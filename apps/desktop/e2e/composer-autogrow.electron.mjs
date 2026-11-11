@@ -38,8 +38,6 @@ fs.mkdirSync(userDataDir, { recursive: true });
 app.setPath("userData", userDataDir);
 
 const DEFAULT_SIZE = { width: 1280, height: 900 };
-/** Width the removed side-by-side send button + row gap used to occupy. */
-const OLD_SEND_COLUMN_PX = Math.round(3.25 * 16 + 0.4 * 16);
 
 /**
  * The first frame of a session stream, byte-for-byte the shape the gateway
@@ -86,10 +84,14 @@ const SAMPLE = `(() => {
   const footer = document.querySelector(".chat-panel__footer");
   const header = document.querySelector(".chat-panel__header");
   const send = document.querySelector(".chat-panel__send");
+  const composerBox = document.querySelector(".chat-panel__composer-box");
   if (!el || !panel) return null;
   const styles = getComputedStyle(el);
   const fieldBox = el.getBoundingClientRect();
   const sendBox = send ? send.getBoundingClientRect() : null;
+  const boxRect = composerBox ? composerBox.getBoundingClientRect() : null;
+  // The field belongs to the composer box: the thread composer puts the field
+  // on top and its control row inside the box's bottom edge.
   const row = el.parentElement;
   return {
     draftChars: el.value.length,
@@ -107,6 +109,7 @@ const SAMPLE = `(() => {
     fieldPaddingRight: Math.round(parseFloat(styles.paddingRight) || 0),
     fieldPaddingLeft: Math.round(parseFloat(styles.paddingLeft) || 0),
     rowWidth: row ? row.clientWidth : 0,
+    rowIsComposerBox: Boolean(composerBox && row === composerBox),
     fieldSpansRow: row ? el.offsetWidth === row.clientWidth : false,
     sendPresent: Boolean(send),
     sendIconOnly: send ? send.textContent.trim().length === 0 : null,
@@ -115,17 +118,24 @@ const SAMPLE = `(() => {
     sendSize: send ? send.offsetWidth : null,
     sendSquare: send ? send.offsetWidth === send.offsetHeight : null,
     sendRadius: send ? parseFloat(getComputedStyle(send).borderRadius) || 0 : null,
-    sendInsideField: sendBox
-      ? {
-          left: Math.round(sendBox.left - fieldBox.left),
-          bottom: Math.round(fieldBox.bottom - sendBox.bottom),
-          inside:
-            sendBox.right <= fieldBox.right + 0.5 &&
-            sendBox.left >= fieldBox.left - 0.5 &&
-            sendBox.bottom <= fieldBox.bottom + 0.5 &&
-            sendBox.top >= fieldBox.top - 0.5
-        }
-      : null,
+    // The send control's place in the composer box: the box's own control row,
+    // under the field and at the box's bottom-right corner. The old layout put
+    // it inside the field and spent a gutter of the field's width on it.
+    sendInBox:
+      sendBox && boxRect
+        ? {
+            left: Math.round(sendBox.left - boxRect.left),
+            top: Math.round(sendBox.top - boxRect.top),
+            rightGap: Math.round(boxRect.right - sendBox.right),
+            bottomGap: Math.round(boxRect.bottom - sendBox.bottom),
+            belowField: Math.round(sendBox.top) >= Math.round(fieldBox.bottom),
+            inside:
+              sendBox.right <= boxRect.right + 0.5 &&
+              sendBox.left >= boxRect.left - 0.5 &&
+              sendBox.bottom <= boxRect.bottom + 0.5 &&
+              sendBox.top >= boxRect.top - 0.5
+          }
+        : null,
     panelHeight: panel.clientHeight,
     panelBodyHeight: body ? body.clientHeight : 0,
     panelFooterHeight: footer ? footer.offsetHeight : 0,
@@ -309,9 +319,12 @@ async function main() {
       `cleared field ${cleared.fieldHeight}px / overflowY ${cleared.fieldOverflowY}`,
     );
 
-    // 6 — the inline send control. The old layout paid for it with a sibling
-    // column (3.25rem button + 0.4rem gap = 58px); the field now owns the whole
-    // composer width and the control sits inside it, costing only a gutter.
+    // 6 — the send control. The old layout paid for it with a sibling column
+    // (3.25rem button + 0.4rem gap = 58px); the field now owns the composer
+    // box's whole inner width and the control sits in the box's own control
+    // row, under the field at the box's bottom-right corner — so it spends no
+    // width of the field at all, and the field's padding is the same whether or
+    // not the control is on screen.
     const withText = samples.find((s) => s.step === "one-line");
     check(
       "send hidden while empty",
@@ -319,9 +332,9 @@ async function main() {
       "the send control rendered on an empty composer",
     );
     check(
-      "field spans the row",
-      samples.every((s) => s.fieldSpansRow),
-      "the textarea did not own the full composer width",
+      "field spans the composer box",
+      samples.every((s) => s.fieldSpansRow && s.rowIsComposerBox),
+      "the textarea did not own the composer box's full inner width",
     );
     check("send appears with text", withText.sendPresent === true, "no send control with text in the field");
     check("send is icon-only", withText.sendIconOnly === true, `button carried text: ${withText.sendLabel}`);
@@ -331,9 +344,16 @@ async function main() {
       `size ${withText.sendSize}px / square ${withText.sendSquare} / radius ${withText.sendRadius}px`,
     );
     check(
-      "send sits inside the field",
-      withText.sendInsideField?.inside === true,
-      `send box ${JSON.stringify(withText.sendInsideField)}`,
+      "send sits in the box's bottom-right corner, under the field",
+      withText.sendInBox?.inside === true &&
+        withText.sendInBox.belowField === true &&
+        // the dock's own end padding (0.4rem) plus the box's 2px border, with
+        // a little slack for a skin that rounds differently
+        withText.sendInBox.rightGap >= 0 &&
+        withText.sendInBox.rightGap <= 12 &&
+        withText.sendInBox.bottomGap >= 0 &&
+        withText.sendInBox.bottomGap <= 12,
+      `send box ${JSON.stringify(withText.sendInBox)}`,
     );
     check(
       "send enabled with text",
@@ -341,22 +361,19 @@ async function main() {
       "the send control was disabled with text in the field and a session",
     );
     check(
-      "gutter costs less than the old column",
-      withText.fieldPaddingRight < OLD_SEND_COLUMN_PX,
-      `gutter ${withText.fieldPaddingRight}px vs the removed ${OLD_SEND_COLUMN_PX}px column`,
-    );
-    check(
-      "no gutter while empty",
-      rest.fieldPaddingRight < withText.fieldPaddingRight,
-      `empty field kept the ${rest.fieldPaddingRight}px gutter`,
+      "field padding is constant",
+      rest.fieldPaddingRight === withText.fieldPaddingRight &&
+        rest.fieldPaddingLeft === withText.fieldPaddingLeft &&
+        withText.fieldPaddingRight > 0,
+      `rest ${rest.fieldPaddingLeft}/${rest.fieldPaddingRight}px, with text ` +
+        `${withText.fieldPaddingLeft}/${withText.fieldPaddingRight}px`,
     );
     check(
       "control never overlaps text",
-      // Text runs from the left padding to the left padding + usable width; the
-      // control's left edge has to start at or after that, or the last wrapped
-      // line disappears under the button.
-      withText.fieldPaddingLeft + withText.fieldUsableWidth <= withText.sendInsideField.left,
-      `text reaches ${withText.fieldPaddingLeft + withText.fieldUsableWidth}px, control starts at ${withText.sendInsideField.left}px`,
+      // The control is not in the field's box at all: it starts at or below
+      // the field's bottom edge, so no wrapped line can run under it.
+      withText.sendInBox?.belowField === true && withText.sendInBox?.inside === true,
+      `control box ${JSON.stringify(withText.sendInBox)} against field bottom`,
     );
 
     const sendText = "Sent with the inline icon button";
@@ -559,15 +576,20 @@ async function main() {
       `stale note survived into the next turn: ${JSON.stringify(nextTurn.note)}`,
     );
 
-    // 9 — the composer's own chrome. The field wears the skin's accent as a 2px
-    // ring of its own, the band around it paints nothing (no fill, no hairline),
-    // and selecting the field adds the glow rather than changing the ring, so
-    // "selected" reads as extra light and not as a second colour.
+    // 9 — the composer's own chrome. One bordered box is the composer: the
+    // field on top and its control row inside the box's bottom edge. The box
+    // wears the skin's accent as a 2px ring, the band around it paints nothing
+    // (no fill, no hairline), and selecting anything in the box adds the glow
+    // to the box — `:focus-within` — rather than changing its ring, so
+    // "selected" reads as extra light and not as a second colour. The field
+    // inside it is frameless: no border and no shadow of its own; the box owns
+    // the ring and the glow.
     //
-    // `:focus` does not match while the window itself is unfocused, even though
-    // `document.activeElement` is set — the driver showed `showInactive()` alone
-    // leaves `:focus=false` and the glow invisible. Give the window real focus
-    // first, or this measures a state the app never renders.
+    // `:focus`/`:focus-within` do not match while the window itself is
+    // unfocused, even though `document.activeElement` is set — the driver
+    // showed `showInactive()` alone leaves `:focus=false` and the glow
+    // invisible. Give the window real focus first, or this measures a state the
+    // app never renders.
     win.show();
     win.focus();
     win.webContents.focus();
@@ -576,10 +598,12 @@ async function main() {
     const chrome = await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const el = document.querySelector(".chat-panel__composer-input");
+      const box = document.querySelector(".chat-panel__composer-box");
       const footer = document.querySelector(".chat-panel__footer");
-      if (!el || !footer) return null;
+      if (!el || !box || !footer) return null;
       const read = () => {
-        const styles = getComputedStyle(el);
+        const styles = getComputedStyle(box);
+        const fieldStyles = getComputedStyle(el);
         return {
           borderWidth: styles.borderTopWidth,
           borderStyle: styles.borderTopStyle,
@@ -588,8 +612,10 @@ async function main() {
           outlineStyle: styles.outlineStyle,
           focused: document.activeElement === el,
           matchesFocus: el.matches(":focus"),
-          matchesFocusVisible: el.matches(":focus-visible"),
+          matchesFocusWithin: box.matches(":focus-within"),
           documentFocused: document.hasFocus(),
+          fieldBorderWidth: fieldStyles.borderTopWidth,
+          fieldBoxShadow: fieldStyles.boxShadow,
         };
       };
       // Resolve the tokens the way the browser does: computed custom properties
@@ -642,6 +668,9 @@ async function main() {
         ring,
         devicePixelRatio,
         borderWidthDevicePx: Math.round(parseFloat(blurred.borderWidth) * devicePixelRatio),
+        fieldBorderWidthDevicePx: Math.round(
+          parseFloat(blurred.fieldBorderWidth) * devicePixelRatio,
+        ),
         footerBackground: footerStyles.backgroundColor,
         footerBorderTopWidth: footerStyles.borderTopWidth,
         footerPaddingTop: Math.round(parseFloat(footerStyles.paddingTop) || 0),
@@ -662,7 +691,7 @@ async function main() {
       `footer top padding ${chrome.footerPaddingTop}px`,
     );
     check(
-      "the field wears the accent as a ring thicker than the hairline it replaced",
+      "the composer box wears the accent as a ring thicker than the hairline it replaced",
       chrome.blurred.borderStyle === "solid" &&
         chrome.blurred.borderWidth === chrome.ring.reference2px &&
         parseFloat(chrome.ring.reference2px) > parseFloat(chrome.ring.reference1px) &&
@@ -673,22 +702,35 @@ async function main() {
         ` accent ${chrome.accent}, neutral border ${chrome.border})`,
     );
     check(
-      "selecting the field adds a glow",
+      "the field inside the box is frameless",
+      chrome.blurred.fieldBorderWidth === "0px" &&
+        chrome.focused.fieldBoxShadow === "none" &&
+        chrome.fieldBorderWidthDevicePx === 0,
+      `field border ${chrome.blurred.fieldBorderWidth}, focused field shadow ` +
+        `${chrome.focused.fieldBoxShadow}`,
+    );
+    check(
+      "selecting the composer adds a glow to its box",
       chrome.focused.focused === true &&
         chrome.focused.matchesFocus === true &&
+        chrome.focused.matchesFocusWithin === true &&
         chrome.blurred.boxShadow === "none" &&
         /0px 0px 0px 3px/.test(chrome.focused.boxShadow) &&
         /0px 0px 14px 2px/.test(chrome.focused.boxShadow),
       `blurred ${chrome.blurred.boxShadow} → focused ${chrome.focused.boxShadow}` +
         ` (focused=${chrome.focused.focused}, :focus=${chrome.focused.matchesFocus},` +
+        ` :focus-within=${chrome.focused.matchesFocusWithin},` +
         ` document focused=${chrome.focused.documentFocused})`,
     );
     check(
       "the glow is the only thing selection changes",
       chrome.focused.borderColor === chrome.blurred.borderColor &&
         chrome.focused.borderWidth === chrome.blurred.borderWidth &&
-        chrome.focused.outlineStyle === "none",
-      `ring ${chrome.blurred.borderColor} → ${chrome.focused.borderColor}, outline ${chrome.focused.outlineStyle}`,
+        chrome.focused.outlineStyle === "none" &&
+        chrome.focused.fieldBorderWidth === chrome.blurred.fieldBorderWidth,
+      `ring ${chrome.blurred.borderColor} → ${chrome.focused.borderColor}, ` +
+        `field border ${chrome.blurred.fieldBorderWidth} → ${chrome.focused.fieldBorderWidth}, ` +
+        `outline ${chrome.focused.outlineStyle}`,
     );
 
     const shot = async (name, text) => {
@@ -850,12 +892,17 @@ async function main() {
       send: {
         hiddenWhileEmpty: rest.sendPresent === false,
         controlPx: withText.sendSize,
-        gutterPx: withText.fieldPaddingRight,
-        idleGutterPx: rest.fieldPaddingRight,
-        removedColumnPx: OLD_SEND_COLUMN_PX,
+        paddingRestPx: {
+          left: rest.fieldPaddingLeft,
+          right: rest.fieldPaddingRight,
+        },
+        paddingWithTextPx: {
+          left: withText.fieldPaddingLeft,
+          right: withText.fieldPaddingRight,
+        },
         fieldWidthPx: withText.fieldWidth,
         fieldUsableWidthPx: withText.fieldUsableWidth,
-        insideField: withText.sendInsideField,
+        inBox: withText.sendInBox,
         click: sendClick,
         shots: { held, stopped },
         stream,
@@ -868,6 +915,7 @@ async function main() {
         ring: chrome.ring,
         devicePixelRatio: chrome.devicePixelRatio,
         borderWidthDevicePx: chrome.borderWidthDevicePx,
+        fieldBorderWidthDevicePx: chrome.fieldBorderWidthDevicePx,
         footerBackground: chrome.footerBackground,
         footerBorderTopWidth: chrome.footerBorderTopWidth,
         footerPaddingTop: chrome.footerPaddingTop,
@@ -929,9 +977,10 @@ async function main() {
   console.log("");
   if (report.send) {
     console.log(
-      `send: ${report.send.controlPx}px round control, ${report.send.gutterPx}px gutter ` +
-        `(idle ${report.send.idleGutterPx}px), field ${report.send.fieldWidthPx}px → ` +
-        `${report.send.fieldUsableWidthPx}px usable; the removed column cost ${report.send.removedColumnPx}px`,
+      `send: ${report.send.controlPx}px round control in the box's control row ` +
+        `${JSON.stringify(report.send.inBox)}, field ${report.send.fieldWidthPx}px → ` +
+        `${report.send.fieldUsableWidthPx}px usable; padding rest ` +
+        `${JSON.stringify(report.send.paddingRestPx)} / with text ${JSON.stringify(report.send.paddingWithTextPx)}`,
     );
     console.log(
       `send click: submitted ${JSON.stringify(report.send.click.calls)} — button present ${report.send.click.present}/${report.send.click.enabled ? "enabled" : "disabled"}, ` +
@@ -946,13 +995,14 @@ async function main() {
   }
   if (report.composer) {
     console.log(
-      `composer chrome: ring ${report.composer.restingRing.borderWidth} ${report.composer.restingRing.borderStyle} ` +
+      `composer chrome: box ring ${report.composer.restingRing.borderWidth} ${report.composer.restingRing.borderStyle} ` +
         `${report.composer.restingRing.borderColor} (accent ${report.composer.accent}, neutral border ${report.composer.border}); ` +
         `band ${report.composer.footerBackground} / top border ${report.composer.footerBorderTopWidth} / pad ${report.composer.footerPaddingTop}px`,
     );
     console.log(
       `composer selected: outline ${report.composer.focused.outlineStyle}, ring ${report.composer.focused.borderColor} ` +
-        `(unchanged), glow ${report.composer.focused.boxShadow}`,
+        `(unchanged), field border ${report.composer.restingRing.fieldBorderWidth}, ` +
+        `glow ${report.composer.focused.boxShadow}`,
     );
     console.log("");
   }

@@ -965,6 +965,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("companion:useHarness", (_e, id: string) =>
     harness.useHarness(id === "hermes" ? "hermes" : "pi"),
   );
+  /*
+   * The switch made from the studio itself. It answers at once instead of
+   * waiting for the target agent to come up: a switch that held the app still
+   * while a gateway restarted read as a reconnection. The target's ensure keeps
+   * running and reports on `companion:statusChanged`, tagged with its agent.
+   */
+  ipcMain.handle("companion:switchHarness", (_e, id: string) =>
+    harness.switchHarness(id === "hermes" ? "hermes" : "pi"),
+  );
   // The built-in companion's endpoint. The key is write-only: it goes to OS
   // secure storage and never travels back to the renderer.
   ipcMain.handle("companion:piSettings", async () => {
@@ -1022,20 +1031,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     (
       _e,
       id: string,
-      patch: { title?: string; pinned?: boolean; archived?: boolean; revision?: number | null },
+      patch: { title?: string; pinned?: boolean; archived?: boolean },
     ) =>
       harness.harnessSessionPatch(
         typeof id === "string" ? id : "",
         patch && typeof patch === "object" ? patch : {},
       ),
   );
-  ipcMain.handle(
-    "companion:sessionDelete",
-    (_e, id: string, options?: { revision?: number | null }) =>
-      harness.harnessSessionDelete(
-        typeof id === "string" ? id : "",
-        options && typeof options === "object" ? options : {},
-      ),
+  ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
+    harness.harnessSessionDelete(typeof id === "string" ? id : ""),
   );
   ipcMain.handle("companion:modelOptions", () =>
     harness.harnessModelOptions(),

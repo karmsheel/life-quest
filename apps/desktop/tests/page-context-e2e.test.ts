@@ -114,6 +114,12 @@ type Sample = {
   attachBeforePill: boolean;
   attachLeftOfPill: boolean;
   sameRow: boolean;
+  /** The composer box's own rect, and where the pill sits in it. */
+  box: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+  fieldBottom: number | null;
+  pillInBox: boolean;
+  pillBelowField: boolean;
+  pillOnBoxLeftHalf: boolean;
   pageHeading: string | null;
   railText: string | null;
   calls: number;
@@ -141,6 +147,7 @@ describe("page context e2e", () => {
     for (const name of [
       "the-pill-is-on-by-default",
       "the-pill-sits-beside-the-attach-control",
+      "the-pill-sits-inside-the-composer-box",
       "clicking-the-pill-turns-it-off",
       "a-turn-sent-while-off-quotes-nothing",
       "walking-to-another-page-turns-it-back-on",
@@ -162,8 +169,14 @@ describe("page context e2e", () => {
     assert.equal(landing.pill?.state, "on");
     assert.equal(landing.pill?.pressed, "true");
     assert.equal(landing.attachBeforePill, true, "the pill is not after the attach control");
-    assert.equal(landing.inLine, true, "the pill left the composer's footer line");
+    assert.equal(landing.inLine, true, "the pill left the composer's receipts group");
     assert.equal(landing.attach?.label, "Attach a receipt", "the attach control changed");
+
+    // The pill is part of the one bordered composer box now: inside the box's
+    // bottom edge, under the field, and on the box's bottom-left half.
+    assert.equal(landing.pillInBox, true, "the pill left the composer box");
+    assert.equal(landing.pillBelowField, true, "the pill is not under the field");
+    assert.equal(landing.pillOnBoxLeftHalf, true, "the pill is not on the box's left half");
 
     // Off is a state, not a disappearance: the pill and its name stay put.
     assert.equal(report.checks.off?.state, "off");

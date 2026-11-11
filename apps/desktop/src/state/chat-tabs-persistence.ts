@@ -8,16 +8,35 @@
  * module is the memory: the provider reads it when it lands and writes it back
  * whenever the strip or the tab in front changes.
  *
+ * There is one strip PER AGENT, not one per profile. A chat belongs to the
+ * agent that made it, so the two agents' chats cannot share a strip: restoring
+ * Hermes ids onto Pi would ask for chats Pi has never heard of, and a switch
+ * that cleared the strip threw away the other agent's working set for good.
+ * That is why the key carries the agent id, and why a switch writes the strip
+ * it is leaving before it reads the one it is entering.
+ *
+ * `null` is the app-less case: a harness page (the e2e rigs) mounts the dock
+ * with only the IPC bridge stubbed and no agent chosen at all. Those pages keep
+ * the pre-agent key, so their behaviour is exactly what it always was.
+ *
  * Only what the strip itself knows is stored: ids and order. Whether a
- * remembered chat still exists is the gateway's answer, so the landing filters
+ * remembered chat still exists is the agent's answer, so the landing filters
  * the stored ids against the list it just read (`restoredChatTabs`) rather than
- * trusting the memory. A chat deleted or archived in Hermes Desktop while this
- * app was shut is dropped from the strip instead of coming back as a tab with no
- * thread behind it.
+ * trusting the memory. A chat deleted or archived elsewhere while this app was
+ * shut is dropped from the strip instead of coming back as a tab with no thread
+ * behind it.
  */
+import type { HarnessId } from "@/vite-env";
 
-/** The profile-local storage slot. One tab strip per profile. */
-const CHAT_TABS_KEY = "lifequest.companion.openTabs";
+/** The pre-agent slot, still used by the app-less harness pages. */
+const LEGACY_CHAT_TABS_KEY = "lifequest.companion.openTabs";
+
+/** One strip per agent: `lifequest.companion.openTabs.hermes`, `.pi`. */
+const CHAT_TABS_PREFIX = "lifequest.companion.openTabs.";
+
+function keyFor(agent: HarnessId | null): string {
+  return agent ? `${CHAT_TABS_PREFIX}${agent}` : LEGACY_CHAT_TABS_KEY;
+}
 
 /** The strip as it was stored, or `known: false` when none was. */
 export type StoredChatTabs = {
@@ -44,16 +63,10 @@ function cleanIds(value: unknown): string[] {
   return ids;
 }
 
-/**
- * Read the strip this profile last had open.
- *
- * A malformed value is treated as no memory rather than a boot failure: the
- * landing then follows the old rule instead of the dock refusing to open.
- */
-export function readStoredChatTabs(): StoredChatTabs {
+/** The stored shape, or none when the slot is empty or malformed. */
+function parseStored(raw: string | null): StoredChatTabs {
+  if (raw === null) return NONE;
   try {
-    const raw = window.localStorage.getItem(CHAT_TABS_KEY);
-    if (raw === null) return NONE;
     const parsed = JSON.parse(raw) as unknown;
     // A bare array is a strip without a front tab; it is accepted so a partial
     // write from an older build still restores the tabs.
@@ -74,6 +87,31 @@ export function readStoredChatTabs(): StoredChatTabs {
 }
 
 /**
+ * Read the strip this agent last had open.
+ *
+ * A malformed value is treated as no memory rather than a boot failure: the
+ * landing then follows the old rule instead of the dock refusing to open.
+ *
+ * A build from before the strips were per-agent left its one strip in the
+ * legacy slot. The first agent asked about it claims it (a copy under that
+ * agent's key) and the legacy slot is cleared, so the other agent does not read
+ * a strip that never belonged to it.
+ */
+export function readStoredChatTabs(agent: HarnessId | null = null): StoredChatTabs {
+  try {
+    const own = parseStored(window.localStorage.getItem(keyFor(agent)));
+    if (own.known || !agent) return own;
+    const legacy = parseStored(window.localStorage.getItem(LEGACY_CHAT_TABS_KEY));
+    if (!legacy.known) return NONE;
+    writeStoredChatTabs(agent, legacy.tabs, legacy.activeId);
+    window.localStorage.removeItem(LEGACY_CHAT_TABS_KEY);
+    return legacy;
+  } catch {
+    return NONE;
+  }
+}
+
+/**
  * Remember the strip for the next run.
  *
  * An empty strip is written as an empty strip, not deleted: "I closed every tab
@@ -81,13 +119,14 @@ export function readStoredChatTabs(): StoredChatTabs {
  * different fact from "this profile has never had a strip".
  */
 export function writeStoredChatTabs(
+  agent: HarnessId | null,
   tabs: readonly string[],
   activeId: string | null,
 ): void {
   try {
     const ids = cleanIds(tabs);
     window.localStorage.setItem(
-      CHAT_TABS_KEY,
+      keyFor(agent),
       JSON.stringify({
         tabs: ids,
         activeId: activeId && ids.includes(activeId) ? activeId : null,
@@ -98,7 +137,7 @@ export function writeStoredChatTabs(
   }
 }
 
-/** What the landing should put on screen, given what the gateway still has. */
+/** What the landing should put on screen, given what the agent still has. */
 export type RestoredChatTabs = {
   /** The remembered tabs that still exist, in tab order. */
   tabs: string[];
@@ -115,13 +154,13 @@ export type RestoredChatTabs = {
 /**
  * Reconcile the remembered strip against the chats that still exist.
  *
- * `liveIds` is the list just read from the gateway (archived and hidden chats
+ * `liveIds` is the list just read from the agent (archived and hidden chats
  * are absent from it by design). `openNow` are tabs a live turn opened while
  * this read was in flight — a scheduled automation can start one before the
  * list arrives — and they are kept, because they belong to the run that is
  * happening now rather than to the previous session.
  *
- * The tab in front is the remembered one; if it vanished from the gateway the
+ * The tab in front is the remembered one; if it vanished from the agent the
  * next remembered tab to its right takes over, else the one to its left, the way
  * a browser hands a closed tab's place to its neighbour. A remembered strip with
  * no surviving tab returns no tabs: the caller falls back to its own landing rule

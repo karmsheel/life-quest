@@ -10,24 +10,10 @@ import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
 import { api } from "@/lib/ipc";
+import { companionStatusSummary } from "@/lib/companion-status-copy";
 import { useCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
-import type { CompanionStatus, McpDoors } from "@/vite-env";
-
-function statusSummary(status: CompanionStatus | null, ensuring: boolean): string {
-  if (ensuring || !status) return "Connecting…";
-  if (status.kind === "ready") return status.detail;
-  if (status.kind === "needs_setup") {
-    return status.message ?? "The built-in companion needs an endpoint and a model.";
-  }
-  if (status.kind === "needs_install") return "Hermes CLI not found on PATH.";
-  if (status.kind === "profile_error") return status.message;
-  if (status.kind === "port_busy") return `Port ${status.port} is busy.`;
-  if (status.kind === "gateway_exited") return status.detail || "Gateway exited.";
-  if (status.kind === "hermes_too_old") return "Hermes is too old for the Sessions API.";
-  if (status.kind === "auth_error") return "Companion API key was rejected.";
-  return "Companion disconnected.";
-}
+import type { McpDoors } from "@/vite-env";
 
 /** The loopback doors' default ports, shown while the door is not bound yet. */
 const LOCAL_DOOR = "http://127.0.0.1:8643/mcp";
@@ -176,7 +162,7 @@ export function SettingsHermes() {
           }
           role="status"
         >
-          {statusSummary(status, ensuring)}
+          {companionStatusSummary(status, ensuring)}
         </p>
 
         {status?.kind === "ready" && status.modelWarning ? (

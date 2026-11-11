@@ -145,15 +145,20 @@ not send an API key to the renderer.
 
 ### The composer's controls
 
+The composer is one bordered box. The field sits at the top, and a single control
+row sits inside the box's bottom edge: the things a turn can carry at the bottom
+left, and what the turn runs on and how it goes at the bottom right.
+
 | Control | What it does |
 |---|---|
-| **Message Hermes…** field | Sends on Enter, newline on Shift+Enter. Grows with the text up to a cap. |
-| Send / **Stop this run** | Sends the turn, or stops the live run cooperatively. |
-| Page pill (**in context** / **off**) | Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
-| Card pills (**in context**) | One pill per dashboard card in context, in the order added, up to three. Clicking a card on the Dashboard adds or removes it. Each pill's `x` is **Remove "<card name>" from context**. |
-| **Attach a receipt** | Attach one JPEG or PNG, up to 25 MB, by picker, drag-and-drop, or a pasted screenshot. One at a time; a second attach replaces the first. **Remove receipt** drops it. |
-| Model pill | Which model the next turn runs on, chosen from the profile's own catalog with its provider names, or **Automatic** for the profile default. Absent when the gateway serves no catalog. |
-| Thinking-level pill | How hard the model should think, from **Default** (gateway default) through the ladder to **Off** where the model allows it. Appears only for a model whose catalog entry supports reasoning. |
+| **Message Hermes…** field | At the top of the box. Sends on Enter, newline on Shift+Enter. Grows with the text up to a cap. |
+| Send / **Stop this run** | The right end of the control row, after the model and thinking pills. Sends the turn, or stops the live run cooperatively. |
+| Page pill (**in context** / **off**) | At the bottom left of the control row, after the receipt control. Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
+| Card pills (**in context**) | Above the field, not in the box. One pill per dashboard card in context, in the order added, up to three. Clicking a card on the Dashboard adds or removes it. Each pill's `x` is **Remove "<card name>" from context**. |
+| **Attach a file** | The plus control with a circular background, at the bottom left of the control row. Attaches any media or file as a general attachment, several in one pick; the chips wait above the field. A general attachment is a file the agent may look at. |
+| **Attach a receipt** | The picture-plus control, beside the add control at the bottom left of the control row. Attach one JPEG or PNG, up to 25 MB, by picker, drag-and-drop, or a pasted screenshot. One at a time; a second attach replaces the first. **Remove receipt** drops it. A receipt is what the ledger cites as a transaction's source, so it is not the same flow as a general attachment. |
+| Model pill | At the bottom right of the control row. Which model the next turn runs on, chosen from the profile's own catalog with its provider names, or **Automatic** for the profile default. Absent when the gateway serves no catalog. |
+| Thinking-level pill | Beside the model pill at the bottom right. How hard the model should think, from **Default** (gateway default) through the ladder to **Off** where the model allows it. Appears only for a model whose catalog entry supports reasoning. |
 
 The card pills are made on the Dashboard: click a card to put it in the chat's
 context, click it again to take that card out, and click empty board space to
@@ -173,7 +178,7 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 | Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat** — the archive control steps away while the chat is pinned. |
 | Tab strip | One tab per open chat, each closable by its **×**, a middle click, or **Ctrl+W** (**Cmd+W** on macOS) for the tab in front, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
-| Composer | The field, send/stop, the page pill, the card pills, the receipt controls, the model and thinking pills. |
+| Composer | One bordered box: the field at the top, with the card pills and attachment chips above it, and the control row inside its bottom edge — add and receipt controls, the page pill and the waiting receipt chip at the bottom left, the model and thinking pills and send/stop at the bottom right. |
 | Dock actions | **New chat**, **Life-Chain**, the two-panes side switch, **Collapse chat**, and the version badge (*Check for updates*). |
 
 ## Rules and behaviour

@@ -13,9 +13,10 @@
  *  1. Enter still sends. A prompt is a paragraph, and a half-written thought
  *     must not be thrown away by the key the operator reaches for while writing.
  *  2. Ctrl+Enter does not send — the send moved somewhere nobody can find.
- *  3. The attach control is not inside the field's own box, or not in its top
- *     right corner: the composer must be able to carry a picture, a clip, a
- *     recording or a document, not words alone.
+ *  3. The add control is not inside the composer box, or not at its bottom
+ *     left: the composer must be able to carry a picture, a clip, a recording
+ *     or a document, not words alone — and the add control is the first gesture
+ *     of the box's own control row, under the field.
  *  4. An attach that never reaches the turn: the file must ride the turn, and
  *     the turn must carry what kind of file it is.
  *  5. The composer closes while a turn runs, so a thought that arrives halfway
@@ -23,6 +24,12 @@
  *  6. A steer that never reaches the live run, or that clears the draft when it
  *     was refused: the words must survive a refusal.
  *  7. A queued message that is lost, or that never runs.
+ *  8. The two attach flows collapsing into one. The add control takes any file
+ *     (no `accept`, `multiple`), because an attachment is something the agent
+ *     may look at. The receipt control takes one picture (`image/png`,
+ *     `image/jpeg`), because a receipt is what the ledger cites as a
+ *     transaction's source. One picker serving both would silently stop a clip
+ *     from being attached, or a receipt from being cited.
  *
  * Exit code 0 = every invariant held.
  */
@@ -84,13 +91,19 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
 
-    /** The composer field and the state around it. */
+    /**
+     * The composer box, the field on top of it, the control row inside its
+     * bottom edge, and the two file pickers that row's controls open.
+     */
     const readComposer = `(() => {
       const field = document.querySelector(".chat-panel__composer-input");
+      const box = document.querySelector(".chat-panel__composer-box");
+      const dock = document.querySelector(".chat-panel__composer-dock");
       const plus = document.querySelector(".chat-panel__composer-plus");
-      const row = document.querySelector(".chat-panel__composer-row");
-      if (!field || !row) return { fieldPresent: false };
-      const box = (el) => {
+      const attachmentInput = document.querySelector(".chat-panel__attachment-input");
+      const receiptInput = document.querySelector(".chat-panel__receipt-input");
+      if (!field || !box) return { fieldPresent: false };
+      const boxOf = (el) => {
         if (!el) return null;
         const r = el.getBoundingClientRect();
         return {
@@ -102,28 +115,71 @@ async function main() {
           height: Math.round(r.height),
         };
       };
-      const fieldBox = box(field);
-      const plusBox = box(plus);
+      const inside = (inner, outer) =>
+        Boolean(inner) &&
+        Boolean(outer) &&
+        inner.left >= outer.left - 0.5 &&
+        inner.right <= outer.right + 0.5 &&
+        inner.top >= outer.top - 0.5 &&
+        inner.bottom <= outer.bottom + 0.5;
+      const alphaOf = (color) => {
+        const numbers = ((color ?? "").match(/[0-9.]+/g) ?? []).map(Number);
+        return numbers.length >= 4 ? numbers[3] : 1;
+      };
+      // A pill radius is 999px today, but resolve a percentage against the
+      // control's own height so the claim survives a skin that writes "50%".
+      const radiusOf = (style, height) => {
+        const value = style ? style.borderTopLeftRadius : "";
+        const amount = parseFloat(value) || 0;
+        return value.trim().endsWith("%") ? (amount / 100) * height : amount;
+      };
+      const fieldBox = boxOf(field);
+      const boxBox = boxOf(box);
+      const dockBox = boxOf(dock);
+      const plusBox = boxOf(plus);
+      const plusStyle = plus ? getComputedStyle(plus) : null;
       return {
         fieldPresent: true,
         fieldBox,
+        boxBox,
+        dockBox,
         plusBox,
         plusPresent: Boolean(plus),
-        plusLabel: plus?.getAttribute("aria-label") ?? null,
-        plusInside:
+        plusLabel: plus ? plus.getAttribute("aria-label") : null,
+        plusBackground: plusStyle ? plusStyle.backgroundColor : null,
+        plusRadiusPx:
+          plusStyle && plusBox ? Math.round(radiusOf(plusStyle, plusBox.height)) : null,
+        plusInsideBox: inside(plusBox, boxBox),
+        plusInsideDock: inside(plusBox, dockBox),
+        // The bottom-left of the box, under the field: the control row lives
+        // inside the box's bottom edge, and the add control is its first
+        // gesture, so it sits below the field and on the box's left half.
+        plusBelowField:
+          Boolean(plusBox) && Boolean(fieldBox) && plusBox.top >= fieldBox.bottom - 0.5,
+        plusOnLeftHalf:
+          Boolean(plusBox) && Boolean(boxBox) && plusBox.left <= boxBox.left + boxBox.width / 2,
+        plusBottomLeft:
+          inside(plusBox, boxBox) &&
           Boolean(plusBox) &&
           Boolean(fieldBox) &&
-          plusBox.left >= fieldBox.left &&
-          plusBox.right <= fieldBox.right &&
-          plusBox.top >= fieldBox.top &&
-          plusBox.bottom <= fieldBox.bottom,
-        // The top-right corner: the plus sits in the upper half of the field,
-        // and to the right of its middle.
-        plusTopRight:
-          Boolean(plusBox) &&
-          Boolean(fieldBox) &&
-          plusBox.top < fieldBox.top + fieldBox.height / 2 &&
-          plusBox.left > fieldBox.left + fieldBox.width / 2,
+          plusBox.top >= fieldBox.bottom - 0.5 &&
+          Boolean(boxBox) &&
+          plusBox.left <= boxBox.left + boxBox.width / 2,
+        // A circular muted surface: painted rather than transparent, square,
+        // and rounded by at least half its own height.
+        plusCircular:
+          Boolean(plusBox && plusStyle) &&
+          plusBox.width === plusBox.height &&
+          alphaOf(plusStyle.backgroundColor) > 0 &&
+          radiusOf(plusStyle, plusBox.height) >= plusBox.height / 2,
+        // The two attach flows are two pickers, not one.
+        attachmentInputPresent: Boolean(attachmentInput),
+        attachmentAccept: attachmentInput ? attachmentInput.getAttribute("accept") : null,
+        attachmentMultiple: attachmentInput ? attachmentInput.multiple : false,
+        receiptInputPresent: Boolean(receiptInput),
+        receiptAccept: receiptInput ? receiptInput.getAttribute("accept") : null,
+        distinctPickers:
+          Boolean(attachmentInput) && Boolean(receiptInput) && attachmentInput !== receiptInput,
         fieldDisabled: field.disabled,
         sendCalls: (window.__lqChatCalls ?? []).length,
       };
@@ -131,21 +187,45 @@ async function main() {
 
     const initial = await run(readComposer);
 
-    check("the composer field rendered", initial.fieldPresent, "no field on the page");
+    check("the composer box rendered", initial.fieldPresent, "no composer box on the page");
     check(
-      "the attach control is inside the field's own box",
-      initial.plusInside,
-      `field ${JSON.stringify(initial.fieldBox)} plus ${JSON.stringify(initial.plusBox)}`,
+      "the add control is inside the composer box, at its bottom left",
+      initial.plusBottomLeft,
+      `box ${JSON.stringify(initial.boxBox)} plus ${JSON.stringify(initial.plusBox)} field ${JSON.stringify(initial.fieldBox)}`,
     );
     check(
-      "the attach control sits in the field's top-right corner",
-      initial.plusTopRight,
-      `field ${JSON.stringify(initial.fieldBox)} plus ${JSON.stringify(initial.plusBox)}`,
+      "the add control sits on the box's control row",
+      initial.plusInsideDock,
+      `plus ${JSON.stringify(initial.plusBox)} dock ${JSON.stringify(initial.dockBox)}`,
     );
     check(
-      "the attach control names itself",
+      "the add control wears a circular surface",
+      initial.plusCircular,
+      `background ${initial.plusBackground}, ${initial.plusBox?.width}x${initial.plusBox?.height}px, ` +
+        `radius ${initial.plusRadiusPx}px`,
+    );
+    check(
+      "the add control names itself",
       Boolean(initial.plusLabel),
       "the plus button has no aria-label",
+    );
+    // Both attach flows survive, as two pickers: the add control takes any
+    // file; the receipt control takes one picture.
+    check(
+      "the add control opens the general file picker",
+      initial.attachmentInputPresent &&
+        initial.attachmentAccept === null &&
+        initial.attachmentMultiple === true,
+      `attachment picker accept=${JSON.stringify(initial.attachmentAccept)}, ` +
+        `multiple=${initial.attachmentMultiple}`,
+    );
+    check(
+      "the receipt control keeps its own image-only picker",
+      initial.receiptInputPresent &&
+        initial.receiptAccept === "image/png,image/jpeg" &&
+        initial.distinctPickers,
+      `receipt picker accept=${JSON.stringify(initial.receiptAccept)}, ` +
+        `distinct=${initial.distinctPickers}`,
     );
 
     // 1 — Enter is a newline, and it sends nothing.
@@ -561,10 +641,10 @@ async function main() {
       `draft is ${JSON.stringify(queued.draft)}`,
     );
 
-    // The picture, for the operator: the composer with its attach control, an
-    // attachment chip, and the two live-turn gestures. It is taken while a
-    // turn is running and a file is waiting, because that is the state the
-    // feature is about.
+    // The picture, for the operator: the one bordered composer box, its add
+    // control at the bottom left of the row inside it, an attachment chip, and
+    // the two live-turn gestures. It is taken while a turn is running and a
+    // file is waiting, because that is the state the feature is about.
     const shot = path.join(artifactsDir, "composer-keys-attachments.png");
     await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -642,7 +722,14 @@ async function main() {
 
   if (report.initial) {
     console.log(
-      `plus: inside ${report.initial.plusInside}, top-right ${report.initial.plusTopRight}`,
+      `plus: bottom-left ${report.initial.plusBottomLeft}, on the dock ` +
+        `${report.initial.plusInsideDock}, circular ${report.initial.plusCircular} ` +
+        `(${JSON.stringify(report.initial.plusBox)})`,
+    );
+    console.log(
+      `pickers: add accept=${JSON.stringify(report.initial.attachmentAccept)} ` +
+        `multiple=${report.initial.attachmentMultiple}; receipt accept=` +
+        `${JSON.stringify(report.initial.receiptAccept)}; distinct=${report.initial.distinctPickers}`,
     );
     console.log(
       `keys: Enter sent ${report.afterEnter?.sends}, typed Enter made ` +
