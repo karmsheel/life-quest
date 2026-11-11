@@ -126,6 +126,11 @@ type Report = {
     viewGroupBy: string | null;
     viewReadableHoldsNoShortId: boolean;
     viewExactPayloadUnchanged: boolean;
+    libraryDomainLine: { label: string; from: string; to: string; text: string } | null;
+    libraryDomainPaneLabels: string[];
+    libraryDomainShowsCurrentBody: boolean;
+    libraryDomainShowsProposedBody: boolean;
+    libraryDomainHasNoPayload: boolean;
   };
   raw: Sample;
   resolved: Sample;
@@ -141,6 +146,13 @@ type Report = {
   customBatch: BatchSample;
   viewRaw: { fields: { label: string; value: string }[]; readable: string; exactPayload: string | null };
   viewResolved: { fields: { label: string; value: string }[]; readable: string; exactPayload: string | null };
+  libraryDomains: {
+    domainLine: { label: string; from: string; to: string; text: string } | null;
+    paneLabels: string[];
+    current: string | null;
+    proposed: string | null;
+    hasExactProposal: boolean;
+  };
 };
 
 /** "47083ecb…" — the shortId the card falls back to for a raw id. */
@@ -443,5 +455,42 @@ describe("decision body labels", () => {
     // The resolved spec keeps both ids the approve path will save.
     assert.match(JSON.stringify(VIEW.resolved), new RegExp(VIEW.ids.volume));
     assert.match(JSON.stringify(VIEW.resolved), new RegExp(VIEW.ids.bottle));
+  });
+
+  it("puts a library note's domain change on the card, above its prose", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+      return;
+    }
+
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    const fixture = JSON.parse(
+      fs.readFileSync(path.join(desktopRoot, "e2e/fixtures/decision-library-domains.json"), "utf8"),
+    ) as {
+      body: string;
+      previousBody: string;
+      expected: { label: string; from: string; to: string; paneLabels: string[] };
+    };
+
+    // The proposal itself: both lists named, so "moving this note to Finance" is
+    // something the operator can read and answer, not a body diff to infer it from.
+    const line = report.libraryDomains.domainLine;
+    assert.ok(line, "the card has no domain line to answer");
+    assert.equal(line.label, fixture.expected.label);
+    assert.equal(line.from, fixture.expected.from);
+    assert.equal(line.to, fixture.expected.to);
+    assert.match(line.text, /Domains/);
+
+    // The note's prose is still what the card is about: the same Current/Proposed
+    // panes as any library Decision, and no JSON payload for a markdown body.
+    assert.deepEqual(report.libraryDomains.paneLabels, fixture.expected.paneLabels);
+    assert.equal(report.libraryDomains.current?.trimEnd(), fixture.previousBody.trimEnd());
+    assert.equal(report.libraryDomains.proposed?.trimEnd(), fixture.body.trimEnd());
+    assert.equal(report.libraryDomains.hasExactProposal, false, "a prose note grew a payload");
+
+    assert.equal(report.checks.libraryDomainShowsCurrentBody, true);
+    assert.equal(report.checks.libraryDomainShowsProposedBody, true);
+    assert.equal(report.checks.libraryDomainHasNoPayload, true);
   });
 });

@@ -74,22 +74,45 @@ export function DecisionBody({
   previous,
   goalName,
   domainName,
+  proposedDomainSlugs = null,
+  previousDomainSlugs = null,
 }: {
   target: DocumentTarget;
   proposed: string;
   previous: string | null;
   goalName: (id: string) => string | null;
   domainName: (slug: string) => string;
+  /**
+   * A library note's tags as the proposal leaves them, or null when the proposal
+   * does not touch them. [] means "untag", which still has to be on the card.
+   */
+  proposedDomainSlugs?: string[] | null;
+  previousDomainSlugs?: string[] | null;
 }) {
   const lookups: Lookups = { goalName, domainName };
   const parsed = parseJson(proposed);
+  const domainChange =
+    proposedDomainSlugs !== null ? (
+      <p className="decision-card__domain-change" data-testid="decision-domain-change">
+        <span className="muted">Domains</span>
+        <span className="decision-value--was">{domainList(previousDomainSlugs, domainName)}</span>
+        <span aria-hidden="true">→</span>
+        <span>{domainList(proposedDomainSlugs, domainName)}</span>
+      </p>
+    ) : null;
 
   if (!isRecord(parsed)) {
-    return <ProseCompare proposed={proposed} previous={previous} />;
+    return (
+      <>
+        {domainChange}
+        <ProseCompare proposed={proposed} previous={previous} />
+      </>
+    );
   }
 
   return (
     <div className="decision-proposal">
+      {domainChange}
       {renderStructured(target, parsed, previous, lookups)}
       <details className="decision-source">
         <summary>Exact proposal</summary>
@@ -97,6 +120,19 @@ export function DecisionBody({
       </details>
     </div>
   );
+}
+
+/**
+ * A note tagged with no domain appears only in Overview; "None" is the operator's
+ * word for that on the Documents page too. Slugs with no live area fall back to
+ * the slug rather than disappearing from a card the operator is approving.
+ */
+function domainList(
+  slugs: string[] | null,
+  domainName: (slug: string) => string,
+): string {
+  if (!slugs || slugs.length === 0) return "None";
+  return slugs.map((slug) => domainName(slug)).join(", ");
 }
 
 function renderStructured(

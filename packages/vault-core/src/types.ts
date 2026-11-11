@@ -835,6 +835,18 @@ export type DecisionRecord = {
   previousTitle: string | null;
   proposedBodyMarkdown: string;
   previousBodyMarkdown: string | null;
+  /**
+   * The library note's domain list as the proposal would leave it, or null when
+   * the proposal does not touch the tags.
+   *
+   * A plain `.md` note's domains live in its frontmatter, and until this field a
+   * proposal could only carry a title and a body — so an agent asked to re-tag a
+   * note had no Decision to file and no tool to call. Null is "no change", []
+   * is the real proposal to untag, which is why this is not simply optional.
+   */
+  proposedDomainSlugs: string[] | null;
+  /** The note's tags when the proposal was filed; null when domains do not change. */
+  previousDomainSlugs: string[] | null;
   actor: Actor;
   createdAt: string;
   resolvedAt: string | null;
