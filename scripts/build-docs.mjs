@@ -50,6 +50,90 @@ function rewriteStagedLinks(dir) {
   }
 }
 
+
+/**
+ * The Releases page is generated, not authored.
+ *
+ * Every release published on GitHub is the one place the project already keeps
+ * a user-facing account of what changed. Building the page from that feed means
+ * a release shows up on the docs site at the next deploy without anyone
+ * remembering to copy it into the wiki. If the feed cannot be read (offline
+ * build, rate limit), the page still exists and points at GitHub instead of
+ * failing the whole site build.
+ */
+const RELEASES_URL =
+  "https://api.github.com/repos/karmsheel/life-quest/releases?per_page=30";
+
+function releaseDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function releasesMarkdown(releases) {
+  const lines = [
+    "# Releases",
+    "",
+    "Every published release, newest first. This page is generated from the",
+    "project's GitHub Releases feed when the docs site is built, so a release",
+    "appears here on the next deploy without a wiki edit.",
+    "",
+  ];
+  for (const release of releases) {
+    const name = release.name || release.tag_name;
+    const date = releaseDate(release.published_at);
+    lines.push(`## ${name}${date ? ` — ${date}` : ""}`, "");
+    if (release.tag_name) {
+      lines.push(
+        `Tag [\`${release.tag_name}\`](${release.html_url})${release.prerelease ? " (pre-release)" : ""}.`,
+        "",
+      );
+    }
+    const body = typeof release.body === "string" ? release.body.trim() : "";
+    lines.push(body || "No release notes were published with this release.", "");
+  }
+  return lines.join("\n");
+}
+
+async function writeReleasesPage() {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "lifequest-docs-build",
+  };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const response = await fetch(RELEASES_URL, { headers });
+    if (!response.ok) throw new Error(`GitHub Releases answered ${response.status}`);
+    const releases = await response.json();
+    if (!Array.isArray(releases)) throw new Error("GitHub Releases returned no list");
+    fs.writeFileSync(path.join(buildDir, "releases.md"), releasesMarkdown(releases));
+    console.log(`[docs] generated releases.md from ${releases.length} release(s)`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    fs.writeFileSync(
+      path.join(buildDir, "releases.md"),
+      [
+        "# Releases",
+        "",
+        "The release feed could not be read while this site was built.",
+        "",
+        `> ${message}`,
+        "",
+        "Read every release on [GitHub Releases](https://github.com/karmsheel/life-quest/releases).",
+        "",
+      ].join("\n"),
+    );
+    console.warn(`[docs] could not generate releases.md (${message}); wrote a fallback page`);
+  }
+}
+
 fs.rmSync(buildDir, { recursive: true, force: true });
 fs.mkdirSync(buildDir, { recursive: true });
 
@@ -57,6 +141,7 @@ copyMarkdown(wikiDir, buildDir);
 copyMarkdown(lawsDir, path.join(buildDir, "LAWS"));
 fs.copyFileSync(path.join(repoRoot, "VISION.md"), path.join(buildDir, "VISION.md"));
 rewriteStagedLinks(buildDir);
+await writeReleasesPage();
 
 const pages = fs
   .readdirSync(buildDir, { withFileTypes: true })

@@ -1,50 +1,46 @@
 # Getting started
 
 LifeQuest is a desktop studio that opens a **vault**: a folder on your computer
-that holds your life data as plain files. This page takes you from the
-prerequisites to a working first vault, and explains the one thing that can stop
-the app from opening at all — the companion. Read
-[the wiki home](./index.md) first if you want the shape of the product before
+that holds your life data as plain files. This page takes you from the download
+to a working first vault. Since 0.2.8 the studio opens with a companion built in:
+**Pi** runs inside the app, so a machine with no Hermes install still reaches
+every surface. **Hermes** remains available as an optional external companion.
+Read [the wiki home](./index.md) first if you want the shape of the product before
 the install.
 
 ## Where it lives
 
-The welcome screen is its own route outside the studio shell: `#/welcome`. It has
-no rail, no domain tab and no chat pane — only the custom window title bar above
-it.
-Inside its card you find the app name, the two vault buttons and the recent-vault
-list.
-
-The **companion setup screen** is shown before that, on the same `.welcome` card,
-whenever the Hermes companion is not connected. You cannot reach the welcome
-screen, and therefore cannot reach any vault, until it is satisfied.
-
-Later, settings live in the **Settings** sheet: press the gear at the top right
-of the title bar (or use the sheet from the chat pane's error banner). See
-[Settings](./28-settings.md) for every tab.
+- The **welcome screen** is its own route outside the studio shell: `#/welcome`.
+  It has no rail, no lens tab and no chat dock — only the app's title bar above
+  the card. The card holds **Create vault**, **Open vault** and **Recent vaults**.
+- The **companion setup screen** is shown before that, on the same welcome card,
+  whenever no companion can start. Its heading is **LifeQuest companion**; the
+  companion picker at the top of the card chooses **Pi** or **Hermes**.
+- The **studio** opens after a vault loads. Its settings are the **Settings**
+  sheet, opened by the gear at the trailing end of the window title bar (a plain
+  link to `/settings`). See [Settings](./28-settings.md).
+- The **onboarding interview** lives in the chat dock of a new vault, above the
+  composer. See [The studio](./03-the-studio.md).
 
 ## What it is for
 
-This page exists to get one vault open, with the companion connected, and to name
-the two things that stop that from happening: a missing Hermes install, and a
-folder that is not a vault. Everything after that is the studio teaching you its
-own surfaces, and the wiki's feature pages are the place to learn them.
+This page gets one vault open with a companion answering, names the two things
+that stop that happening — no usable companion configuration, and a folder that
+is not a vault — and then walks the first five minutes of a 0.2.8 vault. The
+feature pages teach the surfaces themselves.
 
 ## Before you start
 
 | Requirement | What it means |
 |---|---|
-| **Node.js 20+** | Developed on Node 22; 20 LTS is the minimum supported target |
-| **npm** | The repository is an npm-workspaces monorepo |
-| **Hermes CLI** | The companion. It must be on your `PATH`; LifeQuest does not bundle it |
-| **Hermes gateway** | The profile's host gateway, served on the Hermes API port (default `http://localhost:8642`). You do not configure it in the app; the companion profile owns it |
-| **Windows** | The packaged desktop product is Windows; other desktop builds are not the product |
+| **Windows** | The packaged desktop product is a Windows build. Source builds run elsewhere, but Windows is the product |
+| **A folder** | A vault is a folder you choose; an empty one is ideal |
+| **Node.js 20+ and npm** | Only to run or build from source. The packaged app needs neither |
+| **An OpenAI-compatible endpoint** | For Pi. A hosted API needs an endpoint, a model name and usually an API key; a local server (Ollama, LM Studio, llama.cpp) needs no key |
+| **Hermes (optional)** | The external companion. If it is already installed and working, LifeQuest keeps using it until you switch to Pi |
 
-The companion is not optional decoration. The studio **does not open without
-it** ([LAWS/COMPANION.md](../../LAWS/COMPANION.md)): the app looks for the Hermes
-CLI and the Hermes profile it is set to use (`lifequest` by default), attaches to
-that profile's gateway if it is already serving, and starts it if it is not. It
-never kills a gateway it did not start.
+There is no account and no server to sign in to. API keys are never written into
+the vault.
 
 ## Run it from source
 
@@ -60,12 +56,12 @@ never kills a gateway it did not start.
    npm run dev
    ```
 
-   This is the same as `npm run dev:desktop`. The script bundles the Electron main
-   process and preload, starts Vite on port `5173`, and launches the app against
-   it. Re-running it rebundles and relaunches, which is how a change to the main
-   process or preload takes effect.
+   This bundles the Electron main process and preload, starts Vite on port
+   `5173`, and launches the app against it. Re-running it rebundles and
+   relaunches, which is how a main-process or preload change takes effect.
 
-3. Quit with the window's close button, **Ctrl+Q**, or `Ctrl+C` in the terminal.
+3. Quit with the window's close control, **Ctrl+Q**, or `Ctrl+C` in the
+   terminal.
 
 Development builds keep DevTools; packaged builds do not. Use **Ctrl+R** to
 reload the window, **F11** for fullscreen, and **Ctrl+Shift+I** or **F12** for
@@ -80,9 +76,7 @@ npm run package
 ```
 
 The app lands at `apps/desktop/release/win-unpacked/LifeQuest.exe`. Double-click
-it. This is a development build in a packaged shape.
-
-To make the two files a release uploads:
+it. To make the two files a release uploads:
 
 ```bash
 npm run release
@@ -90,27 +84,27 @@ npm run release
 
 | Asset | What it is |
 |---|---|
-| `LifeQuest-0.2.0-setup.exe` | NSIS installer. Per-user, assisted, and it asks where to install; it creates desktop and Start menu shortcuts |
-| `LifeQuest-0.2.0-win-x64.zip` | Portable build: extract it and run `LifeQuest.exe` |
+| `LifeQuest-0.2.8-setup.exe` | NSIS installer. Per-user, assisted, and it asks where to install; it creates desktop and Start menu shortcuts |
+| `LifeQuest-0.2.8-win-x64.zip` | Portable build: extract it and run `LifeQuest.exe` |
 
-The version comes from `apps/desktop/package.json` (`0.2.0`). The build prints
+The version comes from `apps/desktop/package.json` (`0.2.8`). The build prints
 each file's size and SHA-256, and writes `release/release-manifest.json`.
 
 On a private unsigned build, Windows SmartScreen may warn on first launch.
 Choose **More info → Run anyway**. Quit LifeQuest before building again: a
 running `.exe` can lock files under `release/`.
 
-Uninstalling the app does not touch your vault, and it does not delete the
-recent-vault list. The studio is replaceable; the folder is yours.
+Uninstalling the app does not touch your vault, and it deletes neither your
+recent-vault list nor your companion's app data. The studio is replaceable; the
+folder is yours.
 
 ## First launch
 
 1. A splash screen draws the LifeQuest wordmark over a brief loading bar. It
-   covers only the app's own boot — the renderer bundle and the first vault read
-   — and has a floor of 1.5 seconds. It deliberately does not wait for the
-   companion, so a slow Hermes start never leaves you staring at a logo.
-2. If the companion is not ready, the companion setup screen appears (below).
-3. With the companion ready and no vault open, you land on the welcome screen:
+   covers the app's own boot — the renderer bundle and the first vault read —
+   with a floor of 1.5 seconds. It deliberately does not wait for the companion.
+2. If no companion can start, the **LifeQuest companion** screen appears (below).
+3. With a companion ready and no vault open, you land on the welcome screen:
    the heading **LifeQuest**, the line *Your local vault is your identity. Create
    a new vault or open an existing one to continue.*, then **Create vault** and
    **Open vault**, then **Recent vaults**.
@@ -120,36 +114,41 @@ recent-vault list. The studio is replaceable; the folder is yours.
 
 ## The companion gate
 
-The setup screen's heading is **LifeQuest companion**. It names the profile it is
-working on, shows what it is doing, and offers **Recheck** (shown as
-**Connecting…** while it works). Its profile picker reads *LifeQuest runs on
-one Hermes profile. Pick an installed one, or create the app's own `lifequest`
-profile.* Every installed profile is listed, the one in use is marked **In use**,
-and a **default** tag marks your main Hermes profile. If `lifequest` does not
-exist yet, the row **Create the lifequest profile** creates and wires it. With no
-profiles at all the list says *No Hermes profiles found on this machine.*
+**Pi** is built into the app and is the companion on a fresh machine. It runs
+inside the Electron main process, reaches the vault only through the app's MCP
+door, and needs no CLI on `PATH`, no gateway port and no profile directory. On a
+machine that has never been set up it asks for an OpenAI-compatible **Endpoint**,
+a **Model**, a provider **Name** and (optionally) an **API key**, then **Save and
+connect**. A local server needs no key. The key is sealed by the OS and never
+enters the vault; on a machine with no OS keyring the form says the key is kept
+for this session only.
+
+**Hermes** stays a first-class option. Choose it in the companion picker and the
+screen offers the same profile picker the app has always had: every installed
+profile is listed, the one in use is marked **In use**, a **default** tag marks
+your main Hermes profile, and **Create profile** creates and wires the app's own
+`lifequest` profile. The picker is offered only while Hermes is selected.
 
 What the screen can say, and what to do:
 
 | Status | Meaning and next step |
 |---|---|
-| *Connecting to your LifeQuest companion…* | It is looking for the Hermes CLI and the profile. Wait, or press **Recheck** |
-| **Install Hermes Agent** | The CLI is not on your `PATH`. Install Hermes, then **Recheck**. The **Hermes install docs** button opens the Hermes documentation |
-| **Companion port is busy** | Something else holds the gateway port. Free it, then **Recheck** |
-| **Hermes gateway exited** | Hermes refused to start; the screen shows its own message. Fix it, then **Recheck** |
+| *Connecting to your LifeQuest companion…* | It is bringing the companion up. Wait, or press **Recheck** |
+| **Set up the built-in companion** | Pi needs an endpoint and a model. Fill the form and press **Save and connect** |
+| **Install Hermes Agent** | Hermes is selected and its CLI is not on your `PATH`. Install Hermes, then **Recheck** — or switch to **Pi** |
+| **Companion port is busy** | Something else holds the Hermes gateway port. Free it, then **Recheck** |
+| **Hermes gateway exited** | Hermes refused to start; the screen shows the CLI's own message |
 | **Hermes is too old** | The build lacks the Sessions API. Update Hermes, then **Recheck** |
 | **Companion rejected the API key** | The profile's key was refused. Fix the profile `.env`, then **Recheck** |
-| **Companion disconnected** | The profile's gateway could not be reached. Start Hermes or pick another profile |
+| **The endpoint rejected the key** | Pi's key was refused. Update the key in the form and save |
+| **Companion disconnected** | The endpoint or gateway did not answer. Check the URL/server, then **Recheck** |
 
-If you are stuck, choose another installed profile from the picker — switching
-profiles re-runs the connection against it. See
-[Companion](./24-companion.md) for the chat pane and
+The chosen companion is one per app, not per vault, and it is remembered. With
+no stored choice, a machine where Hermes already works keeps Hermes; every other
+machine lands on Pi. See [Companion](./24-companion.md) for the chat dock and
 [Troubleshooting](./32-troubleshooting.md) for deeper failures.
 
 ## How to use it
-
-This section is the run-through: create a vault, open an existing one, and then the
-first things to do inside it.
 
 ### Create your first vault
 
@@ -157,20 +156,58 @@ first things to do inside it.
 2. A folder picker opens. Choose a folder for this vault — ideally an empty one,
    or a new folder you make for the purpose. The vault is exactly that folder;
    there is no separate database directory.
-3. LifeQuest writes the vault and opens it. A new vault is named `Personal`; you
-   are not asked for a name at creation.
+3. LifeQuest writes the vault and opens it on the Dashboard. A new vault is named
+   `Personal`; you are not asked for a name at creation.
 
 A new vault is seeded with:
 
-- four domains — **Health**, **Intellectual**, **Emotional**, **Financial** — in
-  that order;
-- for each domain, four empty, unlocked doctrine documents:
-  **Beliefs & Premise**, **Vision & Desire**, **Purpose**, **Strategy (How)**;
-- vault settings with Monday as the week start;
-- a Life log line recording each domain's creation.
+- the base area **Life**, always unlocked and never a chip of its own;
+- five further areas on disk but locked — **Health**, **Mind**, **Finance**,
+  **Business**, **Relationships** — each with its four empty doctrine documents;
+- vault settings with Monday as the week start and both decision-inbox switches
+  on;
+- one Life log line recording the creation of the base area. A locked area
+  writes no log line, because the Log is operator-visible.
 
 If the folder already contains a vault (a `lifequest.json` marker), creation is
 refused with *Vault already exists at …* instead of overwriting anything.
+
+### Let the interview open your areas
+
+A new vault's chat dock shows a quiet **Welcome to LifeQuest** card with the
+ten-minute offer and one button, **Begin the interview**.
+
+1. Press **Begin the interview**. It sends your own turn through the composer's
+   send path, so the transcript holds your bubble and the companion answers it
+   like any other turn. A first message typed before pressing Begin starts the
+   record silently instead.
+2. Answer the companion's questions. It asks four to six open questions with
+   follow-ups, never a form, and reflects back what it heard before opening
+   anything.
+3. When it has heard enough it calls one tool that opens one to three areas,
+   writes their doctrine drafts, at most one table, and one note of the
+   conversation in the Life area.
+4. The card becomes a receipt: *After analyzing our conversation, I've opened up
+   the Health and Business areas for you.* Press **Continue** to acknowledge it.
+   Nothing is left to decide — the areas, doctrine, table and note are already on
+   disk.
+
+While the record is open and no receipt is waiting, the card shrinks to one quiet
+line with **Continue the interview**. It is never a modal. A vault with no
+onboarding file — or a corrupt one — reads as completed, so an existing vault is
+never shown a first-run card.
+
+### Unlock an area yourself
+
+1. Open **Settings** (the gear in the title bar) and choose **Areas**.
+2. Under **Unlock another area**, find the area by name and press **Unlock**. It
+   is a plain reveal with no confirmation: unlocking creates nothing, moves
+   nothing, and does not change the lens.
+3. The area joins **Your areas** and the title bar's lens. Once a second area is
+   open, the quiet **Life** label becomes a segmented control — **Life**, then
+   each unlocked area.
+
+The full flow, archive and delete are on [Areas](./05-areas.md).
 
 ### Open an existing vault
 
@@ -180,60 +217,65 @@ refused with *Vault already exists at …* instead of overwriting anything.
 The faster path is **Recent vaults** on the welcome screen: each row shows the
 vault's name and its path, and a click opens it. With no history the list says
 *No recent vaults yet.* The list is kept outside the vault, so it survives
-switching vaults, and the app reopens the top entry on the next launch.
+switching vaults, and the app reopens the top entry on the next launch. The
+title bar's vault chip at the foot of the rail raises a **Switch vault** dialog
+for the same job while the studio is open.
 
-If the folder is not a vault, or its `lifequest.json` is unreadable or from another
-schema version, the picker returns and the welcome screen shows the error under
-the buttons. Nothing is modified.
+If the folder is not a vault, or its `lifequest.json` is unreadable or from
+another schema version, the picker returns and the welcome screen shows the error
+under the buttons. Nothing is modified.
 
 ### The first five minutes
 
-1. **Confirm the companion.** Press the gear at the top right, then **All
-   settings**, and open **Hermes**. The status line should begin *Ready ·* and
-   name the API URL. If it does not, use **Recheck**, or pick a profile under
-   **Companion profile**.
-2. **Add a domain.** Still in Settings, open **Domains**, type a name in
-   **Create domain** (for example `Career`) and press **Create**. The four seeded
-   domains are already there; this is for the life area they do not cover. See
-   [Domains](./05-domains.md).
-3. **Write doctrine.** At the top of the window, choose the **Define** wing, open
-   **Dream**, and pick a card for one domain — **Beliefs & Premise** is the place
-   to start. Type in the editor and press **Save**. The other doctrine documents
-   live on **Dream**, **Vision** and **Architecture**; see
-   [Doctrine](./07-doctrine.md).
-4. **Pin a card.** On the **Home** wing, open **Pages**, type a **Title** in the
-   **New page** panel (choosing a **Domain** on Overview), and press **New page**.
-   Then open **Dashboard**, press **Pin board** (it appears once there is
-   something not already pinned), and click the page's title under **Add pin**.
-   The card joins the board for the current lens; see
-   [The studio](./03-the-studio.md) for the lens and
-   [Pages](./21-pages.md) for the page itself.
-5. **Say hello.** In the chat pane on the right, type in the composer (*Message
-   Hermes…*) and press **Enter**. The companion can read the page you are on and
-   answer from the vault.
+1. **Read the Dashboard.** The companion's brief is seeded as the first card on
+   every board, with its kind, its reason and a **Dismiss** for each item. The
+   card itself is the handle into the chat's context: click a card to put it in
+   the conversation. See [Dashboard](./06-dashboard.md).
+2. **Finish or continue the interview.** The **Welcome to LifeQuest** card sits
+   above the composer. If you skipped it, **Settings → Areas** reveals the same
+   five areas by name.
+3. **Write one doctrine page.** Choose the **Define** wing, open **Dream**, and
+   pick the **Beliefs & Premise** card for an open area. Type in the editor and
+   press **Save**. The other documents are on **Dream**, **Vision** and
+   **Architecture**; see [Doctrine](./07-doctrine.md).
+4. **Put one thing on the board.** Choose the **Act** wing and open **Task
+   Manager** (`/act`), then add a card under **Today** — or capture a thought,
+   picture or link on **Quick Notes** (`/chain`).
+5. **Say hello.** In the chat dock, type in the composer (*Message Pi…* when Pi
+   answers) and press **Ctrl+Enter** to send. Enter breaks the line; the modified
+   key sends, and the **Steer** and **Queue** controls work while a turn runs.
+   The companion can read the page you are on and answer from the vault.
 
-## Where the vault goes
+## Where the vault and companion data go
 
-You choose the folder whenever you create or open a vault: LifeQuest has no default
-vault location and never picks one for you. The folder is self-describing because of
-`lifequest.json` at its root, so you can move it anywhere the app can read.
+You choose the vault folder whenever you create or open a vault: LifeQuest has no
+default vault location and never picks one for you. The folder is self-describing
+because of `lifequest.json` at its root, so you can move it anywhere the app can
+read.
 
-Two kinds of files are easy to confuse:
+Two kinds of data are easy to confuse:
 
-- **The vault** is your data. It holds no API keys.
-- App user data is the app's own state, kept in Electron's per-user data folder
-  (`%APPDATA%\LifeQuest` on Windows). It holds the recent-vault list, the last
-  domain lens per vault, and the OS-encrypted secret store. Removing it resets the
-  app's memory of your vaults; it does not delete a vault.
+- **The vault** is your data. It holds no API keys and no companion transcripts.
+  The exact layout is on [The vault](./04-the-vault.md).
+- **App user data** is the app's own state, in Electron's per-user data folder —
+  `%APPDATA%\LifeQuest` on Windows. It holds the recent-vault list, the last area
+  lens per vault, the chosen companion and Hermes profile, the OS-encrypted
+  secret store, and Pi's own files: `pi-endpoint.json` (endpoint, model, provider
+  name), `pi-endpoint.key` (sealed by the OS), and `pi-sessions\` (Pi's chat
+  transcripts). Removing this folder resets the app's memory of your vaults; it
+  does not delete a vault.
 
-The exact on-disk layout is on [The vault](./04-the-vault.md).
+**Hermes data** stays with Hermes: its profile folder owns the gateway
+configuration, the model and the profile's `.env` (where its key lives). The
+app's Settings → Hermes shows the profile path and offers **Open profile folder**.
+Nothing from Hermes is copied into the vault.
 
 ## Quit and back up
 
-- Quit with the window's close button, the title bar's close control when the app
-  falls back to its own window controls, or **Ctrl+Q**.
+- Quit with the window's close control, the title bar's own close control when
+  the app falls back to its own window controls, or **Ctrl+Q**.
 - There is no document to save at quit: edits are saved by the editor you used
-  (**Save**, or **Ctrl+S** in the Daily Note, Review and Ideal State editors).
+  (**Save**, or **Ctrl+S** in the Daily Journal and other Live editor surfaces).
 - To back up, quit the app and copy the vault folder anywhere. To put it in
   version control, make the vault folder a Git repository of its own — see
   [The vault](./04-the-vault.md) for what Git handles well and what it does not.
@@ -244,11 +286,15 @@ The exact on-disk layout is on [The vault](./04-the-vault.md).
 
 - Opening a vault is identity. No account, sign-in or hosted database is required
   ([LAWS/IDENTITY.md](../../LAWS/IDENTITY.md)).
-- The studio does not open without the companion
-  ([LAWS/COMPANION.md](../../LAWS/COMPANION.md)). Hermes is not bundled, and a
-  gateway LifeQuest did not start is not stopped by it.
-- API keys never enter the vault. They live in OS secure storage
-  ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)).
+- The studio does not open without a companion
+  ([LAWS/COMPANION.md](../../LAWS/COMPANION.md)). Pi is built in; Hermes is
+  installed separately and a gateway LifeQuest did not start is not stopped by
+  it.
+- API keys never enter the vault ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)).
+  Pi's key is sealed by the OS; Hermes' credential belongs to its profile.
+- A new vault seeds **Life** plus five locked areas. A locked area is invisible
+  to every read, list and write until it is unlocked; the interview opens at most
+  three, and **Settings → Areas** can open any of them.
 - The app works offline against the files on disk. Features that need the
   companion say so; nothing silently writes your data to a server.
 - Starting the app with no vault open shows the welcome screen. A cold start with
@@ -264,6 +310,11 @@ The exact on-disk layout is on [The vault](./04-the-vault.md).
 - A moved vault leaves a stale recent entry. Open it once from its new path; the
   new path becomes the entry the app reopens.
 - The recent list keeps at most 20 vaults, most recent first.
+- On a machine with no OS keyring, a Pi API key is kept for the session only;
+  the setup form says so. A local endpoint that needs no key is unaffected.
+- Switching companions changes the chats you see: a chat belongs to the companion
+  that made it. Switch from the dock's agent strip or Settings → Hermes →
+  **Companion**.
 - If `npm run dev` exits at once, another process may already hold port `5173`;
   Vite runs with `strictPort` and refuses to move.
 - Windows SmartScreen on a private build is expected. The app is unsigned here;
@@ -274,6 +325,7 @@ The exact on-disk layout is on [The vault](./04-the-vault.md).
 - [Overview](./01-overview.md)
 - [The studio](./03-the-studio.md)
 - [The vault](./04-the-vault.md)
-- [Domains](./05-domains.md)
+- [Areas](./05-areas.md)
+- [Companion](./24-companion.md)
 - [Settings](./28-settings.md)
 - [Troubleshooting](./32-troubleshooting.md)

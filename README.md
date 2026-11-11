@@ -103,6 +103,9 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173, except the cold-start rig, which serves the built `dist/` itself and skips unless `npm run build` has run |
 | `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
+| `npm run docs:check` | Check the wiki against the app: version, routes, rail labels, Settings tabs, links and nav (also run by `npm run release` and CI) |
+| `npm run docs:serve` | Preview the wiki locally with MkDocs Material (install `requirements-docs.txt` first) |
+| `npm run docs:build` | Build the wiki site into `site/` (what GitHub Pages deploys) |
 
 ### Acceptance against a real vault
 

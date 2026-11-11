@@ -3,6 +3,15 @@
 - Use `./bin/agent-cli` first: prefer it over re-reading files or guessing commands. `agent-cli --help` shows the command set; `status`, `git`, `bench`, `e2e`, `check`, `flow`, `docs`, `find`, `where`, `map`, `db`, `logs`, `env` and `layout` answer the lookups past sessions repeated, and `--json` gives the same data for parsing.
 - The CLI's evidence behind it refreshes itself: `scripts/refresh-agent-cli.sh` re-mines the session corpus, re-runs the benchmark and re-runs the CLI's E2E once a week (`agent-cli-refresh.timer`), writing to `.scratch/agent-cli/`. Run `./scripts/refresh-agent-cli.sh --check` to see its state; the last run's summary is `/var/log/agent-cli-refresh/latest.md`.
 
+## The project wiki
+
+- The operator-facing wiki is `docs/wiki/` (Markdown) and is published at <https://karmsheel.github.io/life-quest/> by `.github/workflows/docs.yml`. `docs/wiki/index.md` is the site home.
+- Any change a user can see updates its wiki page in the same branch. A feature that changes a rail label, route, Settings tab, or the release version must update the wiki, or `npm run docs:check` fails.
+- `npm run docs:check` is the gate: it checks the index's "Version covered" against `apps/desktop/package.json`, every route in `App.tsx`, every rail label and wing label, every Settings tab, every internal link, the MkDocs nav, and each page's shape. CI runs it on every PR, on master, and weekly (`docs-check.yml`); a weekly failure opens an issue.
+- `npm run release` runs the same check before electron-builder starts and refuses to build a stale wiki. `npm run docs:serve` previews the site; `npm run docs:build` builds it.
+- The **Releases** page is generated from the GitHub Releases feed at build time (`scripts/build-docs.mjs`), and the docs workflow rebuilds on `release: published`, so every published release appears on the site without a wiki edit.
+
+
 \- Never write unit tests after you write code.
 
 

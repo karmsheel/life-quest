@@ -14,7 +14,13 @@ on:
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - "scripts/build-docs.mjs"
+      - "scripts/docs-check.mjs"
+      - "apps/desktop/package.json"
       - ".github/workflows/docs.yml"
+  # A published release is news the site should carry: the generated Releases
+  # page is rebuilt from the feed, even when no wiki page changed.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -45,8 +51,13 @@ jobs:
       - name: Install MkDocs Material
         run: pip install -r requirements-docs.txt
 
+      - name: Check the wiki is current
+        run: node scripts/docs-check.mjs
+
       - name: Stage the wiki
         run: node scripts/build-docs.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build the site
         run: mkdocs build --strict

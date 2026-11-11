@@ -3,29 +3,32 @@
 LifeQuest is a two-workspace npm monorepo: the Electron + Vite + React studio in
 `apps/desktop`, and the vault file engine in `packages/vault-core`. This page is the
 maintainer's path — how to run it, how the dev loop reloads main-process changes,
-what `npm test` actually runs, and how a build becomes a Windows release. If you
-only want to *use* the app, read [Getting started](./02-getting-started.md)
-instead. Start from [Wiki home](./index.md).
+what `npm test` actually runs, how the wiki is checked, and how a build becomes a
+Windows release. If you only want to *use* the app, read
+[Getting started](./02-getting-started.md) instead. Start from
+[Wiki home](./index.md).
 
 ## Where it lives
 
-Everything is driven from the repository root. The scripts live in
-`apps/desktop/package.json`; the helper scripts they call live in
-`apps/desktop/scripts/`.
+Everything is driven from the repository root. The app's scripts live in
+`apps/desktop/package.json`; the docs and repo tooling live in `scripts/` and
+`bin/`.
 
 | Path | What it is |
 |---|---|
-| `package.json` (root) | Workspace scripts that proxy to `@lifequest/desktop` |
+| `package.json` (root) | Workspace scripts plus `docs:check`, `docs:build`, `docs:serve` |
 | `apps/desktop/scripts/dev.mjs` | The dev loop: bundle, Vite, Electron, watch, relaunch |
 | `apps/desktop/scripts/bundle-electron.mjs` | Production esbuild bundle of main + preload |
 | `apps/desktop/scripts/test.mjs` | Runs the E2E test wrappers |
-| `apps/desktop/scripts/package.mjs` / `release.mjs` | electron-builder invocations |
-| `apps/desktop/electron-builder.yml` | The packaging contract |
+| `apps/desktop/scripts/package.mjs` / `release.mjs` | electron-builder invocations; release runs the docs gate first |
+| `apps/desktop/electron/harness/` | The `AgentHarness` seam (Pi and Hermes) the main bundle carries |
 | `apps/desktop/e2e/` | Rig drivers and the harness pages they load |
 | `apps/desktop/tests/` | `node:test` wrappers, one per rig |
 | `apps/desktop/e2e/artifacts/` | Reports and screenshots; gitignored |
-| `apps/desktop/dist/` and `dist-electron/` | Build outputs; gitignored |
-| `apps/desktop/release/` | Packaged builds; gitignored |
+| `scripts/docs-check.mjs` | The wiki gate CI and `npm run release` use |
+| `scripts/build-docs.mjs` | Stages the wiki for MkDocs and generates the Releases page |
+| `bin/agent-cli` | The read-only lookup CLI for sessions (see below) |
+| `.github/workflows/docs-check.yml`, `docs.yml` | The docs gate and the Pages deploy |
 
 ## Prerequisites
 
@@ -33,7 +36,9 @@ Everything is driven from the repository root. The scripts live in
 |---|---|
 | Node.js 20+ | Developed on Node 22; the E2E runner uses `--experimental-strip-types` |
 | npm | Workspaces monorepo; install once at the root |
-| Hermes | Needed to *run* the studio, not to build or typecheck it |
+| Pi endpoint | Optional. The built-in companion needs an OpenAI-compatible endpoint and a model at runtime, not at build time |
+| Hermes | Optional external sidecar. Needed only if you run the studio on the Hermes harness |
+| Python 3.12 + `requirements-docs.txt` | Only to build or serve the MkDocs site locally |
 | Windows x64 | Needed for `npm run package` / `npm run release`; the product is Windows |
 
 Install with `npm install` at the repo root. In a worktree of your own, run
@@ -77,15 +82,6 @@ If Electron dies before a window opens with exit code `0x80000003`, `dev.mjs`
 prints the diagnosis rather than exiting silently: this machine's Windows refused
 Chromium's sandbox version. Updating `electron` is the fix.
 
-### Why the main process needs that watcher
-
-The main process is an esbuild bundle, built once and loaded once. A change to
-`electron/**`, or to `packages/vault-core/src/**` that main imports, is invisible
-until the bundle is rewritten *and* Electron is relaunched. The renderer, by
-contrast, hot-reloads on save — which is how a stale main process can look like a
-working app while the feature you are editing is not in the process you are
-watching.
-
 ## Typecheck and build
 
 ```bash
@@ -100,8 +96,9 @@ tsconfigs), and both must pass.
 
 - `apps/desktop/dist/` — the production renderer, `base: "./"` so a `file://` load
   works.
-- `apps/desktop/dist-electron/` — the production main and preload. This bundle
-  defines `__LIFEQUEST_E2E_SEAM__` false, so the E2E seam is dead code and cannot be
+- `apps/desktop/dist-electron/` — the production main and preload, including the
+  harness seam and the Pi dependencies. This bundle defines
+  `__LIFEQUEST_E2E_SEAM__` false, so the E2E seam is dead code and cannot be
   reached from a packaged app by setting an environment variable; it also ships no
   sourcemaps, because a `.map` in `app.asar` would hand out the main-process source.
 
@@ -114,7 +111,8 @@ npm test               # from the repo root → apps/desktop/scripts/test.mjs
 ```
 
 That runs `node --experimental-strip-types --test "tests/**/*.test.ts"` in
-`apps/desktop`, with `ELECTRON_RUN_AS_NODE` stripped from the environment.
+`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 103 test
+wrappers over 82 Electron rig drivers.
 
 The testing discipline in this repository is E2E, and the layout enforces it:
 
@@ -124,6 +122,13 @@ The testing discipline in this repository is E2E, and the layout enforces it:
 | `e2e/<name>.html`, `e2e/<name>.tsx` | Harness pages the driver loads from the dev server |
 | `tests/<name>-e2e.test.ts` | A thin `node:test` wrapper that runs the driver and reads its report |
 | `e2e/artifacts/` | `<name>.json` report plus `<name>.png` screenshot from `capturePage`; gitignored |
+
+The suite spans the whole product: `pi-companion` and `onboarding` (the built-in
+companion and the first-run interview against a fake endpoint), `life-areas`,
+`companion-brief-ui`, `images-board`, `attachments`, `archive-fence`,
+`chat-tabs-restore`, `keyboard-shortcuts`, `theme-quick-menu`, the dashboard,
+decisions, projects, review, settings and shell rigs, and engine-level tests such
+as `database-write-policy` and `life-areas-engine`.
 
 Two rules matter when you run them:
 
@@ -138,12 +143,12 @@ Two rules matter when you run them:
 To run one rig, from `apps/desktop` with the dev server up:
 
 ```bash
-node --experimental-strip-types --test tests/card-context-e2e.test.ts
+node --experimental-strip-types --test tests/pi-companion-e2e.test.ts
 node --experimental-strip-types --test tests/startup-boot-e2e.test.ts   # after npm run build
 ```
 
-Four scripts under `apps/desktop/e2e/` are deliberately **not** in `npm test`,
-because they touch the operator's own vault or the real network:
+Some scripts under `apps/desktop/e2e/` are deliberately **not** in `npm test`, because
+they touch the operator's own vault or the real network. The live ones you need:
 
 ```bash
 node apps/desktop/e2e/dashboard-live-summary.mts       # pin a real summary card through the companion's tools
@@ -155,11 +160,65 @@ node apps/desktop/e2e/update-live-feed.mjs             # read the real GitHub fe
 `update-live-feed.mjs` runs the real updater logic against the real network. Run it
 before cutting a release and again after publishing one.
 
+## The repo CLI
+
+`bin/agent-cli` is a zero-dependency Node-builtin CLI for the lookups sessions keep
+repeating. Prefer it over re-reading files or guessing:
+
+```bash
+./bin/agent-cli                 # status: cwd, checkout, branch, dirty, bench, deps, e2e
+./bin/agent-cli --help          # the command set
+./bin/agent-cli git log --json  # the same data a script can parse
+```
+
+It has fourteen commands — `status`, `git`, `bench`, `e2e`, `check`, `flow`,
+`docs`, `find`, `where`, `map`, `db`, `logs`, `env`, `layout` — and is read-only by
+default; the only mutating actions (`bench move|stop|shot`, `e2e run`,
+`check typecheck`) are explicit and take `--dry-run` where they spawn. Its evidence
+refreshes weekly: `scripts/refresh-agent-cli.sh` re-mines the session corpus, re-runs
+the benchmark and the CLI's E2E, writing to `.scratch/agent-cli/`;
+`scripts/agent-cli-refresh.timer` runs it on Mondays, `--check` reports its state,
+and the last summary is `/var/log/agent-cli-refresh/latest.md`.
+
+## The wiki is part of the product
+
+The operator-facing wiki is `docs/wiki/` and is published at
+<https://karmsheel.github.io/life-quest/>. Any change a user can see updates its
+wiki page in the same branch — a rail label, a route, a Settings tab, the release
+version — or `npm run docs:check` fails.
+
+```bash
+npm run docs:check   # node scripts/docs-check.mjs
+npm run docs:build   # stage + mkdocs build --strict
+npm run docs:serve   # stage + mkdocs serve
+```
+
+`docs-check.mjs` checks, against the code:
+
+- the index's **Version covered** line against `apps/desktop/package.json`;
+- every route in `App.tsx`, every rail label in `nav-items.ts`, every wing label,
+  and every Settings tab label appears somewhere in the wiki;
+- every internal link resolves (including `../../LAWS/` and `VISION.md`);
+- every page is in the MkDocs nav and every nav target exists;
+- every page ends with `## Related` and links back to `./index.md`;
+- the index links every page.
+
+The site is built from a staged copy: `scripts/build-docs.mjs` copies
+`docs/wiki/*.md`, `LAWS/` and `VISION.md` into `.docs-build/` and rewrites the
+repo-relative links there, so the source pages keep links that work on GitHub. It
+also generates the **Releases** page from the public releases feed at build time.
+`.docs-build/` and `site/` are gitignored.
+
+Two workflows enforce it: `docs-check.yml` runs the check on every PR, on `master`,
+weekly, and opens (or updates) a drift issue when the weekly run fails;
+`docs.yml` runs the same check, builds with MkDocs Material and deploys to GitHub
+Pages on a push to `master`, on `release: published`, and on demand.
+
 ## Packaging and release
 
 Both go through electron-builder on Windows x64, configured by
 `apps/desktop/electron-builder.yml`. The version both read is `version` in
-`apps/desktop/package.json` (currently `0.2.0`).
+`apps/desktop/package.json` (currently `0.2.8`).
 
 ```bash
 npm run package   # a dev build you can run: apps/desktop/release/win-unpacked/LifeQuest.exe
@@ -170,10 +229,11 @@ npm run release   # the shippable build: installer + portable zip + manifest
 pins the output to the unpacked folder and builds nothing else. It is the fast way
 to run the app without Node, npm or Vite.
 
-**`release`** runs `npm run build` and then electron-builder on all three Windows
-targets: the unpacked folder, an NSIS installer, and a portable zip. It is invoked
-with `--publish never`, so a build can never half-publish. The two uploadable
-files, named from the version, are:
+**`release`** runs the docs check first — a release whose wiki describes the
+previous version is refused before electron-builder starts — then `npm run build`
+and electron-builder on all three Windows targets: the unpacked folder, an NSIS
+installer, and a portable zip. It is invoked with `--publish never`, so a build can
+never half-publish. The two uploadable files, named from the version, are:
 
 | Asset | What it is |
 |---|---|
@@ -243,6 +303,10 @@ Bench discipline:
 
 ## Working rules
 
+- Use `./bin/agent-cli` first for repo facts and commands, rather than re-reading
+  files or guessing.
+- A user-visible change updates its wiki page in the same branch. The docs check is
+  the gate, and the release refuses to build over a stale wiki.
 - Never write unit tests after writing code. Prefer E2E as the sole testing
   mechanism, and have the rig produce a verifiable, repeatable artifact.
 - If you must test a system in isolation, write down all the ways it can fail first,
@@ -256,11 +320,14 @@ Bench discipline:
 
 ## Tips and gotchas
 
-- **A running `LifeQuest.exe` locks files under `release/`.** Quit the app before
+- **A running `LifeQuest.exe` locks files under `release/`.** Quit it before
   building again. Deleting `win-unpacked` removes that build only; vault folders and
   `%APPDATA%\LifeQuest` stay.
-- **`release/`, `dist/`, `dist-electron/` and `e2e/artifacts/` are gitignored.** E2E
-  reports and screenshots are evidence for a hand-over, not repository content.
+- **The docs check fails before a release, not after.** If `npm run release` exits
+  before bundling, fix the pages its `[docs:check]` list names.
+- **`release/`, `dist/`, `dist-electron/`, `e2e/artifacts/`, `.docs-build/` and
+  `site/` are gitignored.** Reports, screenshots and the staged site are not
+  repository content.
 - **Environment overrides exist for rigs, not for the product.** `LIFEQUEST_E2E` can
   redirect `userData`, hide the window, move both MCP ports, point the updater at a
   rig-owned feed and trust policy, and override the installer launcher. It is gated
@@ -276,7 +343,7 @@ Bench discipline:
 
 - [Overview](./01-overview.md)
 - [The vault](./04-the-vault.md)
-- [Companion](./24-companion.md)
+- [The Companion](./24-companion.md)
 - [Updates](./27-updates.md)
 - [System architecture](./30-system-architecture.md)
 - [Troubleshooting](./32-troubleshooting.md)

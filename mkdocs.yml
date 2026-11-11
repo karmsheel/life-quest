@@ -12,7 +12,7 @@
 # to GitHub Pages on every push to `master`.
 
 site_name: LifeQuest
-site_description: The operator's guide to the LifeQuest studio, its vault, and the Hermes companion.
+site_description: The operator's guide to the LifeQuest studio, its vault, and its companion.
 site_url: https://karmsheel.github.io/life-quest/
 repo_url: https://github.com/karmsheel/life-quest
 repo_name: karmsheel/life-quest
@@ -74,51 +74,54 @@ validation:
     unrecognized_links: ignore
 
 nav:
-  - Home: index.md
+  - LifeQuest wiki: index.md
   - Foundations:
       - Overview: 01-overview.md
       - Getting started: 02-getting-started.md
       - The studio: 03-the-studio.md
       - The vault: 04-the-vault.md
-      - Domains: 05-domains.md
-  - The Home wing:
+      - Areas: 05-areas.md
+  - Home:
       - Dashboard: 06-dashboard.md
-  - Define:
-      - Doctrine: 07-doctrine.md
-      - Ideal State: 09-ideal-state.md
-  - Plan:
-      - Architecture: 08-architecture.md
-      - Goals: 10-goals.md
-      - Life Map: 11-life-map.md
-  - Execute:
-      - Projects: 12-projects.md
-      - Daily Schedule: 13-daily-schedule.md
-      - Act: 14-act.md
-  - Daily capture and review:
-      - Life-Chain: 15-life-chain.md
-      - Daily Note: 16-daily-note.md
-      - Automations: 17-automations.md
-      - Reviews: 18-reviews.md
-  - Data and knowledge:
       - Data and databases: 19-data-and-databases.md
       - Finance kit: 20-finance-kit.md
       - Pages: 21-pages.md
       - Documents: 22-documents.md
-  - Companion and governance:
+      - Agents: 25-agents.md
+      - Images: 35-images.md
+  - Define:
+      - Doctrine: 07-doctrine.md
+      - Ideal State: 09-ideal-state.md
+  - Plan:
+      - Goals: 10-goals.md
+      - Life Map: 11-life-map.md
+      - Architecture: 08-architecture.md
+  - Act:
+      - Projects: 12-projects.md
+      - Daily Schedule: 13-daily-schedule.md
+      - Task Manager: 14-task-manager.md
+  - Review:
+      - Reviews: 18-reviews.md
+  - Shelf:
+      - Quick Notes: 15-quick-notes.md
+      - Daily Journal: 16-daily-journal.md
+      - Automations: 17-automations.md
       - Decisions: 23-decisions.md
-      - Companion: 24-companion.md
-      - Personnel and agents: 25-personnel-and-agents.md
       - Log: 26-log.md
-      - Updates: 27-updates.md
+  - Companion:
+      - Companion: 24-companion.md
   - System:
       - Settings: 28-settings.md
       - Security: 29-security.md
       - System architecture: 30-system-architecture.md
       - Development: 31-development.md
       - Troubleshooting: 32-troubleshooting.md
+      - Updates: 27-updates.md
   - Reference:
       - Glossary: 33-glossary.md
       - Common workflows: 34-common-workflows.md
+      - Keyboard shortcuts: 36-keyboard-shortcuts.md
+      - Releases: releases.md
   - Project laws:
       - Architectural laws: LAWS/README.md
       - Vision: VISION.md
