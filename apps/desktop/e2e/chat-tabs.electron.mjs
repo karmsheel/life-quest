@@ -469,6 +469,81 @@ async function main() {
       return true;
     })()`);
 
+  /**
+   * A tab pressed with the middle button: the browser's "close this tab". The
+   * three events are the real sequence a middle press produces, and the booleans
+   * say whether the app swallowed each — a press left unswallowed would start
+   * X11's primary-selection paste under the strip.
+   */
+  const middleClickTab = (label) =>
+    run(`(async () => {
+      const tab = Array.from(document.querySelectorAll(".chat-panel__tab")).find(
+        (el) => (el.querySelector(".chat-panel__tab-label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      if (!tab) return { ok: false };
+      const down = new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(down);
+      tab.dispatchEvent(new MouseEvent("mouseup", { button: 1, bubbles: true, cancelable: true }));
+      const aux = new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(aux);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return {
+        ok: true,
+        // dispatchEvent answers false when a listener cancelled it; the flag is
+        // the same fact after the dispatch.
+        downPrevented: down.defaultPrevented,
+        auxPrevented: aux.defaultPrevented,
+        pinned: tab.getAttribute("data-pinned") === "true",
+      };
+    })()`);
+
+  /** The pinned square, which wears a letter instead of a label, pressed with
+   * the middle button: the store refuses to close a pin, so this must close
+   * nothing and drop nothing. */
+  const middleClickPinnedTab = () =>
+    run(`(async () => {
+      const tab = document.querySelector(".chat-panel__tab[data-pinned]");
+      if (!tab) return { ok: false };
+      const down = new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(down);
+      tab.dispatchEvent(new MouseEvent("mouseup", { button: 1, bubbles: true, cancelable: true }));
+      const aux = new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(aux);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return { ok: true, downPrevented: down.defaultPrevented, auxPrevented: aux.defaultPrevented };
+    })()`);
+
+  /**
+   * A cancelable keydown delivered straight at the window, so the rig can read
+   * `defaultPrevented` as well as what the dock did with the key. The no-strip
+   * case needs exactly that fact: the key must be left to the platform.
+   */
+  const dispatchKeyDown = (options) =>
+    run(`(() => {
+      const event = new KeyboardEvent("keydown", {
+        ...${JSON.stringify(options)},
+        bubbles: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    })()`);
+
+  /**
+   * A real key press through the window's input pipeline, the way the
+   * keyboard-shortcuts rig presses its bindings: keyDown, keyUp, modifiers in
+   * Electron's spelling. No `char` — a shortcut is a keydown.
+   */
+  const pressKey = async (keyCode, modifiers = []) => {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+    await wait(25);
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+    await wait(110);
+    await run(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))",
+    );
+  };
+
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const findRowScript = (label) =>
@@ -1035,6 +1110,25 @@ async function main() {
     );
     screenshots.push(await shot("landing"));
 
+    // 1a — the browser's middle click closes the tab under the pointer, but a
+    // pinned square is not a closable tab: the close control is absent because
+    // Unpin is the only way out of the band, and the middle button must honour
+    // the same rule. The press is swallowed first, so X11's paste never starts.
+    const pinnedPress = await middleClickPinnedTab();
+    const afterPinnedPress = await settle();
+    check(
+      "a middle click on the pinned square closes nothing and keeps it pinned",
+      pinnedPress.ok === true &&
+        pinnedPress.downPrevented === true &&
+        pinnedPress.auxPrevented === true &&
+        afterPinnedPress.tabCount === 2 &&
+        afterPinnedPress.tabs[0]?.pinned === true &&
+        afterPinnedPress.tabs[0]?.letter === "P" &&
+        afterPinnedPress.tabs[1]?.label === "Alpha planning" &&
+        afterPinnedPress.heading === "Alpha planning",
+      JSON.stringify({ press: pinnedPress, tabs: afterPinnedPress.tabs }),
+    );
+
     // 1b — pin and archive are hover-only: a real pointer over a row reveals
     // them and the resting time/pin mark step aside, on that row only.
     check("hovered the pinned row", await hoverSidebarRow("Pinned note"), "no row to hover");
@@ -1145,6 +1239,37 @@ async function main() {
       JSON.stringify({ tabs: baseline.tabs, strip: baseline.strip, heading: baseline.heading }),
     );
 
+    // 1d — the strip is drawn even with one tab, so Mod+W is the dock's here:
+    // it closes that tab and hands the screen to the blank slate. On the slate
+    // there is no strip and no tab to close, so the same key must be left to the
+    // platform instead of being swallowed in a corner of the app that has
+    // nothing to offer it.
+    const swallowedWithStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
+    const closedOnlyTab = await settle();
+    check(
+      "Mod+W closes the only tab while the strip is drawn",
+      swallowedWithStrip === true &&
+        closedOnlyTab.tabCount === 0 &&
+        closedOnlyTab.strip === null &&
+        closedOnlyTab.surface === "thread" &&
+        closedOnlyTab.heading === "Chat",
+      JSON.stringify({
+        swallowedWithStrip,
+        heading: closedOnlyTab.heading,
+        tabs: closedOnlyTab.tabCount,
+      }),
+    );
+    const swallowedWithoutStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
+    const noStripKey = await settle();
+    check(
+      "Mod+W is left alone on the blank slate",
+      swallowedWithoutStrip === false &&
+        noStripKey.tabCount === 0 &&
+        noStripKey.strip === null &&
+        noStripKey.heading === "Chat",
+      JSON.stringify({ swallowedWithoutStrip, heading: noStripKey.heading, tabs: noStripKey.tabCount }),
+    );
+
     // 2 — a plain click is navigation: the clicked chat takes over the main chat
     // and no tab is added.
     check("clicked Bravo", await clickSidebarRow("Bravo budget"), "no row button");
@@ -1186,6 +1311,41 @@ async function main() {
       JSON.stringify({ tabs: middleOpened.tabs, heading: middleOpened.heading }),
     );
 
+    // 3b — Mod+W is the browser's tab-close key: it closes the tab in front and
+    // the strip hands the screen to its neighbour, exactly as the close control
+    // and the close button's menu item do. The dock stays open on a thread.
+    // Sent as a real key press through the window's input pipeline, so this
+    // proves the operator's own keyboard, not a synthetic DOM event.
+    await pressKey("W", ["control"]);
+    const keyClosed = await settle();
+    check(
+      "Mod+W closes the tab in front and hands over to its neighbour",
+      keyClosed.tabCount === 1 &&
+        keyClosed.tabs[0]?.label === "Bravo budget" &&
+        keyClosed.tabs[0]?.active === true &&
+        keyClosed.strip !== null &&
+        keyClosed.heading === "Bravo budget" &&
+        keyClosed.surface === "thread" &&
+        keyClosed.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify({
+        tabs: keyClosed.tabs,
+        strip: keyClosed.strip,
+        heading: keyClosed.heading,
+        activeRow: keyClosed.rows.find((row) => row.active)?.label,
+      }),
+    );
+    // Put the two-tab baseline back for step 4: reopening the closed chat gives
+    // it a fresh tab, and clicking it puts the same chat in front as before.
+    check("re-opened Alpha after the key closed it", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const reopenedAfterKey = await settle();
+    check(
+      "the key's close left the chat listed and reopenable",
+      reopenedAfterKey.tabCount === 2 &&
+        reopenedAfterKey.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        reopenedAfterKey.heading === "Alpha planning",
+      JSON.stringify({ tabs: reopenedAfterKey.tabs, heading: reopenedAfterKey.heading }),
+    );
+
     // 4 — the row menu offers the same gesture in words.
     check("opened Delta's menu", await openSidebarMenu("Delta automation"), "no menu control");
     check(
@@ -1217,6 +1377,44 @@ async function main() {
       "the closed chat is still in the sidebar",
       menuClosed.rows.some((row) => row.label === "Delta automation"),
       JSON.stringify(menuClosed.rows.map((row) => row.label)),
+    );
+
+    // 5b — the middle button is the browser's other close gesture: the tab under
+    // the pointer leaves, even when it is the one in front, and the strip hands
+    // the screen to its neighbour. The press is swallowed so no paste starts.
+    const middleClosed = await middleClickTab("Alpha planning");
+    const afterMiddleClose = await settle();
+    check(
+      "a middle click is swallowed and closes the tab under the pointer",
+      middleClosed.ok === true &&
+        middleClosed.downPrevented === true &&
+        middleClosed.auxPrevented === true &&
+        middleClosed.pinned === false,
+      JSON.stringify(middleClosed),
+    );
+    check(
+      "the middle-closed tab hands the thread to its neighbour",
+      afterMiddleClose.tabCount === 1 &&
+        afterMiddleClose.tabs[0]?.label === "Bravo budget" &&
+        afterMiddleClose.strip !== null &&
+        afterMiddleClose.heading === "Bravo budget" &&
+        afterMiddleClose.surface === "thread",
+      JSON.stringify({
+        tabs: afterMiddleClose.tabs,
+        strip: afterMiddleClose.strip,
+        heading: afterMiddleClose.heading,
+      }),
+    );
+    // Put the two-tab baseline back for step 6 — the same state the close
+    // control left the strip in after step 5.
+    check("re-opened Alpha after the middle click", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const afterMiddleReopen = await settle();
+    check(
+      "the middle-closed chat is still listed and reopenable",
+      afterMiddleReopen.tabCount === 2 &&
+        afterMiddleReopen.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        afterMiddleReopen.heading === "Alpha planning",
+      JSON.stringify({ tabs: afterMiddleReopen.tabs, heading: afterMiddleReopen.heading }),
     );
 
     // 6 — send in Alpha, then switch to Bravo and send there while Alpha is

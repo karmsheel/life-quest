@@ -323,17 +323,6 @@ export type HermesSession = {
    * list never contains one.
    */
   archived: boolean;
-  /**
-   * The gateway's own revision counter for this chat, as the list read it.
-   *
-   * Hermes fences every session mutation: `PATCH /api/sessions/{id}` refuses a
-   * write that carries no `expected_revision`, and refuses one whose revision
-   * no longer matches the row. This is that number, so an archive can be sent
-   * with the fence it needs instead of being refused as a pre-fence client.
-   * Null when the gateway did not report one (an older host): the write then
-   * goes out unfenced and the gateway's own answer is the verdict.
-   */
-  revision: number | null;
 };
 
 /**
@@ -485,10 +474,6 @@ type SessionRow = {
   hidden?: unknown;
   archived?: unknown;
   pinned?: unknown;
-  /** The gateway's revision counter for this row; the fence a mutation needs. */
-  runtime_revision?: unknown;
-  /** The reply to a mutation carries the revision it committed to. */
-  revision?: unknown;
 };
 
 const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
@@ -511,25 +496,6 @@ function unixSeconds(value: unknown): number | null {
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
   if (!Number.isFinite(n)) return null;
   return n > 1e12 ? n / 1000 : n;
-}
-
-/**
- * The gateway's revision counter, when the row carries one.
- *
- * Hermes fences every session mutation on it: a write whose `expected_revision`
- * does not match the row is refused, and a write that carries none at all is
- * refused as a pre-fence client. The list rows carry `runtime_revision` and a
- * mutation's receipt carries `revision`, so both are read here. A row with
- * neither yields null: the write then goes out unfenced, and the gateway's own
- * answer is the verdict.
- */
-function revisionOf(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
-  if (typeof value === "string" && value.trim()) {
-    const n = Number(value);
-    if (Number.isInteger(n) && n >= 0) return n;
-  }
-  return null;
 }
 
 function oneLine(value: unknown): string {
@@ -563,7 +529,6 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
     archived: flag(r.archived),
-    revision: revisionOf(r.runtime_revision ?? r.revision),
   };
 }
 

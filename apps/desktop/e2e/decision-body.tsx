@@ -26,6 +26,11 @@ type RenderInput = {
   target: DocumentTarget;
   body: unknown;
   previous: string | null;
+  /** A library note's tags as the proposal leaves them, and as it found them. */
+  proposedDomainSlugs?: string[] | null;
+  previousDomainSlugs?: string[] | null;
+  /** Live area names, so the card can show "Finance", not "financial". */
+  domainNames?: Record<string, string>;
 };
 
 type HarnessWindow = Window & {
@@ -58,10 +63,18 @@ function Harness({ input }: { input: RenderInput }) {
           <li className="decision-card">
             <DecisionBody
               target={input.target}
-              proposed={JSON.stringify(input.body, null, 2)}
+              // A library note's proposed body is markdown, not a JSON payload:
+              // the card shows the prose the operator will read.
+              proposed={
+                input.target.type === "library"
+                  ? String(input.body ?? "")
+                  : JSON.stringify(input.body, null, 2)
+              }
               previous={input.previous}
               goalName={() => null}
-              domainName={(slug) => slug}
+              domainName={(slug) => input.domainNames?.[slug] ?? slug}
+              proposedDomainSlugs={input.proposedDomainSlugs ?? null}
+              previousDomainSlugs={input.previousDomainSlugs ?? null}
             />
           </li>
         </ul>

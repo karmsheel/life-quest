@@ -388,6 +388,13 @@ const SAMPLE = `(() => {
         box: box(row)
       };
     }),
+    // The glyph a built-in dashboard card wears beside its heading, read off the
+    // shipping BuiltInBadge the harness mounts. The rail's Dashboard row must wear
+    // this same class — the claim is "same icon", not "an icon named blocks".
+    builtInBadgeIcon: (() => {
+      const svg = document.querySelector('[data-probe="builtin-badge"] svg');
+      return svg ? svg.getAttribute("class") || "" : null;
+    })(),
     main: box(main),
     mainBackground: main ? getComputedStyle(main).backgroundColor : null,
     // The sheet's first element child: the page column, not a band. A .top-bar
@@ -1143,6 +1150,26 @@ async function main() {
       "the wide rail keeps its text labels",
       expanded.railLabels?.count > 0 && expanded.railLabels?.display !== "none",
       `labels ${expanded.railLabels?.count} display ${JSON.stringify(expanded.railLabels?.display)}`,
+    );
+    // The Dashboard row wears the glyph a built-in card's heading wears, so the
+    // rail and the board read as one thing. Compared class-to-class against the
+    // shipping BuiltInBadge the harness mounts: the claim is "the same icon",
+    // not "an icon whose name happens to be blocks today".
+    const dashboardRow = (expanded.railRows ?? []).find(
+      (row) => row.title === "Dashboard",
+    );
+    check(
+      "the Dashboard rail row wears the built-in card's own mark",
+      Boolean(expanded.builtInBadgeIcon) &&
+        dashboardRow?.icon === expanded.builtInBadgeIcon,
+      `rail ${JSON.stringify(dashboardRow?.icon)} vs built-in badge ${JSON.stringify(expanded.builtInBadgeIcon)}`,
+    );
+    check(
+      "no rail row still wears the home glyph",
+      (expanded.railRows ?? []).every(
+        (row) => !(row.icon ?? "").includes("lucide-home"),
+      ),
+      `rail icons ${JSON.stringify((expanded.railRows ?? []).map((row) => row.icon))}`,
     );
     check(
       "the wide rail keeps the wing switcher's band",
@@ -2660,6 +2687,13 @@ async function main() {
       // asserted against these, so the report names what the tab should offer.
       domains: domainNames,
       tokens: expanded.tokens,
+      // The Dashboard's rail mark beside the built-in card badge it must match,
+      // so "same icon" is a stated pair in the artifact rather than a claim the
+      // reader has to diff out of expanded.railRows themselves.
+      dashboardMark: {
+        rail: dashboardRow?.icon ?? null,
+        builtInBadge: expanded.builtInBadgeIcon,
+      },
       expanded,
       collapsed,
       restored,

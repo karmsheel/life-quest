@@ -236,10 +236,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
   /**
-   * The general attachment picker: the plus sign inside the field's own
-   * top-right corner. It takes any media or file the operator picks — a
-   * picture, a clip, a recording, a document — because a prompt is not only
-   * words and the composer used to be able to carry nothing else.
+   * The general attachment picker: the plus at the composer's bottom left. It
+   * takes any media or file the operator picks — a picture, a clip, a
+   * recording, a document — because a prompt is not only words and the
+   * composer used to be able to carry nothing else.
    */
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   /**
@@ -1178,6 +1178,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setTabMenu({ id, pinned, x: event.clientX, y: event.clientY });
   }
 
+  /**
+   * The browser's other tab gesture: the middle button closes the tab under the
+   * pointer. A pinned square is not a closable tab — Unpin is the way out of the
+   * band, exactly as the close control's absence says — so that press is
+   * swallowed but closes nothing. Swallowing matters on Linux, where a middle
+   * press otherwise starts X11's primary-selection paste or autoscroll.
+   */
+  function closeTabOnMiddlePress(
+    event: MouseEvent<HTMLDivElement>,
+    id: string,
+    pinned: boolean,
+  ): void {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    if (!pinned) chat.closeTab(id);
+  }
+
   /** Close the tab menu, whether or not it was up. */
   function closeTabMenu(): void {
     setTabMenu(null);
@@ -1589,7 +1606,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             The open chats, as tabs, in the dock's top band. The strip leads the
             dock — above the thread's header — so the chats in the air are the
             first thing the operator sees, and the name row below belongs to the
-            tab in front, the way a browser draws its tabs above the page.
+            tab in front, the way a browser draws its tabs above the page. The
+            browser's tab gestures come with it: a middle click on a tab closes
+            it, and Ctrl/Cmd+W closes the one in front (that key lives in the
+            shortcut runner, because only it can see the strip and stand down
+            under a modal or a recording row).
 
             It is drawn whenever the thread has a tab, even a single one: the
             plus at its trailing edge is the second tab's door, and a strip that
@@ -1640,6 +1661,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     data-live={live || undefined}
                     data-approval={waiting || undefined}
                     onContextMenu={(e) => openTabMenu(e, id, pinned)}
+                    onAuxClick={(e) => closeTabOnMiddlePress(e, id, pinned)}
+                    onMouseDown={(e) => {
+                      // The press half of the middle-click close: without this
+                      // the browser's autoscroll quest starts under the strip.
+                      if (e.button === 1) e.preventDefault();
+                    }}
                   >
                     <button
                       type="button"
@@ -1647,7 +1674,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       aria-selected={id === sessionId}
                       className="chat-panel__tab-main"
                       aria-label={pinned ? `${label} — pinned tab` : undefined}
-                      title={pinned ? `${label} — pinned tab` : label}
+                      title={
+                        pinned
+                          ? `${label} — pinned tab`
+                          : `${label} — middle-click to close`
+                      }
                       onClick={() => {
                         if (id === sessionId) {
                           setView("thread");
@@ -1914,8 +1945,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <div className="chat-panel__empty-orb" aria-hidden />
                 <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
                 <p className="chat-panel__empty-copy">
-                  This is your LifeQuest companion on the lifequest Hermes
-                  profile. Active area: {domainName}.
+                  {companionContext?.harness === "pi"
+                    ? `This is the built-in LifeQuest companion. Active area: ${domainName}.`
+                    : `This is your LifeQuest companion on the ${
+                        companionContext?.profile ?? "lifequest"
+                      } Hermes profile. Active area: ${domainName}.`}
                 </p>
                 {/*
                   The saved questions that fit this screen. One click sends the
@@ -2344,16 +2378,19 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ))}
                   </div>
                 ) : null}
-                <div
-                  className={
-                    controlVisible
-                      ? "chat-panel__composer-row chat-panel__composer-row--control"
-                      : "chat-panel__composer-row"
-                  }
-                >
+                {/*
+                  The composer's own surface: one box around the field the
+                  operator writes in and the control row that belongs to it.
+                  The field rests on top; the row sits inside the box's bottom
+                  edge. That is what makes the model and thinking picks, the
+                  send control, the add/receipt controls and the page pill part
+                  of the composer rather than a footer line under it — and it is
+                  why the accent ring is on this box instead of on the field.
+                */}
+                <div className="chat-panel__composer-box">
                   <textarea
                     ref={inputRef}
-                    className="chat-panel__composer-input"
+                    className="chat-panel__composer-input chat-panel__composer-input--frameless"
                     placeholder={
                       sending
                         ? "Steer the turn that is running…"
@@ -2380,39 +2417,199 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     autoComplete="off"
                   />
                   {/*
-                    The attach control, inside the field's own top-right corner:
-                    the gesture belongs to the box the operator is writing in,
-                    and the top corner is the one the send control does not
-                    spend. It takes any media or file the operator picks.
+                    The row inside the box's bottom edge: the composer's own
+                    controls, split by the work they do. The leading cluster is
+                    what a turn can carry — the add control, the receipt
+                    control, the page pill and the waiting receipt — so they sit
+                    at the bottom left where the field starts. The trailing
+                    cluster is what the turn runs on and how it goes — the
+                    model and thinking picks, then the send/stop control — at
+                    the bottom right.
                   */}
-                  <button
-                    type="button"
-                    className="chat-panel__composer-plus"
-                    data-testid="chat-attachment-button"
-                    disabled={!sessionId}
-                    aria-label="Attach a file"
-                    title="Attach a file"
-                    onClick={() => attachmentInputRef.current?.click()}
-                  >
-                    <Plus size={14} aria-hidden />
-                  </button>
-                  {controlVisible ? (
-                    <button
-                      type={sending ? "button" : "submit"}
-                      className="chat-panel__send"
-                      data-state={sending ? "stop" : "send"}
-                      disabled={sending ? !runId : !sessionId}
-                      aria-label={sending ? "Stop this run" : "Send message"}
-                      title={sending ? "Stop this run" : "Send message"}
-                      onClick={sending ? () => void stopRun() : undefined}
-                    >
-                      {sending ? (
-                        <span className="chat-panel__send-stop" aria-hidden />
-                      ) : (
-                        <ArrowUp size={15} aria-hidden />
-                      )}
-                    </button>
-                  ) : null}
+                  <div className="chat-panel__composer-dock">
+                    <div className="chat-panel__composer-lead">
+                      {/*
+                        The two file pickers stay mounted here, hidden, so the
+                        controls beside them can open one and the change still
+                        lands on the composer's own handlers. They are the two
+                        flows, not one: this field takes any media or file as a
+                        general attachment, the image-plus beside it takes one
+                        picture as a finance receipt. A receipt is what the
+                        ledger cites as a transaction's source; an attachment is
+                        only something the agent may look at. They share a
+                        corner, not a job.
+                      */}
+                      <input
+                        ref={attachmentInputRef}
+                        className="chat-panel__attachment-input"
+                        type="file"
+                        multiple
+                        aria-label="Attach a file"
+                        data-testid="chat-attachment-input"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files ?? []);
+                          for (const file of files) void attachFile(file);
+                          // Clear the picker so choosing the same file twice
+                          // still fires a change event.
+                          e.target.value = "";
+                        }}
+                      />
+                      <input
+                        ref={receiptInputRef}
+                        className="chat-panel__receipt-input"
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        aria-label="Receipt image"
+                        onChange={(e) => {
+                          const file = imageFrom(e.target.files);
+                          if (file) void attachReceipt(file);
+                          // Clear the picker so choosing the same file twice
+                          // still fires a change event.
+                          e.target.value = "";
+                        }}
+                      />
+                      {/*
+                        The add control, at the bottom left of the composer: it
+                        is the first gesture of the row, so it wears a circular
+                        background — the one control-shaped spot the eye lands
+                        on in a mostly type-only row — and takes any media or
+                        file the operator picks.
+                      */}
+                      <button
+                        type="button"
+                        className="chat-panel__composer-plus"
+                        data-testid="chat-attachment-button"
+                        disabled={!sessionId}
+                        aria-label="Attach a file"
+                        title="Attach a file"
+                        onClick={() => attachmentInputRef.current?.click()}
+                      >
+                        <Plus size={15} aria-hidden />
+                      </button>
+                      <div className="chat-panel__receipts">
+                        <button
+                          type="button"
+                          className="chat-panel__attach"
+                          disabled={sending || !sessionId}
+                          aria-label="Attach a receipt"
+                          title="Attach a receipt"
+                          onClick={() => receiptInputRef.current?.click()}
+                        >
+                          <ImagePlus size={15} aria-hidden />
+                        </button>
+
+                        {/*
+                          The page, beside the receipt control and wearing its shape:
+                          one pill that says which screen rides the next turn.
+
+                          It defaults to on and re-arms on every navigation, because
+                          the failure it answers is an agent that offered to build a
+                          card the screen was already showing. The operator can turn
+                          it off — sometimes the question is about something else —
+                          and the pill stays on the line in its off state, because a
+                          control that vanished when used could not be turned back
+                          on.
+                        */}
+                        <button
+                          type="button"
+                          className="chat-panel__page"
+                          data-state={pageContext.on ? "on" : "off"}
+                          data-testid="chat-page-context"
+                          aria-pressed={pageContext.on}
+                          aria-label={
+                            pageContext.on
+                              ? `Page context on: the ${pageContext.label} screen rides your next message`
+                              : `Page context off: the ${pageContext.label} screen will not be sent`
+                          }
+                          title={
+                            pageContext.on
+                              ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
+                              : `The ${pageContext.label} screen is not sent — click to send it again`
+                          }
+                          onClick={() => setPageContextOn(!pageContext.on)}
+                        >
+                          {pageContext.on ? (
+                            <Eye size={12} aria-hidden />
+                          ) : (
+                            <EyeOff size={12} aria-hidden />
+                          )}
+                          <span
+                            className="chat-panel__page-label"
+                            data-testid="chat-page-context-label"
+                          >
+                            {pageContext.label}
+                          </span>
+                          <span className="chat-panel__page-kind">
+                            {pageContext.on ? "in context" : "off"}
+                          </span>
+                        </button>
+                        {receipt ? (
+                          <div className="chat-panel__receipt">
+                            <img
+                              className="chat-panel__receipt-thumb"
+                              src={receipt.previewUrl}
+                              alt=""
+                            />
+                            <span className="chat-panel__receipt-name">{receipt.name}</span>
+                            <span className="chat-panel__receipt-size">
+                              {formatReceiptSize(receipt.size)}
+                            </span>
+                            <button
+                              type="button"
+                              className="chat-panel__receipt-remove"
+                              aria-label="Remove receipt"
+                              title="Remove receipt"
+                              onClick={() => putReceipt(null)}
+                            >
+                              <X size={12} aria-hidden />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    {/*
+                      The turn's runtime pick and the send control: the trailing
+                      end of the composer's control row. The model and thinking
+                      pills are what the next turn runs on; the send/stop control is
+                      how it goes. They sit at the bottom right, where the operator
+                      finishes a thought, and the send only appears once there is
+                      something to send — an empty composer is a writing surface
+                      first.
+                    */}
+                    <div className="chat-panel__composer-trail">
+                      {/*
+                        The dock's version of the Hermes Desktop composer's model
+                        and reasoning pills. Every control in it is
+                        `type="button"` - nothing here can submit the field above
+                        it. Absent entirely when the gateway served no catalog,
+                        which leaves the add and receipt controls carrying the left
+                        end of the row alone.
+                      */}
+                      <ComposerModelControls
+                        catalog={modelCatalog}
+                        disabled={sending || !sessionId}
+                        pick={runtimePick}
+                        onChange={updateRuntimePick}
+                      />
+                      {controlVisible ? (
+                        <button
+                          type={sending ? "button" : "submit"}
+                          className="chat-panel__send"
+                          data-state={sending ? "stop" : "send"}
+                          disabled={sending ? !runId : !sessionId}
+                          aria-label={sending ? "Stop this run" : "Send message"}
+                          title={sending ? "Stop this run" : "Send message"}
+                          onClick={sending ? () => void stopRun() : undefined}
+                        >
+                          {sending ? (
+                            <span className="chat-panel__send-stop" aria-hidden />
+                          ) : (
+                            <ArrowUp size={15} aria-hidden />
+                          )}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
                 {/*
                   While a turn is running, the composer stays open and gains the
@@ -2473,138 +2670,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ))}
                   </ul>
                 ) : null}
-                <div className="chat-panel__composer-runtime">
-                  {/*
-                    The composer's footer line, under the field: the attach control
-                    on the left, the turn's runtime pick on the right. The attach
-                    control stays outside the field so it costs the textarea no
-                    width - the field keeps the panel's full width, and the send
-                    control already spends a gutter of it - with the waiting chip
-                    riding beside it.
-                  */}
-                  <div className="chat-panel__receipts">
-                    <input
-                      ref={attachmentInputRef}
-                      className="chat-panel__attachment-input"
-                      type="file"
-                      multiple
-                      aria-label="Attach a file"
-                      data-testid="chat-attachment-input"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files ?? []);
-                        for (const file of files) void attachFile(file);
-                        // Clear the picker so choosing the same file twice still
-                        // fires a change event.
-                        e.target.value = "";
-                      }}
-                    />
-                    <input
-                      ref={receiptInputRef}
-                      className="chat-panel__receipt-input"
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      aria-label="Receipt image"
-                      onChange={(e) => {
-                        const file = imageFrom(e.target.files);
-                        if (file) void attachReceipt(file);
-                        // Clear the picker so choosing the same file twice still
-                        // fires a change event.
-                        e.target.value = "";
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="chat-panel__attach"
-                      disabled={sending || !sessionId}
-                      aria-label="Attach a receipt"
-                      title="Attach a receipt"
-                      onClick={() => receiptInputRef.current?.click()}
-                    >
-                      <ImagePlus size={15} aria-hidden />
-                    </button>
-                    {/*
-                      The page, beside the receipt control and wearing its shape:
-                      one pill that says which screen rides the next turn.
-
-                      It defaults to on and re-arms on every navigation, because
-                      the failure it answers is an agent that offered to build a
-                      card the screen was already showing. The operator can turn
-                      it off — sometimes the question is about something else —
-                      and the pill stays on the line in its off state, because a
-                      control that vanished when used could not be turned back
-                      on.
-                    */}
-                    <button
-                      type="button"
-                      className="chat-panel__page"
-                      data-state={pageContext.on ? "on" : "off"}
-                      data-testid="chat-page-context"
-                      aria-pressed={pageContext.on}
-                      aria-label={
-                        pageContext.on
-                          ? `Page context on: the ${pageContext.label} screen rides your next message`
-                          : `Page context off: the ${pageContext.label} screen will not be sent`
-                      }
-                      title={
-                        pageContext.on
-                          ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
-                          : `The ${pageContext.label} screen is not sent — click to send it again`
-                      }
-                      onClick={() => setPageContextOn(!pageContext.on)}
-                    >
-                      {pageContext.on ? (
-                        <Eye size={12} aria-hidden />
-                      ) : (
-                        <EyeOff size={12} aria-hidden />
-                      )}
-                      <span
-                        className="chat-panel__page-label"
-                        data-testid="chat-page-context-label"
-                      >
-                        {pageContext.label}
-                      </span>
-                      <span className="chat-panel__page-kind">
-                        {pageContext.on ? "in context" : "off"}
-                      </span>
-                    </button>
-                    {receipt ? (
-                      <div className="chat-panel__receipt">
-                        <img
-                          className="chat-panel__receipt-thumb"
-                          src={receipt.previewUrl}
-                          alt=""
-                        />
-                        <span className="chat-panel__receipt-name">{receipt.name}</span>
-                        <span className="chat-panel__receipt-size">
-                          {formatReceiptSize(receipt.size)}
-                        </span>
-                        <button
-                          type="button"
-                          className="chat-panel__receipt-remove"
-                          aria-label="Remove receipt"
-                          title="Remove receipt"
-                          onClick={() => putReceipt(null)}
-                        >
-                          <X size={12} aria-hidden />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  {/*
-                    The turn's runtime pick, at the right end of the footer line
-                    under the field: the dock's version of the Hermes Desktop
-                    composer's model and reasoning pills. Every control in it
-                    is `type="button"` - nothing here can submit the field
-                    above it. Absent entirely when the gateway served no
-                    catalog, which leaves the attach control alone on the line.
-                  */}
-                  <ComposerModelControls
-                    catalog={modelCatalog}
-                    disabled={sending || !sessionId}
-                    pick={runtimePick}
-                    onChange={updateRuntimePick}
-                  />
-                </div>
               </form>
             )}
           </div>

@@ -1,5 +1,4 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -107,7 +106,10 @@ export function onCompanionStatusChanged(
 /** Store the status and tell everyone. Returns the wire shape (no API key). */
 function publish(status: CompanionStatus): PublicCompanionStatus {
   current = status;
-  return publishHarnessStatus(publicStatus(status));
+  // Tagged with this harness: a switch may already have moved the app to the
+  // other companion, and a late answer from a gateway that was restarting when
+  // the operator clicked must not be painted as the agent they are now on.
+  return publishHarnessStatus("hermes", publicStatus(status));
 }
 
 /**
@@ -1191,16 +1193,6 @@ export type CompanionSessionPatch = {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
-  /**
-   * The gateway's revision counter for the chat, as the list read it.
-   *
-   * Hermes fences every session mutation on it: a write that carries no
-   * `expected_revision` is refused as a pre-fence client (409), and one whose
-   * revision no longer matches the row is refused as a conflict (409). This is
-   * the number the sidebar's list already read, so an archive can be sent with
-   * the fence it needs.
-   */
-  revision?: number | null;
 };
 
 /**
@@ -1209,17 +1201,16 @@ export type CompanionSessionPatch = {
  * All three are durable Hermes-side flags, so Hermes Desktop (and every other
  * channel on this profile) sees the same state; LifeQuest keeps no copy.
  *
- * THE FENCE
+ * ONLY FLAGS CROSS THE WIRE
  *
- * The gateway refuses a session write that carries no mutation identity: it
- * answers 409 `mutation_identity_required` (or `CLIENT_UPGRADE_REQUIRED` for a
- * client old enough to predate the fence). So every write here carries a
- * `request_id` — the idempotency key, so a retry of the same gesture commits
- * once — and an `expected_revision`, the row's own revision counter. A chat
- * whose revision the caller does not know (a row the list did not carry, or an
- * older host that reports no counter) is written unfenced: the gateway's own
- * answer is then the verdict, which is better than refusing the operator's
- * gesture on this app's side.
+ * The host gateway's PATCH is a strict allowlist — `title`, `end_reason`,
+ * `pinned`, `archived`, `hidden`, `unread` — and answers anything else with 400
+ * `unsupported_session_field` before a write is attempted. So a body carrying a
+ * mutation identity (`request_id` / `expected_revision`) is not fenced: it is
+ * refused. Those fields belong to Hermes' *dashboard* backend
+ * (`hermes_cli/web_server_sessions.py`, which fences its `session.mutate` RPC),
+ * not to the `/api/sessions` API this app attaches to. The archive is therefore
+ * the operator's plain flag write, and the gateway's own answer is the verdict.
  */
 export async function companionSessionPatch(
   id: string,
@@ -1232,12 +1223,6 @@ export async function companionSessionPatch(
     if (typeof patch.archived === "boolean") body.archived = patch.archived;
     if (Object.keys(body).length === 0) {
       return { ok: false, error: "Session update had nothing to change" };
-    }
-    // The receipt key. The gateway deduplicates on it, so a retried gesture
-    // commits once instead of racing itself.
-    body.request_id = randomUUID();
-    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
-      body.expected_revision = patch.revision;
     }
     const res = await gatewayCall("Updating a chat", () =>
       hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
@@ -1269,25 +1254,18 @@ export async function companionSessionPatch(
  * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
  * copy of a chat, so there is nothing to reconcile here afterwards.
  *
- * The gateway fences this write the same way it fences every other session
- * mutation, and it takes the fence as query parameters: a delete with no
- * `request_id` and no `expected_revision` is refused as a pre-fence client. So
- * the same identity goes out here.
+ * No body and no fence fields: this app attaches to the host gateway's
+ * `/api/sessions` API, which takes the delete as a plain request (see
+ * `companionSessionPatch` for why a mutation identity does not belong here).
  */
 export async function companionSessionDelete(
   id: string,
-  patch: { revision?: number | null } = {},
 ): Promise<
   { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
 > {
   try {
-    const query = new URLSearchParams();
-    query.set("request_id", randomUUID());
-    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
-      query.set("expected_revision", String(patch.revision));
-    }
     const res = await gatewayCall("Deleting a chat", () =>
-      hermesFetch(`/api/sessions/${encodeURIComponent(id)}?${query.toString()}`, {
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
       }),
     );
@@ -1304,19 +1282,15 @@ export async function companionSessionDelete(
       id?: unknown;
       session_id?: unknown;
       deleted?: unknown;
-      deleted_ids?: unknown;
       already_absent?: unknown;
     };
     /**
-     * The gateway's receipt names the row it retired. A delete answers
-     * `{ok, session_id, revision, deleted_ids}` — the id is `session_id`, not
-     * `id` — and a row that was already gone answers `{ok, already_absent}`,
-     * which is the outcome the caller wanted either way.
-     *
-     * Older hosts answered `{object, id, deleted}`; both shapes are read, so a
-     * delete is not reported as failed just because the host words its receipt
-     * differently. What matters is that the receipt names a row at all: a
-     * reply that names none is not a delete this app can claim.
+     * The gateway's receipt names the row it retired: the host answers
+     * `{object: "hermes.session.deleted", id, deleted}`. `session_id` is read
+     * too, because the dashboard backend words its receipt that way and a host
+     * that adopted that shape should not be reported as a failed delete. What
+     * matters is that the receipt names a row at all: a reply that names none
+     * is not a delete this app can claim.
      */
     const named = [body?.id, body?.session_id].find(
       (value): value is string => typeof value === "string" && value.length > 0,

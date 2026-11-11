@@ -148,7 +148,7 @@ What the companion can do.
 | `list_documents` | Reads every library note plus one record per doctrine document per live domain. No approval. |
 | `get_document` | Reads a library note by id, or a doctrine document by `domainSlug` + `kind`. |
 | `create_library_document` | An agent's create files a pending **Library note** Decision; the file appears when the operator approves it. |
-| `update_document` | An agent's change to a library note files a **Library note** Decision with the proposed title and body. On a doctrine document an agent always proposes, locked or not. |
+| `update_document` | An agent's change to a library note files a **Library note** Decision with the proposed title, body and domains (the note's tags are part of the proposal, and an empty list proposes untagging it). On a doctrine document an agent always proposes, locked or not; `domainSlugs` is refused there, because a doctrine document's area comes from its target. |
 
 So a companion write to any document waits in [Decisions](./23-decisions.md); the
 operator's own edit to an unlocked note is direct. Reads need no approval. Every
