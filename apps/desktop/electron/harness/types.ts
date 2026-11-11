@@ -40,7 +40,14 @@ export type HarnessReady = {
   childPid?: number | null;
 };
 
-/** A companion that is not up, and why. The kinds are additive. */
+/**
+ * A companion that is not up, and why. The kinds are additive.
+ *
+ * `switching` is not a failure: the operator picked this companion and its
+ * ensure is still in flight. It exists so a switch can answer the app at once
+ * instead of holding the studio still until a gateway has restarted — a switch
+ * that waited looked exactly like a reconnection.
+ */
 export type HarnessUnavailable =
   | { kind: "needs_install" }
   /** Built in, but no endpoint/model/key configured yet. */
@@ -50,7 +57,9 @@ export type HarnessUnavailable =
   | { kind: "gateway_exited"; detail: string }
   | { kind: "disconnected" }
   | { kind: "hermes_too_old"; version?: string }
-  | { kind: "auth_error" };
+  | { kind: "auth_error" }
+  /** Chosen, not yet up: the ensure is running in the background. */
+  | { kind: "switching"; harness: HarnessId };
 
 export type HarnessStatus = HarnessReady | HarnessUnavailable;
 

@@ -71,7 +71,10 @@ let current: HarnessStatus = { kind: "needs_setup" };
 
 function publish(status: HarnessStatus): HarnessStatus {
   current = status;
-  return publishHarnessStatus(status);
+  // Tagged with this harness, so a late answer steered at the agent the
+  // operator has since switched away from is dropped by the renderer rather
+  // than shown over the agent now in front.
+  return publishHarnessStatus("pi", status);
 }
 
 export function piStatus(): HarnessStatus {

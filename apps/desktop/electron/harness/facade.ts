@@ -13,6 +13,7 @@ export {
   harnessSummaries,
   loadHarnessSelection,
   shutdownHarnesses,
+  switchHarness,
   useHarness,
 } from "./registry.ts";
 export { onHarnessStatusChanged } from "./status-bus.ts";

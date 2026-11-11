@@ -382,6 +382,13 @@ const lifequest = {
   companionHarnesses: () => ipcRenderer.invoke("companion:harnesses"),
   companionUseHarness: (id: "hermes" | "pi") =>
     ipcRenderer.invoke("companion:useHarness", id),
+  /**
+   * The switch made from the open studio: it answers at once with what is
+   * already known about the target (or a `switching` status), and the target's
+   * ensure lands later on `companion:statusChanged`.
+   */
+  companionSwitchHarness: (id: "hermes" | "pi") =>
+    ipcRenderer.invoke("companion:switchHarness", id),
   /** The built-in companion's endpoint. The key is write-only in this direction. */
   companionPiSettings: () => ipcRenderer.invoke("companion:piSettings"),
   companionPiSettingsSave: (input: {

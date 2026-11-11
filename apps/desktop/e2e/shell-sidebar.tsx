@@ -159,6 +159,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { DocumentKind, DomainRecord } from "@lifequest/vault-core";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 import {
   ThemeProvider,
   syncTitleBarOverlay,
@@ -357,6 +358,16 @@ createRoot(root).render(
                               <div className="home-card" data-probe="home-card" />
                               <div className="view-card" data-probe="view-card" />
                             </div>
+                            {/*
+                              The marker a built-in dashboard card wears beside
+                              its heading. The rail's Dashboard row must wear the
+                              same glyph, so the driver compares the two classes
+                              rather than trusting a hard-coded icon name that
+                              could drift from the badge it is supposed to match.
+                            */}
+                            <span data-probe="builtin-badge">
+                              <BuiltInBadge />
+                            </span>
                             {/*
                               The sheet's scroller has to really overflow, for the
                               same reason the transcript does: a scrollbar claim

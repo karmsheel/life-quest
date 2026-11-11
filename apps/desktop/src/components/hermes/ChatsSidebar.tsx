@@ -22,7 +22,10 @@ import {
 } from "lucide-react";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useOptionalCompanion } from "@/state/CompanionProvider";
+import { companionStatusSummary } from "@/lib/companion-status-copy";
 import { useConfirm } from "@/components/ui/useConfirm";
+import { Link } from "react-router-dom";
 import {
   formatSessionWhen,
   sessionLabel,
@@ -181,6 +184,30 @@ export function ChatsSidebar() {
   const listEmpty =
     chat.sessionsLoaded &&
     (onlyArchived ? archived.length === 0 : chat.sessions.length === 0);
+  /*
+   * The rail's other state. A switch moves the list to the new agent at once;
+   * while that agent's store is being read, the rail says what it is doing
+   * rather than showing "No chats yet" — an empty rail that is wrong for a
+   * moment is what made a switch look like the chats had been wiped.
+   *
+   * An agent that cannot answer at all is a third state. The studio stays open
+   * (it opened with an agent, and an agent is a service), so the rail is where
+   * that agent's own sentence belongs — with the way to fix it, never a silent
+   * empty column.
+   */
+  const companion = useOptionalCompanion();
+  const agentName =
+    companion?.harnesses?.find((entry) => entry.active)?.name ?? "the agent";
+  const agentStatus = companion?.status ?? null;
+  const agentStarting = companion?.switching != null;
+  const agentTrouble =
+    Boolean(companion) &&
+    companion?.switching == null &&
+    agentStatus !== null &&
+    agentStatus.kind !== "ready" &&
+    agentStatus.kind !== "switching";
+  const listLoading =
+    !chat.sessionsLoaded && !chat.listError && !listEmpty && !agentTrouble;
 
   /** Load one chat into the dock, opening the dock if it was put away. */
   async function openChat(id: string) {
@@ -750,6 +777,15 @@ export function ChatsSidebar() {
         <span>New chat</span>
       </button>
 
+      {agentTrouble && agentStatus ? (
+        <div className="chats-rail__error" role="status">
+          <p>{companionStatusSummary(agentStatus, false)}</p>
+          <Link to="/settings?tab=hermes" className="chats-rail__text-btn">
+            Companion settings
+          </Link>
+        </div>
+      ) : null}
+
       {chat.listError ? (
         <div className="chats-rail__error" role="alert">
           <p>{chat.listError}</p>
@@ -764,7 +800,13 @@ export function ChatsSidebar() {
       ) : null}
 
       <div className="chats-rail__list" ref={listRef}>
-        {listEmpty ? (
+        {agentTrouble && !chat.sessionsLoaded ? null : listLoading ? (
+          <p className="chats-rail__empty chats-rail__empty--loading">
+            {agentStarting
+              ? `Starting ${agentName}…`
+              : `Loading ${agentName}\u2019s chats…`}
+          </p>
+        ) : listEmpty ? (
           <p className="chats-rail__empty">
             {onlyArchived ? "No archived chats" : "No chats yet"}
           </p>
