@@ -10,7 +10,7 @@ This wiki explains the app and how to use it. It is written for the operator, no
 the developer, though the system pages at the end go under the hood for anyone who
 wants to know what is on disk and what runs where.
 
-- **Version covered:** LifeQuest 0.2.8 (desktop, Windows).
+- **Version covered:** LifeQuest 0.2.9 (desktop, Windows).
 - **Product host:** Electron + Vite + React. There is no cloud account and no
   hosted copy of your vault.
 - **Companion:** the built-in **Pi** companion opens the studio on its own;
