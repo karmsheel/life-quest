@@ -394,8 +394,8 @@ describe("automations e2e", () => {
     );
     assert.deepEqual(
       dayPage.chat.tabs,
-      [],
-      "a single chat drew a tab strip before the run",
+      [{ label: dayPage.priorChatTitle, active: true }],
+      "a single chat did not draw its one tab before the run",
     );
     assert.ok(
       dayPage.chat.sidebarRows.some((row) => row.label === dayPage.priorChatTitle),

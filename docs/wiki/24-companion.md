@@ -79,9 +79,12 @@ not send an API key to the renderer.
    archived blank stays in the archived view and is not reopened as the new chat.
 3. Click any row in **Chats** to load that conversation into the dock. A
    middle-click on the row — or **Chat actions** then **Open in new tab** — keeps
-   the current chat on screen and opens a second tab. The tab strip appears when
-   more than one chat is open, or whenever a pinned chat exists. The strip is
-   remembered: quit and reopen the app and every tab comes back in the same order,
+   the current chat on screen and opens a second tab. The tab strip leads the
+   dock, above the name of the chat in front, and is drawn whenever the thread has
+   a chat — even a single one. The **+** at its trailing edge opens a new blank
+   chat in a tab of its own, under the same one-blank rule as **New chat**: if a
+   live blank chat is already open, the plus lands on that tab instead of minting
+   another. The strip is remembered: quit and reopen the app and every tab comes back in the same order,
    with the chat that was in front still in front. A remembered chat that has been
    archived or deleted in Hermes Desktop in the meantime loses its tab, and if
    every tab was closed before quitting the dock opens on a blank thread rather

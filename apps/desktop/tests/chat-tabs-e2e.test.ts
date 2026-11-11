@@ -100,6 +100,17 @@ type State = {
   tabCount: number;
   /** The strip's own box; null when the strip is not drawn. */
   strip: { box: Box | null } | null;
+  /** The thread's name row, the row the strip leads. */
+  header: { box: Box | null } | null;
+  /** The plus after the last tab; null when no strip is drawn. */
+  newTab: {
+    label: string | null;
+    /** Explicit ARIA role; null on a plain <button>. */
+    role: string | null;
+    tag: string;
+    visible: boolean;
+    box: Box | null;
+  } | null;
   tabMenu: TabMenu | null;
   chatDivider: {
     label: string | null;
@@ -289,6 +300,8 @@ describe("chat dock tabs and sidebar chats", () => {
       renameOpen,
       renameSwitched,
       renameCancelled,
+      plusOpened,
+      plusAgain,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -350,6 +363,34 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
     assert.equal(landing.tabs[1]?.active, true, "the open chat's tab is not the active one");
     assert.notEqual(landing.strip, null, "the strip is not drawn for the pinned tab");
+    // The swap: the tab strip leads the dock and the chat's name row sits
+    // directly beneath it, measured rather than read off the JSX.
+    assert.equal(
+      landing.strip?.box.bottom,
+      landing.header?.box.top,
+      "the name row does not begin where the tab strip ends",
+    );
+    assert.ok(
+      (landing.strip?.box.top ?? Number.POSITIVE_INFINITY) <
+        (landing.header?.box.top ?? 0),
+      "the tab strip is not above the chat's name row",
+    );
+    assert.equal(
+      landing.newTab?.label,
+      "New chat tab",
+      "the strip ends with no New chat tab control",
+    );
+    assert.equal(landing.newTab?.visible, true, "the New chat tab control is not visible");
+    assert.ok(
+      (landing.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (landing.tabs.at(-1)?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the New chat tab control is not after the last tab",
+    );
+    assert.ok(
+      (landing.newTab?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (landing.strip?.box.right ?? Number.NEGATIVE_INFINITY),
+      "the New chat tab control runs past the strip's trailing edge",
+    );
     assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
 
     // A real pointer over a row reveals its pin/archive controls and hides the
@@ -426,16 +467,22 @@ describe("chat dock tabs and sidebar chats", () => {
       "the resting pin mark did not come back",
     );
 
-    // A plain click is navigation: the clicked chat takes over the main chat and
-    // no tab is added. The hidden strip is the proof — a second tab would draw
-    // it, and step 3 below shows the count rising only on the middle click.
+    // A plain click is navigation: the clicked chat takes over the one tab on
+    // screen, and no second tab is added. The strip keeps its single tab wearing
+    // the new name; step 3 below shows the count rising only on the middle
+    // click.
     assert.equal(opened.heading, "Bravo budget", "the row click loaded the wrong chat");
     assert.equal(
       opened.messageCalls.at(-1),
       "chat-bravo",
       "the row click read a different transcript",
     );
-    assert.equal(opened.tabCount, 0, "a plain click added a tab");
+    assert.equal(opened.tabCount, 1, "a plain click added a tab");
+    assert.equal(
+      opened.tabs[0]?.label,
+      "Bravo budget",
+      "the one tab did not take the clicked chat's name",
+    );
     assert.equal(
       opened.rows.find((row) => row.label === "Bravo budget")?.active,
       true,
@@ -597,8 +644,8 @@ describe("chat dock tabs and sidebar chats", () => {
     );
 
     // 1c left a one-chat baseline: the fixture's pinned chat was unpinned from
-    // the sidebar and its now-normal tab closed, so the strip is gone again and
-    // every later tab count is the unpinned one it always was.
+    // the sidebar and its now-normal tab closed, so the strip is back down to the
+    // one tab it always was, and every later tab count is the unpinned one.
     const pinnedNoteUnpin = unpinnedPinnedNote.patchCalls.at(-1);
     assert.equal(pinnedNoteUnpin?.id, "chat-pinned", "the sidebar Unpin hit the wrong chat");
     assert.equal(pinnedNoteUnpin?.patch.pinned, false, "the sidebar Unpin never reached the bridge");
@@ -607,8 +654,27 @@ describe("chat dock tabs and sidebar chats", () => {
       true,
       "the unpinned square did not become a normal tab with a close control",
     );
-    assert.equal(baseline.tabCount, 0, "closing the extra tab left the strip drawn");
-    assert.equal(baseline.strip, null, "the strip is drawn with one unpinned chat");
+    assert.equal(baseline.tabCount, 1, "closing the extra tab did not leave one tab");
+    assert.equal(
+      baseline.tabs[0]?.label,
+      "Alpha planning",
+      "the one remaining tab is not the chat in front",
+    );
+    assert.notEqual(
+      baseline.strip,
+      null,
+      "the strip is not drawn for one chat, so the plus is unreachable",
+    );
+    assert.equal(
+      baseline.newTab?.visible,
+      true,
+      "a one-tab strip has no visible New chat tab control",
+    );
+    assert.ok(
+      (baseline.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (baseline.tabs[0]?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the New chat tab control is not after the single tab",
+    );
     assert.equal(baseline.heading, "Alpha planning");
 
     // The hover archive control removes the row and the tab it had, and does not
@@ -648,7 +714,12 @@ describe("chat dock tabs and sidebar chats", () => {
       "the deleted chat is still listed",
     );
     assert.equal(deleted.rowCount, 3, "the delete changed the wrong number of rows");
-    assert.equal(deleted.tabCount, 0, "deleting the open chat left a second tab");
+    assert.equal(deleted.tabCount, 1, "deleting the open chat left a second tab");
+    assert.equal(
+      deleted.tabs[0]?.label,
+      "Bravo budget",
+      "deleting the open chat did not leave its neighbour as the one tab",
+    );
     assert.equal(deleted.heading, "Bravo budget", "deleting the open chat did not hand over");
 
     // A background run — an automation, or any chat nobody opened — appears as
@@ -678,7 +749,12 @@ describe("chat dock tabs and sidebar chats", () => {
       true,
       "closing a live tab did not stop its run",
     );
-    assert.equal(lateFrame.tabCount, 0, "a late frame resurrected the closed tab");
+    assert.equal(lateFrame.tabCount, 1, "a late frame resurrected the closed tab");
+    assert.equal(
+      lateFrame.tabs[0]?.label,
+      "Bravo budget",
+      "the late frame left something other than the one open chat",
+    );
     assert.equal(lateFrame.heading, "Bravo budget", "a late frame moved the dock");
     assert.equal(
       lateFrame.rows.find((row) => row.label === "Delta automation")?.live,
@@ -1134,13 +1210,14 @@ describe("chat dock tabs and sidebar chats", () => {
     );
 
     // The archived tab was last in the strip: the tab before it takes the front.
-    // A single tab draws no strip, so the count is zero; the heading says which
-    // chat is in front.
+    // One tab is left, and the strip still draws it with the plus beside it.
     assert.equal(
       previousTabArchived.tabCount,
-      0,
-      `a single tab drew a strip (${previousTabArchived.tabCount} tabs)`,
+      1,
+      `the neighbour tab did not stay in the strip (${previousTabArchived.tabCount} tabs)`,
     );
+    assert.equal(previousTabArchived.tabs[0]?.label, "Bravo budget");
+    assert.equal(previousTabArchived.tabs[0]?.active, true);
     assert.equal(
       previousTabArchived.heading,
       "Bravo budget",
@@ -1167,8 +1244,13 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.equal(
       lastArchived.tabCount,
-      0,
-      "the blank New chat drew a tab strip for a single tab",
+      1,
+      "the blank New chat did not draw its one tab",
+    );
+    assert.equal(
+      lastArchived.tabs[0]?.label,
+      "New chat",
+      "the blank New chat's tab is not the chat on screen",
     );
     assert.equal(
       lastArchived.heading,
@@ -1246,11 +1328,8 @@ describe("chat dock tabs and sidebar chats", () => {
       "New chat",
       `the New chat slot opened something other than the blank chat ("${blankReused.heading}")`,
     );
-    assert.equal(
-      blankReused.tabCount,
-      0,
-      "reusing the blank chat drew a tab strip",
-    );
+    assert.equal(blankReused.tabCount, 1, "reusing the blank chat lost its tab");
+    assert.equal(blankReused.tabs[0]?.label, "New chat");
     assert.equal(
       blankReused.createCalls.length,
       blankArchived.createCalls.length,
@@ -1259,11 +1338,18 @@ describe("chat dock tabs and sidebar chats", () => {
 
     // Archiving the chat in front while the dock shows the chain keeps the chain
     // up and opens nothing: the operator asked to put a chat away, not to be
-    // handed a new one.
+    // handed a new one. Neither surface draws the strip — the band is the
+    // thread's, and no empty band may be left behind on chain.
     assert.equal(
       chainUp.surface,
       "chain",
       "the chain never came up for the archive-from-chain case",
+    );
+    assert.equal(chainUp.strip, null, "the chain drew a tab strip band");
+    assert.equal(
+      archivedFromChain.strip,
+      null,
+      "archiving from the chain left a strip band on the chain",
     );
     assert.equal(
       archivedFromChain.surface,
@@ -1284,6 +1370,67 @@ describe("chat dock tabs and sidebar chats", () => {
       archivedFromChain.createCalls.length,
       chainUp.createCalls.length,
       "archiving from the chain minted a blank chat",
+    );
+
+    // The plus after the last tab opens a new chat tab without disturbing the
+    // chat in front. It is pressed from a one-tab state: the strip is drawn for
+    // a single chat so the door to a second one is reachable before it exists.
+    assert.equal(
+      plusOpened.surface,
+      "thread",
+      "the plus left the thread",
+    );
+    assert.equal(
+      plusOpened.tabCount,
+      2,
+      `the plus did not open a second tab (${plusOpened.tabCount} tabs)`,
+    );
+    assert.equal(plusOpened.tabs[0]?.label, "Seed chat 10", "the chat in front lost its tab");
+    assert.equal(plusOpened.tabs[0]?.active, false, "the plus did not make the new tab active");
+    assert.equal(plusOpened.tabs[1]?.label, "New chat", "the new tab is not a blank chat");
+    assert.equal(plusOpened.tabs[1]?.active, true);
+    assert.equal(plusOpened.heading, "New chat", "the new tab did not become the thread");
+    assert.equal(
+      plusOpened.createCalls.length,
+      renameCancelled.createCalls.length + 1,
+      "the plus did not ask the bridge for a blank chat",
+    );
+    assert.equal(
+      plusOpened.strip?.box.bottom,
+      plusOpened.header?.box.top,
+      "the strip left its place above the name row after the new tab",
+    );
+    assert.equal(plusOpened.newTab?.tag, "button", "the plus is not a button");
+    assert.equal(plusOpened.newTab?.role, null, "the plus is wearing a tab role");
+    assert.ok(
+      (plusOpened.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (plusOpened.tabs.at(-1)?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the plus is not after the last tab once a second tab exists",
+    );
+    assert.ok(
+      (plusOpened.newTab?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (plusOpened.strip?.box.right ?? Number.NEGATIVE_INFINITY),
+      "the plus runs past the strip's trailing edge",
+    );
+
+    // A second press on the plus is the one-blank rule through the strip's own
+    // door: it lands on the blank tab already open, so nothing is minted and the
+    // strip does not grow.
+    assert.equal(plusAgain.tabCount, 2, "a second plus grew the strip");
+    assert.deepEqual(
+      plusAgain.tabs.map((tab) => tab.label),
+      ["Seed chat 10", "New chat"],
+      "a second plus changed the strip's chats",
+    );
+    assert.equal(
+      plusAgain.tabs.at(-1)?.active,
+      true,
+      "a second plus moved the front off the blank tab",
+    );
+    assert.equal(
+      plusAgain.createCalls.length,
+      plusOpened.createCalls.length,
+      "a second plus minted a second blank chat",
     );
 
     // A rename field belongs to the chat it was opened on. With the dock header

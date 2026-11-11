@@ -150,6 +150,7 @@ const SAMPLE = `(() => {
   // a fixed popover (not a strip child), so its on-screen box is read here
   // instead of assumed.
   const tabStrip = document.querySelector(".chat-panel__tabs");
+  const tabNew = document.querySelector(".chat-panel__tab-new");
   const tabMenu = document.querySelector(".chat-panel__tab-menu");
 
   // The dock's resize handle: the drawn column, the range it is held to, and
@@ -271,6 +272,24 @@ const SAMPLE = `(() => {
     tabs,
     tabCount: tabs.length,
     strip: tabStrip ? { box: box(tabStrip) } : null,
+    // The thread's name row: the strip leads the dock, so its bottom edge is
+    // where this row begins. Reported as a box so "tabs above the name" is a
+    // measured claim rather than a reading of the JSX order.
+    header: threadHeader ? { box: box(threadHeader) } : null,
+    // The strip's own door, after the last tab: the browser's plus, in the
+    // dock's own words.
+    newTab: tabNew
+      ? {
+          label: tabNew.getAttribute("aria-label"),
+          // The plus must stay a plain button beside the tablist's tabs: a
+          // tab role here would fold it into the tab band every count and
+          // keyboard walk reads.
+          role: tabNew.getAttribute("role"),
+          tag: tabNew.tagName.toLowerCase(),
+          visible: shownBox(tabNew),
+          box: box(tabNew)
+        }
+      : null,
     tabMenu: tabMenu
       ? {
           box: box(tabMenu),
@@ -757,6 +776,16 @@ async function main() {
       return true;
     })()`);
 
+  /** The plus after the last tab: a new chat in a tab of its own. */
+  const clickNewTab = () =>
+    run(`(async () => {
+      const button = document.querySelector(".chat-panel__tab-new");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
   /**
    * The dock's own New chat control, in the action bar at the bottom of the
    * panel. It shares the store's `newChat` action with the sidebar's slot; the
@@ -973,7 +1002,8 @@ async function main() {
     await unhover();
 
     // 1 — the sidebar lists every live chat in one flat list, pinned first, and
-    // the dock lands on a thread with one tab (so the strip is not noise).
+    // the dock lands on a thread whose strip is drawn (the fixture's pinned
+    // chat is a permanent square, beside the open chat's tab).
     mark("landing");
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
@@ -1047,6 +1077,31 @@ async function main() {
       "the strip is drawn because of the pinned tab, with the open chat beside it",
       landing.strip !== null,
       JSON.stringify(landing.strip),
+    );
+    // The swap: the strip leads the dock and the name row sits directly under
+    // it. Geometry, not JSX order — a strip painted over the header would pass
+    // a DOM-order reading and fail this one.
+    check(
+      "the tab strip is the dock's top band, above the chat's name row",
+      landing.strip !== null &&
+        landing.header !== null &&
+        landing.strip.box.bottom === landing.header.box.top &&
+        landing.strip.box.top < landing.header.box.top,
+      JSON.stringify({ strip: landing.strip?.box, header: landing.header?.box }),
+    );
+    check(
+      "the strip ends with a plus that opens a new chat tab",
+      landing.newTab !== null &&
+        landing.newTab.visible === true &&
+        landing.newTab.label === "New chat tab" &&
+        landing.tabs.length > 0 &&
+        landing.newTab.box.left >= (landing.tabs.at(-1)?.box?.right ?? Infinity) &&
+        landing.newTab.box.right <= landing.strip.box.right,
+      JSON.stringify({
+        plus: landing.newTab,
+        lastTab: landing.tabs.at(-1)?.box,
+        strip: landing.strip?.box
+      }),
     );
     check(
       "the composer is ready on landing",
@@ -1171,25 +1226,43 @@ async function main() {
     check("closed the unpinned chat's tab", await closeTab("Pinned note"), "no close control");
     const baseline = await settle();
     check(
-      "closing the extra tab lands on the one-chat baseline with no strip",
-      baseline.tabCount === 0 &&
-        baseline.strip === null &&
+      "closing the extra tab lands on the one-chat baseline, strip drawn with one tab",
+      baseline.tabCount === 1 &&
+        baseline.tabs[0]?.label === "Alpha planning" &&
+        baseline.tabs[0]?.active === true &&
+        baseline.strip !== null &&
+        baseline.newTab !== null &&
+        baseline.newTab.visible === true &&
+        baseline.newTab.box.left >= (baseline.tabs[0]?.box?.right ?? Infinity) &&
         baseline.heading === "Alpha planning" &&
         baseline.surface === "thread",
       JSON.stringify({ tabs: baseline.tabs, strip: baseline.strip, heading: baseline.heading }),
     );
 
-    // 1d — with no strip there is no tab to close, so Mod+W is not the dock's:
-    // the key must be left to the platform instead of being swallowed in a
-    // corner of the app that has nothing to offer it.
+    // 1d — the strip is drawn even with one tab, so its one tab's close control
+    // is on screen and Mod+W must match it: a real press closes that tab and
+    // hands the screen to the blank slate. On the slate nothing is left to
+    // close, and a real press there would be taken by the platform (closing the
+    // rig's window), so the "left alone" half is probed with a synthetic
+    // keydown — the only safe probe for a key the app declines.
+    await pressKey("W", ["control"]);
+    const closedOnlyTab = await settle();
+    check(
+      "Mod+W closes the only tab while the strip is drawn",
+      closedOnlyTab.tabCount === 0 &&
+        closedOnlyTab.strip === null &&
+        closedOnlyTab.surface === "thread" &&
+        closedOnlyTab.heading === "Chat",
+      JSON.stringify({ heading: closedOnlyTab.heading, tabs: closedOnlyTab.tabCount }),
+    );
     const swallowedWithoutStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
     const noStripKey = await settle();
     check(
-      "Mod+W is left alone when no strip is drawn",
+      "Mod+W is left alone on the blank slate",
       swallowedWithoutStrip === false &&
         noStripKey.tabCount === 0 &&
         noStripKey.strip === null &&
-        noStripKey.heading === "Alpha planning",
+        noStripKey.heading === "Chat",
       JSON.stringify({ swallowedWithoutStrip, heading: noStripKey.heading, tabs: noStripKey.tabCount }),
     );
 
@@ -1208,9 +1281,11 @@ async function main() {
       JSON.stringify(opened.messageCalls.slice(-3)),
     );
     check(
-      "a plain click added no tab",
-      opened.tabCount === 0,
-      `${opened.tabCount} tabs — the strip should still be hidden with one chat`,
+      "a plain click added no tab: the one tab took the clicked chat's name",
+      opened.tabCount === 1 &&
+        opened.tabs[0]?.label === "Bravo budget" &&
+        opened.tabs[0]?.active === true,
+      JSON.stringify(opened.tabs),
     );
     check(
       "the clicked chat is the active row",
@@ -1241,8 +1316,10 @@ async function main() {
     const keyClosed = await settle();
     check(
       "Mod+W closes the tab in front and hands over to its neighbour",
-      keyClosed.tabCount === 0 &&
-        keyClosed.strip === null &&
+      keyClosed.tabCount === 1 &&
+        keyClosed.tabs[0]?.label === "Bravo budget" &&
+        keyClosed.tabs[0]?.active === true &&
+        keyClosed.strip !== null &&
         keyClosed.heading === "Bravo budget" &&
         keyClosed.surface === "thread" &&
         keyClosed.rows.find((row) => row.label === "Bravo budget")?.active === true,
@@ -1313,8 +1390,9 @@ async function main() {
     );
     check(
       "the middle-closed tab hands the thread to its neighbour",
-      afterMiddleClose.tabCount === 0 &&
-        afterMiddleClose.strip === null &&
+      afterMiddleClose.tabCount === 1 &&
+        afterMiddleClose.tabs[0]?.label === "Bravo budget" &&
+        afterMiddleClose.strip !== null &&
         afterMiddleClose.heading === "Bravo budget" &&
         afterMiddleClose.surface === "thread",
       JSON.stringify({
@@ -1634,7 +1712,10 @@ async function main() {
     );
     check(
       "deleting the open chat hands over to its neighbour tab",
-      deleted.heading === "Bravo budget" && deleted.tabCount === 0,
+      deleted.heading === "Bravo budget" &&
+        deleted.tabCount === 1 &&
+        deleted.tabs[0]?.label === "Bravo budget" &&
+        deleted.tabs[0]?.active === true,
       JSON.stringify({ tabs: deleted.tabs, heading: deleted.heading }),
     );
 
@@ -1675,7 +1756,9 @@ async function main() {
     const lateFrame = await settle();
     check(
       "a late frame does not resurrect the closed tab",
-      lateFrame.tabCount === 0 && lateFrame.heading === "Bravo budget",
+      lateFrame.tabCount === 1 &&
+        lateFrame.tabs[0]?.label === "Bravo budget" &&
+        lateFrame.heading === "Bravo budget",
       JSON.stringify({ tabs: lateFrame.tabs, heading: lateFrame.heading }),
     );
     check(
@@ -2219,8 +2302,8 @@ async function main() {
     screenshots.push(await shot("archived-active-tab"));
 
     // The archived tab was the last of the strip: the tab before it takes the
-    // front, still without a view swap. One tab draws no strip, so the count is
-    // zero — the heading is what says which chat is in front.
+    // front, still without a view swap. One tab is left, and the strip keeps
+    // drawing it — the plus beside it is the way back to a second chat.
     check(
       "archived the tab that was last in the strip",
       await clickRowControl("Delta automation", ".chats-rail__archive-btn"),
@@ -2229,7 +2312,9 @@ async function main() {
     const previousTabArchived = await settle();
     check(
       "the previous tab takes the front when the last one is archived",
-      previousTabArchived.tabCount === 0 &&
+      previousTabArchived.tabCount === 1 &&
+        previousTabArchived.tabs[0]?.label === "Bravo budget" &&
+        previousTabArchived.tabs[0]?.active === true &&
         previousTabArchived.heading === "Bravo budget" &&
         previousTabArchived.surface === "thread",
       JSON.stringify({
@@ -2238,8 +2323,8 @@ async function main() {
       }),
     );
 
-    // Only one chat left: archiving it closes the strip and opens a blank New
-    // chat on the thread, the blank slate the New chat slot lands on.
+    // Only one chat left: archiving it leaves the strip's one tab for the blank
+    // New chat the slot opens, the blank slate the New chat slot lands on.
     const createsBeforeLastArchive = previousTabArchived.createCalls.length;
     check(
       "archived the last open chat",
@@ -2251,7 +2336,8 @@ async function main() {
       "archiving the last open chat leaves a blank New chat on the thread",
       lastArchived.surface === "thread" &&
         lastArchived.thread === true &&
-        lastArchived.tabCount === 0 &&
+        lastArchived.tabCount === 1 &&
+        lastArchived.tabs[0]?.label === "New chat" &&
         lastArchived.heading === "New chat" &&
         lastArchived.messages.length === 0 &&
         lastArchived.composer?.disabled === false &&
@@ -2321,7 +2407,8 @@ async function main() {
       "the New chat slot reuses the blank chat already open",
       blankReused.surface === "thread" &&
         blankReused.heading === "New chat" &&
-        blankReused.tabCount === 0 &&
+        blankReused.tabCount === 1 &&
+        blankReused.tabs[0]?.label === "New chat" &&
         blankReused.createCalls.length === createsBeforeReuse,
       JSON.stringify({
         surface: blankReused.surface,
@@ -2341,6 +2428,11 @@ async function main() {
       chainUp.surface === "chain" && chainUp.thread === false,
       JSON.stringify({ surface: chainUp.surface, heading: chainUp.heading }),
     );
+    check(
+      "the chain draws no tab strip band",
+      chainUp.strip === null,
+      JSON.stringify({ strip: chainUp.strip }),
+    );
     const createsBeforeChainArchive = chainUp.createCalls.length;
     check(
       "archived the chat in front from the chain",
@@ -2353,6 +2445,7 @@ async function main() {
       archivedFromChain.surface === "chain" &&
         archivedFromChain.thread === false &&
         archivedFromChain.tabCount === 0 &&
+        archivedFromChain.strip === null &&
         archivedFromChain.createCalls.length === createsBeforeChainArchive,
       JSON.stringify({
         surface: archivedFromChain.surface,
@@ -2419,6 +2512,64 @@ async function main() {
       JSON.stringify({ rowRenaming: renameCancelled.rowRenaming }),
     );
     screenshots.push(await shot("archived-while-renaming"));
+
+    // 25 — the plus after the last tab is the strip's own door: it opens a new
+    // blank conversation in a tab of its own, beside the chat in front, without
+    // disturbing that chat. The step lands at a one-tab state on purpose — the
+    // strip is drawn for a single chat precisely so this control is reachable
+    // before a second tab exists.
+    const createsBeforePlus = renameCancelled.createCalls.length;
+    check("clicked the strip's plus", await clickNewTab(), "no New chat tab control");
+    const plusOpened = await settle(420);
+    check(
+      "the plus opens a new chat tab beside the chat in front",
+      plusOpened.surface === "thread" &&
+        plusOpened.tabCount === 2 &&
+        plusOpened.tabs[0]?.label === "Seed chat 10" &&
+        plusOpened.tabs[0]?.active === false &&
+        plusOpened.tabs[1]?.label === "New chat" &&
+        plusOpened.tabs[1]?.active === true &&
+        plusOpened.heading === "New chat" &&
+        plusOpened.createCalls.length === createsBeforePlus + 1,
+      JSON.stringify({ tabs: plusOpened.tabs, heading: plusOpened.heading }),
+    );
+    check(
+      "the strip keeps its place above the name row after the new tab",
+      plusOpened.strip !== null &&
+        plusOpened.header !== null &&
+        plusOpened.strip.box.bottom === plusOpened.header.box.top &&
+        plusOpened.newTab !== null &&
+        plusOpened.newTab.visible === true &&
+        plusOpened.newTab.role === null &&
+        plusOpened.newTab.box.left >= (plusOpened.tabs.at(-1)?.box?.right ?? Infinity) &&
+        plusOpened.newTab.box.right <= plusOpened.strip.box.right,
+      JSON.stringify({
+        strip: plusOpened.strip?.box,
+        header: plusOpened.header?.box,
+        plus: plusOpened.newTab
+      }),
+    );
+    screenshots.push(await shot("new-tab-plus"));
+
+    // The one-blank rule, pressed through the strip's own door: a second plus
+    // lands on the blank chat already open instead of minting another, so the
+    // tab count and the bridge's create calls both stay put.
+    check("clicked the plus again on the blank chat", await clickNewTab(), "no New chat tab control");
+    const plusAgain = await settle(320);
+    check(
+      "a second plus reuses the blank tab instead of minting another chat",
+      plusAgain.surface === "thread" &&
+        plusAgain.tabCount === 2 &&
+        plusAgain.tabs.map((tab) => tab.label).join("/") === "Seed chat 10/New chat" &&
+        plusAgain.tabs.at(-1)?.active === true &&
+        plusAgain.heading === "New chat" &&
+        plusAgain.createCalls.length === plusOpened.createCalls.length,
+      JSON.stringify({
+        tabs: plusAgain.tabs,
+        heading: plusAgain.heading,
+        creates: plusAgain.createCalls.length
+      }),
+    );
 
     mark("done");
     report = {
@@ -2494,6 +2645,8 @@ async function main() {
         renameOpen,
         renameSwitched,
         renameCancelled,
+        plusOpened,
+        plusAgain,
       },
       failures,
       pass: failures.length === 0,
@@ -2639,6 +2792,24 @@ async function main() {
         state.renameSwitched.heading,
         "",
         `renaming ${state.renameSwitched.rowRenaming}`,
+      ],
+      [
+        "plus opened tab",
+        state.plusOpened.rowCount,
+        state.plusOpened.tabCount,
+        "",
+        state.plusOpened.heading,
+        "",
+        `tabs ${JSON.stringify(state.plusOpened.tabs.map((tab) => tab.label))}, header ${JSON.stringify(state.plusOpened.header?.box)}, strip ${JSON.stringify(state.plusOpened.strip?.box)}`,
+      ],
+      [
+        "plus pressed again",
+        state.plusAgain.rowCount,
+        state.plusAgain.tabCount,
+        "",
+        state.plusAgain.heading,
+        "",
+        `tabs ${JSON.stringify(state.plusAgain.tabs.map((tab) => tab.label))}, creates ${state.plusAgain.createCalls.length}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

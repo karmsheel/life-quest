@@ -796,8 +796,10 @@ async function main() {
       }),
     );
     check(
-      "one chat draws no tab strip",
-      dayPage.chat.tabs.length === 0,
+      "one chat draws its one tab, with the plus beside it",
+      dayPage.chat.tabs.length === 1 &&
+        dayPage.chat.tabs[0]?.label === dayPage.priorChatTitle &&
+        dayPage.chat.tabs[0]?.active === true,
       JSON.stringify(dayPage.chat.tabs),
     );
 

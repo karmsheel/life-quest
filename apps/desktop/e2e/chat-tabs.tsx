@@ -8,8 +8,9 @@
  *  1. The sidebar does not list the profile's chats — the list is still only
  *     reachable from inside the dock, which is the bug this rig exists for.
  *  2. A row click loads the wrong chat, or loads it without opening the dock.
- *  3. The tab strip appears with one chat (noise) or not at all with two (the
- *     parallel affordance never shows).
+ *  3. The tab strip is missing with one chat (so its plus cannot open a second
+ *     one), absent with two (the parallel affordance never shows), or the plus
+ *     opens no tab / steals the chat in front.
  *  4. A second send waits on the first — the store kept one `sending` flag, so
  *     the two turns serialise instead of running together.
  *  5. Deltas cross: a frame tagged with one chat lands in the other chat's

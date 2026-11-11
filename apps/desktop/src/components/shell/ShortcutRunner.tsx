@@ -124,9 +124,11 @@ export function ShortcutRunner() {
    * It is a ref, not state, because the listener below must not re-bind per
    * streamed delta: `closeTab` is rebuilt whenever a run changes, while the
    * strip itself changes only when a tab opens or closes. The conditions are the
-   * strip's own — open dock, thread surface, more than one open chat or a pinned
-   * band, a chat in front — plus the rule the close control already follows: a
-   * pinned square is never dropped by a press or a key, Unpin is its way out.
+   * strip's own — open dock, thread surface, at least one tab in the strip (the
+   * strip is drawn for a single chat too, so its one tab's close control and
+   * this key stay in step), a chat in front — plus the rule the close control
+   * already follows: a pinned square is never dropped by a press or a key, Unpin
+   * is its way out.
    */
   const closableTabRef = useRef<{ id: string; close: (id: string) => void } | null>(
     null,
@@ -134,7 +136,7 @@ export function ShortcutRunner() {
   closableTabRef.current =
     chatOpen &&
     chatSurface === "thread" &&
-    (tabIds.length > 1 || pinnedTabIds.length > 0) &&
+    tabIds.length > 0 &&
     activeId &&
     tabIds.includes(activeId) &&
     activeSession &&

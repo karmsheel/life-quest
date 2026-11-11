@@ -321,6 +321,16 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
+// The strip is the dock's top band now, so this rig's band claim needs the dock
+// to land on a thread with a tab. The shared harness profile is reused by every
+// rig on this dev-server origin — the chat-tabs rig even writes a deliberately
+// closed strip while it runs — so clear the chat memory before mount, or this
+// page would inherit another rig's empty or half-open strip and land tab-less.
+window.localStorage.removeItem("lifequest.companion.lastSessionId");
+window.localStorage.removeItem("lifequest.companion.runtimePins");
+window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+window.localStorage.removeItem("lifequest.companion.openTabs");
+
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from shell-sidebar.html");
 

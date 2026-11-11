@@ -104,6 +104,7 @@ const SAMPLE = `(() => {
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
   const chatHeader = document.querySelector(".chat-panel__header");
+  const chatStrip = document.querySelector(".chat-panel__tabs");
   const shell = document.querySelector(".shell");
   const wings = document.querySelector(".nav-rail__wings");
   const wingsBand = document.querySelector(".nav-rail__wings-band");
@@ -592,6 +593,15 @@ const SAMPLE = `(() => {
           borderBottomWidth: getComputedStyle(chatHeader).borderBottomWidth,
           borderBottomColor: getComputedStyle(chatHeader).borderBottomColor,
           background: getComputedStyle(chatHeader).backgroundColor
+        }
+      : null,
+    // The strip that replaced the header as the dock's top band: the tabs lead
+    // the panel and the name row sits directly under them.
+    chatStrip: chatStrip
+      ? {
+          box: box(chatStrip),
+          borderBottomWidth: getComputedStyle(chatStrip).borderBottomWidth,
+          background: getComputedStyle(chatStrip).backgroundColor
         }
       : null,
     sheet: main
@@ -1254,18 +1264,22 @@ async function main() {
     );
     // The sheet gave its band back: the page now starts at the strip's bottom
     // edge, 44px higher than it did when `.top-bar` sat in the sheet. The rail's
-    // wing band and the dock's header did NOT give theirs back — they still start
-    // at the strip's bottom and keep the 44px band, so the two chrome rows stay
-    // level across the pane seam.
+    // wing band did NOT give its band back, and the dock's band is now the tab
+    // strip — both start at the strip's bottom and keep the 44px, so the two
+    // chrome rows stay level across the pane seam. The thread's name row sits
+    // directly under the tab strip, inside the dock only.
     check(
-      "the rail's band and the dock's header keep their 44px band under the strip",
-      Boolean(wingBand && expanded.chatHeader) &&
+      "the rail's band and the dock's tab strip keep their 44px band under the strip",
+      Boolean(wingBand && expanded.chatStrip && expanded.chatHeader) &&
         wingBand.box.top === titlebarHeight &&
         wingBand.box.bottom === titlebarHeight + expanded.tokens.topbarHeight &&
-        expanded.chatHeader.box.top === titlebarHeight &&
+        expanded.chatStrip.box.top === titlebarHeight &&
+        expanded.chatStrip.box.bottom ===
+          titlebarHeight + expanded.tokens.topbarHeight &&
+        expanded.chatHeader.box.top === expanded.chatStrip.box.bottom &&
         expanded.chatHeader.box.bottom ===
-          titlebarHeight + expanded.tokens.topbarHeight,
-      `rail band ${JSON.stringify(wingBand?.box)}, dock header ${JSON.stringify(expanded.chatHeader?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
+          expanded.chatStrip.box.bottom + expanded.tokens.topbarHeight,
+      `rail band ${JSON.stringify(wingBand?.box)}, dock strip ${JSON.stringify(expanded.chatStrip?.box)}, dock header ${JSON.stringify(expanded.chatHeader?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
     );
     check(
       "the rail's band paints no line of its own",
