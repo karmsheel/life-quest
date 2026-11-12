@@ -1,12 +1,18 @@
 /**
- * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the four rigs
- * that drive it: composer sizing (`composer-autogrow.electron.mjs`), the
- * composer's runtime row (`composer-model-pills.electron.mjs`), how tool
- * activity is shown (`tool-run.electron.mjs`) and the receipt the composer
- * attaches (`receipt-attach.electron.mjs`). They are wrapped together because
- * they share one page, one dev-server probe and one shape of report read back;
- * each rig is still its own Electron process writing its own artifact, so a
- * failure names the concern it belongs to.
+ * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the rigs that
+ * drive it: composer sizing (`composer-autogrow.electron.mjs`), the composer's
+ * runtime row (`composer-model-pills.electron.mjs`), how tool activity is shown
+ * (`tool-run.electron.mjs`), the general attachments and the steer verb, the
+ * composer's keys, attachments and live-turn gestures, and the receipt the
+ * composer attaches (`receipt-attach.electron.mjs`). They are wrapped together
+ * because they share one page, one dev-server probe and one shape of report read
+ * back; each rig is still its own Electron process writing its own artifact, so
+ * a failure names the concern it belongs to.
+ *
+ * The transcript-anchor rig lives in its own file
+ * (`transcript-anchor-e2e.test.ts`): it is the one driver that loads the long
+ * thread and long chain fixtures and collapses the dock, so it keeps its own
+ * process rather than joining this file's page-wide `concurrency: 2` group.
  *
  * The page mounts the real sidebar beside the dock, because the dock's history
  * picker is gone: a rig that switches chats clicks the sidebar's row, which is

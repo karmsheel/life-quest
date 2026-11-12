@@ -193,6 +193,13 @@ The chat dock:
   the frame and the width that leaves the page `400px`. A narrow window keeps the
   dock's floor and gives the page the squeeze. A dragged width is session state,
   re-clamped whenever the window or the rail changes.
+- The composer grows with a long draft up to half the dock's height, then scrolls
+  in place. The height comes out of the thread above it: the border between them
+  moves up rather than the composer covering the chat. A thread read to its newest
+  message keeps that message just above the composer as it grows; scrollback you
+  have scrolled up to is left where it is, so growing the composer never pulls you
+  away from what you were reading. Quick Notes' composer behaves the same way with
+  the signals above it.
 - The dock's side and width are not preferences. They reset when the app
   launches: it opens right, `22.5rem` wide. The rail starts wide too; collapsing
   it is session state, not a stored preference.

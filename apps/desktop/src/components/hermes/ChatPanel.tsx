@@ -126,6 +126,12 @@ const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 const COMPOSER_MAX_PANEL_RATIO = 0.5;
 /** Floor for that cap so a very short panel still shows a usable field. */
 const COMPOSER_MIN_VISIBLE_PX = 72;
+/**
+ * How near the transcript's end still counts as reading the end. A wheel tick or
+ * a dragged scrollbar can leave a pixel or two; growth inside that slack is not
+ * the operator having scrolled away.
+ */
+const TRANSCRIPT_END_SLACK_PX = 8;
 
 /**
  * Whether the caret sits in a field somebody is typing in — ours or another
@@ -747,6 +753,81 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (!open || view !== "chain" || !chainRef.current) return;
     chainRef.current.scrollTop = chainRef.current.scrollHeight;
   }, [open, view, chainItems, chainBusy]);
+
+  /**
+   * Keep the transcript's end where the operator put it while the dock's column
+   * changes shape under it.
+   *
+   * The dock is a flex column — header, tab strip, transcript, composer, action
+   * bar — so anything that grows below the transcript takes its height from the
+   * transcript's scroll port. That part is right: the border between them moves
+   * up, the transcript gives the height up, and the composer's half-panel cap
+   * bounds the whole thing. What is not right is the port's `scrollTop`. The
+   * browser has no reason to touch it — the content did not change, only the
+   * port's height — so a transcript being read at its end suddenly ends *below*
+   * the new bottom edge: the last thing the operator was reading disappears
+   * under the composer, and the composer reads as having grown over the chat
+   * instead of having pushed the border up. The browser's own scroll anchoring
+   * repairs content that moves inside the port; a port that *shrinks* is the
+   * case it does not touch, so the dock does.
+   *
+   * The composer is the loudest source of that growth — it grows with the draft,
+   * up to half the panel — which is why the report is "typing a long paragraph
+   * eats the bottom of the chat". It is not the only source: the context cards,
+   * the attachment chips, the queued rows and the interview card all sit above
+   * the field in the same column and push the same border. Watching the
+   * transcript's port covers all of them at once, because the port's height is
+   * what each of them moves.
+   *
+   * Only an operator who was already at the end is followed. Someone reading
+   * scrollback may type without being pulled back down to the live turn: the
+   * reading position is theirs, and a correction that took it would be a worse
+   * bug than the one this repairs. "Was at the end" is kept from the operator's
+   * own scroll events and from the moment the watch starts, so it describes
+   * where they were *before* the resize. The observation itself runs after
+   * layout and before paint, so the frame that paints the grown composer is the
+   * frame that already has the transcript at its end — there is no frame in
+   * between to see.
+   */
+  useEffect(() => {
+    if (!open || view === "shortcuts") return;
+    // Both bodies stay mounted — only the one in front is visible; the other is
+    // `hidden` (`display: none`), so it has no height and nothing to keep. The
+    // watch follows the visible one.
+    const scroller = view === "chain" ? chainRef.current : listRef.current;
+    if (!scroller) return;
+    const atEnd = () =>
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <=
+      TRANSCRIPT_END_SLACK_PX;
+    let wasAtEnd = atEnd();
+    const onScroll = () => {
+      wasAtEnd = atEnd();
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    if (typeof ResizeObserver === "undefined") {
+      return () => scroller.removeEventListener("scroll", onScroll);
+    }
+    const observer = new ResizeObserver(() => {
+      // A body that is not on screen has no end to keep: a cleanup can land
+      // after this delivery, so the hidden twin may still be observed for a
+      // beat. Zero height means "not in front", and writing scrollTop there
+      // would be a write to nobody.
+      if (scroller.clientHeight === 0) return;
+      // The resize that fired this observation has already happened, so
+      // `wasAtEnd` is the reading from before it. Following the end here is not
+      // a jump: the transcript is being put back where it was already sitting.
+      if (!wasAtEnd) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+    observer.observe(scroller);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", onScroll);
+    };
+    // `sessionId` is here because the flag belongs to the transcript in front:
+    // opening another chat re-arms the watch, so a switch to a transcript that
+    // happens to sit at the same offset cannot leave it reading "scrolled away".
+  }, [open, view, sessionId]);
 
   /**
    * How many cards are in front of this conversation, and whether the latest
