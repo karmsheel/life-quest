@@ -189,11 +189,12 @@ type ChatStreamEvent =
   | { type: "tool.progress"; callId: string; text: string }
   | { type: "tool.completed"; name: string; callId?: string; isError?: boolean;
       durationMs?: number; resultPreview?: string }
-  | { type: "usage"; input?: number; output?: number; total?: number }
-  | { type: "turn.end"; status: TurnStatus; stopReason?: string;
-      usage?: { input?: number; output?: number; total?: number };
-      /** Authoritative assistant/tool rows for this turn, if the harness has them. */
-      snapshot?: TranscriptEntry[] };
+  | { type: "usage"; usage: TurnUsage }
+  /** Terminal frames stay the existing run.* names, extended additively:
+      turn identity is the run id, so no separate turn.end is introduced. */
+  | { type: "run.stopped"; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.incomplete"; reason: string; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.completed"; usage?: TurnUsage; stopReason?: string; snapshot?: TranscriptEntry[] };
 ```
 
 Rules:
@@ -201,10 +202,12 @@ Rules:
 1. **`tool.completed` may arrive with only `name`.** The app mints/keeps an id, pairs FIFO per name when the harness has no id, and marks the row complete. This is today's behavior, kept as the floor.
 2. **`tool.progress` is optional and bounded**; it only changes a row's secondary text. Unknown progress must never block the row.
 3. **`assistant.final` is the answer of record.** If absent, the last text block is the answer; if a snapshot is present, its last assistant text wins. This kills the Hermes "no deltas ⇒ empty bubble" case (`assistant.completed.content` is on the wire today).
-4. **A terminal frame is final, once.** The app must not synthesize `run.completed` on socket close after a terminal frame — today it always does (`companion.ts:1390-1392`), so a dead stream reads as a finished turn. `done`/close without a terminal frame ⇒ `turn.end{status:"incomplete"}`.
+4. **A terminal frame is final, once.** The app must not synthesize `run.completed` on socket close after a terminal frame — today it always does (`companion.ts:1390-1392`), so a dead stream reads as a finished turn. `done`/close without a terminal frame ⇒ `run.incomplete{reason}`.
 5. **Deltas are coalesced in main** before crossing IPC. Pi emits a delta per token; one IPC frame per token is waste. Batch to one frame per ~50 ms or 4 KB, flush before every tool/turn event.
 6. **Nothing unbounded crosses the wire.** Args and result previews are bounded (target ≤ 48 chars as today; args ≤ 2 KB; result preview ≤ 500 chars) and secret-redacted before bounding. Hermes already redacts display args; Pi args are raw and must be treated as untrusted.
 7. **App frames keep their own vocabulary.** `decisions.filed` / `decisions.problem` become `TurnNote`s on the current turn, not the single contested `turnNote` string.
+
+*Implemented:* the wire in `companion-client.ts` keeps the existing `run.*` terminal names and adds `usage`/`snapshot`/`stopReason` to them, so no consumer that predates this design breaks; the record's `TurnStatus` is derived from which terminal frame arrived. `TranscriptEntry` ships as the structured form of the existing `TranscriptMessage` type (same name, extra optional fields), so history projections and E2E stubs that know only `{role, content, at}` keep compiling and parsing.
 
 ### 5.1 Pi adapter mapping
 
