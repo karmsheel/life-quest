@@ -135,6 +135,27 @@ type Report = {
     } | null;
     live: ToolTurnDom;
     history: ToolHistoryDom;
+    /**
+     * Observation, not a gate: whether the reloaded turn reads like the live
+     * one. Answer parity is prose only — the bubble's role label and stamp are
+     * not the answer, and the stamp can differ between send time and the stored
+     * row's time (reported separately as `answerStampDiffers`).
+     */
+    reloadParity: {
+      rowTextMatchesLive: boolean;
+      targetMatchesLive: boolean;
+      footerStatusMatchesLive: boolean;
+      answerMatchesLive: boolean | null;
+      answerProseLive: string | null;
+      answerProseHistory: string | null;
+      answerStampDiffers: boolean;
+      usageVsLive: {
+        harnessFrame: { input?: number; output?: number; total?: number } | null;
+        liveFooter: { input: number | null; output: number | null; total: number | null } | null;
+        historyFooter: { input: number | null; output: number | null; total: number | null } | null;
+        totalsMatch: boolean | null;
+      };
+    };
     requests: {
       lastRole: string | null;
       lastUserText: string;
@@ -379,6 +400,13 @@ describe("built-in companion (Pi)", () => {
     assert.ok(
       (report.tool.history.answer ?? "").includes(TOOL_ANSWER),
       `the reloaded turn lost its answer: ${report.tool.history.answer}`,
+    );
+    assert.equal(
+      report.tool.reloadParity.answerMatchesLive,
+      true,
+      "the reloaded answer's prose differs from the live turn's: " +
+        `live=${JSON.stringify(report.tool.reloadParity.answerProseLive)} ` +
+        `history=${JSON.stringify(report.tool.reloadParity.answerProseHistory)}`,
     );
     assert.equal(
       report.tool.checks.liveRowSeenWhileRunning &&

@@ -640,6 +640,21 @@ function answerOfDom(dom, turn, expected) {
   );
 }
 
+/**
+ * The answer's PROSE only: the `.chat-panel__message-content` inside the
+ * assistant bubble (the same reader the answer checks use). The bubble's own
+ * textContent also carries the role label ("Pi") and the stamp ("9:47 PM"), and
+ * the stamp legitimately differs between a live turn (captured when the turn
+ * settled) and one rebuilt from the stored transcript (the row's own time) —
+ * folding that into a prose comparison would report a product difference that
+ * is not one.
+ */
+function answerContentOf(dom, expected) {
+  const answers = dom?.legacyAnswers ?? [];
+  const hit = answers.find((answer) => (answer.text ?? "").includes(expected)) ?? null;
+  return hit ? hit.text : null;
+}
+
 
 /**
  * The built renderer, over loopback.
@@ -1149,11 +1164,27 @@ async function main() {
   // it. Say whether it does, fact by fact — and whether the reloaded footer
   // accounts for the same tokens (Pi sums both model calls of the turn; a
   // transcript rebuild may only carry the last assistant row's usage).
+  const liveAnswerProse = answerContentOf(liveDom, TOOL_ANSWER);
+  const historyAnswerProse = answerContentOf(historyDom, TOOL_ANSWER);
   const reloadParity = {
     rowTextMatchesLive: live.rowText === history.rowText,
     targetMatchesLive: live.target === history.target,
     footerStatusMatchesLive: live.footerStatus === history.footerStatus,
-    answerMatchesLive: (live.answer ?? "") === (history.answer ?? ""),
+    // Prose only. The bubble's role label and stamp are not the answer; the
+    // stamp can differ by a minute (send time vs the stored row's time), which
+    // is reported separately below rather than as a prose mismatch.
+    answerMatchesLive:
+      liveAnswerProse != null &&
+      historyAnswerProse != null &&
+      liveAnswerProse === historyAnswerProse,
+    answerProseLive: liveAnswerProse,
+    answerProseHistory: historyAnswerProse,
+    answerBubbleRawLive: live.answer,
+    answerBubbleRawHistory: history.answer,
+    answerStampDiffers:
+      live.answer !== history.answer &&
+      liveAnswerProse != null &&
+      liveAnswerProse === historyAnswerProse,
     answerOutsideProcessMatchesLive:
       live.answerOutsideProcess === history.answerOutsideProcess,
     usageVsLive: {
