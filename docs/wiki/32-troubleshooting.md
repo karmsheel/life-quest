@@ -174,6 +174,16 @@ expected until an area is opened.
   emptied strip stays empty.
 - **A page-started chat** (Analyze note, Send to agent, a review) opens in its own
   tab under its own name rather than taking over the current one.
+- **A chat that will not stop saying it is running.** A live turn is closed by the
+  companion's own final frame, and normally that is the only thing that clears the
+  rail's dot. If the companion's stream dies without that frame, the app waits 45
+  seconds of complete silence (a healthy gateway writes a keepalive every ten) and
+  then closes the turn itself: the dot clears, the composer unlocks, the chat says
+  "The companion stopped sending while this turn was running…", and the transcript
+  is re-read from the companion. If the reply is still missing after that, send
+  again — the companion may have lost the turn entirely. A running dot that clears
+  by itself five to forty-five seconds after the reply stops is this bound doing its
+  job, not a new fault.
 
 ## Vaults
 

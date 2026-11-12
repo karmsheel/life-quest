@@ -160,6 +160,13 @@ switches the list, the tab strip and the transcript you see.
    for this screen the dock says **No questions set** and links to
    **Settings → Questions**; when starters are shown, **Edit questions** is the way
    back to the same page.
+7. A turn is live while the companion is still sending. If its stream goes quiet
+   for 45 seconds — a gateway that wedged, or a connection that was cut without
+   saying so — the app closes the turn itself rather than leaving it running: the
+   rail's dot clears, the composer unlocks, and the chat says "The companion
+   stopped sending while this turn was running…". The transcript is re-read from
+   the companion at the same moment, so an answer it had already stored is not
+   lost. Send again if the reply is not there.
 
 ### The composer's controls
 
