@@ -1,12 +1,13 @@
 /**
- * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the four rigs
+ * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the five rigs
  * that drive it: composer sizing (`composer-autogrow.electron.mjs`), the
  * composer's runtime row (`composer-model-pills.electron.mjs`), how tool
- * activity is shown (`tool-run.electron.mjs`) and the receipt the composer
- * attaches (`receipt-attach.electron.mjs`). They are wrapped together because
- * they share one page, one dev-server probe and one shape of report read back;
- * each rig is still its own Electron process writing its own artifact, so a
- * failure names the concern it belongs to.
+ * activity is shown (`tool-run.electron.mjs`), the receipt the composer attaches
+ * (`receipt-attach.electron.mjs`) and the whole turn timeline
+ * (`turn-timeline.electron.mjs`). They are wrapped together because they share
+ * one page, one dev-server probe and one shape of report read back; each rig is
+ * still its own Electron process writing its own artifact, so a failure names
+ * the concern it belongs to.
  *
  * The page mounts the real sidebar beside the dock, because the dock's history
  * picker is gone: a rig that switches chats clicks the sidebar's row, which is
@@ -951,6 +952,237 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         true,
         "the switch to another chat did not land",
       );
+    });
+  });
+
+  // ——— the turn timeline ———————————————————————————————————————————————
+  //
+  // The whole turn, not the tool block: reasoning, rows, narration, answer,
+  // fold/footer, stream death, stop, capability omission and a reload from the
+  // structured transcript. The rig writes the artifact; this block re-reads it
+  // and restates the numbers so the suite is not trusting only the driver's own
+  // pass/fail loop.
+
+  const TURN_TIMELINE_REPORT = path.join(desktopRoot, "e2e/artifacts/turn-timeline.json");
+
+  function runTurnTimelineDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/turn-timeline.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  /** One tool row as the DOM reports it. */
+  type TimelineRow = {
+    text: string | null;
+    status?: string | null;
+    durationMs?: string | null;
+    durationSource?: string | null;
+  };
+
+  /** One turn as the rig sampled it off the screen. */
+  type TimelineSample = {
+    status?: string | null;
+    user?: string | null;
+    answer?: string | null;
+    answerOutsideProcess?: boolean;
+    process?: {
+      state?: string | null;
+      header?: string | null;
+      statusLine?: string | null;
+      reasoning?: { text: string | null; fidelity?: string | null }[];
+      commentary?: (string | null)[];
+      narration?: (string | null)[];
+      toolArgs?: (string | null)[];
+      toolResults?: (string | null)[];
+      rows?: TimelineRow[];
+    } | null;
+    footer?: { status?: string | null; text?: string | null } | null;
+    usage?: string | null;
+    notes?: { kind?: string | null; text?: string | null }[];
+  };
+
+  type TimelineCheck = { name: string; pass: boolean; detail: string };
+
+  type TurnTimelineReport = {
+    pass: boolean;
+    failures: string[];
+    url: string;
+    session: string;
+    script: {
+      calls: number;
+      rows: string[];
+      answer: string;
+      narration: string;
+      commentary: string;
+      usage: { input: number; output: number; total: number };
+    };
+    live: {
+      running: TimelineSample | null;
+      beforeFinal: TimelineSample | null;
+      settled: TimelineSample | null;
+      /** The settled turn with its disclosure opened: where rows/narration live. */
+      opened: TimelineSample | null;
+    };
+    settled: {
+      fold: TimelineSample | null;
+      secondTurn: TimelineSample | null;
+      bothFolded: { user: string | null; process: string | null }[];
+      afterFirstOpen: TimelineSample | null;
+      afterSecondOpen: TimelineSample | null;
+    };
+    incomplete: TimelineSample | null;
+    stopped: TimelineSample | null;
+    capability: {
+      hermes: { live: TimelineSample | null; settled: TimelineSample | null };
+      floor: TimelineSample | null;
+    };
+    history: {
+      initial: TimelineSample | null;
+      opened: TimelineSample | null;
+      sameRows: boolean;
+    };
+    screenshots: string[];
+    checks: TimelineCheck[];
+    counts: {
+      checks: number;
+      passed: number;
+      failed: number;
+      turnsPlayed: number;
+      framesPlayed: number;
+      toolCalls: number;
+      rows: number;
+    };
+  };
+
+  describe("turn timeline", () => {
+    it("runs a turn live, folds it on settle, and rebuilds it from history", async (t) => {
+      if (!(await devServerUp())) {
+        t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+        return;
+      }
+
+      fs.rmSync(TURN_TIMELINE_REPORT, { force: true });
+      const exitCode = await runTurnTimelineDriver();
+      assert.equal(fs.existsSync(TURN_TIMELINE_REPORT), true, "driver wrote no report artifact");
+
+      const report = JSON.parse(
+        fs.readFileSync(TURN_TIMELINE_REPORT, "utf8"),
+      ) as TurnTimelineReport;
+
+      assert.deepEqual(report.failures, []);
+      assert.equal(report.pass, true);
+      assert.equal(exitCode, 0, "driver exited non-zero");
+
+      // Every named check passed, and the report's own counts agree with the
+      // list it wrote: a check that was silently skipped would show up as a
+      // count mismatch rather than as a clean run.
+      assert.equal(report.checks.length, report.counts.checks, "the check list and its count disagree");
+      assert.equal(report.checks.filter((entry) => entry.pass).length, report.counts.passed);
+      assert.equal(report.checks.filter((entry) => !entry.pass).length, report.counts.failed);
+      assert.equal(report.counts.failed, 0);
+      assert.equal(report.counts.toolCalls, 3);
+      assert.equal(report.counts.rows, report.script.rows.length);
+      assert.equal(report.counts.turnsPlayed, 6, "the rig did not play the scripted turns");
+      assert.ok(report.counts.framesPlayed >= 20, `only ${report.counts.framesPlayed} wire frames were played`);
+
+      // The live turn: one row per call in order, one failed row marked, the
+      // answer outside the process, and the narration/commentary inside it.
+      const live = report.live.opened?.process;
+      assert.ok(live, "the live turn rendered no process group when reopened");
+      assert.deepEqual(
+        live.rows?.map((row) => row.text),
+        report.script.rows,
+        "the tool rows did not follow the calls",
+      );
+      assert.deepEqual(
+        live.rows?.map((row) => row.status),
+        ["completed", "completed", "failed"],
+        "the rows did not close as done/done/failed",
+      );
+      assert.equal(report.live.settled?.answer, report.script.answer);
+      assert.equal(report.live.settled?.answerOutsideProcess, true);
+      assert.match(live.narration?.join(" ") ?? "", new RegExp(report.script.narration));
+      assert.match(live.commentary?.join(" ") ?? "", new RegExp(report.script.commentary));
+
+      // The settled turn: folded, recapped, and its footer/usage exact.
+      const fold = report.settled.fold;
+      assert.equal(fold?.process?.state, "closed", "a completed turn did not fold");
+      assert.match(fold?.process?.header ?? "", /worked for/i);
+      assert.equal(fold?.footer?.status, "completed");
+      assert.match(fold?.footer?.text ?? "", /tokens/i);
+      assert.equal(fold?.answerOutsideProcess, true);
+      // Fold state is per turn: opening one did not open the other.
+      assert.equal(report.settled.afterFirstOpen?.process?.state, "open");
+      assert.equal(report.settled.afterSecondOpen?.process?.state, "open");
+      assert.equal(
+        report.settled.bothFolded.find((entry) => entry.user === "And again")?.process,
+        "closed",
+      );
+
+      // A dead stream is not a completed turn; a stop is not either.
+      assert.equal(report.incomplete?.footer?.status, "incomplete");
+      assert.match(report.incomplete?.footer?.text ?? "", /ended before finishing/i);
+      assert.match(report.incomplete?.footer?.text ?? "", /iteration budget/i);
+      assert.equal(report.incomplete?.process?.state, "open");
+      assert.equal(report.stopped?.footer?.status, "stopped");
+      assert.match(report.stopped?.answer ?? "", /Only what arrived/);
+      assert.equal(report.stopped?.process?.state, "open");
+
+      // Capability omission: the Hermes descriptor discloses results only on
+      // settle and never claims a harness duration; the floor descriptor shows
+      // no reasoning, no usage, no disclosures.
+      const hermes = report.capability.hermes;
+      assert.equal(
+        hermes.live?.process?.toolResults?.length,
+        0,
+        "a live result was disclosed where the descriptor says none exists",
+      );
+      assert.equal(
+        hermes.live?.process?.reasoning?.[0]?.fidelity,
+        "preview",
+        "the thinking row did not say it was a preview",
+      );
+      assert.ok(
+        (hermes.settled?.process?.toolResults?.length ?? 0) > 0,
+        "the terminal snapshot's results never appeared",
+      );
+      assert.ok(
+        (hermes.settled?.process?.rows ?? []).every((row) => row.durationSource !== "harness"),
+        "a harness-measured duration was claimed where the descriptor has none",
+      );
+      assert.equal(report.capability.floor?.usage, null, "a floor harness grew a usage line");
+      assert.equal(report.capability.floor?.process?.reasoning?.length, 0);
+      assert.equal(report.capability.floor?.process?.toolResults?.length, 0);
+      assert.equal(report.capability.floor?.process?.toolArgs?.length, 0);
+      assert.equal(report.capability.floor?.process?.rows?.[0]?.text, "read_file \u00b7 AGENTS.md");
+
+      // History: the same rows/fold/footer/answer from the transcript alone.
+      assert.equal(report.history.sameRows, true, "history rebuilt a different set of rows");
+      assert.deepEqual(
+        report.history.opened?.process?.rows?.map((row) => row.text),
+        live.rows?.map((row) => row.text),
+        "the reloaded rows are not the live rows",
+      );
+      assert.equal(report.history.initial?.process?.state, "closed", "history did not fold");
+      assert.equal(report.history.opened?.answer, report.script.answer);
+      assert.equal(report.history.opened?.footer?.status, "completed");
+
+      // Pictures the operator can open later, from the rig's own capturePage.
+      assert.ok(report.screenshots.length >= 2, "the rig left fewer than two pictures");
+      for (const picture of report.screenshots) {
+        assert.equal(fs.existsSync(picture), true, `missing screenshot artifact ${picture}`);
+      }
     });
   });
 

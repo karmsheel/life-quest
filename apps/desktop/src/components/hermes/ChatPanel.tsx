@@ -17,8 +17,6 @@ import {
   ArrowLeftRight,
   ArrowUp,
   Check,
-  ChevronRight,
-  Copy,
   Eye,
   EyeOff,
   ImagePlus,
@@ -54,7 +52,6 @@ import {
   signalStampWhen,
   signalVisible,
 } from "@/lib/signal-chain";
-import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
@@ -70,9 +67,10 @@ import {
   ChatSessionsProvider,
   useChatSessions,
   useChatSessionsOptional,
-  type ChatMessage,
   type ChatReceipt,
 } from "@/state/ChatSessionsProvider";
+import { normalizeCapabilities } from "@/lib/turn-timeline";
+import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionModelCatalog,
@@ -194,6 +192,14 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     : null;
   const companionName =
     knownHarnesses?.find((entry) => entry.active)?.name ?? "Hermes";
+  /**
+   * What the active companion can show in a work log. Absent on an old stub or
+   * before the list arrives, and absent means "the full experience": the dock
+   * must not hide evidence it was given just because a descriptor is missing.
+   */
+  const capabilities = normalizeCapabilities(
+    knownHarnesses?.find((entry) => entry.active)?.capabilities,
+  );
   const sessions = chat.sessions;
   const sessionId = chat.activeId;
   /*
@@ -210,12 +216,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     return [...pinnedTabIds, ...tabIds.filter((id) => !pinned.has(id))];
   }, [tabIds, pinnedTabIds]);
   const run = chat.runOf(sessionId);
-  const messages = run.messages;
+  const turns = run.turns;
   const sending = run.sending;
   const runId = run.runId;
-  const turnNote = run.turnNote;
-  const tools = run.tools;
-  const toolsOpen = run.toolsOpen;
   const approval = run.approval;
   const error = run.error ?? chat.listError;
   const draft = sessionId ? chat.draftOf(sessionId) : "";
@@ -281,10 +284,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * Copy one bubble's text as the operator sees it. A receipt-only turn has no
    * typed text, so the attached file's name is the content there.
    */
-  async function copyMessage(m: ChatMessage) {
-    const ok = await copyText(m.content || m.receipt?.name || "");
+  async function copyMessage(id: string, content: string) {
+    const ok = await copyText(content);
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    setCopied({ id: m.id, ok });
+    setCopied({ id, ok });
     copyTimerRef.current = setTimeout(() => setCopied(null), 1600);
   }
 
@@ -461,7 +464,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const { urls: signalImageUrls, missing: missingSignalImages } =
     useSignalImageUrls(signalImagePaths);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
   const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -733,8 +735,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // the block is capped, and a capped block left at its first row would hide
     // the calls the operator opened it to watch arrive. `toolsOpen` is in the
     // deps because opening it mounts a fresh list at scrollTop 0.
-    if (activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight;
-  }, [open, view, messages, sending, error, turnNote, tools, toolsOpen]);
+  }, [open, view, turns, sending, error]);
 
   /**
    * The chain's own stick-to-the-bottom pass, in a layout effect so a freshly
@@ -1887,7 +1888,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : null}
 
-            {messages.length === 0 && !sending ? (
+            {turns.length === 0 && !sending ? (
               <div className="chat-panel__empty">
                 <div className="chat-panel__empty-orb" aria-hidden />
                 <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
@@ -1976,125 +1977,17 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : (
               <div className="chat-panel__messages" aria-live="polite">
-                {messages.map((m) => {
-                  const copyOk = copied?.id === m.id && copied.ok;
-                  const copyFailed = copied?.id === m.id && !copied.ok;
-                  const copyLabel = copyOk
-                    ? "Copied"
-                    : copyFailed
-                      ? "Copy failed"
-                      : "Copy message";
-                  const atDate = m.at ? new Date(m.at) : null;
-                  const validAt =
-                    atDate && !Number.isNaN(atDate.getTime()) ? atDate : null;
-                  return (
-                    <div
-                      key={m.id}
-                      className={`chat-panel__message chat-panel__message--${m.role}`}
-                    >
-                      <span className="chat-panel__message-role">
-                        {m.role === "user" ? "You" : companionName}
-                        {m.steer ? (
-                          <span
-                            className="chat-panel__message-steer"
-                            data-testid="chat-steer-bubble"
-                            title="Steered into the turn that was running"
-                          >
-                            steered
-                          </span>
-                        ) : null}
-                      </span>
-                      <div className="chat-panel__message-content">
-                        {m.receipt ? (
-                          <span className="chat-panel__message-receipt">
-                            <ImagePlus size={12} aria-hidden />
-                            {m.receipt.name}
-                            <span className="chat-panel__receipt-size">
-                              {formatReceiptSize(m.receipt.size)}
-                            </span>
-                          </span>
-                        ) : null}
-                        {m.content}
-                      </div>
-                      <div className="chat-panel__message-meta">
-                        {validAt ? (
-                          <time
-                            className="chat-panel__message-time"
-                            dateTime={validAt.toISOString()}
-                            title={validAt.toLocaleString()}
-                          >
-                            {formatMessageWhen(m.at)}
-                          </time>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="chat-panel__message-copy"
-                          data-copy-state={copyOk ? "copied" : copyFailed ? "failed" : "idle"}
-                          aria-label={
-                            m.role === "user" ? `${copyLabel} (your message)` : `${copyLabel} (${companionName})`
-                          }
-                          title={copyLabel}
-                          onClick={() => void copyMessage(m)}
-                        >
-                          {copyOk ? (
-                            <Check size={11} aria-hidden />
-                          ) : (
-                            <Copy size={11} aria-hidden />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {sending && tools.length === 0 ? (
-                  <div className="chat-panel__message chat-panel__message--assistant">
-                    <span className="chat-panel__message-role">{companionName}</span>
-                    <div className="chat-panel__message-content">
-                      <span className="chat-panel__thinking muted">
-                        Thinking…
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                {tools.length > 0 ? (
-                  <div className="chat-panel__activity">
-                    {tools.length > 1 ? (
-                      <button
-                        type="button"
-                        className="chat-panel__activity-line"
-                        aria-expanded={toolsOpen}
-                        onClick={() => {
-                          if (sessionId) chat.setToolsOpen(sessionId, !toolsOpen);
-                        }}
-                      >
-                        <ChevronRight
-                          size={12}
-                          aria-hidden
-                          className={toolsOpen ? "chat-panel__activity-caret chat-panel__activity-caret--open" : "chat-panel__activity-caret"}
-                        />
-                        <span>{summarizeToolRun(tools, sending)}</span>
-                      </button>
-                    ) : (
-                      <p className="chat-panel__activity-line">
-                        {summarizeToolRun(tools, sending)}
-                      </p>
-                    )}
-                    {tools.length > 1 && toolsOpen ? (
-                      <ul className="chat-panel__activity-list" ref={activityRef}>
-                        {tools.map((call) => (
-                          <li key={call.id} className="chat-panel__activity-row">
-                            {toolRowLabel(call)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ) : null}
-                {turnNote ? (
-                  <p className="chat-panel__turn-note" role="status">
-                    {turnNote}
-                  </p>
-                ) : null}
+                <TurnTimeline
+                  turns={turns}
+                  capabilities={capabilities}
+                  companionName={companionName}
+                  latestTurnId={turns[turns.length - 1]?.turnId ?? null}
+                  copied={copied}
+                  onCopy={(id, content) => void copyMessage(id, content)}
+                  onToggleFold={(turnId, open) => {
+                    if (sessionId) chat.setTurnFoldOpen(sessionId, turnId, open);
+                  }}
+                />
               </div>
             )}
           </div>

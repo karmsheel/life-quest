@@ -1,5 +1,5 @@
 /**
- * E2E harness for the Chat panel, driven by four scripts:
+ * E2E harness for the Chat panel, driven by five scripts:
  *
  *  - `composer-autogrow.electron.mjs` — the composer's growth, its inline
  *    send/stop control and the turn-outcome note. Failure modes listed there.
@@ -11,6 +11,11 @@
  *    dev-server page has no preload, so the real `receipt:attach` handler is
  *    exercised in that rig's other leg, against a real vault. Failure modes
  *    listed there.
+ *  - `turn-timeline.electron.mjs` — the whole turn: reasoning, tool rows,
+ *    narration, answer, fold/footer and what history replays. It is the only
+ *    rig that turns a capability descriptor on through `?caps=` and the only
+ *    one that asks history for structured rows through `?history=timeline`;
+ *    both are absent by default so the four rigs above keep the page they had.
  *
  * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
  * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
@@ -36,15 +41,25 @@
  *     timer, so a slow first Vite transform cannot be mistaken for "the panel
  *     never rendered".
  */
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
+import {
+  CompanionProvider,
+  useOptionalCompanion,
+} from "@/state/CompanionProvider";
 import { VaultProvider } from "@/state/VaultProvider";
-import type { ChatStreamEvent, CompanionStreamFrame } from "@/vite-env";
+import type {
+  ChatStreamEvent,
+  CompanionStreamFrame,
+  HarnessSummary,
+  HarnessTurnCapabilities,
+  TranscriptMessage,
+} from "@/vite-env";
 import "@/styles/global.css";
 // The real SSE decoder main uses, so a rig can feed a wire frame through the
 // same function the stream does instead of hand-building the event object.
@@ -141,6 +156,163 @@ const MODEL_CATALOG = {
 
 const NO_CATALOG = new URLSearchParams(window.location.search).has("nocatalog");
 
+/**
+ * Which capability descriptor this page should announce, chosen by `?caps=`:
+ *
+ *  - absent / `full` — every capability true, the way the built-in Pi harness
+ *    reports itself. This is deliberately also the shape the dock falls back to
+ *    when a harness page has no provider at all, so the four older rigs see
+ *    exactly the panel they always saw.
+ *  - `hermes` — the external sidekick's honest descriptor: results only arrive
+ *    with the terminal snapshot, calls have no harness-measured duration, the
+ *    thinking row is a sampled preview. The timeline rig proves the UI omits
+ *    the live result disclosure rather than drawing an empty one.
+ *  - `floor` — the minimum a harness must speak: tool rows, but no args, no
+ *    results, no reasoning, no usage. A harness that says nothing gets a UI
+ *    that claims nothing.
+ */
+const CAPABILITIES: Record<string, HarnessTurnCapabilities> = {
+  full: {
+    toolRows: true,
+    toolArgs: true,
+    toolCallIds: true,
+    toolResultsLive: true,
+    toolResultsOnSettle: true,
+    toolDurations: true,
+    toolProgress: true,
+    reasoning: "delta",
+    commentary: true,
+    steps: true,
+    usage: true,
+    history: true,
+    approvals: true,
+    steering: true,
+  },
+  hermes: {
+    toolRows: true,
+    toolArgs: true,
+    toolCallIds: false,
+    toolResultsLive: false,
+    toolResultsOnSettle: true,
+    toolDurations: false,
+    toolProgress: false,
+    reasoning: "preview",
+    commentary: true,
+    steps: false,
+    usage: true,
+    history: true,
+    approvals: true,
+    steering: true,
+  },
+  floor: {
+    toolRows: true,
+    toolArgs: false,
+    toolCallIds: false,
+    toolResultsLive: false,
+    toolResultsOnSettle: false,
+    toolDurations: false,
+    toolProgress: false,
+    reasoning: "none",
+    commentary: false,
+    steps: false,
+    usage: false,
+    history: false,
+    approvals: false,
+    steering: false,
+  },
+};
+
+const CAPS_MODE = new URLSearchParams(window.location.search).get("caps");
+/** Only the timeline rig asks for a descriptor; the others keep the page they had. */
+const WITH_CAPABILITIES = CAPS_MODE !== null;
+const capabilities = CAPABILITIES[CAPS_MODE ?? "full"] ?? CAPABILITIES.full!;
+
+/**
+ * The two companions main's registry publishes, with this page's descriptor on
+ * the active one. The dock reads the active entry's capabilities and nothing
+ * else — it never branches on the harness id — so a rig changes the UI by
+ * choosing the entry, exactly as switching companion does in the app.
+ */
+const HARNESS_SUMMARIES: HarnessSummary[] = [
+  {
+    id: "hermes",
+    name: "Hermes",
+    blurb: "External sidekick",
+    kind: "external",
+    active: true,
+    icon: "hermes",
+    capabilities,
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    blurb: "Built in",
+    kind: "embedded",
+    active: false,
+    icon: "pi",
+    capabilities: CAPABILITIES.full!,
+  },
+];
+
+/**
+ * The structured transcript the history leg reloads from, chosen by
+ * `?history=timeline`.
+ *
+ * This is the shape the sessions API now projects: a user row, the assistant
+ * row that requested three calls, one result row per call (ids answer the
+ * requests, one FAILED), and the assistant row that is the answer of record
+ * with the turn's usage. Reloading with this fixture and no stream frames at
+ * all is how the rig proves history rebuilds the same turn the live stream
+ * settled — one builder, two sources. Keep the tool names, arguments, failure
+ * and answer in step with `e2e/turn-timeline.electron.mjs`; they are compared.
+ */
+const HISTORY_BASE = 1_700_100_000_000;
+const HISTORY_ANSWER = "The composer is wired.";
+const HISTORY_TRANSCRIPT: TranscriptMessage[] = [
+  { role: "user", content: "Do the thing", at: HISTORY_BASE },
+  {
+    role: "assistant",
+    content: "",
+    at: HISTORY_BASE + 400,
+    toolCalls: [
+      { id: "call_read", name: "read_file", args: { path: "AGENTS.md" } },
+      { id: "call_search", name: "search_files", args: { query: "composer" } },
+      { id: "call_term", name: "terminal", args: { command: "npm test" } },
+    ],
+  },
+  {
+    role: "tool",
+    content: "Read 42 lines.",
+    at: HISTORY_BASE + 1_600,
+    toolCallId: "call_read",
+    toolName: "read_file",
+  },
+  {
+    role: "tool",
+    content: "3 matches in src/components/hermes.",
+    at: HISTORY_BASE + 3_300,
+    toolCallId: "call_search",
+    toolName: "search_files",
+  },
+  {
+    role: "tool",
+    content: "Command failed: exit 1",
+    at: HISTORY_BASE + 5_400,
+    toolCallId: "call_term",
+    toolName: "terminal",
+    isError: true,
+  },
+  {
+    role: "assistant",
+    content: HISTORY_ANSWER,
+    at: HISTORY_BASE + 6_000,
+    usage: { input: 1200, output: 240, total: 1440 },
+  },
+];
+const HISTORY_TIMELINE =
+  new URLSearchParams(window.location.search).get("history") === "timeline";
+
+
 /** The rig's handles on the stubbed main process, driven from a driver script. */
 type HarnessWindow = {
   __lqChatCalls?: ChatCall[];
@@ -151,6 +323,13 @@ type HarnessWindow = {
   __lqEmit?: (evt: unknown) => void;
   /** Emit a frame for an explicit chat, so a rig can prove the routing. */
   __lqEmitFor?: (sessionId: string, evt: unknown) => void;
+  /**
+   * The real SSE decoder plus the emit, in one call: the timeline rig hands in
+   * the raw block the gateway would send and gets back the event the panel
+   * received, so its assertions are made against the wire format rather than a
+   * hand-built event object.
+   */
+  __lqEmitSseFor?: (sessionId: string, raw: string) => unknown;
   /** The real SSE decoder, so a driver can prove a wire frame maps to an event. */
   __lqParseSse?: (raw: string) => unknown;
   /** Every `receiptAttach` the panel made, in order. */
@@ -165,6 +344,15 @@ type HarnessWindow = {
 const harness = window as unknown as HarnessWindow;
 harness.__lqChatDelay = 0;
 harness.__lqParseSse = parseSseBlock;
+harness.__lqEmitSseFor = (sessionId: string, raw: string) => {
+  // The app's own decoder, not a fixture: a frame the gateway could send but
+  // this function returns null for is a wire gap, and the rig is told so.
+  const evt = parseSseBlock(raw);
+  if (!evt) return null;
+  if (!harness.__lqEmitFor) throw new Error("the chat panel is not subscribed to the stream yet");
+  harness.__lqEmitFor(sessionId, evt);
+  return evt;
+};
 harness.__lqAttachCalls = [];
 harness.__lqAttachmentCalls = [];
 harness.__lqSteerCalls = [];
@@ -181,6 +369,19 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
+  // The two companions, the active one carrying this page's descriptor. Only a
+  // page opened with `?caps=` mounts the provider that reads this; the same two
+  // entries main's registry publishes keep the shape honest.
+  companionHarnesses: () => Promise.resolve(HARNESS_SUMMARIES),
+  // The provider asks for a status and a profile list on mount. Answers that are
+  // true for a harness page (a companion that is up, no Hermes profiles) keep
+  // the dock on the same screen the older rigs measure. These three are raw
+  // values, not `Result`s: main's preload promises the value itself, and the
+  // provider reads them that way.
+  companionEnsure: () =>
+    Promise.resolve({ kind: "ready" as const, harness: "hermes" as const, detail: "Ready" }),
+  companionProfilesList: () => Promise.resolve({ profiles: [], active: "default" }),
+  onCompanionStatusChanged: () => () => {},
   // The composer's pills read this. `?nocatalog=1` is the companion-not-up
   // state: the panel must then render no row at all.
   companionModelOptions: () =>
@@ -190,8 +391,12 @@ const bridge: Record<string, unknown> = {
   companionSessionCreate: () => ok(SESSION),
   // The shipping parser is what turns the gateway's epoch-seconds `timestamp`
   // into the transcript's own time, so the harness sends wire rows through it.
+  // `?history=timeline` swaps the first chat's rows for the structured shape
+  // the sessions API now returns, so a reload can be compared with the live
+  // turn it settled; every other page keeps the flat bubbles it always had.
   companionSessionMessages: (id: string) => {
     openSessionId = id;
+    if (HISTORY_TIMELINE && id !== OTHER_SESSION.id) return ok(HISTORY_TRANSCRIPT);
     return ok(
       messagesFromPayload({
         data:
@@ -294,7 +499,7 @@ const stubbed = new Proxy(bridge, {
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
 // The dock remembers the chat it opened last and its tab strip between runs, and
-// this page is shared by four rigs. A chat left in front by the previous run
+// this page is shared by five rigs. A chat left in front by the previous run
 // would decide the landing before a rig clicked anything — enough to make the
 // same rig pass on a fresh profile and fail on the next one. Pins are
 // deliberately NOT cleared: that memory is what the pills rig proves survives a
@@ -305,27 +510,56 @@ window.localStorage.removeItem("lifequest.companion.lastSessionId");
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-panel.html");
 
+/**
+ * The provider stack the app gives the dock. `CompanionProvider` is mounted
+ * only when a rig asked for a capability descriptor (`?caps=`), because it is
+ * the provider that tells the dock which harness is answering — and the four
+ * older rigs were written against a page that has none, where the dock's
+ * full-capability fallback is what they see. Same tree either way, so the
+ * timeline rig is still measuring the app's own layout.
+ */
+const shell = (
+  <MemoryRouter>
+    <VaultProvider>
+      <ChatDockProvider>
+        <ChatSessionsProvider>
+          <div className="shell">
+            {/* The rail's own column, with the real list in it: switching
+                chats is a sidebar row now, and a driver that reached into
+                the dock for a history picker would be measuring a surface
+                the app no longer ships. */}
+            <div className="nav-rail">
+              <ChatsSidebar />
+            </div>
+            <div className="shell__main" />
+            <ChatPanel open onOpenChange={() => {}} />
+          </div>
+        </ChatSessionsProvider>
+      </ChatDockProvider>
+    </VaultProvider>
+  </MemoryRouter>
+);
+
+function WhenHarnessesAreKnown({ children }: { children: ReactNode }) {
+  const companion = useOptionalCompanion();
+  const known = (companion?.harnesses?.length ?? 0) > 0;
+  return known ? <>{children}</> : null;
+}
+
 createRoot(root).render(
   <StrictMode>
-    <MemoryRouter>
-      <VaultProvider>
-        <ChatDockProvider>
-          <ChatSessionsProvider>
-            <div className="shell">
-              {/* The rail's own column, with the real list in it: switching
-                  chats is a sidebar row now, and a driver that reached into
-                  the dock for a history picker would be measuring a surface
-                  the app no longer ships. */}
-              <div className="nav-rail">
-                <ChatsSidebar />
-              </div>
-              <div className="shell__main" />
-              <ChatPanel open onOpenChange={() => {}} />
-            </div>
-          </ChatSessionsProvider>
-        </ChatDockProvider>
-      </VaultProvider>
-    </MemoryRouter>
+    {WITH_CAPABILITIES ? (
+      <CompanionProvider>
+        {/* The app mounts this provider long before the dock opens; this page
+            opens the dock immediately, so the dock store must not mount until
+            the harness list has arrived. Otherwise the switch-reset a real
+            companion change triggers fires on the first read and clears the
+            landing the dock just resumed. */}
+        <WhenHarnessesAreKnown>{shell}</WhenHarnessesAreKnown>
+      </CompanionProvider>
+    ) : (
+      shell
+    )}
   </StrictMode>,
 );
 

@@ -7836,11 +7836,364 @@ button.chat-panel__activity-line:hover {
 /* How a turn ended, when it did not end cleanly. Live-only, like `Thinking…`:
    the transcript is Hermes's, and the deltas already shown above it are what
    the reply actually contains. */
-.chat-panel__turn-note {
+.chat-panel__turn-note,
+.chat-panel__turn-remark {
   margin: 0;
   font-size: 0.6875rem;
   font-style: italic;
   color: var(--muted);
+}
+
+/* ——— the turn timeline ———————————————————————————————————————————————
+
+   A turn is a column: the operator's bubble, the work log, the reply, a quiet
+   outcome line. The transcript's old gap sat between bubbles; now it sits
+   between turns, and a turn's own parts sit closer together so they read as one
+   answer rather than four unrelated messages. */
+.chat-panel__turn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Work log. While a turn runs it is open and the status line sits under the
+   rows; once completed it folds to one header, and the body is not rendered at
+   all (unmounting is what keeps a long run to one line, and what keeps the
+   transcript's scroll height honest). */
+.chat-panel__process {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+  padding-left: 0.15rem;
+  color: var(--muted);
+}
+
+.chat-panel__process-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__process-header:hover {
+  color: var(--fg);
+}
+
+.chat-panel__process-heading,
+.chat-panel__process-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__process-summary {
+  font-style: normal;
+}
+
+.chat-panel__process-caret {
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+}
+
+.chat-panel__process-caret--open {
+  transform: rotate(90deg);
+}
+
+.chat-panel__process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* The live clock and what the turn is doing right now. The shimmer is the
+   "working" signal the dock had nowhere to put before; it is motion only, and
+   the text said the same thing without it, so reduced-motion users lose
+   nothing but the sweep. */
+.chat-panel__process-status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.1rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.chat-panel__process-status-time {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in srgb, var(--fg) 82%, var(--muted)) 45%,
+    var(--muted) 90%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: chat-process-shimmer 2.4s ease-in-out infinite;
+}
+
+.chat-panel__process-status-activity {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes chat-process-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel__process-status-time {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Narration: the assistant's prose between tools is process, not the reply, so
+   it is quieter than a bubble and keeps the paragraph breaks the model wrote. */
+.chat-panel__process-narration,
+.chat-panel__process-commentary {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+}
+
+/* A harness-authored commentary is marked as such: it is the agent talking to
+   the operator mid-turn, not the assistant replying. */
+.chat-panel__process-commentary {
+  padding-left: 0.55rem;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  font-style: italic;
+}
+
+/* Thinking: one line until opened. The row is a <details>, so the full trace is
+   in the DOM for the operator (and for a rig) without occupying space. */
+.chat-panel__reasoning {
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.chat-panel__reasoning-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.chat-panel__reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-panel__reasoning-summary:hover {
+  color: var(--fg);
+}
+
+.chat-panel__reasoning-label {
+  flex-shrink: 0;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.625rem;
+}
+
+.chat-panel__reasoning-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__reasoning-body {
+  margin: 0.3rem 0 0;
+  max-height: 8rem;
+  overflow-y: auto;
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+/* One row of the open run. The item wraps the row and its disclosures: the row
+   itself must stay a single line (the legacy block's geometry is measured), so
+   the args/result live beside it, hidden until the row is opened. */
+.chat-panel__activity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.chat-panel__activity-row[data-tool-expanded] {
+  cursor: pointer;
+  border-radius: 0.2rem;
+}
+
+.chat-panel__activity-row[data-tool-expanded]:hover,
+.chat-panel__activity-row[data-tool-expanded]:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  outline: none;
+}
+
+/* Status and duration are drawn, never written: the row's textContent is the
+   call's identity and must stay exactly `name · target`. A pseudo-element is
+   still not a text child of the row. */
+.chat-panel__activity-row[data-tool-status]::before {
+  display: inline-block;
+  width: 0.8rem;
+  margin-right: 0.2rem;
+  text-align: center;
+  font-size: 0.625rem;
+  /* A tight line box keeps the drawn glyph no taller than the row's own strut,
+     so every row is exactly one `line-height` (the cap and ink rigs measure
+     min/max row heights across the list). */
+  line-height: 1;
+  /* On the baseline, not centred: the row clips its own overflow, and a glyph
+     box centred on the x-height can paint below the clip line while the text
+     itself does not. The row's ink is measured pixel by pixel. */
+  vertical-align: baseline;
+}
+
+.chat-panel__activity-row[data-tool-status="running"]::before {
+  content: "";
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-top-color: transparent;
+  animation: chat-tool-spin 800ms linear infinite;
+}
+
+.chat-panel__activity-row[data-tool-status="completed"]::before {
+  content: "✓";
+  color: var(--green);
+}
+
+.chat-panel__activity-row[data-tool-status="failed"]::before {
+  content: "!";
+  color: var(--destructive);
+}
+
+.chat-panel__activity-row[data-tool-status="unknown"]::before {
+  content: "·";
+  opacity: 0.6;
+}
+
+.chat-panel__activity-row[data-tool-duration]::after {
+  content: attr(data-tool-duration);
+  margin-left: 0.45rem;
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+
+@keyframes chat-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel__activity-row[data-tool-status="running"]::before {
+    animation: none;
+    border-top-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+
+.chat-panel__activity-detail {
+  margin: 0;
+  max-height: 8rem;
+  overflow: auto;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+/* The hidden attribute is the row disclosure's closed state; the app's own
+   display rules for `pre` must not paint it anyway. */
+.chat-panel__activity-item > [hidden] {
+  display: none;
+}
+
+.chat-panel__activity-detail--result {
+  border-left: 2px solid color-mix(in srgb, var(--green) 45%, transparent);
+}
+
+.chat-panel__activity-detail--result[data-tool-error] {
+  border-left-color: var(--destructive);
+  color: color-mix(in srgb, var(--destructive) 75%, var(--fg));
+}
+
+/* The outcome line. It is a receipt, not chrome: quiet, at the turn's own edge,
+   and absent while a turn is still running. */
+.chat-panel__turn-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 88%;
+  align-self: flex-end;
+  text-align: right;
+}
+
+.chat-panel__turn-footer-line {
+  margin: 0;
+  font-size: 0.625rem;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.chat-panel__turn-outcome {
+  letter-spacing: 0.04em;
+}
+
+.chat-panel__turn-usage {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-panel__turn-footer .chat-panel__turn-note,
+.chat-panel__turn-footer .chat-panel__turn-remark {
+  text-align: right;
 }
 
 /* The composer's band is a plain gutter — no fill of its own, no hairline. The
