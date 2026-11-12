@@ -774,7 +774,10 @@ async function chatStream(
     | StoredMessage
     | undefined;
   const finalText = finalTextOf(lastAssistant);
-  const usage = usageOfPi(lastAssistant?.usage);
+  // A turn can span several model calls (one per step). The footer is the
+  // TURN's accounting, so sum every assistant message's usage rather than
+  // reporting only the last step's.
+  const usage = sumUsage(turnMessages);
   const stopReason = typeof lastAssistant?.stopReason === "string" ? lastAssistant.stopReason : undefined;
   if (finalText.trim()) onEvent({ type: "assistant.final", text: finalText });
   if (usage) onEvent({ type: "usage", usage });
@@ -810,6 +813,25 @@ async function chatStream(
     });
   }
   return failure ? { ok: false, error: failure } : { ok: true };
+}
+
+function sumUsage(messages: unknown[]): TurnUsage | undefined {
+  let input = 0;
+  let output = 0;
+  let total = 0;
+  let seen = false;
+  for (const raw of messages) {
+    if (!raw || typeof raw !== "object") continue;
+    const m = raw as StoredMessage;
+    if (m.role !== "assistant") continue;
+    const usage = usageOfPi(m.usage);
+    if (!usage) continue;
+    seen = true;
+    input += usage.input ?? 0;
+    output += usage.output ?? 0;
+    total += usage.total ?? (usage.input ?? 0) + (usage.output ?? 0);
+  }
+  return seen ? { input, output, total } : undefined;
 }
 
 /** The visible answer: assistant text blocks only, never the thinking blocks. */
