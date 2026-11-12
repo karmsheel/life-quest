@@ -1,11 +1,19 @@
 /**
- * E2E harness for the Chat panel, driven by four scripts:
+ * E2E harness for the Chat panel, shared by every rig that drives it:
  *
  *  - `composer-autogrow.electron.mjs` — the composer's growth, its inline
  *    send/stop control and the turn-outcome note. Failure modes listed there.
+ *  - `transcript-anchor.electron.mjs` — where the transcript's bottom edge sits
+ *    while the composer grows (this page's `?longthread=1` and `?longchain=1`),
+ *    and that it re-attaches to the thread after the dock is collapsed and
+ *    reopened. Failure modes listed there.
  *  - `tool-run.electron.mjs` — how a turn's tool calls are shown. Failure modes
  *    listed there.
  *  - `composer-model-pills.electron.mjs` — the model and thinking pills.
+ *  - `composer-keys-attachments.electron.mjs` — the composer's keys, the
+ *    attachment chips and the steer/queue gestures.
+ *  - `chat-bubble-meta.electron.mjs` and `companion-paused.electron.mjs` — the
+ *    message presentation and the paused-companion surface (their own files).
  *  - `receipt-attach.electron.mjs` — the receipt the composer attaches, and the
  *    turn it rides. Its composer leg ends at this page's stubbed bridge: a
  *    dev-server page has no preload, so the real `receipt:attach` handler is
@@ -36,7 +44,7 @@
  *     timer, so a slow first Vite transform cannot be mistaken for "the panel
  *     never rendered".
  */
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
@@ -141,6 +149,65 @@ const MODEL_CATALOG = {
 
 const NO_CATALOG = new URLSearchParams(window.location.search).has("nocatalog");
 
+/**
+ * `?longthread=1` answers with a transcript long enough to overflow the body.
+ *
+ * The transcript-anchor rig is about where the thread's bottom edge sits while
+ * the composer grows, and the two-message fixture is short enough that no growth
+ * can move anything: a scroll port that never scrolls cannot show whether its
+ * end was kept. Opt-in rather than the default, because every other rig shares
+ * this page and measures a small, stable transcript.
+ */
+const LONG_THREAD = new URLSearchParams(window.location.search).has("longthread");
+
+/**
+ * The long thread: 24 turns, oldest first, each pair tall enough that a dozen
+ * of them overflow the dock's body at any window size the rig uses.
+ */
+const LONG_THREAD_MESSAGES = Array.from({ length: 24 }, (_, i) => [
+  {
+    role: "user",
+    content: `Long thread turn ${i + 1}`,
+    timestamp: 1_700_000_000 + i * 90,
+  },
+  {
+    role: "assistant",
+    content: `Reply ${i + 1}. ${"A sentence the operator is reading. ".repeat(3)}`,
+    timestamp: 1_700_000_045 + i * 90,
+  },
+]).flat();
+
+/**
+ * `?longchain=1` answers the chain's read with enough signals to overflow its
+ * body.
+ *
+ * The dock has two surfaces with the same composer idiom — the thread and Quick
+ * Notes — and the anchor rig has to prove the same end-keeping on both: the
+ * chain composer grows exactly like the thread's, so the newest signal must keep
+ * sitting just above it. Opt-in for the same reason the long thread is: every
+ * other rig shares this page, and the chain read falls through the stubbed
+ * bridge to an empty answer otherwise.
+ */
+const LONG_CHAIN = new URLSearchParams(window.location.search).has("longchain");
+
+/** The long chain: 24 text signals, newest first the way the vault returns them. */
+const LONG_CHAIN_SIGNALS = Array.from({ length: 24 }, (_, i) => {
+  const at = new Date(1_700_000_000_000 + (24 - i) * 60_000).toISOString();
+  return {
+    id: `signal-long-${24 - i}`,
+    createdAt: at,
+    updatedAt: at,
+    deletedAt: null,
+    type: "thought",
+    source: "manual",
+    sourceRef: null,
+    title: `Signal ${24 - i}`,
+    body: `A note the operator is reading, number ${24 - i}. ${"It carries a sentence. ".repeat(2)}`,
+    domainSlug: null,
+    attachment: null,
+  };
+});
+
 /** The rig's handles on the stubbed main process, driven from a driver script. */
 type HarnessWindow = {
   __lqChatCalls?: ChatCall[];
@@ -179,6 +246,15 @@ let openSessionId = SESSION.id;
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
+  // The chain's read, only on request: `?longchain=1` answers with the long
+  // fixture so the anchor rig can grow Quick Notes' composer over a scrolled
+  // transcript. Every other rig keeps the stubbed fallback an empty chain.
+  ...(LONG_CHAIN
+    ? {
+        signalChainList: () =>
+          ok({ records: LONG_CHAIN_SIGNALS, skipped: 0 }),
+      }
+    : {}),
   onVaultFileChanged: () => () => {},
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
   // The composer's pills read this. `?nocatalog=1` is the companion-not-up
@@ -200,10 +276,12 @@ const bridge: Record<string, unknown> = {
                 { role: "user", content: "Second chat", timestamp: 1_700_000_100 },
                 { role: "assistant", content: "Loaded the other chat.", timestamp: 1_700_000_101 },
               ]
-            : [
-                { role: "user", content: "Composer harness", timestamp: 1_700_000_000 },
-                { role: "assistant", content: "Ready.", timestamp: 1_700_000_002 },
-              ],
+            : LONG_THREAD
+              ? LONG_THREAD_MESSAGES
+              : [
+                  { role: "user", content: "Composer harness", timestamp: 1_700_000_000 },
+                  { role: "assistant", content: "Ready.", timestamp: 1_700_000_002 },
+                ],
         }),
       );
   },
@@ -305,6 +383,20 @@ window.localStorage.removeItem("lifequest.companion.lastSessionId");
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-panel.html");
 
+/**
+ * The dock with its open state live.
+ *
+ * The app's shell owns that state (`AppShell` passes it down and the dock's own
+ * bar carries the way out), and a harness that hard-coded `open` would make
+ * collapse/reopen undrivable — which is how "the transcript's end-keeping
+ * re-attaches when the dock comes back" would go untested. The thread-anchor rig
+ * collapses the dock and reopens it to prove the watch follows the new body.
+ */
+function HarnessDock() {
+  const [open, setOpen] = useState(true);
+  return <ChatPanel open={open} onOpenChange={setOpen} />;
+}
+
 createRoot(root).render(
   <StrictMode>
     <MemoryRouter>
@@ -320,7 +412,7 @@ createRoot(root).render(
                 <ChatsSidebar />
               </div>
               <div className="shell__main" />
-              <ChatPanel open onOpenChange={() => {}} />
+              <HarnessDock />
             </div>
           </ChatSessionsProvider>
         </ChatDockProvider>
