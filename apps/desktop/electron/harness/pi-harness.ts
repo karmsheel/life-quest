@@ -33,7 +33,9 @@ import type {
   CompanionModelCatalog,
   TranscriptMessage,
   TurnAttachment,
+  TurnUsage,
 } from "../companion-client.ts";
+import { sanitizeTranscriptRows } from "../companion-client.ts";
 import type { AgentHarness } from "./agent-harness.ts";
 import {
   isLoopbackEndpoint,
@@ -326,6 +328,12 @@ type StoredMessage = {
   role?: unknown;
   content?: unknown;
   timestamp?: unknown;
+  usage?: unknown;
+  stopReason?: unknown;
+  errorMessage?: unknown;
+  toolCallId?: unknown;
+  toolName?: unknown;
+  isError?: unknown;
 };
 
 function textOf(content: unknown): string {
@@ -341,16 +349,96 @@ function textOf(content: unknown): string {
   return parts.join("");
 }
 
+function usageOfPi(raw: unknown): TurnUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as Record<string, unknown>;
+  const number = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? Math.round(value)
+      : undefined;
+  const input = number(u.input);
+  const output = number(u.output);
+  const total = number(u.totalTokens);
+  if (input == null && output == null && total == null) return undefined;
+  return {
+    ...(input == null ? {} : { input }),
+    ...(output == null ? {} : { output }),
+    ...(total == null ? {} : { total }),
+  };
+}
+
+/**
+ * The turn's rows, in order, with everything Pi kept: assistant text, thinking,
+ * the calls the assistant requested, and the tool results that answered them.
+ *
+ * This is the same projection both for history and for the live turn's settle
+ * snapshot, so a reloaded turn and a just-finished one are built from the same
+ * facts. The old version kept text only, which is why tool rows vanished on
+ * reload even though `pi-sessions` had stored them all along.
+ */
 function projectTranscript(messages: unknown[]): TranscriptMessage[] {
   const rows: TranscriptMessage[] = [];
   for (const raw of messages) {
     if (!raw || typeof raw !== "object") continue;
     const m = raw as StoredMessage;
-    if (m.role !== "user" && m.role !== "assistant") continue;
-    const content = textOf(m.content);
-    if (!content.trim()) continue;
     const at = typeof m.timestamp === "number" ? m.timestamp : undefined;
-    rows.push(at ? { role: m.role, content, at } : { role: m.role, content });
+    if (m.role === "user") {
+      const content = textOf(m.content);
+      if (!content.trim()) continue;
+      rows.push({ role: "user", content, ...(at == null ? {} : { at }) });
+      continue;
+    }
+    if (m.role === "assistant") {
+      const textParts: string[] = [];
+      const reasoningParts: string[] = [];
+      const toolCalls: { id: string; name: string; args?: unknown }[] = [];
+      for (const rawPart of Array.isArray(m.content) ? m.content : []) {
+        if (!rawPart || typeof rawPart !== "object") continue;
+        const part = rawPart as {
+          type?: unknown;
+          text?: unknown;
+          thinking?: unknown;
+          id?: unknown;
+          name?: unknown;
+          arguments?: unknown;
+        };
+        if (part.type === "text" && typeof part.text === "string") textParts.push(part.text);
+        else if (part.type === "thinking" && typeof part.thinking === "string") {
+          reasoningParts.push(part.thinking);
+        } else if (part.type === "toolCall" && typeof part.name === "string") {
+          toolCalls.push({
+            id: typeof part.id === "string" ? part.id : `call_${toolCalls.length}`,
+            name: part.name,
+            ...(part.arguments == null ? {} : { args: part.arguments }),
+          });
+        }
+      }
+      const content = textParts.join("");
+      const reasoning = reasoningParts.join("");
+      if (!content.trim() && !reasoning.trim() && toolCalls.length === 0) continue;
+      const usage = usageOfPi(m.usage);
+      rows.push({
+        role: "assistant",
+        content,
+        ...(at == null ? {} : { at }),
+        ...(reasoning.trim() ? { reasoning } : {}),
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        ...(usage ? { usage } : {}),
+      });
+      continue;
+    }
+    if (m.role === "toolResult") {
+      const callId = typeof m.toolCallId === "string" ? m.toolCallId : undefined;
+      const name = typeof m.toolName === "string" ? m.toolName : undefined;
+      rows.push({
+        role: "tool",
+        content: textOf(m.content),
+        ...(at == null ? {} : { at }),
+        ...(callId ? { toolCallId: callId } : {}),
+        ...(name ? { toolName: name } : {}),
+        ...(m.isError === true ? { isError: true } : {}),
+      });
+    }
   }
   return rows;
 }
@@ -425,7 +513,7 @@ async function sessionMessages(
 ): Promise<HarnessResult<TranscriptMessage[]>> {
   const session = await readPiSession(id);
   if (!session) return { ok: false, error: "Chat not found" };
-  return { ok: true, value: projectTranscript(session.messages) };
+  return { ok: true, value: sanitizeTranscriptRows(projectTranscript(session.messages)) };
 }
 
 async function patchSession(
@@ -600,26 +688,54 @@ async function chatStream(
   const live: LiveRun = { runId, sessionId: session.id, agent, aborted: false };
   runs.set(runId, live);
   onEvent({ type: "run.started", runId });
+  // Everything appended from here on is this turn's own transcript, which is
+  // the authoritative snapshot the renderer settles against.
+  const turnStartIndex = agent.state.messages.length;
 
   let failure: string | null = null;
   const unsubscribe = agent.subscribe((event) => {
     if (event.type === "message_update") {
       const delta = event.assistantMessageEvent;
-      if (delta && delta.type === "text_delta" && typeof delta.delta === "string") {
+      if (delta?.type === "text_delta" && typeof delta.delta === "string") {
         onEvent({ type: "assistant.delta", text: delta.delta });
+      } else if (delta?.type === "thinking_delta" && typeof delta.delta === "string") {
+        // Real reasoning deltas, not a preview: Pi streams the model's thinking
+        // when the provider exposes it and reports nothing when it does not.
+        onEvent({ type: "reasoning.delta", text: delta.delta });
       }
       return;
     }
     if (event.type === "tool_execution_start") {
+      const args = boundedArgs(event.args);
       onEvent({
         type: "tool.started",
         name: event.toolName,
         target: targetLine(event.args),
+        callId: event.toolCallId,
+        ...(args === undefined ? {} : { args }),
       });
       return;
     }
+    if (event.type === "tool_execution_update") {
+      // The vault tools do not stream partial output today, but a tool that
+      // does (or a future one) gets its progress shown without another mapping.
+      const text = resultText(event.partialResult);
+      if (event.toolCallId && text.trim()) {
+        onEvent({ type: "tool.progress", callId: event.toolCallId, text: clipText(text, RESULT_PREVIEW_MAX) });
+      }
+      return;
+    }
     if (event.type === "tool_execution_end") {
-      onEvent({ type: "tool.completed", name: event.toolName });
+      onEvent({
+        type: "tool.completed",
+        name: event.toolName,
+        callId: event.toolCallId,
+        isError: event.isError,
+        ...(typeof event.durationMs === "number" ? { durationMs: event.durationMs } : {}),
+        ...(resultText(event.result).trim()
+          ? { resultPreview: clipText(resultText(event.result), RESULT_PREVIEW_MAX) }
+          : {}),
+      });
     }
   });
 
@@ -649,10 +765,92 @@ async function chatStream(
     // A transcript we cannot persist is a lost resume, not a failed turn.
   }
 
-  if (failure) onEvent({ type: "error", message: failure });
-  if (live.aborted) onEvent({ type: "run.stopped" });
-  else onEvent({ type: "run.completed" });
+  // The turn's authoritative facts, from the transcript the agent just wrote.
+  const turnMessages = agent.state.messages.slice(turnStartIndex);
+  const snapshot = projectTranscript(turnMessages);
+  const lastAssistant = [...turnMessages]
+    .reverse()
+    .find((message) => (message as { role?: unknown } | null)?.role === "assistant") as
+    | StoredMessage
+    | undefined;
+  const finalText = finalTextOf(lastAssistant);
+  const usage = usageOfPi(lastAssistant?.usage);
+  const stopReason = typeof lastAssistant?.stopReason === "string" ? lastAssistant.stopReason : undefined;
+  if (finalText.trim()) onEvent({ type: "assistant.final", text: finalText });
+  if (usage) onEvent({ type: "usage", usage });
+
+  if (failure) {
+    onEvent({ type: "error", message: failure });
+    onEvent({ type: "run.incomplete", reason: failure, ...(usage ? { usage } : {}), ...(snapshot.length > 0 ? { snapshot } : {}) });
+  } else if (live.aborted) {
+    onEvent({ type: "run.stopped", ...(usage ? { usage } : {}), ...(snapshot.length > 0 ? { snapshot } : {}) });
+  } else if (stopReason === "length") {
+    // The model ran out of output budget: the reply is a prefix, not an answer.
+    onEvent({
+      type: "run.incomplete",
+      reason: "the model reached its output limit before finishing",
+      ...(usage ? { usage } : {}),
+      ...(snapshot.length > 0 ? { snapshot } : {}),
+    });
+  } else if (stopReason === "error") {
+    onEvent({
+      type: "run.incomplete",
+      reason: typeof lastAssistant?.errorMessage === "string" && lastAssistant.errorMessage.trim()
+        ? lastAssistant.errorMessage
+        : "the model ended the turn with an error",
+      ...(usage ? { usage } : {}),
+      ...(snapshot.length > 0 ? { snapshot } : {}),
+    });
+  } else {
+    onEvent({
+      type: "run.completed",
+      ...(usage ? { usage } : {}),
+      ...(stopReason ? { stopReason } : {}),
+      ...(snapshot.length > 0 ? { snapshot } : {}),
+    });
+  }
   return failure ? { ok: false, error: failure } : { ok: true };
+}
+
+/** The visible answer: assistant text blocks only, never the thinking blocks. */
+function finalTextOf(m: StoredMessage | undefined): string {
+  const parts: string[] = [];
+  for (const rawPart of Array.isArray(m?.content) ? m.content : []) {
+    if (!rawPart || typeof rawPart !== "object") continue;
+    const part = rawPart as { type?: unknown; text?: unknown };
+    if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
+  }
+  return parts.join("");
+}
+
+const ARGS_MAX_BYTES = 2048;
+const RESULT_PREVIEW_MAX = 500;
+
+/**
+ * Arguments as the row may show them: bounded before they cross IPC. A raw Pi
+ * call can carry a whole file; the panel needs enough to name the call, not a
+ * copy of the vault. Over-long args degrade to a clipped string.
+ */
+function boundedArgs(args: unknown): unknown {
+  if (args == null) return undefined;
+  try {
+    const raw = JSON.stringify(args);
+    if (!raw) return undefined;
+    return raw.length <= ARGS_MAX_BYTES ? (JSON.parse(raw) as unknown) : `${raw.slice(0, ARGS_MAX_BYTES)}…`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Tool result text, whichever shape the tool returned it in. */
+function resultText(result: unknown): string {
+  if (!result || typeof result !== "object") return "";
+  return textOf((result as { content?: unknown }).content);
+}
+
+function clipText(text: string, max: number): string {
+  const flat = text.replace(/\r\n/g, "\n").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 /** One bounded line naming what a call acted on, the same shape the Hermes row uses. */
