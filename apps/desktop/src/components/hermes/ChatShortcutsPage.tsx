@@ -218,6 +218,20 @@ export function ChatShortcutsPage() {
           onCancel={cancel}
         />
       ))}
+
+      {/*
+        Not every key is a movement: the browser's own gestures belong to the
+        dock rather than this table (they are not rebindable), so the reference
+        names them here instead of pretending to list them as rows.
+      */}
+      <p
+        className="chat-shortcuts__hint chat-shortcuts__hint--quiet"
+        data-chat-shortcuts-browser-keys=""
+      >
+        Browser keys in the dock: {mac ? "Cmd" : "Ctrl"}+W closes the tab in
+        front, and a middle click closes the tab under the pointer. A pinned tab
+        leaves the strip only through Unpin.
+      </p>
     </div>
   );
 }

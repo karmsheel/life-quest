@@ -516,8 +516,8 @@ export function shortcutBindingsEqual(
 
 /**
  * Combinations the app or the operating system owns. A user binding that lands
- * on one is refused: stealing Ctrl/Cmd+W would make the window unclosable, and
- * stealing F12 would replace devtools with a wing jump.
+ * on one is refused: Mod+W belongs to the chat dock's tab close (and, on macOS,
+ * to the window), and stealing F12 would replace devtools with a wing jump.
  */
 const RESERVED_BINDINGS = [
   "Escape",

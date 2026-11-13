@@ -10,7 +10,7 @@ that helped write it.
 
 ## Where it lives
 
-The Review wing is the last wing in the rail's wing switcher, after Execute. Its
+The Review wing is the last wing in the rail's wing switcher, after **Act**. Its
 rail has five rows, each a page at its own route:
 
 | Rail label | Route | Period it covers |
@@ -22,9 +22,11 @@ rail has five rows, each a page at its own route:
 | **Yearly** | `/review/yearly` | A calendar year |
 
 Each opens in the centre pane as a page, not a sheet. Any other cadence segment
-under `/review/` redirects to `/review/weekly`. The domain lens in the window
-title bar still applies: with **Overview** selected the active scope is the
-overall review; with a domain selected the active scope is that domain's section.
+under `/review/` redirects to `/review/weekly`. The area lens in the window
+title bar still applies: with **Life** selected the active scope is the
+overall review; with an area selected the active scope is that area's section.
+The page opens with the grey cadence eyebrow — **Daily**, **Weekly**, **Monthly**,
+**Quarterly** or **Yearly** — above its `<Cadence> review` title.
 
 Back to [Wiki home](./index.md).
 
@@ -32,7 +34,7 @@ Back to [Wiki home](./index.md).
 
 Reviews turn a lived period into something you can read back and something the
 next period can be planned from. One file holds the whole period — the overall
-review is four headings, and each domain you review is a section in the same
+review is four headings, and each area you review is a section in the same
 file rather than a document of its own. The companion session for a period and
 scope resumes the same thread instead of starting a new one, and a review marked
 done is locked so the "final" record cannot be quietly rewritten.
@@ -56,16 +58,17 @@ done is locked so the "final" record cannot be quietly rewritten.
    editor, and on Ctrl/Cmd+S. The status beside the mode buttons reads **Saved**,
    **Saving…**, **Not saved**, or **Locked**.
 5. Switch to **Preview** to read the whole file as rendered markdown. Below it,
-   **Domains** lists each live domain with **Missing**, **Draft** or **Done** and
-   an **Open** button that switches the lens to that domain.
-6. To review one domain, select it in the lens and start the interview for that
-   scope. The domain's `## <name>` section with its four subsections is added to
+   **Areas** lists each live area with **Missing**, **Draft** or **Done** and
+   an **Open** button that switches the lens to that area.
+6. To review one area, select it in the lens and start the interview for that
+   scope. The area's `## <name>` section with its four subsections is added to
    the same file, and the companion session is bound to `(cadence, period,
    scope)`.
-7. **Mark done** finishes the active scope. On **Overview** that marks the
-   overall review done and locks the file; on a domain it marks only that
-   section done. A domain done does not lock the file.
-8. On a locked review, **Unlock** appears. Unlock, then edit in place.
+7. **Mark done** finishes the active scope. On **Life** that marks the overall
+   review done and locks the file; on an area it marks only that section done.
+   An area done does not lock the file.
+8. On a locked review the pager shows a **Locked** badge and **Unlock** appears in
+   the action row. Unlock, then edit in place.
 9. **Plan next period** takes period N to a planning session for N+1, opens that
    session in the chat dock, and navigates to **Goals**.
 10. Open **Review rules** to read or edit the standing rules for this cadence,
@@ -74,19 +77,24 @@ done is locked so the "final" record cannot be quietly rewritten.
 At the bottom of every review page — empty or not — sits **Daily notes in this
 period**: the days you wrote in the window, newest first, with a one-line
 excerpt. Click a day to read the note. With none, the panel says **No daily
-notes in this period. and offers Write today's note**.
+notes in this period.** and offers **Write today's note**.
 
 ## The screen
 
 | Part | What it does |
 |---|---|
-| Title and pager | `<Cadence> review` plus **‹ Prev**, the period title, **Next ›**, and a **Locked** badge when locked. |
+| Cadence eyebrow + title and pager | The grey cadence eyebrow, `<Cadence> review`, then **‹ Prev**, the period title, **Next ›**, and a **Locked** badge when locked. |
 | **Document** / **Preview** | Two modes over the same file; **Document** edits and autosaves, **Preview** renders the whole body. |
 | Status text | **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. |
 | Editor | The shared live markdown editor, placeholder **Write this review.**, read-only while locked. |
 | Action buttons | **Start interview** (resumes the scope's session), **Plan next period**, **Mark done**, **Unlock** when locked. |
 | **Review rules** | A collapsible panel: the cadence's standing rules and its `lifequest-snapshot` directives, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |
+
+The review page has no page menu and no lock switch of its own: a locked review
+shows the **Locked** badge in the pager and an **Unlock** button in the action
+row. The lock is set by **Mark done** on the overall scope, not by a separate
+control.
 
 All five cadences open the same page, and the page is one centred reading
 column: the title and pager, the body, the actions and the daily-notes strip
@@ -101,7 +109,7 @@ not as a screen.
 ## Rules and behaviour
 
 One file per cadence and period. The law is short and enforced by the
-engine: a review is one markdown file at `reviews/{cadence}/{period}.md`, domain
+engine: a review is one markdown file at `reviews/{cadence}/{period}.md`, area
 reviews are sections in it, the file locks when the overall review is done,
 planning stubs live under `planning/` with no plan body, and week start cannot
 change while weekly review or planning files exist. It is restated in
@@ -117,9 +125,9 @@ change while weekly review or planning files exist. It is restated in
 
 File shape. Frontmatter carries `cadence`, `period`, `weekStartDay`,
 `locked`, `updatedAt`, `title` and `scopes` — `overall` plus one entry per
-started domain with `status` (`draft` or `done`) and a companion `sessionId`.
+started area with `status` (`draft` or `done`) and a companion `sessionId`.
 The body starts with `# <period title>`, then `## Look-back`, `## Keep`,
-`## Change`, `## Next-period intent`; a started domain adds `## <Domain name>`
+`## Change`, `## Next-period intent`; a started area adds `## <Area name>`
 with the same four as `###` subsections. Extra headings you type are kept after
 the required blocks. A save canonicalises this skeleton and preserves the prose
 under each heading.
@@ -160,9 +168,9 @@ the locked case.
 The period pack. The companion session is given a prescribed pack for the
 period and scope: life-log events, tasks, open goals and goals due in the window,
 Daily Schedule actuals, map events, the period's daily notes, the previous
-review of the same cadence, and on an overall review the domain sections already
-drafted. A domain scope filters log, tasks, goals and events to that domain;
-daily notes stay unscoped because a note belongs to no domain. Doctrine is not
+review of the same cadence, and on an overall review the area sections already
+drafted. An area scope filters log, tasks, goals and events to that area;
+daily notes stay unscoped because a note belongs to no area. Doctrine is not
 in the pack, and the pack carries no table rows — the only database figures are
 the snapshots the rules ask for. Lists are capped and a `truncated` flag says so.
 
@@ -201,12 +209,12 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
   error, or retry with Ctrl/Cmd+S, before paging away.
 - The file is the truth. Editing it outside the app is visible on the next load;
   the page reloads the body from disk when the period changes.
-- A domain **Mark done** is a status change, not a lock — the file stays
+- An area **Mark done** is a status change, not a lock — the file stays
   editable until the overall scope is done.
 - Unlocking does not reset the overall scope's `done` status; it only makes the
   file editable again.
-- A section for a domain that has since been archived remains in the file and is
-  not listed as **Missing**; its H2 keeps the domain's current name on the next
+- A section for an area that has since been archived remains in the file and is
+  not listed as **Missing**; its H2 keeps the area's current name on the next
   canonicalising save.
 - If the companion gateway is down, **Start the interview** still creates the
   file and fills snapshots; the failure is reported as the one step that failed,
@@ -214,14 +222,13 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
 - Daily notes are read from `notes/daily/YYYY-MM-DD.md` and only for dates in the
   window. A review of a future period cannot exist, so it never reads a note that
   is not allowed to exist either.
-- With no lenses or domains, the Domains list under **Preview** is empty and the
+- With no areas open, the **Areas** list under **Preview** is empty and the
   review is overall only.
 
 ## Related
 
-- [Daily Note](./16-daily-note.md) — the journal a review reads back
+- [Daily Journal](./16-daily-journal.md) — the journal a review reads back
 - [Goals](./10-goals.md) — where planning sessions start and where intent lands
 - [Decisions](./23-decisions.md) — where an edit to a locked review waits
 - [The Companion](./24-companion.md) — the interview, sessions and models
-- [Data and Databases](./19-data-and-databases.md) — the database views snapshots read
 - [Settings](./28-settings.md) — **Week starts on** lives in the Vault tab

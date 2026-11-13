@@ -34,6 +34,10 @@
  *     caret leaves it).
  * 10. **The shipped movements are gone.** The panel toggles, page steps, direct
  *     wing jump and settings-surface shortcut do not do what the table says.
+ * 11. **The reference hides the keys the table does not own.** The dock's page
+ *     lists the movements, but Ctrl/Cmd+W and the middle-click tab close are
+ *     browser gestures the dock keeps to itself; the reference has to name them
+ *     so an operator can find a close key that is not a row.
  *
  * A recording row must keep the runner out of the way: the settings page is
  * presented over the page behind it, so every sample carries the shell's own

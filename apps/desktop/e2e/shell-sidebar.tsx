@@ -159,6 +159,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { DocumentKind, DomainRecord } from "@lifequest/vault-core";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 import {
   ThemeProvider,
   syncTitleBarOverlay,
@@ -320,6 +321,16 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
+// The strip is the dock's top band now, so this rig's band claim needs the dock
+// to land on a thread with a tab. The shared harness profile is reused by every
+// rig on this dev-server origin — the chat-tabs rig even writes a deliberately
+// closed strip while it runs — so clear the chat memory before mount, or this
+// page would inherit another rig's empty or half-open strip and land tab-less.
+window.localStorage.removeItem("lifequest.companion.lastSessionId");
+window.localStorage.removeItem("lifequest.companion.runtimePins");
+window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+window.localStorage.removeItem("lifequest.companion.openTabs");
+
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from shell-sidebar.html");
 
@@ -357,6 +368,16 @@ createRoot(root).render(
                               <div className="home-card" data-probe="home-card" />
                               <div className="view-card" data-probe="view-card" />
                             </div>
+                            {/*
+                              The marker a built-in dashboard card wears beside
+                              its heading. The rail's Dashboard row must wear the
+                              same glyph, so the driver compares the two classes
+                              rather than trusting a hard-coded icon name that
+                              could drift from the badge it is supposed to match.
+                            */}
+                            <span data-probe="builtin-badge">
+                              <BuiltInBadge />
+                            </span>
                             {/*
                               The sheet's scroller has to really overflow, for the
                               same reason the transcript does: a scrollbar claim

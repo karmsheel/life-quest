@@ -1,32 +1,33 @@
 # Finance kit
 
 The Finance kit is the first optional kit: a schema, a set of meaning, and six
-starter pages installed into the **Financial** domain in one step. It
+starter pages installed into the **Finance** area in one step. It
 gives you a household ledger — accounts, categories, transactions, budgets,
 recurring items, holdings, assumption sets — plus spend, budget, net-worth and
 scenario pages, and a captured purchase can be logged from chat or from a photo
-of the receipt. Nothing is seeded into a new vault; the kit is installed into an
-existing domain.
+of the receipt. The kit is not seeded into a new vault: the Finance area ships
+locked like the other four, and the kit is installed into it once it is unlocked.
 
 ## Where it lives
 
 - **Install**: **Home** wing → **Dashboard** or **Data**, right rail → **Finance**
   card → **Install Finance kit**. Every finance page block also offers the same
   button when the kit is missing.
-- Ledgers: Home → **Data** (`/data`), Financial lens; the seven databases
-  open at `/data/financial/<databaseId>`.
-- Starter pages: Home → **Pages** (`/pages`), Financial lens; each page opens
+- Ledgers: Home → **Data** (`/data`), **Life** or **Finance** lens; the seven
+  databases open at `/data/financial/<databaseId>`.
+- Starter pages: Home → **Pages** (`/pages`), **Finance** lens; each page opens
   at `/pages/financial/<pageId>`.
 - Rate and capture account: Home → **Data**, right rail — **Exchange rate**
   and **Capture** panels.
-- **Receipts**: the chat dock composer, beside the field.
-- **Restore**: **Settings → Vault → Books**.
+- **Receipts**: the chat dock composer's control row, at the bottom left, beside
+  the add control.
+- **Restore**: **Settings** → **Vault** → **Books**.
 
 Back to [Wiki home](./index.md).
 
 ## What it is for
 
-The kit turns the Financial domain from a written life area into a working book:
+The kit turns the Finance area from a written life area into a working book:
 what you have, what you spend it on, what you planned, what you are worth, and
 what the next year looks like under assumptions you can compare. It is installed
 rather than assumed, so a vault can use plain databases without inheriting a
@@ -37,15 +38,17 @@ at one operator-visible rate.
 
 ### Install the kit
 
-1. Make sure the Financial domain is live. The card only appears when it is, and
-   only when the kit is not already installed, and only on **Overview** or the
-   Financial lens.
+1. Make sure the **Finance** area is unlocked. A new vault seeds it locked and
+   invisible; unlock it in **Settings** → **Areas** with **Unlock another area** (or
+   let the first-run interview open it), then come back. The card only appears
+   when Finance is live, the kit is not already installed, and the lens is
+   **Life** or **Finance**.
 2. Choose **Install Finance kit** on the Dashboard card, the Data rail, or a
    finance page block. There is no second confirmation: the card itself is the
    offer.
 3. The install creates seven databases in `domains/financial/data/`, the pages
    under `domains/financial/pages/`, two assumption sets, and pins on the
-   Financial and Overview dashboards. The databases start empty; the two
+   **Finance** board and the **Life** board. The databases start empty; the two
    assumption sets are named **Scenario 1** and **Scenario 2**.
 4. The engine also has an agent-proposed install path: an agent's request files a
    pending [Decision](./23-decisions.md) labelled **Finance kit**, and approving
@@ -53,12 +56,12 @@ at one operator-visible rate.
    tool, so the click on this card is how the kit is installed.
 
 The install is idempotent: running it again on an installed kit reports that it
-is already installed and writes nothing. It refuses a missing or archived
-Financial domain.
+is already installed and writes nothing. It refuses a missing, locked or archived
+**Finance** area.
 
 ### Fill the book
 
-Open **Data** with the Financial lens. The kit's databases have fixed ids and
+Open **Data** with the **Finance** lens. The kit's databases have fixed ids and
 columns:
 
 | Database | Columns |
@@ -104,10 +107,11 @@ happens.
 ### Log a purchase from chat
 
 1. In the chat dock, type what happened — "Bought food for R85 today" — and send.
-2. Or attach a photo: use **Attach a receipt** (the image button at the left of
-   the composer's footer), drop one image on the form, or paste one into the
-   field. One receipt rides one turn; a second attach replaces the first. The
-   chip shows the file name and size, and **Remove receipt** clears it.
+2. Or attach a photo: use **Attach a receipt** (the picture-plus control in the
+   composer's control row at the bottom left, beside the add control), drop one
+   image on the form, or paste one into the field. One receipt rides one turn; a
+   second attach replaces the first. The chip shows the file name and size, and
+   **Remove receipt** clears it.
 3. The companion reads the turn, including the image when one is attached, and
    calls its capture tool. A posted capture answers with a receipt line naming
    the amount, currency, date, account, category and payee — for example
@@ -122,7 +126,7 @@ happens.
 
 ### Work the plan surfaces
 
-The starter pages are pinned on the Financial board and the Overview board:
+The starter pages are pinned on the **Finance** board and the **Life** board:
 
 - **Ledger** — a markdown intro and the Transactions table.
 - **Spend** — the total spent, and a bar chart of spending by date.
@@ -142,7 +146,7 @@ save of an assumption set, but the editing surface in this build is the row.
 
 ### Export and restore
 
-**Settings → Vault → Books** exports the domain's databases to
+**Settings** → **Vault** → **Books** exports the area's databases to
 `domains/<slug>/data/books.json` and restores from it with an explicit
 confirmation. The mechanics — validation, backup, registry merge — are covered in
 [Data and databases](./19-data-and-databases.md).
@@ -157,14 +161,15 @@ confirmation. The mechanics — validation, backup, registry merge — are cover
 | Data **Exchange rate** panel | The rate source, the rate in force, the last read and the last error. |
 | Finance databases | Ordinary database pages; no separate finance screen. |
 | Starter pages | Ordinary page canvases with finance blocks: ledger table, spend metric and chart, budget vs actual, net worth, scenario compare. |
-| Chat composer | **Attach a receipt**, the chip, **Remove receipt**; the posted receipt line in the reply. |
+| Chat composer | In the control row at the bottom left, beside the add control: **Attach a receipt**, the chip, **Remove receipt**; the posted receipt line in the reply. |
 
 ## Rules and behaviour
 
-The kit installs, it is not seeded. A new vault has four domains and no
-finance tables. The kit is a write into the Financial domain and the operator
+The kit installs, it is not seeded. A new vault has the base area **Life** and
+five locked areas — Health, Mind, Finance, Business, Relationships — and no
+finance tables. The kit is a write into the Finance area and the operator
 chooses it. The law that matters is in [LAWS/DATABASES.md](../../LAWS/DATABASES.md):
-domain databases live in the vault, a kit install proposed by an agent goes
+area databases live in the vault, a kit install proposed by an agent goes
 through Decisions, ingest rows wait for acceptance, conversational capture must
 refuse without an amount and account, capture must name what it logged, and JSON
 restore requires an explicit confirmed action.
@@ -178,8 +183,8 @@ What the install writes.
 | Live rows | `domains/financial/data/domain.sqlite` |
 | Six starter pages | `domains/financial/pages/<pageId>.json` |
 | Two assumption sets | rows in the Assumption sets database |
-| Financial board pins | `domains/financial/pins.json` |
-| Overview board pins | `.lifequest/overview-pins.json` |
+| Finance board pins | `domains/financial/pins.json` |
+| Life board pins | `.lifequest/overview-pins.json` |
 | `.gitignore` lines for the SQLite file and cache | vault root |
 
 Install is operator-direct or a Decision. The operator's click installs. The
@@ -187,13 +192,24 @@ engine's agent path files a **Finance kit** Decision and writes nothing until it
 is approved; the companion's tool surface in this build does not expose that
 path, so the operator installs from the card.
 
-Conversational capture needs no Decision — and is the only finance write that
-does not. When the amount and the account are unambiguous, the companion posts
-the row directly and names what it logged. When either is ambiguous it asks and
-posts nothing. The operator's own edits in **Data** are direct too. Every other
-agent write to the ledger — `upsert_row`, `insert_rows`, `delete_row`, creating a
-column or database, a budget or accounting change — is filed as a Decision; a
-create in a database on the insert allowlist may post, an update always waits.
+Conversational capture needs no Decision. When the amount and the account are
+unambiguous, the companion posts the row directly and names what it logged. When
+either is ambiguous it asks and posts nothing. The operator's own edits in
+**Data** are direct too.
+
+Every other agent write follows the app-wide database split. A new database and
+new rows — `create_database`, `insert_rows`, `upsert_row` without an id — are
+written at once after you agree to them in the chat, and are logged as
+`database.created`, `database.row.created` or `database.rows.created`. Changing
+what the ledger already holds still waits: `upsert_row` with an id, `delete_row`
+and `add_column` file a pending Decision and write nothing until you approve it.
+The old insert allowlist is retired; Settings → Hermes explains the split in its
+**Database writes** row.
+
+Decisions is one global shelf: a Finance kit or ledger proposal is visible and
+counted in the inbox and on the rail badge whatever area lens you are standing
+in. The lens-scoped view is the Dashboard's **Pending decisions** card. See
+[Decisions](./23-decisions.md).
 
 How a capture is resolved. The amount may be written `R85`, `ZAR 85`,
 `$20`, `USD 20`, with a leading minus for a spend. The date is an explicit
@@ -223,7 +239,7 @@ are converted at the stored rate. The default source is
 `https://open.er-api.com/v6/latest/USD` with `rates.ZAR`. A read must answer a
 positive finite number; anything else keeps the last good rate and records the
 error rather than writing nonsense. A refresh is refused when the kit is not
-installed or Financial is archived. The rate is read on vault open and hourly
+installed or the Finance area is locked or archived. The rate is read on vault open and hourly
 while the app is running. Until a rate exists, USD figures are left unconverted
 and the cards say so.
 
@@ -243,7 +259,7 @@ block and no kanban view.
 
 ## Tips and edge cases
 
-- The kit is not required to use the Financial domain's own databases. Install it
+- The kit is not required to use the Finance area's own databases. Install it
   when you want the ledger and pages; plain databases work without it.
 - Installing twice is harmless but pointless: the second call reports already
   installed and writes nothing.
@@ -274,8 +290,8 @@ block and no kanban view.
 - [Data and databases](./19-data-and-databases.md) — the generic machinery the
   kit is built on
 - [Pages](./21-pages.md) — the starter pages and the finance blocks
-- [Decisions](./23-decisions.md) — the install, ledger edits and assumption saves
-  that wait for approval
+- [Decisions](./23-decisions.md) — the install, and the ledger updates, deletes,
+  columns and assumption saves that wait for approval
 - [The Companion](./24-companion.md) — the chat composer and the attach control
 - [The Vault](./04-the-vault.md) — where the kit's files sit
 - [Settings](./28-settings.md) — the **Books** export and restore

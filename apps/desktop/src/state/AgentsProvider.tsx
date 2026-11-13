@@ -45,7 +45,10 @@ type AgentsContextValue = {
 const AgentsContext = createContext<AgentsContextValue | null>(null);
 
 export function AgentsProvider({ children }: { children: ReactNode }) {
-  const { harnesses, harness, useHarness } = useCompanion();
+  // The fast switch, not the boot one: a domain default moves the dock's agent
+  // while the studio is already open, so it must not hold the app still for
+  // another agent to come up.
+  const { harnesses, harness, switchHarness: useHarness } = useCompanion();
   const { snapshot, updateSettings } = useVault();
   const activeDomain = useActiveDomain();
   const slug = activeDomain?.slug ?? null;

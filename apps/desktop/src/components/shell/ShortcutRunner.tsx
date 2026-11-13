@@ -6,6 +6,12 @@
  * is in (from `WingProvider`) and the page they are on (from the router). The
  * provider above it owns which keys mean what; this file owns what they do.
  *
+ * One key here is not a movement: Mod+W closes the chat tab in front, the way
+ * every browser closes a tab. It lives in this listener rather than the movement
+ * table because browsers do not let that key be rebound, because `RESERVED_BINDINGS`
+ * keeps it out of every movement, and because it must see the dock's strip and
+ * the app's modals — two things only this place has in scope at once.
+ *
  * The listener stands aside in four cases, and each is deliberate:
  *
  *  - **A row is recording.** The keys belong to the settings page until it has
@@ -21,12 +27,13 @@
  *  - **The event is already spoken for.** `defaultPrevented` and repeats belong
  *    to whoever had them first.
  */
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NAV_ITEMS, type NavItem } from "@/components/shell/nav-items";
 import { useWing } from "@/components/shell/WingProvider";
 import { WING_IDS, type WingId } from "@/components/shell/wing";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { useShortcutsOptional } from "@/state/ShortcutsProvider";
 import {
@@ -67,6 +74,23 @@ function pageIndex(items: readonly NavItem[], pathname: string): number {
 }
 
 /**
+ * The browser's tab-close key: Mod+W.
+ *
+ * It is deliberately not a row in the movement table. Every browser gives this
+ * key to the tab in front and lets nobody rebind it; the table's reserved space
+ * keeps Mod+W out of every other movement (see `RESERVED_BINDINGS`), and the
+ * dock owns the gesture the way the composer owns Ctrl/Cmd+Enter.
+ */
+function isChatTabCloseKey(event: KeyboardEvent): boolean {
+  return (
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.key === "w" || event.key === "W")
+  );
+}
+
+/**
  * A modal surface is up. The app's own dialogs declare `aria-modal`; the sheet
  * frame is one of them, and the update dialog and confirmations are the others.
  * While one is up the page behind it is not the page the operator is working on.
@@ -90,7 +114,35 @@ export function ShortcutRunner() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { toggle: toggleSidebar } = useNavDock();
-  const { open: chatOpen, setOpen: setChatOpen } = useChatDock();
+  const { open: chatOpen, setOpen: setChatOpen, surface: chatSurface } = useChatDock();
+  // The dock's tab strip. The close key is a fact about what is on screen, so
+  // the runner reads the same two lists the strip draws from.
+  const { activeId, activeSession, closeTab, pinnedTabIds, tabIds } = useChatSessions();
+  /**
+   * The tab Mod+W would close, or null when there is nothing to close.
+   *
+   * It is a ref, not state, because the listener below must not re-bind per
+   * streamed delta: `closeTab` is rebuilt whenever a run changes, while the
+   * strip itself changes only when a tab opens or closes. The conditions are the
+   * strip's own — open dock, thread surface, at least one tab in the strip (the
+   * strip is drawn for a single chat too, so its one tab's close control and
+   * this key stay in step), a chat in front — plus the rule the close control
+   * already follows: a pinned square is never dropped by a press or a key, Unpin
+   * is its way out.
+   */
+  const closableTabRef = useRef<{ id: string; close: (id: string) => void } | null>(
+    null,
+  );
+  closableTabRef.current =
+    chatOpen &&
+    chatSurface === "thread" &&
+    tabIds.length > 0 &&
+    activeId &&
+    tabIds.includes(activeId) &&
+    activeSession &&
+    !activeSession.pinned
+      ? { id: activeId, close: closeTab }
+      : null;
 
   const run = useCallback(
     (id: ShortcutActionId) => {
@@ -146,17 +198,24 @@ export function ShortcutRunner() {
   );
 
   useEffect(() => {
-    if (!bindings) return;
-    const currentBindings = bindings;
-
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if (recording) return;
       if (modalIsOpen()) return;
+      // The dock's own browser gesture, ahead of the movement table. No movement
+      // can own Mod+W — it is reserved — so this cannot shadow one, and the tab
+      // in front must close even while the caret is in the chat composer.
+      const closableTab = closableTabRef.current;
+      if (closableTab && isChatTabCloseKey(event)) {
+        event.preventDefault();
+        closableTab.close(closableTab.id);
+        return;
+      }
+      if (!bindings) return;
       if (isTypingTarget(event.target) && !event.ctrlKey && !event.metaKey) {
         return;
       }
-      const action = shortcutActionForEvent(event, currentBindings);
+      const action = shortcutActionForEvent(event, bindings);
       if (!action) return;
       event.preventDefault();
       run(action);

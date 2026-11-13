@@ -2,15 +2,16 @@
 
 **Daily Schedule** is the page for running today. It copies today's day template — the
 Architecture **Day type** that the default week assigns to this weekday — into a live
-record, and then lets you put those items, your own additions and today's Act tasks onto a
-clock. You rearrange it as the day overruns or finishes early; living the day never
+record, and then lets you put those items, your own additions and today's Task Manager tasks
+onto a clock. You rearrange it as the day overruns or finishes early; living the day never
 rewrites the plan in Architecture.
 
 ## Where it lives
 
-- Wing: Execute. Daily Schedule is the wing's default page, so choosing **Execute**
-  lands here.
-- Rail: second row of the Execute wing, icon **Clock**, label **Daily Schedule**.
+- Wing: **Act** (the wing id stays `execute`). Daily Schedule is the wing's default page, so
+  choosing **Act** lands here.
+- Rail: second row of the Act wing, icon **Clock**, label **Daily Schedule**.
+- Header: the grey **Daily Schedule** page eyebrow above the **Daily Schedule** title.
 - Route: `/daily`.
 - Surface: a full page in the centre pane. It always shows the local calendar date —
   there is no date switcher and no past-day browsing.
@@ -22,15 +23,15 @@ This page is part of the [Wiki home](./index.md).
 The template tells you what a good Tuesday looks like; Tuesday itself never goes to plan.
 Daily Schedule is the place where the plan and the day meet: untimed template items wait in
 **Leftover**, you place them on the **Clock** when you know when they happen, and later
-blocks move out of the way when something runs long. It also draws in the Act tasks sitting
-in the **Today** column, so the board and the day are not two separate stories.
+blocks move out of the way when something runs long. It also draws in the Task Manager tasks
+sitting in the **Today** column, so the board and the day are not two separate stories.
 
 The live day is a record, not a plan: Architecture's day types and default week stay the
 plan, and the live day is a copy that only exists for the date you open.
 
 ## How to use it
 
-1. Choose **Execute**, then **Daily Schedule** in the rail. The page opens on today, as a
+1. Choose **Act**, then **Daily Schedule** in the rail. The page opens on today, as a
    date, and ensures a live day exists for it.
 2. Use the template picker beside the date to choose a day type. On first open it already
    holds the type the default week gives this weekday; **None** clears the template items.
@@ -61,10 +62,10 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 | Part | What it does |
 |---|---|
-| **Daily Schedule** heading | The page title and today's date as text (not a control). |
+| **Daily Schedule** eyebrow + heading | The page eyebrow, the **Daily Schedule** title, and today's date as text (not a control). |
 | Template picker | A select with **None** and every Architecture day type by name; a dangling type id is shown as `"<id> (missing)"`. |
 | **Clock** | Timed blocks, sorted by start time. Each row shows `HH:MM–HH:MM`, the text, a duration field, a start field, a **Done** checkbox, **Unplace** and **Apply**. |
-| **Leftover** | Stored untimed rows (template copies and your additions) followed by today's unplaced Act tasks, which are prefixed **Task ·**. Each row has a done checkbox and **Place**; added rows also have **Remove**. |
+| **Leftover** | Stored untimed rows (template copies and your additions) followed by today's unplaced Task Manager tasks, which are prefixed **Task ·**. Each row has a done checkbox and **Place**; added rows also have **Remove**. |
 | **Place** fields | Start minute and duration number fields with **Place** and **Cancel**, shown in the row you are placing. |
 | Add row | A text field (placeholder **Add schedule item**) and **Add** at the bottom of **Leftover**. |
 
@@ -95,11 +96,11 @@ day is an empty **Clock** and an empty **Leftover** list.
 - An overlap with an *earlier* block is left for you to resolve.
 - The cascade can push a start past midnight; the record still holds it.
 
-### Done, tasks and the Act column
+### Done, tasks and the Today column
 
-- A block sourced from a task, and a task row in **Leftover**, are the same Act task. Ticking
-  one done sets that task's column to **Done**. Unticking a block does not reopen the task.
-  An unplaced task row is moved to **Done** directly.
+- A block sourced from a task, and a task row in **Leftover**, are the same Task Manager task.
+  Ticking one done sets that task's column to **Done**. Unticking a block does not reopen the
+  task. An unplaced task row is moved to **Done** directly.
 - A task that is no longer in the **Today** column disappears from the **Leftover** union.
 - Tasks already placed on the clock are omitted from the **Leftover** union until unplaced.
 - **Leftover** is built at read time: stored rows first, then today's unplaced tasks. The
@@ -113,7 +114,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 - Every action writes a life-log line of type `map.liveDay.*` (`ensured`, `typeSet`,
   `adHocAdded`, `blockPlaced`, `blockUpdated`, `blockUnplaced`, `leftoverCompleted`,
   `blockCompleted`, `adHocDeleted`). See [Log](./26-log.md).
-- The page is vault-global: the domain lens does not filter it, and wing tabs never filter
+- The page is vault-global: the area lens does not filter it, and wing tabs never filter
   page data. This is the wings law — wings switch the rail, not the data — see
   [`LAWS/WINGS.md`](../../LAWS/WINGS.md).
 - Do not expect drag-and-drop or a keyboard rearrangement path here: a block's time is
@@ -143,7 +144,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 - [Architecture](./08-architecture.md) — the day types and default week the live day copies
   from, and the real week it leaves alone.
-- [Act](./14-act.md) — the **Today** column that appears in **Leftover**.
+- [Task Manager](./14-task-manager.md) — the **Today** column that appears in **Leftover**.
 - [Life Map](./11-life-map.md) — the calendar the live day is deliberately not drawn on.
 - [Log](./26-log.md) — the `map.liveDay.*` entries each action writes.
 - [The studio](./03-the-studio.md) — wings, the rail and the three panes.

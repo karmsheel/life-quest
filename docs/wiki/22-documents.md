@@ -1,8 +1,8 @@
 # Documents
 
 Documents is the vault's library: free-form markdown notes, each tagged with zero
-or more domains, created and edited on one page. A note is a plain `.md` file
-under `documents/`, so it is yours in any editor; the app adds a lock and a
+or more areas, created and edited on one page. A note is a plain `.md` file under
+`documents/`, so it is yours in any editor; the app adds a lock and a
 propose-change path so a note you have finished can be defended from quiet
 rewrites — by you or by the companion.
 
@@ -11,21 +11,23 @@ rewrites — by you or by the companion.
 **Home** wing → **Documents** (route `/documents`). It opens in the centre pane
 as a page with the composer at the top and the library below it.
 
-- The domain lens in the window title bar filters the list: **Overview** shows
-  every note; a domain lens shows the notes tagged with that domain. A note with
-  no tags appears only on **Overview**.
+- The **area lens** in the window title bar filters the list: **Life** shows every
+  note; an area's chip shows the notes tagged with that area. A note with no tags
+  appears only on **Life**.
 - There is no per-note route. Clicking a note opens it in the composer on the
   same page.
+- When a note is open, the note's own actions live in one three-dot menu at the
+  page's top right, labelled **Note actions**, with the lock badge beside it.
 
 Back to [Wiki home](./index.md).
 
 ## What it is for
 
 Most of the vault's writing has a prescribed home — doctrine, reviews, projects,
-daily notes. The library is for everything else: a reference note, a decision
-write-up, a plan you are thinking through, something you want beside a domain but
-not inside one. Tagging a note with domains is what makes the domain lens useful;
-leaving it unassigned keeps it in Overview, which is the right place for
+the Daily Journal. The library is for everything else: a reference note, a
+decision write-up, a plan you are thinking through, something you want beside an
+area but not inside one. Tagging a note with areas is what makes the area lens
+useful; leaving it unassigned keeps it in **Life**, which is the right place for
 vault-wide material.
 
 ## How to use it
@@ -33,20 +35,23 @@ vault-wide material.
 ### Create a note
 
 1. Open **Documents**. The top panel is the composer: **Title**, **Body**,
-   **Domains**, and the actions.
+   **Areas**, and the actions.
 2. Type a title and a body. The **Note preview** under the body renders the
    markdown as you type.
-3. Tick one or more **Domains**, or tick none to keep the note in **Overview**
-   only. The picker is pre-set to the active domain when a domain lens is on.
+3. Tick one or more **Areas**, or tick none to keep the note in **Life** only.
+   The picker is pre-set to the active area when an area lens is on. If no area is
+   unlocked the picker says **No live areas. Leave unassigned to keep this note in
+   Life**.
 4. Choose **Create**. The note is written to `documents/<id>.md` and appears in
    the list.
 5. In the list, click a note to open it in the composer; edit it and choose
    **Save**. **Cancel** clears the composer without writing.
 
 The list is ordered most recently updated first. Each card shows the title, its
-domain tags (or **Unassigned**) and the update time. Empty states: **No notes
-yet. Create one above.**, **No notes in this domain. Unassigned notes stay in
-Overview.**, and `<N> note file(s) could not be read.` for files the reader had to skip.
+area tags (or **Unassigned**) and the update time. Empty states: **No notes
+yet. Create one above.**, **No notes in this area. Unassigned notes stay in
+Life.**, and `<N> note file(s) could not be read.` for files the reader had to
+skip.
 
 ### Render markdown and link notes
 
@@ -65,7 +70,7 @@ The preview and the note body use one constrained markdown renderer:
 
 A wiki link resolves two ways:
 
-- `[[<domain>/<kind>]]` or `[[<Domain name>/<Doctrine label>]]` — a doctrine
+- `[[<area>/<kind>]]` or `[[<Area name>/<Doctrine label>]]` — a doctrine
   document. `kind` is `premise`, `what`, `why` or `how`, and the label form accepts
   **Beliefs & Premise**, **Vision & Desire**, **Purpose** and **Strategy (How)**.
   Clicking it opens the doctrine page.
@@ -73,26 +78,32 @@ A wiki link resolves two ways:
   titles. It resolves only when exactly one note has that title; clicking it opens
   that note in the composer.
 
-A `[[target]]` that resolves to nothing stays literal text. External links in the
-preview are contained: they open in a new window, and the current window never
-navigates to a foreign page.
+A doctrine link resolves only for an unlocked, unarchived area. A `[[target]]`
+that resolves to nothing stays literal text. External links in the preview are
+contained: they open in a new window, and the current window never navigates to a
+foreign page.
 
 ### Lock a note
 
-1. Open a note and choose **Lock**. Locking is the operator's mark that the note
-   is finished.
-2. A locked note is read-only in place: the title and body are not editable, the
-   domains are disabled, and **Save** is unavailable. The composer says **Unlock
-   to edit, or propose a change.**
-3. Choose **Unlock** to edit in place again, or **Propose change** to send a
-   proposed revision to [Decisions](./23-decisions.md) while the note stays
-   locked.
+1. Open a note. The lock badge beside its name shows the state, and the three-dot
+   **Note actions** menu leads with **Lock** — a switch whose label is **Lock
+   this note** / **Unlock this note**.
+2. Turn the switch on. Locking is the operator's mark that the note is finished;
+   the badge turns amber and the composer becomes read-only.
+3. A locked note is read-only in place: the title and body are not editable, the
+   areas are disabled, and **Save** is unavailable. The composer says **Unlock to
+   edit, or propose a change.**
+4. Turn the switch back off to edit in place again, or choose **Propose change**
+   from the same menu to send a proposed revision to
+   [Decisions](./23-decisions.md) while the note stays locked.
 
 ### Propose a change
 
-1. Open a locked note and choose **Propose change**.
+1. Open a locked note and open its **Note actions** menu. **Propose change**
+   appears only while the note is locked.
 2. The dialog **Propose change** pre-fills the note's title and body. A **Title**
-   field, an optional **Rationale**, and a **Proposed body** are what you send.
+   field, an optional **Rationale (optional)**, and a **Proposed body** are what
+   you send.
 3. Choose **Submit proposal**. A Decision is filed; the note does not change
    until it is approved. The dialog says it: **This proposal goes to Decisions.
    The document stays locked.**
@@ -101,58 +112,75 @@ navigates to a foreign page.
 
 ### Delete a note
 
-**Delete** asks first: **Delete note** — *The note is hidden from the library. Its
-file stays in the vault.* Confirming hides the note from the list; the markdown
-file is not erased.
+**Delete note** is the last item in the note's menu, drawn in the destructive ink.
+It asks first: **Delete note** — *The note is hidden from the library. Its file
+stays in the vault.* Confirming hides the note from the list; the markdown file
+is not erased.
 
 ## The screen
 
 | Part | What it does |
 |---|---|
-| Header | Title **Documents**, one line: *Markdown notes. Tag a domain, or leave unassigned to keep them in Overview only.* |
+| Header | Title **Documents**, one line: *Markdown notes. Tag an area, or leave unassigned to keep them in Life only.* |
 | **Title** / **Body** | The note's fields. Read-only while locked. |
 | **Note preview** | The rendered markdown, updated as the body changes. |
-| **Domains** | Checkboxes for each live domain; none means Overview-only. Disabled while locked. |
-| Actions | **Create** for a new note; **Save**, **Cancel**, **Delete** when one is open; **Lock** when unlocked; **Unlock** and **Propose change** when locked. |
-| Library list | Note cards with title, domain tags or **Unassigned**, and update time. Click to open. |
+| **Areas** | Checkboxes for each unlocked area; none means Life-only. Disabled while locked. |
+| Actions | **Create** for a new note; **Save** and **Cancel** when one is open. Lock, propose and delete live in the **Note actions** menu, not in the form. |
+| **Note actions** | Three-dot menu at the top right: the **Lock** switch first, then **Propose change** while locked, then **Delete note**. |
+| Library list | Note cards with title, area tags or **Unassigned**, and update time. Click to open. |
 
 ## Rules and behaviour
 
 A note is a markdown file. `documents/<id>.md`, where `<id>` is generated and
 stays the filename for the life of the note — renaming a note changes its title,
-never its path. Frontmatter carries `title`, `domains` (a JSON array),
-`createdAt`, `updatedAt`, `deletedAt` and `locked`. A note is hidden when
+never its path. Frontmatter carries `title`, `domains` (a JSON array of area
+slugs), `createdAt`, `updatedAt`, `deletedAt` and `locked`. A note is hidden when
 `deletedAt` is set; the file stays. `documents/` sits at the vault root, not under
-a domain.
+an area.
 
-Domains are tags, not a folder. A note may carry several domain slugs or none.
-The domain lens is a filter over the tags: Overview shows everything, a domain
-lens shows the notes that name it. A note with an empty tag list appears only on
-Overview. Domain tags must name an existing domain; an unknown tag is refused by
-the engine, not silently stored.
+Areas are tags, not a folder. A note may carry several area slugs or none. The
+area lens is a filter over the tags: **Life** shows everything, an area lens
+shows the notes that name it. A note with an empty tag list appears only on
+**Life**. Area tags must name an existing area; an unknown tag is refused by the
+engine with `Unknown domain: <slug>`, not silently stored.
 
 Lock is operator-only. The engine refuses a lock or unlock from an agent with
 **Only the user may lock or unlock library notes.** Locking is not a Decision for
 the operator — it applies at once. Unlocking does not apply, dismiss or change a
 pending proposal.
 
-The law behind the lock. The doctrine law applies to library notes too:
-locked documents must not be edited in place, agents must not lock or unlock, and
-an agent change to a locked document must appear as a pending Decision. The full
-statement is in [LAWS/DOCTRINE.md](../../LAWS/DOCTRINE.md).
+The law behind the lock. The doctrine law applies to library notes too: locked
+documents must not be edited in place, agents must not lock or unlock, and an
+agent change to a locked document must appear as a pending Decision. A library
+note's areas are part of the note the operator reads, so they follow the same
+rule. The full statement is in [LAWS/DOCTRINE.md](../../LAWS/DOCTRINE.md).
+
+The three-dot menu is the studio's one page-action pattern. Its first item is
+always the page's **Lock** switch, and the rest are that page's acts — here
+**Propose change** and **Delete note** — so a lockable surface never spreads its
+settings and its actions across two corners. The same menu sits on the Dashboard
+board (**Dashboard actions**) and on a doctrine document (**Document actions**);
+a [Pages](./21-pages.md) canvas has no menu, because a page has no lock.
 
 What the companion can do.
 
 | Tool | Behaviour |
 |---|---|
-| `list_documents` | Reads every library note plus one record per doctrine document per live domain. No approval. |
+| `list_documents` | Reads every library note plus one record per doctrine document per unlocked area. No approval. |
 | `get_document` | Reads a library note by id, or a doctrine document by `domainSlug` + `kind`. |
-| `create_library_document` | An agent's create files a pending **Library note** Decision; the file appears when the operator approves it. |
-| `update_document` | An agent's change to a library note files a **Library note** Decision with the proposed title and body. On a doctrine document an agent always proposes, locked or not. |
+| `create_library_document` | An agent's create files a pending **Library note** Decision; the file appears when the operator approves it. The proposal carries the note's `domainSlugs`. |
+| `update_document` | An agent's change to a library note files a **Library note** Decision with the proposed title, body and areas. `domainSlugs` is the note's area list: omit it and the tags stand, send `[]` to propose untagging, send a list to re-tag. On a doctrine document an agent always proposes, locked or not; `domainSlugs` is refused there with "domainSlugs only applies to a library note; a doctrine document's area comes from domainSlug". |
 
 So a companion write to any document waits in [Decisions](./23-decisions.md); the
 operator's own edit to an unlocked note is direct. Reads need no approval. Every
 create, update and lock change appends a life-log entry naming the actor.
+
+**A proposed area change has its own row on the card.** When an agent's
+`update_document` changes a library note's tags, the Decision card shows a
+**Domains** row (the card's label is still spelled that way) naming the note's
+areas before and after — for example "Health" → "Health, Mind". Approving it
+writes the new area list into the note's frontmatter; unlocking the note does not
+settle it, and an approval does not unlock the note.
 
 Media. The library composer has no image insert control, and the **Note
 preview** does not resolve vault media: an `![alt](media/<name>)` reference is
@@ -180,12 +208,11 @@ window that carries the app bridge.
   literal text.
 - Two notes with the same title make `[[that title]]` ambiguous, and an ambiguous
   link stays literal text rather than guessing.
-- **Delete** is soft: the note leaves the list and the lens, and the file remains
-  in the vault. There is no restore control in the studio; the file is still
-  readable and can be edited by hand.
-- A note tagged with an archived domain keeps the tag. The note is visible on
-  **Overview**, and the picker shows the archived tag only while that note is
-  open.
+- **Delete note** is soft: the note leaves the list and the lens, and the file
+  remains in the vault. There is no restore control in the studio; the file is
+  still readable and can be edited by hand.
+- A note tagged with an archived area keeps the tag. The note is visible on
+  **Life**, and the picker shows the archived tag only while that note is open.
 - A locked note can still be deleted; deletion is not an in-place edit.
 - A proposal approved later still writes that proposal's body — the last
   approval wins. Unlocking does not settle a pending proposal.
@@ -195,12 +222,9 @@ window that carries the app bridge.
 
 ## Related
 
-- [Doctrine](./07-doctrine.md) — the prescribed documents that share the same lock
-  and proposal model
+- [Doctrine](./07-doctrine.md) — the prescribed documents that share the same lock and proposal model
 - [Decisions](./23-decisions.md) — where a companion or locked-note change waits
-- [Data and databases](./19-data-and-databases.md) — when a note wants structured
-  rows instead of prose
+- [Data and databases](./19-data-and-databases.md) — when a note wants structured rows instead of prose
 - [Pages](./21-pages.md) — the other freeform knowledge surface, built from blocks
 - [The Vault](./04-the-vault.md) — where `documents/` sits in the folder layout
-- [The Companion](./24-companion.md) — the tools the companion reads and proposes
-  with
+- [Companion](./24-companion.md) — the tools the companion reads and proposes with

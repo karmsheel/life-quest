@@ -31,6 +31,8 @@
  *   e2e/artifacts/pi-companion-picker.png
  *   e2e/artifacts/pi-companion-turn.png          the live tool turn settled
  *   e2e/artifacts/pi-companion-turn-history.png  the same turn after a reload
+ *   e2e/artifacts/pi-companion-switcher.png   a 1:1 crop of the agent blocks
+ *   e2e/artifacts/pi-companion-switcher-day.png  the same crop under the day theme
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -847,16 +849,105 @@ async function main() {
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-thread.png"), threadImage.toPNG());
 
   // The switcher: a vertical pill of agent blocks in the dock's corner. Both
-  // agents are unscoped here, so both are offered on Overview.
-  const pickerShown = await js(`(() => ({
-    shown: Boolean(document.querySelector(".agent-switcher")),
-    items: [...document.querySelectorAll(".agent-switcher__pill")].map(
-      (el) => el.getAttribute("aria-label"),
-    ),
-  }))()`);
+  // agents are unscoped here, so both are offered on Overview. Each block's
+  // mark is read with it, because the block falls back to nothing but its
+  // initial when a mark is missing. An image mark is load-checked with
+  // `decode()`: an SVG with only a viewBox has no intrinsic pixel width to
+  // compare. A glyph mark is checked for one ink and for fitting whole inside
+  // the block's circle — every corner of its painted bounds must be inside the
+  // ring, or the picture is of a clipped logo.
+  const pickerShown = await js(`(async () => {
+    const switcher = document.querySelector(".agent-switcher");
+    const pills = [...document.querySelectorAll(".agent-switcher__pill")];
+    const box = switcher ? switcher.getBoundingClientRect() : null;
+    const marks = [];
+    for (const el of pills) {
+      const img = el.querySelector("img[data-agent-mark]");
+      const svg = el.querySelector("svg[data-agent-mark]");
+      const pill = el.getBoundingClientRect();
+      const border = parseFloat(getComputedStyle(el).borderTopWidth) || 0;
+      const radius = Math.min(pill.width, pill.height) / 2 - border;
+      const centerX = pill.left + pill.width / 2;
+      const centerY = pill.top + pill.height / 2;
+      let decoded = false;
+      if (img) {
+        try {
+          await img.decode();
+          decoded = true;
+        } catch {
+          decoded = false;
+        }
+      }
+      let rendered = null;
+      if (svg) {
+        const rects = [...svg.querySelectorAll("path")].map((path) =>
+          path.getBoundingClientRect(),
+        );
+        if (rects.length > 0) {
+          const left = Math.min(...rects.map((rect) => rect.left));
+          const right = Math.max(...rects.map((rect) => rect.right));
+          const top = Math.min(...rects.map((rect) => rect.top));
+          const bottom = Math.max(...rects.map((rect) => rect.bottom));
+          const corners = [
+            [left, top],
+            [right, top],
+            [left, bottom],
+            [right, bottom],
+          ];
+          rendered = {
+            width: right - left,
+            height: bottom - top,
+            centered:
+              Math.abs((left + right) / 2 - centerX) < 0.75 &&
+              Math.abs((top + bottom) / 2 - centerY) < 0.75,
+            fitsCircle: corners.every(
+              ([x, y]) => Math.hypot(x - centerX, y - centerY) <= radius + 0.5,
+            ),
+            sizeRatio: Math.max(right - left, bottom - top) / (radius * 2),
+          };
+        }
+      }
+      marks.push({
+        label: el.getAttribute("aria-label"),
+        kind: svg ? "glyph" : img ? "image" : "none",
+        src: img ? img.getAttribute("src") : null,
+        decoded,
+        viewBox: svg ? svg.getAttribute("viewBox") : null,
+        pathCount: svg ? svg.querySelectorAll("path").length : 0,
+        fills: svg
+          ? [...svg.querySelectorAll("path")].map(
+              (path) => getComputedStyle(path).fill,
+            )
+          : [],
+        ink: svg ? getComputedStyle(svg).color : null,
+        rendered,
+      });
+    }
+    return {
+      shown: Boolean(switcher),
+      items: pills.map((el) => el.getAttribute("aria-label")),
+      marks,
+      box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
+    };
+  })()`);
   const pickerImage = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-picker.png"), pickerImage.toPNG());
 
+  // A 1:1 crop of the blocks: at 33px a whole-window shot cannot show which
+  // mark an agent wears, and the icon is the thing this picture is evidence of.
+  if (pickerShown.box && pickerShown.box.width > 0) {
+    const pad = 12;
+    const switcherShot = await win.webContents.capturePage({
+      x: Math.max(0, Math.round(pickerShown.box.x - pad)),
+      y: Math.max(0, Math.round(pickerShown.box.y - pad)),
+      width: Math.round(pickerShown.box.width + pad * 2),
+      height: Math.round(pickerShown.box.height + pad * 2),
+    });
+    fs.writeFileSync(
+      path.join(artifactsDir, "pi-companion-switcher.png"),
+      switcherShot.toPNG(),
+    );
+  }
   // ——— the tool turn: the dock's work log, from real pi-harness events ———
   //
   // The first turn proved a reply. This one proves the TIMELINE: the fake model
@@ -1348,6 +1439,66 @@ async function main() {
   await sleep(1600);
   const scopeFinancial = await readSwitcher();
 
+  // Black and white means both inks: the glyph follows the app's ink, so the
+  // day theme is booted for real — a skin paints `--fg` as inline custom
+  // properties, which flipping `data-theme` alone would not move — and the mark
+  // is read again once the dock is back. The night ink is the one already read
+  // off the block at the top.
+  const darkInk =
+    pickerShown.marks.find((mark) => mark.label === "Pi")?.fills[0] ?? null;
+  await js(`(() => { localStorage.setItem("lifequest-theme", "light"); return true; })()`);
+  win.webContents.reload();
+  let lightInk = null;
+  for (let i = 0; i < 300; i += 1) {
+    lightInk = await js(`(() => {
+      const path = document.querySelector(".agent-switcher svg[data-agent-mark] path");
+      return path ? getComputedStyle(path).fill : null;
+    })()`);
+    if (lightInk) break;
+    await sleep(100);
+  }
+  const lightBox = await js(`(() => {
+    const el = document.querySelector(".agent-switcher");
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  })()`);
+  // The window has only just reloaded, so a capture can be a frame the new page
+  // has not painted yet — blank, or before the mark. Accept a frame only once it
+  // is the size asked for and actually holds the mark's ink; a picture that is
+  // not of the shipped screen is worse than none.
+  let dayCropInkPixels = 0;
+  await sleep(600);
+  if (lightBox && lightBox.width > 0) {
+    const pad = 12;
+    const x = Math.max(0, Math.round(lightBox.x - pad));
+    const y = Math.max(0, Math.round(lightBox.y - pad));
+    const width = Math.round(lightBox.width + pad * 2);
+    const height = Math.round(lightBox.height + pad * 2);
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      // The whole window is captured and cropped here rather than asked for a
+      // rect: the full frame is the capture path the rest of this rig proves
+      // reliable right after a reload.
+      const frame = await win.webContents.capturePage();
+      const cropped = frame.crop({ x, y, width, height });
+      const bitmap = cropped.toBitmap();
+      let ink = 0;
+      for (let i = 0; i + 3 < bitmap.length; i += 4) {
+        if (bitmap[i] < 120 && bitmap[i + 1] < 120 && bitmap[i + 2] < 120) ink += 1;
+      }
+      if (ink > 60) {
+        dayCropInkPixels = ink;
+        fs.writeFileSync(
+          path.join(artifactsDir, "pi-companion-switcher-day.png"),
+          cropped.toPNG(),
+        );
+        break;
+      }
+      await sleep(200);
+    }
+  }
+  const inkThemes = { light: lightInk, dark: darkInk };
+
   const report = {
     ok:
       configured.settings === "ready" &&
@@ -1388,6 +1539,8 @@ async function main() {
     stored,
     threadHasReply: threadText.includes(REPLY),
     picker: pickerShown,
+    inkThemes,
+    dayCrop: { inkPixels: dayCropInkPixels },
     tool: {
       checks: toolChecks,
       database: configured.database ?? null,
@@ -1425,6 +1578,8 @@ async function main() {
       "pi-companion-picker.png",
       "pi-companion-turn.png",
       "pi-companion-turn-history.png",
+      "pi-companion-switcher.png",
+      "pi-companion-switcher-day.png",
       "pi-companion-scope-overview.png",
       "pi-companion-scope-domain.png",
     ],

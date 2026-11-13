@@ -1,5 +1,4 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -92,6 +91,40 @@ export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
 let current: CompanionStatus = { kind: "needs_install" };
 
 /**
+ * How long a chat stream may go without a single byte before this side declares
+ * the transport dead.
+ *
+ * The gateway is chatty while a turn is live: it writes an SSE keepalive
+ * comment every ten seconds even when the agent is thinking or running a slow
+ * tool, and every delta and tool frame lands on the same socket. So a silence
+ * far longer than that is not a slow turn — it is a stream that stopped, a
+ * gateway that wedged, or a connection that was cut without the socket saying
+ * so. Without a bound the turn stayed "running" for as long as the app stayed
+ * open: the composer would not take another message, the rail's dot kept
+ * pulsing, and restarting the app was the only way out. A turn the operator had
+ * already watched stream its answer in could still be shown as in flight.
+ */
+const PRODUCT_STREAM_IDLE_MS = 45_000;
+let streamIdleMs = PRODUCT_STREAM_IDLE_MS;
+
+/**
+ * Shorten the silence a chat stream is allowed, for the e2e seam only.
+ *
+ * The product keeps its 45-second bound; the seam's gate in `main.ts` is the
+ * only caller, and it only exists in a dev build with `LIFEQUEST_E2E` set. A
+ * rig that waited 45 real seconds for the bound would spend more time proving
+ * the clock than the behaviour.
+ */
+export function setChatStreamIdleMs(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 500) return;
+  streamIdleMs = Math.round(ms);
+}
+
+/** The sentence a stream that stopped gets, in the operator's own terms. */
+const STREAM_LOST =
+  "The companion stopped sending while this turn was running. The turn was closed and the chat was re-read, so any answer it stored is in the transcript. Send again if the reply is not there.";
+
+/**
  * Everyone who wants to hear that the companion's status moved.
  *
  * The listener set lives on the app's bus (`harness/status-bus.ts`), not here:
@@ -108,7 +141,10 @@ export function onCompanionStatusChanged(
 /** Store the status and tell everyone. Returns the wire shape (no API key). */
 function publish(status: CompanionStatus): PublicCompanionStatus {
   current = status;
-  return publishHarnessStatus(publicStatus(status));
+  // Tagged with this harness: a switch may already have moved the app to the
+  // other companion, and a late answer from a gateway that was restarting when
+  // the operator clicked must not be painted as the agent they are now on.
+  return publishHarnessStatus("hermes", publicStatus(status));
 }
 
 /**
@@ -1192,16 +1228,6 @@ export type CompanionSessionPatch = {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
-  /**
-   * The gateway's revision counter for the chat, as the list read it.
-   *
-   * Hermes fences every session mutation on it: a write that carries no
-   * `expected_revision` is refused as a pre-fence client (409), and one whose
-   * revision no longer matches the row is refused as a conflict (409). This is
-   * the number the sidebar's list already read, so an archive can be sent with
-   * the fence it needs.
-   */
-  revision?: number | null;
 };
 
 /**
@@ -1210,17 +1236,16 @@ export type CompanionSessionPatch = {
  * All three are durable Hermes-side flags, so Hermes Desktop (and every other
  * channel on this profile) sees the same state; LifeQuest keeps no copy.
  *
- * THE FENCE
+ * ONLY FLAGS CROSS THE WIRE
  *
- * The gateway refuses a session write that carries no mutation identity: it
- * answers 409 `mutation_identity_required` (or `CLIENT_UPGRADE_REQUIRED` for a
- * client old enough to predate the fence). So every write here carries a
- * `request_id` — the idempotency key, so a retry of the same gesture commits
- * once — and an `expected_revision`, the row's own revision counter. A chat
- * whose revision the caller does not know (a row the list did not carry, or an
- * older host that reports no counter) is written unfenced: the gateway's own
- * answer is then the verdict, which is better than refusing the operator's
- * gesture on this app's side.
+ * The host gateway's PATCH is a strict allowlist — `title`, `end_reason`,
+ * `pinned`, `archived`, `hidden`, `unread` — and answers anything else with 400
+ * `unsupported_session_field` before a write is attempted. So a body carrying a
+ * mutation identity (`request_id` / `expected_revision`) is not fenced: it is
+ * refused. Those fields belong to Hermes' *dashboard* backend
+ * (`hermes_cli/web_server_sessions.py`, which fences its `session.mutate` RPC),
+ * not to the `/api/sessions` API this app attaches to. The archive is therefore
+ * the operator's plain flag write, and the gateway's own answer is the verdict.
  */
 export async function companionSessionPatch(
   id: string,
@@ -1233,12 +1258,6 @@ export async function companionSessionPatch(
     if (typeof patch.archived === "boolean") body.archived = patch.archived;
     if (Object.keys(body).length === 0) {
       return { ok: false, error: "Session update had nothing to change" };
-    }
-    // The receipt key. The gateway deduplicates on it, so a retried gesture
-    // commits once instead of racing itself.
-    body.request_id = randomUUID();
-    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
-      body.expected_revision = patch.revision;
     }
     const res = await gatewayCall("Updating a chat", () =>
       hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
@@ -1270,25 +1289,18 @@ export async function companionSessionPatch(
  * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
  * copy of a chat, so there is nothing to reconcile here afterwards.
  *
- * The gateway fences this write the same way it fences every other session
- * mutation, and it takes the fence as query parameters: a delete with no
- * `request_id` and no `expected_revision` is refused as a pre-fence client. So
- * the same identity goes out here.
+ * No body and no fence fields: this app attaches to the host gateway's
+ * `/api/sessions` API, which takes the delete as a plain request (see
+ * `companionSessionPatch` for why a mutation identity does not belong here).
  */
 export async function companionSessionDelete(
   id: string,
-  patch: { revision?: number | null } = {},
 ): Promise<
   { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
 > {
   try {
-    const query = new URLSearchParams();
-    query.set("request_id", randomUUID());
-    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
-      query.set("expected_revision", String(patch.revision));
-    }
     const res = await gatewayCall("Deleting a chat", () =>
-      hermesFetch(`/api/sessions/${encodeURIComponent(id)}?${query.toString()}`, {
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
       }),
     );
@@ -1305,19 +1317,15 @@ export async function companionSessionDelete(
       id?: unknown;
       session_id?: unknown;
       deleted?: unknown;
-      deleted_ids?: unknown;
       already_absent?: unknown;
     };
     /**
-     * The gateway's receipt names the row it retired. A delete answers
-     * `{ok, session_id, revision, deleted_ids}` — the id is `session_id`, not
-     * `id` — and a row that was already gone answers `{ok, already_absent}`,
-     * which is the outcome the caller wanted either way.
-     *
-     * Older hosts answered `{object, id, deleted}`; both shapes are read, so a
-     * delete is not reported as failed just because the host words its receipt
-     * differently. What matters is that the receipt names a row at all: a
-     * reply that names none is not a delete this app can claim.
+     * The gateway's receipt names the row it retired: the host answers
+     * `{object: "hermes.session.deleted", id, deleted}`. `session_id` is read
+     * too, because the dashboard backend words its receipt that way and a host
+     * that adopted that shape should not be reported as a failed delete. What
+     * matters is that the receipt names a row at all: a reply that names none
+     * is not a delete this app can claim.
      */
     const named = [body?.id, body?.session_id].find(
       (value): value is string => typeof value === "string" && value.length > 0,
@@ -1345,6 +1353,16 @@ export async function companionSessionDelete(
  * cannot also produce the bytes for. A receipt arrives on the older
  * `attachment` argument and keeps its own wording; the general attachments
  * arrive as a list and are described by kind.
+ *
+ * THE STREAM IS BOUNDED BY SILENCE, NOT BY A TOTAL TIMEOUT
+ *
+ * A turn may legitimately run for an hour, so there is no deadline on the whole
+ * request. What cannot be legitimate is a socket that produces nothing at all:
+ * the gateway writes a keepalive comment every ten seconds while it is working,
+ * so a silence longer than `streamIdleMs` means the stream is gone, whatever the
+ * socket thinks. When that happens the request is aborted and the turn is
+ * failed with a sentence the operator can act on. The renderer then settles the
+ * turn, which is the part that clears the running dot and unlocks the composer.
  */
 export async function companionChatStream(
   sessionId: string,
@@ -1359,6 +1377,16 @@ export async function companionChatStream(
   // the turn instead of leaving a permanent spinner.
   let terminated = false;
   let started = false;
+  // One abort controller owns the whole request, and one timer measures the
+  // silence. Every byte received pushes the timer out; nothing else does.
+  const stall = new AbortController();
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const armIdle = () => {
+    if (idle !== undefined) clearTimeout(idle);
+    idle = setTimeout(() => stall.abort(), streamIdleMs);
+    // A watchdog must never be the reason the app process stays alive.
+    idle.unref?.();
+  };
   try {
     const instructions: CompanionInstructionsInput = {
       ...ctx,
@@ -1367,6 +1395,9 @@ export async function companionChatStream(
         : {}),
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
     };
+    // Armed before the fetch: a gateway that accepts the connection and never
+    // answers is the same failure as one that goes silent mid-turn.
+    armIdle();
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
@@ -1376,6 +1407,7 @@ export async function companionChatStream(
           instructions: buildInstructions(instructions),
           ...runtimeRequestBody(runtime),
         }),
+        signal: stall.signal,
       },
     );
     if (!res.ok || !res.body) {
@@ -1394,6 +1426,9 @@ export async function companionChatStream(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      // Bytes are the only heartbeat this side can see: keepalive comments are
+      // dropped by the SSE parser, so they must not be mistaken for a stall.
+      armIdle();
       buf += decoder.decode(value, { stream: true });
       const split = splitSse(buf);
       buf = split.rest;
@@ -1411,13 +1446,21 @@ export async function companionChatStream(
     }
     return { ok: true };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    // A transport failure mid-turn is still a turn that ended badly. Without a
-    // terminal frame the panel would keep the turn "running" forever.
+    // The abort is ours, so it gets our sentence rather than undici's.
+    const message = stall.signal.aborted
+      ? STREAM_LOST
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    // A transport failure mid-turn (a dropped socket, or our own silence
+    // watchdog) is still a turn that ended badly. Without a terminal frame the
+    // panel would keep the turn "running" forever.
     if (started && !terminated) {
       onEvent({ type: "run.incomplete", reason: message });
     }
     return { ok: false, error: message };
+  } finally {
+    if (idle !== undefined) clearTimeout(idle);
   }
 }
 

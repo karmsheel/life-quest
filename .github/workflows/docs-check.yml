@@ -1,0 +1,51 @@
+name: docs-check
+
+# The wiki is part of the product. This gate runs on every pull request, on
+# master, and weekly, so drift is found before a release rather than after one.
+# `npm run release` runs the same script and refuses to build on failure.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    # Mondays, 05:17 UTC — catch drift that merged without a release.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: docs-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the wiki against the app
+        run: node scripts/docs-check.mjs
+
+      - name: Open or update the drift issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Docs drift: the wiki no longer matches master"
+          body="The weekly docs check failed. Run \`npm run docs:check\` locally and fix what it reports, then push.
+          
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing="$(gh issue list --state open --search "$title in:title" --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

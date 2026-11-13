@@ -293,6 +293,9 @@ const SAMPLE = `(() => {
           bodyVisible: visible(chatShortcutsBody),
           shortcutsRoot: present("[data-chat-shortcuts]"),
           hint: text(document.querySelector(".chat-shortcuts__hint")),
+          browserKeys: text(
+            document.querySelector("[data-chat-shortcuts-browser-keys]"),
+          ),
           editCount: document.querySelectorAll(".chat-shortcuts__edit").length,
           recordingPromptCount: document.querySelectorAll(
             "[data-chat-shortcut-recording-prompt]",
@@ -832,6 +835,13 @@ async function main() {
       typeof dock.hint === "string" &&
         dock.hint.includes("All on their default keys."),
       `hint ${JSON.stringify(dock.hint)}`,
+    );
+    check(
+      "the reference names the dock's browser keys beside the movement table",
+      typeof dock.browserKeys === "string" &&
+        dock.browserKeys.includes("Ctrl+W") &&
+        dock.browserKeys.includes("middle click"),
+      `browser keys ${JSON.stringify(dock.browserKeys)}`,
     );
     check(
       "the dock hides its composer and footer on the reference",

@@ -8,8 +8,9 @@
  *  1. The sidebar does not list the profile's chats — the list is still only
  *     reachable from inside the dock, which is the bug this rig exists for.
  *  2. A row click loads the wrong chat, or loads it without opening the dock.
- *  3. The tab strip appears with one chat (noise) or not at all with two (the
- *     parallel affordance never shows).
+ *  3. The tab strip is missing with one chat (so its plus cannot open a second
+ *     one), absent with two (the parallel affordance never shows), or the plus
+ *     opens no tab / steals the chat in front.
  *  4. A second send waits on the first — the store kept one `sending` flag, so
  *     the two turns serialise instead of running together.
  *  5. Deltas cross: a frame tagged with one chat lands in the other chat's
@@ -45,10 +46,20 @@
  *     scrolling. The menu has to open into the room above the row instead, stay
  *     wholly inside the list's viewport without moving it, and still open
  *     downward for a row that has the room under it.
+ * 17. A middle click that is not the browser's tab-close — the press lands on
+ *     one tab but another closes, a background tab's close moves the thread, or
+ *     a pinned square is dropped by the button when Unpin is its only way out.
+ *     The press has to be swallowed too: left alone, a middle button starts
+ *     X11's primary-selection paste under the strip.
+ * 18. Mod+W that is not the browser's tab-close — it does not close the tab in
+ *     front, it closes a tab while the strip is not drawn (one chat, no pinned
+ *     band), or it swallows the key where there is no tab to close. The key is
+ *     the platform's when the dock has nothing to offer it.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
- * ChatSessionsProvider, the real CSS and layout engine — is shipping code.
+ * ChatSessionsProvider, the real ShortcutRunner, the real CSS and layout engine
+ * — is shipping code.
  *
  * The restore rig (`chat-tabs-restore.electron.mjs`) drives this same page: it
  * boots it twice as two Electron processes over one profile with `?keep=1` (do

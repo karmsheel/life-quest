@@ -1,5 +1,5 @@
 import { unlockedAreas, type AgentScope } from "@lifequest/vault-core/pure";
-import { agentIcon } from "@/lib/agent-icons";
+import { AgentMark } from "@/components/ui/AgentMark";
 import { useOptionalAgents, type AgentEntry } from "@/state/AgentsProvider";
 import { useVault } from "@/state/VaultProvider";
 
@@ -64,7 +64,6 @@ export function SettingsAgents() {
         the default for an area is selected when you enter it.
       </p>
       {agents.map((agent) => {
-        const icon = agentIcon(agent.id);
         const shownDomains = domains.filter(
           (domain) => agent.domains.length === 0 || agent.domains.includes(domain.slug),
         );
@@ -72,11 +71,11 @@ export function SettingsAgents() {
           <div className="settings-agent" key={agent.id}>
             <div className="settings-agent__head">
               <span className="settings-agent__mark">
-                {icon ? (
-                  <img src={icon} alt="" draggable={false} />
-                ) : (
-                  <span aria-hidden>{agent.name.charAt(0)}</span>
-                )}
+                <AgentMark
+                  id={agent.id}
+                  name={agent.name}
+                  className={`settings-agent__mark-icon settings-agent__mark-icon--${agent.id}`}
+                />
               </span>
               <div className="settings-agent__name">
                 <strong>{agent.name}</strong>

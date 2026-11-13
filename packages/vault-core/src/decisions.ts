@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { getDocument } from "./domain-documents.ts";
-import { libraryGet } from "./library-documents.ts";
+import { libraryGet, normalizeDomains } from "./library-documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import {
@@ -218,6 +218,20 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     typeof raw.proposedBodyMarkdown === "string" ? raw.proposedBodyMarkdown : "";
   const previousBodyMarkdown =
     typeof raw.previousBodyMarkdown === "string" ? raw.previousBodyMarkdown : null;
+  // A domain change is written into the Decision file, so it has to be read back
+  // out of it: the inbox noticed this class of bug before, where a field that
+  // only existed on write disappeared on the next load. An older Decision has
+  // neither key, and reads as "this proposal does not touch the tags".
+  const proposedDomainSlugs =
+    Array.isArray(raw.proposedDomainSlugs) &&
+    raw.proposedDomainSlugs.every((slug) => typeof slug === "string")
+      ? (raw.proposedDomainSlugs as string[])
+      : null;
+  const previousDomainSlugs =
+    Array.isArray(raw.previousDomainSlugs) &&
+    raw.previousDomainSlugs.every((slug) => typeof slug === "string")
+      ? (raw.previousDomainSlugs as string[])
+      : null;
   const resolvedAt =
     typeof raw.resolvedAt === "string" ? raw.resolvedAt : null;
   // KAR-64: reason must be in the rebuilt field set, not just on write, or it is
@@ -257,6 +271,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     previousTitle,
     proposedBodyMarkdown,
     previousBodyMarkdown,
+    proposedDomainSlugs,
+    previousDomainSlugs,
     actor,
     createdAt,
     resolvedAt,
@@ -477,6 +493,16 @@ export async function createDecision(
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
     /**
+     * The library note's tags as the proposal would leave them, or null when the
+     * proposal does not touch them. [] is a proposal to untag the note.
+     */
+    proposedDomainSlugs?: string[] | null;
+    /**
+     * The note's tags when the proposal was filed. Optional: for an existing note
+     * the record derives them from the note itself rather than trusting a caller.
+     */
+    previousDomainSlugs?: string[] | null;
+    /**
      * Domain slugs for a target that does not carry them itself. Only used for an
      * agent library target whose file does not exist yet, and for a goal target.
      */
@@ -574,6 +600,33 @@ export async function createDecision(
     // proposedBodyMarkdown must be a string.
     if (typeof input.proposedBodyMarkdown !== "string") {
       return { ok: false, error: "proposedBodyMarkdown is required" };
+    }
+
+    // A proposed domain change is only a library-note thing. Every slug is
+    // validated against the vault's areas here, at propose time, rather than when
+    // the operator approves: a card in the inbox must always be able to land.
+    let proposedDomainSlugs: string[] | null = null;
+    if (input.proposedDomainSlugs !== undefined && input.proposedDomainSlugs !== null) {
+      if (!isLibraryTarget(input.target)) {
+        return { ok: false, error: "proposedDomainSlugs only applies to a library note" };
+      }
+      if (
+        !Array.isArray(input.proposedDomainSlugs) ||
+        !input.proposedDomainSlugs.every((slug) => typeof slug === "string")
+      ) {
+        return { ok: false, error: "proposedDomainSlugs must be an array of strings" };
+      }
+      const normalized = await normalizeDomains(rootPath, input.proposedDomainSlugs);
+      if (!normalized.ok) return normalized;
+      proposedDomainSlugs = normalized.value;
+    }
+    if (
+      input.previousDomainSlugs !== undefined &&
+      input.previousDomainSlugs !== null &&
+      (!Array.isArray(input.previousDomainSlugs) ||
+        !input.previousDomainSlugs.every((slug) => typeof slug === "string"))
+    ) {
+      return { ok: false, error: "previousDomainSlugs must be an array of strings" };
     }
 
     // Load the target and confirm it is locked (pages/pins/goals/day templates are NOT lockable).
@@ -717,7 +770,7 @@ export async function createDecision(
       }
     }
 
-    const domainSlugs: string[] =
+    let domainSlugs: string[] =
       input.target.type === "doctrine"
         ? [input.target.domainSlug]
         : input.target.type === "page"
@@ -748,6 +801,16 @@ export async function createDecision(
                             ? libraryNote.value.domainSlugs
                             : (input.domainSlugs ?? []);
 
+    // A re-tag touches both areas while it is pending: the card stays in the lens
+    // it is leaving as well as the one it is moving to, so neither view hides it.
+    const previousDomainSlugs =
+      proposedDomainSlugs !== null
+        ? (libraryNote?.value.domainSlugs ?? input.previousDomainSlugs ?? [])
+        : null;
+    if (proposedDomainSlugs !== null) {
+      domainSlugs = [...new Set([...domainSlugs, ...proposedDomainSlugs])];
+    }
+
     // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
     // "Proposed change to" would make the inbox read "Proposed change to
     // Finance bot".
@@ -770,6 +833,8 @@ export async function createDecision(
       previousTitle: input.previousTitle ?? null,
       proposedBodyMarkdown: input.proposedBodyMarkdown,
       previousBodyMarkdown: input.previousBodyMarkdown ?? null,
+      proposedDomainSlugs,
+      previousDomainSlugs,
       actor: input.actor,
       createdAt: now,
       resolvedAt: null,
@@ -1789,10 +1854,23 @@ async function applyApprovedBody(
       const now = new Date().toISOString();
       const nextTitle =
         decision.proposedTitle !== null ? decision.proposedTitle : existing.title;
+      // A proposal that changes the tags applies them; one that does not leaves
+      // them exactly as the note had them. Re-validated here because the vault can
+      // move between the filing and the answer.
+      let nextDomainSlugs = existing.domainSlugs;
+      if (decision.proposedDomainSlugs !== null) {
+        const normalized = await normalizeDomains(rootPath, decision.proposedDomainSlugs);
+        if (!normalized.ok) {
+          // An area directory that was removed cannot come back by approving
+          // again, so this is terminal rather than a stranded pending card.
+          return { ok: false, error: normalized.error, terminal: true };
+        }
+        nextDomainSlugs = normalized.value;
+      }
       const md = serializeFrontmatter(
         {
           title: nextTitle,
-          domains: JSON.stringify(existing.domainSlugs),
+          domains: JSON.stringify(nextDomainSlugs),
           createdAt: existing.createdAt,
           updatedAt: now,
           deletedAt: existing.deletedAt,

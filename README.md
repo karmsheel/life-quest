@@ -1,5 +1,8 @@
 # LifeQuest
 
+[![docs](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml)
+[![docs-check](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml)
+
 **Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Premise → Vision → Purpose → Strategy), Decisions, Life log, and agent roster live as plain files beside each other. The studio does not open without the companion. Capture is not the studio.
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
@@ -103,6 +106,9 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173, except the cold-start rig, which serves the built `dist/` itself and skips unless `npm run build` has run |
 | `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
+| `npm run docs:check` | Check the wiki against the app: version, routes, rail labels, Settings tabs, links and nav (also run by `npm run release` and CI) |
+| `npm run docs:serve` | Preview the wiki locally with MkDocs Material (install `requirements-docs.txt` first) |
+| `npm run docs:build` | Build the wiki site into `site/` (what GitHub Pages deploys) |
 
 ### Acceptance against a real vault
 
