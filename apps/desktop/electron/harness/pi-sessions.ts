@@ -5,10 +5,17 @@
 // transcripts stay with the harness and the vault stays the operator's life
 // database. One JSON file per chat, written atomically, because the dock lets
 // the operator delete and rename while a turn is running.
+//
+// A vault is nevertheless the profile that is loaded, so the files are grouped
+// under the open vault's identity (`<userData>/pi-sessions/<vaultId>/`): one
+// folder for the whole app meant a new vault opened onto the previous vault's
+// chats. `unassigned/` is the no-vault case (the setup screen and the app-less
+// harness pages), which keeps the old flat behaviour for them.
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { currentVaultBucket } from "../vault-scope.ts";
 
 export type PiStoredSession = {
   id: string;
@@ -37,14 +44,34 @@ export type PiSessionSummary = {
   archived: boolean;
 };
 
-function sessionsDir(): string {
+/** The legacy flat home; also the parent of every vault bucket. */
+function sessionsRoot(): string {
   return path.join(app.getPath("userData"), "pi-sessions");
 }
 
-/** Ids are file names; anything else is refused rather than sanitized silently. */
-function sessionFile(id: string): string | null {
+/** A bucket is a path segment, so an id that is not one is not trusted to be. */
+function safeBucket(bucket: string): string {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(bucket) ? bucket : "unassigned";
+}
+
+/** A vault's folder; "unassigned" is the no-vault case. */
+function bucketDir(bucket: string = currentVaultBucket()): string {
+  return path.join(sessionsRoot(), safeBucket(bucket));
+}
+
+/**
+ * Ids are file names; anything else is refused rather than sanitized silently.
+ *
+ * `bucket` is explicit because a turn belongs to the vault it STARTED in: a run
+ * that outlives a vault switch must still write its transcript to the vault
+ * that owns the chat, never into the vault the operator has moved to.
+ */
+function sessionFile(
+  id: string,
+  bucket: string = currentVaultBucket(),
+): string | null {
   if (!/^[A-Za-z0-9_-]{6,64}$/.test(id)) return null;
-  return path.join(sessionsDir(), `${id}.json`);
+  return path.join(bucketDir(bucket), `${id}.json`);
 }
 
 function summaryOf(session: PiStoredSession): PiSessionSummary {
@@ -61,7 +88,7 @@ function summaryOf(session: PiStoredSession): PiSessionSummary {
 export async function listPiSessions(): Promise<PiSessionSummary[]> {
   let names: string[];
   try {
-    names = await fs.readdir(sessionsDir());
+    names = await fs.readdir(bucketDir());
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw e;
@@ -101,7 +128,10 @@ export async function readPiSession(id: string): Promise<PiStoredSession | null>
   }
 }
 
-export async function createPiSession(title = ""): Promise<PiStoredSession> {
+export async function createPiSession(
+  title = "",
+  bucket: string = currentVaultBucket(),
+): Promise<PiStoredSession> {
   const now = Date.now();
   const session: PiStoredSession = {
     id: randomUUID(),
@@ -113,14 +143,24 @@ export async function createPiSession(title = ""): Promise<PiStoredSession> {
     archived: false,
     messages: [],
   };
-  await writePiSession(session);
+  await writePiSession(session, bucket);
   return session;
 }
 
-export async function writePiSession(session: PiStoredSession): Promise<void> {
-  const file = sessionFile(session.id);
+/**
+ * Write one chat, into `bucket` when the caller captured the vault the turn
+ * started in. The default is the open vault, which is what list/read/delete use.
+ */
+export async function writePiSession(
+  session: PiStoredSession,
+  bucket: string = currentVaultBucket(),
+): Promise<void> {
+  if (safeBucket(bucket) !== bucket) {
+    throw new Error(`Refusing an unsafe vault bucket: ${bucket}`);
+  }
+  const file = sessionFile(session.id, bucket);
   if (!file) throw new Error(`Refusing an unsafe session id: ${session.id}`);
-  await fs.mkdir(sessionsDir(), { recursive: true });
+  await fs.mkdir(bucketDir(bucket), { recursive: true });
   const tmp = `${file}.tmp`;
   await fs.writeFile(tmp, `${JSON.stringify(session)}\n`, "utf8");
   await fs.rename(tmp, file);
@@ -135,6 +175,68 @@ export async function deletePiSession(id: string): Promise<boolean> {
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw e;
+  }
+}
+
+/**
+ * True when pre-vault flat transcripts are waiting for an adopting vault.
+ *
+ * The one-time adoption must run only for an install that actually has old
+ * state: a fresh install's first vault starts clean, even if this machine
+ * happens to have Hermes on PATH.
+ */
+export async function hasLegacyPiSessions(): Promise<boolean> {
+  try {
+    const names = await fs.readdir(sessionsRoot());
+    return names.some((name) => name.endsWith(".json"));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw e;
+  }
+}
+
+/**
+ * Move the pre-vault flat transcripts into `vaultId`'s bucket, once.
+ *
+ * Before chats were vault-scoped there was one folder for the whole app, and the
+ * vault open at the upgrade is the one that keeps them: every other vault starts
+ * clean. The move is per file, so a half-finished adoption still leaves the
+ * remaining files where they were and is safe to run again.
+ *
+ * A collision never overwrites: the destination file is this vault's own chat
+ * already, and the legacy file is left for whatever vault adopts next.
+ */
+export async function adoptLegacyPiSessions(vaultId: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(vaultId)) return;
+  const root = sessionsRoot();
+  let names: string[];
+  try {
+    names = await fs.readdir(root);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw e;
+  }
+  const target = path.join(root, vaultId);
+  await fs.mkdir(target, { recursive: true });
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const from = path.join(root, name);
+    const to = path.join(target, name);
+    try {
+      await fs.access(to);
+      continue;
+    } catch {
+      // No destination file: this one is free to move.
+    }
+    try {
+      await fs.rename(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      // A file that vanished between the listing and the rename is not an
+      // adoption failure; the vault opening must not depend on this.
+      if (code === "ENOENT") continue;
+      throw e;
+    }
   }
 }
 

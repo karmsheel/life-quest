@@ -181,13 +181,15 @@ and the version badge. See [Companion](./24-companion.md).
   would be a taxonomy delivery in disguise, so the engine refuses that proposal.
 - Unlocking an area does not switch the lens. After a second area opens, choose
   it in the title bar's lens tab.
-- Pi's transcripts live in app user data, never in the vault. Switching companions
-  changes the set of chats you see, because a chat belongs to the companion that
-  made it.
+- Pi's transcripts live in app user data, never in the vault, grouped by the vault
+  that made them. The vault is the profile the app loads: switching vaults swaps
+  the chat rail, the tab strip and the agent, so one vault's chats never appear
+  in another.
 - Images is a Home-wing library at `/images`; the vision board itself is a
   document on **Vision**, not on Images. See [Doctrine](./07-doctrine.md).
 - Hermes remains a first-class companion on a machine that already has it
-  working; you can switch at any time from the dock or from Settings → Hermes.
+  working; a vault adds a Hermes agent at any time from Settings → Hermes, and
+  the dock switches between the agents that vault has.
 
 ## What LifeQuest is not
 

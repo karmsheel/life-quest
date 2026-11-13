@@ -231,6 +231,12 @@ import {
   setActiveDomain,
   type RecentEntry,
 } from "./recent-vaults.js";
+import { setVaultScope } from "./vault-scope.js";
+import {
+  adoptLegacyVaultDataOnce,
+  applyVaultAgentBinding,
+  detectLegacyInstall,
+} from "./vault-agents.js";
 import {
   clearHermesKey,
   getHermesKey,
@@ -407,6 +413,10 @@ export async function detectExternalDoctrineChanges(): Promise<
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
+  // The vault is now current, and that includes everything keyed by it: the
+  // chat stores read this before they answer a single list. Published before
+  // the lens and the MCP doors so no read can land on the previous vault.
+  setVaultScope({ id: snapshot.lifequest.id, rootPath: snapshot.rootPath });
   // Restore the persisted lens for this vault (KAR-6).
   const persisted = await getActiveDomain(snapshot.lifequest.id);
   // A persisted lens that is locked or archived no longer names a lens: the
@@ -421,11 +431,49 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
     await setActiveDomain(snapshot.lifequest.id, null);
   }
   await captureDoctrineMtimes(snapshot.rootPath);
+  // Whether this install has a pre-vault world must be read BEFORE this open is
+  // recorded as recent: afterwards every install looks like it had a previous
+  // vault, and a fresh install whose machine happens to have Hermes on PATH
+  // would bind the shared `lifequest` agent on its first open. Reading the
+  // history is best-effort, and an unreadable one is treated as legacy — losing
+  // an operator's old chats is worse than a fresh vault that starts clean.
+  let legacyInstall: boolean;
+  try {
+    legacyInstall = await detectLegacyInstall();
+  } catch {
+    legacyInstall = true;
+  }
   await recordRecentVault({
     id: snapshot.lifequest.id,
     name: snapshot.lifequest.name,
     path: snapshot.rootPath,
   });
+  // The vault's chats and agents follow it, so its agent binding is settled
+  // before anything reads either store. The one-time adoption runs first: it is
+  // what gives the vault that was open at the upgrade the chats and agent the
+  // app used to keep, and every other vault — and every fresh install — starts
+  // clean.
+  //
+  // Neither step may fail the open. An unreadable binding, a profile that is
+  // gone, or an adoption that cannot move a file is a companion status (or a
+  // chat that stays where it was) the operator can act on — not a reason to keep
+  // the previous vault's chats on screen.
+  try {
+    await adoptLegacyVaultDataOnce(snapshot.lifequest.id, {
+      legacyInstall,
+      effectiveHarness: harness.activeHarnessId(),
+    });
+  } catch {
+    // The old chats stay where they are; the vault is still open.
+  }
+  try {
+    await applyVaultAgentBinding({
+      id: snapshot.lifequest.id,
+      rootPath: snapshot.rootPath,
+    });
+  } catch {
+    // The companion reports its own failure on the status bus.
+  }
   // Open the loopback MCP doors for this vault. A failed start keeps the
   // vault open; we record the error for Settings instead of throwing.
   // startMcp rebinds when a listener already exists, so switching vaults

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  CompanionHarnessChanged,
   CompanionProfileInfo,
   CompanionStatus,
   HarnessId,
@@ -55,6 +56,15 @@ type CompanionContextValue = {
    * replaced while another agent boots.
    */
   switchHarness: (id: HarnessId) => Promise<void>;
+  /**
+   * Re-read the agent list, the Hermes profiles and the current status.
+   *
+   * Settings → Agents in this vault calls it after it adds or removes the
+   * vault's Hermes agent: the vault's binding changed but the active harness
+   * did not, so no status or harness push is coming and the dock's pill list
+   * would stay stale.
+   */
+  refreshHarnesses: () => Promise<void>;
   /**
    * Every Hermes profile this install has, null until the first read. The
    * setup screen and Settings both render the picker off this, so a stuck
@@ -147,12 +157,54 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  /** Mark one agent active in the picker list, before any answer arrives. */
+  /**
+   * Mark the agent the provider just moved to as active in the picker list.
+   *
+   * Only when the list already carries that agent. The list is main's
+   * synchronous view of "which agents this vault can talk to", and it is
+   * replaced wholesale by every re-read; a mark for an agent the current list
+   * does not have — the harness-changed push for a vault whose Hermes agent was
+   * just added, or a switch racing that read — must not demote the only agent
+   * the stale list can show. Demoting it would leave the switcher with no active
+   * agent for a frame, and `AgentsProvider`'s "an agent scoped away is not left
+   * answering" fallback reads that as "nothing is active" and switches back to
+   * Pi, overwriting the vault's binding in main. The ring itself still moves:
+   * the switcher draws `harness` as active whether or not the row says so, and
+   * the re-read below settles the flags.
+   */
   const markActive = useCallback((id: HarnessId) => {
-    setHarnesses((prev) =>
-      prev ? prev.map((h) => ({ ...h, active: h.id === id })) : prev,
-    );
+    setHarnesses((prev) => {
+      if (!prev) return prev;
+      if (!prev.some((entry) => entry.id === id)) return prev;
+      return prev.map((entry) => ({ ...entry, active: entry.id === id }));
+    });
   }, []);
+
+  /**
+   * Re-read the agent list, the profiles and the status.
+   *
+   * The list is main's synchronous answer to "which agents can this vault talk
+   * to", so it is re-read whenever the vault's binding changes — a fresh Hermes
+   * agent makes the pill appear, a removed one makes it disappear. A failure is
+   * silence, not a banner: the pickers keep what they already show.
+   */
+  const refreshHarnesses = useCallback(async () => {
+    try {
+      const [listed, profiles, status] = await Promise.all([
+        api().companionHarnesses(),
+        api().companionProfilesList(),
+        api().companionStatus(),
+      ]);
+      if (Array.isArray(listed)) {
+        setHarnesses(listed.length > 0 ? listed : null);
+      }
+      setProfiles(profiles.profiles);
+      setProfile(profiles.active);
+      if (status) applyStatus(status);
+    } catch {
+      // No bridge, or a read that failed: the page keeps what it knows.
+    }
+  }, [applyStatus]);
 
   /**
    * Switch companion — the BOOT/setup path, which waits.
@@ -304,6 +356,60 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
     }
   }, [applyStatus]);
 
+  /**
+   * The vault that just opened applied its own agent binding.
+   *
+   * A vault switch can change which companion is in front without this provider
+   * ever being asked to switch — the main process applied the vault's binding and
+   * pushed the result. So the provider follows the push: the harness state, the
+   * picker's active mark, and a re-read of the harness list and the Hermes
+   * profiles (the profile list is per agent, so it moved too). It has to happen
+   * even when the harness id did not change: a Pi-to-Pi vault switch keeps the
+   * id but not necessarily the profile or the active flags.
+   *
+   * The push is part of the main-process contract; a harness page's partial
+   * bridge may not have it, and then this provider behaves exactly as before.
+   */
+  useEffect(() => {
+    const bridge = api();
+    // The bridge type promises the method, but a harness page mounts this
+    // provider over a partial stub, so the runtime check is the real guard.
+    if (typeof bridge.onCompanionHarnessChanged !== "function") return undefined;
+    const apply = (payload: CompanionHarnessChanged) => {
+      const next = payload?.harness;
+      if (next !== "pi" && next !== "hermes") return;
+      // The ref first: any status the new agent is publishing right now must be
+      // accepted as its own, not dropped as a stale answer from the agent left.
+      harnessRef.current = next;
+      setHarness(next);
+      markActive(next);
+      // The vault open applied the binding but the agent's ensure is still
+      // running in the background, and the status bus will only say so when it
+      // gets there. Marking the switch here is what keeps the chat store from
+      // painting a failed list read as an error: it sees `switching` and waits
+      // for the ready status, which clears the mark (applyStatus does that for
+      // any non-switching answer from this agent).
+      setSwitching(next);
+      // The harness list itself can change on a vault open (Hermes is offered
+      // only when the vault has a Hermes agent), and the status read is the
+      // verdict at the moment the push arrived.
+      void refreshHarnesses();
+    };
+    try {
+      const off = bridge.onCompanionHarnessChanged(apply);
+      // The preload returns the unsubscribe. A harness page's proxy stub answers
+      // every unknown method with a function that resolves a Promise, so a
+      // subscription it does not know about comes back as a Promise — and React
+      // would call that Promise as this effect's cleanup ("destroy is not a
+      // function"), taking the whole page down. Only a real unsubscribe is
+      // returned; anything else means this bridge has no such push.
+      return typeof off === "function" ? off : undefined;
+    } catch {
+      // No bridge (a harness page): nothing to subscribe to.
+      return undefined;
+    }
+  }, [markActive, refreshHarnesses]);
+
   const value = useMemo(
     () => ({
       status,
@@ -315,6 +421,7 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
       harness,
       useHarness,
       switchHarness,
+      refreshHarnesses,
       profiles,
       profile,
       useProfile,
@@ -329,6 +436,7 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
       harness,
       useHarness,
       switchHarness,
+      refreshHarnesses,
       profiles,
       profile,
       useProfile,

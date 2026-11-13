@@ -82,13 +82,17 @@ day, re-derived rather than appended to. Each item is dismissed as **Done**,
 
 **Companion harness** — the implementation behind the chat dock. **Pi** is built
 in and reaches the vault through the MCP door; **Hermes** is the external
-sidekick with its own CLI, profile and gateway. One harness is active per
-installation and each harness keeps its own chats. Chosen under Settings →
-Hermes → **Companion**. See [Companion](./24-companion.md).
+sidekick with its own CLI, profile and gateway. The choice is per vault: Pi is
+every vault's default, and a vault gains Hermes only when you add a Hermes agent
+to it under Settings → Hermes → **Agents in this vault**. Each vault keeps its own
+chats. See [Companion](./24-companion.md).
 
-**Companion profile** — a named Hermes profile. The app's default is `lifequest`;
-the app creates it if it does not exist. Profiles belong to Hermes only. See
-[Getting started](./02-getting-started.md).
+**Companion profile** — a named Hermes profile, which is one Hermes agent's memory,
+skills and transcript store. A vault can bind one profile (a fresh one, or
+explicitly one that already works on another vault, which shares its memory). The
+app's own profile is `lifequest`, adopted by the vault that was open when the
+per-vault agent model arrived. Profiles belong to Hermes only. See
+[Getting started](./02-getting-started.md) and [Agents](./25-agents.md).
 
 **Daily Journal** — the operator's journal for one local date, stored at
 `notes/daily/{YYYY-MM-DD}.md` and headed by its date. The operator is the only

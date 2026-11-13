@@ -242,21 +242,24 @@ Full detail: [Pages](./21-pages.md).
 
 Full detail: [Agents](./25-agents.md), [Decisions](./23-decisions.md).
 
-## Set up or switch the built-in Pi companion
+## Set up the built-in Pi companion
 
-1. With a vault open, go to **Settings → Hermes**. Under **Companion**, choose **Pi**
-   (blurb **Built in**).
+1. With a vault open, go to **Settings → Hermes → Agents in this vault**. Every
+   vault has **Pi**; choose **Use Pi** if the vault is currently on a Hermes agent.
 2. The **Built-in endpoint** section appears: **Endpoint** (an OpenAI-compatible
    base URL), **Model**, **Name** and **API key**. A local server works without a
    key. Choose **Save and connect**.
 3. Pi stores its endpoint and model in `%APPDATA%\LifeQuest\pi-endpoint.json`, its
    key is sealed by the OS, and its transcripts live in
-   `%APPDATA%\LifeQuest\pi-sessions\`. None of it is in the vault.
-4. Switch back to **Hermes** (**External sidekick**) at any time from the same picker;
-   the **Companion profile** section appears only while Hermes is selected. Each
-   companion keeps its own chats.
+   `%APPDATA%\LifeQuest\pi-sessions\<vault id>\`. None of it is in the vault.
+4. To give this vault a Hermes agent instead, use **Create a new agent for this
+   vault** or **Use an existing agent…** in the same section — see
+   [Companion](./24-companion.md). Adding one to this vault does not add it to
+   another.
 5. On a fresh machine the same setup is offered before the vault opens, under the
-   **LifeQuest companion** heading, with **Recheck** as the retry.
+   **LifeQuest companion** heading, with **Recheck** as the retry. The setup
+   screen's picker is the boot choice; opening a vault applies that vault's own
+   agent.
 
 Full detail: [Companion](./24-companion.md), [Settings](./28-settings.md).
 
@@ -293,7 +296,8 @@ Full detail: [Decisions](./23-decisions.md), [Companion](./24-companion.md).
    **Archived**) or **Only archived** (the archive alone; empty says **No archived
    chats**).
 5. Restore an archived row with **Unarchive**. New chat opens its own tab beside
-   the chat you were in, and the tab strip is remembered across an app restart.
+   the chat you were in, and the tab strip is remembered across an app restart —
+   per vault and per agent.
 
 Full detail: [Companion](./24-companion.md).
 
@@ -307,14 +311,18 @@ Full detail: [Companion](./24-companion.md).
 3. Reopen it from the rail-foot vault chip's **Switch vault** dialog (recent
    vaults, with the open one marked **Open now**, and **Open another folder…**), or
    from the welcome screen's **Open vault**. **Settings → Vault → Vault folder →
-   Change folder…** does the same.
+   Change folder…** does the same. Switching loads that vault's chats, tab strip
+   and agent; the other vault's are not carried across, and a vault you have not
+   used before starts on Pi with no chats.
 4. For a Git backup, export each area's tables to JSON first: **Settings → Vault →
    Books → Export books**. The SQLite file is not merged as text.
 5. To restore a book, arm that area's **Allow restore** switch, then choose
    **Restore books**. The app validates the JSON, backs up the current SQLite to
    `domain.sqlite.bak`, and then replaces the live book.
 6. The vault is not encrypted at rest in this build: its confidentiality is the
-   operating system account's. API keys never enter the vault.
+   operating system account's. API keys never enter the vault. Chat transcripts and
+   agent bindings stay in app user data, so a copied vault carries your content, not
+   your conversations or the Hermes agent it used.
 
 Full detail: [The vault](./04-the-vault.md),
 [Security](./29-security.md).

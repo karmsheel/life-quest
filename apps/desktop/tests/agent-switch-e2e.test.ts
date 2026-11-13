@@ -175,12 +175,15 @@ type Report = {
     restored: { value: string | null };
   };
   persistence: {
+    vaultId: string;
     beforeReload: {
+      vaultId: string;
       hermesRaw: string | null;
       piRaw: string | null;
       legacyRaw: string | null;
       hermes: { tabs: string[]; activeId: string | null } | null;
       pi: { tabs: string[]; activeId: string | null } | null;
+      lastSessionId: string | null;
     };
   };
   reload: {
@@ -444,16 +447,21 @@ describe("agent switch (the studio stays up)", () => {
       `the draft was lost by the switch: composer now ${JSON.stringify(report.draft.restored.value)}`,
     );
 
-    // ── D. Per-agent tab memory, restored by a fresh document ──────────────
+    // ── D. Per-vault, per-agent tab memory, restored by a fresh document ──
     assert.notEqual(
       report.persistence.beforeReload.hermesRaw,
       null,
-      "no stored tab strip for Hermes (lifequest.companion.openTabs.hermes)",
+      `no stored tab strip for Hermes (lifequest.companion.openTabs.${report.persistence.vaultId}.hermes)`,
     );
     assert.notEqual(
       report.persistence.beforeReload.piRaw,
       null,
-      "no stored tab strip for Pi (lifequest.companion.openTabs.pi)",
+      `no stored tab strip for Pi (lifequest.companion.openTabs.${report.persistence.vaultId}.pi)`,
+    );
+    assert.equal(
+      report.persistence.beforeReload.vaultId,
+      report.persistence.vaultId,
+      "the rig read the tab strip for a different vault than the one it opened",
     );
     assert.ok(
       report.reload.tabLabels.includes("Hermes alpha") &&

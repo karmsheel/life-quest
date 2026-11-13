@@ -208,6 +208,52 @@ type CompanionProfilesResult = {
   profiles: CompanionProfileInfo[];
 };
 
+/**
+ * Which agent a vault runs on. A vault is the profile that is loaded, so its
+ * companion choice and its Hermes agent are the vault's, never the app's.
+ */
+export type VaultAgentBinding = {
+  harness: HarnessId;
+  hermesProfile: string | null;
+};
+
+/**
+ * One Hermes profile the operator could bind, with the vaults it already works
+ * on. A non-empty `usedBy` is the reuse warning: memory, skills and knowledge
+ * would be shared with those vaults.
+ */
+export type VaultAgentProfile = {
+  name: string;
+  path: string;
+  isDefault: boolean;
+  hasSoul: boolean;
+  hasConfig: boolean;
+  usedBy: { vaultId: string; vaultName: string }[];
+};
+
+/** Settings → Agents in this vault, in one read. */
+export type VaultAgentsState = {
+  vaultId: string | null;
+  binding: VaultAgentBinding;
+  installedProfiles: VaultAgentProfile[];
+  vaultOpen: boolean;
+};
+
+/** Create a new agent for the vault, or reuse an installed one explicitly. */
+export type VaultAgentAddInput =
+  | { mode: "fresh"; name?: string }
+  | { mode: "existing"; profile: string };
+
+/**
+ * The open vault's agent changed: its binding was applied on vault open, or the
+ * operator switched from the dock. The harness id can move while neither
+ * agent's status does, so this is its own push rather than a status event.
+ */
+export type CompanionHarnessChanged = {
+  harness: HarnessId;
+  vaultId: string | null;
+};
+
 type CompanionInstructionsContext = {
   domainName: string | null;
   domainSlug: string | null;
@@ -564,6 +610,29 @@ type LifequestApi = {
    * later on `onCompanionStatusChanged`.
    */
   companionSwitchHarness: (id: HarnessId) => Promise<CompanionStatus>;
+  /**
+   * The agents in this vault: which companion it runs on, whether it has a
+   * Hermes agent, and the profiles the operator could reuse.
+   */
+  vaultAgentsGet: () => Promise<VaultAgentsState>;
+  /**
+   * Add a Hermes agent to the open vault — a fresh profile the companion seeds
+   * on first use, or an installed one reused (the caller has shown the shared
+   * memory warning).
+   */
+  vaultAgentsAddHermes: (
+    input: VaultAgentAddInput,
+  ) => Promise<Result<VaultAgentBinding>>;
+  /** Remove the vault's Hermes agent; the vault falls back to Pi. */
+  vaultAgentsRemoveHermes: () => Promise<Result<VaultAgentBinding>>;
+  /**
+   * The open vault's agent changed after its binding was applied, or because
+   * the operator switched. Distinguish it from the status push: the harness id
+   * can move while neither agent's status moves.
+   */
+  onCompanionHarnessChanged: (
+    cb: (payload: CompanionHarnessChanged) => void,
+  ) => () => void;
   companionPiSettings: () => Promise<PiSettings>;
   companionPiSettingsSave: (input: {
     baseUrl?: string;
@@ -976,6 +1045,7 @@ export type {
   TranscriptEntry,
   TranscriptMessage,
   TurnUsage,
+  CompanionHarnessChanged,
   CompanionInstructionsContext,
   CompanionModelCatalog,
   CompanionModelChoice,
@@ -998,4 +1068,8 @@ export type {
   Result,
   UpdateAsset,
   UpdateDecision,
+  VaultAgentAddInput,
+  VaultAgentBinding,
+  VaultAgentProfile,
+  VaultAgentsState,
 };

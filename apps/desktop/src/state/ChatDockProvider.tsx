@@ -11,6 +11,7 @@ import {
 import { useLocation } from "react-router-dom";
 import type { Pin } from "@lifequest/vault-core";
 import { pageLabelFor } from "@/lib/page-context";
+import { useVault } from "@/state/VaultProvider";
 import type { HermesSession } from "@/vite-env";
 
 /**
@@ -280,6 +281,39 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setRequestedSession(null);
     setRequestedAutomationContext(null);
   }, []);
+
+  /**
+   * The vault changed: the dock is a different vault's dock now.
+   *
+   * Everything the composer holds for the conversation — the cards in context,
+   * the live pins, the chat a page asked for — names something in the vault that
+   * is no longer open. A card id or a chat id from another vault would dress the
+   * new vault's first turn in the old vault's context, so the request and the
+   * conversation state are cleared with the vault. The dock itself (open,
+   * surface, side, width) is a way of looking at the workspace, not vault data,
+   * and stays where the operator put it.
+   */
+  const { snapshot } = useVault();
+  const vaultId = snapshot?.lifequest.id ?? null;
+  const seenVault = useRef<string | null | undefined>(undefined);
+  if (seenVault.current === undefined) seenVault.current = vaultId;
+  /** Whether a real vault has ever been open in this mount. */
+  const everHadVault = useRef(vaultId !== null);
+  useEffect(() => {
+    const previous = seenVault.current ?? null;
+    if (seenVault.current === vaultId) return;
+    seenVault.current = vaultId;
+    // A harness page's stubbed snapshot resolves after mount; that first read is
+    // this dock's own vault, not a switch, and it must not eat a request the page
+    // made in the meantime. A vault that was open and closed and opened again is
+    // a real change.
+    const initialRead = previous === null && !everHadVault.current;
+    if (vaultId) everHadVault.current = true;
+    if (initialRead) return;
+    commitContextCards([]);
+    setLivePinIds([]);
+    clearRequestedSession();
+  }, [vaultId, commitContextCards, clearRequestedSession]);
 
   const swapSide = useCallback(() => {
     setSide((current) => (current === "left" ? "right" : "left"));
