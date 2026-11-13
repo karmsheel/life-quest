@@ -1000,7 +1000,7 @@ a {
 /* Five labels in a 16rem column: a square block, not a pill. The rail overrides
    `.ui-segmented`'s rounded frame so the switcher reads as a rectangular control
    set into the rail, and gives every option enough padding that the active tab's
-   rule never crowds its word. The frame's even margin is the band's own gap
+   word never crowds the frame. The frame's even margin is the band's own gap
    above; the rail's padding is the margin at its sides. Two classes on purpose:
    `.ui-segmented`'s own rule is later in the sheet and would win at equal
    specificity. */
@@ -1015,6 +1015,16 @@ a {
   border-radius: 0;
   font-size: 0.625rem;
   white-space: nowrap;
+}
+
+/* One outline, not two. The frame already draws the control's edge, so the
+   selected wing wears the shared raised fill and its shadow without a hairline
+   of its own: at this tight padding the shared active border sat three pixels
+   inside the frame's line and read as a second, nested outline around the wing.
+   The transparent border keeps the box the same size, so switching wings moves
+   nothing. */
+.nav-rail__wings .ui-segmented__option.is-active {
+  border-color: transparent;
 }
 
 /* The wing's rows begin under the switcher's band, not in any sheet chrome: the
