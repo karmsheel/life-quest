@@ -115,8 +115,15 @@ const SAMPLE = `(() => {
   const container = document.querySelector('[data-testid="chat-context-pills"]');
   const pills = [...document.querySelectorAll('[data-testid="chat-context-pill"]')];
   const field = document.querySelector('.chat-panel__composer-input');
+  // The composer the pill row belongs to is the BOX the operator writes in, not
+  // the textarea inside it: the box owns the accent ring and the dock, so its
+  // outer edge is the column the row above it has to share. Measuring the
+  // frameless textarea would inset the comparison by the box's 2px border — the
+  // row sat exactly on the box's edge and the claim still failed.
+  const composerBox =
+    document.querySelector('.chat-panel__composer-box') ?? field;
   const containerRect = container ? container.getBoundingClientRect() : null;
-  const fieldRect = field ? field.getBoundingClientRect() : null;
+  const composerRect = composerBox ? composerBox.getBoundingClientRect() : null;
   const heading = (card) => {
     const el = card.querySelector('.home-card__title, .view-card__title');
     return el ? (el.textContent || '').trim() : null;
@@ -144,10 +151,10 @@ const SAMPLE = `(() => {
       ? {
           placeholder: field.getAttribute('placeholder'),
           disabled: field.disabled,
-          width: fieldRect.width,
-          left: fieldRect.left,
-          right: fieldRect.right,
-          top: fieldRect.top,
+          width: composerRect.width,
+          left: composerRect.left,
+          right: composerRect.right,
+          top: composerRect.top,
         }
       : null,
     container: container
@@ -161,7 +168,7 @@ const SAMPLE = `(() => {
           left: containerRect.left,
           right: containerRect.right,
           height: containerRect.height,
-          fieldTop: fieldRect ? fieldRect.top : null,
+          fieldTop: composerRect ? composerRect.top : null,
         }
       : null,
     pills: pills.map((pill) => {
