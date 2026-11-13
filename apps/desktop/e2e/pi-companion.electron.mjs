@@ -701,6 +701,24 @@ async function main() {
   // ports nobody else holds — see isolateMcpPorts.
   const mcpPorts = await isolateMcpPorts();
 
+  // Hermes is a bystander in this rig (it is about Pi), but the app probes for
+  // it at boot and the vault-binding step below names a fresh agent. Both must
+  // stay out of the operator's real `~/.hermes` AND off the real host: a
+  // throwaway home keeps any profile the app would seed local, and the real
+  // `hermes` CLI is removed from PATH so the probe answers `needs_install`
+  // instead of attaching to the operator's running gateway on 8642 (which
+  // answered `auth_error` against the throwaway profile key). Without the
+  // throwaway home, a run left `lq-pi-companion-hermes` in the real profiles
+  // directory and a second run refused the "fresh" add because the name existed.
+  const hermesHome = path.join(artifactsDir, "pi-hermes-home");
+  fs.rmSync(hermesHome, { recursive: true, force: true });
+  fs.mkdirSync(hermesHome, { recursive: true });
+  process.env.HERMES_HOME = hermesHome;
+  process.env.PATH = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .filter((dir) => dir && !fs.existsSync(path.join(dir, "hermes")))
+    .join(path.delimiter);
+
   const dist = await serveDist();
   process.env.VITE_DEV_SERVER_URL = `http://127.0.0.1:${dist.port}`;
   const { bootForE2e } = await import("../dist-electron/main.js");

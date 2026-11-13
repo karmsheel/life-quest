@@ -396,7 +396,14 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
       void refreshHarnesses();
     };
     try {
-      return bridge.onCompanionHarnessChanged(apply);
+      const off = bridge.onCompanionHarnessChanged(apply);
+      // The preload returns the unsubscribe. A harness page's proxy stub answers
+      // every unknown method with a function that resolves a Promise, so a
+      // subscription it does not know about comes back as a Promise — and React
+      // would call that Promise as this effect's cleanup ("destroy is not a
+      // function"), taking the whole page down. Only a real unsubscribe is
+      // returned; anything else means this bridge has no such push.
+      return typeof off === "function" ? off : undefined;
     } catch {
       // No bridge (a harness page): nothing to subscribe to.
       return undefined;

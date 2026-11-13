@@ -488,12 +488,15 @@ function Harness() {
           the width (and with the edges) the operator's sheet actually gives it. */}
       <div className="shell__content">
         <MemoryRouter initialEntries={["/act"]}>
-          <ChatDockProvider>
-            <VaultProvider>
+          {/* The vault is outside the dock, as in the app: the dock reads the
+              open vault (its chats and its agent are the vault's), so a harness
+              that inverted the two would mount a dock with no vault at all. */}
+          <VaultProvider>
+            <ChatDockProvider>
               <ActPage />
-            </VaultProvider>
-            <DockProbe />
-          </ChatDockProvider>
+              <DockProbe />
+            </ChatDockProvider>
+          </VaultProvider>
         </MemoryRouter>
       </div>
     </div>

@@ -44,6 +44,26 @@ fs.mkdirSync(userDataDir, { recursive: true });
 app.setPath("userData", userDataDir);
 
 const BUNDLE = path.join(artifactsDir, ".receipt-attach.bundle.mjs");
+
+/**
+ * Hermes is the transport the turn leg measures, and it is the operator's real
+ * install by default. The app now applies the open vault's agent binding on
+ * vault open, so this rig binds a throwaway agent to its own vault and points
+ * that agent at the recording gateway; the throwaway home and the stripped PATH
+ * keep every profile and every CLI probe away from the real `~/.hermes` and its
+ * running host. The profile path is also what the companion's transport guard
+ * compares against, so the fake gateway has to claim exactly this path.
+ */
+const HERMES_HOME = path.join(userDataDir, "receipt-hermes-home");
+const RECEIPT_PROFILE = "receipt-rig";
+fs.rmSync(HERMES_HOME, { recursive: true, force: true });
+fs.mkdirSync(HERMES_HOME, { recursive: true });
+process.env.HERMES_HOME = HERMES_HOME;
+process.env.PATH = (process.env.PATH ?? "")
+  .split(path.delimiter)
+  .filter((dir) => dir && !fs.existsSync(path.join(dir, "hermes")))
+  .join(path.delimiter);
+const RECEIPT_PROFILE_PATH = path.join(HERMES_HOME, "profiles", RECEIPT_PROFILE);
 /**
  * A vault of this run's own. Windows refuses to remove a directory while any
  * handle inside it is still closing, so a fixed path makes one interrupted run
@@ -77,6 +97,8 @@ const MODULES = [
   "apps/desktop/electron/receipt-image.ts",
   "apps/desktop/electron/pending-receipt.ts",
   "apps/desktop/electron/vault-service.ts",
+  "apps/desktop/electron/vault-agents.ts",
+  "apps/desktop/electron/harness/facade.ts",
   "apps/desktop/electron/companion.ts",
 ];
 
@@ -832,7 +854,26 @@ async function composerLeg() {
 /** The turn the app builds, with and without a receipt on it. */
 async function turnLeg(mod) {
   const gateway = await startRecordingGateway();
-  mod.companionAttachToGateway(gateway.baseUrl, "rig-key");
+  // A vault-scoped app starts on Pi; this leg measures the Hermes transport, so
+  // bind the rig's throwaway agent to the vault the attach leg opened and make
+  // it the answering agent before the fake gateway is attached. The fake gateway
+  // claims the bound profile's path, which is what the transport guard checks.
+  const bound = await mod.addHermesAgentToVault({
+    mode: "fresh",
+    name: RECEIPT_PROFILE,
+  });
+  check(
+    "binds the rig's own Hermes agent to the open vault",
+    bound?.ok === true && bound.value?.hermesProfile === RECEIPT_PROFILE,
+    bound?.ok ? JSON.stringify(bound.value) : `refused: ${bound?.error}`,
+  );
+  const active = await mod.useHarness("hermes");
+  check(
+    "makes the rig's Hermes agent the answering one",
+    active?.kind !== undefined,
+    `status ${JSON.stringify(active?.kind)}`,
+  );
+  mod.companionAttachToGateway(gateway.baseUrl, "rig-key", RECEIPT_PROFILE_PATH);
 
   const ctx = {
     domainName: "Financial",

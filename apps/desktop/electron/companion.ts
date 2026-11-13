@@ -982,10 +982,18 @@ async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
  * it. The E2E rigs point the chat client at their own recording server with it,
  * because the alternative — making them drive the real discovery path — would
  * have them write an API key into the operator's own Hermes profile.
+ *
+ * `profilePath` is the profile the attached status claims to be for. It is
+ * empty for a rig that attaches without a vault-scoped agent (the historical
+ * shape), and the rig's own throwaway profile path when the open vault binds an
+ * agent: the transport guard refuses a ready status whose profile is not the
+ * vault's bound one, and a fake gateway that claimed no profile would be refused
+ * for the very vault the rig just bound.
  */
 export function companionAttachToGateway(
   baseUrl: string,
   apiKey: string,
+  profilePath = "",
 ): PublicCompanionStatus {
   const normalized = baseUrl.replace(/\/$/, "");
   current = {
@@ -993,7 +1001,7 @@ export function companionAttachToGateway(
     port: portFromBaseUrl(normalized),
     baseUrl: normalized,
     startedByLifeQuest: false,
-    profilePath: "",
+    profilePath,
     cliPath: "",
     childPid: null,
     apiKey,
