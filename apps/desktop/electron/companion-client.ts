@@ -405,6 +405,10 @@ export type HermesSession = {
    * list never contains one.
    */
   archived: boolean;
+  /** The gateway's own per-session model lock. Null when the row carries none. */
+  model: string | null;
+  /** The surface that created the session, as the gateway recorded it. */
+  source: string;
 };
 
 /**
@@ -556,6 +560,8 @@ type SessionRow = {
   hidden?: unknown;
   archived?: unknown;
   pinned?: unknown;
+  model?: unknown;
+  source?: unknown;
 };
 
 const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
@@ -611,6 +617,8 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
     archived: flag(r.archived),
+    model: typeof r.model === "string" ? r.model.trim() || null : null,
+    source: typeof r.source === "string" ? r.source.trim() : "",
   };
 }
 

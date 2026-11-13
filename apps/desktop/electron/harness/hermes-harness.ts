@@ -22,6 +22,9 @@ export const hermesHarness: ProfiledHarness = {
   sessionMessages: (id) => companion.companionSessionMessages(id),
   patchSession: (id, patch: SessionPatch) => companion.companionSessionPatch(id, patch),
   deleteSession: (id) => companion.companionSessionDelete(id),
+  // The gateway's own session-model lock: a chat whose model the provider
+  // retired is moved by rewriting this, not by a per-turn pick.
+  setSessionModel: (id, model) => companion.companionSessionModelSet(id, model),
   openSession: () => companion.companionSessionsOpen(),
 
   modelCatalog: () => companion.companionModelOptions(),

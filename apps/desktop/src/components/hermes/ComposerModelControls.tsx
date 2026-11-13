@@ -38,8 +38,12 @@ const EFFORT_LABELS: Record<string, string> = {
   max: "Max",
 };
 
-/** Last path segment of a model id: `stealth/space-bunny-alpha` → the alpha. */
-function shortModelLabel(model: string): string {
+/**
+ * Last path segment of a model id: `stealth/space-bunny-alpha` → the alpha.
+ * Exported because the thread's retired-model notice names the same model the
+ * way the pill does.
+ */
+export function shortModelLabel(model: string): string {
   const id = model.trim();
   const slash = id.lastIndexOf("/");
   const tail = slash >= 0 ? id.slice(slash + 1) : id;
@@ -77,11 +81,18 @@ function providerName(catalog: CompanionModelCatalog, slug: string): string {
 export function ComposerModelControls({
   catalog,
   disabled,
+  sessionModel,
   pick,
   onChange,
 }: {
   catalog: CompanionModelCatalog | null;
   disabled: boolean;
+  /**
+   * The model the open chat's gateway session is locked to, when the gateway
+   * reported one. With no pick set, this — not the profile default — is what
+   * the next turn actually runs on, so the pill names it.
+   */
+  sessionModel?: string | null;
   pick: CompanionRuntimeOverride;
   onChange: (next: CompanionRuntimeOverride) => void;
 }) {
@@ -101,8 +112,9 @@ export function ComposerModelControls({
 
   const pickedProvider = (pick.provider ?? "").trim();
   const pickedModel = (pick.model ?? "").trim();
+  const sessionPickedModel = (sessionModel ?? "").trim();
   const effectiveProvider = pickedProvider || catalog?.current.provider || "";
-  const effectiveModel = pickedModel || catalog?.current.model || "";
+  const effectiveModel = pickedModel || sessionPickedModel || catalog?.current.model || "";
   const choice = catalog ? findChoice(catalog, effectiveProvider, effectiveModel) : null;
   const listProvider = providerSlug || effectiveProvider || catalog?.providers[0]?.slug || "";
   const list = catalog?.providers.find((p) => p.slug === listProvider);
@@ -169,7 +181,9 @@ export function ComposerModelControls({
 
   const modelTitle = pickedModel
     ? `Model: ${effectiveModel} on ${providerName(catalog, effectiveProvider)} — click to change`
-    : `Model: the profile's own default (${effectiveModel || "unknown"}) — click to choose another`;
+    : sessionPickedModel
+      ? `Model: ${effectiveModel} — this chat's own model — click to change`
+      : `Model: the profile's own default (${effectiveModel || "unknown"}) — click to choose another`;
 
   const canDisableReasoning = choice?.canDisableReasoning === true;
   // Mirrors the Desktop reasoning pill: it is present whenever the catalog says
@@ -191,7 +205,11 @@ export function ComposerModelControls({
         onClick={() => toggleMenu("model")}
       >
         <span className="chat-panel__pill-label">
-          {pickedModel ? shortModelLabel(pickedModel) : defaultLabel}
+          {pickedModel
+            ? shortModelLabel(pickedModel)
+            : sessionPickedModel
+              ? shortModelLabel(sessionPickedModel)
+              : defaultLabel}
         </span>
         {pickedModel ? <span className="chat-panel__pill-dot" aria-hidden /> : null}
         <ChevronDown size={11} aria-hidden />

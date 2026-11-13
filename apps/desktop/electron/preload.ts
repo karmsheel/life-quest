@@ -464,6 +464,8 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
     ipcRenderer.invoke("companion:sessionMessages", id),
+  companionSessionModelSet: (payload: { sessionId: string; model: string; provider?: string }) =>
+    ipcRenderer.invoke("companion:sessionModelSet", payload),
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },

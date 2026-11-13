@@ -7488,6 +7488,10 @@ a.home-mini-list__link:hover {
   margin: 0 0 0.35rem;
 }
 
+.chat-panel__model-repair {
+  margin-bottom: 0.5rem;
+}
+
 .chat-panel__error-actions {
   display: flex;
   flex-wrap: wrap;

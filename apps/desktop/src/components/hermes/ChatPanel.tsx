@@ -54,7 +54,10 @@ import {
 } from "@/lib/signal-chain";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
-import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
+import {
+  ComposerModelControls,
+  shortModelLabel,
+} from "@/components/hermes/ComposerModelControls";
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
@@ -393,6 +396,30 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const [modelCatalog, setModelCatalog] = useState<CompanionModelCatalog | null>(null);
   const runtimePick = (sessionId && chat.runtimePins[sessionId]) || NO_RUNTIME_PICK;
+  /*
+    WHICH MODEL THE NEXT TURN WILL ACTUALLY RUN ON.
+
+    Not the showcase answer: Hermes serves an existing chat on the model its
+    gateway session was created with and ignores the model a turn names. So the
+    pill, this notice and the repair all read the chat's own model first; the
+    profile default is only what a brand-new chat starts on.
+  */
+  const activeChatSession = sessionId
+    ? (chat.sessions.find((session) => session.id === sessionId) ?? null)
+    : null;
+  const activeChatModel =
+    (runtimePick.model ?? "").trim() || (activeChatSession?.model ?? "").trim();
+  const catalogOffersModel = Boolean(
+    modelCatalog &&
+      activeChatModel &&
+      modelCatalog.providers.some((provider) =>
+        provider.models.some((model) => model.id === activeChatModel),
+      ),
+  );
+  /** The reported fault: an old chat locked to a model this profile retired. */
+  const chatModelRetired = Boolean(
+    modelCatalog && sessionId && activeChatModel && !catalogOffersModel,
+  );
   /**
    * The thread header's rename field. The list is not this dock's surface any
    * more, so this is the only rename field it carries.
@@ -909,10 +936,40 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     };
   }, [open, modelCatalog]);
 
-  /** Pin this chat's model and thinking level, or clear the pin back to default. */
+  /**
+   * Pick this chat's model and thinking level.
+   *
+   * The pick has to reach the chat's own gateway session: Hermes runs an
+   * existing chat on the model that session was created with and ignores the
+   * `model` a turn names, so a pick that only rode the turn would look applied
+   * and change nothing. Clearing the pick means "the profile's current default",
+   * which is applied the same way.
+   */
   function updateRuntimePick(next: CompanionRuntimeOverride) {
     if (!sessionId) return;
+    const nextModel = (next.model ?? "").trim();
+    const pickedBefore = (runtimePick.model ?? "").trim();
     chat.updateRuntimePick(sessionId, next);
+    if (nextModel === pickedBefore) return;
+    const target = nextModel || (modelCatalog?.current.model ?? "").trim();
+    if (!target) return;
+    const provider =
+      (next.provider ?? "").trim() || (modelCatalog?.current.provider ?? "").trim();
+    void chat.setSessionModel(sessionId, target, provider);
+  }
+
+  /**
+   * Move the open chat onto the profile's current model.
+   *
+   * The one gesture that ends the reported "every old chat is silent" state:
+   * the gateway's session lock is moved to a model the profile still serves.
+   */
+  async function repairChatModel() {
+    if (!sessionId || !modelCatalog) return;
+    const target = modelCatalog.current;
+    if (!target.model.trim()) return;
+    chat.updateRuntimePick(sessionId, { model: target.model, provider: target.provider });
+    await chat.setSessionModel(sessionId, target.model, target.provider);
   }
 
   /**
@@ -1628,6 +1685,36 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     );
   }
 
+  const defaultModelLabel = modelCatalog?.current.model
+    ? shortModelLabel(modelCatalog.current.model)
+    : "";
+  /*
+    A chat the provider has retired the model of. Its turns fail on the gateway
+    before any model call — which is why the operator sees their message go up and
+    no answer arrive — so the dock says what happened and offers the one click
+    that moves the chat onto the profile's current model.
+  */
+  const modelRepairBanner =
+    chatModelRetired && defaultModelLabel ? (
+      <div className="chat-panel__error chat-panel__model-repair" role="status" data-testid="chat-model-repair">
+        <p>
+          This chat's model (<strong>{activeChatModel}</strong>) is no longer offered by
+          this profile, so it cannot answer. Move it to the model this profile uses now.
+        </p>
+        <div className="chat-panel__error-actions">
+          <button
+            type="button"
+            className="chat-panel__text-btn"
+            data-testid="chat-model-repair-use-default"
+            disabled={sending}
+            onClick={() => void repairChatModel()}
+          >
+            Use {modelCatalog?.current.model ?? defaultModelLabel}
+          </button>
+        </div>
+      </div>
+    ) : null;
+
   const errorBanner = error ? (
     <div className="chat-panel__error" role="alert">
       <p>{error}</p>
@@ -2195,6 +2282,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 onAcknowledge={() => void acknowledgeOnboarding()}
               />
             ) : null}
+            {/*
+              The retired-model notice is dock chrome, not transcript: it sits
+              above the composer under the scroll port so a long conversation
+              cannot scroll the one explanation and its fix out of sight.
+            */}
+            {view === "thread" ? modelRepairBanner : null}
             {view === "chain" ? (
               /*
                 The chain's composer: the same field, the same inline arrow, the
@@ -2562,6 +2655,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       <ComposerModelControls
                         catalog={modelCatalog}
                         disabled={sending || !sessionId}
+                        sessionModel={activeChatSession?.model ?? null}
                         pick={runtimePick}
                         onChange={updateRuntimePick}
                       />

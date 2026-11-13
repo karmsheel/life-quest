@@ -331,6 +331,15 @@ type ChatSessionsContextValue = {
 
   runtimePins: Record<string, CompanionRuntimeOverride>;
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
+  /**
+   * Persist which model one chat runs on.
+   *
+   * The turn's own `model` is not enough: Hermes pins a chat to the model its
+   * session was created with, so an existing chat keeps running a retired model
+   * until the session's own lock is moved. Answers whether the gateway accepted
+   * the change; a refusal lands on that chat's error.
+   */
+  setSessionModel: (id: string, model: string, provider: string) => Promise<boolean>;
 
   /**
    * The sidebar's archived view. "hide" is the working list; "show" adds the
@@ -602,6 +611,48 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       });
     },
     [],
+  );
+
+  /**
+   * Persist a chat's model on the gateway session itself.
+   *
+   * WHY THIS EXISTS (a reported fault, not a guess): Hermes serves an existing
+   * chat on the model its session was created with and ignores the `model` a
+   * turn's body names. When the provider retires that model, every turn in that
+   * chat fails — the operator sees their message go up and no answer arrive —
+   * while a brand-new chat answers, because it was created on the current
+   * default. The only way to move an existing chat is the gateway's own
+   * `POST /api/sessions/{id}/model` lock, which this store calls. `sessions` is
+   * repainted from the answer so the composer stops calling a repaired chat
+   * retired before the next list read lands.
+   */
+  const setSessionModel = useCallback(
+    async (id: string, model: string, provider: string): Promise<boolean> => {
+      const target = model.trim();
+      if (!id || !target) return false;
+      try {
+        const result = await api().companionSessionModelSet({
+          sessionId: id,
+          model: target,
+          provider: provider.trim(),
+        });
+        if (!result.ok) {
+          updateRun(id, (current) => ({ ...current, error: result.error }));
+          return false;
+        }
+        setSessions((prev) =>
+          prev.map((session) => (session.id === id ? { ...session, model: target } : session)),
+        );
+        return true;
+      } catch (e) {
+        updateRun(id, (current) => ({
+          ...current,
+          error: e instanceof Error ? e.message : String(e),
+        }));
+        return false;
+      }
+    },
+    [updateRun],
   );
 
   /**
@@ -2157,6 +2208,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       removeAttachmentFor,
       runtimePins,
       updateRuntimePick,
+      setSessionModel,
       archivedView,
       setArchivedView,
       loadSessions,
@@ -2226,6 +2278,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       stopRun,
       updateRun,
       updateRuntimePick,
+      setSessionModel,
     ],
   );
 
