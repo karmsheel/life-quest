@@ -185,6 +185,14 @@ switches the list, the tab strip and the transcript you see.
    same way rather than passed off as complete. The transcript is re-read from the
    companion at the same moment, so an answer it had already stored is not lost.
    Send again if the reply is not there.
+10. A chat keeps its own model. Hermes runs every turn of an existing chat on the
+   model that chat's session was created with — a pick only rode the turn, so a
+   retired model used to strand old chats while a new chat answered. The model
+   pill now writes the chat's model on its Hermes session, and a chat the provider
+   no longer serves says so above the composer: **This chat is set to … which this
+   profile no longer offers**, with **Use <model>** moving it onto the model the
+   profile uses now. The pill names the chat's own model when you have not picked
+   one, so it always names the model the next turn actually runs on.
 
 ### The composer's controls
 
@@ -197,7 +205,7 @@ switches the list, the tab strip and the transcript you see.
 | **Attach a receipt** | The picture-plus beside it. One JPEG or PNG, up to 25 MB, by picker, drag-and-drop or a pasted screenshot; **Remove receipt** drops it. A receipt is what the ledger cites as a transaction's source. |
 | Page pill (**in context** / **off**) | Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
 | Card pills (**in context**) | One pill per dashboard card in context, in the order added, up to three. The `x` is **Remove "<card name>" from context**. |
-| Model pill / thinking pill | Which model and how hard it thinks for the next turn. Hermes serves a catalog; Pi's menu follows its endpoint. Absent when the companion offers no catalog. |
+| Model pill / thinking pill | The chat's model and how hard it thinks. Choosing a model saves it on the chat's Hermes session, so it governs every later turn; with no pick the pill names the model the chat already runs on. Hermes serves a catalog; Pi's menu follows its endpoint. Absent when the companion offers no catalog. |
 
 The page context is quoted as the operator's own data, fenced as untrusted, with a
 budget of 4,000 characters and table/list caps. The card context is made on the

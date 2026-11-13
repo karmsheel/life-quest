@@ -1046,6 +1046,22 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
     harness.harnessSessionMessages(id),
   );
+  // The gateway's own session-model lock: the composer's Save writes the chat's
+  // model here so a chat whose provider retired its model can be moved.
+  ipcMain.handle(
+    "companion:sessionModelSet",
+    (
+      _e,
+      payload: { sessionId?: unknown; model?: unknown; provider?: unknown },
+    ) =>
+      harness.harnessSessionModelSet(
+        typeof payload?.sessionId === "string" ? payload.sessionId : "",
+        {
+          model: typeof payload?.model === "string" ? payload.model : "",
+          provider: typeof payload?.provider === "string" ? payload.provider : "",
+        },
+      ),
+  );
   ipcMain.handle(
     "companion:sessionPatch",
     (

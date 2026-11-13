@@ -336,6 +336,15 @@ type HermesSession = {
   title: string;
   preview: string | null;
   lastActive: number | null;
+  /**
+   * The model this chat's gateway session is locked to, or null when the
+   * gateway did not say. Hermes runs an existing chat on the model its session
+   * was created with, so this — not the composer's pill — is what the next turn
+   * actually uses.
+   */
+  model: string | null;
+  /** The surface that created the chat (`api_server`, `local`, …). */
+  source: string;
   /** Durable Hermes-side flag: pinned chats sort into their own section. */
   pinned: boolean;
   /**
@@ -576,6 +585,18 @@ type LifequestApi = {
   }) => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (id: string) => Promise<Result<TranscriptMessage[]>>;
+  /**
+   * Persist the model this chat runs on.
+   *
+   * A turn's own `model`/`provider` is ignored by the gateway for an existing
+   * chat (its session keeps the model it was created with), so choosing a model
+   * has to move the session's own lock.
+   */
+  companionSessionModelSet: (payload: {
+    sessionId: string;
+    model: string;
+    provider?: string;
+  }) => Promise<Result<true>>;
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },

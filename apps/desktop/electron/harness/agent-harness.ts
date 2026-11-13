@@ -45,6 +45,16 @@ export interface AgentHarness {
   sessionMessages(id: string): Promise<HarnessResult<TranscriptMessage[]>>;
   patchSession(id: string, patch: SessionPatch): Promise<HarnessResult<HarnessSession>>;
   deleteSession(id: string): Promise<HarnessResult<{ id: string; deleted: boolean }>>;
+  /**
+   * Persist the model the chat itself runs on.
+   * Hermes locks a session to the model it was created with, so a chat whose
+   * model the provider retired needs that lock moved; the built-in companion
+   * honours the per-turn runtime pick already, so its implementation is a no-op.
+   */
+  setSessionModel(
+    id: string,
+    model: { model: string; provider: string },
+  ): Promise<HarnessAck>;
   /** Re-establish the companion before a page (a review) promises a chat. */
   openSession(): Promise<HarnessAck>;
 

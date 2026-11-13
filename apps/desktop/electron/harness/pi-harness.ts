@@ -484,6 +484,10 @@ function toHarnessSession(session: {
     lastActive: Math.round(session.lastActive / 1000),
     pinned: session.pinned,
     archived: session.archived === true,
+    // The embedded companion has no gateway-side session model lock, so a Pi
+    // chat reports none; its turns already follow the composer's runtime pick.
+    model: null,
+    source: "pi",
   };
 }
 
@@ -1007,6 +1011,11 @@ export const piHarness: AgentHarness = {
   sessionMessages,
   patchSession,
   deleteSession,
+  // The embedded companion already routes each turn by the runtime pick it is
+  // handed, so there is no session-level model to rewrite here.
+  async setSessionModel() {
+    return { ok: true };
+  },
   async openSession() {
     const status = await piEnsure();
     return status.kind === "ready"

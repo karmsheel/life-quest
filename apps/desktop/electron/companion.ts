@@ -1223,6 +1223,43 @@ export async function companionSessionMessages(
   }
 }
 
+/**
+ * POST /api/sessions/{id}/model — persist the model this chat runs on.
+ *
+ * The gateway locks a session to the model it was created with, and a per-turn
+ * `model` in the chat body does not move that lock: a retiree therefore keeps
+ * failing until the lock itself is rewritten, which is this call. The model is
+ * trimmed here because the gateway treats a blank id as a request to clear it.
+ */
+export async function companionSessionModelSet(
+  id: string,
+  target: { model: string; provider?: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const model = target.model.trim();
+    if (!model) return { ok: false, error: "No model to set." };
+    const provider = target.provider?.trim() ?? "";
+    const res = await gatewayCall("Setting the chat's model", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}/model`, {
+        method: "POST",
+        body: JSON.stringify({ model, ...(provider ? { provider } : {}) }),
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Model change failed (${response.status})`),
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** The client-safe session fields the gateway's PATCH accepts. */
 export type CompanionSessionPatch = {
   title?: string;

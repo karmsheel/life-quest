@@ -163,6 +163,11 @@ export async function readArchivedSessions(
         lastActive: unixSeconds(row.last_active),
         pinned: Number(row.pinned ?? 0) !== 0,
         archived: true,
+        // The store row carries no settled model/source here: the gateway's own
+        // list answers those for a live chat, and an archived one has no next
+        // turn to pin.
+        model: null,
+        source: "",
       });
     }
     return out;
