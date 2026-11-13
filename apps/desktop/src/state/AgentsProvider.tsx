@@ -48,7 +48,12 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   // The fast switch, not the boot one: a domain default moves the dock's agent
   // while the studio is already open, so it must not hold the app still for
   // another agent to come up.
-  const { harnesses, harness, switchHarness: useHarness } = useCompanion();
+  const {
+    harnesses,
+    harness,
+    switching,
+    switchHarness: useHarness,
+  } = useCompanion();
   const { snapshot, updateSettings } = useVault();
   const activeDomain = useActiveDomain();
   const slug = activeDomain?.slug ?? null;
@@ -101,6 +106,10 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const lastDomain = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!harness || !Array.isArray(harnesses)) return;
+    // A switch is in flight: the list and the harness flag are mid-flight facts,
+    // and a choice persisted from them would land on whichever vault is open
+    // when the call goes out. The move can wait for the switch to settle.
+    if (switching) return;
     if (lastDomain.current === undefined) {
       lastDomain.current = slug;
       return;
@@ -111,7 +120,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     if (!domainDefault || domainDefault === harness) return;
     if (!visibleAgents.some((agent) => agent.id === domainDefault)) return;
     void useHarness(domainDefault);
-  }, [slug, harness, harnesses, domainDefault, visibleAgents, useHarness]);
+  }, [slug, harness, harnesses, domainDefault, visibleAgents, useHarness, switching]);
 
   /**
    * An agent scoped away from the current domain is not left answering in it:
@@ -120,13 +129,20 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     if (!harness || visibleAgents.length === 0) return;
+    // The "nothing active" fact this effect repairs is only trustworthy when no
+    // switch is in flight. During a vault open the list can trail the harness
+    // push by a frame (the old vault's shorter list, the new agent not yet in
+    // it), and switching from that transient would persist a different agent
+    // onto the vault that was just opened — which is exactly how a Pi-only
+    // Alpha switch used to rewrite Beta's Hermes binding to Pi.
+    if (switching) return;
     if (visibleAgents.some((agent) => agent.active)) return;
     const next =
       (domainDefault && visibleAgents.find((agent) => agent.id === domainDefault)?.id) ||
       visibleAgents.find((agent) => agent.id === "pi")?.id ||
       visibleAgents[0]!.id;
     if (next !== harness) void useHarness(next);
-  }, [harness, visibleAgents, domainDefault, useHarness]);
+  }, [harness, visibleAgents, domainDefault, useHarness, switching]);
 
   const setScopes = useCallback(
     async (next: AgentScope[]) => {

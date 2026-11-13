@@ -181,20 +181,20 @@ LifeQuest also keeps state of its own, outside every vault. On Windows this is
 | Lives in the vault | Lives in app user data |
 |---|---|
 | All content you author | The recent-vault list, the last area lens per vault, and dismissed deadline notices (`recent.json`) |
-| Vault settings (`weekStartDay`, saved questions, inbox switches, agent scopes) | Which companion is chosen — the built-in **Pi** or the external **Hermes** — and the chosen Hermes profile |
+| Vault settings (`weekStartDay`, saved questions, inbox switches, agent scopes) | Which agent this vault uses, in `vaultAgents` in `recent.json`: the built-in **Pi**, and the Hermes profile bound to this vault when you added one |
 | Area databases, pages, pins, views | The Pi endpoint, model and provider name (`pi-endpoint.json`) and the Pi API key (`pi-endpoint.key`, sealed by the OS) |
-| Your pictures and chat attachments | Pi's transcripts (`pi-sessions/`) |
+| Your pictures and chat attachments | Pi's transcripts, grouped by vault (`pi-sessions/<vault id>/`) |
 | `about.md` | Connected-agent pairing secrets (`pairing-secrets/`) |
 | The Life log, decisions, Quick Notes captures, the companion brief, the onboarding record | The OS-encrypted vault secret store (`secrets.json`) and the unsolicited-filing preference (`companion-filing.json`) |
-| | The theme and skin, keyboard bindings and the dock's open tabs (window local storage) |
+| | The theme and skin, keyboard bindings and the dock's open tabs, per vault and agent (window local storage) |
 
 That split has consequences worth knowing:
 
 - Copying a vault to another machine carries your content and vault settings, but not your
-  theme, recent list, chosen companion, Pi endpoint or key, Pi transcripts, keyboard
-  bindings or API keys.
-- Deleting app user data resets the app — including the recent-vault list — but never
-  deletes a vault.
+  theme, recent list, the agent this vault uses, its Hermes profile, Pi endpoint or key, Pi
+  transcripts, keyboard bindings or API keys.
+- Deleting app user data resets the app — including the recent-vault list and every vault's
+  agent binding — but never deletes a vault.
 - Deleting a vault folder deletes your content; the app's own data does not restore it.
 - Pi's endpoint key never enters the vault, and Pi's transcripts never do either: both live
   in `%APPDATA%\LifeQuest` ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)).
@@ -212,6 +212,22 @@ vault's path and offers **Change folder…**, not the list.
 
 The last area lens is stored per vault id in `recent.json`, so a vault returns to the lens
 you left it on. It is app state, not a vault file.
+
+## Chats and agents belong to the vault
+
+The vault is the profile the app loads: its chats, its open tabs and the agent that answers
+in the dock are all scoped to it, and a vault only ever shows its own. Choose another vault
+with **Switch vault** and the chat rail, the tab strip and the agent switcher follow the new
+vault — the other vault's chats and agent are not carried across.
+
+Every vault starts on the built-in **Pi** agent and with no chats. If you want a Hermes agent
+for that vault, add one in **Settings → Hermes → Agents in this vault**: by default the app
+creates a fresh Hermes profile for the vault, with its own memory and skills. Reusing a
+profile that already works on another vault is a separate, explicit choice and warns that the
+two vaults then share that agent's memory and knowledge. See [Companion](./24-companion.md).
+
+Transcripts stay in app user data, grouped by vault, never in the vault folder: a copied
+vault carries your content, not your conversations.
 
 ## How to use it
 
@@ -300,7 +316,8 @@ all; they live in the OS-encrypted secret store, or for Pi in
 - API keys, calendar tokens and Sheet or Notion tokens never enter the vault
   ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)).
 - Chat transcripts never enter the vault. With Hermes they stay with Hermes; the built-in Pi
-  keeps its transcripts in `%APPDATA%\LifeQuest\pi-sessions\`.
+  keeps its transcripts in `%APPDATA%\LifeQuest\pi-sessions\<vault id>\`, grouped by the
+  vault that made them.
 - Reads need no approval; the operator writes directly. Agent writes that change prescribed
   documents go through [Decisions](./23-decisions.md).
 - A path that names something inside the vault is checked twice: the segment grammar refuses
@@ -325,11 +342,11 @@ all; they live in the OS-encrypted secret store, or for Pi in
 - Unlocking a seeded area is a reveal, not a restore: its doctrine files were already there,
   so there is nothing to import and no confirmation dialog.
 - Removing the app, or `%APPDATA%\LifeQuest`, does not remove a vault. Only the folder
-  itself does. Removing `%APPDATA%\LifeQuest` does discard the Pi endpoint, its sealed key
-  and its transcripts.
+  itself does. Removing `%APPDATA%\LifeQuest` does discard the Pi endpoint, its sealed key,
+  its transcripts and every vault's agent binding.
 - The vault's `theme` and `hermesBaseUrl` settings keys are not what the current UI reads:
   theme and skin come from the window's local storage, and the companion endpoint comes from
-  the Pi endpoint file or the chosen Hermes profile.
+  the Pi endpoint file or the Hermes profile bound to the open vault.
 - `images/` appears in a vault the first time you upload a picture; `attachments/files/`
   appears the first time you drop a file on the composer. Neither is seeded into a fresh
   vault.

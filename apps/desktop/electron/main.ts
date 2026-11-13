@@ -33,6 +33,7 @@ import type {
   CompanionRuntimeOverride,
 } from "./companion-client.js";
 import * as vault from "./vault-service.js";
+import * as vaultAgents from "./vault-agents.js";
 import {
   checkForUpdate,
   installUpdate,
@@ -614,6 +615,24 @@ function startCompanionStatusBroadcast(): void {
   });
 }
 
+/**
+ * The agent of the open vault, pushed to every window when it changes.
+ *
+ * A vault open applies its binding without the renderer asking, so a studio that
+ * is already on screen has to hear that "the companion" is now a different
+ * agent — and the harness id can move while neither agent's status does. A vault
+ * switch itself rides the vault snapshot; this event is only about the agent.
+ */
+function startCompanionHarnessBroadcast(): void {
+  vaultAgents.onHarnessChanged((payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("companion:harnessChanged", payload);
+      }
+    }
+  });
+}
+
 function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
@@ -993,6 +1012,37 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
    */
   ipcMain.handle("companion:switchHarness", (_e, id: string) =>
     harness.switchHarness(id === "hermes" ? "hermes" : "pi"),
+  );
+  // The agents in this vault. Which companion the open vault runs on, and which
+  // Hermes agent it has (if any), belongs to the vault; the setup screen keeps
+  // using the app-level picker above, because it runs before a vault exists.
+  ipcMain.handle("vaultAgents:get", () =>
+    vaultAgents.vaultAgentsState(harness.activeHarnessId()),
+  );
+  ipcMain.handle(
+    "vaultAgents:addHermes",
+    async (
+      _e,
+      input: Parameters<typeof vaultAgents.addHermesAgentToVault>[0],
+    ) => {
+      const res = await vaultAgents.addHermesAgentToVault(input);
+      // "Change agent" on a vault already running Hermes re-points the companion
+      // at the agent just bound. A vault that is on Pi still needs the explicit
+      // switch: adding an agent is not the same as using it.
+      if (
+        res.ok &&
+        res.value.hermesProfile &&
+        harness.activeHarnessId() === "hermes"
+      ) {
+        void companion
+          .companionUseProfile(res.value.hermesProfile)
+          .catch(() => undefined);
+      }
+      return res;
+    },
+  );
+  ipcMain.handle("vaultAgents:removeHermes", () =>
+    vaultAgents.removeHermesAgentFromVault(),
   );
   // The built-in companion's endpoint. The key is write-only: it goes to OS
   // secure storage and never travels back to the renderer.
@@ -1740,6 +1790,10 @@ app.whenReady().then(() => {
   // ~0.6s after the ready status, and a window that opened first must still
   // hear it.
   startCompanionStatusBroadcast();
+  // Armed beside it, for the same reason: a vault open applies its agent
+  // binding without the renderer asking, and a studio already on screen must
+  // hear that the agent changed.
+  startCompanionHarnessBroadcast();
   // Published before it is awaited, so a rig that calls `bootForE2e` while the
   // product's own boot is still loading joins that window instead of opening a
   // second one.

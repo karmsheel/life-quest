@@ -18,9 +18,12 @@ import {
   type ChatSurface,
 } from "@/state/ChatDockProvider";
 import {
+  clearStoredLastSessionId,
   readStoredChatTabs,
+  readStoredLastSessionId,
   restoredChatTabs,
   writeStoredChatTabs,
+  writeStoredLastSessionId,
 } from "@/state/chat-tabs-persistence";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -167,8 +170,35 @@ export type CompanionSessionPatch = {
   archived?: boolean;
 };
 
-const LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
 const RUNTIME_PINS_KEY = "lifequest.companion.runtimePins";
+
+/**
+ * The guard key for one landing: a landing belongs to a vault and an agent.
+ *
+ * Two landings for the same pair must not fight (the dock's mount landing and
+ * the agent switch's landing race on purpose), but a landing for another vault
+ * or another agent is a different question and must not be skipped because the
+ * old one has not finished. The vault is part of the key so a same-harness vault
+ * switch — Pi to Pi, the common case — still lands on the new vault's chats
+ * instead of being mistaken for the landing already in flight.
+ */
+function landingKeyFor(vaultId: string | null, agent: HarnessId | null): string {
+  return `${vaultId ?? "none"}:${agent ?? "legacy"}`;
+}
+
+/**
+ * The refusal a Hermes transport answers while a vault switch is repointing the
+ * companion, verbatim from the main process (`companion.ts`).
+ *
+ * It is not a failure the operator caused or can act on — it is the switch still
+ * running — so the reads that answer it wait for the ready status instead of
+ * painting a banner over the dock.
+ */
+const COMPANION_SWITCHING_ERROR = "The companion is switching to this vault's agent.";
+
+function isCompanionSwitching(error: string | null | undefined): boolean {
+  return error === COMPANION_SWITCHING_ERROR;
+}
 
 /** A pin with anything that is not a usable string dropped. */
 function cleanRuntimePick(value: unknown): CompanionRuntimeOverride {
@@ -387,6 +417,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
   const [archivedView, setArchivedViewState] = useState<ArchivedView>("hide");
 
+  /**
+   * The open vault's stable identity (`lifequest.id`, never the path: a copied
+   * vault keeps its identity). Null on a harness page, which mounts this store
+   * with no vault at all.
+   *
+   * Kept in a ref beside the state because a landing, a turn's settle and the
+   * storage writes all read it after an await: they must write the key of the
+   * vault the work belongs to, not whatever vault happens to be open when the
+   * answer arrives.
+   */
+  const vaultId = snapshot?.lifequest.id ?? null;
+  const vaultIdRef = useRef<string | null>(vaultId);
+  vaultIdRef.current = vaultId;
+
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const activeIdRef = useRef(activeId);
@@ -395,6 +439,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   openTabsRef.current = openTabs;
   const runtimePinsRef = useRef(runtimePins);
   runtimePinsRef.current = runtimePins;
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
   const archivedViewRef = useRef(archivedView);
   archivedViewRef.current = archivedView;
   const surfaceRef = useRef(surface);
@@ -618,15 +664,22 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    */
   const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
     const epoch = listEpoch.current;
+    const vault = vaultEpoch.current;
     const agent = harnessRef.current;
     const listed = await api().companionSessionsList({
       includeArchived: archivedViewRef.current !== "hide",
     });
     if (epoch !== listEpoch.current) return null;
+    // A vault switch while this read was in flight: the answer names the old
+    // vault's chats, whatever the main process says its scope is now.
+    if (vault !== vaultEpoch.current) return null;
     if (!listed.ok) {
       // A read that failed while the agent was still coming up is not an error
       // to paint: the rail says "loading", and the list is read again when the
-      // agent reports ready. Anything else is the agent's own answer.
+      // agent reports ready. The same goes for the transport's own "switching"
+      // refusal, which the main process sends while a vault switch repoints the
+      // companion. Anything else is the agent's own answer.
+      if (isCompanionSwitching(listed.error)) return null;
       if (agent && switchingRef.current === agent) return null;
       setListError(listed.error);
       return null;
@@ -634,6 +687,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     if (agent) {
       for (const session of listed.value) agentOfSession.current.set(session.id, agent);
     }
+    // A chat the new vault's list carries is that vault's own, so it stops being
+    // retired: a vault the operator switches back to can open its chats again and
+    // a stopped run's trailing frames for them land normally. Only ids no
+    // current list claims stay retired, and those are exactly the ones whose
+    // stopped frames could still arrive.
+    for (const session of listed.value) retiredSessions.current.delete(session.id);
     setSessionsLoaded(true);
     setListError(null);
     setSessions(listed.value);
@@ -676,6 +735,29 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * started for the agent being left cannot set state for the one being entered.
    */
   const listEpoch = useRef(0);
+  /**
+   * Which vault's store this is. Bumped on every vault change, before anything
+   * is cleared and before the new vault's chats are read. Every read that can
+   * outlive a vault switch (the list, a transcript, a created chat, a turn's
+   * settle) carries the epoch it started under and drops its answer when it
+   * moved: the previous vault's answer must not paint over the new vault.
+   */
+  const vaultEpoch = useRef(0);
+  /**
+   * Chats the previous vault's store owned, retired when the vault changed.
+   *
+   * Stopping a live run is not instantaneous: the gateway keeps streaming its
+   * terminal frames for a moment after `companionRunStop`, and those frames name
+   * a session id from the vault that is no longer open. They are dropped, so a
+   * stopped turn cannot grow a tab or a run in the new vault. The pair is only
+   * skipped while the new vault's list does not carry that id — a vault the
+   * operator switches back to keeps its chats, and their new turns land.
+   */
+  const retiredSessions = useRef(new Set<string>());
+  /** The most recent landing, so an older one's cleanup cannot clear its guard. */
+  const landingToken = useRef(0);
+  /** Draws in flight, per chat: a second settle frame must not send twice. */
+  const draining = useRef(new Set<string>());
   /**
    * The last list and strip seen for each agent, so switching back paints that
    * agent's chats at once and refreshes underneath, instead of showing an empty
@@ -742,8 +824,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       // behind. The in-flight guard inside the update below still applies, so a
       // forced read can never paint over a newer turn's live bubbles.
       if (run.sending && !force) return;
+      // The transcript is the old vault's if the vault changed while it was in
+      // flight. Its chat id no longer belongs to the open store, so the answer is
+      // dropped rather than opening a run for a chat nobody can see.
+      const vault = vaultEpoch.current;
       const result = await api().companionSessionMessages(id);
+      if (vault !== vaultEpoch.current) return;
       if (!result.ok) {
+        // The read raced the vault switch's repoint: the dock keeps what it had
+        // and reads again once the agent is ready.
+        if (isCompanionSwitching(result.error)) return;
         updateRun(id, (current) => ({ ...current, error: result.error }));
         return;
       }
@@ -804,7 +894,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       closedTabs.current.delete(id);
       setActiveId(id);
       setSurface("thread");
-      window.localStorage.setItem(LAST_SESSION_KEY, id);
+      writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, id);
       setListError(null);
       const tabs = openTabsRef.current;
       if (!tabs.includes(id)) {
@@ -858,7 +948,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
       setActiveId(id);
       setSurface("thread");
-      window.localStorage.setItem(LAST_SESSION_KEY, id);
+      writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, id);
       setListError(null);
       await loadMessages(id);
     },
@@ -891,14 +981,21 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       fresh: boolean,
       allowSurface: boolean,
     ) => {
-      const key = agent ?? "legacy";
+      // A landing belongs to a vault and an agent. The epoch pair is captured
+      // with the guard: the vault can change while the list is out, and then
+      // this landing's whole basis — the list, the remembered strip, the ids —
+      // is the previous vault's.
+      const vault = vaultIdRef.current;
+      const vaultAtStart = vaultEpoch.current;
+      const key = landingKeyFor(vault, agent);
       if (landingFor.current === key) return;
+      const token = ++landingToken.current;
       landingFor.current = key;
       try {
         // Read the remembered strip BEFORE the list goes out. The strip is the
-        // last thing the dock wrote for this agent, and a write from the
-        // in-flight switch could otherwise land first and blank it.
-        const stored = readStoredChatTabs(agent);
+        // last thing the dock wrote for this agent and vault, and a write from
+        // the in-flight switch could otherwise land first and blank it.
+        const stored = readStoredChatTabs(vault, agent);
         const listed =
           !fresh && sessionsRef.current.length
             ? sessionsRef.current
@@ -907,7 +1004,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         // the mount it already started rather than clearing the strip over a
         // hiccup.
         if (!listed) return;
-        const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+        // The vault moved while the list was in flight: this landing would now
+        // read the previous vault's strip and chats onto the new one.
+        if (vaultAtStart !== vaultEpoch.current) return;
+        const lastSessionId = readStoredLastSessionId(vault, agent);
         const live = new Set(listed.map((s) => s.id));
         // A tab a live turn opened while the list was in flight belongs to the
         // run that is happening now. On a switch, the strip already carried is
@@ -927,7 +1027,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           setOpenTabs([]);
           setActiveId(first);
           if (first) {
-            window.localStorage.setItem(LAST_SESSION_KEY, first);
+            writeStoredLastSessionId(vault, agent, first);
             setListError(null);
             await loadMessages(first);
           } else if (allowSurface) {
@@ -939,7 +1039,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           tabsHydrated.current = true;
           setOpenTabs(landing.tabs);
           setActiveId(landing.activeId);
-          window.localStorage.setItem(LAST_SESSION_KEY, landing.activeId);
+          writeStoredLastSessionId(vault, agent, landing.activeId);
           setListError(null);
           if (allowSurface) setSurface("thread");
           // A live turn's bubbles are arriving, not yet written down: its run is
@@ -966,14 +1066,17 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         );
         setActiveId(resumeId);
         if (resumeId) {
-          window.localStorage.setItem(LAST_SESSION_KEY, resumeId);
+          writeStoredLastSessionId(vault, agent, resumeId);
           setListError(null);
           if (!runOf(resumeId).messagesLoaded) await loadMessages(resumeId);
         } else if (allowSurface) {
           setSurface("thread");
         }
       } finally {
-        landingFor.current = null;
+        // An older landing's cleanup must not clear the guard of a newer one:
+        // a vault switch resets the guard and starts its own landing while this
+        // one is still unwinding.
+        if (landingToken.current === token) landingFor.current = null;
       }
     },
     [loadMessages, loadSessions, runOf, setSurface],
@@ -995,6 +1098,106 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       resuming.current = false;
     }
   }, [landOnAgent]);
+
+  /**
+   * The vault changed: this store is a different vault's store now.
+   *
+   * The dock keeps per-agent tab strips, transcripts, drafts, receipts, queued
+   * turns, running turns and runtime pins — and every one of them names
+   * something in the vault that is no longer open. None of that may survive the
+   * switch: a run that outlived it would keep writing through doors that now
+   * serve the other vault, and a restored strip would put the previous vault's
+   * chats on screen. So the reset comes first and it is complete — live runs
+   * stopped, the epochs moved (which drops the answers already in flight), then
+   * every map and guard cleared. Only after that does the new vault land on its
+   * own chats, when its agent is known.
+   */
+  const resetForVault = useCallback(() => {
+    // Stop the live turns BEFORE the store forgets them: a run left running
+    // keeps streaming through the doors, and those doors serve the new vault
+    // now. The old vault's chats are retired so the stopped run's last frames
+    // cannot reopen one of them here; the guard lifts once the new vault's own
+    // list carries the id again (a vault the operator switches back to).
+    for (const run of Object.values(runsRef.current)) {
+      if (run.sending && run.runId) void api().companionRunStop(run.runId);
+    }
+    for (const id of Object.keys(runsRef.current)) retiredSessions.current.add(id);
+    for (const session of sessionsRef.current) retiredSessions.current.add(session.id);
+    // The epochs move FIRST: every read already in flight (a list, a transcript,
+    // a created chat, a turn's settle) drops its answer from here on.
+    vaultEpoch.current += 1;
+    listEpoch.current += 1;
+    // The refs mirror the state synchronously, before the new vault's landing
+    // reads them: a landing's `openNow` is the tabs a live turn opened while the
+    // list was out, and for this landing that must be none of the vault being
+    // left. React updates the refs from state on the next render; the landing's
+    // first await may resolve first.
+    sessionsRef.current = [];
+    activeIdRef.current = null;
+    openTabsRef.current = [];
+    runsRef.current = {};
+    runtimePinsRef.current = {};
+    harnessSnapshots.current.clear();
+    agentOfSession.current.clear();
+    closedTabs.current.clear();
+    automationContexts.current.clear();
+    draining.current.clear();
+    newChatInFlight.current = null;
+    resuming.current = false;
+    landingFor.current = null;
+    landingToken.current = 0;
+    tabsHydrated.current = false;
+    for (const url of receiptPreviews.current.values()) URL.revokeObjectURL(url);
+    receiptPreviews.current.clear();
+    for (const urls of attachmentPreviews.current.values()) {
+      for (const url of urls) URL.revokeObjectURL(url);
+    }
+    attachmentPreviews.current.clear();
+    setSessions([]);
+    setSessionsLoaded(false);
+    setListError(null);
+    setActiveId(null);
+    setOpenTabs([]);
+    setRuns({});
+    setDrafts({});
+    setReceipts({});
+    setAttachments({});
+    setQueues({});
+    setRuntimePins({});
+    writeStoredRuntimePins({});
+    // The archived view is a way of looking at one vault's history; the new
+    // vault starts on its working list.
+    archivedViewRef.current = "hide";
+    setArchivedViewState("hide");
+    setLivePinIds([]);
+  }, [setLivePinIds]);
+
+  /** The vault this store was last keyed to; `undefined` before the first read. */
+  const seenVault = useRef<string | null | undefined>(undefined);
+  if (seenVault.current === undefined) seenVault.current = vaultId;
+  /** Whether a real vault has ever been open in this mount. */
+  const everHadVault = useRef(vaultId !== null);
+  useEffect(() => {
+    const previous = seenVault.current ?? null;
+    if (seenVault.current === vaultId) return;
+    seenVault.current = vaultId;
+    // The first vault a mounted store learns about is the one it was mounted for,
+    // not a switch — a harness page resolves its stubbed snapshot after mount,
+    // while the app's studio only mounts once the vault exists. That first read
+    // must not reset the landing the dock already began.
+    const initialRead = previous === null && !everHadVault.current;
+    if (vaultId) everHadVault.current = true;
+    if (initialRead) return;
+    resetForVault();
+    // The vault was closed: the store is empty and there is nothing to land on.
+    if (!vaultId) return;
+    const agent = harnessRef.current;
+    if (!agent) return;
+    resuming.current = true;
+    void landOnAgent(agent, null, true, false).finally(() => {
+      resuming.current = false;
+    });
+  }, [vaultId, landOnAgent, resetForVault]);
 
   /**
    * The swap, when the operator changes agent.
@@ -1019,7 +1222,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     // dock lands on nothing (the list renders, no chat opens). A landing for
     // the legacy no-agent slot is not this one — it is cancelled below and
     // replaced by this agent's landing.
-    if (resuming.current && landingFor.current === harness) return;
+    if (
+      resuming.current &&
+      landingFor.current === landingKeyFor(vaultIdRef.current, harness)
+    ) {
+      return;
+    }
     listEpoch.current += 1;
     if (previous) {
       harnessSnapshots.current.set(previous, {
@@ -1027,14 +1235,22 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         openTabs: openTabsRef.current,
         activeId: activeIdRef.current,
       });
-      writeStoredChatTabs(previous, openTabsRef.current, activeIdRef.current);
+      // The strip is written for the vault it belongs to, which is the one open
+      // now: after a vault change the previous agent's strip was already stored
+      // under that vault's key by the write-through effect.
+      writeStoredChatTabs(
+        vaultIdRef.current,
+        previous,
+        openTabsRef.current,
+        activeIdRef.current,
+      );
     }
     const cached = harnessSnapshots.current.get(harness) ?? null;
     // The incoming agent's remembered strip is read HERE, before any state is
     // written for it: the persistence effect would otherwise write this empty
     // seed under the new agent's key and the landing would read back a strip the
     // operator never closed.
-    const stored = readStoredChatTabs(harness);
+    const stored = readStoredChatTabs(vaultIdRef.current, harness);
     const seedTabs = cached?.openTabs ?? (stored.known ? stored.tabs : []);
     const seedActive = cached?.activeId ?? stored.activeId ?? null;
     setListError(null);
@@ -1083,8 +1299,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       // One blank chat at a time: every gesture asking while the first request
       // is still out shares its answer instead of minting a second blank.
       if (newChatInFlight.current) return newChatInFlight.current;
+      // A blank chat is minted in whichever vault is open when the call goes out:
+      // one asked for before a switch must not land in the new vault as if the
+      // operator had asked for it here.
+      const vaultAtStart = vaultEpoch.current;
       const work = (async (): Promise<string | null> => {
         const listed = await loadSessions();
+        if (vaultAtStart !== vaultEpoch.current) return null;
         const blank = listed?.find(
           (s) => s.id !== excludeId && !s.archived && !s.preview?.trim(),
         );
@@ -1094,8 +1315,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }
 
         const created = await api().companionSessionCreate("");
+        if (vaultAtStart !== vaultEpoch.current) return null;
         if (!created.ok) {
-          setListError(created.error);
+          if (!isCompanionSwitching(created.error)) setListError(created.error);
           return null;
         }
         const creator = harnessRef.current;
@@ -1163,12 +1385,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const neighbor = remaining[at] ?? null;
       if (neighbor) {
         setActiveId(neighbor);
-        window.localStorage.setItem(LAST_SESSION_KEY, neighbor);
+        writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, neighbor);
         void loadMessages(neighbor);
       } else {
         setActiveId(null);
         setSurface(emptySurface);
-        window.localStorage.removeItem(LAST_SESSION_KEY);
+        clearStoredLastSessionId(vaultIdRef.current, harnessRef.current);
       }
     },
     [runs, loadMessages, setReceiptFor, setSurface, visibleTabsNow],
@@ -1295,14 +1517,14 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           null;
         setActiveId(neighbor);
         if (neighbor) {
-          window.localStorage.setItem(LAST_SESSION_KEY, neighbor);
+          writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, neighbor);
           // A pinned chat may be the neighbour without ever having been opened
           // this run (it is a tab because of the pin), so its transcript has to
           // be read here the way closing a tab reads its neighbour's.
           if (!(runs[neighbor] ?? EMPTY_RUN).messagesLoaded) void loadMessages(neighbor);
         } else {
           setSurface("thread");
-          window.localStorage.removeItem(LAST_SESSION_KEY);
+          clearStoredLastSessionId(vaultIdRef.current, harnessRef.current);
         }
       }
       setReceiptFor(id, null);
@@ -1359,6 +1581,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       // is not cancelled by a switch (it is already running in that agent), but
       // its settle must not write the old agent's list over the new one's.
       const turnEpoch = listEpoch.current;
+      // The same for the vault: a vault switch clears the store this turn was
+      // opened in, so its settle must not put a run back for a chat the new
+      // vault does not have.
+      const turnVault = vaultEpoch.current;
 
       const page = pageContext.on ? readPageContext(pageContext.route) : null;
       const automationContext = automationContexts.current.get(id);
@@ -1458,12 +1684,19 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         });
         if ("ok" in result && result.ok === false) {
           failed = true;
-          failTurn(id, result.error);
+          if (turnVault === vaultEpoch.current) failTurn(id, result.error);
         }
       } catch (err) {
         failed = true;
-        failTurn(id, err instanceof Error ? err.message : "Failed to reach Hermes");
+        if (turnVault === vaultEpoch.current) {
+          failTurn(id, err instanceof Error ? err.message : "Failed to reach Hermes");
+        }
       } finally {
+        // The vault moved while this turn's transport was out: the store it
+        // painted into is gone (the vault reset cleared it), and every write in
+        // this block — the settle, the repair read, the refresh, the list —
+        // belongs to the other vault. The turn was stopped by the reset.
+        if (turnVault !== vaultEpoch.current) return;
         // THE TURN IS SETTLED FIRST, BEFORE ANYTHING THAT CAN WAIT.
         //
         // `sending` is the composer's lock and the rail's dot. The stream's
@@ -1608,13 +1841,21 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * send the same entry twice, and the chat is marked busy before the turn
    * starts so a third settle cannot overtake it.
    */
-  const draining = useRef(new Set<string>());
   const drainQueue = useCallback(
     async (id: string): Promise<void> => {
       // Queued text belongs to the chat that queued it, and a chat belongs to the
       // agent that made it. Switching agent must not hand the old agent's queued
       // turn to the new one's channel.
       if (!ownsSession(id)) return;
+      // The chat belonged to the vault that was open when it was queued. Its
+      // queue was cleared by the vault reset; this closes the window in which a
+      // settle frame from the stopped run could still ask for a drain.
+      if (
+        retiredSessions.current.has(id) &&
+        !sessionsRef.current.some((session) => session.id === id)
+      ) {
+        return;
+      }
       if (draining.current.has(id)) return;
       // A turn that is still sending owns the composer: the queue waits for its
       // terminal frame rather than racing it.
@@ -1748,6 +1989,17 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     const off = api().onCompanionStream((frame: CompanionStreamFrame) => {
       const { sessionId: id, event: evt } = frame;
       if (!id) return;
+      // A frame for a chat the previous vault owned. Stopping a run is not
+      // instantaneous, so its last frames still arrive after the reset; they
+      // must not grow a run or a tab in this vault. Once the new list carries
+      // the id — the operator switched back to the vault it belongs to — the
+      // frame is that vault's own and lands normally.
+      if (
+        retiredSessions.current.has(id) &&
+        !sessionsRef.current.some((session) => session.id === id)
+      ) {
+        return;
+      }
       const isActive = () => activeIdRef.current === id;
       // A frame for a chat belonging to the agent the operator has switched
       // away from still lands in that chat's run — the turn is not cancelled by
@@ -1899,8 +2151,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     // to restore (and a mid-landing tab would be written under a strip the
     // landing is about to replace).
     if (landingFor.current) return;
-    writeStoredChatTabs(harnessRef.current, openTabs, activeId);
-    if (activeId) window.localStorage.setItem(LAST_SESSION_KEY, activeId);
+    writeStoredChatTabs(vaultIdRef.current, harnessRef.current, openTabs, activeId);
+    if (activeId) writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, activeId);
   }, [openTabs, activeId]);
 
   useEffect(() => {

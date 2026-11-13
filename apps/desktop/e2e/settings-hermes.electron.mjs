@@ -42,13 +42,11 @@ const SAMPLE = `(() => {
   const text = (el) => ((el && el.textContent) || "").trim();
   const block = (id) => document.querySelector('[data-testid="' + id + '"]');
   const blockBox = (id) => box(block(id));
-  const list = document.querySelector(".companion-profile-list");
-  const columns = list
-    ? getComputedStyle(list).gridTemplateColumns.split(" ").filter(Boolean).length
-    : 0;
-  const cards = Array.from(
-    document.querySelectorAll(".companion-profile-list .companion-profile-row")
-  );
+  const byTestId = (id) => document.querySelector('[data-testid="' + id + '"]');
+  const byTestIdText = (id) => {
+    const el = byTestId(id);
+    return el ? text(el) : null;
+  };
   const facts = Array.from(document.querySelectorAll(".settings-fact")).map((row) => {
     const label = row.querySelector(".settings-fact__label");
     const value = row.querySelector(".settings-fact__value");
@@ -61,12 +59,14 @@ const SAMPLE = `(() => {
     };
   });
   const toggle = document.querySelector('[role="switch"]');
-  const create = document.querySelector(".companion-profile-row--create");
   const content = document.querySelector(".settings-card") ||
     document.querySelector(".settings-overlay__main-scroll");
+  const piCard = byTestId("vault-agent-pi");
+  const hermesCard = byTestId("vault-agent-hermes");
+  const sharedWarning = byTestId("vault-agent-shared-warning");
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
-    order: ["hermes-doors", "hermes-connection", "hermes-profile", "hermes-behaviour"]
+    order: ["hermes-doors", "hermes-connection", "vault-agents", "hermes-behaviour"]
       .map((id) => ({ id, box: blockBox(id) })),
     firstBlock: text((document.querySelector(".settings-hermes__block .settings-hermes__heading") || { textContent: "" })),
     facts,
@@ -79,26 +79,36 @@ const SAMPLE = `(() => {
         }
       : null,
     checkboxCount: document.querySelectorAll('input[type="checkbox"]').length,
-    cards: cards.map((card) => ({
-      label: card.getAttribute("aria-label"),
-      checked: card.getAttribute("aria-checked"),
-      disabled: card.disabled === true,
-      inUse: text(card.querySelector(".companion-profile-row__in-use")) || null,
-      desc: text(card.querySelector(".companion-profile-row__desc")),
-      tag: text(card.querySelector(".companion-profile-row__tag")) || null,
-      avatar: text(card.querySelector(".companion-profile-row__avatar")) || null,
-      box: box(card),
-    })),
-    create: create
+    // The shipped "Agents in this vault" card: Pi always, Hermes bound or absent.
+    vaultAgents: block("vault-agents")
       ? {
-          label: create.getAttribute("aria-label"),
-          checked: create.getAttribute("aria-checked"),
-          inUse: text(create.querySelector(".companion-profile-row__in-use")) || null,
-          desc: text(create.querySelector(".companion-profile-row__desc")),
-          box: box(create),
+          box: blockBox("vault-agents"),
+          pi: piCard
+            ? {
+                box: box(piCard),
+                active: piCard.getAttribute("data-active") === "true",
+                usePi: Boolean(byTestId("vault-agent-use-pi")),
+              }
+            : null,
+          hermes: hermesCard
+            ? {
+                box: box(hermesCard),
+                bound: hermesCard.getAttribute("data-bound") === "true",
+                profile: byTestIdText("vault-agent-hermes-profile"),
+                boundCopy: byTestIdText("vault-agent-hermes-bound"),
+                emptyCopy: byTestIdText("vault-agent-hermes-empty"),
+                active: Boolean(byTestId("vault-agent-hermes-active")),
+                sharedWarning: sharedWarning ? text(sharedWarning) : null,
+                useHermes: Boolean(byTestId("vault-agent-use-hermes")),
+                change: Boolean(byTestId("vault-agent-change")),
+                remove: Boolean(byTestId("vault-agent-remove-hermes")),
+                create: Boolean(byTestId("vault-agent-create")),
+                reuse: Boolean(byTestId("vault-agent-reuse")),
+              }
+            : null,
+          notice: byTestIdText("vault-agent-notice"),
         }
       : null,
-    listColumns: columns,
     content: { box: box(content) },
     sheet: {
       scrollWidth: document.documentElement.scrollWidth,
@@ -132,6 +142,33 @@ async function main() {
   });
 
   const run = (expression) => win.webContents.executeJavaScript(expression, true);
+  const pageErrors = [];
+  win.webContents.on("console-message", (event, level, message) => {
+    const text =
+      typeof event?.message === "string" ? event.message : typeof message === "string" ? message : "";
+    const severity = typeof event?.level === "string" ? event.level : level;
+    if (severity === "error" || (typeof severity === "number" && severity >= 3)) {
+      pageErrors.push(String(text).slice(0, 500));
+    }
+  });
+  /**
+   * Wait for the harness page's ready promise, but never forever: a page that
+   * throws before settling would otherwise hang the driver until the wrapper
+   * kills it, and the report — the artifact this rig exists to write — would
+   * never appear.
+   */
+  const waitHarnessReady = async (timeoutMs = 25_000) => {
+    const ready = run("window.settingsHermesHarnessReady.then(() => true)");
+    const timeout = new Promise((resolve) => setTimeout(() => resolve("timeout"), timeoutMs));
+    const outcome = await Promise.race([ready, timeout]);
+    if (outcome !== "timeout") return;
+    const body = await run(
+      "(() => ({ text: document.body.innerText.slice(0, 1500), html: document.body.innerHTML.length, scripts: [...document.scripts].map((s) => s.src) }))()",
+    ).catch(() => null);
+    throw new Error(
+      `the harness page never signalled ready; page errors: ${JSON.stringify(pageErrors)}; body: ${JSON.stringify(body)}`,
+    );
+  };
 
   const sample = async () => {
     const value = await run(SAMPLE);
@@ -157,11 +194,11 @@ async function main() {
     return path.basename(file);
   };
 
-  const report = { pass: false, failures, states: {}, screenshots };
+  const report = { pass: false, failures, states: {}, screenshots, pageErrors };
 
   try {
     await win.loadURL(url);
-    await run("window.settingsHermesHarnessReady.then(() => true)");
+    await waitHarnessReady();
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
 
@@ -217,50 +254,44 @@ async function main() {
       );
     }
 
-    // ── 3. the catalog is short cards, not page-wide bars ───────────────
+    // ── 3. "Agents in this vault": Pi always, the bound agent named ─────
     const contentWidth = opened.content.box?.width ?? opened.viewport.width;
+    const agents = opened.vaultAgents;
     check(
-      "the profile choice is a grid",
-      opened.listColumns >= 2,
-      `${opened.listColumns} column(s)`,
+      "the Agents in this vault section is on the page",
+      Boolean(agents),
+      `section ${JSON.stringify(agents)}`,
     );
     check(
-      "there is a card per installed profile and one to create the app's own",
-      opened.cards.length === 3 && opened.create !== null,
-      `cards ${JSON.stringify(opened.cards.map((card) => card.label))}, create ${JSON.stringify(opened.create?.label)}`,
-    );
-    for (const card of opened.cards) {
-      check(
-        `"${card.label}" is a short card, not a full-width bar`,
-        (card.box?.width ?? contentWidth) <= contentWidth * 0.5,
-        `card ${card.box?.width}px of ${contentWidth}px`,
-      );
-      check(
-        `"${card.label}" is short enough to read at a glance`,
-        (card.box?.height ?? 999) <= 72,
-        `card ${card.box?.height}px tall`,
-      );
-      check(
-        `"${card.label}" has an avatar and the profile's path`,
-        (card.avatar ?? "").length > 0 && /\.hermes/.test(card.desc ?? ""),
-        `avatar "${card.avatar}", desc "${card.desc}"`,
-      );
-    }
-    check(
-      "the default card is marked as the default",
-      opened.cards[0]?.tag === "default" &&
-        opened.cards.slice(1).every((card) => card.tag === null),
-      `tags ${JSON.stringify(opened.cards.map((card) => card.tag))}`,
+      "Pi is always offered and is not the active agent while the vault runs Hermes",
+      agents?.pi?.active === false && agents?.pi?.usePi === true,
+      `pi ${JSON.stringify(agents?.pi)}`,
     );
     check(
-      "the create card is the one in use while the app is on lifequest",
-      opened.create?.checked === "true" && opened.create?.inUse === "In use",
-      `checked ${opened.create?.checked}, mark ${opened.create?.inUse}`,
+      "the bound Hermes agent names its profile and reads Bound to this vault",
+      agents?.hermes?.bound === true &&
+        agents?.hermes?.profile === "brook" &&
+        /bound to this vault/i.test(agents?.hermes?.boundCopy ?? ""),
+      `hermes ${JSON.stringify(agents?.hermes)}`,
     );
     check(
-      "no installed profile claims to be in use",
-      opened.cards.every((card) => card.checked === "false" && card.inUse === null),
-      `cards ${JSON.stringify(opened.cards.map((card) => [card.label, card.checked, card.inUse]))}`,
+      "the bound agent is marked active and offers Change/Remove, not Use Hermes",
+      agents?.hermes?.active === true &&
+        agents?.hermes?.useHermes === false &&
+        agents?.hermes?.change === true &&
+        agents?.hermes?.remove === true,
+      `hermes ${JSON.stringify(agents?.hermes)}`,
+    );
+    check(
+      "a profile another vault already uses carries the shared-memory warning",
+      /other vault/i.test(agents?.hermes?.sharedWarning ?? "") &&
+        /memory, skills and knowledge are shared/i.test(agents?.hermes?.sharedWarning ?? ""),
+      `warning ${JSON.stringify(agents?.hermes?.sharedWarning)}`,
+    );
+    check(
+      "the agent card does not widen the page",
+      (agents?.box?.width ?? Infinity) <= contentWidth + 1 && (agents?.box?.height ?? 0) > 0,
+      `card ${JSON.stringify(agents?.box)} of ${contentWidth}px`,
     );
 
     screenshots.push(await shot("opened"));
@@ -277,35 +308,36 @@ async function main() {
       `toggle ${JSON.stringify(opened.toggle)}`,
     );
 
-    // ── 5. choosing a profile reaches the bridge and marks the card ─────
+    // ── 5. Remove from this vault reaches the bridge and falls back to Pi ─
     const clicked = await run(
       `(() => {
-        const el = document.querySelector('.companion-profile-row[aria-label="Use the brook profile"]');
+        const el = document.querySelector('[data-testid="vault-agent-remove-hermes"]');
         if (!el) return false;
         el.click();
         return true;
       })()`,
     );
-    check("a profile card could be clicked", clicked, "no brook card");
-    const picked = await settle();
+    check("Remove from this vault could be clicked", clicked, "no remove control");
+    const removed = await settle();
     check(
-      "the choice reached companionUseProfile",
-      JSON.stringify(picked.calls.useProfile) === JSON.stringify(["brook"]),
-      `bridge saw ${JSON.stringify(picked.calls.useProfile)}`,
+      "the removal reached vaultAgentsRemoveHermes",
+      removed.calls.removeHermes === 1,
+      `bridge saw ${JSON.stringify(removed.calls.removeHermes)}`,
     );
     check(
-      "the chosen card reads In use",
-      picked.cards.find((card) => card.label === "Use the brook profile")?.inUse === "In use" &&
-        picked.cards.find((card) => card.label === "Use the brook profile")?.checked === "true",
-      `cards ${JSON.stringify(picked.cards.map((card) => [card.label, card.checked, card.inUse]))}`,
+      "the vault falls back to Pi after the removal",
+      removed.vaultAgents?.pi?.active === true && removed.vaultAgents?.hermes?.bound === false,
+      `agents ${JSON.stringify(removed.vaultAgents)}`,
     );
     check(
-      "the create card is no longer marked",
-      picked.create?.checked !== "true" && picked.create?.inUse === null,
-      `create ${JSON.stringify(picked.create)}`,
+      "the empty card says the vault has no Hermes agent and offers both ways to add one",
+      /this vault has no hermes agent/i.test(removed.vaultAgents?.hermes?.emptyCopy ?? "") &&
+        removed.vaultAgents?.hermes?.create === true &&
+        removed.vaultAgents?.hermes?.reuse === true,
+      `hermes ${JSON.stringify(removed.vaultAgents?.hermes)}`,
     );
 
-    screenshots.push(await shot("picked"));
+    screenshots.push(await shot("removed"));
 
     // ── 6. the switch writes, and reads back its new state ──────────────
     const toggled = await run(
@@ -330,13 +362,15 @@ async function main() {
     );
     check(
       "the rest of the page survives the press",
-      off.cards.length === 3 && off.facts.length === 5,
-      `${off.cards.length} cards, ${off.facts.length} facts`,
+      // The vault is on Pi after the removal, so the Hermes connection facts
+      // have given way to the built-in endpoint form; the doors' two remain.
+      Boolean(off.vaultAgents) && off.facts.length >= 2,
+      `agents ${JSON.stringify(off.vaultAgents)}, ${off.facts.length} facts`,
     );
 
     // ── 7. a door that failed to bind keeps its own error, in place ─────
     await win.loadURL(`${url}?doorsError=1`);
-    await run("window.settingsHermesHarnessReady.then(() => true)");
+    await waitHarnessReady();
     const failedDoor = await settle(360);
     const invite = failedDoor.facts.find((fact) => fact.label === "Invite");
     check(
@@ -375,7 +409,7 @@ async function main() {
 
     report.states = {
       opened,
-      picked,
+      removed,
       off,
       failedDoor,
     };
@@ -396,12 +430,11 @@ async function main() {
   const opened = report.states.opened;
   if (opened) {
     const table = [
-      ["state", "facts", "cards", "columns", "fact line Δ", "switch", "door error"],
+      ["state", "facts", "agents", "fact line Δ", "switch", "door error"],
       [
         "opened",
         String(opened.facts.length),
-        String(opened.cards.length),
-        String(opened.listColumns),
+        String(opened.vaultAgents ? 1 : 0),
         String(
           Math.max(
             ...opened.facts.map((fact) => {

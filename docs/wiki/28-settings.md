@@ -160,8 +160,8 @@ rail's **Switch vault** dialog. See [The vault](./04-the-vault.md).
 
 ## Hermes
 
-**Hermes** — *LifeQuest companion on the `<profile>` Hermes profile*. This tab
-holds the companion itself, whichever one is answering:
+**Hermes** — *The companion and the agents this vault runs on*. This tab holds
+the companion itself and the vault's own agent choice:
 
 - **MCP doors** first, because the two loopback addresses are what you come to the
   page to copy: **Local** (`http://127.0.0.1:8643/mcp` by default) and **Invite**
@@ -172,11 +172,19 @@ holds the companion itself, whichever one is answering:
   CLI's own words, Hermes too old, key rejected, disconnected — with any model
   warning under it. When Hermes is ready, one-line facts name the **CLI**,
   **Profile** and **API**. **Recheck** re-runs the connection; **Open profile
-  folder** opens the profile (Hermes only).
-- **Companion**: the harness picker — **Pi** (*Built in*) or **Hermes** (*External
-  sidekick*) — with plain copy: *Which companion answers in the chat bar. A chat
-  belongs to the companion that made it, so switching changes the chats you see.*
-  A switch is fast and does not take the studio away.
+  folder** opens the profile (Hermes only). The profile picker that used to live
+  here is on the setup screen instead; a vault's Hermes agent is chosen in
+  **Agents in this vault**.
+- **Agents in this vault**: the vault's own agents. The **Pi** card is always
+  there and says it is built in and available in every vault; **Use Pi** makes it
+  the answering agent. The **Hermes** card says *This vault has no Hermes agent*
+  until one is added, and offers **Create a new agent for this vault** (a fresh
+  Hermes profile, seeded on first use, with its own memory) or **Use an existing
+  agent…** (an installed profile, with a warning naming the other vaults it works
+  on, because memory, skills and knowledge are shared). A bound Hermes agent shows
+  its profile name and offers **Use Hermes**, **Change agent** and **Remove from
+  this vault** (the vault falls back to Pi; the profile stays on disk). Switching
+  is fast and does not take the studio away.
 - **Agents by area**: each agent's **Shown in** and **Default in** chips. No areas
   selected means every area; a narrowed agent is absent from the dock's switcher
   outside its areas, not greyed; the default for an area is selected when you enter
@@ -185,9 +193,6 @@ holds the companion itself, whichever one is answering:
   key**, then **Save and connect**. A local server needs no key; the key is sealed
   by the OS, never written into the vault, and kept for the session only on a
   machine with no keyring.
-- **Companion profile** (Hermes only): the setup screen's picker — every installed
-  profile, the active one marked, and **Create profile**. Both this
-  block and the connection facts are offered only while Hermes is selected.
 - **Chat behaviour**: **File implied changes** — *When a chat proposes a doctrine,
   library, goal, or day-template change, file one pending Decision. The vault
   changes only when you approve it.* On by default. **Database writes** is a
@@ -308,10 +313,11 @@ feed, and a real release outranks the preview.
   (`weekStartDay`, `chatQuestions`, `decisionInbox`, `agentScopes`). **About me**
   is `.lifequest/about.md`. Theme, starred list and keyboard bindings are window
   storage.
-- The chosen companion and Hermes profile are app user data, in
-  `%APPDATA%\LifeQuest\recent.json`; Pi's endpoint, sealed key and transcripts are
-  app user data too (`pi-endpoint.json`, `pi-endpoint.key`, `pi-sessions\`). None
-  of them is written into the vault.
+- The agent each vault uses is app user data: `vaultAgents` in
+  `%APPDATA%\LifeQuest\recent.json` records the vault's Pi/Hermes choice and, for
+  Hermes, the profile bound to it. Pi's endpoint, sealed key and transcripts are
+  app user data too (`pi-endpoint.json`, `pi-endpoint.key`,
+  `pi-sessions\<vault id>\`). None of them is written into the vault.
 - API keys never enter the vault ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)). The
   companion's own credential belongs to its profile; secrets the app stores for
   itself live in OS secure storage.

@@ -17,11 +17,31 @@ export type RecentEntry = {
   lastOpenedAt: string;
 };
 
+/**
+ * Which agent a vault runs on. `hermesProfile` names a machine-local Hermes
+ * profile, which is why this lives in app prefs and never in the vault: a vault
+ * copied to another machine must not drag an agent's profile with it.
+ */
+export type VaultAgentPrefs = {
+  harness: "hermes" | "pi";
+  hermesProfile: string | null;
+};
+
 export type UserPrefs = {
   recent: RecentEntry[];
   activeDomainByVaultId: Record<string, string>;
   deadlineDismissedOnByVaultId: Record<string, string>;
   deadlineNotifiedOnByVaultId: Record<string, string>;
+  /**
+   * Each vault's agent choice, keyed by the vault's stable id. An absent entry
+   * means a clean vault (Pi, no Hermes agent) — never "inherit the last one".
+   */
+  vaultAgents?: Record<string, VaultAgentPrefs>;
+  /**
+   * The one-time move of the pre-vault world (flat Pi chats, the single Hermes
+   * profile) into the vault that was open at the upgrade. True once it has run.
+   */
+  vaultAgentsMigrated?: boolean;
   /**
    * The Hermes profile the companion runs on (see `companionUseProfile`).
    * Absent means the app's own `lifequest` profile, which is what every
@@ -50,6 +70,40 @@ const emptyPrefs = (): UserPrefs => ({
   deadlineDismissedOnByVaultId: {},
   deadlineNotifiedOnByVaultId: {},
 });
+
+/**
+ * One stored binding, validated.
+ *
+ * `harness` says which agent the vault is answering with right now; a Hermes
+ * profile may be bound without being chosen yet (the pill exists, the vault is
+ * still on Pi), so the profile is kept independently of the harness. A Hermes
+ * harness with no usable profile is not a Hermes agent at all, so that record
+ * reads back as the clean default. Only this app writes these; the check is for
+ * a file that was hand-edited or written by a future version.
+ */
+function readVaultAgent(value: unknown): VaultAgentPrefs | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { harness?: unknown; hermesProfile?: unknown };
+  if (record.harness !== "hermes" && record.harness !== "pi") return null;
+  const profile =
+    typeof record.hermesProfile === "string" && record.hermesProfile.trim()
+      ? record.hermesProfile.trim()
+      : null;
+  if (record.harness === "hermes" && !profile) return null;
+  return { harness: record.harness, hermesProfile: profile };
+}
+
+function readVaultAgents(value: unknown): Record<string, VaultAgentPrefs> {
+  const out: Record<string, VaultAgentPrefs> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [vaultId, record] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    const binding = readVaultAgent(record);
+    if (binding) out[vaultId] = binding;
+  }
+  return out;
+}
 
 export async function loadPrefs(): Promise<UserPrefs> {
   try {
@@ -85,6 +139,14 @@ export async function loadPrefs(): Promise<UserPrefs> {
       // write erases. The harness choice must survive an unrelated prefs write.
       ...(parsed.harness === "hermes" || parsed.harness === "pi"
         ? { harness: parsed.harness }
+        : {}),
+      // The same rule again, and this one loses agent bindings if broken: a
+      // vault's claim on a Hermes profile must survive a lens or deadline write.
+      ...(parsed.vaultAgents !== undefined
+        ? { vaultAgents: readVaultAgents(parsed.vaultAgents) }
+        : {}),
+      ...(parsed.vaultAgentsMigrated === true
+        ? { vaultAgentsMigrated: true }
         : {}),
     };
   } catch (e) {

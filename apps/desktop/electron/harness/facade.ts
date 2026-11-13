@@ -10,6 +10,7 @@ import type { HarnessStatus, SessionPatch } from "./types.ts";
 
 export {
   activeHarnessId,
+  applyHarnessSelection,
   harnessSummaries,
   loadHarnessSelection,
   shutdownHarnesses,

@@ -3,11 +3,13 @@
 The companion is the agent that lives in the chat dock and does the thinking for
 the studio. LifeQuest ships two: the built-in **Pi**, which runs inside the app
 and needs only an OpenAI-compatible endpoint, and **Hermes**, an optional external
-companion that runs as a Hermes profile on a gateway. The studio runs on one of
-them at a time, and every chat belongs to the one that made it. What remains in
-the studio is what only the studio can own — the vault, the tools that read and
-write it, the locks, and the [Decisions](./23-decisions.md) queue that reviews
-agent writes. See also [Wiki home](./index.md).
+companion that runs as a Hermes profile on a gateway. A vault runs on one of them
+at a time, and every chat belongs to the vault and the agent that made it: Pi is
+every vault's default, and a vault gains Hermes only when you add a Hermes agent
+to that vault. What remains in the studio is what only the studio can own — the
+vault, the tools that read and write it, the locks, and the
+[Decisions](./23-decisions.md) queue that reviews agent writes. See also
+[Wiki home](./index.md).
 
 ## Where it lives
 
@@ -16,13 +18,14 @@ agent writes. See also [Wiki home](./index.md).
   collapses to a launcher mark, and its width is dragged with the divider between
   it and the page.
 - A vertical **agent switcher** strip sits at the dock's top-right edge: one block
-  per agent offered in the area you are looking at.
+  per agent this vault has, offered in the area you are looking at.
 - The **Chats** list is the middle of the rail, under the wing's pages and above
-  the governed shelf. It lists every conversation on the companion you are using.
+  the governed shelf. It lists every conversation of the vault and agent you are
+  using.
 - **Settings → Hermes** is the companion page. It leads with the **MCP doors**,
-  then **Connection**, then the **Companion** picker, then **Agents by area**,
-  then the **Built-in endpoint** (Pi) or **Companion profile** (Hermes) block, and
-  last the **Chat behaviour** rows.
+  then **Connection**, then **Agents in this vault**, then **Agents by area**,
+  then the **Built-in endpoint** (Pi) or the Hermes connection facts, and last the
+  **Chat behaviour** rows.
 - Before the app opens, a **LifeQuest companion** pane reports the boot: the
   setup form for Pi, or the Hermes profile picker, with **Recheck**.
 - There is no page route for chat. The dock is chrome, like the rail; its state
@@ -41,8 +44,12 @@ Desktop also reads.
 **Pi** exists so the studio works on a fresh machine: no Hermes CLI, no gateway,
 no profile — an endpoint and a model name. **Hermes** is for an operator who
 already runs Hermes, wants their memory and skills, and wants the same chat from
-Hermes Desktop and other channels. A chat is scoped to its companion: switching
-switches the list, the tab strip and the transcript you see.
+Hermes Desktop and other channels. The vault is the profile that is loaded, so the
+agent is scoped to the vault: a new vault starts on Pi with no chats, and a vault
+gains a Hermes agent only when you add one there. A Hermes agent is a Hermes
+profile, and a profile carries memory, skills and knowledge — which is why a
+fresh profile for the vault is the default, and reusing one that already works on
+another vault is a separate, explicit choice.
 
 ## How to use it
 
@@ -61,25 +68,39 @@ switches the list, the tab strip and the transcript you see.
 5. Once Pi answers, the studio opens on the vault. If a vault is not open yet you
    land on the welcome page.
 
-### Switch to Hermes, or back
+### Add a Hermes agent to this vault
 
-1. Open **Settings → Hermes**, section **Companion**: "Which companion answers in
-   the chat bar. A chat belongs to the companion that made it, so switching
-   changes the chats you see."
-2. Pick **Pi** ("Built in") or **Hermes** ("External sidekick"). The switch is
+Every vault starts on **Pi** and nothing else. A Hermes agent is added to the
+vault, not to the app, so the next vault you open does not inherit it.
+
+1. Open **Settings → Hermes → Agents in this vault**. The **Pi** card is always
+   there, marked active while the vault runs on Pi. The **Hermes** card says
+   **This vault has no Hermes agent** until one is added.
+2. Choose **Create a new agent for this vault**. The app creates a Hermes profile
+   named after the vault (for example `lifequest-personal-1a2b3c4d`) the first
+   time it is used, seeds its SOUL and MCP entry, and binds it to this vault. The
+   new profile starts with its own memory: nothing from another vault is in it.
+3. Or choose **Use an existing agent…** to bind a profile that already exists.
+   Every installed profile is listed with the vaults it already works on, and a
+   warning says that memory, skills and knowledge will be shared with them. This
+   is the only way two vaults share one agent, and it is never the default.
+4. The **Hermes** pill appears in the dock's agent switcher. Choose **Use Hermes**
+   to make it the vault's answering agent; **Use Pi** goes back. A switch is
    instant: the studio is not taken away while the target boots, and the target's
    block wears a pending mark until it answers.
-3. With Hermes selected, **Connection** shows the probe line and the read-only
+5. With Hermes selected, **Connection** shows the probe line and the read-only
    **CLI**, **Profile** and **API** facts, **Recheck** (it reads **Checking…**
-   while it works) and **Open profile folder**. The **Companion profile** picker
-   lists every Hermes profile, marks the active one with **In use**, tags the main
-   one **default**, and offers **Create the lifequest profile** when it does not
-   exist yet.
-4. There is nowhere in the app to type a Hermes gateway URL or API key. That
+   while it works) and **Open profile folder**.
+6. There is nowhere in the app to type a Hermes gateway URL or API key. That
    profile's own `.env` holds the key, the app reads it in the main process, and
    the renderer never receives it.
-5. With Pi selected, the **Built-in endpoint** block is the same form as the setup
-   pane, and **Companion profile** is absent.
+7. **Remove from this vault** unbinds the agent and the vault falls back to Pi.
+   The profile and its memory stay on disk, so you can add it back — to this
+   vault or, explicitly, to another one.
+
+The **Companion profile** picker still exists on the setup screen, before a vault
+is open: that is the boot choice for the machine, and opening a vault applies the
+vault's own binding.
 
 ### Choose which agent answers where
 
@@ -106,9 +127,9 @@ switches the list, the tab strip and the transcript you see.
 4. The **tab strip** leads the dock, above the name of the chat in front, and is
    drawn whenever the thread has a tab, even a single one. The **+** at its
    trailing edge (**New chat tab**) opens a fresh chat in a tab of its own. Tabs
-   are remembered per agent: quit and reopen and every tab returns in the same
-   order, with the chat that was in front still in front. A remembered chat that
-   was archived or deleted in the meantime loses its tab.
+   are remembered per vault and agent: quit and reopen and every tab returns in
+   the same order, with the chat that was in front still in front. A remembered
+   chat that was archived or deleted in the meantime loses its tab.
 5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
@@ -242,7 +263,7 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
 
 | Part | What it does |
 |---|---|
-| Agent switcher (dock top-right) | A vertical strip of the agents offered in this area; the active one is ringed, a switch in flight is marked pending. |
+| Agent switcher (dock top-right) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
 | Dock header | The active chat's name with **Pin chat** / **Rename chat** / **Archive chat** (the archive control steps away while pinned). |
@@ -284,10 +305,12 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
   `get_companion_brief` at the start of a session, seeded first on every Dashboard
   board, and dismissed only by the operator (**Done**, **Not useful**, **Wrong**,
   **Later**). The companion cannot dismiss an item or mark it done.
-- **Transcripts live with the harness.** Pi's sessions are in
-  `%APPDATA%\LifeQuest\pi-sessions\`; Hermes's are in its profile's own store.
-  Deleting a chat deletes it there, and a chat's tabs and archive state follow that
-  harness, not the vault.
+- **Transcripts live with the harness, grouped by vault.** Pi's sessions are in
+  `%APPDATA%\LifeQuest\pi-sessions\<vault id>\`; Hermes's are in the bound
+  profile's own store. Deleting a chat deletes it there, and a chat's tabs and
+  archive state follow that harness and vault, not the app. Switching vaults
+  swaps the chat rail, the tab strip and the agent; no chat or agent crosses
+  over.
 - **Secrets stay out of the renderer.** Pi's endpoint key and Hermes's profile key
   are read in the main process. The vault's own secrets live in OS secure storage,
   never in the vault file — see [Security](./29-security.md).
@@ -304,14 +327,18 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
 
 - **Nothing is wrong when the dock stalls before the companion is ready.** The
   companion pane is the boot surface, not an error. **Recheck** is always safe.
-- **Switching companions is not a reconnection.** The studio stays up, the target
-  boots behind it, and the chat list changes because it belongs to the other agent.
-  The dock's tab strip is remembered per agent.
+- **Switching agents is not a reconnection.** The studio stays up, the target
+  boots behind it, and the chat list changes because it belongs to the other
+  agent. The dock's tab strip is remembered per vault and agent.
+- **Switching vaults is a profile change, not a relaunch.** The vault's own chats,
+  tabs and agent come back and the other vault's do not. A vault that has no
+  Hermes agent shows only the Pi pill.
 - **The page pill is about the screen, not the chat.** Turning it off lasts until
   you navigate; the next page you open is in context again.
-- **A missing agent from the switcher is a scope, not a bug.** If an agent is not
-  shown in this area, **Shown in** in Settings → Hermes → Agents by area is where
-  to widen it.
+- **A missing agent from the switcher is a scope or a vault, not a bug.** If an
+  agent is not shown in this area, **Shown in** in Settings → Hermes → Agents by
+  area is where to widen it; if Hermes is not shown at all, this vault has no
+  Hermes agent yet — **Agents in this vault** is where to add one.
 - **Receipts are for the ledger.** Attach a photo of a purchase only when the
   Finance kit exists and you want a transaction logged.
 - **The dock's Quick Notes surface is text-only.** It hosts the same records as the

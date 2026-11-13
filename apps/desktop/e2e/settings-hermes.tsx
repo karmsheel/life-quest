@@ -4,13 +4,14 @@
  * A system-in-isolation rig, so the ways it can fail are written down first:
  *
  *  1. The MCP doors are not at the top of the page: the operator comes here to
- *     copy a door's address, and it is still below the profile picker.
- *  2. A profile's name and its value are stacked again — `Profile` on one line,
- *     the path on the next — so five facts read as ten rows.
- *  3. The companion profile choice is a stack of full-width bars again, taking
- *     the width of the whole page for four options.
- *  4. The cards do not select: a click never reaches `companionUseProfile`, or
- *     the chosen card never reads "In use".
+ *     copy a door's address, and it is still below the agent card.
+ *  2. A fact's name and its value are stacked again — `Profile` on one line, the
+ *     path on the next — so five facts read as ten rows.
+ *  3. The "Agents in this vault" card does not render the open vault's binding:
+ *     Pi must always be offered, and a bound Hermes agent must name its profile,
+ *     read "Bound to this vault", and warn when another vault already shares it.
+ *  4. Removing the agent does not reach `vaultAgentsRemoveHermes`, or the page
+ *     does not fall back to Pi after it.
  *  5. The filing preference is a raw checkbox again instead of the switch.
  *  6. The switch does not persist: the click never reaches `companionSetFiling`,
  *     or it sends the old value.
@@ -89,6 +90,65 @@ const PROFILES = [
  * the one that reads "In use". That is the branch the old picker got wrong. */
 let activeProfile = "lifequest";
 
+/**
+ * The open vault's agent binding and the installed profiles the card can list.
+ * Hermes is bound to `brook`, and `brook` is already in use on another vault —
+ * so the card must carry the shared-memory warning before the rig is satisfied.
+ */
+let binding: { harness: "hermes" | "pi"; hermesProfile: string | null } = {
+  harness: "hermes",
+  hermesProfile: "brook",
+};
+
+const VAULT_PROFILES = [
+  {
+    name: "default",
+    path: "/root/.hermes",
+    isDefault: true,
+    hasConfig: true,
+    hasSoul: false,
+    usedBy: [] as { vaultId: string; vaultName: string }[],
+  },
+  {
+    name: "brook",
+    path: "/root/.hermes/profiles/brook",
+    isDefault: false,
+    hasConfig: true,
+    hasSoul: true,
+    usedBy: [{ vaultId: "harness-other-vault", vaultName: "Other Vault" }],
+  },
+  {
+    name: "coder",
+    path: "/root/.hermes/profiles/coder",
+    isDefault: false,
+    hasConfig: true,
+    hasSoul: true,
+    usedBy: [] as { vaultId: string; vaultName: string }[],
+  },
+];
+
+/** Both agents, as the dock's switcher and Settings' card read them. */
+const HARNESSES = [
+  {
+    id: "hermes" as const,
+    name: "Hermes",
+    blurb: "The external sidekick",
+    kind: "external" as const,
+    active: true,
+    icon: "hermes",
+    capabilities: {},
+  },
+  {
+    id: "pi" as const,
+    name: "Pi",
+    blurb: "The built-in companion",
+    kind: "embedded" as const,
+    active: false,
+    icon: "pi",
+    capabilities: {},
+  },
+];
+
 const READY = {
   kind: "ready" as const,
   port: 8642,
@@ -136,7 +196,27 @@ const calls = {
   useProfile: [] as string[],
   filing: [] as boolean[],
   openFolder: 0,
+  addHermes: [] as unknown[],
+  removeHermes: 0,
+  switchHarness: [] as string[],
 };
+
+/**
+ * The push the real main process sends after it applies a vault's binding. The
+ * page's providers subscribe to it, so the stub has to speak it too: otherwise
+ * "Remove from this vault" would change the binding while the page kept showing
+ * Hermes as the active agent, and the rig would be measuring a stub artefact.
+ */
+const harnessListeners: ((payload: { harness: "hermes" | "pi"; vaultId: string | null }) => void)[] = [];
+function publishHarness(harness: "hermes" | "pi") {
+  for (const listener of [...harnessListeners]) {
+    try {
+      listener({ harness, vaultId: SNAPSHOT.lifequest.id });
+    } catch {
+      // One broken listener must not keep the others from hearing it.
+    }
+  }
+}
 
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
@@ -154,6 +234,59 @@ const bridge: Record<string, unknown> = {
     activeProfile = name;
     return Promise.resolve(READY);
   },
+  companionHarnesses: () =>
+    Promise.resolve(
+      HARNESSES.map((entry) => ({ ...entry, active: entry.id === binding.harness })),
+    ),
+  companionSwitchHarness: (id: string) => {
+    calls.switchHarness.push(id);
+    const next = id === "hermes" ? "hermes" : "pi";
+    binding = { ...binding, harness: next };
+    publishHarness(next);
+    return Promise.resolve({ kind: "switching", harness: id });
+  },
+  onCompanionHarnessChanged: (cb: (payload: { harness: "hermes" | "pi"; vaultId: string | null }) => void) => {
+    harnessListeners.push(cb);
+    return () => {
+      const at = harnessListeners.indexOf(cb);
+      if (at >= 0) harnessListeners.splice(at, 1);
+    };
+  },
+  vaultAgentsGet: () =>
+    Promise.resolve({
+      vaultId: SNAPSHOT.lifequest.id,
+      binding,
+      installedProfiles: VAULT_PROFILES,
+      vaultOpen: true,
+    }),
+  vaultAgentsAddHermes: (input: { mode: "fresh"; name?: string } | { mode: "existing"; profile: string }) => {
+    calls.addHermes.push(input);
+    const hermesProfile =
+      input.mode === "existing" ? input.profile : input.name ?? "harness-fresh";
+    binding = { ...binding, hermesProfile };
+    return Promise.resolve({ ok: true as const, value: binding });
+  },
+  vaultAgentsRemoveHermes: () => {
+    calls.removeHermes += 1;
+    binding = { harness: "pi", hermesProfile: null };
+    // The real main process applies the new binding and publishes it; the page
+    // follows the push (see `harnessListeners`).
+    publishHarness("pi");
+    return Promise.resolve({ ok: true as const, value: binding });
+  },
+  // After "Remove from this vault" the page is on Pi, and Settings renders the
+  // built-in endpoint form. Its stub must answer with a PiSettings shape: the
+  // generic `ok(null)` fallback would set the form's fields to undefined and
+  // crash its `baseUrl.trim()` on the next paint.
+  companionPiSettings: () =>
+    Promise.resolve({
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "rig-model",
+      providerName: "Rig endpoint",
+      hasKey: false,
+      keyPersisted: false,
+    }),
+  companionPiSettingsSave: () => Promise.resolve(READY),
   companionGetFiling: () => Promise.resolve(filing),
   companionSetFiling: (enabled: boolean) => {
     calls.filing.push(enabled);
@@ -220,6 +353,10 @@ const knobs = {
   setDoors: (next: Doors) => {
     doors = next;
   },
+  /** Replace the open vault's agent binding before the next load. */
+  setBinding: (next: { harness: "hermes" | "pi"; hermesProfile: string | null }) => {
+    binding = next;
+  },
   /** Replace the profile the companion is on, before the next load. */
   setActiveProfile: (name: string) => {
     activeProfile = name;
@@ -232,14 +369,24 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
-// The page is settled when its four blocks, the switch and at least one profile
-// card are all up: a partial paint is what the driver would otherwise measure.
+// The page is settled when its blocks, the switch and the shipped "Agents in
+// this vault" card are all up: a partial paint is what the driver would
+// otherwise measure.
 const waitForPage = () => {
   const blocks = document.querySelectorAll(".settings-hermes__block");
   const toggle = document.querySelector('[role="switch"]');
-  const cards = document.querySelectorAll(".companion-profile-row");
+  const vaultAgents = document.querySelector('[data-testid="vault-agents"]');
+  const piCard = document.querySelector('[data-testid="vault-agent-pi"]');
+  const hermesProfile = document.querySelector('[data-testid="vault-agent-hermes-profile"]');
   const facts = document.querySelectorAll(".settings-fact");
-  if (blocks.length < 4 || !toggle || cards.length === 0 || facts.length < 5) {
+  if (
+    blocks.length < 4 ||
+    !toggle ||
+    !vaultAgents ||
+    !piCard ||
+    !hermesProfile ||
+    facts.length < 5
+  ) {
     requestAnimationFrame(waitForPage);
     return;
   }

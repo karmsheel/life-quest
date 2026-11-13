@@ -701,6 +701,24 @@ async function main() {
   // ports nobody else holds — see isolateMcpPorts.
   const mcpPorts = await isolateMcpPorts();
 
+  // Hermes is a bystander in this rig (it is about Pi), but the app probes for
+  // it at boot and the vault-binding step below names a fresh agent. Both must
+  // stay out of the operator's real `~/.hermes` AND off the real host: a
+  // throwaway home keeps any profile the app would seed local, and the real
+  // `hermes` CLI is removed from PATH so the probe answers `needs_install`
+  // instead of attaching to the operator's running gateway on 8642 (which
+  // answered `auth_error` against the throwaway profile key). Without the
+  // throwaway home, a run left `lq-pi-companion-hermes` in the real profiles
+  // directory and a second run refused the "fresh" add because the name existed.
+  const hermesHome = path.join(artifactsDir, "pi-hermes-home");
+  fs.rmSync(hermesHome, { recursive: true, force: true });
+  fs.mkdirSync(hermesHome, { recursive: true });
+  process.env.HERMES_HOME = hermesHome;
+  process.env.PATH = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .filter((dir) => dir && !fs.existsSync(path.join(dir, "hermes")))
+    .join(path.delimiter);
+
   const dist = await serveDist();
   process.env.VITE_DEV_SERVER_URL = `http://127.0.0.1:${dist.port}`;
   const { bootForE2e } = await import("../dist-electron/main.js");
@@ -725,6 +743,15 @@ async function main() {
     const switched = await api.companionUseHarness("pi");
     const created = await api.vaultCreate(${JSON.stringify(vaultDir)}, "Pi rig");
     const opened = await api.vaultOpen(${JSON.stringify(vaultDir)});
+    // The dock's switcher offers Hermes only when this vault has a Hermes agent
+    // (agents are vault-scoped now). This world has no Hermes gateway, so a
+    // fresh profile is bound and never activated: the point is the switcher and
+    // the domain scoping, and the switch itself lands on the connect screen,
+    // which the domain section accepts as the same rule having fired.
+    const addedAgent = await api.vaultAgentsAddHermes({
+      mode: "fresh",
+      name: "lq-pi-companion-hermes",
+    });
     // A new vault seeds the base Life area unlocked and Health/Mind/Finance/
     // Business/Relationships locked. This rig scopes agents by area and switches
     // the lens, so the two areas it uses are unlocked first — the same
@@ -750,6 +777,7 @@ async function main() {
       switched: switched && switched.kind,
       createdOk: created && created.ok,
       openedOk: opened && opened.ok,
+      addedAgent: addedAgent && addedAgent.ok === true ? addedAgent.value : addedAgent,
       unlocked: unlockedHealth && unlockedHealth.ok === true &&
         unlockedFinance && unlockedFinance.ok === true,
       database,

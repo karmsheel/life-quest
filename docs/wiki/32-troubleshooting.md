@@ -12,11 +12,11 @@ it. It only describes controls and messages the app actually has. Start from
 | Surface | When you see it | What it tells you |
 |---|---|---|
 | The splash (logo over the window) | For the first ~1.5–2 s of any launch | The app's own boot is still running |
-| The **LifeQuest companion** setup card | Whenever the companion is not `ready` | Which companion failure it is, **Recheck**, the companion picker, and the Pi endpoint form |
+| The **LifeQuest companion** setup card | Whenever the companion is not `ready` | Which companion failure it is, **Recheck**, the boot companion picker, and the Pi endpoint form |
 | The welcome page | No vault open | **Create vault**, **Open vault**, **Recent vaults**, and the open error |
 | *Files changed on disk* banner | The vault changed outside the app's own writes | A **Reload** button |
 | The chat dock | A new vault, or the companion's answers | The **Welcome to LifeQuest** onboarding card |
-| Settings → Hermes | Anytime | Companion status, **Companion** picker, **MCP doors**, **Recheck** |
+| Settings → Hermes | Anytime | Companion status, **Agents in this vault**, **MCP doors**, **Recheck** |
 | Settings → Areas | Locked areas are missing | **Unlock another area**, **Your areas**, **Archived** |
 | Settings → Vault | Anytime | The open vault, **Change folder…**, **Books** export/restore |
 | Settings → Updates | Anytime | What the release check got, and **Check now** |
@@ -85,10 +85,18 @@ a fresh one) on `auth_error`.
 
 ### The companion switched but the studio came back
 
-It should not. After the first `ready`, the studio stays put: switching companions
-is a status change on the surface, not a teardown. If you do see the connect card
-after switching, **Recheck** once — a switch deliberately does not wait for the new
-agent to boot, so its first status may be `switching` for a moment.
+It should not. After the first `ready`, the studio stays put: switching agents (or
+vaults) is a status and data change on the surface, not a teardown. If you do see
+the connect card after switching, **Recheck** once — a switch deliberately does
+not wait for the new agent to boot, so its first status may be `switching` for a
+moment.
+
+### A vault shows another vault's chats
+
+It should not, and it no longer does: chats are stored per vault. If you are on an
+older build, update; the vault that was open at the upgrade keeps the old chats,
+and every other vault starts clean. A chat cannot be moved between vaults by the
+app — use the vault that owns it.
 
 ### A model warning in Settings → Hermes
 
@@ -309,13 +317,13 @@ hide a missing page.
 | Location | What is in it |
 |---|---|
 | Your vault folder | `.lifequest/` (settings, log, Decisions, map, goals, automations, signals, brief, onboarding record, reviews, cache), `domains/<slug>/`, `images/`, `attachments/`, `documents/`, `projects/`, `reviews/`, `planning/`, `notes/` |
-| `%APPDATA%\LifeQuest` (`userData`) | `recent.json` (recent vaults, lens per vault, harness choice), `secrets.json` (OS-encrypted Hermes keys), `pi-endpoint.json` and `pi-endpoint.key`, `pi-sessions/`, `pairing-secrets/`, `companion-filing.json` |
+| `%APPDATA%\LifeQuest` (`userData`) | `recent.json` (recent vaults, lens and agent binding per vault), `secrets.json` (OS-encrypted Hermes keys), `pi-endpoint.json` and `pi-endpoint.key`, `pi-sessions/<vault id>/`, `pairing-secrets/`, `companion-filing.json` |
 | The Hermes home (`%LOCALAPPDATA%\hermes` or `~/.hermes`) | Hermes' own install, profiles, `config.yaml`, `SOUL.md`, `.env` |
 | `%TEMP%\LifeQuest-update` | A downloaded installer, until launched or discarded |
 
 The vault is yours to copy, back up and put in git. `userData` is app state;
-removing it loses your recent list, the harness choice and stored keys, not your
-life data.
+removing it loses your recent list, the per-vault agent bindings and stored keys,
+not your life data.
 
 ## How to find logs
 

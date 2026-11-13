@@ -123,11 +123,13 @@ connect**. A local server needs no key. The key is sealed by the OS and never
 enters the vault; on a machine with no OS keyring the form says the key is kept
 for this session only.
 
-**Hermes** stays a first-class option. Choose it in the companion picker and the
-screen offers the same profile picker the app has always had: every installed
-profile is listed, the one in use is marked **In use**, a **default** tag marks
-your main Hermes profile, and **Create profile** creates and wires the app's own
-`lifequest` profile. The picker is offered only while Hermes is selected.
+**Hermes** stays a first-class option, added per vault. The setup screen (before a
+vault is open) still offers the companion picker and the profile picker: every
+installed profile is listed, the one in use is marked **In use**, a **default** tag
+marks your main Hermes profile, and **Create profile** creates and wires the app's
+own `lifequest` profile. The picker is offered only while Hermes is selected. Once
+a vault is open, **Settings → Hermes → Agents in this vault** is where a Hermes
+agent is added to that vault — see [Companion](./24-companion.md).
 
 What the screen can say, and what to do:
 
@@ -143,10 +145,11 @@ What the screen can say, and what to do:
 | **The endpoint rejected the key** | Pi's key was refused. Update the key in the form and save |
 | **Companion disconnected** | The endpoint or gateway did not answer. Check the URL/server, then **Recheck** |
 
-The chosen companion is one per app, not per vault, and it is remembered. With
-no stored choice, a machine where Hermes already works keeps Hermes; every other
-machine lands on Pi. See [Companion](./24-companion.md) for the chat dock and
-[Troubleshooting](./32-troubleshooting.md) for deeper failures.
+The companion choice is per vault: a new vault starts on **Pi** with no chats, and
+it gains Hermes only when you add a Hermes agent to that vault. The setup screen's
+pick is the boot choice for a machine with no vault open yet; opening a vault
+applies that vault's own binding. See [Companion](./24-companion.md) for the chat
+dock and [Troubleshooting](./32-troubleshooting.md) for deeper failures.
 
 ## How to use it
 
@@ -259,11 +262,11 @@ Two kinds of data are easy to confuse:
   The exact layout is on [The vault](./04-the-vault.md).
 - **App user data** is the app's own state, in Electron's per-user data folder —
   `%APPDATA%\LifeQuest` on Windows. It holds the recent-vault list, the last area
-  lens per vault, the chosen companion and Hermes profile, the OS-encrypted
-  secret store, and Pi's own files: `pi-endpoint.json` (endpoint, model, provider
-  name), `pi-endpoint.key` (sealed by the OS), and `pi-sessions\` (Pi's chat
-  transcripts). Removing this folder resets the app's memory of your vaults; it
-  does not delete a vault.
+  lens and the agent binding per vault, the OS-encrypted secret store, and Pi's
+  own files: `pi-endpoint.json` (endpoint, model, provider name),
+  `pi-endpoint.key` (sealed by the OS), and `pi-sessions\<vault id>\` (Pi's chat
+  transcripts, grouped by vault). Removing this folder resets the app's memory of
+  your vaults and their agents; it does not delete a vault.
 
 **Hermes data** stays with Hermes: its profile folder owns the gateway
 configuration, the model and the profile's `.env` (where its key lives). The
@@ -312,9 +315,10 @@ Nothing from Hermes is copied into the vault.
 - The recent list keeps at most 20 vaults, most recent first.
 - On a machine with no OS keyring, a Pi API key is kept for the session only;
   the setup form says so. A local endpoint that needs no key is unaffected.
-- Switching companions changes the chats you see: a chat belongs to the companion
-  that made it. Switch from the dock's agent strip or Settings → Hermes →
-  **Companion**.
+- Switching vaults changes the chats you see and the agent that answers: a vault
+  owns its chats and its agents, and none of them cross over. Switch with the
+  rail-foot vault chip's **Switch vault** dialog; a vault's agents are managed in
+  Settings → Hermes → **Agents in this vault**.
 - If `npm run dev` exits at once, another process may already hold port `5173`;
   Vite runs with `strictPort` and refuses to move.
 - Windows SmartScreen on a private build is expected. The app is unsigned here;

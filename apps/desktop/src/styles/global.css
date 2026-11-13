@@ -6633,6 +6633,249 @@ a.home-mini-list__link:hover {
   color: var(--danger);
 }
 
+/* —— Settings · Hermes · Agents in this vault ——
+   The vault's agent is a fact about the vault, so it reads as two cards: Pi,
+   which every vault has, and the Hermes agent this vault either has or does
+   not. The active one is marked and the actions sit under the card they act
+   on; there is no picker to mistake for navigation. */
+.vault-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.vault-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.vault-agent-card--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+}
+
+.vault-agent-card--empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+.vault-agent-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.vault-agent-card__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.vault-agent-card__title {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.vault-agent-card__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.vault-agent-card__desc {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.vault-agent-card__desc code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+
+.vault-agent-card__tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.vault-agent-card__copy {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.vault-agent-card__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+.vault-agent-card__warning svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.vault-agent-card__note {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* The explicit reuse decision: every installed profile and the vaults it
+   already works on, so the shared-memory cost is visible before the pick. */
+.vault-agent-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.vault-agent-chooser__heading {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.vault-agent-chooser__lead {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.vault-agent-chooser__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.vault-agent-chooser__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.2rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.vault-agent-chooser__row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  border-color: var(--border);
+}
+
+.vault-agent-chooser__row:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.vault-agent-chooser__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vault-agent-chooser__name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.vault-agent-chooser__tag {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.vault-agent-chooser__path {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-agent-chooser__warning {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+.vault-agent-chooser__safe {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.vault-agent-chooser__in-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--accent);
+}
+
+.vault-agent-chooser__pick {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
 /* —— Settings · Questions: prompts saved for the chat composer —— */
 /* The form and the list share one card because they are one thing: the list is
    what the form has written so far. The rule between them is the seam. */
