@@ -11,7 +11,7 @@ import { resolveHermesCli } from "../companion-profile.ts";
 import { readPiSettings } from "./pi-settings.ts";
 import { getHarnessId, setHarnessId } from "../recent-vaults.ts";
 import { lastHarnessStatus, publishHarnessStatus } from "./status-bus.ts";
-import type { HarnessId, HarnessStatus, HarnessSummary } from "./types.ts";
+import type { HarnessId, HarnessStatus, HarnessSummary, HarnessTurnCapabilities } from "./types.ts";
 
 /**
  * Hermes until the app decides otherwise.
@@ -127,6 +127,49 @@ export async function switchHarness(id: HarnessId): Promise<HarnessStatus> {
   return answer;
 }
 
+/**
+ * The per-harness capability facts, kept beside the summaries so there is one
+ * place to update when a harness gains a frame. These are claims about what the
+ * adapter can emit today, not what the vendor could theoretically provide.
+ */
+const PI_CAPABILITIES: HarnessTurnCapabilities = {
+  toolRows: true,
+  toolArgs: true,
+  toolCallIds: true,
+  toolResultsLive: true,
+  toolResultsOnSettle: true,
+  toolDurations: true,
+  toolProgress: true,
+  reasoning: "delta",
+  commentary: true,
+  steps: true,
+  usage: true,
+  history: true,
+  approvals: true,
+  steering: true,
+};
+
+const HERMES_CAPABILITIES: HarnessTurnCapabilities = {
+  toolRows: true,
+  toolArgs: true,
+  // The session chat stream carries no tool_call_id on tool.started/completed.
+  toolCallIds: false,
+  toolResultsLive: false,
+  // The terminal run.<status> row carries the turn's transcript, results included.
+  toolResultsOnSettle: true,
+  toolDurations: false,
+  toolProgress: false,
+  // The session route's thinking is a sampled preview, not a delta stream.
+  reasoning: "preview",
+  // Forwarded only when the runtime emits assistant.commentary.
+  commentary: true,
+  steps: false,
+  usage: true,
+  history: true,
+  approvals: true,
+  steering: true,
+};
+
 export function harnessSummaries(): HarnessSummary[] {
   return [
     {
@@ -136,6 +179,7 @@ export function harnessSummaries(): HarnessSummary[] {
       kind: "external",
       active: active === "hermes",
       icon: "hermes",
+      capabilities: HERMES_CAPABILITIES,
     },
     {
       id: "pi",
@@ -144,6 +188,7 @@ export function harnessSummaries(): HarnessSummary[] {
       kind: "embedded",
       active: active === "pi",
       icon: "pi",
+      capabilities: PI_CAPABILITIES,
     },
   ];
 }

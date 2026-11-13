@@ -105,6 +105,34 @@ export type SessionPatch = {
   archived?: boolean;
 };
 
+/**
+ * What one harness can actually put in a turn's work log.
+ *
+ * The renderer reads this instead of branching on the harness id: a capability
+ * that is false is OMITTED from the UI, never shown as an empty placeholder.
+ * `reasoning` distinguishes streams of real thinking from the lossy preview the
+ * Hermes session route exposes, because the row labels the two differently.
+ */
+export type HarnessTurnCapabilities = {
+  toolRows: boolean;
+  toolArgs: boolean;
+  toolCallIds: boolean;
+  /** Result text arrives during the turn, not only when it settles. */
+  toolResultsLive: boolean;
+  /** Result text can be recovered from the terminal snapshot / transcript. */
+  toolResultsOnSettle: boolean;
+  /** The harness measured each call; false means the app clock is the only one. */
+  toolDurations: boolean;
+  toolProgress: boolean;
+  reasoning: "delta" | "preview" | "none";
+  commentary: boolean;
+  steps: boolean;
+  usage: boolean;
+  history: boolean;
+  approvals: boolean;
+  steering: boolean;
+};
+
 /** What a harness picker shows. */
 export type HarnessSummary = {
   id: HarnessId;
@@ -115,6 +143,8 @@ export type HarnessSummary = {
   active: boolean;
   /** Which mark the switcher draws; unknown ids fall back to their initial. */
   icon: string;
+  /** What the dock may render for this harness (see HarnessTurnCapabilities). */
+  capabilities: HarnessTurnCapabilities;
 };
 
 // The dock's shapes are harness-neutral already; these aliases let the seam

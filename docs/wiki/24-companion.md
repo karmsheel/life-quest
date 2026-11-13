@@ -141,32 +141,50 @@ switches the list, the tab strip and the transcript you see.
 1. Type in the field placeholdered **Message Pi…** or **Message Hermes…**.
    **Enter** starts a new line; **Ctrl+Enter** (**Cmd+Enter** on macOS) sends.
 2. While a turn runs the send control becomes **Stop this run** and the transcript
-   shows **Thinking…** until text arrives. The field's placeholder becomes **Steer
-   the turn that is running…**.
+   shows a live status line such as **Working… 6s · reading the note**. The field's
+   placeholder becomes **Steer the turn that is running…**.
 3. To add to a live turn, type and choose **Steer** — the words go into the run that
    is already working. To line a message up behind it, choose **Queue**; queued
    rows appear under the composer labelled **Queued**, each with **Remove queued
    message**. Ctrl/Cmd+Enter steers while a turn is running.
-4. Read the bubbles: your messages are labelled **You**, the companion's **Pi** or
-   **Hermes**. A steered message wears a `steered` mark. Each bubble has a time and
-   a copy control (**Copy message**, then **Copied**). A turn that called tools
-   draws one grey activity line such as "Explored 2 files" or "Used 4 tools"; when
-   more than one call ran, click the line to expand the calls.
-5. If the companion asks for approval mid-turn, the transcript shows the request
+4. Read the turn as a work log. Your messages are labelled **You**, the
+   companion's **Pi** or **Hermes**; a steered message wears a `steered` mark, and
+   each bubble has a time and a copy control (**Copy message**, then **Copied**).
+   Between the question and the answer sits the turn's process: its reasoning (a
+   **Thought** row, or **Thinking preview** when the agent only samples it), any
+   commentary or narration, and one row per tool call such as
+   "get_database · 4e89…" with its state, its duration and, on click, its
+   arguments and result. While the turn runs the process stays open; when it
+   settles it folds to one header such as "Worked for 1s · Used 4e89…", and
+   clicking the header reopens it.
+5. Below the process is the answer, never inside it, and a footer with the
+   outcome: **Completed · 1s · 1.4k tokens**, or **Stopped**, **Failed** or
+   **Ended before finishing** with the reason. A failed, stopped or incomplete
+   turn keeps its process open so the cut-short work stays visible. Reloading the
+   chat rebuilds the same rows, fold, footer and token count from the companion's
+   own transcript.
+6. The same work log is drawn for both agents, but only from what the agent can
+   honestly report: Pi streams results, real reasoning and its own tool timings as
+   they happen; Hermes' session stream delivers results with the turn's final
+   snapshot, shows thinking only as a preview, and the row's duration is the app's
+   own clock, labelled as such. Nothing is timed, counted or worded on the agent's
+   behalf when it did not say so.
+7. If the companion asks for approval mid-turn, the transcript shows the request
    with **Allow once** and **Deny**. Nothing else in the app can approve it.
-6. The empty chat shows **Ask Pi** or **Ask Hermes** and the active area. Under it,
+8. The empty chat shows **Ask Pi** or **Ask Hermes** and the active area. Under it,
    **Start with a question** offers your saved questions that fit the screen, each
    with its scope; clicking one sends it as the first turn. With no saved question
    for this screen the dock says **No questions set** and links to
    **Settings → Questions**; when starters are shown, **Edit questions** is the way
    back to the same page.
-7. A turn is live while the companion is still sending. If its stream goes quiet
+9. A turn is live while the companion is still sending. If its stream goes quiet
    for 45 seconds — a gateway that wedged, or a connection that was cut without
    saying so — the app closes the turn itself rather than leaving it running: the
-   rail's dot clears, the composer unlocks, and the chat says "The companion
-   stopped sending while this turn was running…". The transcript is re-read from
-   the companion at the same moment, so an answer it had already stored is not
-   lost. Send again if the reply is not there.
+   rail's dot clears, the composer unlocks, and the turn's footer reads **Ended
+   before finishing**. A stream that closes without a final frame is treated the
+   same way rather than passed off as complete. The transcript is re-read from the
+   companion at the same moment, so an answer it had already stored is not lost.
+   Send again if the reply is not there.
 
 ### The composer's controls
 

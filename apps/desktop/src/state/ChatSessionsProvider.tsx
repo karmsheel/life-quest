@@ -31,7 +31,15 @@ import type {
   HermesSession,
 } from "@/vite-env";
 import type { FocusedCardContext } from "../../electron/companion-client.ts";
-import type { ToolCall } from "@/lib/tool-run";
+import {
+  applyTurnEvent,
+  buildTurnTimeline,
+  normalizeCapabilities,
+  openTurn,
+  settleProvisionally,
+  type TurnRecord,
+} from "@/lib/turn-timeline";
+import type { HarnessTurnCapabilities } from "@/vite-env";
 
 /**
  * One bubble in a chat.
@@ -83,20 +91,56 @@ export type QueuedMessage = {
 
 /** Everything one chat's turn is doing, kept per session so parallel runs stay apart. */
 export type SessionRun = {
+  /**
+   * Flat message bubbles, kept for callers that still read them. The panel no
+   * longer renders these: a conversation is a list of turns (below), because a
+   * reply, its work log and its outcome have to stay together. Tool rows are
+   * excluded here — they are evidence, not something the companion said.
+   */
   messages: ChatMessage[];
   /** The transcript has been read once for this chat; a revisit keeps it. */
   messagesLoaded: boolean;
+  /** Every turn in the chat, oldest first; the live one is last. */
+  turns: TurnRecord[];
+  /** Id of the turn currently streaming, when one is. */
+  liveTurnId: string | null;
   sending: boolean;
   /** Run id of the live turn, learned from `run.started`; stop needs it. */
   runId: string | null;
-  /** How the last turn ended, when it did not end cleanly. */
-  turnNote: string | null;
-  /** This turn's tool calls, in wire order; a live turn's evidence, not messages. */
-  tools: ToolCall[];
-  toolsOpen: boolean;
   approval: { runId: string; requestId: string; summary: string } | null;
   error: string | null;
 };
+
+/** Replace one turn in a run's list without disturbing the others. */
+function replaceTurn(
+  turns: readonly TurnRecord[],
+  turnId: string,
+  next: TurnRecord,
+): TurnRecord[] {
+  return turns.map((turn) => (turn.turnId === turnId ? next : turn));
+}
+
+/**
+ * The turn a stream frame belongs to: the one this run opened, else the newest
+ * turn still running. `run.started` renames the pending turn, and a late frame
+ * may land after that bookkeeping — both are the same live turn.
+ */
+function liveTurnOf(run: SessionRun): TurnRecord | null {
+  if (run.liveTurnId) {
+    const byId = run.turns.find((turn) => turn.turnId === run.liveTurnId);
+    if (byId) return byId;
+  }
+  for (let i = run.turns.length - 1; i >= 0; i -= 1) {
+    const turn = run.turns[i]!;
+    if (turn.status === "running") return turn;
+  }
+  return null;
+}
+
+/** The newest turn, settled or not: where late notes and terminals land. */
+function lastTurnOf(run: SessionRun): TurnRecord | null {
+  return run.turns.length > 0 ? run.turns[run.turns.length - 1]! : null;
+}
 
 /**
  * The dock's three surfaces — the open conversation, the Life-Chain the same
@@ -108,11 +152,10 @@ export type SessionRun = {
 const EMPTY_RUN: SessionRun = Object.freeze({
   messages: [] as ChatMessage[],
   messagesLoaded: false,
+  turns: [] as TurnRecord[],
+  liveTurnId: null,
   sending: false,
   runId: null,
-  turnNote: null,
-  tools: [] as ToolCall[],
-  toolsOpen: false,
   approval: null,
   error: null,
 });
@@ -300,7 +343,8 @@ type ChatSessionsContextValue = {
   /** A failure with no turn behind it: a list read, a receipt, the chain. */
   reportError: (message: string | null) => void;
   setErrorFor: (id: string, message: string | null) => void;
-  setToolsOpen: (id: string, open: boolean) => void;
+  /** Open or close one turn's process fold. */
+  setTurnFoldOpen: (id: string, turnId: string, open: boolean) => void;
   setAutomationContext: (id: string, context: string) => void;
 };
 
@@ -348,12 +392,6 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   surfaceRef.current = surface;
   const contextCardsRef = useRef<ChatCardContext[]>(contextCards);
   contextCardsRef.current = contextCards;
-  /**
-   * The assistant bubble each chat's live turn is writing into. A delta carries
-   * no message id, so the first one mints the bubble and the rest append to it;
-   * one id per chat is what keeps two parallel replies from sharing a bubble.
-   */
-  const assistantIds = useRef(new Map<string, string>());
   /** Chats whose tab was deliberately closed while their turn was still live. */
   const closedTabs = useRef(new Set<string>());
   /** The automation material each chat was opened with, carried by every turn. */
@@ -562,6 +600,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    */
   const companion = useOptionalCompanion();
   const harness = companion?.harness ?? null;
+  /**
+   * What the active companion can put in a work log. The panel renders the
+   * descriptor, never the harness id; a stub with no summary falls back to the
+   * full set so an old rig sees the whole experience rather than a disabled one.
+   */
+  const capabilities: HarnessTurnCapabilities = useMemo(
+    () =>
+      normalizeCapabilities(
+        companion?.harnesses?.find((entry) => entry.active)?.capabilities,
+      ),
+    [companion?.harnesses],
+  );
+  const capabilitiesRef = useRef(capabilities);
+  capabilitiesRef.current = capabilities;
   const harnessStatus = companion?.status ?? null;
   const switching = companion?.switching ?? null;
   const harnessRef = useRef<HarnessId | null>(harness);
@@ -644,19 +696,34 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         updateRun(id, (current) => ({ ...current, error: result.error }));
         return;
       }
+      const transcript = result.value;
       updateRun(id, (current) => {
         // A turn may have begun while the transcript was in flight; replacing
-        // its bubbles with the stored page would drop what is already streaming.
+        // it with the stored page would drop what is already streaming.
         if (current.sending) return current;
+        // Tool rows are evidence inside a turn, never bubbles of their own. The
+        // flat list is kept besides the turns for the callers that still read it.
+        const messages = transcript.flatMap((m) =>
+          m.role === "tool"
+            ? []
+            : [
+                {
+                  id: nextId(),
+                  role: m.role as "user" | "assistant",
+                  content: m.content,
+                  ...(m.at === undefined ? {} : { at: m.at }),
+                },
+              ],
+        );
         return {
           ...current,
           messagesLoaded: true,
-          messages: result.value.map((m) => ({
-            id: nextId(),
-            role: m.role,
-            content: m.content,
-            at: m.at,
-          })),
+          messages,
+          turns: buildTurnTimeline(transcript, {
+            sessionId: id,
+            ...(harnessRef.current ? { harness: harnessRef.current } : {}),
+          }),
+          liveTurnId: null,
         };
       });
       const firstUser = result.value.find((m) => m.role === "user" && m.content.trim());
@@ -894,6 +961,14 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     const previous = seenHarness.current;
     if (previous === harness) return;
     seenHarness.current = harness;
+    // The dock's own landing can already be in flight for this very agent:
+    // `ChatSessionsProvider` mounts after the harness list arrives, so the
+    // panel's resume effect runs before this effect, starts the list read, and
+    // is the first paint. Bumping the epoch under it cancels that read and the
+    // dock lands on nothing (the list renders, no chat opens). A landing for
+    // the legacy no-agent slot is not this one — it is cancelled below and
+    // replaced by this agent's landing.
+    if (resuming.current && landingFor.current === harness) return;
     listEpoch.current += 1;
     if (previous) {
       harnessSnapshots.current.set(previous, {
@@ -1197,6 +1272,28 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * out, so a chat that is switched away from still shows what was asked when
    * the operator comes back.
    */
+  /**
+   * A turn that never got its stream. The transport failing is not the same as
+   * the agent finishing: the turn reads as failed and says so, rather than
+   * settling as a completed turn with no reply and a red box underneath.
+   */
+  const failTurn = useCallback(
+    (id: string, message: string) => {
+      updateRun(id, (current) => {
+        const live = liveTurnOf(current);
+        const turns = live
+          ? replaceTurn(
+              current.turns,
+              live.turnId,
+              applyTurnEvent(live, { type: "error", message }, capabilitiesRef.current),
+            )
+          : current.turns;
+        return { ...current, turns, error: message };
+      });
+    },
+    [updateRun],
+  );
+
   const sendMessageRef = useRef<(id: string, text: string) => Promise<void>>(async () => {});
   const settleTurnRef = useRef<(id: string) => void>(() => {});
   const sendMessage = useCallback(
@@ -1217,27 +1314,36 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const pick = runtimePinsRef.current[id] ?? {};
 
       const sentAt = Date.now();
+      // The turn is opened here, with the operator's own words in it, so the
+      // bubble is visible before the first frame lands and a chat switched away
+      // from still shows what was asked. `run.started` adopts this turn and gives
+      // it the harness's run id.
+      const turn = openTurn({
+        sessionId: id,
+        ...(harnessRef.current ? { harness: harnessRef.current } : {}),
+        at: sentAt,
+        user: {
+          text: content,
+          at: sentAt,
+          ...(receipt ? { receipt: { name: receipt.name, size: receipt.size } } : {}),
+        },
+      });
       updateRun(id, (current) => ({
         ...current,
-        messages: [
-          ...current.messages,
-          {
-            id: nextId(),
-            role: "user",
-            content,
-            at: sentAt,
-            ...(receipt ? { receipt: { name: receipt.name, size: receipt.size } } : {}),
-          },
+        // A newer turn folds any turn the app had closed on its own guess: the
+        // guess is done, and the work log it kept visible can fold now.
+        turns: [
+          ...current.turns.map((row) =>
+            row.provisional ? { ...row, provisional: false } : row,
+          ),
+          turn,
         ],
+        liveTurnId: turn.turnId,
         sending: true,
         error: null,
         runId: null,
-        turnNote: null,
-        tools: [],
-        toolsOpen: false,
         approval: null,
       }));
-      assistantIds.current.delete(id);
       setReceiptFor(id, null);
       setAttachmentsFor(id, []);
       setSessions((prev) =>
@@ -1301,14 +1407,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         });
         if ("ok" in result && result.ok === false) {
           failed = true;
-          updateRun(id, (current) => ({ ...current, error: result.error }));
+          failTurn(id, result.error);
         }
       } catch (err) {
         failed = true;
-        updateRun(id, (current) => ({
-          ...current,
-          error: err instanceof Error ? err.message : "Failed to reach Hermes",
-        }));
+        failTurn(id, err instanceof Error ? err.message : "Failed to reach Hermes");
       } finally {
         // THE TURN IS SETTLED FIRST, BEFORE ANYTHING THAT CAN WAIT.
         //
@@ -1357,6 +1460,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       boardSlug,
       pageContext,
       attachments,
+      failTurn,
       receipts,
       loadMessages,
       refresh,
@@ -1394,19 +1498,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           updateRun(id, (current) => ({ ...current, error: result.error }));
           return false;
         }
-        updateRun(id, (current) => ({
-          ...current,
-          messages: [
-            ...current.messages,
-            {
-              id: nextId(),
-              role: "user",
-              content,
-              at: Date.now(),
-              steer: true,
-            },
-          ],
-        }));
+        updateRun(id, (current) => {
+          const live = liveTurnOf(current);
+          if (!live) return current;
+          return {
+            ...current,
+            turns: replaceTurn(current.turns, live.turnId, {
+              ...live,
+              steers: [
+                ...(live.steers ?? []),
+                { text: content, at: Date.now(), steer: true },
+              ],
+            }),
+          };
+        });
         return true;
       } catch (err) {
         updateRun(id, (current) => ({
@@ -1501,9 +1606,25 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    */
   const settleTurn = useCallback(
     (id: string) => {
-      updateRun(id, (current) =>
-        current.sending ? { ...current, sending: false } : current,
-      );
+      updateRun(id, (current) => {
+        if (!current.sending && !current.liveTurnId) return current;
+        const live = liveTurnOf(current);
+        // The transport closed without a terminal frame. The renderer cannot
+        // know why, so it closes the turn it opened rather than leaving a
+        // spinner forever; a terminal frame that arrives after this one still
+        // says what actually happened (the reducer lets it correct the status).
+        const turns =
+          live && live.status === "running"
+            ? replaceTurn(current.turns, live.turnId, settleProvisionally(live))
+            : current.turns;
+        return {
+          ...current,
+          turns,
+          liveTurnId: null,
+          sending: false,
+          runId: null,
+        };
+      });
       void drainQueue(id);
     },
     [drainQueue, updateRun],
@@ -1550,11 +1671,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [updateRun],
   );
 
-  const setToolsOpen = useCallback(
-    (id: string, open: boolean) => {
-      updateRun(id, (current) =>
-        current.toolsOpen === open ? current : { ...current, toolsOpen: open },
-      );
+  const setTurnFoldOpen = useCallback(
+    (id: string, turnId: string, open: boolean) => {
+      updateRun(id, (current) => {
+        const turn = current.turns.find((row) => row.turnId === turnId);
+        if (!turn || turn.foldOpen === open) return current;
+        return {
+          ...current,
+          turns: replaceTurn(current.turns, turnId, { ...turn, foldOpen: open }),
+        };
+      });
     },
     [updateRun],
   );
@@ -1586,59 +1712,45 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           closedTabs.current.delete(id);
           ensureTab(id);
         }
-        updateRun(id, (current) => ({
-          ...current,
-          runId: evt.runId || null,
-          sending: true,
-          error: null,
-          turnNote: null,
-          approval: null,
-        }));
-        if (isActive()) setLivePinIds(contextCardsRef.current.map((card) => card.pin.id));
-        return;
-      }
-      if (evt.type === "assistant.delta") {
-        const bubble = assistantIds.current.get(id) ?? nextId();
-        assistantIds.current.set(id, bubble);
-        const startedAt = Date.now();
+        const runId = evt.runId || null;
         updateRun(id, (current) => {
-          const index = current.messages.findIndex((m) => m.id === bubble);
-          if (index === -1) {
+          const pending = liveTurnOf(current);
+          if (pending) {
+            // Adopt the turn `sendMessage` opened: the harness has now named the
+            // run and owns its identity. The user text is already in it.
+            const adopted: TurnRecord = {
+              ...pending,
+              turnId: runId ?? pending.turnId,
+              ...(runId ? { runId } : {}),
+            };
             return {
               ...current,
-              messages: [
-                ...current.messages,
-                { id: bubble, role: "assistant", content: evt.text, at: startedAt },
-              ],
+              turns: replaceTurn(current.turns, pending.turnId, adopted),
+              liveTurnId: adopted.turnId,
+              runId,
+              sending: true,
+              error: null,
+              approval: null,
             };
           }
-          const messages = current.messages.slice();
-          const cur = messages[index]!;
-          messages[index] = { ...cur, content: cur.content + evt.text };
-          return { ...current, messages };
+          // A turn nobody here typed: a scheduled automation. It has no user
+          // text, so its timeline starts with the work log.
+          const opened = openTurn({
+            sessionId: id,
+            ...(runId ? { turnId: runId } : {}),
+            ...(harnessRef.current ? { harness: harnessRef.current } : {}),
+          });
+          return {
+            ...current,
+            turns: [...current.turns, opened],
+            liveTurnId: opened.turnId,
+            runId,
+            sending: true,
+            error: null,
+            approval: null,
+          };
         });
-        return;
-      }
-      if (evt.type === "tool.started") {
-        updateRun(id, (current) => ({
-          ...current,
-          tools: [
-            ...current.tools,
-            { id: nextId(), name: evt.name, target: evt.target, done: false },
-          ],
-        }));
-        return;
-      }
-      if (evt.type === "tool.completed") {
-        updateRun(id, (current) => {
-          const index = current.tools.findIndex(
-            (call) => !call.done && call.name === evt.name,
-          );
-          if (index === -1) return current;
-          const tools = current.tools.slice();
-          tools[index] = { ...tools[index]!, done: true };
-          return { ...current, tools };
-        });
+        if (isActive()) setLivePinIds(contextCardsRef.current.map((card) => card.pin.id));
         return;
       }
       if (evt.type === "approval.request") {
@@ -1652,84 +1764,57 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }));
         return;
       }
-      if (evt.type === "run.stopped") {
-        updateRun(id, (current) => ({
+
+      const terminal =
+        evt.type === "run.completed" ||
+        evt.type === "run.stopped" ||
+        evt.type === "run.incomplete" ||
+        evt.type === "error";
+      const appNote =
+        evt.type === "decisions.filed" || evt.type === "decisions.problem";
+
+      updateRun(id, (current) => {
+        const live = liveTurnOf(current);
+        // A terminal or an app note can trail the turn's own end through IPC, so
+        // when nothing is live it still lands on the newest turn instead of
+        // opening a phantom one. Content without a send is the one case where a
+        // turn has to be created: the frame is evidence something ran.
+        let target: TurnRecord | null = live;
+        let turns = current.turns;
+        if (!target && (terminal || appNote)) target = lastTurnOf(current);
+        if (!target) {
+          const opened = openTurn({
+            sessionId: id,
+            ...(harnessRef.current ? { harness: harnessRef.current } : {}),
+          });
+          turns = [...turns, opened];
+          target = opened;
+        }
+        const next = applyTurnEvent(target, evt, capabilitiesRef.current);
+        if (next === target) return current;
+        return { ...current, turns: replaceTurn(turns, target.turnId, next) };
+      });
+
+      if (!terminal) return;
+      closedTabs.current.delete(id);
+      if (isActive()) setLivePinIds([]);
+      updateRun(id, (current) => {
+        const live = liveTurnOf(current);
+        const error =
+          evt.type === "error" ? evt.message : current.error;
+        return {
           ...current,
           sending: false,
           runId: null,
-          turnNote: "Stopped — the reply above is only what arrived before the interrupt",
-        }));
-        closedTabs.current.delete(id);
-        if (isActive()) setLivePinIds([]);
-        void drainQueue(id);
-        return;
-      }
-      if (evt.type === "run.incomplete") {
-        updateRun(id, (current) => ({
-          ...current,
-          sending: false,
-          runId: null,
-          turnNote: evt.reason
-            ? `Ended before finishing — ${evt.reason}`
-            : "Ended before finishing",
-        }));
-        closedTabs.current.delete(id);
-        if (isActive()) setLivePinIds([]);
-        void drainQueue(id);
-        return;
-      }
-      if (evt.type === "error") {
-        updateRun(id, (current) => ({ ...current, sending: false, error: evt.message }));
-        void drainQueue(id);
-        return;
-      }
-      if (evt.type === "run.completed") {
-        updateRun(id, (current) => ({
-          ...current,
-          sending: false,
-          runId: null,
-        }));
-        closedTabs.current.delete(id);
-        if (isActive()) setLivePinIds([]);
-        void refresh();
-        void drainQueue(id);
-        return;
-      }
-      /**
-       * The app's own frames arrive after the stream has finished: the main
-       * process reads the turn's fenced proposals and files them, and a turn that
-       * said "here are the changes" also says what became of them. Without this
-       * line the operator had to take the agent's word for it — the reported bug
-       * was the agent saying it filed decisions while the Inbox (rightly, because
-       * the old funnel dropped them) showed nothing.
-       *
-       * The note lands on the chat the frame names, not on whichever chat is
-       * open: a scheduled automation that files proposals keeps its own record of
-       * having done so in its own tab.
-       */
-      if (evt.type === "decisions.filed") {
-        const count = evt.ids.length;
-        const named = evt.titles
-          .slice(0, 2)
-          .map((title) => (title.length > 64 ? `${title.slice(0, 63)}…` : title));
-        const more =
-          evt.titles.length > named.length
-            ? ` and ${evt.titles.length - named.length} more`
-            : "";
-        updateRun(id, (current) => ({
-          ...current,
-          turnNote: `Filed ${count} ${count === 1 ? "proposal" : "proposals"} — review ${
-            count === 1 ? "it" : "them"
-          } in Decisions${named.length > 0 ? `: ${named.join(", ")}${more}` : ""}.`,
-        }));
-        return;
-      }
-      if (evt.type === "decisions.problem") {
-        // A proposal that could not be filed is said out loud, not left for the
-        // operator to notice as an absence in the Inbox.
-        updateRun(id, (current) => ({ ...current, turnNote: evt.message }));
-        return;
-      }
+          // Only the turn that was live stops being live; a late terminal for a
+          // previous run must not steal the marker from a newer one.
+          liveTurnId:
+            live && current.liveTurnId === live.turnId ? null : current.liveTurnId,
+          error,
+        };
+      });
+      if (evt.type === "run.completed") void refresh();
+      void drainQueue(id);
     });
     return off;
   }, [drainQueue, ensureTab, ownsSession, refresh, setLivePinIds, updateRun]);
@@ -1841,7 +1926,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       dismissError,
       reportError,
       setErrorFor,
-      setToolsOpen,
+      setTurnFoldOpen,
       setAutomationContext,
     }),
     [
@@ -1884,7 +1969,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setErrorFor,
       setAttachmentsFor,
       setReceiptFor,
-      setToolsOpen,
+      setTurnFoldOpen,
       steerMessage,
       stopRun,
       updateRun,

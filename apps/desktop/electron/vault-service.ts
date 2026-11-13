@@ -270,7 +270,7 @@ import type {
   TurnAttachment,
   TurnAttachmentRequest,
 } from "./companion-client.js";
-import { onboardingContextOf } from "./companion-client.js";
+import { onboardingContextOf, sanitizeStreamEvent } from "./companion-client.js";
 import {
   buildBoundReviewContext,
   startOrResumePlanSession as startOrResumePlanSessionCore,
@@ -1937,6 +1937,9 @@ function resolveTurnAttachments(
   };
 }
 
+/** How long assistant deltas are batched before one IPC frame. */
+const DELTA_FLUSH_MS = 50;
+
 export async function companionChatStreamWithPack(
   sessionId: string,
   input: string,
@@ -2009,10 +2012,32 @@ export async function companionChatStreamWithPack(
   // Decision after the stream returns. Collecting is not approving.
   let assistantText = "";
   const completedToolNames: string[] = [];
+  // Pi emits a delta per token; one IPC frame per token is pure overhead on the
+  // channel the panel renders from. Deltas are batched here and flushed before
+  // any frame that changes what the panel is doing (a tool, a terminal, an
+  // error), so the UI never shows a tool row before the text that preceded it.
+  let pendingDelta = "";
+  let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+  const flushDelta = () => {
+    if (deltaTimer) {
+      clearTimeout(deltaTimer);
+      deltaTimer = null;
+    }
+    if (!pendingDelta) return;
+    const text = pendingDelta;
+    pendingDelta = "";
+    onEvent({ type: "assistant.delta", text });
+  };
   const forward = (evt: ChatStreamEvent) => {
-    if (evt.type === "assistant.delta") assistantText += evt.text;
-    else if (evt.type === "tool.completed") completedToolNames.push(evt.name);
-    onEvent(evt);
+    if (evt.type === "assistant.delta") {
+      assistantText += evt.text;
+      pendingDelta += evt.text;
+      if (!deltaTimer) deltaTimer = setTimeout(flushDelta, DELTA_FLUSH_MS);
+      return;
+    }
+    flushDelta();
+    if (evt.type === "tool.completed") completedToolNames.push(evt.name);
+    onEvent(sanitizeStreamEvent(evt));
   };
 
   const result = await harness.harnessChatStream(
@@ -2024,6 +2049,7 @@ export async function companionChatStreamWithPack(
     attachment,
     attachments,
   );
+  flushDelta();
   if (result.ok && currentRoot) {
     const root = currentRoot;
     try {

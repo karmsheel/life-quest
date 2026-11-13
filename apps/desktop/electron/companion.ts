@@ -38,6 +38,7 @@ import {
   createdSessionFromPayload,
   messagesFromPayload,
   modelCatalogFromPayload,
+  sanitizeTranscriptRows,
   onboardingContextOf,
   runtimeRequestBody,
   sessionFromPayload,
@@ -1216,7 +1217,7 @@ export async function companionSessionMessages(
     if (unreachable) return { ok: false, error: unreachable };
     const response = res as Response;
     if (!response.ok) return { ok: false, error: `Messages failed (${response.status})` };
-    return { ok: true, value: messagesFromPayload(await response.json()) };
+    return { ok: true, value: sanitizeTranscriptRows(messagesFromPayload(await response.json())) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -1372,6 +1373,10 @@ export async function companionChatStream(
   attachment?: TurnAttachment | null,
   attachments?: TurnAttachment[] | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Terminal tracking lives outside the try so a dropped socket can still settle
+  // the turn instead of leaving a permanent spinner.
+  let terminated = false;
+  let started = false;
   // One abort controller owns the whole request, and one timer measures the
   // silence. Every byte received pushes the timer out; nothing else does.
   const stall = new AbortController();
@@ -1411,6 +1416,13 @@ export async function companionChatStream(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
+    const deliver = (evt: ChatStreamEvent) => {
+      if (evt.type === "run.completed" || evt.type === "run.stopped" || evt.type === "run.incomplete") {
+        terminated = true;
+      }
+      if (evt.type === "run.started") started = true;
+      onEvent(evt);
+    };
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1420,18 +1432,33 @@ export async function companionChatStream(
       buf += decoder.decode(value, { stream: true });
       const split = splitSse(buf);
       buf = split.rest;
-      for (const evt of split.events) onEvent(evt);
+      for (const evt of split.events) deliver(evt);
     }
     const tail = splitSse(buf + "\n\n");
-    for (const evt of tail.events) onEvent(evt);
-    onEvent({ type: "run.completed" });
+    for (const evt of tail.events) deliver(evt);
+    // A stream that closes without its terminal frame is not a finished turn:
+    // the gateway died, the socket dropped, or the handler errored after the
+    // last delta. Reporting it as completed is how a half-finished turn used to
+    // read like a whole one. `run.incomplete` says what actually happened; the
+    // terminal frame carries the snapshot, so this one carries only the reason.
+    if (!terminated) {
+      onEvent({ type: "run.incomplete", reason: "the stream closed before the turn finished" });
+    }
     return { ok: true };
   } catch (e) {
-    // The abort is ours, so it gets our sentence rather than undici's. The
-    // renderer reads a failed result as "this turn is over": it settles the
-    // running state and re-reads the transcript before saying anything.
-    if (stall.signal.aborted) return { ok: false, error: STREAM_LOST };
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // The abort is ours, so it gets our sentence rather than undici's.
+    const message = stall.signal.aborted
+      ? STREAM_LOST
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    // A transport failure mid-turn (a dropped socket, or our own silence
+    // watchdog) is still a turn that ended badly. Without a terminal frame the
+    // panel would keep the turn "running" forever.
+    if (started && !terminated) {
+      onEvent({ type: "run.incomplete", reason: message });
+    }
+    return { ok: false, error: message };
   } finally {
     if (idle !== undefined) clearTimeout(idle);
   }
@@ -1469,7 +1496,10 @@ export async function companionApproval(
   try {
     const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
       method: "POST",
-      body: JSON.stringify({ request_id: requestId, allow }),
+      // Hermes 0.22.5 refuses `{allow}` (400) and fences approvals on
+      // `choice`: once | session | always | deny. "Approve once" is the dock's
+      // one button; "deny" is the same button's other state.
+      body: JSON.stringify({ request_id: requestId, choice: allow ? "once" : "deny" }),
     });
     if (!res.ok) return { ok: false, error: `Approval failed (${res.status})` };
     return { ok: true };

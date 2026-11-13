@@ -147,6 +147,28 @@ type CompanionStatus =
   /** Chosen from the switcher, not up yet: the ensure is running in the background. */
   | { kind: "switching"; harness: HarnessId };
 
+/**
+ * What a harness can put in a turn's work log. The renderer omits what is
+ * false instead of drawing an empty placeholder; `reasoning` says whether the
+ * row is a real delta stream or a lossy preview.
+ */
+type HarnessTurnCapabilities = {
+  toolRows: boolean;
+  toolArgs: boolean;
+  toolCallIds: boolean;
+  toolResultsLive: boolean;
+  toolResultsOnSettle: boolean;
+  toolDurations: boolean;
+  toolProgress: boolean;
+  reasoning: "delta" | "preview" | "none";
+  commentary: boolean;
+  steps: boolean;
+  usage: boolean;
+  history: boolean;
+  approvals: boolean;
+  steering: boolean;
+};
+
 /** One companion the picker offers. */
 type HarnessSummary = {
   id: HarnessId;
@@ -156,6 +178,7 @@ type HarnessSummary = {
   active: boolean;
   /** Which mark the switcher draws. */
   icon: string;
+  capabilities: HarnessTurnCapabilities;
 };
 
 /** The built-in companion's endpoint, as Settings reads it. The key is never returned. */
@@ -244,15 +267,53 @@ type FocusedCardContext = {
   system?: string;
 };
 
+/** Exact token accounting for one turn, when the harness reports it. */
+type TurnUsage = {
+  input?: number;
+  output?: number;
+  total?: number;
+};
+
+/**
+ * One structured transcript row, as history rebuilds it: a user message, an
+ * assistant message with the calls it requested, or a tool result. The flat
+ * `{role, content, at}` rows older stubs return are a strict subset.
+ */
+type TranscriptMessage = {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  at?: number;
+  toolCalls?: { id: string; name: string; args?: unknown }[];
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  reasoning?: string;
+  usage?: TurnUsage;
+};
+
+type TranscriptEntry = TranscriptMessage;
+
 type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string; target: string }
-  | { type: "tool.completed"; name: string }
+  | { type: "reasoning.delta"; text: string }
+  | { type: "assistant.commentary"; text: string; alreadyStreamed?: boolean }
+  | { type: "assistant.final"; text: string }
+  | { type: "tool.started"; name: string; target: string; callId?: string; args?: unknown }
+  | { type: "tool.progress"; callId: string; text: string }
+  | {
+      type: "tool.completed";
+      name: string;
+      callId?: string;
+      isError?: boolean;
+      durationMs?: number;
+      resultPreview?: string;
+    }
+  | { type: "usage"; usage: TurnUsage }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
-  | { type: "run.stopped" }
-  | { type: "run.incomplete"; reason: string }
-  | { type: "run.completed" }
+  | { type: "run.stopped"; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.incomplete"; reason: string; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.completed"; usage?: TurnUsage; stopReason?: string; snapshot?: TranscriptEntry[] }
   | { type: "error"; message: string }
   /** Pending Decisions this turn's fenced proposals became (app-sent). */
   | { type: "decisions.filed"; ids: string[]; titles: string[] }
@@ -514,11 +575,7 @@ type LifequestApi = {
     includeArchived?: boolean;
   }) => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
-  companionSessionMessages: (
-    id: string,
-  ) => Promise<
-    Result<{ role: "user" | "assistant"; content: string; at?: number }[]>
-  >;
+  companionSessionMessages: (id: string) => Promise<Result<TranscriptMessage[]>>;
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
@@ -915,6 +972,10 @@ declare global {
 
 export type {
   ChatStreamEvent,
+  HarnessTurnCapabilities,
+  TranscriptEntry,
+  TranscriptMessage,
+  TurnUsage,
   CompanionInstructionsContext,
   CompanionModelCatalog,
   CompanionModelChoice,

@@ -285,23 +285,105 @@ function operatorFacingStreamError(message: string): string {
 }
 
 /**
+ * Token accounting for one turn, when the harness reports it exactly.
+ *
+ * Absent fields stay absent: a harness that cannot account for cache reads must
+ * not be presented as if it could. `total` is the harness's own total when it
+ * sends one, otherwise the app's input+output (never an estimate of tokens it
+ * never saw).
+ */
+export type TurnUsage = {
+  input?: number;
+  output?: number;
+  total?: number;
+};
+
+/**
+ * One structured transcript row: a user message, an assistant message with the
+ * calls it requested, or the result of one of those calls.
+ *
+ * This is the shape history is rebuilt from — both harnesses already store it.
+ * The flat `{role, content, at}` rows the dock used to read are a strict subset,
+ * so an older gateway, a persisted Pi session, or an E2E stub that knows only
+ * about bubbles still parses.
+ */
+export type TranscriptMessage = {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  /** Creation time as epoch milliseconds. */
+  at?: number;
+  /** Assistant rows: the tool calls this message requested. */
+  toolCalls?: { id: string; name: string; args?: unknown }[];
+  /** Tool rows: which assistant call this result answers. */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  /** Assistant rows: thinking the harness kept in its transcript. */
+  reasoning?: string;
+  usage?: TurnUsage;
+};
+
+/** The design doc's name for a structured transcript row. */
+export type TranscriptEntry = TranscriptMessage;
+
+/**
  * One frame of a turn's stream.
+ *
+ * The `run.*` family is the turn skeleton every harness must speak: start,
+ * text, tools, terminal. Everything between is additive and optional — a
+ * harness that cannot produce a field omits the frame rather than sending a
+ * placeholder, and the panel renders what it has.
  *
  * The last two are the app's own, not the gateway's: a companion turn can end
  * with proposals in its prose that the main process files as Decisions after the
  * model has stopped talking, and the operator needs to be told that happened
- * where they are looking. They arrive after `run.completed`, on the same channel,
- * so a chat that just said "here are the changes" also says what became of them.
+ * where they are looking. They arrive after the terminal frame, on the same
+ * channel, so a chat that just said "here are the changes" also says what became
+ * of them.
  */
 export type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string; target: string }
-  | { type: "tool.completed"; name: string }
+  /** The model's thinking, when the harness exposes real reasoning deltas. */
+  | { type: "reasoning.delta"; text: string }
+  /** A harness-authored mid-turn update (Hermes commentary), rendered as narration. */
+  | { type: "assistant.commentary"; text: string; alreadyStreamed?: boolean }
+  /** The turn's authoritative final answer, when the harness can name it. */
+  | { type: "assistant.final"; text: string }
+  | {
+      type: "tool.started";
+      name: string;
+      target: string;
+      /** Native per-call id, when the harness has one. */
+      callId?: string;
+      /** Raw or display arguments, bounded by the main process before it crosses IPC. */
+      args?: unknown;
+    }
+  /** Partial output for a call that is still running. */
+  | { type: "tool.progress"; callId: string; text: string }
+  | {
+      type: "tool.completed";
+      name: string;
+      callId?: string;
+      isError?: boolean;
+      /** Harness-measured duration; absent means the app's clock is the only one. */
+      durationMs?: number;
+      /** Bounded, redacted result text for the row disclosure. */
+      resultPreview?: string;
+    }
+  | { type: "usage"; usage: TurnUsage }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
-  | { type: "run.stopped" }
-  | { type: "run.incomplete"; reason: string }
-  | { type: "run.completed" }
+  /** The turn was interrupted: the text delivered so far is a partial reply. */
+  | { type: "run.stopped"; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  /** The turn ended without finishing (failure, iteration budget, partial). */
+  | { type: "run.incomplete"; reason: string; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | {
+      type: "run.completed";
+      usage?: TurnUsage;
+      stopReason?: string;
+      /** Authoritative rows for this turn, when the harness keeps them. */
+      snapshot?: TranscriptEntry[];
+    }
   | { type: "error"; message: string }
   /** Pending Decisions this turn's fenced proposals became. */
   | { type: "decisions.filed"; ids: string[]; titles: string[] }
@@ -604,13 +686,6 @@ export function formatSessionWhen(lastActive: number | null, nowMs = Date.now())
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** One transcript row, with the time it was sent when the gateway knows it. */
-export type TranscriptMessage = {
-  role: "user" | "assistant";
-  content: string;
-  /** Creation time as epoch milliseconds. */
-  at?: number;
-};
 
 /**
  * The gateway stamps `timestamp` in epoch seconds (a float). Some surfaces
@@ -631,16 +706,106 @@ function messageAt(row: { timestamp?: unknown }): number | undefined {
   return undefined;
 }
 
+function usageNumber(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
+}
+
+/** The gateway's token accounting, read across the shapes its rows carry. */
+function usageOf(raw: unknown): TurnUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as Record<string, unknown>;
+  const input = usageNumber(u.input ?? u.input_tokens ?? u.prompt_tokens ?? u.promptTokens);
+  const output = usageNumber(u.output ?? u.output_tokens ?? u.completion_tokens ?? u.completionTokens);
+  const total = usageNumber(u.total ?? u.total_tokens ?? u.totalTokens);
+  if (input == null && output == null && total == null) return undefined;
+  const resolvedTotal = total ?? (input != null && output != null ? input + output : undefined);
+  return {
+    ...(input == null ? {} : { input }),
+    ...(output == null ? {} : { output }),
+    ...(resolvedTotal == null ? {} : { total: resolvedTotal }),
+  };
+}
+
+/** The assistant rows' requested calls, including the ids a result row answers. */
+function toolCallsOf(raw: unknown): { id: string; name: string; args?: unknown }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const calls: { id: string; name: string; args?: unknown }[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const call = row as Record<string, unknown>;
+    const fn = (call.function && typeof call.function === "object" ? call.function : call) as Record<string, unknown>;
+    const name = typeof fn.name === "string" ? fn.name.trim() : "";
+    if (!name) continue;
+    const idValue = call.id ?? call.tool_call_id ?? call.call_id;
+    const id = typeof idValue === "string" && idValue.trim() ? idValue.trim() : `call_${calls.length}`;
+    const args = parseArgs(fn.arguments ?? fn.args);
+    calls.push({ id, name, ...(args == null ? {} : { args }) });
+  }
+  return calls.length > 0 ? calls : undefined;
+}
+
+/**
+ * Turn gateway rows into the dock's structured transcript.
+ *
+ * Assistant rows keep the calls they requested, result rows keep the id they
+ * answer, and each keeps whatever accounting the row carried. A result row is
+ * not dropped when its text is empty: the row is evidence a call happened even
+ * when the tool returned nothing.
+ */
 export function messagesFromPayload(payload: unknown): TranscriptMessage[] {
   const value: TranscriptMessage[] = [];
   for (const row of rowsOf(payload, ["data", "messages", "items"])) {
     if (!row || typeof row !== "object") continue;
-    const r = row as { role?: unknown; content?: unknown; timestamp?: unknown };
-    if (r.role !== "user" && r.role !== "assistant") continue;
+    const r = row as {
+      role?: unknown;
+      content?: unknown;
+      timestamp?: unknown;
+      tool_calls?: unknown;
+      tool_call_id?: unknown;
+      tool_calls_id?: unknown;
+      tool_name?: unknown;
+      name?: unknown;
+      is_error?: unknown;
+      reasoning?: unknown;
+      usage?: unknown;
+      token_count?: unknown;
+    };
+    const role =
+      r.role === "user" || r.role === "assistant" || r.role === "tool" ? r.role : null;
+    if (!role) continue;
     const content = messageText(r.content);
-    if (!content.trim()) continue;
     const at = messageAt(r);
-    value.push(at == null ? { role: r.role, content } : { role: r.role, content, at });
+    const usage = usageOf(r.usage ?? r.token_count);
+    if (role === "tool") {
+      const name = oneLine(r.tool_name ?? r.name);
+      const callId = r.tool_call_id ?? r.tool_calls_id;
+      const toolRow: TranscriptMessage = {
+        role: "tool",
+        content,
+        ...(at == null ? {} : { at }),
+        ...(typeof callId === "string" && callId.trim() ? { toolCallId: callId.trim() } : {}),
+        ...(name ? { toolName: name } : {}),
+        ...(r.is_error === true ? { isError: true } : {}),
+        ...(usage ? { usage } : {}),
+      };
+      value.push(toolRow);
+      continue;
+    }
+    const toolCalls = role === "assistant" ? toolCallsOf(r.tool_calls) : undefined;
+    if (role === "assistant" && !content.trim() && !toolCalls) continue;
+    if (role === "user" && !content.trim()) continue;
+    const reasoning = role === "assistant" && typeof r.reasoning === "string" && r.reasoning.trim()
+      ? r.reasoning
+      : undefined;
+    value.push({
+      role,
+      content,
+      ...(at == null ? {} : { at }),
+      ...(toolCalls ? { toolCalls } : {}),
+      ...(reasoning ? { reasoning } : {}),
+      ...(usage ? { usage } : {}),
+    });
   }
   return value;
 }
@@ -1039,6 +1204,12 @@ export function buildInstructions(
  * row used to render as the literal word "tool"; reading `ok` is why a row
  * used to claim success for a key the wire never sends.
  */
+/** The terminal frames carry the turn's own transcript rows under `messages`. */
+function snapshotOf(data: Record<string, unknown>): TranscriptMessage[] | undefined {
+  const rows = messagesFromPayload({ messages: data.messages });
+  return rows.length > 0 ? rows : undefined;
+}
+
 function toolName(data: Record<string, unknown>): string {
   const name = data.tool_name ?? data.name;
   return typeof name === "string" && name.trim() ? name.trim() : "tool";
@@ -1147,13 +1318,19 @@ export function mapStreamEvent(
       // The turn was interrupted: the deltas already delivered are a PARTIAL
       // reply, and nothing else on the wire says so. The panel needs this to
       // keep a stopped turn from reading like a finished one.
-      return { type: "run.stopped" };
+      return {
+        type: "run.stopped",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
+      };
     case "run.failed":
       // Same family, no interrupt: the turn ended without finishing (failure,
       // iteration budget, partial). ``turn_exit_reason`` names it when present.
       return {
         type: "run.incomplete",
         reason: typeof data.turn_exit_reason === "string" ? data.turn_exit_reason : "",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
       };
     case "assistant.delta": {
       const text =
@@ -1164,12 +1341,42 @@ export function mapStreamEvent(
             : "";
       return { type: "assistant.delta", text };
     }
-    case "tool.started":
+    case "assistant.completed": {
+      // The authoritative whole reply. It arrives after the deltas, so the
+      // panel can settle on it instead of trusting whichever delta landed last.
+      const text = typeof data.content === "string" ? data.content : "";
+      return text.trim() ? { type: "assistant.final", text } : null;
+    }
+    case "assistant.commentary": {
+      // A mid-turn update the runtime chose to say in prose (Codex commentary).
+      // It is narration inside the work log, never the answer.
+      const text = typeof data.text === "string" ? data.text : "";
+      return text.trim()
+        ? { type: "assistant.commentary", text, alreadyStreamed: data.already_streamed === true }
+        : null;
+    }
+    case "tool.started": {
+      const args = parseArgs(data.args);
       return {
         type: "tool.started",
         name: toolName(data),
         target: toolTargetLine(data.args),
+        ...(args ? { args } : {}),
       };
+    }
+    case "tool.progress": {
+      // The session stream's thinking channel: the runtime's model output
+      // sampled to a bounded preview, named `_thinking`. Real deltas are not
+      // wired on this route; the descriptor calls this "preview" so the panel
+      // labels it as a preview rather than claiming a stream it does not have.
+      if (data.tool_name !== "_thinking") return null;
+      const text = typeof data.text === "string" ? data.text : typeof data.delta === "string" ? data.delta : "";
+      return text.trim() ? { type: "reasoning.delta", text } : null;
+    }
+    case "tool.failed":
+      // A failed call must still close its row; without this frame the row
+      // spins forever and the turn reads as if it were still working.
+      return { type: "tool.completed", name: toolName(data), isError: true };
     case "tool.completed":
       // Nothing to add to the row: the frame carries no outcome, so this is
       // only the panel's signal that the call named here is no longer running.
@@ -1183,7 +1390,11 @@ export function mapStreamEvent(
       };
     }
     case "run.completed":
-      return { type: "run.completed" };
+      return {
+        type: "run.completed",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
+      };
     case "error":
       return {
         type: "error",
@@ -1206,4 +1417,124 @@ export function splitSse(buffer: string): { events: ChatStreamEvent[]; rest: str
     if (evt) events.push(evt);
   }
   return { events, rest };
+}
+
+// ---------------------------------------------------------------------------
+// Bounding and redaction at the IPC boundary
+// ---------------------------------------------------------------------------
+
+const ARGS_BOUND = 2048;
+const RESULT_BOUND = 500;
+const SNAPSHOT_ROW_BOUND = 2000;
+const SNAPSHOT_MAX_ROWS = 400;
+
+function clipText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/**
+ * Remove the one thing a tool argument or result should never carry across a
+ * channel: a credential. Deliberately narrow — a key/value whose name says it
+ * is a secret, and provider-style `sk-` tokens. It runs on tool payloads, never
+ * on the assistant's prose, because redacting an answer the operator is reading
+ * would be a different (and worse) bug.
+ */
+export function redactSecrets(value: string): string {
+  return value
+    .replace(
+      /((?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password)\s*[:=]\s*)(["']?)([^\s"',;}]+)/gi,
+      "$1$2[redacted]",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[redacted]");
+}
+
+function bounded(value: unknown): unknown {
+  if (value == null) return undefined;
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw) return undefined;
+    if (raw.length <= ARGS_BOUND) return value;
+    return `${raw.slice(0, ARGS_BOUND)}…`;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeSnapshot(rows: TranscriptEntry[]): TranscriptEntry[] {
+  return rows.slice(0, SNAPSHOT_MAX_ROWS).map((row) => ({
+    ...row,
+    content: redactSecrets(clipText(row.content, SNAPSHOT_ROW_BOUND)),
+    ...(row.reasoning
+      ? { reasoning: redactSecrets(clipText(row.reasoning, SNAPSHOT_ROW_BOUND)) }
+      : {}),
+    ...(row.toolCalls
+      ? {
+          toolCalls: row.toolCalls.slice(0, 64).map((call) => ({
+            ...call,
+            ...(call.args === undefined ? {} : { args: bounded(call.args) }),
+          })),
+        }
+      : {}),
+  }));
+}
+
+/**
+ * The last gate before a stored transcript crosses IPC.
+ *
+ * Assistant and user text is passed through: it is the conversation, and its
+ * length is the answer's length. Tool rows are evidence, not prose — their
+ * result text and call arguments are clipped and redacted exactly like a live
+ * tool frame, so an old transcript cannot carry a file or a key the live path
+ * would have refused.
+ */
+export function sanitizeTranscriptRows(rows: TranscriptMessage[]): TranscriptMessage[] {
+  return rows.map((row) => {
+    if (row.role !== "tool" && !row.toolCalls && !row.reasoning) return row;
+    return {
+      ...row,
+      ...(row.role === "tool"
+        ? { content: redactSecrets(clipText(row.content, SNAPSHOT_ROW_BOUND)) }
+        : {}),
+      ...(row.reasoning
+        ? { reasoning: redactSecrets(clipText(row.reasoning, SNAPSHOT_ROW_BOUND)) }
+        : {}),
+      ...(row.toolCalls
+        ? {
+            toolCalls: row.toolCalls.slice(0, 64).map((call) => ({
+              ...call,
+              ...(call.args === undefined ? {} : { args: bounded(call.args) }),
+            })),
+          }
+        : {}),
+    };
+  });
+}
+
+/**
+ * The last gate before a turn frame crosses IPC.
+ *
+ * Harness adapters already bound what they own, but the renderer must not have
+ * to trust that: args and result previews are clipped and credential-shaped
+ * text is redacted here, so a future harness cannot flood the channel or leak a
+ * key by forgetting to bound one field. The assistant's own text is untouched.
+ */
+export function sanitizeStreamEvent(evt: ChatStreamEvent): ChatStreamEvent {
+  switch (evt.type) {
+    case "tool.started":
+      return evt.args === undefined ? evt : { ...evt, args: bounded(evt.args) };
+    case "tool.progress":
+      return { ...evt, text: redactSecrets(clipText(evt.text, RESULT_BOUND)) };
+    case "tool.completed":
+      return evt.resultPreview === undefined
+        ? evt
+        : { ...evt, resultPreview: redactSecrets(clipText(evt.resultPreview, RESULT_BOUND)) };
+    case "run.completed":
+    case "run.stopped":
+    case "run.incomplete":
+      return evt.snapshot === undefined
+        ? evt
+        : { ...evt, snapshot: sanitizeSnapshot(evt.snapshot) };
+    default:
+      return evt;
+  }
 }

@@ -10,10 +10,12 @@ import { describe, it } from "node:test";
  * The built-in companion, end to end.
  *
  * The rig boots the real app against a throwaway profile and vault, points the
- * built-in companion at a fake OpenAI-compatible endpoint, runs one turn
- * through the real preload bridge, and reads the reply back through the real
- * dock. Its report and two pictures are the artifact; the assertions below
- * restate the important ones so a regression fails here by name.
+ * built-in companion at a fake OpenAI-compatible endpoint, runs two turns
+ * through the real preload bridge — one plain, one that asks the fake model for
+ * a genuine read-only vault tool call — and reads them back through the real
+ * dock, live and after a reload. Its report and pictures are the artifact; the
+ * assertions below restate the important ones so a regression fails here by
+ * name.
  */
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -25,6 +27,82 @@ const electron = require("electron") as string;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/pi-companion.json");
 const THREAD_SHOT = path.join(desktopRoot, "e2e/artifacts/pi-companion-thread.png");
 const PICKER_SHOT = path.join(desktopRoot, "e2e/artifacts/pi-companion-picker.png");
+const TURN_SHOT = path.join(desktopRoot, "e2e/artifacts/pi-companion-turn.png");
+const TURN_HISTORY_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/pi-companion-turn-history.png",
+);
+
+/** What the fake endpoint's second completion says, once the tool result is in. */
+const TOOL_ANSWER = "The rig ledger is empty.";
+
+type DomUsage = {
+  present: boolean;
+  text?: string;
+  numeric?: boolean;
+  numbers?: { input: number | null; output: number | null; total: number | null };
+};
+
+type ToolTurnDom = {
+  turnOk: boolean;
+  turnError: string | null;
+  toolName: string | null;
+  rowText: string;
+  target: string;
+  rowState: string;
+  rowSeenWhileRunning: boolean;
+  duration:
+    | { source: string; value?: number; native?: boolean; durationSource?: string | null }
+    | null;
+  foldHeader: string | null;
+  footerStatus: string | null;
+  answer: string | null;
+  answerOutsideProcess: boolean | null;
+  usage: DomUsage;
+  /** What pi-harness reported the tool returned, clipped for the DOM disclosure. */
+  resultPreview: string | null;
+  resultText: string;
+  wire: {
+    eventTypes: string[];
+    toolStarted: {
+      type: string;
+      name: string;
+      target: string;
+      callId?: string;
+      args?: unknown;
+    } | null;
+    toolCompleted: {
+      type: string;
+      name: string;
+      isError?: boolean;
+      durationMs?: number;
+      resultPreview?: string;
+    } | null;
+    usage: { input?: number; output?: number; total?: number } | null;
+    final: string | null;
+    runCompleted: boolean;
+    snapshotToolRows: {
+      toolName: string | null;
+      toolCallId: string | null;
+      isError: boolean;
+      contentLength: number;
+    }[];
+  };
+};
+
+type ToolHistoryDom = {
+  textHasAnswer: boolean;
+  toolRowSeen: boolean;
+  rowText: string;
+  target: string;
+  rowState: string;
+  foldHeader: string | null;
+  footerStatus: string | null;
+  answer: string | null;
+  answerOutsideProcess: boolean | null;
+  usage: DomUsage;
+  resultText: string;
+};
 const SWITCHER_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/pi-companion-switcher.png",
@@ -42,6 +120,8 @@ type Report = {
     openedOk: boolean;
     /** The rig unlocks the two seeded areas it scopes agents in. */
     unlocked: boolean;
+    database: { id: string; name: string } | null;
+    databaseError?: string | null;
   };
   mounted: boolean;
   turn: { ok: boolean; sessionId: string | null; eventTypes: string[] };
@@ -70,6 +150,49 @@ type Report = {
       } | null;
     }[];
     box?: { x: number; y: number; width: number; height: number } | null;
+  };
+  tool: {
+    checks: Record<string, boolean>;
+    database: { id: string; name: string } | null;
+    databaseError: string | null;
+    mcpPorts: { local: number; invite: number } | null;
+    plan: {
+      kind: string;
+      name?: string;
+      args?: Record<string, unknown>;
+      reason?: string;
+    } | null;
+    live: ToolTurnDom;
+    history: ToolHistoryDom;
+    /**
+     * Observation, not a gate: whether the reloaded turn reads like the live
+     * one. Answer parity is prose only — the bubble's role label and stamp are
+     * not the answer, and the stamp can differ between send time and the stored
+     * row's time (reported separately as `answerStampDiffers`).
+     */
+    reloadParity: {
+      rowTextMatchesLive: boolean;
+      targetMatchesLive: boolean;
+      footerStatusMatchesLive: boolean;
+      answerMatchesLive: boolean | null;
+      answerProseLive: string | null;
+      answerProseHistory: string | null;
+      answerStampDiffers: boolean;
+      usageVsLive: {
+        harnessFrame: { input?: number; output?: number; total?: number } | null;
+        liveFooter: { input: number | null; output: number | null; total: number | null } | null;
+        historyFooter: { input: number | null; output: number | null; total: number | null } | null;
+        totalsMatch: boolean | null;
+      };
+    };
+    requests: {
+      lastRole: string | null;
+      lastUserText: string;
+      hasToolResult: boolean;
+      toolCount: number;
+      plan: { kind: string; name?: string; text?: string; reason?: string };
+    }[];
+    toolsAdvertised: string[];
   };
   inkThemes: { light: string | null; dark: string | null };
   dayCrop: { inkPixels: number };
@@ -140,6 +263,199 @@ describe("built-in companion (Pi)", () => {
       "the harness did not persist the reply",
     );
     assert.equal(report.threadHasReply, true, "the dock did not show the reply");
+
+    /*
+     * The tool turn: a real read-only vault call, executed by the real
+     * pi-harness through the real MCP door, rendered by the dock's work log.
+     * The checks are named in the report so a failure says which fact broke;
+     * these restate them by name here.
+     */
+    assert.ok(
+      report.tool.database?.id,
+      `the rig could not seed the table its tool call reads: ${report.tool.databaseError}`,
+    );
+    assert.equal(
+      report.tool.checks.toolTurnOk,
+      true,
+      `the tool turn did not resolve: ${report.tool.live.turnError}`,
+    );
+    assert.equal(
+      report.tool.checks.toolsAdvertised,
+      true,
+      "the model request advertised no vault tools — the MCP door did not bind",
+    );
+    assert.equal(
+      report.tool.checks.endpointRequestedToolCall,
+      true,
+      "the fake endpoint never scripted a tool call",
+    );
+    assert.equal(
+      report.tool.checks.harnessRanTool,
+      true,
+      "pi-harness emitted no tool start/completion for the scripted call",
+    );
+    assert.equal(
+      report.tool.checks.toolSucceeded,
+      true,
+      `the read-only tool call failed: ${JSON.stringify(report.tool.live.wire.toolCompleted)}`,
+    );
+    assert.ok(
+      report.tool.live.wire.eventTypes.includes("tool.started") &&
+        report.tool.live.wire.eventTypes.includes("tool.completed"),
+      `tool frames missing from the stream: ${report.tool.live.wire.eventTypes.join(", ")}`,
+    );
+    assert.ok(
+      report.tool.live.wire.eventTypes.includes("assistant.final") &&
+        report.tool.live.wire.eventTypes.includes("usage") &&
+        report.tool.live.wire.runCompleted,
+      `tool turn did not complete with a final answer and usage: ${report.tool.live.wire.eventTypes.join(", ")}`,
+    );
+    assert.equal(
+      report.tool.live.toolName,
+      report.tool.plan?.name ?? report.tool.live.toolName,
+      "the executed tool is not the one the endpoint asked for",
+    );
+    assert.ok(
+      report.tool.toolsAdvertised.includes(report.tool.live.toolName ?? ""),
+      `the tool the endpoint asked for was not advertised: ${report.tool.live.toolName}`,
+    );
+
+    // While it ran: a row named after the real tool, with a non-empty target.
+    assert.equal(
+      report.tool.live.rowSeenWhileRunning,
+      true,
+      "the dock showed no tool row before the turn settled",
+    );
+    assert.ok(
+      (report.tool.live.rowText ?? "").includes(report.tool.live.toolName ?? ""),
+      `the live row does not name the tool: ${report.tool.live.rowText}`,
+    );
+    assert.ok(
+      report.tool.live.target.length > 0,
+      `the live tool row has no target: ${report.tool.live.rowText}`,
+    );
+    assert.equal(
+      report.tool.checks.liveRowTargetNamesTable,
+      true,
+      `the live row's target is not the seeded table: ${report.tool.live.target}`,
+    );
+    assert.equal(
+      report.tool.checks.liveResultNamesTable,
+      true,
+      `the live row's result never names the seeded table: ${report.tool.live.resultPreview?.slice(0, 200)}`,
+    );
+    // After it ran: closed as done, with the harness-measured duration.
+    assert.equal(
+      report.tool.checks.toolSucceeded,
+      true,
+      `the tool call did not return the rig's table: ${report.tool.live.resultPreview?.slice(0, 200)}`,
+    );
+    assert.equal(
+      report.tool.live.rowState,
+      "done",
+      `the settled tool row is ${report.tool.live.rowState}, not done: ${report.tool.live.rowText}`,
+    );
+    assert.ok(
+      report.tool.live.duration !== null,
+      "the settled tool row carries no duration in its DOM data",
+    );
+    assert.equal(
+      report.tool.live.duration?.native,
+      true,
+      "the duration is not the harness-measured one (data-tool-duration-source)",
+    );
+    assert.ok(
+      typeof report.tool.live.wire.toolCompleted?.durationMs === "number",
+      "pi-harness reported no native duration on tool.completed",
+    );
+
+    // The settled turn: a process fold, the answer outside it, and a footer.
+    assert.match(
+      report.tool.live.foldHeader ?? "",
+      /worked for/i,
+      `no "Worked for …" process fold: ${report.tool.live.foldHeader}`,
+    );
+    assert.ok(
+      (report.tool.live.answer ?? "").includes(TOOL_ANSWER),
+      `the answer bubble is not the second completion: ${report.tool.live.answer}`,
+    );
+    assert.equal(
+      report.tool.live.answerOutsideProcess,
+      true,
+      "the final answer was rendered inside the folded process",
+    );
+    assert.equal(
+      report.tool.live.footerStatus,
+      "completed",
+      `the turn footer is ${report.tool.live.footerStatus}, not completed`,
+    );
+    assert.equal(
+      report.tool.live.usage.present,
+      true,
+      "the turn footer carries no token usage",
+    );
+    assert.equal(
+      report.tool.live.usage.numeric,
+      true,
+      `the footer's usage carries no numbers: ${report.tool.live.usage.text}`,
+    );
+
+    // History: the same row survives a reload, rebuilt from the transcript.
+    assert.equal(
+      report.tool.history.toolRowSeen,
+      true,
+      "the reloaded chat shows no tool row from history",
+    );
+    assert.ok(
+      (report.tool.history.rowText ?? "").includes(report.tool.live.toolName ?? ""),
+      `the history row does not name the tool: ${report.tool.history.rowText}`,
+    );
+    assert.ok(
+      report.tool.history.target.length > 0,
+      `the history tool row has no target: ${report.tool.history.rowText}`,
+    );
+    assert.equal(
+      report.tool.checks.historyRowTargetNamesTable,
+      true,
+      `the history row's target is not the seeded table: ${report.tool.history.target}`,
+    );
+    assert.equal(
+      report.tool.checks.historyResultNamesTable,
+      true,
+      `the history row lost the tool result: ${report.tool.history.resultText.slice(0, 200)}`,
+    );
+    assert.equal(
+      report.tool.checks.historyRowClosedDone,
+      true,
+      `the reloaded tool row is ${report.tool.history.rowState}, not done`,
+    );
+    assert.match(
+      report.tool.history.foldHeader ?? "",
+      /worked for/i,
+      `the reloaded turn has no process fold: ${report.tool.history.foldHeader}`,
+    );
+    assert.ok(
+      (report.tool.history.answer ?? "").includes(TOOL_ANSWER),
+      `the reloaded turn lost its answer: ${report.tool.history.answer}`,
+    );
+    assert.equal(
+      report.tool.reloadParity.answerMatchesLive,
+      true,
+      "the reloaded answer's prose differs from the live turn's: " +
+        `live=${JSON.stringify(report.tool.reloadParity.answerProseLive)} ` +
+        `history=${JSON.stringify(report.tool.reloadParity.answerProseHistory)}`,
+    );
+    assert.equal(
+      report.tool.checks.liveRowSeenWhileRunning &&
+        report.tool.checks.liveRowClosedDone &&
+        report.tool.checks.historyToolRowSeen,
+      true,
+      `tool-turn checks: ${JSON.stringify(
+        Object.fromEntries(
+          Object.entries(report.tool.checks).filter(([, pass]) => pass !== true),
+        ),
+      )}`,
+    );
 
     assert.equal(report.picker.shown, true, "the dock offers no agent switcher");
     assert.deepEqual(
@@ -234,6 +550,12 @@ describe("built-in companion (Pi)", () => {
 
     assert.equal(fs.existsSync(THREAD_SHOT), true, "no thread screenshot");
     assert.equal(fs.existsSync(PICKER_SHOT), true, "no picker screenshot");
+    assert.equal(fs.existsSync(TURN_SHOT), true, "no settled tool-turn screenshot");
+    assert.equal(
+      fs.existsSync(TURN_HISTORY_SHOT),
+      true,
+      "no tool-turn history screenshot",
+    );
     assert.equal(fs.existsSync(SWITCHER_SHOT), true, "no switcher screenshot");
     assert.ok(
       fs.statSync(SWITCHER_SHOT).size > 500,
