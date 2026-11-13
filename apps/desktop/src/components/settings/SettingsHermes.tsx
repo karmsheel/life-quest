@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
 import { SettingsFact } from "@/components/ui/SettingsFact";
-import { HarnessPicker } from "@/components/hermes/HarnessPicker";
 import { PiEndpointForm } from "@/components/settings/PiEndpointForm";
 import { SettingsAgents } from "@/components/settings/SettingsAgents";
+import { SettingsVaultAgents } from "@/components/settings/SettingsVaultAgents";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
@@ -29,7 +28,7 @@ const NO_VAULT: McpDoors = {
 
 export function SettingsHermes() {
   const { snapshot } = useVault();
-  const { status, ensuring, retry, profile, harness } = useCompanion();
+  const { status, ensuring, retry, harness } = useCompanion();
   const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -99,7 +98,7 @@ export function SettingsHermes() {
     <SettingsSection
       icon={<Sparkles size={16} />}
       title="Hermes"
-      subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
+      subtitle="The companion and the agents this vault runs on"
       banner={
         error || message ? (
           <>
@@ -120,10 +119,10 @@ export function SettingsHermes() {
       {/*
         MCP doors first: they are the two addresses every other agent on this
         machine needs in order to reach the vault, and the thing an operator
-        comes to this page to copy. They used to sit under the profile picker,
-        below the fold on a normal window — local plumbing at the end of the
-        page. The block opts out of page-context capture: the doors are local
-        plumbing, not content for a model turn.
+        comes to this page to copy. They used to sit under the old app-level
+        agent picker, below the fold on a normal window — local plumbing at the
+        end of the page. The block opts out of page-context capture: the doors
+        are local plumbing, not content for a model turn.
       */}
       <section
         className="settings-hermes__block"
@@ -201,14 +200,12 @@ export function SettingsHermes() {
         </div>
       </section>
 
-      <section className="settings-hermes__block" data-testid="companion-harness">
-        <h3 className="settings-hermes__heading">Companion</h3>
-        <p className="settings-hermes__lead">
-          Which companion answers in the chat bar. A chat belongs to the
-          companion that made it, so switching changes the chats you see.
-        </p>
-        <HarnessPicker />
-      </section>
+      {/*
+        The vault's agent choice lives in one section now: a vault is the
+        profile that is loaded, so its companion is part of the vault, not an
+        app-wide setting. The dock's switcher shows the same binding as pills.
+      */}
+      <SettingsVaultAgents />
 
       <SettingsAgents />
 
@@ -218,19 +215,6 @@ export function SettingsHermes() {
           <PiEndpointForm disabled={ensuring} />
         </section>
       ) : null}
-
-      {/*
-        The same picker the setup screen offers, so switching the companion's
-        profile later does not mean being stuck first: every installed Hermes
-        profile, the active one marked, and the app's own `lifequest` on
-        offer. Choosing one re-runs the ensure against it.
-      */}
-      {harness === "pi" ? null : (
-        <section className="settings-hermes__block" data-testid="hermes-profile">
-          <h3 className="settings-hermes__heading">Companion profile</h3>
-          <CompanionProfilePicker />
-        </section>
-      )}
 
       <section className="settings-hermes__block" data-testid="hermes-behaviour">
         <h3 className="settings-hermes__heading">Chat behaviour</h3>

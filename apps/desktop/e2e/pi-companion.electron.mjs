@@ -725,6 +725,15 @@ async function main() {
     const switched = await api.companionUseHarness("pi");
     const created = await api.vaultCreate(${JSON.stringify(vaultDir)}, "Pi rig");
     const opened = await api.vaultOpen(${JSON.stringify(vaultDir)});
+    // The dock's switcher offers Hermes only when this vault has a Hermes agent
+    // (agents are vault-scoped now). This world has no Hermes gateway, so a
+    // fresh profile is bound and never activated: the point is the switcher and
+    // the domain scoping, and the switch itself lands on the connect screen,
+    // which the domain section accepts as the same rule having fired.
+    const addedAgent = await api.vaultAgentsAddHermes({
+      mode: "fresh",
+      name: "lq-pi-companion-hermes",
+    });
     // A new vault seeds the base Life area unlocked and Health/Mind/Finance/
     // Business/Relationships locked. This rig scopes agents by area and switches
     // the lens, so the two areas it uses are unlocked first — the same
@@ -750,6 +759,7 @@ async function main() {
       switched: switched && switched.kind,
       createdOk: created && created.ok,
       openedOk: opened && opened.ok,
+      addedAgent: addedAgent && addedAgent.ok === true ? addedAgent.value : addedAgent,
       unlocked: unlockedHealth && unlockedHealth.ok === true &&
         unlockedFinance && unlockedFinance.ok === true,
       database,

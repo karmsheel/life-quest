@@ -52,6 +52,7 @@ import {
   writePiSession,
   type PiStoredSession,
 } from "./pi-sessions.ts";
+import { currentVaultBucket } from "../vault-scope.ts";
 import { publishHarnessStatus } from "./status-bus.ts";
 import type {
   ChatTurnRequest,
@@ -498,7 +499,9 @@ async function listSessions(): Promise<HarnessResult<HarnessSession[]>> {
 
 async function createSession(title: string): Promise<HarnessResult<HarnessSession>> {
   try {
-    const session = await createPiSession(title);
+    // Pinned to the vault that is open now: the chat belongs to it from the
+    // first write, whatever the operator does next.
+    const session = await createPiSession(title, currentVaultBucket());
     return {
       ok: true,
       value: toHarnessSession({ ...session, preview: null }),
@@ -554,7 +557,21 @@ async function deleteSession(
 type LiveAgent = { agent: Agent; signature: string };
 const agents = new Map<string, LiveAgent>();
 
-type LiveRun = { runId: string; sessionId: string; agent: Agent; aborted: boolean };
+/**
+ * One turn in flight, with the vault bucket it belongs to.
+ *
+ * The bucket is captured when the turn starts. A vault switch moves the open
+ * vault while this run may still be finishing, and the transcript must land in
+ * the vault that started the turn — reading the current bucket at write time
+ * would file vault A's answer under vault B.
+ */
+type LiveRun = {
+  runId: string;
+  sessionId: string;
+  agent: Agent;
+  aborted: boolean;
+  bucket: string;
+};
 const runs = new Map<string, LiveRun>();
 
 const approvals = new Map<string, (allow: boolean) => void>();
@@ -649,13 +666,16 @@ async function chatStream(
   request: ChatTurnRequest,
   onEvent: (event: ChatStreamEvent) => void,
 ): Promise<HarnessAck> {
+  // The turn belongs to the vault that is open when it starts, and it keeps
+  // that vault even if the operator switches away before the answer settles.
+  const bucket = currentVaultBucket();
   const settings = await readPiSettings();
   const modelId = request.runtime?.model?.trim() || settings.model;
   if (!modelId) {
     return { ok: false, error: statusMessage(await piEnsure()) };
   }
   let session = await readPiSession(request.sessionId);
-  if (!session) session = await createPiSession("");
+  if (!session) session = await createPiSession("", bucket);
 
   const tools = await vaultTools();
   // The attachments have to reach the PROMPT, not only the content array: an
@@ -684,7 +704,7 @@ async function chatStream(
   const { agent } = await agentFor(session, settings, modelId, signature, tools, systemPrompt);
 
   const runId = randomUUID();
-  const live: LiveRun = { runId, sessionId: session.id, agent, aborted: false };
+  const live: LiveRun = { runId, sessionId: session.id, agent, aborted: false, bucket };
   runs.set(runId, live);
   onEvent({ type: "run.started", runId });
   // Everything appended from here on is this turn's own transcript, which is
@@ -754,12 +774,18 @@ async function chatStream(
   const messages = persistable(agent.state.messages);
   const preview = firstUserText(messages) ?? session.preview;
   try {
-    await writePiSession({
-      ...session,
-      messages,
-      preview,
-      lastActive: Date.now(),
-    });
+    await writePiSession(
+      {
+        ...session,
+        messages,
+        preview,
+        lastActive: Date.now(),
+      },
+      // The run's own bucket, not whatever is open now: a turn that outlives a
+      // vault switch still settles into the vault it started in. This is also
+      // the settle write for a stopped or failed run.
+      live.bucket,
+    );
   } catch {
     // A transcript we cannot persist is a lost resume, not a failed turn.
   }

@@ -1,5 +1,5 @@
 /**
- * The dock's tab strip, remembered between runs.
+ * The dock's tab strip, remembered between runs — per vault and per agent.
  *
  * The strip is the operator's working set: every chat they had open, in the
  * order the tabs were made, and the one that was in front. That set used to live
@@ -8,16 +8,27 @@
  * module is the memory: the provider reads it when it lands and writes it back
  * whenever the strip or the tab in front changes.
  *
- * There is one strip PER AGENT, not one per profile. A chat belongs to the
- * agent that made it, so the two agents' chats cannot share a strip: restoring
- * Hermes ids onto Pi would ask for chats Pi has never heard of, and a switch
- * that cleared the strip threw away the other agent's working set for good.
- * That is why the key carries the agent id, and why a switch writes the strip
- * it is leaving before it reads the one it is entering.
+ * Chats belong to a vault now, so the strip does too: a tab id is a chat the
+ * open vault's agent made, and restoring it onto another vault would ask for a
+ * chat that vault has never heard of. The key therefore carries the vault's
+ * stable identity (`VaultSnapshot.lifequest.id`, not its path — a copied vault
+ * keeps its identity) AND the agent: the two agents' chats cannot share a strip
+ * either, because restoring Hermes ids onto Pi would ask for chats Pi has never
+ * heard of, and a switch that cleared the strip threw away the other agent's
+ * working set for good.
  *
- * `null` is the app-less case: a harness page (the e2e rigs) mounts the dock
- * with only the IPC bridge stubbed and no agent chosen at all. Those pages keep
- * the pre-agent key, so their behaviour is exactly what it always was.
+ * A landing with no agent is the app-less case: a harness page (the e2e rigs)
+ * mounts the dock with only the IPC bridge stubbed and no companion provider at
+ * all, so no agent is ever chosen. Those pages keep the pre-vault slots — even
+ * when their stub bridge answers with a snapshot — so their behaviour is exactly
+ * what it always was, cleanup included. The app never lands without an agent:
+ * the harness list is read above the studio gate.
+ *
+ * The pre-vault keys the shipped app used (`lifequest.companion.openTabs`,
+ * `lifequest.companion.openTabs.<agent>`, `lifequest.companion.lastSessionId`)
+ * are deliberately not read for a vault: their strip names chats from whichever
+ * vault happened to be open when they were written. Losing that memory costs
+ * open-tab order, never chats — the list the landing reads is the truth.
  *
  * Only what the strip itself knows is stored: ids and order. Whether a
  * remembered chat still exists is the agent's answer, so the landing filters
@@ -28,14 +39,26 @@
  */
 import type { HarnessId } from "@/vite-env";
 
-/** The pre-agent slot, still used by the app-less harness pages. */
+/** The pre-vault slots, still used by the app-less harness pages. */
 const LEGACY_CHAT_TABS_KEY = "lifequest.companion.openTabs";
+const LEGACY_LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
 
-/** One strip per agent: `lifequest.companion.openTabs.hermes`, `.pi`. */
+/** One strip per vault and agent: `lifequest.companion.openTabs.<vaultId>.hermes`. */
 const CHAT_TABS_PREFIX = "lifequest.companion.openTabs.";
+const LAST_SESSION_PREFIX = "lifequest.companion.lastSessionId.";
 
-function keyFor(agent: HarnessId | null): string {
-  return agent ? `${CHAT_TABS_PREFIX}${agent}` : LEGACY_CHAT_TABS_KEY;
+function keyFor(vaultId: string | null, agent: HarnessId | null): string {
+  // No agent is a harness page, not a vault with an unknown agent: the app's
+  // studio never opens before the companion names its harness.
+  if (!vaultId || !agent) {
+    return agent ? `${CHAT_TABS_PREFIX}${agent}` : LEGACY_CHAT_TABS_KEY;
+  }
+  return `${CHAT_TABS_PREFIX}${vaultId}.${agent}`;
+}
+
+function lastSessionKeyFor(vaultId: string | null, agent: HarnessId | null): string {
+  if (!vaultId || !agent) return LEGACY_LAST_SESSION_KEY;
+  return `${LAST_SESSION_PREFIX}${vaultId}`;
 }
 
 /** The strip as it was stored, or `known: false` when none was. */
@@ -87,23 +110,28 @@ function parseStored(raw: string | null): StoredChatTabs {
 }
 
 /**
- * Read the strip this agent last had open.
+ * Read the strip this vault's agent last had open.
  *
  * A malformed value is treated as no memory rather than a boot failure: the
  * landing then follows the old rule instead of the dock refusing to open.
  *
- * A build from before the strips were per-agent left its one strip in the
- * legacy slot. The first agent asked about it claims it (a copy under that
- * agent's key) and the legacy slot is cleared, so the other agent does not read
- * a strip that never belonged to it.
+ * With no vault, or no agent — a harness page — this is the old behaviour,
+ * including the claim of a strip an older build left in the legacy slot: the
+ * first agent asked about it gets a copy under its own key and the legacy slot is
+ * cleared. The app never runs that claim for a vault: its pre-vault strip named
+ * chats from another vault, so restoring it would put the wrong chats in the
+ * strip.
  */
-export function readStoredChatTabs(agent: HarnessId | null = null): StoredChatTabs {
+export function readStoredChatTabs(
+  vaultId: string | null,
+  agent: HarnessId | null = null,
+): StoredChatTabs {
   try {
-    const own = parseStored(window.localStorage.getItem(keyFor(agent)));
-    if (own.known || !agent) return own;
+    const own = parseStored(window.localStorage.getItem(keyFor(vaultId, agent)));
+    if (own.known || (vaultId && agent) || !agent) return own;
     const legacy = parseStored(window.localStorage.getItem(LEGACY_CHAT_TABS_KEY));
     if (!legacy.known) return NONE;
-    writeStoredChatTabs(agent, legacy.tabs, legacy.activeId);
+    writeStoredChatTabs(null, agent, legacy.tabs, legacy.activeId);
     window.localStorage.removeItem(LEGACY_CHAT_TABS_KEY);
     return legacy;
   } catch {
@@ -119,6 +147,7 @@ export function readStoredChatTabs(agent: HarnessId | null = null): StoredChatTa
  * different fact from "this profile has never had a strip".
  */
 export function writeStoredChatTabs(
+  vaultId: string | null,
   agent: HarnessId | null,
   tabs: readonly string[],
   activeId: string | null,
@@ -126,7 +155,7 @@ export function writeStoredChatTabs(
   try {
     const ids = cleanIds(tabs);
     window.localStorage.setItem(
-      keyFor(agent),
+      keyFor(vaultId, agent),
       JSON.stringify({
         tabs: ids,
         activeId: activeId && ids.includes(activeId) ? activeId : null,
@@ -134,6 +163,50 @@ export function writeStoredChatTabs(
     );
   } catch {
     // A storage refusal costs the strip its memory, not the open chats.
+  }
+}
+
+/**
+ * The chat this dock opened last in one vault, or null.
+ *
+ * It is separate from the strip because it also covers a chat that was open on
+ * its own (a run nobody tabbed, a chat opened then closed): the landing resumes
+ * it even though the strip never remembered it. Per-vault for the same reason
+ * the strip is: the id names a chat in that vault.
+ */
+export function readStoredLastSessionId(
+  vaultId: string | null,
+  agent: HarnessId | null,
+): string | null {
+  try {
+    return window.localStorage.getItem(lastSessionKeyFor(vaultId, agent));
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the chat this dock opened last, for the next landing. */
+export function writeStoredLastSessionId(
+  vaultId: string | null,
+  agent: HarnessId | null,
+  sessionId: string,
+): void {
+  try {
+    window.localStorage.setItem(lastSessionKeyFor(vaultId, agent), sessionId);
+  } catch {
+    // A storage refusal costs the landing its hint, not the chat.
+  }
+}
+
+/** Forget the last-opened chat: nothing is open in this vault any more. */
+export function clearStoredLastSessionId(
+  vaultId: string | null,
+  agent: HarnessId | null,
+): void {
+  try {
+    window.localStorage.removeItem(lastSessionKeyFor(vaultId, agent));
+  } catch {
+    // A storage refusal costs the landing its hint, not the chat.
   }
 }
 

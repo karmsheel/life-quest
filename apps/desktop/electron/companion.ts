@@ -25,6 +25,12 @@ import {
   setCompanionProfile,
 } from "./recent-vaults.ts";
 import {
+  currentVaultAgentBinding,
+  getVaultAgentBinding,
+  setVaultAgentBinding,
+} from "./vault-agents.ts";
+import { currentVaultScope } from "./vault-scope.ts";
+import {
   readCompanionPrompts,
   type CompanionPrompts,
 } from "./companion-prompts.ts";
@@ -690,17 +696,34 @@ export function companionStatus(): PublicCompanionStatus {
 }
 
 /**
- * The profile the companion runs on: `lifequest` until the operator picks
- * another in the picker, and remembered across launches in the app prefs.
+ * The profile the companion runs on.
  *
- * Read once, lazily, because the first `companionEnsure` can arrive before
- * anything has had a chance to load the prefs file — and `needs_install` must
- * not have to wait on a settings read to answer.
+ * The open vault owns it: a vault is a profile, so the agent binding names the
+ * Hermes profile this process may touch, and a switch moves it before anything
+ * reads the gateway. Only before a vault exists — the setup screen — does the
+ * app-level choice still answer; it is also the value the one-time adoption
+ * copies into the vault that was open at the upgrade.
  */
 let activeProfile: string | null = null;
 let profileLoaded = false;
 
 async function activeProfileName(): Promise<string> {
+  const scope = currentVaultScope();
+  if (scope) {
+    try {
+      const binding = await getVaultAgentBinding(scope.id);
+      if (binding.hermesProfile && isSafeProfileName(binding.hermesProfile)) {
+        return binding.hermesProfile;
+      }
+    } catch {
+      // An unreadable binding falls through to the app's own profile, which the
+      // ensure then seeds and reports on.
+    }
+    return PROFILE_NAME;
+  }
+  // No vault yet: the app-level choice, read once, lazily (the first
+  // `companionEnsure` can arrive before anything has had a chance to load the
+  // prefs file, and `needs_install` must not wait on a settings read to answer).
   if (!profileLoaded) {
     try {
       const stored = await getCompanionProfile();
@@ -723,6 +746,21 @@ async function activeProfileName(): Promise<string> {
  * whose startup covers the binding.
  */
 let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
+/**
+ * The profile the last ensure was asked for.
+ *
+ * A vault switch can move the choice while a gateway is still starting. The
+ * run in flight then answers for a profile the vault no longer uses, and
+ * handing its promise back would leave the new vault's profile never ensured —
+ * the dock would show the old agent's status under the new vault's binding.
+ * A caller whose profile is no longer the one that ran waits it out and asks
+ * again for the one now in force.
+ */
+let lastEnsuredFor: string | null = null;
+
+async function sameProfileInForce(name: string | null): Promise<boolean> {
+  return name !== null && name === (await activeProfileName());
+}
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   /**
@@ -739,15 +777,32 @@ export async function companionEnsure(): Promise<PublicCompanionStatus> {
    * A profile switch is the one caller with a new answer to ask for: it waits
    * for the run already in flight and then starts its own (see
    * `companionUseProfile`), so deduplicating here cannot pin it to the profile
-   * it is leaving.
+   * it is leaving. A vault switch does the same. The loop is the wait: it only
+   * leaves once no run is in flight, so the run started after it cannot overlap
+   * the one it was waiting for.
    */
-  if (ensureInFlight) return ensureInFlight;
+  while (ensureInFlight) {
+    let failure: unknown;
+    const settled = await ensureInFlight.catch((e: unknown) => {
+      failure = e;
+      return undefined;
+    });
+    if (await sameProfileInForce(lastEnsuredFor)) {
+      // A joiner sees the same verdict the original caller would have: a run
+      // that threw keeps throwing at the caller rather than being flattened
+      // into a stale status.
+      if (failure !== undefined) throw failure;
+      return settled ?? companionStatus();
+    }
+  }
   // The profile is looked up INSIDE the shared promise, before the first
   // suspension: `await activeProfileName()` in the caller's own frame would let a
   // second call slip past the guard while the first was still reading prefs,
   // and that is precisely the overlap this is here to stop.
   const run = (async () => {
-    const status = await ensureCompanion(realIo(), await activeProfileName());
+    const profile = await activeProfileName();
+    lastEnsuredFor = profile;
+    const status = await ensureCompanion(realIo(), profile);
     const published = publish(status);
     // Deliberately not awaited: every launch calls this, and the probe is a
     // round-trip to a host that may be slow, absent, or restarting. It answers
@@ -779,8 +834,12 @@ export async function companionProfilesList(): Promise<{
  * This is the way out of a stuck connect. A machine whose host never served
  * `/p/lifequest` is no longer a dead end: the operator sees every profile this
  * Hermes install has, picks one, and the app seeds it (soul, MCP entry, eager
- * tool search) and attaches to it. The choice is persisted, so the next launch
- * comes up on the same profile.
+ * tool search) and attaches to it.
+ *
+ * The choice's home follows the vault: while one is open the profile is the
+ * vault's agent binding (picking a profile makes this vault a Hermes vault), and
+ * only before a vault exists does it live in the app-level prefs. That is what
+ * keeps the next vault from inheriting this one's agent.
  *
  * The name is validated here even though the renderer is ours: a name that is
  * not a plain segment would escape `profiles/` or the `/p/` prefix, and the
@@ -793,8 +852,20 @@ export async function companionUseProfile(name: string): Promise<PublicCompanion
   }
   activeProfile = trimmed;
   profileLoaded = true;
+  const scope = currentVaultScope();
   try {
-    await setCompanionProfile(trimmed);
+    if (scope) {
+      // Choosing a profile binds it to the vault the same way adding an agent
+      // does: it becomes the vault's Hermes agent, while which companion answers
+      // is still the operator's separate "Use Hermes" decision.
+      const current = await getVaultAgentBinding(scope.id);
+      await setVaultAgentBinding(scope.id, {
+        harness: current.harness,
+        hermesProfile: trimmed,
+      });
+    } else {
+      await setCompanionProfile(trimmed);
+    }
   } catch {
     // A prefs write that fails costs the choice its memory, not this session.
   }
@@ -979,11 +1050,42 @@ export async function companionShutdown(): Promise<void> {
   await shutdownCompanion(current, realIo());
 }
 
+/**
+ * The sentence a transport call gets while the companion is moving to this
+ * vault's agent. Callers treat it as "wait for the switch", not as a defect.
+ */
+const SWITCHING_AGENT = "The companion is switching to this vault's agent.";
+
+/**
+ * The ready status on hand — but only while it belongs to the agent the open
+ * vault is bound to.
+ *
+ * A vault switch between two Hermes-bound vaults is not instantaneous on the
+ * transport: `rememberOpen` binds the new profile and starts its ensure in the
+ * background, so until that ensure lands `current` still holds the PREVIOUS
+ * profile's ready status, and its baseUrl serves the PREVIOUS profile's
+ * sessions. A session list/create/read answered from it would paint the other
+ * vault's chats into this one — a correct answer for the wrong agent, which no
+ * renderer-side vault epoch can detect. So a transport call made while the bound
+ * profile and the ready status's own profile path disagree is refused.
+ *
+ * Nothing is mutated for this: the ensure in flight publishes the real verdict,
+ * and the caller asks again when it lands. The ensure path does not come through
+ * here, so a switch can always complete.
+ */
 function readyOrError(): CompanionStatus & { kind: "ready" } {
-  if (current.kind !== "ready") {
+  const status = current;
+  if (status.kind !== "ready") {
     throw new Error("Companion is not ready");
   }
-  return current;
+  const bound = currentVaultAgentBinding()?.hermesProfile ?? null;
+  if (bound) {
+    const expected = profileDir(hermesRoot(process.env, os.homedir()), bound);
+    // A ready status with no profile path cannot be shown to be this vault's,
+    // so it is refused as well: waiting is better than another vault's answer.
+    if (status.profilePath !== expected) throw new Error(SWITCHING_AGENT);
+  }
+  return status;
 }
 
 async function hermesFetch(

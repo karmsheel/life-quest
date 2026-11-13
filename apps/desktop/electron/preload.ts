@@ -24,6 +24,38 @@ type ConnectedAgent = {
   decidedAt: string | null;
 };
 
+/** Which agent a vault runs on, as main stores it. */
+type VaultAgentBinding = { harness: "hermes" | "pi"; hermesProfile: string | null };
+
+/** One Hermes profile the operator could bind, with the vaults it already uses. */
+type VaultAgentProfile = {
+  name: string;
+  path: string;
+  isDefault: boolean;
+  hasSoul: boolean;
+  hasConfig: boolean;
+  usedBy: { vaultId: string; vaultName: string }[];
+};
+
+/** Settings → Agents in this vault, in one read. */
+type VaultAgentsState = {
+  vaultId: string | null;
+  binding: VaultAgentBinding;
+  installedProfiles: VaultAgentProfile[];
+  vaultOpen: boolean;
+};
+
+/** Create a new agent for the vault, or reuse an installed one explicitly. */
+type VaultAgentAddInput =
+  | { mode: "fresh"; name?: string }
+  | { mode: "existing"; profile: string };
+
+/** The push that says the open vault's agent changed. */
+type CompanionHarnessChanged = {
+  harness: "hermes" | "pi";
+  vaultId: string | null;
+};
+
 const lifequest = {
   vaultCreate: (path: string, name?: string) =>
     ipcRenderer.invoke("vault:create", path, name) as Promise<Result<unknown>>,
@@ -389,6 +421,35 @@ const lifequest = {
    */
   companionSwitchHarness: (id: "hermes" | "pi") =>
     ipcRenderer.invoke("companion:switchHarness", id),
+  /**
+   * The agents in this vault. The companion choice and the Hermes agent belong
+   * to the vault, so Settings asks here instead of the app-level picker above
+   * (which the setup screen keeps, because it runs before a vault exists).
+   */
+  vaultAgentsGet: () =>
+    ipcRenderer.invoke("vaultAgents:get") as Promise<VaultAgentsState>,
+  vaultAgentsAddHermes: (input: VaultAgentAddInput) =>
+    ipcRenderer.invoke("vaultAgents:addHermes", input) as Promise<
+      Result<VaultAgentBinding>
+    >,
+  vaultAgentsRemoveHermes: () =>
+    ipcRenderer.invoke("vaultAgents:removeHermes") as Promise<
+      Result<VaultAgentBinding>
+    >,
+  /**
+   * The open vault's agent changed — its binding was applied on vault open, or
+   * the operator switched from the dock. Separate from the status push: the
+   * harness id can move while neither agent's status does.
+   */
+  onCompanionHarnessChanged: (cb: (payload: CompanionHarnessChanged) => void) => {
+    const listener = (_event: unknown, payload: CompanionHarnessChanged) => {
+      cb(payload);
+    };
+    ipcRenderer.on("companion:harnessChanged", listener);
+    return () => {
+      ipcRenderer.removeListener("companion:harnessChanged", listener);
+    };
+  },
   /** The built-in companion's endpoint. The key is write-only in this direction. */
   companionPiSettings: () => ipcRenderer.invoke("companion:piSettings"),
   companionPiSettingsSave: (input: {

@@ -116,10 +116,12 @@ carries an optional role label and an area slug, and the Agents button writes th
 area from your lens and leaves the role label empty. Role labels are read and
 shown when the roster carries one.
 
-Pi and Hermes are not hires. They are the harnesses the studio itself offers;
-you do not scan for them, hire them or grant them anything. **Pi** is built in,
-**Hermes** is the external sidekick, and the **Companion** picker in Settings is
-the only place the choice is made.
+Pi and Hermes are not hires. They are the companion agents the studio itself
+offers; you do not scan for them, hire them or grant them anything. **Pi** is
+built in and every vault has it, **Hermes** is the external sidekick, and the
+choice is made per vault in **Settings → Hermes → Agents in this vault**: a fresh
+Hermes agent for the vault, or an existing profile reused with a warning that its
+memory is shared. The dock's agent switcher shows only the agents that vault has.
 
 ## The screen
 

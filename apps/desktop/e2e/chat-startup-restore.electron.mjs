@@ -51,11 +51,14 @@
  *                   sure the profile remembers that chat (the strip plus
  *                   `lastSessionId`) and flushes storage, so the restart has the
  *                   state the operator reported.
- *   --phase=verify  the restart. The strip (`lifequest.companion.openTabs.hermes`)
- *                   and `lastSessionId` are remembered. The chat's tab must be
- *                   in front, its header must name it, AND its transcript must be
- *                   on screen without an interaction — the reported bug is that
- *                   it is the "Ask Hermes" empty slate instead.
+ *   --phase=verify  the restart. The strip
+ *                   (`lifequest.companion.openTabs.<vaultId>.hermes`) and
+ *                   `lastSessionId.<vaultId>` are remembered — chats belong to a
+ *                   vault, so the shipped keys carry the vault's stable id. The
+ *                   chat's tab must be in front, its header must name it, AND its
+ *                   transcript must be on screen without an interaction — the
+ *                   reported bug is that it is the "Ask Hermes" empty slate
+ *                   instead.
  *
  * A NOTE ON THE FIXTURE. On unfixed code the FIRST launch is broken by the same
  * race the report is about: the dock never lands, so no transcript is read and
@@ -346,7 +349,8 @@ function writeHostEnv(world, port) {
  * Deliberately reads the rendered DOM rather than any store: "the transcript is
  * on screen" is a claim about what the operator sees.
  */
-const SAMPLE = `(() => {
+const SAMPLE = (world) => `(() => {
+  const vaultId = ${JSON.stringify(world.vaultId)};
   const text = (el) => ((el && el.textContent) || "").trim();
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => ({
     label: text(tab.querySelector(".chat-panel__tab-label")),
@@ -388,9 +392,9 @@ const SAMPLE = `(() => {
     messageCount: messages.length,
     messages,
     railLabels: Array.from(document.querySelectorAll(".chats-rail__label")).map(text).filter(Boolean),
-    storedStrip: window.localStorage.getItem("lifequest.companion.openTabs.hermes"),
+    storedStrip: window.localStorage.getItem("lifequest.companion.openTabs." + vaultId + ".hermes"),
     legacyStrip: window.localStorage.getItem("lifequest.companion.openTabs"),
-    lastSessionId: window.localStorage.getItem("lifequest.companion.lastSessionId"),
+    lastSessionId: window.localStorage.getItem("lifequest.companion.lastSessionId." + vaultId),
   };
 })()`;
 
@@ -637,7 +641,7 @@ async function main() {
       15_000,
     );
 
-    const state = await win.webContents.executeJavaScript(SAMPLE, true);
+    const state = await win.webContents.executeJavaScript(SAMPLE(world), true);
     states[phase] = state;
     mark("sample:done");
 
@@ -692,11 +696,11 @@ async function main() {
         await win.webContents.executeJavaScript(
           `(() => {
             window.localStorage.setItem(
-              "lifequest.companion.openTabs.hermes",
+              "lifequest.companion.openTabs." + ${JSON.stringify(world.vaultId)} + ".hermes",
               ${JSON.stringify(JSON.stringify({ tabs: [chat.id], activeId: chat.id }))},
             );
             window.localStorage.setItem(
-              "lifequest.companion.lastSessionId",
+              "lifequest.companion.lastSessionId." + ${JSON.stringify(world.vaultId)},
               ${JSON.stringify(chat.id)},
             );
             return true;
@@ -708,7 +712,7 @@ async function main() {
         observations.seededStripDirectly = false;
       }
 
-      const remembered = await win.webContents.executeJavaScript(SAMPLE, true);
+      const remembered = await win.webContents.executeJavaScript(SAMPLE(world), true);
       states.seedRemembered = remembered;
       check(
         "the restart's remembered strip is in the profile",
@@ -785,7 +789,7 @@ async function main() {
       const recovered = clickDelivered
         ? await waitFor(win, `document.querySelectorAll(".chat-panel__message").length > 0`, 5_000)
         : false;
-      const afterWorkaround = await win.webContents.executeJavaScript(SAMPLE, true);
+      const afterWorkaround = await win.webContents.executeJavaScript(SAMPLE(world), true);
       states.verifyAfterWorkaround = afterWorkaround;
       observations.afterReopeningTheChat = {
         clickDelivered,

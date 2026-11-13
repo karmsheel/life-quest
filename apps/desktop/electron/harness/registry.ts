@@ -1,15 +1,23 @@
 // Which companion the studio is talking to.
 //
-// The choice is one per app, not per vault and not per chat: a session belongs
-// to the harness that made it, so switching changes which set of chats you are
-// looking at. It is stored in app prefs (a setting, not vault data).
+// The choice belongs to the vault: a session belongs to the harness that made
+// it, and a vault is the profile that is loaded, so a new vault never inherits
+// the previous vault's agent. The binding itself lives in app prefs beside the
+// other per-vault maps (`vault-agents.ts`); this module owns the running choice
+// — the active harness, its status, and the switch.
 import os from "node:os";
 import type { AgentHarness } from "./agent-harness.ts";
 import { hermesHarness } from "./hermes-harness.ts";
 import { piHarness } from "./pi-harness.ts";
 import { resolveHermesCli } from "../companion-profile.ts";
 import { readPiSettings } from "./pi-settings.ts";
-import { getHarnessId, setHarnessId } from "../recent-vaults.ts";
+import { getHarnessId } from "../recent-vaults.ts";
+import {
+  currentVaultAgentBinding,
+  persistHarnessChoice,
+  publishHarnessChanged,
+} from "../vault-agents.ts";
+import { currentVaultScope } from "../vault-scope.ts";
 import { lastHarnessStatus, publishHarnessStatus } from "./status-bus.ts";
 import type { HarnessId, HarnessStatus, HarnessSummary, HarnessTurnCapabilities } from "./types.ts";
 
@@ -73,6 +81,29 @@ export async function loadHarnessSelection(): Promise<HarnessId> {
 }
 
 /**
+ * Whether the open vault has a Hermes agent at all.
+ *
+ * Hermes is not a choice in a vault with no Hermes agent: the switcher omits it
+ * (`harnessSummaries`), and a direct bridge call has to be answered the same
+ * way. Honouring one would leave the running harness saying Hermes while the
+ * vault's binding says Pi — a state nothing in the app can show or repair.
+ * Before a vault exists (the setup screen) both are the operator's to choose.
+ */
+function hermesAvailableHere(): boolean {
+  const scope = currentVaultScope();
+  return scope === null || currentVaultAgentBinding()?.hermesProfile != null;
+}
+
+/** The answer to "switch to Hermes" in a vault that has no Hermes agent. */
+function noHermesAgentStatus(): HarnessStatus {
+  return {
+    kind: "needs_setup",
+    message:
+      "This vault has no Hermes agent. Add one in Settings › Agents in this vault, or keep using Pi.",
+  };
+}
+
+/**
  * Switch companion, persist it, and bring the new one up — the BOOT path.
  *
  * The boot and the setup screen wait for the answer, because their job is to
@@ -80,51 +111,88 @@ export async function loadHarnessSelection(): Promise<HarnessId> {
  * busy). A switch made from the studio must not wait: see `switchHarness`.
  */
 export async function useHarness(id: HarnessId): Promise<HarnessStatus> {
+  if (id === "hermes" && !hermesAvailableHere()) return noHermesAgentStatus();
   active = id;
   hydrated = true;
-  try {
-    await setHarnessId(id);
-  } catch {
-    // The switch still holds for this run.
-  }
+  await rememberChoice(id);
+  publishHarnessChanged({
+    harness: id,
+    vaultId: currentVaultScope()?.id ?? null,
+  });
   const status = await byId[id].ensure();
   return publishHarnessStatus(id, status);
 }
 
 /**
- * Switch companion from the app that is already open.
- *
- * The studio is on screen and the operator asked for a different agent. Making
- * that wait for the target's `ensure` — which can restart a Hermes gateway, or
- * probe an endpoint for up to eight seconds — is what made a switch look like a
- * reconnection: the app threw the studio away and showed the connect screen
- * while the new agent came up.
- *
- * So the choice flips at once, the answer is whatever the target last reported
- * (or a `switching` status when it has never answered), and the ensure runs in
- * the background and lands on the status bus, tagged with its agent. Owners
- * that are already up keep running: an agent is a service, not a page.
+ * Remember the choice without letting a prefs write decide whether the switch
+ * holds: the agent is running for this session either way.
  */
-export async function switchHarness(id: HarnessId): Promise<HarnessStatus> {
-  if (active === id) return lastHarnessStatus(id) ?? byId[id].status();
-  active = id;
-  hydrated = true;
+async function rememberChoice(id: HarnessId): Promise<void> {
   try {
-    await setHarnessId(id);
+    await persistHarnessChoice(id);
   } catch {
     // The switch still holds for this run.
   }
-  const known = lastHarnessStatus(id);
-  const answer: HarnessStatus = known ?? { kind: "switching", harness: id };
+}
+
+/**
+ * Publish a `switching` answer and let the target's own verdict land later.
+ *
+ * A switch does not wait for the target to boot: holding the studio still while
+ * a gateway restarted looked exactly like a reconnection. The ensure publishes
+ * its own verdict (tagged with its agent) and a throw is still a status the
+ * operator can read.
+ */
+function bringUpInBackground(id: HarnessId, answer: HarnessStatus): HarnessStatus {
   publishHarnessStatus(id, answer);
-  // Deliberately not awaited: the studio does not wait for another agent to
-  // boot. The ensure publishes its own verdict (and `publishHarnessStatus` tags
-  // it), and a throw is still a status the operator can read.
   void byId[id]
     .ensure()
     .then((status) => publishHarnessStatus(id, status))
     .catch(() => publishHarnessStatus(id, { kind: "disconnected" }));
   return answer;
+}
+
+/**
+ * Switch companion from the app that is already open.
+ *
+ * The choice flips at once, the answer is whatever the target last reported
+ * (or a `switching` status when it has never answered), and the ensure runs in
+ * the background. Owners that are already up keep running: an agent is a
+ * service, not a page.
+ */
+export async function switchHarness(id: HarnessId): Promise<HarnessStatus> {
+  if (id === "hermes" && !hermesAvailableHere()) return noHermesAgentStatus();
+  if (active === id) return lastHarnessStatus(id) ?? byId[id].status();
+  active = id;
+  hydrated = true;
+  await rememberChoice(id);
+  publishHarnessChanged({
+    harness: id,
+    vaultId: currentVaultScope()?.id ?? null,
+  });
+  return bringUpInBackground(
+    id,
+    lastHarnessStatus(id) ?? { kind: "switching", harness: id },
+  );
+}
+
+/**
+ * Make the open vault's bound agent the running one.
+ *
+ * Called on vault open, after its binding has been settled. Module state and the
+ * change push only — the vault already remembers the choice, so nothing is
+ * persisted here — and the answer is always `switching`: a status from the
+ * previous vault's agent is not this one's answer, even when the harness id
+ * happens to be the same.
+ */
+export async function applyHarnessSelection(id: HarnessId): Promise<HarnessStatus> {
+  active = id;
+  hydrated = true;
+  publishHarnessChanged({
+    harness: id,
+    vaultId: currentVaultScope()?.id ?? null,
+  });
+  return bringUpInBackground(id, { kind: "switching", harness: id });
 }
 
 /**
@@ -171,7 +239,14 @@ const HERMES_CAPABILITIES: HarnessTurnCapabilities = {
 };
 
 export function harnessSummaries(): HarnessSummary[] {
-  return [
+  // A vault with no Hermes agent does not offer Hermes: the pill is absent, not
+  // greyed out, because there is no agent behind it to switch to. Before a vault
+  // exists (the setup screen and the app-less harness pages) both are the
+  // operator's to choose from, exactly as they were.
+  const scope = currentVaultScope();
+  const hermesOffered =
+    scope === null || currentVaultAgentBinding()?.hermesProfile != null;
+  const rows: HarnessSummary[] = [
     {
       id: "hermes",
       name: "Hermes",
@@ -191,6 +266,7 @@ export function harnessSummaries(): HarnessSummary[] {
       capabilities: PI_CAPABILITIES,
     },
   ];
+  return rows.filter((row) => row.id !== "hermes" || hermesOffered);
 }
 
 /** Both, on quit: a harness that is not active may still hold a child or a socket. */

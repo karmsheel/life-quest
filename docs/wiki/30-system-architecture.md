@@ -28,8 +28,9 @@ At runtime there are two directories, and keeping them apart is a product rule:
 - **The vault** — the folder you picked: doctrine, goals, map, notes, reviews,
   databases, pages, images, attachments, Decisions, log.
 - **`userData`** — the app's state, on Windows `%APPDATA%\LifeQuest`: recent vaults,
-  the lens per vault, the harness choice, the Pi endpoint and sealed key, Pi
-  transcripts, the Hermes key, pairing secrets, chat-tab memory.
+  the lens and agent binding per vault, the Pi endpoint and sealed key, Pi
+  transcripts grouped per vault, the Hermes key, pairing secrets, chat-tab memory
+  per vault and agent.
 
 ## The shape of the system
 
@@ -157,10 +158,12 @@ deliberately boring, one open vault and one queue.
   serialised through `enqueue`, so two writes never interleave inside the engine. A
   call with no vault open returns `{ ok: false, error: "No vault is open" }`.
 - Opening a vault does more than read files. `rememberOpen` records the recent
-  vault, restores its saved lens, starts (or rebinds) both MCP doors, and writes the
-  companion bearer into the Hermes profile — only when the local door actually
-  bound. Linked databases then sync in a try/catch, because a sync failure must not
-  block the open.
+  vault, restores its saved lens, applies that vault's agent binding (the
+  per-vault Pi/Hermes choice, with a one-time adoption of the old app-level choice
+  and flat Pi transcripts into the first vault opened after an update), starts (or
+  rebinds) both MCP doors, and writes the companion bearer into the Hermes profile
+  — only when the local door actually bound. Linked databases then sync in a
+  try/catch, because a sync failure must not block the open.
 - It is the only caller of the onboarding batch and the images/attachment stores,
   so those writes sit on the same queue as every other write.
 - `vaultGetSnapshot` re-reads the vault and captures doctrine mtimes, which decides
@@ -202,11 +205,13 @@ One companion contract, two implementations, and the rest of the app calls it.
   `HarnessSummary`, `ChatTurnRequest`), so a new companion does not teach the
   renderer a second dialect. A `ready` status carries its `harness` id and a human
   sentence in `detail`.
-- `harness/registry.ts` holds the active choice (one per app, stored in prefs). A
-  stored choice wins; with none, a machine whose Hermes works and has no Pi
-  endpoint keeps Hermes, and everything else lands on Pi. `switchHarness` flips the
-  choice at once and lets the new agent's `ensure` land on the status bus — the
-  studio is never thrown back to the connect screen by a switch.
+- `harness/registry.ts` holds the active choice for the open vault (stored per
+  vault in `recent.json`'s `vaultAgents`; before a vault is open, the boot choice
+  comes from the app prefs). A vault's binding wins when it opens; a vault with no
+  binding lands on Pi. `switchHarness` flips the choice at once and lets the new
+  agent's `ensure` land on the status bus — the studio is never thrown back to the
+  connect screen by a switch. `harnessSummaries` offers Pi always, and Hermes only
+  when the open vault has a Hermes profile bound.
 - `harness/status-bus.ts` tags each status with its harness, so a late answer from
   the agent you left cannot overwrite the one you are on.
 
@@ -214,11 +219,12 @@ One companion contract, two implementations, and the rest of the app calls it.
 or profile. Its endpoint/model/provider come from `pi-endpoint.json`, its key from
 `pi-endpoint.key`, and its catalog from the endpoint's own `GET /models`. Its only
 tools are the MCP door's — there is no filesystem tool to talk around them — and its
-transcripts are one JSON file per chat under `pi-sessions/`.
+transcripts are one JSON file per chat under `pi-sessions/<vault id>/`.
 
-**HermesHarness** keeps the external gateway: CLI discovery, the `lifequest`
-profile, `SOUL.md`, the `mcp_servers.lifequest` entry with the vault bearer, the
-gateway on `8642`, and `/p/lifequest`.
+**HermesHarness** keeps the external gateway: CLI discovery, the vault's Hermes
+profile (the app's `lifequest` profile for a vault that adopts it, or a profile
+created for the vault), `SOUL.md`, the `mcp_servers.lifequest` entry with the vault
+bearer, the gateway on `8642`, and `/p/<profile>`.
 
 ## Companion lifecycle
 

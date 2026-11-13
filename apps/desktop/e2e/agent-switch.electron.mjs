@@ -816,32 +816,44 @@ const INSTALL_SWITCH_COUNTER = `(() => {
   return result;
 })()`;
 
-/** Per-agent tab memory, as the app stored it. */
-const READ_TAB_STORAGE = `(() => {
-  const slot = (agent) => window.localStorage.getItem("lifequest.companion.openTabs." + agent);
-  const parse = (raw) => {
-    if (raw === null) return null;
-    try {
-      const value = JSON.parse(raw);
-      if (Array.isArray(value)) return { tabs: value, activeId: null, bare: true };
-      return {
-        tabs: Array.isArray(value && value.tabs) ? value.tabs : [],
-        activeId: value && typeof value.activeId === "string" ? value.activeId : null,
-        bare: false,
-      };
-    } catch {
-      return { parseError: true, raw };
-    }
-  };
-  return {
-    hermesRaw: slot("hermes"),
-    piRaw: slot("pi"),
-    legacyRaw: window.localStorage.getItem("lifequest.companion.openTabs"),
-    hermes: parse(slot("hermes")),
-    pi: parse(slot("pi")),
-    lastSessionId: window.localStorage.getItem("lifequest.companion.lastSessionId"),
-  };
-})()`;
+/**
+ * Per-vault, per-agent tab memory, as the app stored it.
+ *
+ * Chats belong to a vault, so the shipped keys carry the vault's stable id:
+ * `lifequest.companion.openTabs.<vaultId>.<agent>` and
+ * `lifequest.companion.lastSessionId.<vaultId>`. The pre-vault keys
+ * (`openTabs.<agent>`, `lastSessionId`) are not read by the app for a vault, so
+ * a rig that asserted them would be checking a slot nothing writes.
+ */
+function readTabStorage(vaultId) {
+  return `(() => {
+    const vaultId = ${JSON.stringify(vaultId)};
+    const slot = (agent) => window.localStorage.getItem("lifequest.companion.openTabs." + vaultId + "." + agent);
+    const parse = (raw) => {
+      if (raw === null) return null;
+      try {
+        const value = JSON.parse(raw);
+        if (Array.isArray(value)) return { tabs: value, activeId: null, bare: true };
+        return {
+          tabs: Array.isArray(value && value.tabs) ? value.tabs : [],
+          activeId: value && typeof value.activeId === "string" ? value.activeId : null,
+          bare: false,
+        };
+      } catch {
+        return { parseError: true, raw };
+      }
+    };
+    return {
+      vaultId,
+      hermesRaw: slot("hermes"),
+      piRaw: slot("pi"),
+      legacyRaw: window.localStorage.getItem("lifequest.companion.openTabs"),
+      hermes: parse(slot("hermes")),
+      pi: parse(slot("pi")),
+      lastSessionId: window.localStorage.getItem("lifequest.companion.lastSessionId." + vaultId),
+    };
+  })()`;
+}
 
 /** Stop the rail sampler before a reload tears the context down. */
 const STOP_RAIL_SAMPLER = `(() => {
@@ -1216,7 +1228,7 @@ async function main() {
   const stateRestored = await readState();
   const draftRestored = await js(READ_COMPOSER);
   const probeAtEnd = await js(READ_PROBE);
-  const storageBeforeReload = await js(READ_TAB_STORAGE);
+  const storageBeforeReload = await js(readTabStorage(created.value.lifequest.id));
   const pageSwitchCalls = await js(
     "typeof window.__lqSwitchHarnessCalls === 'number' ? window.__lqSwitchHarnessCalls : null",
   );
@@ -1552,6 +1564,7 @@ async function main() {
       restored: draftRestored,
     },
     persistence: {
+      vaultId: created.value.lifequest.id,
       beforeReload: storageBeforeReload,
     },
     reload: {
