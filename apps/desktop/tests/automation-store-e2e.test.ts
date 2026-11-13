@@ -263,11 +263,11 @@ describe("automation store e2e", () => {
           body: note,
         })
       : null;
-    assert.ok(context, "the Daily Note context is missing");
+    assert.ok(context, "the Daily Journal context is missing");
     assert.match(context!, /AUTOMATION — ANALYZE NOTE/);
     assert.match(context!, /First line of the day\./);
     assert.match(context!, /Last line of the day\./);
-    assert.match(context!, /--- DAILY NOTE \(2026-10-24\) ---/);
+    assert.match(context!, /--- DAILY JOURNAL \(2026-10-24\) ---/);
     assert.equal(
       automationContextFor(
         { ...dailyNoteAutomation!, host: "none" },

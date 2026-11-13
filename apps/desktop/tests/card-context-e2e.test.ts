@@ -514,7 +514,7 @@ describe("dashboard card context e2e", () => {
         },
         {
           name: "Renew the passport",
-          domain: "No domain",
+          domain: "No area",
           unassigned: true,
           progress: null,
           hasBar: false,
