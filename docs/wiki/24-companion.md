@@ -210,8 +210,8 @@ vault's own binding.
    model that chat's session was created with — a pick only rode the turn, so a
    retired model used to strand old chats while a new chat answered. The model
    pill now writes the chat's model on its Hermes session, and a chat the provider
-   no longer serves says so above the composer: **This chat is set to … which this
-   profile no longer offers**, with **Use <model>** moving it onto the model the
+   no longer serves says so above the composer — **This chat's model (…), which this
+   profile no longer offers** — with **Use <model>** moving it onto the model the
    profile uses now. The pill names the chat's own model when you have not picked
    one, so it always names the model the next turn actually runs on.
 
