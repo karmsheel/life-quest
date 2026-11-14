@@ -264,7 +264,7 @@ folder rather than one window. See [Decisions](./23-decisions.md).
 
 ## Updates
 
-**Updates** — *LifeQuest v0.2.10 · checked from GitHub Releases*. It reports what
+**Updates** — *LifeQuest v0.2.11 · checked from GitHub Releases*. It reports what
 the release feed last said: *Checking GitHub for a newer release…* while a check
 runs; *LifeQuest X is available (you are on vY).* when a newer release exists,
 plus a **Release page** button; *Up to date — vY is the newest release.*; or the

@@ -1,7 +1,7 @@
 # Common workflows
 
 Recipes for the things an operator actually does, in order, with the controls
-LifeQuest 0.2.10 shows. Each recipe links to the page that explains the feature in
+LifeQuest 0.2.11 shows. Each recipe links to the page that explains the feature in
 full.
 
 Return to [Wiki home](./index.md).

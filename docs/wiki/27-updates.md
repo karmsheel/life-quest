@@ -10,7 +10,7 @@ app. See also [Wiki home](./index.md).
 
 ## Where it lives
 
-- The version badge (`v0.2.10`) sits at the trailing end of the chat dock's bottom
+- The version badge (`v0.2.11`) sits at the trailing end of the chat dock's bottom
   action bar, after **Collapse chat**. The bar's accessible name is "Dock
   actions".
 - When an update is available, a small **Update available** line appears beside
@@ -50,7 +50,7 @@ byte moves.
 
 1. Main reads the feed on its hourly clock. A release it has not announced before
    raises a notice: **LifeQuest 0.3.0 is available** (the release's version),
-   with "You are running v0.2.10. The new release is ready to download."
+   with "You are running v0.2.11. The new release is ready to download."
 2. Choose **View update** to open the same dialog the build number opens, on the
    offer already in hand.
 3. Or dismiss the notice with its cross (**Dismiss**). A dismissal is final for
@@ -71,7 +71,7 @@ is news again.
 1. Click the version number in the dock bar in any state. If an offer is already
    known, the dialog opens on it; if not, it opens on **Checking for updates** and
    reads the feed.
-2. Read the offer: "You are running **v0.2.10**. Version **0.3.0** is ready to
+2. Read the offer: "You are running **v0.2.11**. Version **0.3.0** is ready to
    download." Choose **What changed** to unfold the release notes, shown as plain
    text exactly as written on GitHub. The installer's file name and size sit under
    the notes.
@@ -93,7 +93,7 @@ makes when a release carries no Windows installer.
 ### When there is nothing new
 
 1. When the feed says this build is current, the dialog is titled **LifeQuest
-   v0.2.10**, the kicker is **Up to date**, and the body reads "That is the newest
+   v0.2.11**, the kicker is **Up to date**, and the body reads "That is the newest
    release — there is nothing to download." **Check again** repeats the read
    (forcing the network); **Close** dismisses.
 2. If the check could not answer, the kicker reads **Update check failed**, the
@@ -104,9 +104,9 @@ makes when a release carries no Windows installer.
 ### Check and preview from Settings
 
 - **Settings → Updates** is titled **Updates** with the subtitle "LifeQuest
-  v0.2.10 · checked from GitHub Releases". Its status line summarises the last
+  v0.2.11 · checked from GitHub Releases". Its status line summarises the last
   answer: "Checking GitHub for a newer release…", "LifeQuest 0.3.0 is available
-  (you are on v0.2.10).", "Up to date — v0.2.10 is the newest release.", "No answer
+  (you are on v0.2.11).", "Up to date — v0.2.11 is the newest release.", "No answer
   from the update feed yet.", or the failure. **Check now** reads the feed again
   (it reads **Checking…** while it works), and **Release page** appears when a
   release is being offered.
@@ -123,7 +123,7 @@ makes when a release carries no Windows installer.
 | Part | What it does |
 |---|---|
 | **Update available** | Quiet label beside the build number, shown only while an offer (or the preview) is up. |
-| Version number | `v0.2.10`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.0 is available". Glows only when there is something to install. |
+| Version number | `v0.2.11`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.0 is available". Glows only when there is something to install. |
 | In-app notice | **LifeQuest 0.3.0 is available**, the build you are running, **View update**, and a dismissal. A polite status region: no focus, no blocking. |
 | Native notification | Title **LifeQuest 0.3.0 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |
