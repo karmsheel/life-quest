@@ -214,6 +214,16 @@ vault's own binding.
    profile no longer offers** — with **Use <model>** moving it onto the model the
    profile uses now. The pill names the chat's own model when you have not picked
    one, so it always names the model the next turn actually runs on.
+11. A conversation Hermes had paused — its turn was interrupted, for example
+   because the app was quit while it was answering — used to be a dead end that
+   answered nothing and told you to start a new chat. It now recovers in place: the
+   app acknowledges the lost turn the same way the host's own `/discard` does,
+   the message you had sent runs, and the reply appears in the same chat with all of
+   its history. The interrupted turn is marked **Ended before finishing** with a
+   note saying the chat was recovered and continues; nothing is replayed, so the
+   lost turn's side effects are never repeated. If the companion cannot be reached
+   to recover it (an older Hermes, no CLI), the chat says it is paused and suggests
+   a new chat, as before.
 
 ### The composer's controls
 

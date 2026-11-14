@@ -44,6 +44,9 @@ import {
   createdSessionFromPayload,
   messagesFromPayload,
   modelCatalogFromPayload,
+  PAUSED_CONVERSATION_MESSAGE,
+  PAUSED_RECOVERED_IDLE_REASON,
+  PAUSED_RECOVERED_REASON,
   sanitizeTranscriptRows,
   onboardingContextOf,
   runtimeRequestBody,
@@ -1489,6 +1492,76 @@ export async function companionSessionDelete(
 }
 
 /**
+ * How long a paused-chat recovery waits for the message queued behind the lost
+ * turn to produce its answer, and how often it asks the transcript.
+ *
+ * Waiting is the point: the recovery acknowledges the lost turn, and Hermes then
+ * runs the send that was committed but never executed. Its answer lands in the
+ * transcript, not on the stream that already closed, so the app polls the
+ * transcript instead of showing a turn that never answers. The window is a
+ * bound on the UI's "running" state, not on the agent: a slower answer still
+ * lands, and the operator's next send asks for the chat again.
+ */
+const PAUSE_RECOVERY_POLL_MS = 400;
+const PAUSE_RECOVERY_WINDOW_MS = 30_000;
+
+/**
+ * Acknowledge the turn Hermes fenced as unknown so the paused conversation runs
+ * again.
+ *
+ * `hermes sessions discard` is the non-interactive form of the host's own
+ * `/discard`: it resolves the exact unknown admission through
+ * `prompt.resolve_unknown`, without replaying the lost turn. The CLI is already
+ * how this app drives its host (`gateway ensure`, `config set`), and the
+ * session-control surface it speaks is the only one that can resolve an unknown
+ * turn — the HTTP sessions API the dock chats over has no route for it. The same
+ * `HERMES_HOME` and multiplexing flags the gateway was ensured with are used, so
+ * the command reaches the host that is actually serving this vault's profile.
+ */
+async function discardLostTurn(sessionId: string): Promise<void> {
+  const cli = await whichHermes();
+  if (!cli) throw new Error("The Hermes CLI is not on PATH.");
+  const home = hermesRoot(process.env, os.homedir());
+  const profile = await activeProfileName();
+  await runHermes(
+    cli,
+    ["-p", profile, "sessions", "discard", sessionId, "--yes"],
+    { HERMES_HOME: home, GATEWAY_MULTIPLEX_PROFILES: "true" },
+  );
+}
+
+/**
+ * Recover a conversation Hermes paused, and read back the transcript it
+ * continues in. Throws when the host cannot be made to recover at all.
+ *
+ * The transcript before the discard is the baseline: the assistant row on top
+ * of it is the answer to the message that was queued behind the lost turn, and
+ * it is what proves the chat runs again. Returning the rows rather than a
+ * boolean lets the caller hand the turn an authoritative snapshot, so the dock
+ * paints the recovered conversation instead of trusting its own partial view.
+ */
+async function recoverPausedChat(
+  sessionId: string,
+): Promise<{ snapshot: TranscriptMessage[]; resumed: boolean }> {
+  const before = await companionSessionMessages(sessionId);
+  const baseline = before.ok ? before.value.length : 0;
+  await discardLostTurn(sessionId);
+  let latest: TranscriptMessage[] = before.ok ? before.value : [];
+  const deadline = Date.now() + PAUSE_RECOVERY_WINDOW_MS;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, PAUSE_RECOVERY_POLL_MS));
+    const read = await companionSessionMessages(sessionId);
+    if (read.ok) {
+      latest = read.value;
+      if (read.value.length > baseline && read.value.at(-1)?.role === "assistant") {
+        return { snapshot: read.value, resumed: true };
+      }
+    }
+    if (Date.now() >= deadline) return { snapshot: latest, resumed: false };
+  }
+}
+
+/**
  * One turn: the operator's text, the vault context, and — when the composer's
  * pills carry a pick — the model/provider and thinking level that turn should
  * run under. The pick is per turn, never persisted app-side beyond the
@@ -1524,6 +1597,10 @@ export async function companionChatStream(
   // the turn instead of leaving a permanent spinner.
   let terminated = false;
   let started = false;
+  // Set when the host says this conversation is paused behind a lost turn. The
+  // token is never reported: a paused chat is recoverable, so this function
+  // recovers it and settles the turn on the transcript instead.
+  let paused = false;
   // One abort controller owns the whole request, and one timer measures the
   // silence. Every byte received pushes the timer out; nothing else does.
   const stall = new AbortController();
@@ -1533,6 +1610,45 @@ export async function companionChatStream(
     idle = setTimeout(() => stall.abort(), streamIdleMs);
     // A watchdog must never be the reason the app process stays alive.
     idle.unref?.();
+  };
+  /**
+   * Recover a paused chat and settle the turn on what the transcript says.
+   *
+   * `ok` means the conversation is usable again: the turn ends with the recovery
+   * note and the re-read rows, so the answer to the queued message paints without
+   * the operator sending anything. `ok: false` is the old dead end, kept as a
+   * fallback for a host that cannot be recovered (an older Hermes, no CLI) — and
+   * only then does the "start a new chat" sentence reach the screen.
+   */
+  const finishPaused = async (): Promise<
+    { ok: true } | { ok: false; error: string }
+  > => {
+    terminated = true;
+    let recovered: { snapshot: TranscriptMessage[]; resumed: boolean } | null = null;
+    try {
+      recovered = await recoverPausedChat(sessionId);
+    } catch {
+      // The CLI refused or could not reach the host: the chat is still paused.
+      recovered = null;
+    }
+    if (recovered !== null) {
+      onEvent({
+        type: "run.incomplete",
+        reason: recovered.resumed ? PAUSED_RECOVERED_REASON : PAUSED_RECOVERED_IDLE_REASON,
+        // Only a transcript that actually grew has an answer for THIS turn. The
+        // pre-discard rows belong to earlier turns, and handing them over would
+        // paint some older reply as if it answered the message that was lost.
+        ...(recovered.resumed && recovered.snapshot.length > 0
+          ? { snapshot: recovered.snapshot }
+          : {}),
+      });
+      return { ok: true };
+    }
+    onEvent({ type: "error", message: PAUSED_CONVERSATION_MESSAGE });
+    if (started) {
+      onEvent({ type: "run.incomplete", reason: "the stream closed before the turn finished" });
+    }
+    return { ok: false, error: PAUSED_CONVERSATION_MESSAGE };
   };
   try {
     const instructions: CompanionInstructionsInput = {
@@ -1564,6 +1680,14 @@ export async function companionChatStream(
     const decoder = new TextDecoder();
     let buf = "";
     const deliver = (evt: ChatStreamEvent) => {
+      if (evt.type === "error" && evt.paused) {
+        // Not an error to report: the host fenced a lost turn and paused this
+        // conversation, and the way out is to acknowledge that turn, not to
+        // tell the operator to abandon the chat. Recovered below, once the
+        // stream has stopped (the host closes it right after this frame).
+        paused = true;
+        return;
+      }
       if (evt.type === "run.completed" || evt.type === "run.stopped" || evt.type === "run.incomplete") {
         terminated = true;
       }
@@ -1583,6 +1707,10 @@ export async function companionChatStream(
     }
     const tail = splitSse(buf + "\n\n");
     for (const evt of tail.events) deliver(evt);
+    // The host paused this conversation behind a lost turn. That is not the end
+    // of the chat: acknowledge the lost turn, let the message committed behind it
+    // run, and settle THIS turn on the transcript that recovery produces.
+    if (paused) return await finishPaused();
     // A stream that closes without its terminal frame is not a finished turn:
     // the gateway died, the socket dropped, or the handler errored after the
     // last delta. Reporting it as completed is how a half-finished turn used to
@@ -1593,6 +1721,9 @@ export async function companionChatStream(
     }
     return { ok: true };
   } catch (e) {
+    // A paused frame that arrived before the transport died still names a
+    // recoverable chat, so the recovery outranks the transport's own sentence.
+    if (paused) return await finishPaused();
     // The abort is ours, so it gets our sentence rather than undici's.
     const message = stall.signal.aborted
       ? STREAM_LOST

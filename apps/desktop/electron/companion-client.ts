@@ -263,13 +263,52 @@ export function buildTurnInput(
 const PAUSED_CONVERSATION_MARKER = /unknown_execution/i;
 
 /**
- * The operator-facing sentence for that state. It names the cause (a turn was
- * interrupted), the consequence (this conversation is paused), and the one
- * control that gets a working chat back — the dock's new-chat button, because a
- * paused conversation cannot be revived from the app at all.
+ * The operator-facing sentence for that state, used when the app could NOT
+ * recover the chat itself. It names the cause (a turn was interrupted) and the
+ * consequence (this conversation is paused).
+ *
+ * It deliberately no longer says the only way out is a new chat: Hermes can
+ * acknowledge the lost turn (`prompt.resolve_unknown`, the `/discard` command,
+ * `hermes sessions discard`) and then runs the messages queued behind it, so the
+ * conversation keeps its history. `companion.ts` performs that recovery on the
+ * paused frame; this sentence is the fallback for when it cannot (an older
+ * Hermes, a missing CLI). Before 2026-11-13 the app only showed this sentence,
+ * which told operators to throw a recoverable conversation away.
  */
 export const PAUSED_CONVERSATION_MESSAGE =
   "This conversation is paused because a turn was interrupted — start a new chat.";
+
+/**
+ * The turn note when the app did recover a paused chat in place.
+ *
+ * The turn itself is honestly still `incomplete` — the interrupted turn never
+ * produced an answer — but the note has to say the chat continues, or an
+ * operator reads the usual "ended before finishing" footer as another dead end
+ * and starts a needless new chat. The reply to the message queued behind the
+ * lost turn arrives in the same snapshot.
+ */
+export const PAUSED_RECOVERED_REASON =
+  "the chat had been paused after an interrupted turn — it was recovered and continues below";
+
+/**
+ * The same note when the recovery found nothing waiting to run.
+ *
+ * A pause can also be met by a send that was never committed behind the lost
+ * turn (the previous client's send was the lost one). The chat is recovered all
+ * the same, but no reply is coming on its own, so the note must not promise one:
+ * it says the chat continues and the operator can send.
+ */
+export const PAUSED_RECOVERED_IDLE_REASON =
+  "the chat had been paused after an interrupted turn — it was recovered; send again to continue";
+
+/**
+ * Whether a host error message is the paused-conversation token. Exported so
+ * the main process can decide to recover instead of report; the token itself
+ * never reaches the screen.
+ */
+export function isPausedConversation(message: string): boolean {
+  return PAUSED_CONVERSATION_MARKER.test(message);
+}
 
 /**
  * Host error vocabulary to the app's, in one place.
@@ -384,7 +423,12 @@ export type ChatStreamEvent =
       /** Authoritative rows for this turn, when the harness keeps them. */
       snapshot?: TranscriptEntry[];
     }
-  | { type: "error"; message: string }
+  /**
+   * `paused` marks the host's paused-conversation token, which the main process
+   * recovers from instead of reporting: the chat is not dead, it is blocked
+   * behind a lost turn that can be acknowledged.
+   */
+  | { type: "error"; message: string; paused?: true }
   /** Pending Decisions this turn's fenced proposals became. */
   | { type: "decisions.filed"; ids: string[]; titles: string[] }
   /** Proposals in this turn's reply that could not be filed, and why. */
@@ -1297,9 +1341,11 @@ export function parseSseBlock(raw: string): ChatStreamEvent | null {
       if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
     } catch {
       if (eventName === "error" || dataRaw) {
+        const raw = dataRaw || "Invalid stream payload";
         return {
           type: "error",
-          message: operatorFacingStreamError(dataRaw || "Invalid stream payload"),
+          message: operatorFacingStreamError(raw),
+          ...(isPausedConversation(raw) ? { paused: true as const } : {}),
         };
       }
       return null;
@@ -1403,13 +1449,15 @@ export function mapStreamEvent(
         ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
         ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
       };
-    case "error":
+    case "error": {
+      const raw = String(data.message ?? data.error ?? "Stream error");
       return {
         type: "error",
-        message: operatorFacingStreamError(
-          String(data.message ?? data.error ?? "Stream error"),
-        ),
+        message: operatorFacingStreamError(raw),
+        // The paused token is not an error to report: main recovers the chat.
+        ...(isPausedConversation(raw) ? { paused: true as const } : {}),
       };
+    }
     default:
       return null;
   }
