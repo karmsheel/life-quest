@@ -255,18 +255,25 @@ type State = {
     flexDirection: string;
     /** Square block: the frame and every tab carry no corner radius. */
     borderRadius: string;
+    /** The frame's one outline, and the fill it sets the wings on. */
+    borderTopWidth: string;
+    borderTopColor: string;
+    background: string;
     padding: { top: number; right: number; bottom: number; left: number };
     options: {
       label: string;
       active: boolean;
       box: Box;
       borderRadius: string;
+      /** Transparent on every tab: the frame is the only outline. */
+      borderTopWidth: string;
+      borderTopColor: string;
+      background: string;
       padding: { top: number; right: number; bottom: number; left: number };
       /** Overflow test: a word wider than its content box scrolls. */
       scrollWidth: number;
       clientWidth: number;
     }[];
-    background: string;
   } | null;
   /** The active wing's rows, as the rail renders them under the switcher. */
   wingRows: { label: string | null; href: string | null; active: boolean }[];
@@ -668,6 +675,35 @@ describe("shell sidebar (docked rail)", () => {
         `the wide wing switcher's "${option.label}" tab kept a rounded corner (${option.borderRadius})`,
       );
     }
+    // One outline, not two. The frame draws the control's edge; the selected
+    // wing is marked by the raised fill alone, because the shared active border
+    // sat three pixels inside the frame's line and read as a second, nested
+    // outline around the wing.
+    assert.equal(
+      expanded.wingSwitcher.borderTopWidth,
+      "1px",
+      `the wide wing switcher's frame draws no outline (${expanded.wingSwitcher.borderTopWidth})`,
+    );
+    assert.ok(
+      alphaOf(expanded.wingSwitcher.borderTopColor) > 0,
+      `the wide wing switcher's frame line is invisible (${expanded.wingSwitcher.borderTopColor})`,
+    );
+    for (const option of expanded.wingSwitcher.options) {
+      assert.equal(
+        alphaOf(option.borderTopColor),
+        0,
+        `the wide wing switcher's "${option.label}" tab paints a second outline inside the frame (${option.borderTopColor})`,
+      );
+    }
+    const selectedWing = expanded.wingSwitcher.options.find(
+      (option) => option.active,
+    );
+    assert.ok(selectedWing, "the wide wing switcher marks no active tab");
+    assert.notEqual(
+      selectedWing.background,
+      expanded.wingSwitcher.background,
+      `the selected wing (${selectedWing.background}) is the frame's own fill (${expanded.wingSwitcher.background}); without its line it would not read as selected`,
+    );
     assert.ok(
       Math.abs(
         expanded.wingSwitcher.box.left -

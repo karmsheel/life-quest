@@ -545,8 +545,14 @@ const SAMPLE = `(() => {
           flexDirection: getComputedStyle(wings).flexDirection,
           // The switcher is a square block set inside the rail's own padding, and
           // its options must not crowd their words: both are read off the
-          // shipping control rather than inferred from the stylesheet.
+          // shipping control rather than inferred from the stylesheet. The frame
+          // is also the control's only outline — every tab's border is transparent
+          // (the active tab is marked by its raised fill), so the measured frame
+          // line must be the one and only line in the block.
           borderRadius: getComputedStyle(wings).borderRadius,
+          borderTopWidth: getComputedStyle(wings).borderTopWidth,
+          borderTopColor: getComputedStyle(wings).borderTopColor,
+          background: getComputedStyle(wings).backgroundColor,
           padding: (() => {
             const style = getComputedStyle(wings);
             return {
@@ -565,6 +571,9 @@ const SAMPLE = `(() => {
               active: el.classList.contains("is-active"),
               box: box(el),
               borderRadius: style.borderRadius,
+              borderTopWidth: style.borderTopWidth,
+              borderTopColor: style.borderTopColor,
+              background: style.backgroundColor,
               padding: {
                 top: parseFloat(style.paddingTop),
                 right: parseFloat(style.paddingRight),
@@ -576,8 +585,7 @@ const SAMPLE = `(() => {
               scrollWidth: el.scrollWidth,
               clientWidth: el.clientWidth
             };
-          }),
-          background: getComputedStyle(wings).backgroundColor
+          })
         }
       : null,
     wingRows: wingRows

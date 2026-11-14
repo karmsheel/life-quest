@@ -122,8 +122,10 @@ The rail:
 
 - A collapse toggle at the top (**Collapse sidebar** / **Expand sidebar**), with
   `aria-expanded` and `aria-controls="nav-rail"`.
-- The five-wing band, a square block directly under the title bar. Collapsed, it
-  turns vertical and all five wings stay reachable.
+- The five-wing band, a square block directly under the title bar. Its frame is
+  the block's one outline: the selected wing is marked by its raised fill, not by
+  a second line inside the frame. Collapsed, the band turns vertical and all five
+  wings stay reachable.
 - The active wing's pages, each with an icon and its label.
 - A divider, then the **Chats** section. Its header carries the title **Chats**
   plus a search icon (**Search chats**) and a view-options icon
