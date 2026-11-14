@@ -224,6 +224,8 @@ export {
   getRow,
   upsertRow,
   insertRows,
+  updateRowCellsBulk,
+  normaliseFinancePayeeCells,
   deleteRow,
   checkDatabaseCells,
   validateRowCells,
@@ -274,6 +276,7 @@ export {
   syncLinkedDatabases,
   listSyncConflicts,
   resolveSyncConflict,
+  rebaseSyncBaselines,
 } from "./adapters.ts";
 export {
   installFinanceKit,
@@ -298,6 +301,11 @@ export {
   isStoredReceiptPath,
   isReceiptStoreReady,
 } from "./capture.ts";
+export { sanitisePayee, PAYEE_SANITISER_VERSION } from "./payee.ts";
+export type { PayeeLintIssue, PayeeSanitiseInput, PayeeSanitiseResult } from "./payee.ts";
+export { normaliseFinancePayeeHistory } from "./finance-payee.ts";
+export type { PayeeMigrationOutcome } from "./finance-payee.ts";
+export type { FinancePayeeNormalisation } from "./domain-databases.ts";
 export {
   budgetVsActual,
   netWorth,

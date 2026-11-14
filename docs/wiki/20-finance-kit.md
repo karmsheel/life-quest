@@ -124,6 +124,32 @@ happens.
 5. To undo the thread's last capture, ask the companion to undo it. The row is
    deleted; a receipt image it cited stays in the vault.
 
+The payee is the merchant or item only. A date, a known account name, a category
+word or filler such as **spent on** is stripped, so `9/28/26 spent on petrol at
+Engen` posts with payee **Petrol at Engen**. Your sentence is kept verbatim in
+`notes`, so the words you typed are never lost. A leading date in the sentence
+sets the transaction date: `9/28/26` and `28/09/2026` both read 2026-09-28,
+`03/04/2026` is read day/month, and an explicit `YYYY-MM-DD` still wins.
+
+A category named in the sentence still wins. Otherwise a keyword rule picks a
+category that exists in the vault: **petrol**, **fuel**, **diesel**, **garage**,
+**Engen**, **Shell** or **Sasol** → **Fuel**; **meat**, **butcher** or **steak** →
+**Meat**; **coffee** → **Food**. A rule only matches a category that exists —
+the name match is case-insensitive, and **Food** finds **Food & Drink** by its
+first word — so a book with no **Fuel** category leaves that row
+**Uncategorized**.
+
+### Clean payees
+
+A vault written before payee hygiene holds the old rows: the payee still carries
+the date, the account name, the category words and the filler from the sentence.
+Opening that vault normalises the history once. Each polluted payee becomes the
+merchant or item, and a row that had no `notes` keeps its original wording
+there, so nothing the operator typed is destroyed. The repair writes no
+Decisions: it is an app-side migration, not a shelf of approvals. It records one
+**Normalised payees** line in the [Log](./26-log.md) with the scanned and changed
+counts, and the next open finds the work done and writes nothing.
+
 ### Work the plan surfaces
 
 The starter pages are pinned on the **Finance** board and the **Life** board:
@@ -213,10 +239,13 @@ in. The lens-scoped view is the Dashboard's **Pending decisions** card. See
 
 How a capture is resolved. The amount may be written `R85`, `ZAR 85`,
 `$20`, `USD 20`, with a leading minus for a spend. The date is an explicit
-`YYYY-MM-DD`, **yesterday**, or today. Income words such as **received**,
-**income**, **salary**, **refund** or **got paid** make the value positive;
-otherwise it is a spend and negative. The category is matched by name against
-**Categories**, and **Uncategorized** is created if the book has none. The
+`YYYY-MM-DD`, a leading date in the sentence (`9/28/26`, `28/09/2026`,
+`28 Sep 2026`; an ambiguous day/month reads day/month), **yesterday**, or today.
+The payee is the merchant or item, and the sentence is kept verbatim in `notes`.
+Income words such as **received**, **income**, **salary**, **refund** or **got
+paid** make the value positive; otherwise it is a spend and negative. The
+category is one named in the sentence; otherwise the keyword rules pick an
+existing category, and **Uncategorized** is created if the book has none. The
 account is chosen in this order: one named in the sentence, the default capture
 account, the sole transactional account in that currency; otherwise it asks. The
 provenance is the chat thread, which is what undo and correct key on.

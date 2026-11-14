@@ -24,7 +24,9 @@ import {
   rowDisplayLabel,
   isDomainLive,
   listDatabases,
+  describePayeeIssues,
   listRows,
+  normaliseFinancePayeeCells,
   upsertRow,
   validateRowCells,
 } from "./domain-databases.ts";
@@ -866,13 +868,23 @@ export async function executeDatabaseTool(
       if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
         return fail("VALIDATION", "cells must be a JSON object keyed by column id");
       }
-      const cellMap = cells as Record<string, unknown>;
+      const rawCellMap = cells as Record<string, unknown>;
       // validateCells passes vacuously on {}, so an empty map is rejected here.
-      if (Object.keys(cellMap).length === 0) {
+      if (Object.keys(rawCellMap).length === 0) {
         return fail("VALIDATION", "cells must not be empty");
       }
 
       const { slug: domainSlug } = live;
+      // Normalise before the write is labelled or filed, so a pending Decision
+      // shows the cells that will actually land — not the polluted payee.
+      const normalisedPayee = await normaliseFinancePayeeCells(
+        root,
+        domainSlug,
+        String(args.databaseId),
+        rawCellMap,
+      );
+      const cellMap = normalisedPayee.cells;
+      const payeeWarnings = describePayeeIssues(normalisedPayee.issues);
       const databaseId = String(args.databaseId);
       const rowId = isNonEmptyString(args.id) ? String(args.id) : null;
 
@@ -924,6 +936,7 @@ export async function executeDatabaseTool(
           databaseId,
           rowId: written.value.id,
           rowCount: 1,
+          ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
         };
       }
 
@@ -950,7 +963,13 @@ export async function executeDatabaseTool(
       });
       if ("error" in filed) return filed;
       const decisionId = String((filed as { decisionId: string }).decisionId);
-      return { decisionId, status: "pending", posted: false, rowCount: 1 };
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        rowCount: 1,
+        ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
+      };
     }
 
     case "delete_row": {
@@ -1134,6 +1153,7 @@ export async function executeDatabaseTool(
         (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
       )?.id;
       const seenExternal = new Set<string>();
+      const batchPayeeWarnings = new Set<string>();
       const ids: string[] = [];
       const rows: Array<{ id: string; cells: Record<string, unknown> }> = [];
       const labels: string[] = [];
@@ -1143,9 +1163,19 @@ export async function executeDatabaseTool(
         if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must be a JSON object keyed by column id`);
         }
-        const cellMap = cells as Record<string, unknown>;
-        if (Object.keys(cellMap).length === 0) {
+        const draftCellMap = cells as Record<string, unknown>;
+        if (Object.keys(draftCellMap).length === 0) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must not be empty`);
+        }
+        const normalisedPayee = await normaliseFinancePayeeCells(
+          root,
+          domainSlug,
+          databaseId,
+          draftCellMap,
+        );
+        const cellMap = normalisedPayee.cells;
+        for (const warning of describePayeeIssues(normalisedPayee.issues)) {
+          batchPayeeWarnings.add(warning);
         }
 
         const typed = await validateRowCells(root, domainSlug, databaseId, cellMap);
@@ -1193,6 +1223,7 @@ export async function executeDatabaseTool(
         databaseId,
         rowCount: rows.length,
         rowIds: ids,
+        ...(batchPayeeWarnings.size > 0 ? { warnings: [...batchPayeeWarnings] } : {}),
       };
     }
 
