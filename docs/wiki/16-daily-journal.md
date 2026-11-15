@@ -96,6 +96,18 @@ An empty day is an empty editor, not an error and not a page of instructions.
 - The note is vault-level: it belongs to no area and is not filtered by the area lens. Every
   scope of a review sees the same journal, narrowed only by the period window.
 
+### Moving the caret
+
+- Up and Down step one line of the page **as it is drawn**, not one paragraph break in the
+  file. A paragraph long enough to wrap therefore moves the caret through the lines it wraps
+  onto, and the caret crosses into the neighbouring paragraph only from the first line going
+  up or the last line going down — the same distance in both directions, whichever end of a
+  paragraph the wrapped line happens to sit at.
+- Enter starts a new paragraph. **Shift+Enter** keeps a line break inside the paragraph you
+  are in, and a paragraph written that way wraps and steps the same way as any other.
+- The arrow keys only ever move the caret: a traversal up and down a note leaves every
+  character of the note where it was.
+
 ### Saving
 
 - There is no save control. Autosave fires on a short debounce, on the editor losing focus,

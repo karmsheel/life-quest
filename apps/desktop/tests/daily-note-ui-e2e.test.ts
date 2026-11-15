@@ -73,6 +73,12 @@ const GRAPHITE_FOCUS_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/daily-note-graphite-focus.png",
 );
+/** The day's page with a soft-wrapped paragraph open as its writing line: the
+ *  artifact for the report that the arrows step visual lines, not newlines. */
+const ARROWS_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-arrows.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -426,6 +432,7 @@ describe("daily note ui e2e", () => {
     fs.rmSync(CALENDAR_SHOT, { force: true });
     fs.rmSync(GRAPHITE_SHOT, { force: true });
     fs.rmSync(GRAPHITE_FOCUS_SHOT, { force: true });
+    fs.rmSync(ARROWS_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
@@ -1413,6 +1420,11 @@ describe("daily note ui e2e", () => {
       fs.existsSync(SPLIT_LEFT_SHOT),
       true,
       "driver captured no screenshot of the wide page with the chat on the left",
+    );
+    assert.equal(
+      fs.existsSync(ARROWS_SHOT),
+      true,
+      "driver captured no screenshot of the wrapped paragraph the arrows step through",
     );
   });
 });
