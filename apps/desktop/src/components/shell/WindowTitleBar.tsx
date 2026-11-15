@@ -50,6 +50,7 @@ export function WindowTitleBar() {
     <header
       className="window-titlebar"
       data-nav-collapsed={navCollapsed ? "true" : undefined}
+      data-nav-place={themeChrome.navRail.place}
     >
       {/*
         The domain lens, raised into the window's strip. It is not a control

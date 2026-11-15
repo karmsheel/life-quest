@@ -62,6 +62,7 @@ const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
 const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
 const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
 const VARIANTS_PNG = path.join(artifactsDir, "themes-v2-variants.png");
+const SIDEBAR_RIGHT_PNG = path.join(artifactsDir, "themes-v2-sidebar-right.png");
 
 const failures = [];
 const checks = [];
@@ -193,6 +194,32 @@ const SAMPLE = `(async () => {
     areaInitials: [...document.querySelectorAll(".domain-switcher__initial")].map((el) =>
       (el.textContent ?? "").trim(),
     ),
+    navPlaceAttr: document.documentElement.dataset.chromeNavPlace ?? null,
+    innerWidth: window.innerWidth,
+    railRect: (() => {
+      const el = document.querySelector(".nav-rail");
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: Math.round(b.left), right: Math.round(b.right) };
+    })(),
+    mainRect: (() => {
+      const el = document.querySelector(".shell__main");
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: Math.round(b.left), right: Math.round(b.right) };
+    })(),
+    chatRect: (() => {
+      const el = document.querySelector(".chat-panel");
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: Math.round(b.left), right: Math.round(b.right) };
+    })(),
+    lensCenter: (() => {
+      const el = document.querySelector(".window-titlebar__lens");
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return Math.round(b.left + b.width / 2);
+    })(),
     navWidthAttr: document.documentElement.dataset.chromeNavWidth ?? null,
     navWidthVar: getComputedStyle(document.documentElement)
       .getPropertyValue("--shell-sidebar-width")
@@ -781,6 +808,63 @@ async function main() {
     }),
   );
 
+  // ── 6c: the sidebar on the trailing edge ────────────────────────────────
+  writeThemeFile("nav-right.json", {
+    name: "nav-right",
+    label: "Sidebar Right",
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "labels" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+      navRail: { place: "right", width: "wide" },
+    },
+  });
+  const rightRail = await waitFor(
+    (s) =>
+      s.navPlaceAttr === "right" &&
+      s.preview &&
+      s.railRect &&
+      s.mainRect &&
+      s.railRect.left > s.mainRect.right,
+  );
+  check(
+    "sidebar-can-sit-on-the-right",
+    rightRail?.navPlaceAttr === "right" &&
+      rightRail.railRect.left > rightRail.mainRect.right &&
+      rightRail.railRect.right >= rightRail.innerWidth - 20 &&
+      rightRail.mainRect.left <= 2 &&
+      rightRail.lensCenter !== null &&
+      rightRail.lensCenter > 0 &&
+      rightRail.lensCenter < rightRail.railRect.left,
+    JSON.stringify({
+      place: rightRail?.navPlaceAttr,
+      rail: rightRail?.railRect,
+      main: rightRail?.mainRect,
+      lens: rightRail?.lensCenter,
+      width: rightRail?.innerWidth,
+    }),
+  );
+
+  const rightShot = await win.webContents.capturePage();
+  fs.writeFileSync(SIDEBAR_RIGHT_PNG, rightShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromRight = await waitFor(
+    (s) => !s.preview && s.wingTitlebar && s.domainBottom && s.navPlaceAttr === "left",
+  );
+  check(
+    "right-rail-reverts-to-the-kept-theme",
+    backFromRight?.kept === "solar-system.json" &&
+      backFromRight.navPlaceAttr === "left" &&
+      backFromRight.wingTitlebar === true,
+    JSON.stringify({
+      kept: backFromRight?.kept,
+      place: backFromRight?.navPlaceAttr,
+      wing: backFromRight?.wingTitlebar,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -1042,6 +1126,7 @@ async function main() {
   const pressedWingVariant = await click("chrome-wing-variant-icons");
   const pressedDomain = await click("chrome-domain-place-bottom-center");
   const pressedDomainVariant = await click("chrome-domain-variant-pill");
+  const pressedRight = await click("chrome-nav-place-right");
   const pressedNarrow = await click("chrome-nav-width-narrow");
   const overriddenChrome = await waitFor(
     (s) =>
@@ -1050,6 +1135,10 @@ async function main() {
       s.domainBottom &&
       !s.domainBelow &&
       s.navWidthAttr === "narrow" &&
+      s.navPlaceAttr === "right" &&
+      s.railRect &&
+      s.mainRect &&
+      s.railRect.left > s.mainRect.right &&
       s.wingText === "H" &&
       s.domainPill,
   );
@@ -1059,6 +1148,7 @@ async function main() {
       pressedWingVariant === true &&
       pressedDomain === true &&
       pressedDomainVariant === true &&
+      pressedRight === true &&
       pressedNarrow === true &&
       overriddenChrome?.wingTitlebar === true &&
       overriddenChrome.wingFloating === false &&
@@ -1066,13 +1156,23 @@ async function main() {
       overriddenChrome.domainBottom === true &&
       overriddenChrome.domainBelow === false &&
       overriddenChrome.domainPill === true &&
-      overriddenChrome.navWidthAttr === "narrow",
+      overriddenChrome.navWidthAttr === "narrow" &&
+      overriddenChrome.navPlaceAttr === "right" &&
+      overriddenChrome.railRect.left > overriddenChrome.mainRect.right,
     JSON.stringify({
       pressed:
-        pressedWing && pressedWingVariant && pressedDomain && pressedDomainVariant && pressedNarrow,
+        pressedWing &&
+        pressedWingVariant &&
+        pressedDomain &&
+        pressedDomainVariant &&
+        pressedRight &&
+        pressedNarrow,
       wingTitlebar: overriddenChrome?.wingTitlebar,
       wingText: overriddenChrome?.wingText,
       pill: overriddenChrome?.domainPill,
+      navPlace: overriddenChrome?.navPlaceAttr,
+      railLeft: overriddenChrome?.railRect?.left,
+      mainRight: overriddenChrome?.mainRect?.right,
       wingFloating: overriddenChrome?.wingFloating,
       domainBottom: overriddenChrome?.domainBottom,
       domainBelow: overriddenChrome?.domainBelow,
@@ -1086,18 +1186,26 @@ async function main() {
   win.webContents.reload();
   await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
   const afterChromeReload = await waitFor(
-    (s) => s.shell && s.kept === "agent-written.json" && s.wingTitlebar && s.domainBottom && s.navWidthAttr === "narrow",
+    (s) =>
+      s.shell &&
+      s.kept === "agent-written.json" &&
+      s.wingTitlebar &&
+      s.domainBottom &&
+      s.navWidthAttr === "narrow" &&
+      s.navPlaceAttr === "right",
     20_000,
   );
   check(
     "operator-chrome-survives-a-reload",
     afterChromeReload?.wingTitlebar === true &&
       afterChromeReload.domainBottom === true &&
-      afterChromeReload.navWidthAttr === "narrow",
+      afterChromeReload.navWidthAttr === "narrow" &&
+      afterChromeReload.navPlaceAttr === "right",
     JSON.stringify({
       wingTitlebar: afterChromeReload?.wingTitlebar,
       domainBottom: afterChromeReload?.domainBottom,
       nav: afterChromeReload?.navWidthAttr,
+      navPlace: afterChromeReload?.navPlaceAttr,
     }),
   );
 
@@ -1111,7 +1219,12 @@ async function main() {
   }
   const pressedChromeReset = await click("chrome-reset");
   const resetChrome = await waitFor(
-    (s) => s.wingFloating && !s.wingTitlebar && s.domainBelow && s.navWidthAttr === "wide",
+    (s) =>
+      s.wingFloating &&
+      !s.wingTitlebar &&
+      s.domainBelow &&
+      s.navWidthAttr === "wide" &&
+      s.navPlaceAttr === "left",
   );
   check(
     "reset-returns-the-themes-chrome",
@@ -1119,12 +1232,14 @@ async function main() {
       resetChrome?.wingFloating === true &&
       resetChrome.wingTitlebar === false &&
       resetChrome.domainBelow === true &&
-      resetChrome.navWidthAttr === "wide",
+      resetChrome.navWidthAttr === "wide" &&
+      resetChrome.navPlaceAttr === "left",
     JSON.stringify({
       pressed: pressedChromeReset,
       wingFloating: resetChrome?.wingFloating,
       domainBelow: resetChrome?.domainBelow,
       nav: resetChrome?.navWidthAttr,
+      navPlace: resetChrome?.navPlaceAttr,
     }),
   );
 
@@ -1179,6 +1294,7 @@ async function main() {
       material: path.relative(desktopRoot, MATERIAL_PNG),
       layout: path.relative(desktopRoot, LAYOUT_PNG),
       variants: path.relative(desktopRoot, VARIANTS_PNG),
+      sidebarRight: path.relative(desktopRoot, SIDEBAR_RIGHT_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

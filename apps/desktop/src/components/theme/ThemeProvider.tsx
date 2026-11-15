@@ -50,6 +50,7 @@ import {
   MOTIONS,
   parseThemeFile,
   RADII,
+  NAV_RAIL_PLACES,
   NAV_RAIL_WIDTHS,
   resolveChrome,
   resolveMaterial,
@@ -153,8 +154,14 @@ function readStoredChromeOverride(): ThemeChromeOverride {
       if (Object.keys(domain).length > 0) override.domainSwitcher = domain;
     }
     if (isRecord(raw.navRail)) {
+      const place = pick(raw.navRail.place, NAV_RAIL_PLACES);
       const width = pick(raw.navRail.width, NAV_RAIL_WIDTHS);
-      if (width) override.navRail = { width };
+      if (place || width) {
+        override.navRail = {
+          ...(place ? { place } : {}),
+          ...(width ? { width } : {}),
+        };
+      }
     }
     return override;
   } catch {

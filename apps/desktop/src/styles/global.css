@@ -13174,3 +13174,95 @@ button.chat-panel__activity-line:hover {
 .domain-switcher--list .domain-switcher__name {
   max-width: 100%;
 }
+
+/* ——— the sidebar on the right ————————————————————————————————————————————
+   A theme can put the navigation on the window's trailing edge. The panes keep
+   their DOM order and the tray re-places them by track; the rail trades its
+   trailing hairline for a leading one and carries the frame's slack out to the
+   window's edge, which the dock does when it is the last column.
+
+   The rail also stops overlapping the window strip here: the strip's own
+   trailing controls (the caption buttons on Windows and Linux) live in that
+   corner, and the sidebar must never paint over them. */
+:root[data-chrome-nav-place="right"] .shell {
+  grid-template-columns: 1fr var(--chat-column) var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell > .nav-rail {
+  grid-column: 3;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+  width: calc(var(--nav-column) + var(--shell-frame));
+  height: calc(100% + var(--shell-frame));
+  margin-top: 0;
+  margin-right: calc(-1 * var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="right"] .shell > .nav-rail .nav-rail__header {
+  justify-content: flex-start;
+  margin: 0 0 0.1rem -0.35rem;
+}
+
+:root[data-chrome-nav-place="right"] .shell > .shell__main {
+  grid-column: 1;
+}
+
+:root[data-chrome-nav-place="right"] .shell > .chat-panel {
+  grid-column: 2;
+  width: var(--chat-column);
+}
+
+/* The dock beside the rail, when the rail is on the right: the dock takes the
+   window's leading column, the sheet the middle, the rail the trailing one. */
+:root[data-chrome-nav-place="right"] .shell--chat-left {
+  grid-template-columns: var(--chat-column) 1fr var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .shell__main {
+  grid-column: 2;
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .chat-panel {
+  grid-column: 1;
+  width: calc(var(--chat-column) + var(--shell-frame));
+}
+
+/* Collapsed dock: the sheet already gives up its frame to the window edge in
+   the trailing arrangement, but the rail is the trailing pane now, so the sheet
+   keeps its own box and the rail carries the slack. */
+:root[data-chrome-nav-place="right"] .shell--chat-collapsed.shell--chat-right > .shell__main {
+  width: 100%;
+}
+
+/* The seam's handle follows the dock: its leading edge in the trailing
+   arrangement, its trailing edge in the leading one. */
+:root[data-chrome-nav-place="right"] .shell--chat-right > .chat-divider {
+  left: calc(100% - var(--chat-column) - var(--nav-column));
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .chat-divider {
+  left: var(--chat-column);
+}
+
+/* The strip mirrors with the rail: the lens centres between the window's
+   leading edge and the rail's leading edge, and the trailing track reserves the
+   sidebar's column so the window controls never crowd the tab. */
+.window-titlebar[data-nav-place="right"] {
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(0, auto)
+    minmax(var(--shell-nav-width), 1fr);
+}
+
+.window-titlebar[data-nav-place="right"][data-nav-collapsed] {
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(0, auto)
+    minmax(var(--shell-nav-width-collapsed), 1fr);
+}
+
+/* The moved wing switcher anchors to the page's leading edge when the rail no
+   longer owns it. */
+:root[data-chrome-nav-place="right"] .chrome-bar--titlebar-left {
+  left: 0.6rem;
+}

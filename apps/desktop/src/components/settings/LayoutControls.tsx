@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import {
   DOMAIN_PLACES,
   DOMAIN_VARIANTS,
+  NAV_RAIL_PLACES,
   NAV_RAIL_WIDTHS,
   WING_PLACES,
   WING_VARIANTS,
@@ -64,6 +65,10 @@ const DOMAIN_VARIANT_LABELS: Record<
   pill: "Pill",
   icons: "Icons",
   list: "List",
+};
+const NAV_RAIL_PLACE_LABELS: Record<ThemeChrome["navRail"]["place"], string> = {
+  left: "Left",
+  right: "Right",
 };
 const NAV_RAIL_WIDTH_LABELS: Record<ThemeChrome["navRail"]["width"], string> = {
   narrow: "Narrow",
@@ -163,6 +168,21 @@ export function LayoutControls() {
           domainSwitcher: {
             variant: value as ThemeChrome["domainSwitcher"]["variant"],
           },
+        }),
+    },
+    {
+      key: "nav-place",
+      component: "navRail",
+      testIdPrefix: "chrome-nav-place",
+      label: "Sidebar side",
+      options: NAV_RAIL_PLACES.map((value) => ({
+        value,
+        label: NAV_RAIL_PLACE_LABELS[value],
+      })),
+      selected: chrome.navRail.place,
+      onPick: (value) =>
+        setChromeOverride({
+          navRail: { place: value as ThemeChrome["navRail"]["place"] },
         }),
     },
     {

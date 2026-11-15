@@ -32,6 +32,7 @@ export type DomainSwitcherPlace =
   | "hidden";
 export type DomainSwitcherVariant = "segmented" | "pill" | "icons" | "list";
 
+export type NavRailPlace = "left" | "right";
 export type NavRailWidth = "narrow" | "default" | "wide";
 
 export type ThemeChrome = {
@@ -40,8 +41,8 @@ export type ThemeChrome = {
     place: DomainSwitcherPlace;
     variant: DomainSwitcherVariant;
   };
-  /** The sidebar's own column: how much room it keeps for the rail. */
-  navRail: { width: NavRailWidth };
+  /** The sidebar's own column: which edge it holds and how much room it keeps. */
+  navRail: { place: NavRailPlace; width: NavRailWidth };
 };
 
 /**
@@ -86,7 +87,7 @@ export type ThemeFile = {
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
   wingSwitcher: { place: "rail-top", variant: "labels" },
   domainSwitcher: { place: "titlebar-center", variant: "segmented" },
-  navRail: { width: "default" },
+  navRail: { place: "left", width: "default" },
 };
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
@@ -123,6 +124,7 @@ export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "icons",
   "list",
 ];
+export const NAV_RAIL_PLACES: readonly NavRailPlace[] = ["left", "right"];
 export const NAV_RAIL_WIDTHS: readonly NavRailWidth[] = [
   "narrow",
   "default",
@@ -413,6 +415,18 @@ export function parseThemeFile(raw: unknown): ParseResult {
       if (!isRecord(navRail)) {
         return { ok: false, error: "chrome.navRail must be an object" };
       }
+      const place = navRail.place;
+      if (place !== undefined) {
+        if (
+          typeof place !== "string" ||
+          !(NAV_RAIL_PLACES as readonly string[]).includes(place)
+        ) {
+          return {
+            ok: false,
+            error: `chrome.navRail.place must be one of ${NAV_RAIL_PLACES.join(", ")}`,
+          };
+        }
+      }
       const width = navRail.width;
       if (width !== undefined) {
         if (
@@ -424,7 +438,10 @@ export function parseThemeFile(raw: unknown): ParseResult {
             error: `chrome.navRail.width must be one of ${NAV_RAIL_WIDTHS.join(", ")}`,
           };
         }
-        chrome.navRail = { width: width as NavRailWidth };
+        chrome.navRail = {
+          place: (place as NavRailPlace) ?? "left",
+          width: width as NavRailWidth,
+        };
       }
     }
   }
@@ -519,7 +536,7 @@ export const THEME_VOCABULARY = [
   "Shape: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
-  "chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
+  "chrome.navRail.place: left | right; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

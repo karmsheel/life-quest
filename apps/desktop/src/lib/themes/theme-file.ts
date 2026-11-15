@@ -47,6 +47,7 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
     NAV_RAIL_WIDTHS[chrome.navRail.width],
   );
   root.dataset.chromeNavWidth = chrome.navRail.width;
+  root.dataset.chromeNavPlace = chrome.navRail.place;
 }
 
 /**
