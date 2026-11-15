@@ -1719,11 +1719,12 @@ export async function fxRefreshForE2e(): Promise<void> {
  * Tell whatever is open that the feed answered on the watch's clock.
  *
  * The renderer gets every answer the watch reports — a release to show, or the
- * news that an announced release is gone — over one channel, so the badge and the
- * notice always draw the feed's latest answer rather than two views that can
+ * news that a release is gone — over one channel, so the dock's badge and its
+ * dialog always draw the feed's latest answer rather than two views that can
  * disagree. The OS notification is the second half, and it fires only when the
- * window is not focused: an operator looking at the studio already gets the
- * in-app notice, and two notifications for one release would be one too many.
+ * window is not focused: an operator looking at the studio already sees the
+ * build number glowing, and two notifications for one release would be one too
+ * many.
  *
  * The e2e seam skips it. A hidden rig window is never focused, so without this
  * the suite would fire a real desktop notification on the machine running it —
@@ -1744,7 +1745,7 @@ function announceUpdateNews(news: UpdateWatchNews): void {
     });
     // Clicking the notification is the operator answering it: bring the window
     // that carries the offer to the front rather than leaving them to find it in
-    // the taskbar. The in-app notice is already waiting there.
+    // the taskbar. The glowing build number is already waiting there.
     notification.on("click", () => {
       const target = productWindow;
       if (!target || target.isDestroyed()) return;
@@ -1754,8 +1755,8 @@ function announceUpdateNews(news: UpdateWatchNews): void {
     });
     notification.show();
   } catch {
-    // A notification is a courtesy; the in-app notice and the rail's glow carry
-    // the news whether or not the OS accepts it.
+    // A notification is a courtesy; the dock's glowing build number carries the
+    // news whether or not the OS accepts it.
   }
 }
 

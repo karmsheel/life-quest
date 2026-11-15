@@ -3,41 +3,87 @@
  * process, the REAL preload, and the REAL renderer against a release feed this
  * rig owns, whose newest release changes *while the app is running*.
  *
- * `update-badge.electron.mjs` proves the badge and the popup against a stubbed
- * bridge. `update-install.electron.mjs` proves the feed rules and the download
- * against the real main. This one covers the fact neither of those can reach, and
- * the reason the feature was asked for:
+ * There is no in-window notice card any more. The operator asked for it gone:
+ * the watch's news surfaces through the dock action bar's build number — its
+ * glow, the "Update available" caption beside it, and the real dialog that
+ * number opens — plus the OS notification main raises. This rig proves that
+ * world, and the absence of the card is a measurement in every sample:
+ * `noticeCount` is the number of `.update-notice` elements in the page, and it
+ * is asserted to be 0 at every step.
  *
- *   · a release published after launch reaches the renderer with no click and no
- *     reload — main's watch reads the feed on its own clock, pushes the answer
- *     over IPC, and the operator gets an in-app notice plus the rail's glow;
- *   · the notice is announced once per release, not on every tick;
- *   · a dismissed notice stays dismissed while the same release keeps being
- *     offered;
+ * `update-badge.electron.mjs` proves the badge, its caption and the dialog
+ * against a stubbed bridge, including the narrow dock where the caption
+ * retreats. `update-install.electron.mjs` proves the feed rules and the download
+ * against the real main. This rig covers the fact neither of those can reach:
+ *
+ *   · a release published after launch reaches the renderer with no click, no
+ *     reload and no card — main's watch reads the feed on its own clock, pushes
+ *     the answer over IPC, and the dock's build number starts to glow;
+ *   · the glow is not announced twice on later ticks (the caption and the offer
+ *     are the whole surface, so "once" is a quiet bar, not a card count);
  *   · a watch read that fails is quiet and does not erase the offer the operator
  *     can still install;
- *   · a release that stops being offered clears the notice, and one that comes
- *     back is announced again;
- *   · "View update" opens the real upgrade dialog, not a second weaker offer.
+ *   · a release that stops being offered clears the glow and its caption, and a
+ *     release that comes back glows again;
+ *   · clicking the glowing build number opens the real upgrade dialog, and
+ *     "Not now" closes it without losing the offer.
+ *
+ * The app has to reach its dock: the badge lives in the dock's action bar, and
+ * the notice this rig used to sample lived above every route. So this rig is
+ * the old one plus a throwaway world — a vault created in the temp dir and a
+ * `recent.json` that reopens it, a Pi endpoint pointing at the rig's own server
+ * so the companion gate answers ready, and free MCP doors — and NOTHING else
+ * changes. The operator's profile and vault are never read.
+ *
+ * ── every way this could fail, written down before the code ───────────────────
+ *
+ *  1. The app never reaches the dock, so the badge is absent — a broken
+ *     `recent.json`/endpoint seed, or the companion gate stuck on its setup
+ *     screen. The rig names the screen it actually landed on.
+ *  2. The launch check offers nothing, yet the build number glows (or carries
+ *     `data-update-state="available"`), or a caption is already beside it.
+ *  3. The popup comes back: `.update-notice` is in the DOM, or a dialog is open
+ *     before the operator clicked anything.
+ *  4. The watch's news never reaches the renderer, so a release published while
+ *     the app runs is invisible.
+ *  5. The news arrives but the badge does not turn state: no
+ *     `.update-badge--available`, the wrong `data-update-version`, or no caption.
+ *  6. The caption is not the bar's own element immediately before the badge, or
+ *     the badge stops being the bar's trailing control.
+ *  7. The same release on later ticks raises a second surface — an alert, a
+ *     dialog, a notice, or a second caption — instead of the badge simply
+ *     staying on.
+ *  8. A 500 from the feed clears the offer or adds an error surface: the watch
+ *     failing is not the release being withdrawn.
+ *  9. A withdrawn release leaves the glow or its caption on screen.
+ * 10. A returned release does not glow again.
+ * 11. Clicking the glowing build number opens nothing, opens a weaker offer, or
+ *     opens it without the release the badge names.
+ * 12. "Not now" closes the dialog but loses the offer, or the badge stops being
+ *     the bar's last control afterwards.
  *
  * Isolation: `LIFEQUEST_E2E` points the app at a throwaway profile, keeps the
- * window off the operator's desktop, replaces the feed with this rig's server, and
- * shortens the watch's interval through the seam — the product reads every hour;
- * a rig that waited that long would not be testing the watch at all.
+ * window off the operator's desktop, replaces the feed with this rig's server,
+ * and shortens the watch's interval through the seam — the product reads every
+ * hour; a rig that waited that long would not be testing the watch at all.
  *
  * Run from `apps/desktop`, with the dev server up and the main bundle built:
  *
  *   <electron> e2e/update-poll.electron.mjs
  *
  * The report is the artifact: `e2e/artifacts/update-poll.json`, with two PNGs of
- * the shipped screen (the notice, and the dialog it opens).
+ * the shipped screen (the glowing badge in its bar, and the dialog it opens).
  */
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
+// The real vault creator, so the app opens a throwaway vault of its own: the
+// operator's profile and vault are never read or written by this rig.
+import { createVault } from "@lifequest/vault-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
@@ -45,10 +91,10 @@ const REPORT = path.join(artifactsDir, "update-poll.json");
 
 /**
  * The build under test, off the app's own `package.json` — the same file the
- * updater compares against and the notice renders. The offered release is a
- * fixed fixture that has to stay ahead of it; the sweep asserts that rather than
- * assuming it, so a future release does not silently turn every step below into a
- * test of the "up to date" branch.
+ * updater compares against and the badge names. The offered release is a fixed
+ * fixture that has to stay ahead of it; the sweep asserts that rather than
+ * assuming it, so a future release does not silently turn every step below into
+ * a test of the "up to date" branch.
  */
 const APP_VERSION = JSON.parse(
   fs.readFileSync(path.join(here, "..", "package.json"), "utf8"),
@@ -57,6 +103,12 @@ const NEWER_VERSION = "0.9.0";
 
 /** The rig's cadence. Far below the product's, and only this run's. */
 const POLL_MS = 400;
+
+/** The built-in companion's fake endpoint: one model, known to the app. */
+const PI_MODEL = "e2e-update-poll-model";
+
+/** The caption the shipped bar draws beside a glowing build number. */
+const CAPTION_TEXT = "Update available";
 
 const failures = [];
 const states = {};
@@ -93,15 +145,28 @@ function releaseFor(version, base) {
 /**
  * The feed this rig owns. `same` answers with the running build (nothing to
  * offer), `newer` with the fixture above, and `broken` with a 500 — the read a
- * watch tick cannot turn into an answer.
+ * watch tick cannot turn into an answer. The same server answers the built-in
+ * companion's `GET /v1/models` probe, so the app's companion gate reaches ready
+ * and the real dock mounts; that route is not part of the update claims.
  */
 function startFeed() {
   let scenario = "same";
   let base = "";
-  const counts = { feed: 0, errors: 0 };
+  const counts = { feed: 0, errors: 0, models: 0 };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", base);
+    if (url.pathname === "/v1/models") {
+      counts.models += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          object: "list",
+          data: [{ id: PI_MODEL, object: "model", owned_by: "e2e" }],
+        }),
+      );
+      return;
+    }
     if (url.pathname !== "/releases/latest") {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ message: "Not Found" }));
@@ -148,48 +213,129 @@ function startFeed() {
   });
 }
 
-/** What the renderer currently draws, in one sample. */
+/** Two free loopback ports, so the app's MCP doors never touch the operator's. */
+function freePorts(count) {
+  return Promise.all(
+    Array.from({ length: count }, () => {
+      return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.once("error", reject);
+        server.listen({ port: 0, host: "127.0.0.1" }, () => {
+          const address = server.address();
+          const port = typeof address === "object" && address ? address.port : 0;
+          server.close(() => resolve(port));
+        });
+      });
+    }),
+  );
+}
+
+/**
+ * What the renderer currently draws, in one sample.
+ *
+ * `noticeCount` is deliberately the first field: the in-window card was removed,
+ * so every step of this run is also a measured claim that it did not come back.
+ * The badge is reported by class and by its data attributes, and the caption is
+ * reported as its own element immediately before the badge in the dock's action
+ * bar — the absence of a card is only half the story; the presence of the glow
+ * and its sentence is the other half.
+ */
 const SAMPLE = `(() => {
   try {
-  const notice = document.querySelector('.update-notice');
-  const dialog = document.querySelector('.update-dialog');
+  const box = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      width: Math.round(r.width),
+      height: Math.round(r.height)
+    };
+  };
+  const visible = (el) => {
+    if (!el) return false;
+    const style = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return (
+      r.width > 0 &&
+      r.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none' &&
+      Number(style.opacity) > 0
+    );
+  };
   const buttons = (root) =>
     Array.from(root.querySelectorAll('button')).map((el) => ({
       label: (el.getAttribute('aria-label') ?? el.textContent ?? '').trim(),
       disabled: el.disabled === true,
     }));
-  let box = null;
-  let visible = false;
-  let style = null;
-  if (notice) {
-    const rect = notice.getBoundingClientRect();
-    style = getComputedStyle(notice);
-    box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
-    visible =
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.visibility !== 'hidden' &&
-      style.display !== 'none' &&
-      Number(style.opacity) > 0;
-  }
+  const badge = document.querySelector('.update-badge');
+  const captions = Array.from(document.querySelectorAll('.update-badge__label'));
+  const caption = badge ? badge.previousElementSibling : captions[0] ?? null;
+  const captionEl =
+    caption && caption.classList && caption.classList.contains('update-badge__label')
+      ? caption
+      : captions[0] ?? null;
+  const bar = document.querySelector('.chat-panel__actions');
+  const barControls = bar ? Array.from(bar.querySelectorAll('button')) : [];
+  const dialog = document.querySelector('.update-dialog');
   return {
-    notice: notice
+    noticeCount: document.querySelectorAll('.update-notice').length,
+    noticeAttributeCount: document.querySelectorAll('[data-update-notice]').length,
+    badgeCount: document.querySelectorAll('.update-badge').length,
+    captionCount: captions.length,
+    alertCount: document.querySelectorAll('[role="alert"]').length,
+    route: window.location.hash || window.location.pathname,
+    surface: document.querySelector('.chat-panel')
+      ? document.querySelector('.chat-panel').getAttribute('data-chat-surface')
+      : null,
+    hasShell: Boolean(document.querySelector('.shell')),
+    hasActionBar: Boolean(bar),
+    companionSetup: Boolean(
+      document.querySelector('.companion-setup, .companion-setup-screen, .splash-screen'),
+    ),
+    badge: badge
       ? {
-          version: notice.getAttribute('data-update-notice'),
-          role: notice.getAttribute('role'),
-          live: notice.getAttribute('aria-live'),
-          label: notice.getAttribute('aria-label'),
-          text: (notice.textContent ?? '').replace(/\\s+/g, ' ').trim(),
-          buttons: buttons(notice),
-          box,
-          visible,
-          style: {
-            opacity: style.opacity,
-            display: style.display,
-            visibility: style.visibility,
-            animationName: style.animationName,
-            animationPlayState: style.animationPlayState,
-          },
+          className: badge.className,
+          available: badge.classList.contains('update-badge--available'),
+          dataState: badge.getAttribute('data-update-state'),
+          dataVersion: badge.getAttribute('data-update-version'),
+          dataPreview: badge.getAttribute('data-update-preview'),
+          ariaLabel: badge.getAttribute('aria-label'),
+          ariaHaspopup: badge.getAttribute('aria-haspopup'),
+          ariaExpanded: badge.getAttribute('aria-expanded'),
+          text: (badge.textContent ?? '').trim(),
+          box: box(badge),
+          visible: visible(badge),
+          inBar: Boolean(bar && bar.contains(badge)),
+          lastControlInBar: barControls.length
+            ? barControls[barControls.length - 1] === badge
+            : null,
+        }
+      : null,
+    caption: captionEl
+      ? {
+          tag: captionEl.tagName.toLowerCase(),
+          text: (captionEl.textContent ?? '').trim(),
+          display: getComputedStyle(captionEl).display,
+          dataLabel: captionEl.getAttribute('data-update-label'),
+          inBar: Boolean(bar && bar.contains(captionEl)),
+          immediatelyBeforeBadge:
+            Boolean(badge) && captionEl.nextElementSibling === badge,
+          box: box(captionEl),
+          visible: visible(captionEl),
+        }
+      : null,
+    bar: bar
+      ? {
+          box: box(bar),
+          lastControlIsBadge: barControls.length
+            ? barControls[barControls.length - 1] === badge
+            : null,
+          containsBadge: Boolean(badge && bar.contains(badge)),
+          controls: barControls.map((el) => (el.getAttribute('aria-label') ?? '').trim()),
         }
       : null,
     dialog: dialog
@@ -223,14 +369,63 @@ async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
 
   const feed = await startFeed();
-  const profileDir = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), "lq-update-poll-profile-")),
+  const [mcpLocal, mcpInvite] = await freePorts(2);
+
+  // A throwaway world: the profile, the vault it reopens, and the endpoint that
+  // lets the built-in companion answer ready. Nothing here is the operator's.
+  const world = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lq-update-poll-")));
+  const profileDir = path.join(world, "profile");
+  const vaultDir = path.join(world, "vault");
+  fs.mkdirSync(profileDir, { recursive: true });
+  const created = await createVault(vaultDir, "Update Poll");
+  if (!created.ok) throw new Error(`the throwaway vault could not be created: ${created.error}`);
+
+  // The app reopens `recent[0]` on a cold start. The harness choice is Pi so the
+  // companion gate never probes the operator's Hermes install; the profile name
+  // only matters if a Hermes call sneaks in, and it must not be the operator's.
+  fs.writeFileSync(
+    path.join(profileDir, "recent.json"),
+    `${JSON.stringify(
+      {
+        recent: [
+          {
+            id: created.value.lifequest.id,
+            name: "Update Poll",
+            path: vaultDir,
+            lastOpenedAt: new Date().toISOString(),
+          },
+        ],
+        activeDomainByVaultId: {},
+        deadlineDismissedOnByVaultId: {},
+        deadlineNotifiedOnByVaultId: {},
+        companionProfile: "e2e-update-poll",
+        harness: "pi",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  // The built-in companion's endpoint, in the throwaway profile. It is loopback,
+  // so no key is needed; `GET /v1/models` answers from the rig's own server.
+  fs.writeFileSync(
+    path.join(profileDir, "pi-endpoint.json"),
+    `${JSON.stringify(
+      {
+        baseUrl: `${feed.base}/v1`,
+        model: PI_MODEL,
+        providerName: "E2E update rig",
+      },
+      null,
+      2,
+    )}\n`,
   );
 
   // Seeded before main.js is imported: the module reads the seam at load.
   process.env.LIFEQUEST_E2E = JSON.stringify({
     userData: profileDir,
     showWindow: false,
+    mcpPorts: { local: mcpLocal, invite: mcpInvite },
     updateFeedUrl: `${feed.base}/releases/latest`,
     updatePollMs: POLL_MS,
     // Loopback over http; the release's installer url is this rig's own. The
@@ -242,9 +437,9 @@ async function main() {
   const win = await bootForE2e();
   // The seam keeps the window hidden so it cannot steal the operator's desktop,
   // and a hidden window does not paint: Chromium does not advance CSS animations
-  // in it, so the notice would sit at its entrance frame's `opacity: 0` forever
-  // and every "is it on screen" question would be a question about a frozen
-  // page. A rig window on the bench's own X display is the product's frame.
+  // in it, so the badge's halo would sit frozen and every "is it on screen"
+  // question would be a question about a frozen page. A rig window on the bench's
+  // own X display is the product's frame.
   win.showInactive();
 
   const run = (expression) =>
@@ -269,10 +464,6 @@ async function main() {
     }
   };
 
-  // A card that has mounted but whose entrance has not painted yet reads
-  // `opacity: 0`; "on screen" is a fact about the settled frame, not the first
-  // one. The watch's push lands before React has drawn the notice, and under a
-  // dev server's first paint that gap can be longer than the animation.
   const navigationLog = [];
   win.webContents.on("did-start-loading", () => navigationLog.push("start-loading"));
   win.webContents.on("did-finish-load", () => navigationLog.push("finish-load"));
@@ -290,49 +481,6 @@ async function main() {
     if (event.level === "error") rendererErrors.push(event.message);
   });
 
-  const noticeState = () =>
-    run(`(() => {
-      const el = document.querySelector('.update-notice');
-      if (!el) return { present: false };
-      const style = getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return {
-        present: true,
-        opacity: style.opacity,
-        display: style.display,
-        visibility: style.visibility,
-        animation: style.animationName,
-        width: rect.width,
-        height: rect.height,
-      };
-    })()`);
-
-  const waitForNoticeShown = async () => {
-    const deadline = Date.now() + 8_000;
-    for (;;) {
-      const state = await noticeState();
-      if (state.present && state.visibility !== "hidden" && Number(state.opacity) > 0) {
-        return state;
-      }
-      if (Date.now() > deadline) {
-        const page = await run(`(() => ({
-          readyState: document.readyState,
-          visibilityState: document.visibilityState,
-          rootChildren: document.querySelector('#root')?.childElementCount ?? null,
-          rootHtml: (document.querySelector('#root')?.innerHTML ?? '').slice(0, 400),
-          bodyHtml: (document.body.innerHTML ?? '').slice(0, 400),
-          noticeCount: document.querySelectorAll('.update-notice').length,
-          newsCount: Array.isArray(window.__updateNews) ? window.__updateNews.length : null,
-          hasBridge: Boolean(window.lifequest && window.lifequest.onUpdateDecision),
-        }))()`);
-        throw new Error(
-          `timed out waiting for the notice to be on screen: ${JSON.stringify(state)}; page ${JSON.stringify(page)}; renderer errors: ${JSON.stringify(rendererErrors.slice(-4))}`,
-        );
-      }
-      await sleep(60);
-    }
-  };
-
   const sample = async () => {
     const value = await run(SAMPLE);
     if (value && value.sampleError) {
@@ -340,6 +488,24 @@ async function main() {
     }
     return value;
   };
+
+  /** Everything the page can say about why the dock never arrived. */
+  const pageDiagnosis = () =>
+    run(`(() => ({
+      readyState: document.readyState,
+      route: window.location.hash || window.location.pathname,
+      title: document.title,
+      rootChildren: document.querySelector('#root')?.childElementCount ?? null,
+      hasShell: Boolean(document.querySelector('.shell')),
+      hasActionBar: Boolean(document.querySelector('.chat-panel__actions')),
+      hasBadge: Boolean(document.querySelector('.update-badge')),
+      hasChatPanel: Boolean(document.querySelector('.chat-panel')),
+      hasWelcome: Boolean(document.querySelector('.welcome')),
+      hasCompanionSetup: Boolean(document.querySelector('.companion-setup, .companion-setup-screen')),
+      bodyText: (document.body.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 300),
+      hasBridge: Boolean(window.lifequest && window.lifequest.updateCheck),
+      newsCount: Array.isArray(window.__updateNews) ? window.__updateNews.length : null,
+    }))()`);
 
   const click = (selector) =>
     run(`(() => {
@@ -361,9 +527,24 @@ async function main() {
     return { file, width: size.width, height: size.height, empty: image.isEmpty() };
   };
 
-  stage = "wait for the bridge";
+  stage = "wait for the bridge and the dock";
   // The bridge is live as soon as the preload has run, before React mounts.
   await waitFor("Boolean(window.lifequest && window.lifequest.updateCheck)", "the preload bridge");
+  // The badge lives in the dock's action bar, so this is also the claim that the
+  // real app opened a vault and reached its studio rather than the welcome or
+  // companion-setup screen.
+  try {
+    await waitFor(
+      "(() => document.querySelector('.update-badge') ? true : null)()",
+      "the dock's update badge",
+      60_000,
+    );
+  } catch (error) {
+    throw new Error(
+      `${error.message}; the page reported ${JSON.stringify(await pageDiagnosis())}; ` +
+        `renderer errors: ${JSON.stringify(rendererErrors.slice(-4))}`,
+    );
+  }
 
   // The launch's own check, fired by the provider mounting. Waiting for it (not
   // for a timer) is what makes "before this rig asked for anything" a fact.
@@ -383,19 +564,39 @@ async function main() {
   );
 
   stage = "launch sample";
-  // ── 1 — launch with nothing to offer: quiet, no notice ────────────────────
+  // ── 1 — launch with nothing to offer: a resting build number, no offer ────
   await sleep(600);
   const launch = await sample();
   states.launch = { feedRequests: launchRequests, ...launch };
   check(
-    "a launch with no newer release shows no notice",
-    launch.notice === null,
-    `notice ${JSON.stringify(launch.notice)}`,
+    "the launch reaches the dock's own action bar",
+    launch.hasActionBar === true && launch.badge?.inBar === true,
+    `action bar ${launch.hasActionBar}, badge in bar ${launch.badge?.inBar}`,
+  );
+  check(
+    "a launch with no newer release leaves the build number at rest",
+    launch.badge?.available === false && launch.badge?.dataState !== "available",
+    `badge class ${JSON.stringify(launch.badge?.className)}, state ${JSON.stringify(launch.badge?.dataState)}`,
+  );
+  check(
+    "a launch with no newer release draws no caption",
+    launch.captionCount === 0 && launch.caption === null,
+    `captions ${JSON.stringify(launch.caption)} (count ${launch.captionCount})`,
+  );
+  check(
+    "a launch with no newer release shows no in-app notice",
+    launch.noticeCount === 0 && launch.noticeAttributeCount === 0,
+    `noticeCount ${launch.noticeCount}, data-update-notice count ${launch.noticeAttributeCount}`,
   );
   check(
     "a launch with no newer release opens no dialog by itself",
-    launch.dialog === null,
-    `dialog ${JSON.stringify(launch.dialog)}`,
+    launch.dialog === null && launch.alertCount === 0,
+    `dialog ${JSON.stringify(launch.dialog)}, alerts ${launch.alertCount}`,
+  );
+  check(
+    "the build number is the action bar's trailing control",
+    launch.bar?.lastControlIsBadge === true && launch.badge?.lastControlInBar === true,
+    `bar controls ${JSON.stringify(launch.bar?.controls)}`,
   );
 
   stage = "subscribe to the push channel";
@@ -419,7 +620,7 @@ async function main() {
   const feedAtPublish = feed.counts.feed;
   feed.setScenario("newer");
 
-  const arrived = await (async () => {
+  const arrivedNews = await (async () => {
     const deadline = Date.now() + 20_000;
     for (;;) {
       const news = await run("Array.isArray(window.__updateNews) ? window.__updateNews.length : 0");
@@ -428,7 +629,20 @@ async function main() {
       await sleep(50);
     }
   })();
-  await waitForNoticeShown();
+  // The badge's glow is React state drawn after the push lands; wait for the
+  // class the operator would see, not for the IPC frame.
+  await waitFor(
+    `(() => {
+      const el = document.querySelector('.update-badge');
+      return el &&
+        el.classList.contains('update-badge--available') &&
+        el.getAttribute('data-update-version') === ${JSON.stringify(NEWER_VERSION)}
+        ? true
+        : null;
+    })()`,
+    "the glowing build number",
+  );
+  await sleep(200);
   states.arrived = await sample();
   check(
     "the watch read the feed again without anyone clicking",
@@ -437,85 +651,101 @@ async function main() {
   );
   check(
     "the watch reported the release over IPC",
-    arrived >= 1 &&
+    arrivedNews >= 1 &&
       states.arrived.news?.[0]?.state === "available" &&
       states.arrived.news?.[0]?.latest === NEWER_VERSION,
     `news ${JSON.stringify(states.arrived.news)}`,
   );
 
-  const notice = states.arrived.notice;
-  if (!check("the release raised an in-app notice", Boolean(notice), "no .update-notice in the page")) {
-    console.error(`[update-poll] dom: ${JSON.stringify(states.arrived, null, 2)}`);
-    throw new Error("no notice rendered");
+  const arrived = states.arrived;
+  if (
+    !check(
+      "the release turns the build number into the offer",
+      arrived.badge?.available === true,
+      `badge ${JSON.stringify(arrived.badge)}`,
+    )
+  ) {
+    console.error(`[update-poll] dom: ${JSON.stringify(arrived, null, 2)}`);
+    throw new Error("the badge never turned available");
   }
   check(
-    "the notice names the release",
-    notice.version === NEWER_VERSION &&
-      notice.text.includes(`LifeQuest ${NEWER_VERSION} is available`) &&
-      notice.text.includes(`v${APP_VERSION}`),
-    `version ${JSON.stringify(notice.version)}, text ${JSON.stringify(notice.text)}`,
+    "the glowing build number carries the offered version",
+    arrived.badge?.dataState === "available" &&
+      arrived.badge?.dataVersion === NEWER_VERSION,
+    `state ${JSON.stringify(arrived.badge?.dataState)}, version ${JSON.stringify(arrived.badge?.dataVersion)}`,
+  );
+  // The card is gone: the glow and its sentence are the whole surface, so "once"
+  // means the bar is quiet on later ticks, not that a card was skipped.
+  check(
+    "the offer raises no in-app notice",
+    arrived.noticeCount === 0 && arrived.noticeAttributeCount === 0,
+    `noticeCount ${arrived.noticeCount}, data-update-notice count ${arrived.noticeAttributeCount}`,
   );
   check(
-    "the notice is a polite status region, not a modal",
-    notice.role === "status" &&
-      notice.live === "polite" &&
-      (notice.label ?? "").includes(NEWER_VERSION),
-    `role ${notice.role}, live ${notice.live}, label ${JSON.stringify(notice.label)}`,
+    "the offer opens no dialog by itself",
+    arrived.dialog === null && arrived.alertCount === 0,
+    `dialog ${JSON.stringify(arrived.dialog)}, alerts ${arrived.alertCount}`,
   );
   check(
-    "the notice offers the upgrade and a dismissal",
-    notice.buttons.some((button) => button.label.startsWith("Open the LifeQuest")) &&
-      notice.buttons.some((button) => button.label === "Dismiss the update notice"),
-    `buttons ${JSON.stringify(notice.buttons)}`,
+    "the offer puts a caption immediately before the build number",
+    arrived.captionCount === 1 &&
+      arrived.caption?.text === CAPTION_TEXT &&
+      arrived.caption?.inBar === true &&
+      arrived.caption?.immediatelyBeforeBadge === true &&
+      arrived.caption?.visible === true,
+    `caption ${JSON.stringify(arrived.caption)} (count ${arrived.captionCount})`,
   );
   check(
-    "the notice is on screen, inside the window",
-    notice.visible &&
-      notice.box.width > 0 &&
-      notice.box.height > 0 &&
-      notice.box.left >= 0 &&
-      notice.box.top >= 0 &&
-      notice.box.right <= states.arrived.viewport.width &&
-      notice.box.bottom <= states.arrived.viewport.height,
-    `visible ${notice.visible}, box ${JSON.stringify(notice.box)}, viewport ${JSON.stringify(states.arrived.viewport)}`,
+    "the glowing build number is still the bar's trailing control",
+    arrived.badge?.inBar === true &&
+      arrived.badge?.lastControlInBar === true &&
+      arrived.bar?.lastControlIsBadge === true,
+    `badge ${JSON.stringify(arrived.badge?.box)}, bar controls ${JSON.stringify(arrived.bar?.controls)}`,
   );
+  // The shipped screen, as the handover points at it: the glowing build number
+  // in the dock's own action bar, caption beside it.
+  states.badgeScreenshot = await shoot("update-poll-badge.png");
   check(
-    "the notice does not take the dialog with it",
-    states.arrived.dialog === null,
-    `dialog ${JSON.stringify(states.arrived.dialog)}`,
-  );
-  states.toastScreenshot = await shoot("update-poll-toast.png");
-  check(
-    "the notice's picture is a real capture",
-    !states.toastScreenshot.empty &&
-      states.toastScreenshot.width > 0 &&
-      states.toastScreenshot.height > 0,
-    `screenshot ${JSON.stringify(states.toastScreenshot)}`,
+    "the badge's picture is a real capture",
+    !states.badgeScreenshot.empty &&
+      states.badgeScreenshot.width > 0 &&
+      states.badgeScreenshot.height > 0,
+    `screenshot ${JSON.stringify(states.badgeScreenshot)}`,
   );
 
   stage = "wait for later ticks";
-  // ── 4 — the same release on later ticks is not re-announced ───────────────
+  // ── 4 — the same release on later ticks raises nothing new ────────────────
   const feedAtFirstNews = feed.counts.feed;
-  const reannounceDeadline = Date.now() + 15_000;
-  while (feed.counts.feed < feedAtFirstNews + 2 && Date.now() < reannounceDeadline) {
+  const repeatDeadline = Date.now() + 15_000;
+  while (feed.counts.feed < feedAtFirstNews + 2 && Date.now() < repeatDeadline) {
     await sleep(40);
   }
   const repeated = await sample();
   states.repeated = repeated;
   check(
-    "the watch kept reading after the release was announced",
+    "the watch kept reading after the release arrived",
     feed.counts.feed >= feedAtFirstNews + 2,
     `the feed saw ${feed.counts.feed}, wanted ${feedAtFirstNews + 2}`,
   );
   check(
-    "the same release is announced once, not on every tick",
+    "the same release is reported once, not on every tick",
     repeated.news?.length === 1,
     `news ${JSON.stringify(repeated.news)}`,
   );
   check(
-    "the notice is still there after the later ticks",
-    repeated.notice?.version === NEWER_VERSION && repeated.notice?.visible === true,
-    `notice ${JSON.stringify(repeated.notice)}`,
+    "later ticks keep the glow on",
+    repeated.badge?.available === true &&
+      repeated.badge?.dataVersion === NEWER_VERSION &&
+      repeated.caption?.text === CAPTION_TEXT,
+    `badge ${JSON.stringify(repeated.badge)}, caption ${JSON.stringify(repeated.caption)}`,
+  );
+  check(
+    "later ticks raise no notice, alert or dialog",
+    repeated.noticeCount === 0 &&
+      repeated.alertCount === 0 &&
+      repeated.dialog === null &&
+      repeated.captionCount === 1,
+    `noticeCount ${repeated.noticeCount}, alerts ${repeated.alertCount}, dialog ${JSON.stringify(repeated.dialog)}, captions ${repeated.captionCount}`,
   );
 
   stage = "a failing feed";
@@ -539,9 +769,18 @@ async function main() {
     `news ${JSON.stringify(failedReads.news)}`,
   );
   check(
-    "a watch read that fails leaves the notice alone",
-    failedReads.notice?.version === NEWER_VERSION && failedReads.notice?.visible === true,
-    `notice ${JSON.stringify(failedReads.notice)}`,
+    "a watch read that fails leaves the glow and its caption alone",
+    failedReads.badge?.available === true &&
+      failedReads.badge?.dataVersion === NEWER_VERSION &&
+      failedReads.caption?.text === CAPTION_TEXT,
+    `badge ${JSON.stringify(failedReads.badge)}, caption ${JSON.stringify(failedReads.caption)}`,
+  );
+  check(
+    "a failing read raises no notice, alert or dialog",
+    failedReads.noticeCount === 0 &&
+      failedReads.alertCount === 0 &&
+      failedReads.dialog === null,
+    `noticeCount ${failedReads.noticeCount}, alerts ${failedReads.alertCount}, dialog ${JSON.stringify(failedReads.dialog)}`,
   );
   // The offer the operator can still install must survive those failures: the
   // session's cached answer is what `update:install` validates against.
@@ -556,17 +795,24 @@ async function main() {
   );
 
   stage = "wait for the withdrawal";
-  // ── 6 — the release is withdrawn: the notice goes with the offer ──────────
+  // ── 6 — the release is withdrawn: the glow goes with the offer ────────────
   feed.setScenario("same");
-  const withdrawn = await (async () => {
+  await (async () => {
     const deadline = Date.now() + 20_000;
     for (;;) {
       const sampleNow = await sample();
-      if ((sampleNow.news?.length ?? 0) >= 2) return sampleNow;
+      if (
+        (sampleNow.news?.length ?? 0) >= 2 &&
+        sampleNow.badge?.available === false
+      ) {
+        return;
+      }
       if (Date.now() > deadline) throw new Error("the watch never reported the withdrawal");
       await sleep(50);
     }
   })();
+  await sleep(200);
+  const withdrawn = await sample();
   states.withdrawn = withdrawn;
   check(
     "a release that stops being offered is reported",
@@ -574,64 +820,98 @@ async function main() {
     `news ${JSON.stringify(withdrawn.news)}`,
   );
   check(
-    "a withdrawn release takes its notice with it",
-    withdrawn.notice === null,
-    `notice ${JSON.stringify(withdrawn.notice)}`,
+    "a withdrawn release clears the glow",
+    withdrawn.badge?.available === false && withdrawn.badge?.dataState !== "available",
+    `badge ${JSON.stringify(withdrawn.badge)}`,
+  );
+  check(
+    "a withdrawn release takes its caption and its version with it",
+    withdrawn.captionCount === 0 && withdrawn.caption === null,
+    `caption ${JSON.stringify(withdrawn.caption)} (count ${withdrawn.captionCount})`,
+  );
+  check(
+    "a withdrawn release leaves no notice behind",
+    withdrawn.noticeCount === 0 && withdrawn.noticeAttributeCount === 0,
+    `noticeCount ${withdrawn.noticeCount}`,
   );
 
   stage = "wait for the re-published release";
-  // ── 7 — the release comes back: it is news again ──────────────────────────
+  // ── 7 — the release comes back: it glows again ────────────────────────────
   feed.setScenario("newer");
   await (async () => {
     const deadline = Date.now() + 20_000;
     for (;;) {
       const sampleNow = await sample();
-      if (sampleNow.notice?.version === NEWER_VERSION) return;
-      if (Date.now() > deadline) throw new Error("the re-published release was never announced");
+      if (
+        (sampleNow.news?.length ?? 0) >= 3 &&
+        sampleNow.badge?.available === true &&
+        sampleNow.caption?.text === CAPTION_TEXT
+      ) {
+        return;
+      }
+      if (Date.now() > deadline) throw new Error("the re-published release never glowed");
       await sleep(50);
     }
   })();
-  await waitForNoticeShown();
+  await sleep(200);
   const returned = await sample();
   states.returned = returned;
   check(
-    "a release that comes back is announced again",
+    "a release that comes back is reported again",
     (returned.news?.length ?? 0) >= 3 &&
       returned.news?.[2]?.state === "available" &&
       returned.news?.[2]?.latest === NEWER_VERSION,
     `news ${JSON.stringify(returned.news)}`,
   );
   check(
-    "the returning notice names the release",
-    returned.notice?.version === NEWER_VERSION && returned.notice?.visible === true,
-    `notice ${JSON.stringify(returned.notice)}`,
+    "the returned release glows with its version and caption",
+    returned.badge?.available === true &&
+      returned.badge?.dataVersion === NEWER_VERSION &&
+      returned.caption?.text === CAPTION_TEXT &&
+      returned.captionCount === 1,
+    `badge ${JSON.stringify(returned.badge)}, caption ${JSON.stringify(returned.caption)}`,
+  );
+  check(
+    "the returned release raises no notice",
+    returned.noticeCount === 0 && returned.noticeAttributeCount === 0,
+    `noticeCount ${returned.noticeCount}`,
   );
 
   stage = "open the dialog";
-  // ── 8 — "View update" opens the real upgrade dialog ───────────────────────
-  const opened = await click('.update-notice button[aria-label^="Open the LifeQuest"]');
-  check("the notice's action is clickable", opened, "no View update control");
-  const dialog = await waitFor(
+  // ── 8 — the glowing build number opens the real upgrade dialog ────────────
+  const opened = await click(".update-badge");
+  check("the glowing build number is clickable", opened, "no .update-badge to click");
+  await waitFor(
     "(() => { const el = document.querySelector('.update-dialog'); return el ? true : null; })()",
     "the upgrade dialog",
   );
-  check("clicking View update opens the dialog", Boolean(dialog), "no .update-dialog in the page");
+  await sleep(200);
   const openedState = await sample();
   states.opened = openedState;
   check(
-    "the dialog is the real offer for the release the notice named",
+    "clicking the glowing build number opens the dialog",
+    openedState.dialog !== null,
+    "no .update-dialog in the page",
+  );
+  check(
+    "the dialog is the real offer for the release the badge names",
     openedState.dialog?.view === "offer" &&
       openedState.dialog?.version === NEWER_VERSION &&
       (openedState.dialog?.title ?? "").includes(NEWER_VERSION),
     `dialog ${JSON.stringify(openedState.dialog)}`,
   );
   check(
-    "the dialog is the same one the build number opens: it offers the install",
+    "the dialog is the same one the build number always opened: it offers the install",
     openedState.dialog?.buttons.some((button) =>
       button.label.includes("Download and install"),
     ) &&
       openedState.dialog?.buttons.some((button) => button.label.includes("Not now")),
     `buttons ${JSON.stringify(openedState.dialog?.buttons)}`,
+  );
+  check(
+    "the dialog arrives without the card",
+    openedState.noticeCount === 0 && openedState.noticeAttributeCount === 0,
+    `noticeCount ${openedState.noticeCount}`,
   );
   states.dialogScreenshot = await shoot("update-poll-dialog.png");
   check(
@@ -642,54 +922,34 @@ async function main() {
     `screenshot ${JSON.stringify(states.dialogScreenshot)}`,
   );
 
-  // "Not now" closes the dialog and leaves the notice; the news is not lost by
+  // "Not now" closes the dialog and leaves the glow: the news is not lost by
   // looking at it.
   await click('.update-dialog button[aria-label="Not now"]');
-  const afterNotNow = await waitFor(
+  await waitFor(
     "(() => { const el = document.querySelector('.update-dialog'); return el ? null : true; })()",
     "the dialog to close",
   );
+  await sleep(200);
   const closedState = await sample();
   states.closed = closedState;
-  check("Not now closes the dialog", Boolean(afterNotNow), "the dialog stayed open");
+  check("Not now closes the dialog", closedState.dialog === null, "the dialog stayed open");
   check(
-    "closing the dialog leaves the notice in place",
-    closedState.notice?.version === NEWER_VERSION && closedState.notice?.visible === true,
-    `notice ${JSON.stringify(closedState.notice)}`,
-  );
-
-  stage = "dismiss the notice";
-  // ── 9 — dismissing the notice ends it for this release ────────────────────
-  const dismissed = await click(".update-notice__dismiss");
-  check("the notice can be dismissed", dismissed, "no dismiss control");
-  await waitFor(
-    "(() => document.querySelector('.update-notice') ? null : true)()",
-    "the notice to be dismissed",
-  );
-  const dismissedState = await sample();
-  states.dismissed = dismissedState;
-  check(
-    "dismissing removes the notice",
-    dismissedState.notice === null,
-    `notice ${JSON.stringify(dismissedState.notice)}`,
-  );
-
-  const feedAtDismiss = feed.counts.feed;
-  const stayDismissedDeadline = Date.now() + 15_000;
-  while (feed.counts.feed < feedAtDismiss + 2 && Date.now() < stayDismissedDeadline) {
-    await sleep(40);
-  }
-  const stayedDismissed = await sample();
-  states.stayedDismissed = stayedDismissed;
-  check(
-    "the watch kept reading after the dismissal",
-    feed.counts.feed >= feedAtDismiss + 2,
-    `the feed saw ${feed.counts.feed}, wanted ${feedAtDismiss + 2}`,
+    "closing the dialog leaves the glow and its caption in place",
+    closedState.badge?.available === true &&
+      closedState.badge?.dataVersion === NEWER_VERSION &&
+      closedState.caption?.text === CAPTION_TEXT,
+    `badge ${JSON.stringify(closedState.badge)}, caption ${JSON.stringify(closedState.caption)}`,
   );
   check(
-    "a dismissed notice does not come back for the same release",
-    stayedDismissed.notice === null && stayedDismissed.news?.length === 3,
-    `notice ${JSON.stringify(stayedDismissed.notice)}, news ${JSON.stringify(stayedDismissed.news)}`,
+    "closing the dialog leaves the build number as the bar's trailing control",
+    closedState.badge?.lastControlInBar === true &&
+      closedState.bar?.lastControlIsBadge === true,
+    `bar controls ${JSON.stringify(closedState.bar?.controls)}`,
+  );
+  check(
+    "closing the dialog raises no notice",
+    closedState.noticeCount === 0,
+    `noticeCount ${closedState.noticeCount}`,
   );
 
   states.feedAtEnd = { ...feed.counts };
@@ -705,7 +965,13 @@ function writeReport() {
     fs.writeFileSync(
       REPORT,
       `${JSON.stringify(
-        { ranAt: new Date().toISOString(), states, failures, pass: failures.length === 0 },
+        {
+          ranAt: new Date().toISOString(),
+          stage,
+          states,
+          failures,
+          pass: failures.length === 0,
+        },
         null,
         2,
       )}\n`,
@@ -747,11 +1013,15 @@ app
 
     console.log("");
     console.log(`launch feed requests: ${states.launch?.feedRequests ?? "—"}`);
-    console.log(`notice:  ${states.arrived?.notice?.text ?? "—"}`);
+    console.log(
+      `badge:   ${states.arrived?.badge?.className ?? "—"} / version ${states.arrived?.badge?.dataVersion ?? "—"}`,
+    );
+    console.log(`caption: ${states.arrived?.caption?.text ?? "—"}`);
     console.log(`dialog:  ${states.opened?.dialog?.title ?? "—"}`);
+    console.log(`notice count: ${states.arrived?.noticeCount ?? "—"} (launch ${states.launch?.noticeCount ?? "—"})`);
     console.log(`news:    ${JSON.stringify(states.returned?.news ?? [])}`);
     console.log(`polls:   ${JSON.stringify(states.feedAtEnd ?? {})}`);
-    console.log(`shots:   ${JSON.stringify([states.toastScreenshot?.file, states.dialogScreenshot?.file])}`);
+    console.log(`shots:   ${JSON.stringify([states.badgeScreenshot?.file, states.dialogScreenshot?.file])}`);
     console.log(`report: ${REPORT}`);
     for (const failure of report.failures) console.log(`FAIL ${failure}`);
     console.log(report.pass ? "update poll: PASS" : "update poll: FAIL");
