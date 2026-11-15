@@ -8,6 +8,14 @@ file locks when the whole review is marked done. The single idea: a review is a
 durable vault document, not a chat transcript — the report outlives the session
 that helped write it.
 
+The new period's review is not available the instant the period starts. Each
+cadence has its own **review window**: the page opens on the latest period whose
+window has opened, and until then it keeps showing the previous period. Daily
+opens at 18:00 on its own day; weekly opens at 08:00 on the week's last day;
+monthly opens on the second-last day of the month; quarterly on the third-last
+day of the quarter; yearly in the last week of the year. All five are editable in
+**Settings → Review**.
+
 ## Where it lives
 
 The Review wing is the last wing in the rail's wing switcher, after **Act**. Its
@@ -30,6 +38,35 @@ The page opens with the grey cadence eyebrow — **Daily**, **Weekly**, **Monthl
 
 Back to [Wiki home](./index.md).
 
+## When a review opens
+
+Every cadence has a window: the period's review becomes available part-way
+through the period, never at its first instant. Before the window opens, the
+page shows the **previous** period — where you can still write or edit, exactly
+as before. The defaults are the ones below; **Settings → Review** changes each
+one, including the wall-clock time.
+
+| Cadence | Default window | What the page shows before it opens |
+|---|---|---|
+| **Daily** | Opens on its own day at **18:00** | Yesterday's daily review |
+| **Weekly** | Opens on the week's **last day at 08:00** (Sunday for a Monday start) | The previous week's review |
+| **Monthly** | Opens on the **second-last day of the month** at 00:00 | The previous month's review |
+| **Quarterly** | Opens on the **third-last day of the quarter** at 00:00 | The previous quarter's review |
+| **Yearly** | Opens in the **last week of the year** (25 December) at 00:00 | The previous year's review |
+
+The window has two halves: a number of days before the period's last day, and a
+local time of day. A weekly review with 0 days and 08:00 opens on the last day at
+8 a.m.; a monthly review with 1 day and 00:00 opens on the second-last day at
+midnight. A pager note says when the calendar-current period opens, for example
+*The daily review for the current period opens 15 Nov 2026 at 18:00.* Until then,
+**Next ›** stops at the open period, because the newer review does not exist to
+page to. The vault engine enforces the same rule, so a companion or connected
+agent that asks to create the unopened period's review is refused with the
+opening time, not silently allowed.
+
+The window follows the vault's **Week starts on** setting: with a Sunday start,
+the weekly review opens on Saturday at 08:00. See [Settings](./28-settings.md).
+
 ## What it is for
 
 Reviews turn a lived period into something you can read back and something the
@@ -42,11 +79,13 @@ done is locked so the "final" record cannot be quietly rewritten.
 ## How to use it
 
 1. Choose **Daily**, **Weekly**, **Monthly**, **Quarterly** or **Yearly** in the
-   rail. The page opens on the current, still-in-progress period.
+   rail. The page opens on the latest period whose review window is open — often
+   the previous period, because the new one opens part-way through
+   ([When a review opens](#when-a-review-opens)).
 2. Move the period with **‹ Prev** and **Next ›**. The centre of the header shows
    the period title, for example `Weekly review · Week of 21 Sep 2026`.
-   **Next ›** is disabled while you are on the current period: reviews are past
-   and present only.
+   **Next ›** is disabled on the open period: reviews are past and present only,
+   and a review that has not opened yet cannot be paged to.
 3. On a period with no file, the page says **No review for this period yet.**
    and offers two ways in:
    - **Start the interview** creates the review file, fills the figures the
@@ -132,10 +171,13 @@ with the same four as `###` subsections. Extra headings you type are kept after
 the required blocks. A save canonicalises this skeleton and preserves the prose
 under each heading.
 
-Future periods are refused. Creating a review for a period that has not
-started fails with `Cannot create a future review`, and the page snaps to the
-current period with the notice that the period was in the future. Planning may
-create the next period's stub; reviews may not.
+Unopened periods are refused. A review's own window is the gate: creating or
+writing one before it opens fails with the opening time (*This review is not
+available yet: it opens 15 Nov 2026 at 08:00.*), and the page does not offer the
+period at all — it stays on the latest open one. Past periods are always
+writable, and reading a period's file is never blocked, so a review started
+earlier is still editable after its window passes. Planning may create the next
+period's stub; reviews may not.
 
 Snapshots are filled by the app, not the model. A cadence's rules can carry
 fenced `lifequest-snapshot` directives naming a database view (`{id, domain,
@@ -220,8 +262,13 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
   file and fills snapshots; the failure is reported as the one step that failed,
   not as a lost review.
 - Daily notes are read from `notes/daily/YYYY-MM-DD.md` and only for dates in the
-  window. A review of a future period cannot exist, so it never reads a note that
-  is not allowed to exist either.
+  window. A review that has not opened yet cannot exist, so it never reads a note
+  that is not allowed to exist either.
+- Before today's daily review opens at 18:00 the page shows yesterday's. That is
+  the window working, not a lost review: the current day's file appears once the
+  clock passes the configured time. A window left open across the boundary picks
+  the new period up the next time the Review page is opened or the period is
+  paged.
 - With no areas open, the **Areas** list under **Preview** is empty and the
   review is overall only.
 
@@ -231,4 +278,5 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
 - [Goals](./10-goals.md) — where planning sessions start and where intent lands
 - [Decisions](./23-decisions.md) — where an edit to a locked review waits
 - [The Companion](./24-companion.md) — the interview, sessions and models
-- [Settings](./28-settings.md) — **Week starts on** lives in the Vault tab
+- [Settings](./28-settings.md) — **Week starts on** lives in the Vault tab, and
+  the per-cadence review windows live in the **Review** tab

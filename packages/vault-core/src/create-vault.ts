@@ -6,6 +6,7 @@ import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { openVault } from "./open-vault.ts";
 import { vaultPaths } from "./paths.ts";
+import { defaultReviewAvailability } from "./review-availability.ts";
 import {
   DEFAULT_HERMES_URL,
   DOCUMENT_KIND_LABELS,
@@ -56,6 +57,7 @@ export async function createVault(
       autoApproveInserts: [],
       chatQuestions: [],
       decisionInbox: { ...DEFAULT_DECISION_INBOX_SETTINGS },
+      reviewAvailability: defaultReviewAvailability(),
       agentScopes: [],
     };
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);

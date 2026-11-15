@@ -8,6 +8,10 @@ import {
 } from "./decision-inbox.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
+import {
+  parseReviewAvailabilityPatch,
+  reviewAvailabilityFromUnknown,
+} from "./review-availability.ts";
 import type { AgentHire, AgentScope, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
@@ -241,6 +245,12 @@ export async function updateSettings(
     // unrelated write. The new switches therefore have to be carried through
     // explicitly, normalized so a legacy vault gains the defaults.
     const currentInbox = decisionInboxFromUnknown(current.decisionInbox);
+    // The review windows are the other new settings block: carried through the
+    // explicit rebuild below so an unrelated write does not drop it, and
+    // normalized so a legacy vault gains the defaults on its first save.
+    const currentAvailability = reviewAvailabilityFromUnknown(
+      current.reviewAvailability,
+    );
     const currentScopes = agentScopesFromUnknown(current.agentScopes);
     const next: VaultSettings = {
       hermesBaseUrl:
@@ -250,6 +260,7 @@ export async function updateSettings(
       autoApproveInserts: currentInserts,
       chatQuestions: currentQuestions,
       decisionInbox: currentInbox,
+      reviewAvailability: currentAvailability,
       agentScopes: currentScopes,
     };
 
@@ -317,6 +328,20 @@ export async function updateSettings(
       });
       if (!parsedInbox.ok) return parsedInbox;
       next.decisionInbox = parsedInbox.value;
+    }
+
+    if (patch.reviewAvailability !== undefined) {
+      // Same merge rule, one level deeper: a patch may carry only the daily
+      // window (the settings page saves the single cadence it edited), and the
+      // other four have to keep what is stored rather than snap back to the
+      // defaults. The parser merges over `currentAvailability` and validates
+      // the merged windows, so a partial edit cannot smuggle in a bad value.
+      const parsedAvailability = parseReviewAvailabilityPatch(
+        patch.reviewAvailability,
+        currentAvailability,
+      );
+      if (!parsedAvailability.ok) return parsedAvailability;
+      next.reviewAvailability = parsedAvailability.value;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);
