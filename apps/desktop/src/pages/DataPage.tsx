@@ -13,6 +13,7 @@ import {
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +22,16 @@ import { FxRatePanel } from "@/components/data/FxRatePanel";
 export default function DataPage() {
   const { snapshot } = useVault();
   const lens = useDomainLens();
+  /*
+   * The vault's live revision. A database can now be merged or deleted by
+   * approving a Decision, and the Decisions sheet is painted OVER this page
+   * rather than replacing it (AppRoutes keeps this route mounted while
+   * `/decisions` is in the address bar). Nothing here navigates on approval, so
+   * without this the list would keep drawing the four duplicate tables the
+   * operator just collapsed until they left the page and came back. Every write
+   * already announces itself on this revision; a database list is a cheap read.
+   */
+  const live = useLiveData();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,7 +109,7 @@ export default function DataPage() {
         setTransactionalAccounts(transactional.map((a) => ({ id: a.id, name: a.cells.name as string })));
       }
     }
-  }, [domainSlug, snapshot?.domains]);
+  }, [domainSlug, snapshot?.domains, live]);
 
   useEffect(() => {
     void load();

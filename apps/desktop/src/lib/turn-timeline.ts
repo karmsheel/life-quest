@@ -246,7 +246,7 @@ export function formatToolDuration(ms: number): string {
   return formatDuration(ms);
 }
 
-/** `842`, `14.2k` — token counts, when the harness accounted for them exactly. */
+/** `842`, `14.2k`, `1.2M` — token counts, when the harness accounted for them exactly. */
 export function formatTokens(usage: TurnUsage | undefined): string | null {
   const total =
     usage?.total ??
@@ -255,6 +255,12 @@ export function formatTokens(usage: TurnUsage | undefined): string | null {
       : undefined);
   if (total === undefined || !Number.isFinite(total) || total < 0) return null;
   if (total < 1000) return String(Math.round(total));
+  // Long chats cross a million, and four digits before a `k` ("1220k") hides
+  // how much the turn actually spent. The ladder climbs at the same one-decimal
+  // voice the thousands already use; `.0` is dropped as there too.
+  if (total >= 1_000_000) {
+    return `${(total / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
   return `${(total / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 

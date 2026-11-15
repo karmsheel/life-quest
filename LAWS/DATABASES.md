@@ -11,6 +11,10 @@ Domain databases and pages live in the vault folder. The desktop book is that fo
   applies at once.
 - An agent change to or deletion of data that already exists MUST appear as a pending
   Decision and MUST NOT land until the operator approves it.
+- Merging one database into another, or deleting a database, MUST appear as a pending
+  Decision and MUST NOT land until the operator approves it.
+- The companion MUST NOT create a second database with the same name in the same area; it
+  MUST reuse the one that exists.
 - A new or changed ingest mapping MUST go through Decisions.
 - Ingest batch rows MUST NOT post until the operator accepts the batch.
 - Conversational capture MUST NOT post when the amount or the account is missing.

@@ -46,6 +46,11 @@
  *     invariants claimed here: the block never exceeds its `max-height`, it
  *     scrolls its own overflow rather than growing, every row keeps its line
  *     box, and the newest call is reachable by scrolling the block.
+ * 12. Thinking placeholder typeset as prose — before the first frame the panel
+ *     shows `Thinking…`; with no typography of its own it inherited the panel's
+ *     16px body size and the browser's paragraph margins, painting half again
+ *     the size of the work log beside it. Measured against the live status row
+ *     it sits above, so the claim is "same line of type", not "smaller".
  * * The frames are byte-for-byte the shape the gateway sends, fed through the
  * app's own `parseSseBlock` — the driver never hand-builds an event object, so
  * failures 6 and 7 are asserted against the wire format rather than against the
@@ -204,6 +209,51 @@ const STATE = `(() => {
     activityBlocks: document.querySelectorAll(".chat-panel__activity").length,
     activeTitle:
       document.querySelector(".chat-panel__heading--thread")?.textContent.trim() ?? null
+  };
+})()`;
+
+/**
+ * The live placeholder and the status row under it, read as type.
+ *
+ * This is a typography claim, not a text claim: before the first frame arrives
+ * the panel says `Thinking…` alone, so it has to be one of the work log's own
+ * lines. What that means is measured here — the size, style and margins it
+ * paints with, against the `Working… 1s` row that follows it in the same
+ * column, and the fact that the two stack instead of sharing a line.
+ */
+const THINKING_TYPE = `(() => {
+  const read = (el) => {
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return {
+      text: el.textContent.trim(),
+      fontSize: parseFloat(cs.fontSize),
+      fontSizeCss: cs.fontSize,
+      fontStyle: cs.fontStyle,
+      fontWeight: cs.fontWeight,
+      color: cs.color,
+      marginTop: parseFloat(cs.marginTop),
+      marginBottom: parseFloat(cs.marginBottom),
+      lineHeight: cs.lineHeight,
+      boxHeight: Number(rect.height.toFixed(2)),
+      top: Number(rect.top.toFixed(2)),
+      bottom: Number(rect.bottom.toFixed(2)),
+      display: cs.display
+    };
+  };
+  const thinking = document.querySelector(".chat-panel__thinking");
+  const status = document.querySelector(".chat-panel__process-status");
+  const body = document.querySelector(".chat-panel__body");
+  const thinkingRect = thinking ? thinking.getBoundingClientRect() : null;
+  const statusRect = status ? status.getBoundingClientRect() : null;
+  return {
+    thinking: read(thinking),
+    status: read(status),
+    /** The size the panel would paint prose at — what the placeholder must not inherit. */
+    bodyFontSize: body ? getComputedStyle(body).fontSize : null,
+    /** Its own line: the status row starts below it, not beside it. */
+    stacked: Boolean(thinkingRect && statusRect) && thinkingRect.bottom <= statusRect.top + 0.5
   };
 })()`;
 
@@ -576,6 +626,10 @@ async function main() {
     const rest = await state();
     await run(SEND("Do the thing", LIVE_MS));
     await waitFor(`Boolean(document.querySelector(".chat-panel__thinking"))`, "the thinking row");
+    // The only moment the placeholder exists: no block has landed yet. Read its
+    // type and take the picture from the same frame.
+    const thinkingType = await run(THINKING_TYPE);
+    const thinkingShot = await shoot("thinking");
     const beforeTools = await state();
 
     // --- stage A: three calls in flight -------------------------------------
@@ -964,13 +1018,14 @@ async function main() {
         withActivity: stageA.thinking,
         nextTurn: nextTurn.thinking,
       },
+      thinkingType,
       reset: {
         newTurnBlocks: nextTurn.activityBlocks,
         switchedActivity: switched.activity,
         switchedAfterClick: switched.afterClick,
         switchedTranscript: switched.transcript,
       },
-      screenshots: [collapsedShot, expandedShot, rowInkShot, grownShot],
+      screenshots: [thinkingShot, collapsedShot, expandedShot, rowInkShot, grownShot],
       failures,
       pass: failures.length === 0,
     };

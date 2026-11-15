@@ -179,8 +179,9 @@ vault's own binding.
    settles it folds to one header such as "Worked for 1s · Used 4e89…", and
    clicking the header reopens it.
 5. Below the process is the answer, never inside it, and a footer with the
-   outcome: **Completed · 1s · 1.4k tokens**, or **Stopped**, **Failed** or
-   **Ended before finishing** with the reason. A failed, stopped or incomplete
+   outcome: **Completed · 1s · 1.4k tokens** (past a million tokens the count
+   reads in millions, **1.2M tokens**), or **Stopped**, **Failed** or **Ended
+   before finishing** with the reason. A failed, stopped or incomplete
    turn keeps its process open so the cut-short work stays visible. Reloading the
    chat rebuilds the same rows, fold, footer and token count from the companion's
    own transcript.
@@ -300,15 +301,16 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
   page they open — the pill re-arms on every navigation.
 - **The companion can read anything in the vault and most writes wait.** Reads
   need no approval. Writes to doctrine, library notes, reviews, projects, goal
-  records, Architecture templates, pins, ingest mappings, posted ledger edits and
-  dashboard views go through [Decisions](./23-decisions.md). Direct writes are
-  adding data (a new database, a new row, a batch of rows — after the confirmation
-  in chat), Daily Schedule tasks, a conversational transaction whose amount and
-  account are unambiguous, page script blocks, and the companion brief — and each
-  is named in chat afterwards. If an amount or an account is missing, the companion
-  asks and does not post. Pages other than script blocks and Finance kit installs
-  are not agent-writable surfaces: the shipped tools have no page-write or
-  kit-install call.
+  records, Architecture templates, pins, ingest mappings, posted ledger edits,
+  database merges and whole-database deletions, and dashboard views go through
+  [Decisions](./23-decisions.md). Direct writes are adding data (a new database, a
+  new row, a batch of rows — after the confirmation in chat, and a database name
+  must be new in that area), Daily Schedule tasks, a conversational transaction
+  whose amount and account are unambiguous, page script blocks, and the companion
+  brief — and each is named in chat afterwards. If an amount or an account is
+  missing, the companion asks and does not post. Pages other than script blocks and
+  Finance kit installs are not agent-writable surfaces: the shipped tools have no
+  page-write or kit-install call.
 - **The companion brief is the one card the companion owns.** It is written with
   `set_companion_brief` — a replacement of at most five typed, sourced, expiring
   items (watch, prompt, ahead, commitment, pattern) — read with

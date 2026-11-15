@@ -158,6 +158,12 @@ export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
  * case is the one a grant's write check is guarding, and the per-call domain
  * check below runs for every database write either way.
  *
+ * `delete_database` and `merge_databases` (2026-11-15) are here, not in the
+ * immediate set: deleting a database or moving its rows into another one changes
+ * data that already exists (LAWS/DATABASES.md), so both file ONE pending
+ * Decision and write nothing. Their per-call domain check is the same
+ * `domainSlug` argument every database write names.
+ *
  * Fort-Knox AGENT-10: this list is the *advertised* surface, so it may only
  * carry tools that really do file a Decision. `write_review` and `unlock_review`
  * were here and were then refused unconditionally by the per-call gate, which
@@ -178,6 +184,8 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "upsert_row",
   "delete_row",
   "add_column",
+  "delete_database",
+  "merge_databases",
   // Agent-built dashboard views (plan.md design): a view or a pin change is a
   // write, and whether it lands or becomes a Decision is the board's own page
   // lock rather than this list. It is classified here because the gate is what
