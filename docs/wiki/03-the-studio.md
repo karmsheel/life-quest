@@ -153,14 +153,17 @@ variant for the Life Map.
 
 The chat dock:
 
-- The **agent switcher**, a vertical strip of agent blocks at the dock's corner.
-  Pi and Hermes each wear their own mark; the active one wears the accent ring;
-  an agent scoped away from the current area is absent rather than greyed.
+- The **agent switcher**, a vertical strip of agent blocks in the composer's
+  trailing margin: in the empty gutter beside the composer when the dock is wide,
+  and just above the composer box when the dock is too narrow to hold that
+  gutter. Pi and Hermes each wear their own mark; the active one wears the accent
+  ring; an agent scoped away from the current area is absent rather than greyed.
 - The **chat tabs**, drawn whenever the thread has a tab. Open chats sit in the
-  strip above the thread's header, the tab in front owns the name row under them,
-  and a **+** at the trailing edge is **New chat tab**. A middle click closes a
-  tab and **Ctrl/Cmd+W** closes the tab in front. Right-clicking a tab opens
-  **Pin**, **Rename**, **Archive** and **Delete**.
+  strip above the chat's name, the name in front hangs under them in a small chip
+  with a **Rename chat** pencil at its end, and a **+** at the strip's trailing
+  edge is **New chat tab**. A middle click closes a tab and **Ctrl/Cmd+W** closes
+  the tab in front. Right-clicking a tab opens **Pin**, **Rename**, **Archive**
+  and **Delete**.
 - **Pinned chats** lead the strip as squares: the label's first letter and a
   small pin, no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
@@ -177,7 +180,10 @@ The chat dock:
   (*Message Pi…* or *Message Hermes…*, depending on which companion answers) and
   a control row inside its edges — attachments and the page pill at the leading
   end, model and thinking pills and send/stop at the trailing end. Enter breaks
-  the line; **Ctrl/Cmd+Enter** sends.
+  the line; **Ctrl/Cmd+Enter** sends. The box keeps a margin on each side of the
+  dock, and that margin grows as the dock is dragged wider — at the dock's
+  narrowest the composer fills it edge to edge, and on a wide dock each side is
+  about an eighth of the width — so the composer never stretches the whole bar.
 - The dock's bottom action bar under the composer, in order: **New chat**,
   **Quick Notes**, **Keyboard shortcuts** (opens the reference as a dock
   surface), the two-panes side switch, **Collapse chat**, and the version badge

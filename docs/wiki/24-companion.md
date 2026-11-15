@@ -17,8 +17,10 @@ vault, the tools that read and write it, the locks, and the
   switch in its bottom bar swaps it to the left. It is present on every page,
   collapses to a launcher mark, and its width is dragged with the divider between
   it and the page.
-- A vertical **agent switcher** strip sits at the dock's top-right edge: one block
-  per agent this vault has, offered in the area you are looking at.
+- A vertical **agent switcher** strip stands in the composer's trailing margin: in
+  the empty gutter beside the composer when the dock is wide, and just above the
+  composer box when the dock is too narrow to hold it. One block per agent this
+  vault has, offered in the area you are looking at.
 - The **Chats** list is the middle of the rail, under the wing's pages and above
   the governed shelf. It lists every conversation of the vault and agent you are
   using.
@@ -125,11 +127,14 @@ vault's own binding.
    or **Chat actions** then **Open in new tab** — opens a second tab beside the
    current one.
 4. The **tab strip** leads the dock, above the name of the chat in front, and is
-   drawn whenever the thread has a tab, even a single one. The **+** at its
-   trailing edge (**New chat tab**) opens a fresh chat in a tab of its own. Tabs
-   are remembered per vault and agent: quit and reopen and every tab returns in
-   the same order, with the chat that was in front still in front. A remembered
-   chat that was archived or deleted in the meantime loses its tab.
+   drawn whenever the thread has a tab, even a single one. The chat's name sits
+   under the strip in a small chip hung off its bottom edge, with a pencil
+   (**Rename chat**) at the chip's end — the quick way into the same rename field
+   the tab menu opens. The **+** at the strip's trailing edge (**New chat tab**)
+   opens a fresh chat in a tab of its own. Tabs are remembered per vault and
+   agent: quit and reopen and every tab returns in the same order, with the chat
+   that was in front still in front. A remembered chat that was archived or
+   deleted in the meantime loses its tab.
 5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
@@ -277,12 +282,12 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
 
 | Part | What it does |
 |---|---|
-| Agent switcher (dock top-right) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. |
+| Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
-| Dock header | The active chat's name with **Pin chat** / **Rename chat** / **Archive chat** (the archive control steps away while pinned). |
-| Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. |
-| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. |
+| Chat name chip | The active chat's name in a small box hung off the strip's bottom edge, centred on the dock, with a pencil (**Rename chat**) at its end. Pin and archive live in the tab's right-click menu. |
+| Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
+| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
 | Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour

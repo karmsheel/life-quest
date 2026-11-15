@@ -24,6 +24,12 @@
  *    rig that turns a capability descriptor on through `?caps=` and the only
  *    one that asks history for structured rows through `?history=timeline`;
  *    both are absent by default so the four rigs above keep the page they had.
+ *  - `dock-chrome.electron.mjs` — the dock's own chrome: the thread's name chip
+ *    under the tab strip, the composer's side gutters as the dock widens, and
+ *    where the agent switcher stands in them. It is the only rig that mounts
+ *    `AgentsProvider` (`?agents=1`) so the real switcher draws in the footer;
+ *    absent by default so every other rig's page is unchanged. Failure modes
+ *    listed there.
  *
  * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
  * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
@@ -48,6 +54,10 @@
  *  3. Ready flag — the runner waits on `chatPanelHarnessReady` rather than a
  *     timer, so a slow first Vite transform cannot be mistaken for "the panel
  *     never rendered".
+ *  4. Recorded writes — a session patch (rename, pin, archive) is a durable
+ *     Hermes flag the panel asks main to write; the rig's bridge records it so
+ *     a driver can prove the name chip's field really committed the name it
+ *     held, rather than reading the panel's own optimistic copy.
  */
 import { StrictMode, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -60,6 +70,7 @@ import {
   CompanionProvider,
   useOptionalCompanion,
 } from "@/state/CompanionProvider";
+import { AgentsProvider } from "@/state/AgentsProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import type {
   ChatStreamEvent,
@@ -236,6 +247,18 @@ const WITH_CAPABILITIES = CAPS_MODE !== null;
 const capabilities = CAPABILITIES[CAPS_MODE ?? "full"] ?? CAPABILITIES.full!;
 
 /**
+ * `?agents=1` mounts the real agents provider, so the dock's agent switcher
+ * draws the two companions main's registry publishes.
+ *
+ * The switcher reads `useOptionalAgents`, so without this provider it draws
+ * nothing at all — which is the page every other rig was written against and
+ * must keep. Opt-in for the same reason `?caps=` is: this page is shared, and a
+ * provider that put a control on the screen would change what the other rigs
+ * measure. The dock-chrome rig is the only one that asks.
+ */
+const AGENTS_MODE = new URLSearchParams(window.location.search).has("agents");
+
+/**
  * The two companions main's registry publishes, with this page's descriptor on
  * the active one. The dock reads the active entry's capabilities and nothing
  * else — it never branches on the harness id — so a rig changes the UI by
@@ -404,6 +427,15 @@ type HarnessWindow = {
   __lqAttachmentCalls?: { mime: string; name: string; bytes: number }[];
   /** Every `companionRunSteer` the panel made, in order. */
   __lqSteerCalls?: { runId: string; text: string }[];
+  /**
+   * Every `companionSessionPatch` the panel made, in order: the durable
+   * rename/pin/archive flags. The dock-chrome rig reads the title patch after
+   * pressing Enter in the name chip's own field.
+   */
+  __lqPatchCalls?: {
+    id: string;
+    patch: { title?: string; pinned?: boolean; archived?: boolean };
+  }[];
   chatPanelHarnessReady?: Promise<void>;
 };
 
@@ -422,6 +454,7 @@ harness.__lqEmitSseFor = (sessionId: string, raw: string) => {
 harness.__lqAttachCalls = [];
 harness.__lqAttachmentCalls = [];
 harness.__lqSteerCalls = [];
+harness.__lqPatchCalls = [];
 
 /**
  * The chat the panel has open, as far as the bridge can see: its transcript was
@@ -444,6 +477,17 @@ const bridge: Record<string, unknown> = {
     : {}),
   onVaultFileChanged: () => () => {},
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
+  // The durable session flags main writes (rename / pin / archive), recorded so
+  // a driver can prove the name chip's field committed the name it held. The
+  // reply is the session main mints; the store patches its row from the patch,
+  // never from the reply, so the flags are the only thing a rig reads back.
+  companionSessionPatch: async (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) => {
+    harness.__lqPatchCalls = [...(harness.__lqPatchCalls ?? []), { id, patch }];
+    return ok({ ...SESSION, ...patch });
+  },
   // The two companions, the active one carrying this page's descriptor. Only a
   // page opened with `?caps=` mounts the provider that reads this; the same two
   // entries main's registry publishes keep the shape honest.
@@ -602,33 +646,28 @@ function HarnessDock() {
 }
 
 /**
- * The provider stack the app gives the dock. `CompanionProvider` is mounted
- * only when a rig asked for a capability descriptor (`?caps=`), because it is
- * the provider that tells the dock which harness is answering — and the four
- * older rigs were written against a page that has none, where the dock's
- * full-capability fallback is what they see. Same tree either way, so the
- * timeline rig is still measuring the app's own layout.
+ * The dock with the providers it lives under, below the two that belong above
+ * it. `AgentsProvider` is a child of `VaultProvider` because the switcher it
+ * feeds reads the vault's agent scopes — the same order `App.tsx` mounts them
+ * in — and only a page opened with `?agents=1` mounts it. Without the flag the
+ * tree below the gate is exactly the page every older rig was written against.
  */
-const shell = (
-  <MemoryRouter>
-    <VaultProvider>
-      <ChatDockProvider>
-        <ChatSessionsProvider>
-          <div className="shell">
-            {/* The rail's own column, with the real list in it: switching
-                chats is a sidebar row now, and a driver that reached into
-                the dock for a history picker would be measuring a surface
-                the app no longer ships. */}
-            <div className="nav-rail">
-              <ChatsSidebar />
-            </div>
-            <div className="shell__main" />
-            <HarnessDock />
-          </div>
-        </ChatSessionsProvider>
-      </ChatDockProvider>
-    </VaultProvider>
-  </MemoryRouter>
+const dockProviders = (
+  <ChatDockProvider>
+    <ChatSessionsProvider>
+      <div className="shell">
+        {/* The rail's own column, with the real list in it: switching
+            chats is a sidebar row now, and a driver that reached into
+            the dock for a history picker would be measuring a surface
+            the app no longer ships. */}
+        <div className="nav-rail">
+          <ChatsSidebar />
+        </div>
+        <div className="shell__main" />
+        <HarnessDock />
+      </div>
+    </ChatSessionsProvider>
+  </ChatDockProvider>
 );
 
 function WhenHarnessesAreKnown({ children }: { children: ReactNode }) {
@@ -637,15 +676,37 @@ function WhenHarnessesAreKnown({ children }: { children: ReactNode }) {
   return known ? <>{children}</> : null;
 }
 
+/**
+ * The provider stack the app gives the dock. `CompanionProvider` is mounted
+ * only when a rig asked for a capability descriptor (`?caps=`) or the agents
+ * provider (`?agents=1`), because it is the provider that tells the dock which
+ * harness is answering — and the four older rigs were written against a page
+ * that has none, where the dock's full-capability fallback is what they see.
+ * Same tree either way, so every rig is still measuring the app's own layout.
+ */
+const shell = (
+  <MemoryRouter>
+    <VaultProvider>
+      {AGENTS_MODE ? (
+        <AgentsProvider>{dockProviders}</AgentsProvider>
+      ) : (
+        dockProviders
+      )}
+    </VaultProvider>
+  </MemoryRouter>
+);
+
 createRoot(root).render(
   <StrictMode>
-    {WITH_CAPABILITIES ? (
+    {WITH_CAPABILITIES || AGENTS_MODE ? (
       <CompanionProvider>
         {/* The app mounts this provider long before the dock opens; this page
             opens the dock immediately, so the dock store must not mount until
             the harness list has arrived. Otherwise the switch-reset a real
             companion change triggers fires on the first read and clears the
-            landing the dock just resumed. */}
+            landing the dock just resumed. The gate is a property of the
+            companion provider being above the dock, so it wraps the agents
+            provider too. */}
         <WhenHarnessesAreKnown>{shell}</WhenHarnessesAreKnown>
       </CompanionProvider>
     ) : (

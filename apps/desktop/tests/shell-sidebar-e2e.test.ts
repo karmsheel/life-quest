@@ -240,7 +240,7 @@ type State = {
   /**
    * The rail's first level: the five-wing switcher and the band it sits in.
    * The band's own bottom border is measured because it must stay unpainted —
-   * the hairline in that row belongs to the dock's header.
+   * the hairline in that row belongs to the dock's tab strip.
    */
   wingsBand: { box: Box; display: string; borderBottomWidth: string } | null;
   wingSwitcher: {
@@ -282,6 +282,17 @@ type State = {
     borderBottomWidth: string;
     borderBottomColor: string;
     background: string;
+  } | null;
+  /**
+   * The thread's name row's content: the chip box hung under the tab strip, with
+   * the label's own type size. A row that regressed to the old band would still
+   * have a `chatHeader`; the chip is what makes it the new row.
+   */
+  chatChip: {
+    box: Box;
+    display: string;
+    borderTopWidth: string;
+    label: { text: string; fontSizePx: number } | null;
   } | null;
   chatStrip: {
     box: Box;
@@ -598,7 +609,7 @@ describe("shell sidebar (docked rail)", () => {
 
     // The rail's first level: the five-wing switcher in a band of its own, above
     // the wing's rows and directly under the window strip. The band paints no
-    // line of its own — the hairline in that row is the dock's own header rule.
+    // line of its own — the hairline in that row is the dock's own tab strip rule.
     assert.ok(expanded.wingSwitcher, "the rail rendered no wing switcher");
     assert.equal(
       expanded.wingSwitcher.inRail,
@@ -634,8 +645,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.ok(expanded.wingsBand, "the rail drew no band for the wing switcher");
     // The rail's band did not give its height back with the sheet's band: it
-    // starts at the strip's bottom edge and keeps the 44px band the dock's header
-    // wears, so the two chrome rows stay level across the pane seam.
+    // starts at the strip's bottom edge and keeps the 44px band the dock's tab
+    // strip wears, so the two chrome rows stay level across the pane seam.
     assert.equal(
       expanded.wingsBand.box.top,
       titlebarHeight,
@@ -658,7 +669,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       expanded.wingsBand.borderBottomWidth,
       "0px",
-      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the hairline in that row is the dock's own header rule`,
+      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the hairline in that row is the dock's tab strip's rule`,
     );
     // The switcher is a rectangular block, not the shared pill: square corners
     // on the frame and on every tab, the rail's own padding as its only margin —
@@ -1049,7 +1060,8 @@ describe("shell sidebar (docked rail)", () => {
     // The sheet's retired band. The page now starts at the strip's bottom edge,
     // and the dock's tab strip wears the band the header used to — the same 44px
     // as the rail's wing switcher, so the chrome rows stay level across the pane
-    // seam — while the thread's name row keeps the hairline directly under it.
+    // seam. Below it the thread's name row is a chip, not a second band, and the
+    // strip's own bottom rule is the only line across that seam.
     assert.ok(expanded.chatStrip, "the dock rendered no tab strip band");
     assert.equal(
       expanded.chatStrip.box.top,
@@ -1066,6 +1078,12 @@ describe("shell sidebar (docked rail)", () => {
         parseFloat(expanded.chatStrip.borderBottomWidth) <= 1,
       `the dock tab strip lost its underline (${expanded.chatStrip.borderBottomWidth})`,
     );
+    // The dock's name row is the chip now, not the old 44px band: the seam is
+    // unchanged (header top == strip bottom), the row paints no hairline (the
+    // strip's bottom rule is the only line), the row is a chip's height rather
+    // than a band's, and the chip hangs flush off the strip inside it. The
+    // failure this catches: the name row regressed to a full band, the old
+    // underline came back, or the chip left the strip's bottom edge.
     assert.ok(expanded.chatHeader, "the dock rendered no name row");
     assert.equal(
       expanded.chatHeader.box.top,
@@ -1073,14 +1091,42 @@ describe("shell sidebar (docked rail)", () => {
       `the dock name row starts at ${expanded.chatHeader.box.top}px, not directly under the tab strip (${expanded.chatStrip.box.bottom}px)`,
     );
     assert.equal(
-      expanded.chatHeader.box.bottom,
-      expanded.chatStrip.box.bottom + topbarHeight,
-      `the dock name row ends at ${expanded.chatHeader.box.bottom}px, not ${expanded.chatStrip.box.bottom + topbarHeight}px down`,
+      expanded.chatHeader.borderBottomWidth,
+      "0px",
+      `the dock name row brought back a hairline (${expanded.chatHeader.borderBottomWidth}); ` +
+        `the strip's bottom rule is the only line between the tabs and the transcript`,
     );
     assert.ok(
-      parseFloat(expanded.chatHeader.borderBottomWidth) > 0 &&
-        parseFloat(expanded.chatHeader.borderBottomWidth) <= 1,
-      `the dock name row lost its underline (${expanded.chatHeader.borderBottomWidth})`,
+      expanded.chatHeader.box.height < topbarHeight,
+      `the dock name row grew back to a ${expanded.chatHeader.box.height}px band (the old band was ${topbarHeight}px)`,
+    );
+    assert.ok(expanded.chatChip, "the thread rendered no name chip");
+    assert.ok(
+      expanded.chatHeader.box.height >= expanded.chatChip!.box.height,
+      `the name row (${expanded.chatHeader.box.height}px) is shorter than its chip (${expanded.chatChip!.box.height}px)`,
+    );
+    assert.ok(
+      Math.abs(expanded.chatChip!.box.top - expanded.chatStrip.box.bottom) <= 1,
+      `the chip's top edge is ${expanded.chatChip!.box.top}px, not flush with the strip's bottom edge (${expanded.chatStrip.box.bottom}px)`,
+    );
+    assert.ok(
+      expanded.chatChip!.display === "inline-flex" || expanded.chatChip!.display === "flex",
+      `the name chip is a ${expanded.chatChip!.display} box, not an inline/flex box sized to its text`,
+    );
+    assert.ok(
+      parseFloat(expanded.chatChip!.borderTopWidth) > 0,
+      `the name chip carries no border (${expanded.chatChip!.borderTopWidth})`,
+    );
+    assert.ok(
+      Math.abs(expanded.chatHeader.box.width - expanded.chat.box.width) <= 1,
+      `the name row is ${expanded.chatHeader.box.width}px wide in a ${expanded.chat.box.width}px dock`,
+    );
+    assert.ok(
+      expanded.chatChip!.box.left >= expanded.chatHeader.box.left - 1 &&
+        expanded.chatChip!.box.right <= expanded.chatHeader.box.right + 1 &&
+        expanded.chatChip!.box.top >= expanded.chatHeader.box.top - 1 &&
+        expanded.chatChip!.box.bottom <= expanded.chatHeader.box.bottom + 1,
+      `the chip (${JSON.stringify(expanded.chatChip!.box)}) is not inside the name row (${JSON.stringify(expanded.chatHeader.box)})`,
     );
 
     // The domain tab raised into the window strip. The sheet's `.top-bar` is gone
