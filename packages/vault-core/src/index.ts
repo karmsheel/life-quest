@@ -124,8 +124,10 @@ export {
   type IsoWeek,
 } from "./period.ts";
 export {
+  DAILY_REVIEW_NO_AREAS,
   ensureReview,
   getReview,
+  getReviewAreaChecklist,
   writeReview,
   markReviewDone,
   unlockReview,
@@ -133,6 +135,7 @@ export {
   listReviewIndex,
   applyLockedReviewBody,
 } from "./reviews.ts";
+export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
 export {
   REVIEW_SECTIONS,
   FINANCE_SNAPSHOT_ID,
