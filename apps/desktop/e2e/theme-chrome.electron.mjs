@@ -65,6 +65,7 @@ const VARIANTS_PNG = path.join(artifactsDir, "themes-v2-variants.png");
 const SIDEBAR_RIGHT_PNG = path.join(artifactsDir, "themes-v2-sidebar-right.png");
 const DOCK_LEFT_PNG = path.join(artifactsDir, "themes-v2-dock-left.png");
 const FLOATING_RAIL_PNG = path.join(artifactsDir, "themes-v2-floating-rail.png");
+const OUTSIDE_PNG = path.join(artifactsDir, "themes-v2-outside-theme.png");
 
 const failures = [];
 const checks = [];
@@ -227,6 +228,8 @@ const SAMPLE = `(async () => {
       return el ? Math.round(el.getBoundingClientRect().height) : null;
     })(),
     titlebarSizeAttr: document.documentElement.dataset.chromeTitlebarSize ?? null,
+    accentVar: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
+    stripPainted: Boolean(document.querySelector(".window-titlebar")),
     titlebarVar: document.documentElement.style.getPropertyValue("--window-titlebar-height") ?? null,
     mainRect: (() => {
       const el = document.querySelector(".shell__main");
@@ -319,6 +322,28 @@ const AGENT_THEME = {
     motion: "lively",
     shadow: "deep",
     typeScale: "airy",
+    backdrop: "grid",
+  },
+};
+
+/** The Phase 1 gate: a complete theme authored only through the MCP door. */
+const OUTSIDE_THEME = {
+  name: "outside-theme",
+  label: "Outside Theme",
+  description: "A whole theme — chrome and all six material axes — written through the companion's write_theme tool.",
+  chrome: {
+    wingSwitcher: { place: "floating-left", variant: "labels" },
+    domainSwitcher: { place: "bottom-center", variant: "pill" },
+    navRail: { place: "floating", width: "wide" },
+    chatDock: { side: "left" },
+    titlebar: { size: "tall" },
+  },
+  material: {
+    radius: "sharp",
+    shadow: "flat",
+    motion: "none",
+    typeScale: "compact",
+    density: "compact",
     backdrop: "grid",
   },
 };
@@ -1478,6 +1503,147 @@ async function main() {
     }),
   );
 
+  // ── 12: the Phase 1 gate — a whole theme from outside, worn and kept ────
+  // The first door client closed with its own section; the gate opens a fresh
+  // one, which is also the companion's real shape: a call, not a session.
+  const gateDoor = await e2eCompanionDoor();
+  const { Client: GateClient } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport: GateTransport } = await import(
+    "@modelcontextprotocol/sdk/client/streamableHttp.js"
+  );
+  const gateClient = new GateClient({ name: "theme-rig-gate", version: "0.1.0" });
+  await gateClient.connect(
+    new GateTransport(new URL(gateDoor.url), {
+      requestInit: { headers: { Authorization: `Bearer ${gateDoor.token}` } },
+    }),
+  );
+  const gateCall = async (name, args) => {
+    const result = await gateClient.callTool({ name, arguments: args });
+    const text = result.content?.find((part) => part.type === "text")?.text ?? "{}";
+    try {
+      return { json: JSON.parse(text), isError: result.isError === true };
+    } catch {
+      return { json: null, isError: true };
+    }
+  };
+  const outsideWritten = await gateCall("write_theme", { theme: OUTSIDE_THEME });
+  const outside = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("outside-theme.json") &&
+      s.wingFloating &&
+      s.domainBottom &&
+      s.domainPill &&
+      s.navPlaceAttr === "floating" &&
+      s.navWidthAttr === "wide" &&
+      s.dockLeft &&
+      s.titlebarHeight === 40 &&
+      s.radiusLg === "8px" &&
+      s.shadowAttr === "flat" &&
+      s.motion === "none" &&
+      s.typeScaleAttr === "compact" &&
+      s.density === "compact" &&
+      s.backdropAttr === "grid",
+    25_000,
+  );
+  check(
+    "a-theme-authored-outside-can-be-worn",
+    outsideWritten.json?.written === "outside-theme.json" &&
+      outside?.wingFloating === true &&
+      outside.domainBottom === true &&
+      outside.domainPill === true &&
+      outside.navPlaceAttr === "floating" &&
+      outside.navWidthAttr === "wide" &&
+      outside.dockLeft === true &&
+      outside.titlebarHeight === 40 &&
+      outside.radiusLg === "8px" &&
+      outside.shadowAttr === "flat" &&
+      outside.motion === "none" &&
+      outside.typeScaleAttr === "compact" &&
+      outside.density === "compact" &&
+      outside.backdropAttr === "grid",
+    JSON.stringify({
+      written: outsideWritten.json?.written,
+      preview: outside?.preview,
+      wing: outside?.wingFloating,
+      domain: outside?.domainBottom,
+      pill: outside?.domainPill,
+      nav: outside?.navPlaceAttr,
+      width: outside?.navWidthAttr,
+      dockLeft: outside?.dockLeft,
+      strip: outside?.titlebarHeight,
+      radius: outside?.radiusLg,
+      shadow: outside?.shadowAttr,
+      motion: outside?.motion,
+      type: outside?.typeScaleAttr,
+      density: outside?.density,
+      backdrop: outside?.backdropAttr,
+    }),
+  );
+
+  const keptOutside = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const outsideKept = await waitFor(
+    (s) => keptOutside === true && !s.preview && s.kept === "outside-theme.json",
+    15_000,
+  );
+  check(
+    "outside-theme-keeps-across-a-reload",
+    keptOutside === true && outsideKept?.kept === "outside-theme.json",
+    JSON.stringify({ kept: outsideKept?.kept }),
+  );
+
+  // The gate's second half: the app restarts wearing it, with the operator's
+  // way out still painted — window controls, Settings entry, preview bar.
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const afterOutsideRestart = await waitFor(
+    (s) =>
+      s.shell &&
+      s.kept === "outside-theme.json" &&
+      s.wingFloating &&
+      s.domainBottom &&
+      s.navPlaceAttr === "floating" &&
+      s.dockLeft &&
+      s.titlebarHeight === 40 &&
+      s.radiusLg === "8px" &&
+      s.motion === "none" &&
+      s.density === "compact" &&
+      s.backdropAttr === "grid" &&
+      s.settingsEntry &&
+      s.stripPainted,
+    25_000,
+  );
+  check(
+    "outside-theme-survives-a-restart-with-its-way-out",
+    afterOutsideRestart?.kept === "outside-theme.json" &&
+      afterOutsideRestart.wingFloating === true &&
+      afterOutsideRestart.navPlaceAttr === "floating" &&
+      afterOutsideRestart.dockLeft === true &&
+      afterOutsideRestart.titlebarHeight === 40 &&
+      afterOutsideRestart.radiusLg === "8px" &&
+      afterOutsideRestart.motion === "none" &&
+      afterOutsideRestart.density === "compact" &&
+      afterOutsideRestart.backdropAttr === "grid" &&
+      afterOutsideRestart.settingsEntry === true &&
+      afterOutsideRestart.stripPainted === true,
+    JSON.stringify({
+      kept: afterOutsideRestart?.kept,
+      wing: afterOutsideRestart?.wingFloating,
+      dockLeft: afterOutsideRestart?.dockLeft,
+      strip: afterOutsideRestart?.titlebarHeight,
+      radius: afterOutsideRestart?.radiusLg,
+      motion: afterOutsideRestart?.motion,
+      density: afterOutsideRestart?.density,
+      settings: afterOutsideRestart?.settingsEntry,
+      strip: afterOutsideRestart?.stripPainted,
+    }),
+  );
+
+  const outsideShot = await win.webContents.capturePage();
+  fs.writeFileSync(OUTSIDE_PNG, outsideShot.toPNG());
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -1495,6 +1661,7 @@ async function main() {
       sidebarRight: path.relative(desktopRoot, SIDEBAR_RIGHT_PNG),
       dockLeft: path.relative(desktopRoot, DOCK_LEFT_PNG),
       floatingRail: path.relative(desktopRoot, FLOATING_RAIL_PNG),
+      outsideTheme: path.relative(desktopRoot, OUTSIDE_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
