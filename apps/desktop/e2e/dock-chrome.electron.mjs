@@ -46,8 +46,11 @@
  *     width inside the column) lands on the composer box's edge. At the 300px
  *     floor the body's 0.875rem minimum is a couple of pixels wider than the
  *     composer's 12px, so the column may be up to 4px narrower there and no
- *     more. The message rows are the second witness: the operator's bubble is
- *     left-aligned to that column and the companion's right-aligned to it.
+ *     more. The message rows are the second witness: their union must cover that
+ *     column (some row starts on its leading edge, some ends on its trailing
+ *     edge) and no row may escape it. Which side the operator's bubble sits on is
+ *     the transcript's business, not this rig's, so the witness is the rows as a
+ *     block rather than one role's bubble.
  *
  * ── every way this could fail, written down before the code ───────────────────
  *
@@ -106,7 +109,8 @@
  *       appears and disappears with the conversation, so the text column changes
  *       width as the chat grows and the two edges drift apart.
  *   T4. The padding moves the rows but not the text the operator reads: the
- *       bubble edges stay on the old column, i.e. the text is not actually in the
+ *       message rows' union no longer covers the column's edges (a row escaped it
+ *       or the rows collapsed away from it), i.e. the text is not actually in the
  *       measured content box.
  *   T5. At the 300px floor the body's 0.875rem floor is wider than the composer's
  *       12px, so the column is legitimately a few pixels narrower — a bounded
@@ -297,6 +301,8 @@ const SAMPLE = `(() => {
   const transcriptBodyEl = document.querySelector(
     ".chat-panel__body:not(.chat-panel__body--chain):not(.chat-panel__body--shortcuts)",
   );
+  const messagesEl = document.querySelector(".chat-panel__messages");
+  const messageEls = Array.from(document.querySelectorAll(".chat-panel__message"));
   const userMessageEl = document.querySelector(".chat-panel__message--user");
   const assistantMessages = Array.from(
     document.querySelectorAll(".chat-panel__message--assistant"),
@@ -315,6 +321,8 @@ const SAMPLE = `(() => {
   const composerForm = rect(composerFormEl);
   const composerBox = rect(composerBoxEl);
   const transcriptBody = rect(transcriptBodyEl);
+  const messages = rect(messagesEl);
+  const messageRows = messageEls.map((el) => rect(el)).filter(Boolean);
   const userMessage = rect(userMessageEl);
   const lastAssistant = rect(lastAssistantEl);
   const switcher = rect(switcherEl);
@@ -360,10 +368,10 @@ const SAMPLE = `(() => {
   // scroller reserves its scrollbar (scrollbar-gutter: stable), so clientWidth
   // already excludes that bar while still including padding: the content box's
   // right edge is where the text actually ends, not the padding box's edge with a
-  // scrollbar's width still to come. The two bubble edges are the second witness:
-  // the operator's message is left-aligned to this column and the companion's
-  // right-aligned to it, so a padding that only moved the rows would show up as
-  // a bubble that no longer lands on the composer box's edge.
+  // scrollbar's width still to come. The message rows are the second witness:
+  // their union must cover this column and every row must stay inside it, so a
+  // padding that only moved the rows would show up as rows that no longer land on
+  // the composer box's edges.
   const transcriptPaddingLeft = transcriptStyle ? px(transcriptStyle.paddingLeft) : null;
   const transcriptPaddingRight = transcriptStyle ? px(transcriptStyle.paddingRight) : null;
   const transcriptClientWidth = transcriptBodyEl ? transcriptBodyEl.clientWidth : null;
@@ -380,6 +388,23 @@ const SAMPLE = `(() => {
   const transcriptContentRight =
     transcriptContentLeft !== null && transcriptContentWidth !== null
       ? round(transcriptContentLeft + transcriptContentWidth)
+      : null;
+  // The role-agnostic witness. Which side the operator's bubble sits on is the
+  // transcript's own business (the chat and the review surfaces have chosen
+  // differently over time), so the claim is about the rows as a block: their
+  // union covers the column, and every row stays inside it. A padding that moved
+  // the rows but not the text, or a row that escaped the column, shows up here.
+  const rowsLeft =
+    messageRows.length > 0 ? Math.min(...messageRows.map((row) => row.left)) : null;
+  const rowsRight =
+    messageRows.length > 0 ? Math.max(...messageRows.map((row) => row.right)) : null;
+  const rowsOutsideLeft =
+    messageRows.length > 0 && transcriptContentLeft !== null
+      ? Math.min(...messageRows.map((row) => row.left - transcriptContentLeft))
+      : null;
+  const rowsOutsideRight =
+    messageRows.length > 0 && transcriptContentRight !== null
+      ? Math.min(...messageRows.map((row) => transcriptContentRight - row.right))
       : null;
 
   return {
@@ -420,6 +445,32 @@ const SAMPLE = `(() => {
           contentLeftPx: transcriptContentLeft,
           contentWidthPx: transcriptContentWidth,
           contentRightPx: transcriptContentRight,
+          messages: messages
+            ? {
+                rect: messages,
+                leftDeltaPx:
+                  transcriptContentLeft === null
+                    ? null
+                    : round(messages.left - transcriptContentLeft),
+                rightDeltaPx:
+                  transcriptContentRight === null
+                    ? null
+                    : round(transcriptContentRight - messages.right),
+                rowCount: messageRows.length,
+                rowsLeftDeltaPx:
+                  rowsLeft === null || transcriptContentLeft === null
+                    ? null
+                    : round(rowsLeft - transcriptContentLeft),
+                rowsRightDeltaPx:
+                  rowsRight === null || transcriptContentRight === null
+                    ? null
+                    : round(transcriptContentRight - rowsRight),
+                rowsOutsideLeftPx:
+                  rowsOutsideLeft === null ? null : round(rowsOutsideLeft),
+                rowsOutsideRightPx:
+                  rowsOutsideRight === null ? null : round(rowsOutsideRight)
+              }
+            : null,
           userMessage: userMessageEl
             ? {
                 rect: userMessage,
@@ -916,9 +967,10 @@ async function main() {
         leftDeltaPx,
         rightDeltaPx,
         widthDeltaPx,
-        bubbleLeftDeltaPx: transcript?.userMessage?.leftDeltaPx ?? null,
-        bubbleRightDeltaPx: transcript?.lastAssistant?.rightDeltaPx ?? null,
-        bubblePresent: Boolean(transcript?.userMessage && transcript?.lastAssistant),
+        messages: transcript?.messages ?? null,
+        messagesPresent: Boolean(
+          transcript?.messages && transcript.messages.rowCount > 0,
+        ),
       };
     });
     check(
@@ -933,13 +985,13 @@ async function main() {
       transcriptColumn.every((entry) => entry.body?.scrollbarGutter === "stable"),
       `scrollbarGutter per width: ${JSON.stringify(transcriptColumn.map((entry) => entry.body?.scrollbarGutter))}`,
     );
-    // T4 — both fixtures are on screen, so each bubble edge can be used as the
-    // witness that the text (not just the padding) sits in the column.
+    // T4 — the message rows are the second witness: they must be on screen at
+    // every rung, so the column's edges can be shown to be used by the text.
     check(
-      "transcript-bubbles-present",
-      transcriptColumn.every((entry) => entry.bubblePresent === true),
-      `one .chat-panel__message--user and one --assistant are needed per width: ` +
-        `${JSON.stringify(transcriptColumn.map((entry) => entry.bubblePresent))}`,
+      "transcript-messages-present",
+      transcriptColumn.every((entry) => entry.messagesPresent === true),
+      `the transcript's message rows were not measurable per width: ` +
+        `${JSON.stringify(transcriptColumn.map((entry) => entry.messagesPresent))}`,
     );
     for (const entry of transcriptColumn) {
       // T5 — the 300px floor is the one width where the body's 0.875rem minimum
@@ -964,17 +1016,43 @@ async function main() {
         `text column is ${entry.widthDeltaPx}px from the composer box's width ` +
           `(tolerance ${tolerancePx}px)`,
       );
-      // T4 — the operator's bubble starts on the column's leading edge and the
-      // companion's answer ends on its trailing edge.
+      // T4 — the message rows fill the column: the messages container is the
+      // column's box, their union covers both edges, and no row escapes it.
       check(
-        `transcript-bubble:${entry.width}:left`,
-        entry.bubbleLeftDeltaPx !== null && Math.abs(entry.bubbleLeftDeltaPx) <= 2,
-        `the user bubble's left edge is ${entry.bubbleLeftDeltaPx}px from the text column's left`,
+        `transcript-messages:${entry.width}:left`,
+        entry.messages !== null &&
+          entry.messages.leftDeltaPx !== null &&
+          Math.abs(entry.messages.leftDeltaPx) <= tolerancePx,
+        `the message rows start ${entry.messages?.leftDeltaPx}px from the text column's left ` +
+          `(tolerance ${tolerancePx}px)`,
       );
       check(
-        `transcript-bubble:${entry.width}:right`,
-        entry.bubbleRightDeltaPx !== null && Math.abs(entry.bubbleRightDeltaPx) <= 2,
-        `the assistant bubble's right edge is ${entry.bubbleRightDeltaPx}px from the text column's right`,
+        `transcript-messages:${entry.width}:right`,
+        entry.messages !== null &&
+          entry.messages.rightDeltaPx !== null &&
+          Math.abs(entry.messages.rightDeltaPx) <= tolerancePx,
+        `the message rows end ${entry.messages?.rightDeltaPx}px from the text column's right ` +
+          `(tolerance ${tolerancePx}px)`,
+      );
+      check(
+        `transcript-rows:${entry.width}:span`,
+        entry.messages !== null &&
+          entry.messages.rowsLeftDeltaPx !== null &&
+          entry.messages.rowsRightDeltaPx !== null &&
+          Math.abs(entry.messages.rowsLeftDeltaPx) <= 2 &&
+          Math.abs(entry.messages.rowsRightDeltaPx) <= 2,
+        `the rows' union is ${entry.messages?.rowsLeftDeltaPx}px / ` +
+          `${entry.messages?.rowsRightDeltaPx}px off the column's edges`,
+      );
+      check(
+        `transcript-rows:${entry.width}:inside`,
+        entry.messages !== null &&
+          entry.messages.rowsOutsideLeftPx !== null &&
+          entry.messages.rowsOutsideRightPx !== null &&
+          entry.messages.rowsOutsideLeftPx >= -2 &&
+          entry.messages.rowsOutsideRightPx >= -2,
+        `a message row escaped the column by ${entry.messages?.rowsOutsideLeftPx}px / ` +
+          `${entry.messages?.rowsOutsideRightPx}px`,
       );
     }
 
@@ -1723,7 +1801,7 @@ async function main() {
         `  ${entry.width}px: text ${entry.content?.left}..${entry.content?.right} ` +
           `(${entry.content?.width}px) vs composer ${entry.composerBox?.left}..${entry.composerBox?.right} ` +
           `(${entry.composerBox?.width}px) — Δl ${entry.leftDeltaPx}, Δr ${entry.rightDeltaPx}, ` +
-          `Δw ${entry.widthDeltaPx}; bubbles Δ ${entry.bubbleLeftDeltaPx}/${entry.bubbleRightDeltaPx}`,
+          `Δw ${entry.widthDeltaPx}; rows Δ ${entry.messages?.rowsLeftDeltaPx}/${entry.messages?.rowsRightDeltaPx}`,
       );
     }
     console.log("");

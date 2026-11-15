@@ -23,7 +23,9 @@
  *     up over the transcript), switched by a container query on the footer;
  *  4. the transcript's text column keeps the composer box's measure: the same
  *     gutter on each side (the trailing one giving back the reserved scrollbar's
- *     0.5rem), with the message bubbles landing on the composer's edges.
+ *     0.5rem), with the message rows filling that column — their union covering
+ *     its edges and no row escaping it, whichever side each role's bubble sits
+ *     on.
  *
  * The page mounts the real sidebar beside the dock and the real provider stack,
  * so this is the app's own layout — not a mock of it.
@@ -238,9 +240,19 @@ type DockChromeReport = {
       leftDeltaPx: number | null;
       rightDeltaPx: number | null;
       widthDeltaPx: number | null;
-      bubbleLeftDeltaPx: number | null;
-      bubbleRightDeltaPx: number | null;
-      bubblePresent: boolean;
+      /** The message rows as a block: the second witness that the text, not just
+       *  the padding, sits in the column. Role-agnostic on purpose — which side
+       *  the operator's bubble is on belongs to the transcript, not this rig. */
+      messages: {
+        leftDeltaPx: number | null;
+        rightDeltaPx: number | null;
+        rowCount: number;
+        rowsLeftDeltaPx: number | null;
+        rowsRightDeltaPx: number | null;
+        rowsOutsideLeftPx: number | null;
+        rowsOutsideRightPx: number | null;
+      } | null;
+      messagesPresent: boolean;
     }[];
   };
   chip: {
@@ -478,23 +490,42 @@ describe("dock chrome", () => {
         `the transcript's text column is ${entry.widthDeltaPx}px wider than the composer box at ` +
           `${entry.width}px (tolerance ${tolerance}px)`,
       );
-      // T4 — the text really sits in that column: the operator's bubble starts
-      // on the column's leading edge and the companion's ends on its trailing
-      // edge, so a padding that moved the rows but not the text would fail.
+      // T4 — the text really sits in that column: the message rows fill it. The
+      // rows' union covers both edges and no row escapes it, so a padding that
+      // moved the rows but not the text would fail. The side each role's bubble
+      // is aligned to is the transcript's business, not this rig's.
       assert.equal(
-        entry.bubblePresent,
+        entry.messagesPresent,
         true,
-        `the transcript had no user+assistant bubble pair to witness the column at ${entry.width}px`,
+        `the transcript's message rows were not measurable at ${entry.width}px`,
       );
+      assert.ok(entry.messages !== null, `no message-row block at ${entry.width}px`);
       assert.ok(
-        entry.bubbleLeftDeltaPx !== null && Math.abs(entry.bubbleLeftDeltaPx) <= 2,
-        `the user bubble's left edge is ${entry.bubbleLeftDeltaPx}px from the text column's left ` +
+        entry.messages!.leftDeltaPx !== null && Math.abs(entry.messages!.leftDeltaPx) <= 2,
+        `the message rows start ${entry.messages!.leftDeltaPx}px from the text column's left ` +
           `at ${entry.width}px`,
       );
       assert.ok(
-        entry.bubbleRightDeltaPx !== null && Math.abs(entry.bubbleRightDeltaPx) <= 2,
-        `the assistant bubble's right edge is ${entry.bubbleRightDeltaPx}px from the text ` +
-          `column's right at ${entry.width}px`,
+        entry.messages!.rightDeltaPx !== null && Math.abs(entry.messages!.rightDeltaPx) <= 2,
+        `the message rows end ${entry.messages!.rightDeltaPx}px from the text column's right ` +
+          `at ${entry.width}px`,
+      );
+      assert.ok(
+        entry.messages!.rowCount > 0 &&
+          entry.messages!.rowsLeftDeltaPx !== null &&
+          entry.messages!.rowsRightDeltaPx !== null &&
+          Math.abs(entry.messages!.rowsLeftDeltaPx) <= 2 &&
+          Math.abs(entry.messages!.rowsRightDeltaPx) <= 2,
+        `the rows' union is ${entry.messages!.rowsLeftDeltaPx}px / ` +
+          `${entry.messages!.rowsRightDeltaPx}px off the column's edges at ${entry.width}px`,
+      );
+      assert.ok(
+        entry.messages!.rowsOutsideLeftPx !== null &&
+          entry.messages!.rowsOutsideRightPx !== null &&
+          entry.messages!.rowsOutsideLeftPx >= -2 &&
+          entry.messages!.rowsOutsideRightPx >= -2,
+        `a message row escaped the column by ${entry.messages!.rowsOutsideLeftPx}px / ` +
+          `${entry.messages!.rowsOutsideRightPx}px at ${entry.width}px`,
       );
     }
 
