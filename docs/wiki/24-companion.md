@@ -16,7 +16,11 @@ vault, the tools that read and write it, the locks, and the
 - The **chat dock** is the right-hand pane of the three-pane studio; the side
   switch in its bottom bar swaps it to the left. It is present on every page,
   collapses to a launcher mark, and its width is dragged with the divider between
-  it and the page.
+  it and the page. **Full screen chat** at the trailing end of its top row
+  collapses the main page and gives the dock the workspace right of the rail —
+  the rail and its **Chats** list stay — and the title bar's **Collapse main
+  page** / **Restore main page** is the same mode, with **Mod+Shift+F** as the
+  shortcut.
 - A vertical **agent switcher** strip stands in the composer's trailing margin: in
   the empty gutter beside the composer when the dock is wide, and just above the
   composer box when the dock is too narrow to hold it. One block per agent this
@@ -147,6 +151,14 @@ vault's own binding.
 7. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable flags on
    that companion, so its other surfaces see them too.
+8. **Give the chat the workspace.** Choose **Full screen chat** at the trailing
+   end of the dock's top row — the tab strip when a tab is drawn, the header row
+   when it is not. The main page collapses, the chat takes the workspace right of
+   the rail, and the rail with its chats list stays; the control now reads **Exit
+   full screen chat**. The title bar's **Collapse main page** / **Restore main
+   page** is the second door and **Mod+Shift+F** the shortcut. The mode is
+   session-only — it resets on relaunch, and collapsing the dock leaves it and
+   brings the page back.
 
 ### Search and the archive
 
@@ -278,6 +290,12 @@ the dock included. Running one of the day's acts from it closes the sheet first 
 then opens the chat tab in the dock behind, so the result is never started where
 you cannot see it. See [Daily Journal](./16-daily-journal.md).
 
+Focus mode and full-screen chat are different arrangements. Focus mode is a sheet
+lying over everything, so it covers the dock, full screen or not; full-screen chat
+is a shell mode in which the main page is gone and the dock takes its place, the
+dock itself staying live, scrollable and typeable. Closing the sheet gives back
+the arrangement you left; leaving full-screen chat gives back the split.
+
 ## The screen
 
 | Part | What it does |
@@ -285,6 +303,7 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
 | Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
+| Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name chip | The active chat's name in a small box hung off the strip's bottom edge, centred on the dock, with a pencil (**Rename chat**) at its end. Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |

@@ -17,6 +17,7 @@ export function AppShell() {
     setOpen: setChatOpen,
     setPresent: setChatPresent,
     side: chatSide,
+    focus: chatFocus,
   } = useChatDock();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
   const { pathname } = useLocation();
@@ -70,6 +71,11 @@ export function AppShell() {
               // window's own trailing edge. The rail holds its column either way.
               chatSide === "left" ? "shell--chat-left" : "shell--chat-right",
               navCollapsed ? "shell--nav-collapsed" : "",
+              // Full-screen chat: the page pane is not drawn and the dock takes
+              // the workspace beside the rail. The rail stays — it is the
+              // window's chrome and holds the chats list — so the tray keeps its
+              // leading track and the dock starts where the page used to.
+              chatFocus ? "shell--chat-focus" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -96,8 +102,10 @@ export function AppShell() {
             </div>
             <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
             {/* The handle on the seam, drawn only while there is a column to drag:
-                a collapsed dock is one floating mark, not a pane. */}
-            {chatOpen ? (
+                a collapsed dock is one floating mark, not a pane, and a
+                full-screen dock has no page on its leading side to share a seam
+                with. */}
+            {chatOpen && !chatFocus ? (
               <ChatDivider side={chatSide} props={chatColumn.dividerProps} />
             ) : null}
             {/* What the gesture says out loud. A drag has no button to come back

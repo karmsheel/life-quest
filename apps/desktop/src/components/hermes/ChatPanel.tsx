@@ -61,6 +61,7 @@ import {
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -1761,6 +1762,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     );
   }
 
+  /*
+    The dock's own full-screen door. It is drawn at the trailing end of the top
+    row — the tab strip when the thread has one, the header row on the chain and
+    shortcuts surfaces and on a thread with no tab yet — so the control is always
+    one click away whichever surface of the dock is in front. The class differs
+    only in size: the strip's band is tighter than a header row.
+  */
+  const focusToggle = (className: string) => (
+    <ChatFocusToggle
+      className={className}
+      testId="chat-fullscreen"
+      offLabel="Full screen chat"
+      onLabel="Exit full screen chat"
+    />
+  );
+
   return (
     <aside
       ref={panelRef}
@@ -1896,20 +1913,33 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 plus. It sticks to the band's trailing edge while the strip
                 scrolls, so a full strip never hides the way to a new one.
               */}
-              <button
-                type="button"
-                className="chat-panel__tab-new"
-                aria-label="New chat tab"
-                title="New chat tab"
-                onClick={() => void newSession()}
-              >
-                <Plus size={13} aria-hidden />
-              </button>
+              {/*
+                The strip's trailing corner: the way to a new tab, then the way
+                to the whole workspace. Both stick to the band's trailing edge
+                while the strip scrolls — a full strip must not hide either door
+                — so they travel in one sticky group rather than as two marks
+                that could paint over each other.
+              */}
+              <div className="chat-panel__tabs-trailing">
+                <button
+                  type="button"
+                  className="chat-panel__tab-new"
+                  aria-label="New chat tab"
+                  title="New chat tab"
+                  onClick={() => void newSession()}
+                >
+                  <Plus size={13} aria-hidden />
+                </button>
+                {focusToggle("chat-panel__icon-btn chat-panel__tab-focus")}
+              </div>
             </div>
           ) : null}
           {view === "chain" ? (
             <div className="chat-panel__header">
               <p className="chat-panel__heading">Quick Notes</p>
+              <div className="chat-panel__header-actions">
+                {focusToggle("chat-panel__icon-btn")}
+              </div>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -1941,6 +1971,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 >
                   <Pencil size={16} aria-hidden />
                 </Link>
+                {focusToggle("chat-panel__icon-btn")}
               </div>
             </div>
           ) : (
@@ -2009,6 +2040,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </button>
                 </div>
               )}
+              {/*
+                A thread with no tab draws no strip, so the full-screen door
+                moves down into the name row rather than disappearing; a thread
+                with a tab keeps it in the strip above, where the operator's
+                pointer already is for the tabs themselves.
+              */}
+              <div className="chat-panel__header-actions">
+                {tabIds.length === 0 ? focusToggle("chat-panel__icon-btn") : null}
+              </div>
             </div>
           )}
           {/*

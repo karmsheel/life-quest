@@ -42,7 +42,7 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 const STORAGE_KEY = "lifequest-keyboard-shortcuts";
 
-/** The 14 movements and the binding each default resolves to on this Linux bench
+/** The 15 movements and the binding each default resolves to on this Linux bench
  *  (`Mod` is Ctrl here). The contract is `src/lib/shortcuts.ts`. */
 const EXPECTED_DEFAULTS = {
   "wing.home": "Ctrl+1",
@@ -58,6 +58,7 @@ const EXPECTED_DEFAULTS = {
   "history.forward": "Alt+ArrowRight",
   "panel.sidebar.toggle": "Ctrl+B",
   "panel.chat.toggle": "Ctrl+J",
+  "panel.chat.focus": "Ctrl+Shift+F",
   "surface.settings.open": "Ctrl+Comma",
 };
 
@@ -65,7 +66,7 @@ const EXPECTED_DEFAULTS = {
 const EXPECTED_GROUPS = [
   { id: "wings", rows: 7 },
   { id: "pages", rows: 4 },
-  { id: "panels", rows: 2 },
+  { id: "panels", rows: 3 },
   { id: "surfaces", rows: 1 },
 ];
 
@@ -411,8 +412,8 @@ const lastKey = (state) => {
 
 function checkRows(state, label) {
   check(
-    `${label}: the page renders exactly the fourteen movements`,
-    state.rows.length === 14,
+    `${label}: the page renders exactly the fifteen movements`,
+    state.rows.length === 15,
     `${state.rows.length} rows: ${JSON.stringify(state.rows.map((row) => row.id))}`,
   );
   for (const [id, binding] of Object.entries(EXPECTED_DEFAULTS)) {
@@ -761,10 +762,11 @@ async function main() {
       `bar ${JSON.stringify(dockThread.dock && dockThread.dock.bar)}`,
     );
     check(
-      "the titlebar's trailing cluster is the theme control and settings",
-      trailingClasses.length === 2 &&
-        ["theme-mode-toggle", "settings-menu"].every((needle, index) =>
-          String(trailingClasses[index] ?? "").includes(needle),
+      "the titlebar's trailing cluster is the full-screen door, theme and settings",
+      trailingClasses.length === 3 &&
+        ["chat-focus-toggle", "theme-mode-toggle", "settings-menu"].every(
+          (needle, index) =>
+            String(trailingClasses[index] ?? "").includes(needle),
         ),
       `trailing cluster ${JSON.stringify(trailingClasses)}`,
     );
@@ -813,7 +815,7 @@ async function main() {
           dock.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
           EXPECTED_GROUPS,
         ) &&
-        dock.rows.length === 14,
+        dock.rows.length === 15,
       `root ${dock.shortcutsRoot}, groups ${JSON.stringify(dock.groups)}, rows ${dock.rows.length}`,
     );
     check(
@@ -902,7 +904,7 @@ async function main() {
     await clickNav("Keyboard", "shortcuts");
     const defaults = await record(
       "defaults",
-      "document.querySelectorAll('[data-shortcut-row]').length === 14",
+      "document.querySelectorAll('[data-shortcut-row]').length === 15",
     );
     await scrollMainTop();
     await frames();
@@ -979,7 +981,7 @@ async function main() {
     const searched = await record(
       "searched",
       `document.querySelectorAll(".settings-nav-item").length === 1 &&
-        document.querySelectorAll("[data-shortcut-row]").length === 14`,
+        document.querySelectorAll("[data-shortcut-row]").length === 15`,
     );
     await shot("search");
     check(
@@ -1332,7 +1334,7 @@ async function main() {
       "the reopened reference keeps its composer hidden",
       dockReopened.dock.footerHidden === true &&
         dockReopened.dock.composerVisible === false &&
-        dockReopened.dock.rows.length === 14,
+        dockReopened.dock.rows.length === 15,
       `footer hidden ${dockReopened.dock.footerHidden}, composer ${dockReopened.dock.composerVisible}, rows ${dockReopened.dock.rows.length}`,
     );
 
@@ -1544,7 +1546,7 @@ async function main() {
     await clickNav("Keyboard", "shortcuts");
     const reloadPage = await record(
       "reloadPage",
-      "document.querySelectorAll('[data-shortcut-row]').length === 14",
+      "document.querySelectorAll('[data-shortcut-row]').length === 15",
     );
     await scrollTo('[data-shortcut-row="wing.next"]');
     await shot("reload");
@@ -1830,8 +1832,8 @@ async function main() {
     );
     check(
       "every movement row carries exactly one edit pencil",
-      editDock.editCount === 14 &&
-        editDock.rows.length === 14 &&
+      editDock.editCount === 15 &&
+        editDock.rows.length === 15 &&
         editDock.rows.every((row) => row.edit.present === true),
       `${editDock.editCount} pencils, rows ${JSON.stringify(editDock.rows.map((row) => [row.id, row.edit.present]))}`,
     );

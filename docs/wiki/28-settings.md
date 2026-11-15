@@ -99,7 +99,7 @@ travel with the folder.
 ## Keyboard
 
 **Keyboard shortcuts** — *Keys for moving around the studio*. The page lists
-fourteen movements in four groups; the dock's **Keyboard shortcuts** reference
+fifteen movements in four groups; the dock's **Keyboard shortcuts** reference
 shows the same table and is the other editor.
 
 - **Wings** — **Go to Home** (`Mod+1`), **Go to Define** (`Mod+2`), **Go to
@@ -107,7 +107,8 @@ shows the same table and is the other editor.
   **Next wing** (`Mod+PageDown`), **Previous wing** (`Mod+PageUp`).
 - **Pages** — **Next page** (`Mod+Shift+PageDown`), **Previous page**
   (`Mod+Shift+PageUp`), **Back** (`Alt+←`), **Forward** (`Alt+→`).
-- **Panels** — **Toggle sidebar** (`Mod+B`), **Toggle chat** (`Mod+J`).
+- **Panels** — **Toggle sidebar** (`Mod+B`), **Toggle chat** (`Mod+J`),
+  **Toggle full-screen chat** (`Mod+Shift+F`).
 - **Surfaces** — **Open settings** (`Mod+,`).
 
 **Change** puts a row into *Press keys…*, and the next combination with a real key

@@ -670,7 +670,8 @@ a {
 }
 
 .window-titlebar__trailing .theme-mode-toggle svg,
-.window-titlebar__trailing .settings-menu__trigger svg {
+.window-titlebar__trailing .settings-menu__trigger svg,
+.window-titlebar__trailing .chat-focus-toggle svg {
   width: 14px;
   height: 14px;
 }
@@ -758,6 +759,45 @@ a {
 
 .shell--chat-left > .chat-panel {
   grid-column: 2;
+}
+
+/* Full-screen chat: the page pane leaves the tray and the dock takes everything
+   beside the rail. The rail holds the window's leading edge either way — it is
+   chrome, and it carries the chats list the conversation is chosen from — so the
+   focus arrangement is the same two tracks as the normal one with a page-sized
+   dock in the second. The compound selectors are deliberate: they win over the
+   swapped arrangement's rules below (`.shell--chat-left > .chat-panel`) whatever
+   the side the dock was on when the mode was entered, and over the dock's own
+   width token further down the sheet. */
+.shell.shell--chat-focus {
+  grid-template-columns: var(--nav-column) 1fr;
+}
+
+/* The page is not a zero-width pane: it is not drawn at all. A hidden track would
+   still pay its hairline and its frame, and the dock would stop short of the
+   seam it is supposed to own. */
+.shell.shell--chat-focus > .shell__main {
+  display: none;
+}
+
+/* The dock starts at the rail's trailing edge and carries the frame's slack out
+   to the window's own trailing edge, exactly as it does in the normal
+   arrangement. Its height already reaches the window's bottom edge. */
+.shell.shell--chat-focus > .chat-panel {
+  grid-column: 2;
+  width: calc(100% + var(--shell-frame));
+}
+
+/* A conversation is read, not stretched: with the page gone the dock can be most
+   of a wide window, so the transcript and the composer sit in a centred measure
+   instead of running the full width of the glass. The tab strip, the name row
+   and the bottom action bar stay full width — they are chrome, and they are where
+   the doors are. */
+.shell--chat-focus .chat-panel__body,
+.shell--chat-focus .chat-panel__footer {
+  width: 100%;
+  max-width: 56rem;
+  margin-inline: auto;
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
@@ -12235,16 +12275,32 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's own door to a new chat: the browser's plus, set after the last tab
- * and a share of the band rather than a tab itself — it opens a conversation, it
- * does not represent one. It sticks to the band's trailing edge, so a strip with
- * more tabs than the dock is wide still ends with the one control that makes
- * another; the dock's canvas behind it keeps a tab sliding under it from showing
- * through.
+ * The strip's trailing corner, as one sticky group: the plus that opens a new
+ * chat, then the full-screen door. It sticks to the band's trailing edge, so a
+ * strip with more tabs than the dock is wide still ends with both controls; the
+ * dock's canvas behind it keeps a tab sliding under it from showing through.
+ * One sticky box rather than two sticky children, or the two marks would paint
+ * over each other at the same `right: 0`.
  */
-.chat-panel__tab-new {
+.chat-panel__tabs-trailing {
   position: sticky;
   right: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 0.3rem;
+  background: var(--background);
+}
+
+/*
+ * The strip's own door to a new chat: the browser's plus, set after the last tab
+ * and a share of the band rather than a tab itself — it opens a conversation, it
+ * does not represent one.
+ */
+.chat-panel__tab-new {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12256,7 +12312,7 @@ button.chat-panel__activity-line:hover {
   padding: 0;
   border: 0;
   border-radius: 0.35rem;
-  background: var(--background);
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
@@ -12265,6 +12321,14 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-new:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
+}
+
+/* The strip's full-screen door, sized to the band rather than to the header's
+   utility row: the plus beside it is 1.6rem, and the two controls are one group. */
+.chat-panel__tab-focus {
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--muted);
 }
 
 /*
