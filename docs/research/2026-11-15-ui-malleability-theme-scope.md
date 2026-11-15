@@ -210,6 +210,8 @@ components they named become theme-controlled. It is also the cheapest rung wher
 4. Did the agent compose a usable theme from the vocabulary without seeing pixels?
 5. What did the component audit cost in CSS files touched, and does that scale to R3?
 
+**Tooling note:** Day 2 can be built on UI SDK behaviors/primitives instead of hand-rolled roving focus; that option, its trade-offs and the principles worth borrowing are analysed in [the UI SDK incorporation note](2026-11-15-ui-sdk-incorporation.md).
+
 **Kill signals:** R2 needs more than four shell components refactored; the titlebar drag region
 cannot be preserved with a moved domain switcher; the component audit exceeds the spike; a theme can
 strand the operator; the showcase theme still looks like a recolour.
@@ -261,7 +263,7 @@ Defaults I would take unless you object:
 
 ---
 
-## 10. Relationship to the 2026-11-11 spec
+## 10. Relationship to the 2026-11-11 spec and the UI SDK note
 
 The pack format, registry, install/Decision rules and draft-inert rule from the personal agent
 experience spec are **reused**: a theme is a pack with `kind: "theme"` and no guidance. What moves is
