@@ -7,6 +7,7 @@ import {
   DOMAIN_VARIANTS,
   CHAT_DOCK_SIDES,
   NAV_RAIL_PLACES,
+  TITLEBAR_SIZES,
   NAV_RAIL_WIDTHS,
   WING_PLACES,
   WING_VARIANTS,
@@ -74,6 +75,12 @@ const CHAT_DOCK_SIDE_LABELS: Record<ThemeChrome["chatDock"]["side"], string> = {
 const NAV_RAIL_PLACE_LABELS: Record<ThemeChrome["navRail"]["place"], string> = {
   left: "Left",
   right: "Right",
+  floating: "Floating",
+};
+const TITLEBAR_SIZE_LABELS: Record<ThemeChrome["titlebar"]["size"], string> = {
+  compact: "Compact",
+  default: "Default",
+  tall: "Tall",
 };
 const NAV_RAIL_WIDTH_LABELS: Record<ThemeChrome["navRail"]["width"], string> = {
   narrow: "Narrow",
@@ -173,6 +180,21 @@ export function LayoutControls() {
           domainSwitcher: {
             variant: value as ThemeChrome["domainSwitcher"]["variant"],
           },
+        }),
+    },
+    {
+      key: "titlebar-size",
+      component: "titlebar",
+      testIdPrefix: "chrome-titlebar-size",
+      label: "Titlebar height",
+      options: TITLEBAR_SIZES.map((value) => ({
+        value,
+        label: TITLEBAR_SIZE_LABELS[value],
+      })),
+      selected: chrome.titlebar.size,
+      onPick: (value) =>
+        setChromeOverride({
+          titlebar: { size: value as ThemeChrome["titlebar"]["size"] },
         }),
     },
     {

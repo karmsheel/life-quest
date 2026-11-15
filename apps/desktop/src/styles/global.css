@@ -440,7 +440,11 @@ a {
     minmax(0, auto)
     minmax(max-content, 1fr);
   align-items: center;
-  height: env(titlebar-area-height, var(--window-titlebar-height));
+  /* The strip is as tall as the theme asks, but never shorter than the caption
+     area the platform draws: Windows and Linux hand the overlay a fixed height,
+     and painting the strip under it would hide the theme's own controls. On
+     macOS, where there is no overlay, the theme's height is the whole answer. */
+  height: max(env(titlebar-area-height, 0px), var(--window-titlebar-height));
   background: var(--titlebar-bg);
   color: var(--fg);
   -webkit-app-region: drag;
@@ -13287,5 +13291,79 @@ button.chat-panel__activity-line:hover {
 /* The moved wing switcher anchors to the page's leading edge when the rail no
    longer owns it. */
 :root[data-chrome-nav-place="right"] .chrome-bar--titlebar-left {
+  left: 0.6rem;
+}
+
+/* ——— the sidebar afloat —————————————————————————————————————————————————
+   Floating chrome: the rail leaves the tray's first track entirely and rides
+   over the page as its own card, the way a floating dock does. The page keeps
+   the window's full width underneath — the operator chooses the overlay, and
+   the collapsed column still works as a thin launcher. */
+:root[data-chrome-nav-place="floating"] .shell {
+  --nav-column: 0px;
+  grid-template-columns: 0 1fr var(--chat-column);
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left {
+  grid-template-columns: 0 var(--chat-column) 1fr;
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .shell__main {
+  grid-column: 2;
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .chat-panel {
+  grid-column: 3;
+  width: calc(var(--chat-column) + var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left > .chat-panel {
+  grid-column: 2;
+  width: var(--chat-column);
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left > .shell__main {
+  grid-column: 3;
+  width: calc(100% + var(--shell-frame));
+}
+
+/* The rail itself: out of the grid, a rounded card below the strip, holding
+   the same column layout inside. Its own width is the token the theme picked;
+   collapsed, it narrows to the icon column like the docked rail. */
+:root[data-chrome-nav-place="floating"] .shell > .nav-rail {
+  grid-column: 1;
+  position: absolute;
+  z-index: 25;
+  top: calc(var(--window-titlebar-height) + 0.75rem);
+  left: 0.75rem;
+  bottom: 0.75rem;
+  width: var(--shell-sidebar-width);
+  height: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-chrome-nav-place="floating"] .shell.shell--nav-collapsed > .nav-rail {
+  width: var(--shell-nav-width-collapsed);
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .nav-rail .nav-rail__header {
+  height: auto;
+  padding: 0.35rem 0 0;
+  margin: 0;
+}
+
+/* The strip, when the rail is not in it: the lens centres across the window
+   and the moved wing switcher anchors to the page's leading edge. */
+.window-titlebar[data-nav-place="floating"] {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, auto)
+    minmax(0, 1fr);
+}
+
+:root[data-chrome-nav-place="floating"] .chrome-bar--titlebar-left {
   left: 0.6rem;
 }

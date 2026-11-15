@@ -56,6 +56,7 @@ import {
   resolveChrome,
   resolveMaterial,
   SHADOWS,
+  TITLEBAR_SIZES,
   TYPE_SCALES,
   WING_PLACES,
   WING_VARIANTS,
@@ -157,6 +158,10 @@ function readStoredChromeOverride(): ThemeChromeOverride {
     if (isRecord(raw.chatDock)) {
       const side = pick(raw.chatDock.side, CHAT_DOCK_SIDES);
       if (side) override.chatDock = { side };
+    }
+    if (isRecord(raw.titlebar)) {
+      const size = pick(raw.titlebar.size, TITLEBAR_SIZES);
+      if (size) override.titlebar = { size };
     }
     if (isRecord(raw.navRail)) {
       const place = pick(raw.navRail.place, NAV_RAIL_PLACES);
@@ -486,6 +491,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         },
         navRail: { ...chromeOverrideRef.current.navRail, ...patch.navRail },
         chatDock: { ...chromeOverrideRef.current.chatDock, ...patch.chatDock },
+        titlebar: { ...chromeOverrideRef.current.titlebar, ...patch.titlebar },
       };
       // Drop empty branches so "no overrides" stays a clean empty object.
       for (const key of Object.keys(next) as (keyof ThemeChromeOverride)[]) {

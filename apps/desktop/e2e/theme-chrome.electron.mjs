@@ -64,6 +64,7 @@ const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
 const VARIANTS_PNG = path.join(artifactsDir, "themes-v2-variants.png");
 const SIDEBAR_RIGHT_PNG = path.join(artifactsDir, "themes-v2-sidebar-right.png");
 const DOCK_LEFT_PNG = path.join(artifactsDir, "themes-v2-dock-left.png");
+const FLOATING_RAIL_PNG = path.join(artifactsDir, "themes-v2-floating-rail.png");
 
 const failures = [];
 const checks = [];
@@ -214,8 +215,19 @@ const SAMPLE = `(async () => {
       const el = document.querySelector(".nav-rail");
       if (!el) return null;
       const b = el.getBoundingClientRect();
-      return { left: Math.round(b.left), right: Math.round(b.right) };
+      return {
+        left: Math.round(b.left),
+        right: Math.round(b.right),
+        top: Math.round(b.top),
+        width: Math.round(b.width),
+      };
     })(),
+    titlebarHeight: (() => {
+      const el = document.querySelector(".window-titlebar");
+      return el ? Math.round(el.getBoundingClientRect().height) : null;
+    })(),
+    titlebarSizeAttr: document.documentElement.dataset.chromeTitlebarSize ?? null,
+    titlebarVar: document.documentElement.style.getPropertyValue("--window-titlebar-height") ?? null,
     mainRect: (() => {
       const el = document.querySelector(".shell__main");
       if (!el) return null;
@@ -933,6 +945,79 @@ async function main() {
     }),
   );
 
+  // ── 6e: the sidebar afloat, and the strip's own height ──────────────────
+  writeThemeFile("float-lab.json", {
+    name: "float-lab",
+    label: "Floating Rail",
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "icons" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+      navRail: { place: "floating", width: "default" },
+      titlebar: { size: "tall" },
+    },
+  });
+  const floatRail = await waitFor(
+    (s) =>
+      s.navPlaceAttr === "floating" &&
+      s.preview &&
+      s.railRect &&
+      s.mainRect &&
+      s.railRect.left <= 20 &&
+      s.mainRect.left <= 2 &&
+      s.titlebarHeight === 40 &&
+      s.titlebarSizeAttr === "tall",
+  );
+  check(
+    "sidebar-can-float-above-the-page",
+    floatRail?.navPlaceAttr === "floating" &&
+      floatRail.railRect.left <= 20 &&
+      floatRail.railRect.width >= 200 &&
+      floatRail.railRect.width <= 320 &&
+      floatRail.railRect.top >= 35 &&
+      floatRail.mainRect.left <= 2,
+    JSON.stringify({
+      place: floatRail?.navPlaceAttr,
+      rail: floatRail?.railRect,
+      main: floatRail?.mainRect,
+      preview: floatRail?.preview,
+      error: floatRail?.error,
+      previewText: (floatRail?.previewText ?? "").slice(0, 80),
+      titlebarVar: floatRail?.titlebarVar,
+    }),
+  );
+  check(
+    "titlebar-can-wear-a-taller-strip",
+    floatRail?.titlebarHeight === 40 && floatRail.titlebarSizeAttr === "tall",
+    JSON.stringify({
+      height: floatRail?.titlebarHeight,
+      size: floatRail?.titlebarSizeAttr,
+    }),
+  );
+  const floatRailShot = await win.webContents.capturePage();
+  fs.writeFileSync(FLOATING_RAIL_PNG, floatRailShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromFloat = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.wingTitlebar &&
+      s.navPlaceAttr === "left" &&
+      s.titlebarHeight === 32,
+  );
+  check(
+    "float-and-strip-size-revert-to-the-kept-theme",
+    backFromFloat?.kept === "solar-system.json" &&
+      backFromFloat.navPlaceAttr === "left" &&
+      backFromFloat.titlebarHeight === 32,
+    JSON.stringify({
+      kept: backFromFloat?.kept,
+      place: backFromFloat?.navPlaceAttr,
+      height: backFromFloat?.titlebarHeight,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -1215,6 +1300,7 @@ async function main() {
   const pressedDomainVariant = await click("chrome-domain-variant-pill");
   const pressedRight = await click("chrome-nav-place-right");
   const pressedDockLeft = await click("chrome-chat-side-left");
+  const pressedTitlebarTall = await click("chrome-titlebar-size-tall");
   const pressedNarrow = await click("chrome-nav-width-narrow");
   const overriddenChrome = await waitFor(
     (s) =>
@@ -1225,6 +1311,7 @@ async function main() {
       s.navWidthAttr === "narrow" &&
       s.navPlaceAttr === "right" &&
       s.dockLeft &&
+      s.titlebarHeight === 40 &&
       s.railRect &&
       s.mainRect &&
       s.railRect.left >= s.mainRect.right - 16 &&
@@ -1239,6 +1326,7 @@ async function main() {
       pressedDomainVariant === true &&
       pressedRight === true &&
       pressedDockLeft === true &&
+      pressedTitlebarTall === true &&
       pressedNarrow === true &&
       overriddenChrome?.wingTitlebar === true &&
       overriddenChrome.wingFloating === false &&
@@ -1249,6 +1337,7 @@ async function main() {
       overriddenChrome.navWidthAttr === "narrow" &&
       overriddenChrome.navPlaceAttr === "right" &&
       overriddenChrome.dockLeft === true &&
+      overriddenChrome.titlebarHeight === 40 &&
       overriddenChrome.railRect.left >= overriddenChrome.mainRect.right - 16,
     JSON.stringify({
       pressed:
@@ -1258,12 +1347,16 @@ async function main() {
         pressedDomainVariant &&
         pressedRight &&
         pressedDockLeft &&
+        pressedTitlebarTall &&
         pressedNarrow,
       wingTitlebar: overriddenChrome?.wingTitlebar,
       wingText: overriddenChrome?.wingText,
       pill: overriddenChrome?.domainPill,
       navPlace: overriddenChrome?.navPlaceAttr,
       dockLeft: overriddenChrome?.dockLeft,
+      titlebarHeight: overriddenChrome?.titlebarHeight,
+      titlebarVar: overriddenChrome?.titlebarVar,
+      titlebarAttr: overriddenChrome?.titlebarSizeAttr,
       railLeft: overriddenChrome?.railRect?.left,
       mainRight: overriddenChrome?.mainRect?.right,
       wingFloating: overriddenChrome?.wingFloating,
@@ -1286,7 +1379,8 @@ async function main() {
       s.domainBottom &&
       s.navWidthAttr === "narrow" &&
       s.navPlaceAttr === "right" &&
-      s.dockLeft,
+      s.dockLeft &&
+      s.titlebarHeight === 40,
     20_000,
   );
   check(
@@ -1295,13 +1389,15 @@ async function main() {
       afterChromeReload.domainBottom === true &&
       afterChromeReload.navWidthAttr === "narrow" &&
       afterChromeReload.navPlaceAttr === "right" &&
-      afterChromeReload.dockLeft === true,
+      afterChromeReload.dockLeft === true &&
+      afterChromeReload.titlebarHeight === 40,
     JSON.stringify({
       wingTitlebar: afterChromeReload?.wingTitlebar,
       domainBottom: afterChromeReload?.domainBottom,
       nav: afterChromeReload?.navWidthAttr,
       navPlace: afterChromeReload?.navPlaceAttr,
       dockLeft: afterChromeReload?.dockLeft,
+      titlebarHeight: afterChromeReload?.titlebarHeight,
     }),
   );
 
@@ -1321,7 +1417,8 @@ async function main() {
       s.domainBelow &&
       s.navWidthAttr === "wide" &&
       s.navPlaceAttr === "left" &&
-      !s.dockLeft,
+      !s.dockLeft &&
+      s.titlebarHeight === 32,
   );
   check(
     "reset-returns-the-themes-chrome",
@@ -1331,7 +1428,8 @@ async function main() {
       resetChrome.domainBelow === true &&
       resetChrome.navWidthAttr === "wide" &&
       resetChrome.navPlaceAttr === "left" &&
-      resetChrome.dockLeft === false,
+      resetChrome.dockLeft === false &&
+      resetChrome.titlebarHeight === 32,
     JSON.stringify({
       pressed: pressedChromeReset,
       wingFloating: resetChrome?.wingFloating,
@@ -1339,6 +1437,7 @@ async function main() {
       nav: resetChrome?.navWidthAttr,
       navPlace: resetChrome?.navPlaceAttr,
       dockLeft: resetChrome?.dockLeft,
+      titlebarHeight: resetChrome?.titlebarHeight,
     }),
   );
 
@@ -1395,6 +1494,7 @@ async function main() {
       variants: path.relative(desktopRoot, VARIANTS_PNG),
       sidebarRight: path.relative(desktopRoot, SIDEBAR_RIGHT_PNG),
       dockLeft: path.relative(desktopRoot, DOCK_LEFT_PNG),
+      floatingRail: path.relative(desktopRoot, FLOATING_RAIL_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

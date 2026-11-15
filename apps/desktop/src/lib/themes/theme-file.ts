@@ -29,6 +29,13 @@ const TYPE_SCALES: Record<ThemeMaterial["typeScale"], string> = {
   airy: "17px",
 };
 
+/** The strip's three declared heights, in the token's own unit. */
+const TITLEBAR_SIZES: Record<ThemeChrome["titlebar"]["size"], string> = {
+  compact: "26px",
+  default: "32px",
+  tall: "40px",
+};
+
 /** The sidebar's three declared widths, in the token's own unit. */
 const NAV_RAIL_WIDTHS: Record<ThemeChrome["navRail"]["width"], string> = {
   narrow: "13.5rem",
@@ -48,6 +55,8 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
   );
   root.dataset.chromeNavWidth = chrome.navRail.width;
   root.dataset.chromeNavPlace = chrome.navRail.place;
+  root.style.setProperty("--window-titlebar-height", TITLEBAR_SIZES[chrome.titlebar.size]);
+  root.dataset.chromeTitlebarSize = chrome.titlebar.size;
 }
 
 /**

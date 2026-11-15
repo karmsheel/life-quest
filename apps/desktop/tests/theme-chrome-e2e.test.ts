@@ -35,6 +35,7 @@ type Report = {
     variants: string;
     sidebarRight: string;
     dockLeft: string;
+    floatingRail: string;
   };
   theme: unknown;
   refused: unknown;
@@ -129,6 +130,7 @@ describe("theme files v2", () => {
         report.artifacts.variants,
         report.artifacts.sidebarRight,
         report.artifacts.dockLeft,
+        report.artifacts.floatingRail,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),
