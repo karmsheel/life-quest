@@ -179,8 +179,9 @@ vault's own binding.
    settles it folds to one header such as "Worked for 1s · Used 4e89…", and
    clicking the header reopens it.
 5. Below the process is the answer, never inside it, and a footer with the
-   outcome: **Completed · 1s · 1.4k tokens**, or **Stopped**, **Failed** or
-   **Ended before finishing** with the reason. A failed, stopped or incomplete
+   outcome: **Completed · 1s · 1.4k tokens** (past a million tokens the count
+   reads in millions, **1.2M tokens**), or **Stopped**, **Failed** or **Ended
+   before finishing** with the reason. A failed, stopped or incomplete
    turn keeps its process open so the cut-short work stays visible. Reloading the
    chat rebuilds the same rows, fold, footer and token count from the companion's
    own transcript.
