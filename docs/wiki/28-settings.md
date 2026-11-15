@@ -91,6 +91,8 @@ starred, so it is in the quick menu immediately; installed themes are listed und
 **Installed** with **Remove**. A file that is not JSON, or not a valid theme, is
 refused with the reason naming the field that failed.
 
+**Layout** sits under the skin grid: where the wing switcher (`Rail top`, `Titlebar left`, `Floating left`, `Hidden`), the area lens (`Titlebar centre`, `Below titlebar`, `Bottom centre`, `Floating bottom right`, `Hidden`) and the sidebar width (`Narrow` / `Default` / `Wide`) live. A theme file proposes all of it; your pick here wins, is marked as yours, and **Reset to theme** hands it back. `Hidden` is real — the preview bar, the Settings entry and the window controls are never hidden by a theme, so there is always a way out.
+
 **Material** sits directly under the theme grid: six segmented controls — Radius, Elevation, Type scale, Density, Motion and Backdrop — that pick the named steps the shell was built against. A theme file proposes its own steps, but your pick here always wins, is marked as yours, and survives swapping, keeping or removing the theme. **Reset to theme** hands the axes back to whatever theme is worn.
 
 **Theme files** are a narrower, more structural thing than a skin. A theme file

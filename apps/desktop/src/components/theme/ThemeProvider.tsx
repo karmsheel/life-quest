@@ -38,19 +38,27 @@ import {
 } from "@/lib/themes/user-themes";
 import type { ForgeSkin } from "@/lib/themes/types";
 import {
+  applyChrome,
   applyMaterial,
   BACKDROPS,
   DEFAULT_THEME_CHROME,
   DEFAULT_THEME_MATERIAL,
   DENSITIES,
+  DOMAIN_PLACES,
+  DOMAIN_VARIANTS,
+  layerChrome,
   MOTIONS,
   parseThemeFile,
   RADII,
+  NAV_RAIL_WIDTHS,
   resolveChrome,
   resolveMaterial,
   SHADOWS,
   TYPE_SCALES,
+  WING_PLACES,
+  WING_VARIANTS,
   type ThemeChrome,
+  type ThemeChromeOverride,
   type ThemeFile,
   type ThemeMaterial,
 } from "@/lib/themes/theme-file";
@@ -79,6 +87,9 @@ const THEME_PREVIEW_MS = 10_000;
  */
 const MATERIAL_OVERRIDE_STORAGE_KEY = "lifequest-material-override";
 
+/** The operator's own chrome picks, per window, layered over the theme's. */
+const CHROME_OVERRIDE_STORAGE_KEY = "lifequest-chrome-override";
+
 const MATERIAL_ENUMS = {
   radius: RADII,
   density: DENSITIES,
@@ -103,6 +114,67 @@ function readStoredMaterialOverride(): Partial<ThemeMaterial> {
     return override;
   } catch {
     return {};
+  }
+}
+
+function readStoredChromeOverride(): ThemeChromeOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(CHROME_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: ThemeChromeOverride = {};
+    const pick = <T extends string>(
+      value: unknown,
+      allowed: readonly T[],
+    ): T | undefined =>
+      typeof value === "string" && (allowed as readonly string[]).includes(value)
+        ? (value as T)
+        : undefined;
+    if (isRecord(raw.wingSwitcher)) {
+      const wing = {
+        ...(pick(raw.wingSwitcher.place, WING_PLACES)
+          ? { place: pick(raw.wingSwitcher.place, WING_PLACES)! }
+          : {}),
+        ...(pick(raw.wingSwitcher.variant, WING_VARIANTS)
+          ? { variant: pick(raw.wingSwitcher.variant, WING_VARIANTS)! }
+          : {}),
+      };
+      if (Object.keys(wing).length > 0) override.wingSwitcher = wing;
+    }
+    if (isRecord(raw.domainSwitcher)) {
+      const domain = {
+        ...(pick(raw.domainSwitcher.place, DOMAIN_PLACES)
+          ? { place: pick(raw.domainSwitcher.place, DOMAIN_PLACES)! }
+          : {}),
+        ...(pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)
+          ? { variant: pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)! }
+          : {}),
+      };
+      if (Object.keys(domain).length > 0) override.domainSwitcher = domain;
+    }
+    if (isRecord(raw.navRail)) {
+      const width = pick(raw.navRail.width, NAV_RAIL_WIDTHS);
+      if (width) override.navRail = { width };
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function persistChromeOverride(override: ThemeChromeOverride): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(CHROME_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(CHROME_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -146,8 +218,14 @@ interface ThemeContextValue {
    * chrome — a window that has never been given a theme file.
    */
   themeFile: ThemeFile | null;
-  /** Where the shell's own components live, resolved from `themeFile`. */
+  /** Where the shell's own components live, resolved from `themeFile` + overrides. */
   chrome: ThemeChrome;
+  /** The operator's own chrome picks, layered over the theme's. */
+  chromeOverride: ThemeChromeOverride;
+  /** Change one or more chrome fields and wear the result at once. */
+  setChromeOverride: (patch: ThemeChromeOverride) => void;
+  /** Drop every operator chrome override and hand layout back to the theme. */
+  resetChromeOverride: () => void;
   /** The material layer the window is actually wearing (theme + overrides). */
   material: ThemeMaterial;
   /** The operator's own material picks, layered over the theme's. */
@@ -267,6 +345,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
    */
   const [themeFile, setThemeFile] = useState<ThemeFile | null>(null);
   const [chrome, setChrome] = useState<ThemeChrome>(DEFAULT_THEME_CHROME);
+  const [chromeOverride, setChromeOverrideState] = useState<ThemeChromeOverride>(
+    readStoredChromeOverride,
+  );
+  const chromeOverrideRef = useRef<ThemeChromeOverride>(chromeOverride);
   const [material, setMaterial] = useState<ThemeMaterial>(DEFAULT_THEME_MATERIAL);
   const [materialOverride, setMaterialOverrideState] = useState<
     Partial<ThemeMaterial>
@@ -311,7 +393,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         ...next?.material,
         ...materialOverrideRef.current,
       });
-      setChrome(resolveChrome(next?.chrome));
+      // Theme first, operator second — the same rule as material: a theme
+      // proposes a layout, the operator's own Settings picks always win.
+      const nextChrome = layerChrome(
+        next?.chrome,
+        chromeOverrideRef.current,
+      );
+      setChrome(nextChrome);
+      applyChrome(nextChrome, document.documentElement);
       setMaterial(nextMaterial);
       applyMaterial(nextMaterial, document.documentElement);
       if (next?.colors) {
@@ -365,6 +454,42 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     materialOverrideRef.current = {};
     setMaterialOverrideState({});
     persistMaterialOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change the wing/domain placement, variant or rail width. Layered over the
+   * theme for every paint (including previews) and persisted per window.
+   */
+  const setChromeOverride = useCallback(
+    (patch: ThemeChromeOverride) => {
+      const next: ThemeChromeOverride = {
+        wingSwitcher: {
+          ...chromeOverrideRef.current.wingSwitcher,
+          ...patch.wingSwitcher,
+        },
+        domainSwitcher: {
+          ...chromeOverrideRef.current.domainSwitcher,
+          ...patch.domainSwitcher,
+        },
+        navRail: { ...chromeOverrideRef.current.navRail, ...patch.navRail },
+      };
+      // Drop empty branches so "no overrides" stays a clean empty object.
+      for (const key of Object.keys(next) as (keyof ThemeChromeOverride)[]) {
+        if (Object.keys(next[key] ?? {}).length === 0) delete next[key];
+      }
+      chromeOverrideRef.current = next;
+      setChromeOverrideState(next);
+      persistChromeOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetChromeOverride = useCallback(() => {
+    chromeOverrideRef.current = {};
+    setChromeOverrideState({});
+    persistChromeOverride({});
     paintTheme(paintedTheme.current);
   }, [paintTheme]);
 
@@ -597,7 +722,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ...(worn?.description ? { description: worn.description } : {}),
       colors: base.colors,
       ...(base.darkColors ? { darkColors: base.darkColors } : {}),
-      chrome: resolveChrome(worn?.chrome ?? chrome),
+      chrome,
+      chromeOverride,
       material,
     };
     const answer = await window.lifequest?.themeExport?.(exported);
@@ -773,8 +899,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       uninstallSkin,
       themeFile,
       chrome,
+      chromeOverride,
       material,
       materialOverride,
+      resetChromeOverride,
+      setChromeOverride,
       setMaterialOverride,
       resetMaterialOverride,
       themePreview,
@@ -793,11 +922,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [
       availableSkins,
       chrome,
+      chromeOverride,
       favoriteSkins,
       installSkin,
       installedSkins,
       isSkinFavorite,
       applyThemeFile,
+      resetChromeOverride,
+      setChromeOverride,
       exportCurrentTheme,
       keepThemeFile,
       keepThemePreview,

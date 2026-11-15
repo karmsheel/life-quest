@@ -60,6 +60,7 @@ const KEPT_PNG = path.join(artifactsDir, "themes-v2-kept.png");
 const FLOATING_PNG = path.join(artifactsDir, "themes-v2-floating.png");
 const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
 const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
+const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
 
 const failures = [];
 const checks = [];
@@ -181,6 +182,14 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).backgroundImage.slice(0, 80) : null;
     })(),
     radiusLg: radius,
+    navWidthAttr: document.documentElement.dataset.chromeNavWidth ?? null,
+    navWidthVar: getComputedStyle(document.documentElement)
+      .getPropertyValue("--shell-sidebar-width")
+      .trim(),
+    railWidth: (() => {
+      const rail = document.querySelector(".nav-rail");
+      return rail ? Math.round(rail.getBoundingClientRect().width) : null;
+    })(),
   };
 })()`;
 
@@ -238,6 +247,7 @@ const AGENT_THEME = {
   chrome: {
     wingSwitcher: { place: "floating-left", variant: "labels" },
     domainSwitcher: { place: "below-titlebar", variant: "segmented" },
+    navRail: { width: "wide" },
   },
   material: {
     radius: "round",
@@ -806,6 +816,21 @@ async function main() {
     }),
   );
 
+  const wideRail = await waitFor(
+    (s) => s.navWidthAttr === "wide" && s.navWidthVar === "19rem" && (s.railWidth ?? 0) >= 300,
+  );
+  check(
+    "nav-rail-width-is-the-themes",
+    wideRail?.navWidthAttr === "wide" &&
+      wideRail.navWidthVar === "19rem" &&
+      (wideRail.railWidth ?? 0) >= 300,
+    JSON.stringify({
+      navWidthAttr: wideRail?.navWidthAttr,
+      navWidthVar: wideRail?.navWidthVar,
+      railWidth: wideRail?.railWidth,
+    }),
+  );
+
   // ── 8: the operator's side of the gate, in Settings → Appearance ─────────
   const openedSettings = await evaluate(`(() => {
     const trigger = document.querySelector(".settings-menu__trigger");
@@ -916,6 +941,88 @@ async function main() {
     JSON.stringify({ pressedReset, radiusLg: reset?.radiusLg, kept: reset?.kept }),
   );
 
+  // ── 10: the operator's own chrome overrides, above the theme's ──────────
+  const click = (testId) =>
+    evaluate(`(() => {
+      const b = document.querySelector('[data-testid="${testId}"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+  const pressedWing = await click("chrome-wing-place-titlebar-left");
+  const pressedDomain = await click("chrome-domain-place-bottom-center");
+  const pressedNarrow = await click("chrome-nav-width-narrow");
+  const overriddenChrome = await waitFor(
+    (s) => s.wingTitlebar && !s.wingFloating && s.domainBottom && !s.domainBelow && s.navWidthAttr === "narrow",
+  );
+  check(
+    "operator-chrome-overrides-the-theme",
+    pressedWing === true &&
+      pressedDomain === true &&
+      pressedNarrow === true &&
+      overriddenChrome?.wingTitlebar === true &&
+      overriddenChrome.wingFloating === false &&
+      overriddenChrome.domainBottom === true &&
+      overriddenChrome.domainBelow === false &&
+      overriddenChrome.navWidthAttr === "narrow",
+    JSON.stringify({
+      pressed: pressedWing && pressedDomain && pressedNarrow,
+      wingTitlebar: overriddenChrome?.wingTitlebar,
+      wingFloating: overriddenChrome?.wingFloating,
+      domainBottom: overriddenChrome?.domainBottom,
+      domainBelow: overriddenChrome?.domainBelow,
+      nav: overriddenChrome?.navWidthAttr,
+    }),
+  );
+
+  const layoutShot = await win.webContents.capturePage();
+  fs.writeFileSync(LAYOUT_PNG, layoutShot.toPNG());
+
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const afterChromeReload = await waitFor(
+    (s) => s.shell && s.kept === "agent-written.json" && s.wingTitlebar && s.domainBottom && s.navWidthAttr === "narrow",
+    20_000,
+  );
+  check(
+    "operator-chrome-survives-a-reload",
+    afterChromeReload?.wingTitlebar === true &&
+      afterChromeReload.domainBottom === true &&
+      afterChromeReload.navWidthAttr === "narrow",
+    JSON.stringify({
+      wingTitlebar: afterChromeReload?.wingTitlebar,
+      domainBottom: afterChromeReload?.domainBottom,
+      nav: afterChromeReload?.navWidthAttr,
+    }),
+  );
+
+  // Reopen Settings and hand layout back to the theme.
+  await evaluate(`(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`);
+  for (let i = 0; i < 100; i += 1) {
+    const ready = await evaluate(`Boolean(document.querySelector('[data-testid="chrome-reset"]'))`);
+    if (ready) break;
+    await evaluate(`(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`);
+    await sleep(150);
+  }
+  const pressedChromeReset = await click("chrome-reset");
+  const resetChrome = await waitFor(
+    (s) => s.wingFloating && !s.wingTitlebar && s.domainBelow && s.navWidthAttr === "wide",
+  );
+  check(
+    "reset-returns-the-themes-chrome",
+    pressedChromeReset === true &&
+      resetChrome?.wingFloating === true &&
+      resetChrome.wingTitlebar === false &&
+      resetChrome.domainBelow === true &&
+      resetChrome.navWidthAttr === "wide",
+    JSON.stringify({
+      pressed: pressedChromeReset,
+      wingFloating: resetChrome?.wingFloating,
+      domainBelow: resetChrome?.domainBelow,
+      nav: resetChrome?.navWidthAttr,
+    }),
+  );
+
   // Remove the agent's file where the operator would: two presses, then gone.
   const firstRemove = await evaluate(`(() => {
     const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
@@ -965,6 +1072,7 @@ async function main() {
       floating: path.relative(desktopRoot, FLOATING_PNG),
       settings: path.relative(desktopRoot, SETTINGS_PNG),
       material: path.relative(desktopRoot, MATERIAL_PNG),
+      layout: path.relative(desktopRoot, LAYOUT_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

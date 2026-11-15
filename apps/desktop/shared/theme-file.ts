@@ -31,12 +31,28 @@ export type DomainSwitcherPlace =
   | "hidden";
 export type DomainSwitcherVariant = "segmented" | "pill";
 
+export type NavRailWidth = "narrow" | "default" | "wide";
+
 export type ThemeChrome = {
   wingSwitcher: { place: WingSwitcherPlace; variant: WingSwitcherVariant };
   domainSwitcher: {
     place: DomainSwitcherPlace;
     variant: DomainSwitcherVariant;
   };
+  /** The sidebar's own column: how much room it keeps for the rail. */
+  navRail: { width: NavRailWidth };
+};
+
+/**
+ * The operator's chrome picks, layered over whatever theme is worn. Every
+ * field is optional per component: overriding the wing's place leaves the
+ * theme's domain placement alone, which is what makes Settings useful without
+ * turning into a second theme file.
+ */
+export type ThemeChromeOverride = {
+  wingSwitcher?: Partial<ThemeChrome["wingSwitcher"]>;
+  domainSwitcher?: Partial<ThemeChrome["domainSwitcher"]>;
+  navRail?: Partial<ThemeChrome["navRail"]>;
 };
 
 export type ThemeShadow = "flat" | "soft" | "deep";
@@ -69,6 +85,7 @@ export type ThemeFile = {
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
   wingSwitcher: { place: "rail-top", variant: "labels" },
   domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+  navRail: { width: "default" },
 };
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
@@ -97,6 +114,11 @@ export const DOMAIN_PLACES: readonly DomainSwitcherPlace[] = [
 export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "segmented",
   "pill",
+];
+export const NAV_RAIL_WIDTHS: readonly NavRailWidth[] = [
+  "narrow",
+  "default",
+  "wide",
 ];
 export const RADII: readonly ThemeMaterial["radius"][] = [
   "sharp",
@@ -378,6 +400,25 @@ export function parseThemeFile(raw: unknown): ParseResult {
         variant: (variant as DomainSwitcherVariant) ?? "segmented",
       };
     }
+    const navRail = raw.chrome.navRail;
+    if (navRail !== undefined) {
+      if (!isRecord(navRail)) {
+        return { ok: false, error: "chrome.navRail must be an object" };
+      }
+      const width = navRail.width;
+      if (width !== undefined) {
+        if (
+          typeof width !== "string" ||
+          !(NAV_RAIL_WIDTHS as readonly string[]).includes(width)
+        ) {
+          return {
+            ok: false,
+            error: `chrome.navRail.width must be one of ${NAV_RAIL_WIDTHS.join(", ")}`,
+          };
+        }
+        chrome.navRail = { width: width as NavRailWidth };
+      }
+    }
   }
 
   const material: Partial<ThemeMaterial> = {};
@@ -434,7 +475,23 @@ export function resolveChrome(chrome?: Partial<ThemeChrome>): ThemeChrome {
       ...DEFAULT_THEME_CHROME.domainSwitcher,
       ...chrome?.domainSwitcher,
     },
+    navRail: {
+      ...DEFAULT_THEME_CHROME.navRail,
+      ...chrome?.navRail,
+    },
   };
+}
+
+/** Layer the operator's chrome picks over the worn theme's chrome. */
+export function layerChrome(
+  theme?: Partial<ThemeChrome>,
+  override?: ThemeChromeOverride,
+): ThemeChrome {
+  return resolveChrome({
+    wingSwitcher: { ...theme?.wingSwitcher, ...override?.wingSwitcher },
+    domainSwitcher: { ...theme?.domainSwitcher, ...override?.domainSwitcher },
+    navRail: { ...theme?.navRail, ...override?.navRail },
+  } as Partial<ThemeChrome>);
 }
 
 export function resolveMaterial(
@@ -454,7 +511,7 @@ export const THEME_VOCABULARY = [
   "Shape: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
-  "material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
+  "chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

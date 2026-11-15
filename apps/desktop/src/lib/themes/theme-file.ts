@@ -6,7 +6,10 @@
  * so main's theme tools, the renderer and the rigs all agree on the same rules.
  */
 export * from "../../../shared/theme-file.ts";
-import type { ThemeMaterial } from "../../../shared/theme-file.ts";
+import type {
+  ThemeChrome,
+  ThemeMaterial,
+} from "../../../shared/theme-file.ts";
 
 const RADIUS_SCALES: Record<ThemeMaterial["radius"], string[]> = {
   sharp: ["2px", "4px", "4px", "6px", "8px"],
@@ -25,6 +28,26 @@ const TYPE_SCALES: Record<ThemeMaterial["typeScale"], string> = {
   default: "16px",
   airy: "17px",
 };
+
+/** The sidebar's three declared widths, in the token's own unit. */
+const NAV_RAIL_WIDTHS: Record<ThemeChrome["navRail"]["width"], string> = {
+  narrow: "13.5rem",
+  default: "16rem",
+  wide: "19rem",
+};
+
+/**
+ * Write the chrome layout onto the document: one variable and one state
+ * attribute, because the pane arrangements are already grid rules the shell
+ * owns. The React side reads the same resolved chrome for the hosts it paints.
+ */
+export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
+  root.style.setProperty(
+    "--shell-sidebar-width",
+    NAV_RAIL_WIDTHS[chrome.navRail.width],
+  );
+  root.dataset.chromeNavWidth = chrome.navRail.width;
+}
 
 /**
  * Write the material layer onto the document, exactly where `applySkin` writes

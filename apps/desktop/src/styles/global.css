@@ -12982,3 +12982,123 @@ button.chat-panel__activity-line:hover {
 .theme-material__control {
   flex: 0 0 auto;
 }
+
+/* ——— layout (Settings → Appearance) ——————————————————————————————————————————
+   The operator's side of the chrome layout: where the wing switcher, the area
+   lens and the sidebar sit, each one a pick above the theme's. Ruled off from
+   the material section above and the theme files below, the same way those two
+   separate themselves, and structured like Material so the two read as
+   siblings. */
+
+.theme-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-layout__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-layout__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-layout__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-layout__intro {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-layout__intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.theme-layout__reset {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-layout__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Five compact rows in one block: the settings hairline stays between them, but
+   the spacing is a step tighter than the page's one-row-per-setting measure. */
+.theme-layout__rows .theme-layout__row + .theme-layout__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+.theme-layout__row {
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+}
+
+.theme-layout__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+}
+
+/* The operator's marker: a dot and the word, kept small so it annotates the
+   component rather than competing with it. Shown only for a picked component,
+   so an untouched control reads as the theme's own. */
+.theme-layout__yours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.theme-layout__yours-dot {
+  flex: 0 0 auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.theme-layout__control {
+  flex: 0 0 auto;
+}
+
+/* Hidden is a legitimate pick, not a trap: say where the way out is. */
+.theme-layout__note {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
