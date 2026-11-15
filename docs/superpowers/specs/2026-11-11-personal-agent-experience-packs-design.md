@@ -1,7 +1,10 @@
 # Personal Agent Experience — Packs (Tier 0) — Design Spec
 
 **Date:** 2026-11-11
-**Status:** Proposed — awaiting go on Milestone 0
+**Status:** Superseded for v1 — the first slice is UI malleability, see
+[UI malleability and theme scope](../research/2026-11-15-ui-malleability-theme-scope.md).
+The pack machinery below (manifest, registry, install, Decision, drafts) is reused for theme
+packs; persona/skills/routines return later as a pack kind.
 **Product:** LifeQuest — local-first life-management studio
 **Depends on:** [Plugin system analysis](../research/2026-11-09-plugin-system-analysis.md), `VISION.md`, `LAWS/COMPANION.md`, the harness seam (`docs/superpowers/specs/2026-10-21-agent-harness-seam-design.md`), review skills (`packages/vault-core/src/review-skills.ts`), automations (`packages/vault-core/src/automation-core.ts`), pages and views (`packages/vault-core/src/pages.ts`, `view-schema.ts`), connected-agent grants (`packages/vault-core/src/pairing-grant.ts`).
 
