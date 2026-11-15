@@ -50,6 +50,10 @@
  *     `usage:false`, no args/results) the UI claims none of them. The rig proves
  *     the absence as loudly as the presence: no empty placeholder rows, no
  *     fabricated "0 tokens", no invented result disclosure.
+ *  8. Usage keeps its order of magnitude. A turn of 1.22M tokens must read
+ *     "1.2M tokens", not "1220k" (four digits before a unit hides how much was
+ *     spent); a turn of 14.2k must still read "14.2k tokens". One decimal, the
+ *     same voice at both scales, and the footer's own text is the witness.
  *
  * The descriptor is chosen with `?caps=` and the structured transcript with
  * `?history=timeline` on the shared harness page; both are absent by default so
@@ -111,8 +115,11 @@ const PREVIEW_TEXT = "Preview of a sampled thought.";
 const INCOMPLETE_REASON = "iteration budget";
 const INCOMPLETE_PARTIAL = "Half a reply";
 const STOPPED_PARTIAL = "Only what arrived";
-/** Exact accounting: the footer may show it, and may not invent more than it. */
-const USAGE = { input: 1200, output: 240, total: 1440 };
+/**
+ * Exact accounting: the footer may show it, and may not invent more than it.
+ * Chosen past a million so the footer's unit ladder is exercised, not assumed.
+ */
+const USAGE = { input: 1_080_000, output: 140_000, total: 1_220_000 };
 
 /** The row labels the wire's args must produce (companion-client's target line). */
 const EXPECTED_ROWS = [
@@ -212,7 +219,8 @@ const TURN_TWO = {
   delta: frame("assistant.delta", { text: "One moment." }),
   final: frame("assistant.completed", { content: SECOND_ANSWER }),
   terminal: frame("run.completed", {
-    usage: { input: 600, output: 120, total: 720 },
+    // Thousands, so the k branch is witnessed beside the million-token turn.
+    usage: { input: 12_600, output: 1_600, total: 14_200 },
     messages: SECOND_SNAPSHOT_ROWS,
   }),
 };
@@ -757,11 +765,22 @@ async function main() {
       `footer ${JSON.stringify(settledFold?.footer)}, usage ${JSON.stringify(settledFold?.usage)}`,
     );
 
+    check(
+      "usage: a million-token turn reads in M at one decimal",
+      settledFold?.usage === "\u00b7 1.2M tokens" && (settledFold?.usage ?? "").includes("M tokens"),
+      `usage ${JSON.stringify(settledFold?.usage)} for ${JSON.stringify(USAGE)}`,
+    );
+
     // A second settled turn, so the per-turn fold claim has two witnesses.
     await sendTurn("And again");
     await emitAll([TURN_TWO.runStarted, TURN_TWO.startRead, TURN_TWO.completeRead]);
     await emitAll([TURN_TWO.delta, TURN_TWO.final, TURN_TWO.terminal]);
     const settledTwo = await waitForFooter("And again", "completed");
+    check(
+      "usage: a thousand-token turn still reads in k",
+      settledTwo?.usage === "\u00b7 14.2k tokens",
+      `usage ${JSON.stringify(settledTwo?.usage)}`,
+    );
 
     const bothFolded = await state();
     const firstFold = await openFold("Do the thing");

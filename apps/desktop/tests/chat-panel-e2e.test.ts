@@ -1277,6 +1277,10 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       assert.match(fold?.process?.header ?? "", /worked for/i);
       assert.equal(fold?.footer?.status, "completed");
       assert.match(fold?.footer?.text ?? "", /tokens/i);
+      // The unit ladder restated: past a million the footer reads in M at one
+      // decimal, and a thousands-sized turn keeps the k it always had.
+      assert.equal(fold?.usage, "\u00b7 1.2M tokens");
+      assert.equal(report.settled.secondTurn?.usage, "\u00b7 14.2k tokens");
       assert.equal(fold?.answerOutsideProcess, true);
       // Fold state is per turn: opening one did not open the other.
       assert.equal(report.settled.afterFirstOpen?.process?.state, "open");
