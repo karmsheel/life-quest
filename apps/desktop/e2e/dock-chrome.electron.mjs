@@ -39,6 +39,16 @@
  *     (`container-type: inline-size`) and the `@container` query is what makes
  *     the switch.
  *
+ *  4. The TRANSCRIPT'S TEXT COLUMN keeps the composer's measure: on a wide dock
+ *     the body's content box is exactly the composer box's width — the same
+ *     gutter on the leading side, and on the trailing side that gutter less the
+ *     reserved scrollbar's 0.5rem, so the text's right edge (not a scrollbar's
+ *     width inside the column) lands on the composer box's edge. At the 300px
+ *     floor the body's 0.875rem minimum is a couple of pixels wider than the
+ *     composer's 12px, so the column may be up to 4px narrower there and no
+ *     more. The message rows are the second witness: the operator's bubble is
+ *     left-aligned to that column and the companion's right-aligned to it.
+ *
  * ── every way this could fail, written down before the code ───────────────────
  *
  * The rig is a system-in-isolation test (the real ChatPanel, the real CSS, the
@@ -85,6 +95,22 @@
  *       gutter misses the expected value by more than the tolerance.
  *   G7. The drive itself fails: `--chatbar-width` on `.shell` does not resolve
  *       into the dock's column, so every number is measured at the wrong width.
+ *
+ *  Transcript column
+ *   T1. The transcript keeps the retired band's flat 0.875rem gutter while the
+ *       composer grows with the dock, so a wide dock has a narrow text column
+ *       over a wide field — the operator's request, unfixed.
+ *   T2. The trailing padding forgets the reserved scrollbar, so the text's right
+ *       edge lands a scrollbar's width (0.5rem) inside the composer box's edge.
+ *   T3. `scrollbar-gutter` is not `stable` on the scroller: the reserved bar
+ *       appears and disappears with the conversation, so the text column changes
+ *       width as the chat grows and the two edges drift apart.
+ *   T4. The padding moves the rows but not the text the operator reads: the
+ *       bubble edges stay on the old column, i.e. the text is not actually in the
+ *       measured content box.
+ *   T5. At the 300px floor the body's 0.875rem floor is wider than the composer's
+ *       12px, so the column is legitimately a few pixels narrower — a bounded
+ *       exception, not a silent loosening: 4px, checked by name.
  *
  *  Agent switcher
  *   S1. The switcher does not render at all — `AgentsProvider` missing from the
@@ -266,6 +292,16 @@ const SAMPLE = `(() => {
   const footerEl = document.querySelector(".chat-panel__footer");
   const composerFormEl = document.querySelector("form.chat-panel__composer");
   const composerBoxEl = document.querySelector(".chat-panel__composer-box");
+  // The visible thread transcript. The chain body and the shortcuts reference are
+  // in the DOM too but hidden; this is the one the thread's messages render into.
+  const transcriptBodyEl = document.querySelector(
+    ".chat-panel__body:not(.chat-panel__body--chain):not(.chat-panel__body--shortcuts)",
+  );
+  const userMessageEl = document.querySelector(".chat-panel__message--user");
+  const assistantMessages = Array.from(
+    document.querySelectorAll(".chat-panel__message--assistant"),
+  );
+  const lastAssistantEl = assistantMessages[assistantMessages.length - 1] ?? null;
   const switcherEl = document.querySelector(".agent-switcher");
   const tabLabelEl = document.querySelector(".chat-panel__tab--active .chat-panel__tab-label");
 
@@ -278,11 +314,15 @@ const SAMPLE = `(() => {
   const footer = rect(footerEl);
   const composerForm = rect(composerFormEl);
   const composerBox = rect(composerBoxEl);
+  const transcriptBody = rect(transcriptBodyEl);
+  const userMessage = rect(userMessageEl);
+  const lastAssistant = rect(lastAssistantEl);
   const switcher = rect(switcherEl);
 
   const chipStyle = chipEl ? getComputedStyle(chipEl) : null;
   const labelStyle = labelEl ? getComputedStyle(labelEl) : null;
   const footerStyle = footerEl ? getComputedStyle(footerEl) : null;
+  const transcriptStyle = transcriptBodyEl ? getComputedStyle(transcriptBodyEl) : null;
   const switcherStyle = switcherEl ? getComputedStyle(switcherEl) : null;
   const shellStyle = getComputedStyle(shellEl);
 
@@ -316,6 +356,32 @@ const SAMPLE = `(() => {
   const switcherBottomVsComposerBoxTop =
     switcher && composerBox ? round(switcher.bottom - composerBox.top) : null;
 
+  // The transcript's text column, read the way the browser lays it out. The body
+  // scroller reserves its scrollbar (scrollbar-gutter: stable), so clientWidth
+  // already excludes that bar while still including padding: the content box's
+  // right edge is where the text actually ends, not the padding box's edge with a
+  // scrollbar's width still to come. The two bubble edges are the second witness:
+  // the operator's message is left-aligned to this column and the companion's
+  // right-aligned to it, so a padding that only moved the rows would show up as
+  // a bubble that no longer lands on the composer box's edge.
+  const transcriptPaddingLeft = transcriptStyle ? px(transcriptStyle.paddingLeft) : null;
+  const transcriptPaddingRight = transcriptStyle ? px(transcriptStyle.paddingRight) : null;
+  const transcriptClientWidth = transcriptBodyEl ? transcriptBodyEl.clientWidth : null;
+  const transcriptContentLeft =
+    transcriptBody && transcriptPaddingLeft !== null
+      ? round(transcriptBody.left + transcriptPaddingLeft)
+      : null;
+  const transcriptContentWidth =
+    transcriptClientWidth !== null &&
+    transcriptPaddingLeft !== null &&
+    transcriptPaddingRight !== null
+      ? round(transcriptClientWidth - transcriptPaddingLeft - transcriptPaddingRight)
+      : null;
+  const transcriptContentRight =
+    transcriptContentLeft !== null && transcriptContentWidth !== null
+      ? round(transcriptContentLeft + transcriptContentWidth)
+      : null;
+
   return {
     chatSurface: panelEl.getAttribute("data-chat-surface"),
     viewport: {
@@ -338,6 +404,42 @@ const SAMPLE = `(() => {
         : round((gutterLeft + gutterRight) / 2),
     gutterCentrePx: gutterCentre,
     composerWidthRatio: composerBox ? round(composerBox.width / panel.width) : null,
+    // The text column the transcript renders into, beside the composer box it
+    // must line up with.
+    transcript: transcriptBodyEl
+      ? {
+          body: transcriptBody,
+          clientWidthPx: transcriptClientWidth,
+          scrollbarWidthPx:
+            transcriptBody && transcriptClientWidth !== null
+              ? round(transcriptBody.width - transcriptClientWidth)
+              : null,
+          paddingLeftPx: transcriptPaddingLeft,
+          paddingRightPx: transcriptPaddingRight,
+          scrollbarGutter: transcriptStyle.scrollbarGutter,
+          contentLeftPx: transcriptContentLeft,
+          contentWidthPx: transcriptContentWidth,
+          contentRightPx: transcriptContentRight,
+          userMessage: userMessageEl
+            ? {
+                rect: userMessage,
+                leftDeltaPx:
+                  transcriptContentLeft === null
+                    ? null
+                    : round(userMessage.left - transcriptContentLeft)
+              }
+            : null,
+          lastAssistant: lastAssistantEl
+            ? {
+                rect: lastAssistant,
+                rightDeltaPx:
+                  transcriptContentRight === null
+                    ? null
+                    : round(lastAssistant.right - transcriptContentRight)
+              }
+            : null
+        }
+      : null,
     hasStrip: Boolean(stripEl),
     hasHeader: Boolean(headerEl),
     headerTopVsStripBottomPx: headerTopVsStripBottom,
@@ -766,6 +868,115 @@ async function main() {
       at900.composerWidthRatio !== null && at900.composerWidthRatio <= COMPOSER_WIDE_RATIO_MAX,
       `composer/panel is ${at900.composerWidthRatio} at 900px (max ${COMPOSER_WIDE_RATIO_MAX})`,
     );
+
+    // ── T1–T5: the transcript's text column lines up with the composer box ──
+    // Read per width off the ladder's own samples, so the padding is compared at
+    // the same dock widths as the composer's gutters. The content box is the
+    // browser's: clientWidth (already less the reserved scrollbar) minus the two
+    // paddings, which is where the text really sits.
+    const transcriptColumn = samples.map((sample) => {
+      const transcript = sample.transcript;
+      const box = sample.composerBox;
+      const leftDeltaPx =
+        transcript && transcript.contentLeftPx !== null && box
+          ? Math.round((transcript.contentLeftPx - box.left) * 100) / 100
+          : null;
+      const rightDeltaPx =
+        transcript && transcript.contentRightPx !== null && box
+          ? Math.round((transcript.contentRightPx - box.right) * 100) / 100
+          : null;
+      const widthDeltaPx =
+        transcript && transcript.contentWidthPx !== null && box
+          ? Math.round((transcript.contentWidthPx - box.width) * 100) / 100
+          : null;
+      return {
+        width: sample.width,
+        panelWidthPx: sample.panel.width,
+        composerBox: box ? { left: box.left, right: box.right, width: box.width } : null,
+        content:
+          transcript && transcript.contentLeftPx !== null
+            ? {
+                left: transcript.contentLeftPx,
+                right: transcript.contentRightPx,
+                width: transcript.contentWidthPx,
+              }
+            : null,
+        body: transcript
+          ? {
+              left: transcript.body ? transcript.body.left : null,
+              right: transcript.body ? transcript.body.right : null,
+              width: transcript.body ? transcript.body.width : null,
+              clientWidthPx: transcript.clientWidthPx,
+              scrollbarWidthPx: transcript.scrollbarWidthPx,
+              paddingLeftPx: transcript.paddingLeftPx,
+              paddingRightPx: transcript.paddingRightPx,
+              scrollbarGutter: transcript.scrollbarGutter,
+            }
+          : null,
+        leftDeltaPx,
+        rightDeltaPx,
+        widthDeltaPx,
+        bubbleLeftDeltaPx: transcript?.userMessage?.leftDeltaPx ?? null,
+        bubbleRightDeltaPx: transcript?.lastAssistant?.rightDeltaPx ?? null,
+        bubblePresent: Boolean(transcript?.userMessage && transcript?.lastAssistant),
+      };
+    });
+    check(
+      "transcript-present",
+      transcriptColumn.every((entry) => entry.content !== null && entry.body !== null),
+      "the thread's transcript body (or its content box) was not measurable",
+    );
+    // T3 — the reserved bar is a property of the scroller, not of whether this
+    // particular transcript happens to overflow.
+    check(
+      "transcript-scrollbar-gutter",
+      transcriptColumn.every((entry) => entry.body?.scrollbarGutter === "stable"),
+      `scrollbarGutter per width: ${JSON.stringify(transcriptColumn.map((entry) => entry.body?.scrollbarGutter))}`,
+    );
+    // T4 — both fixtures are on screen, so each bubble edge can be used as the
+    // witness that the text (not just the padding) sits in the column.
+    check(
+      "transcript-bubbles-present",
+      transcriptColumn.every((entry) => entry.bubblePresent === true),
+      `one .chat-panel__message--user and one --assistant are needed per width: ` +
+        `${JSON.stringify(transcriptColumn.map((entry) => entry.bubblePresent))}`,
+    );
+    for (const entry of transcriptColumn) {
+      // T5 — the 300px floor is the one width where the body's 0.875rem minimum
+      // outruns the composer's 12px gutter; the column may be up to 4px narrower
+      // there and no more. Every other rung gets the full 2px alignment.
+      const tolerancePx = entry.width === 300 ? 4 : 2;
+      check(
+        `transcript-column:${entry.width}:left`,
+        entry.leftDeltaPx !== null && Math.abs(entry.leftDeltaPx) <= tolerancePx,
+        `text column left is ${entry.leftDeltaPx}px from the composer box's left ` +
+          `(tolerance ${tolerancePx}px)`,
+      );
+      check(
+        `transcript-column:${entry.width}:right`,
+        entry.rightDeltaPx !== null && Math.abs(entry.rightDeltaPx) <= tolerancePx,
+        `text column right is ${entry.rightDeltaPx}px from the composer box's right ` +
+          `(tolerance ${tolerancePx}px; a scrollbar's width left in the column shows up here)`,
+      );
+      check(
+        `transcript-column:${entry.width}:width`,
+        entry.widthDeltaPx !== null && Math.abs(entry.widthDeltaPx) <= tolerancePx,
+        `text column is ${entry.widthDeltaPx}px from the composer box's width ` +
+          `(tolerance ${tolerancePx}px)`,
+      );
+      // T4 — the operator's bubble starts on the column's leading edge and the
+      // companion's answer ends on its trailing edge.
+      check(
+        `transcript-bubble:${entry.width}:left`,
+        entry.bubbleLeftDeltaPx !== null && Math.abs(entry.bubbleLeftDeltaPx) <= 2,
+        `the user bubble's left edge is ${entry.bubbleLeftDeltaPx}px from the text column's left`,
+      );
+      check(
+        `transcript-bubble:${entry.width}:right`,
+        entry.bubbleRightDeltaPx !== null && Math.abs(entry.bubbleRightDeltaPx) <= 2,
+        `the assistant bubble's right edge is ${entry.bubbleRightDeltaPx}px from the text column's right`,
+      );
+    }
 
     // ── C1–C9, C13: the chip's own chrome, measured once at 900px ───────────
     const wide = at900;
@@ -1333,6 +1544,19 @@ async function main() {
           max: COMPOSER_WIDE_RATIO_MAX,
         },
       },
+      // The operator's request, as numbers: the transcript's content box against
+      // the composer box at every rung of the ladder. `present` is false only
+      // when the thread body itself could not be measured; each sample then
+      // carries its own nulls and the named checks above have already failed.
+      transcriptColumn: {
+        present: transcriptColumn.every(
+          (entry) => entry.content !== null && entry.body !== null,
+        ),
+        bodyScrollbarGutter: transcriptColumn[0]?.body?.scrollbarGutter ?? null,
+        tolerancePx: 2,
+        narrowTolerancePx: 4,
+        samples: transcriptColumn,
+      },
       chip: {
         present: chip !== null,
         stripPresent: wide.hasStrip,
@@ -1488,6 +1712,20 @@ async function main() {
     console.log(format(header));
     console.log(widths.map((width) => "-".repeat(width)).join("  "));
     for (const row of rows) console.log(format(row));
+    console.log("");
+  }
+  if (report.transcriptColumn) {
+    console.log(
+      `transcript column: scrollbar-gutter ${report.transcriptColumn.bodyScrollbarGutter}`,
+    );
+    for (const entry of report.transcriptColumn.samples) {
+      console.log(
+        `  ${entry.width}px: text ${entry.content?.left}..${entry.content?.right} ` +
+          `(${entry.content?.width}px) vs composer ${entry.composerBox?.left}..${entry.composerBox?.right} ` +
+          `(${entry.composerBox?.width}px) — Δl ${entry.leftDeltaPx}, Δr ${entry.rightDeltaPx}, ` +
+          `Δw ${entry.widthDeltaPx}; bubbles Δ ${entry.bubbleLeftDeltaPx}/${entry.bubbleRightDeltaPx}`,
+      );
+    }
     console.log("");
   }
   if (report.chip) {

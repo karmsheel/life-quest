@@ -7214,7 +7214,29 @@ a.home-mini-list__link:hover {
    any edge: the sheet's trailing hairline is the seam's only divider, and the top
    edge is read by the fill alone — no radius or shadow survives a flush panel
    either. */
+/* The dock's own measure: the room each band leaves empty beside its content,
+   and the band's scrollbar.
+
+   `--composer-gutter` is the space left empty on each side of the composer box.
+   At the 300px floor it is 12px — the composer fills the dock, as it always did
+   — and as the operator drags the dock wider it grows with the extra width until
+   each side is 12.5% of the band. It lives on the dock rather than on the
+   composer band because the transcript column is inset by the same measure (see
+   `.chat-panel__body` below): one token, so the composer and the text it belongs
+   to cannot drift apart. The cap is the same number a 12.5% padding resolved to
+   — 12.5% of the band's content box is `0.125 * chat-column - 1.5px` — written
+   as a length so the field and the transcript read one value. */
 .chat-panel {
+  --composer-gutter: clamp(
+    0.75rem,
+    calc(0.75rem + (var(--chat-column) - 18.75rem) * 0.16),
+    calc(var(--chat-column) * 0.125 - 1.5px)
+  );
+  /* The text column's inset: the composer's on a wide dock, and never less than
+     the transcript's own 0.875rem gutter on a narrow one. */
+  --transcript-gutter: max(0.875rem, var(--composer-gutter));
+  /* The app's scrollbar width (see the global `::-webkit-scrollbar` rule). */
+  --dock-scrollbar: 0.5rem;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -7582,6 +7604,20 @@ a.home-mini-list__link:hover {
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
+}
+
+/* The text keeps the composer's margins, so a wide dock is one column: the
+   transcript's content box is exactly the composer box's width, and the two
+   edges line up over a long conversation. The scroller keeps its bar at the
+   dock's edge — `scrollbar-gutter` reserves it whether or not the chat overflows
+   — and the trailing padding gives that bar its 0.5rem back, so the text's right
+   edge lands on the composer box's right edge rather than a scrollbar's width
+   inside it. The shortcuts reference is a page of its own, with no composer to
+   line up with, and keeps its plain gutter. */
+.chat-panel__body:not(.chat-panel__body--shortcuts) {
+  padding-inline: var(--transcript-gutter)
+    calc(var(--transcript-gutter) - var(--dock-scrollbar));
+  scrollbar-gutter: stable;
 }
 
 .chat-panel__error {
@@ -8593,11 +8629,6 @@ button.chat-panel__activity-line:hover {
    cap is a percentage resolved by the padding itself, which is why the token is
    only ever used inside a padding or an inset. */
 .chat-panel__footer {
-  --composer-gutter: clamp(
-    0.75rem,
-    calc(0.75rem + (var(--chat-column) - 18.75rem) * 0.16),
-    12.5%
-  );
   flex-shrink: 0;
   padding: 0.75rem;
   /* The agent switcher's wide/narrow switch is a container query on this band:

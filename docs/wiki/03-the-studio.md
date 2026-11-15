@@ -184,6 +184,9 @@ The chat dock:
   dock, and that margin grows as the dock is dragged wider — at the dock's
   narrowest the composer fills it edge to edge, and on a wide dock each side is
   about an eighth of the width — so the composer never stretches the whole bar.
+  The message text keeps the same margins: the transcript's content box is the
+  composer box's width, with its scrollbar at the dock's own edge, so on a wide
+  dock the conversation and the field read as one column.
 - The dock's bottom action bar under the composer, in order: **New chat**,
   **Quick Notes**, **Keyboard shortcuts** (opens the reference as a dock
   surface), the two-panes side switch, **Collapse chat**, and the version badge

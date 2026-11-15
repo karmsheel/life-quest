@@ -20,7 +20,10 @@
  *  3. the agent switcher stands in that right-hand gutter when the dock is
  *     wide, and steps just above the composer form when it is narrow (anchored
  *     to the form, not the band, so the band's cards and notices cannot push it
- *     up over the transcript), switched by a container query on the footer.
+ *     up over the transcript), switched by a container query on the footer;
+ *  4. the transcript's text column keeps the composer box's measure: the same
+ *     gutter on each side (the trailing one giving back the reserved scrollbar's
+ *     0.5rem), with the message bubbles landing on the composer's edges.
  *
  * The page mounts the real sidebar beside the dock and the real provider stack,
  * so this is the app's own layout — not a mock of it.
@@ -204,6 +207,41 @@ type DockChromeReport = {
     symmetryTolerancePx: number;
     narrowRatio: { width: number; value: number | null; min: number };
     wideRatio: { width: number; value: number | null; max: number };
+  };
+  /**
+   * The operator's request measured: the transcript's text column against the
+   * composer box at every rung of the dock ladder. Content geometry is read the
+   * way the browser lays it out — clientWidth already excludes the reserved
+   * scrollbar — so a trailing padding that forgets that bar shows up as a right
+   * edge inside the composer's.
+   */
+  transcriptColumn: {
+    present: boolean;
+    bodyScrollbarGutter: string | null;
+    tolerancePx: number;
+    narrowTolerancePx: number;
+    samples: {
+      width: number;
+      panelWidthPx: number;
+      composerBox: { left: number; right: number; width: number } | null;
+      content: { left: number; right: number; width: number } | null;
+      body: {
+        left: number | null;
+        right: number | null;
+        width: number | null;
+        clientWidthPx: number | null;
+        scrollbarWidthPx: number | null;
+        paddingLeftPx: number | null;
+        paddingRightPx: number | null;
+        scrollbarGutter: string | null;
+      } | null;
+      leftDeltaPx: number | null;
+      rightDeltaPx: number | null;
+      widthDeltaPx: number | null;
+      bubbleLeftDeltaPx: number | null;
+      bubbleRightDeltaPx: number | null;
+      bubblePresent: boolean;
+    }[];
   };
   chip: {
     present: boolean;
@@ -394,6 +432,71 @@ describe("dock chrome", () => {
       `composer/panel is ${report.gutters.wideRatio.value} at ${report.gutters.wideRatio.width}px ` +
         `(max ${report.gutters.wideRatio.max})`,
     );
+
+    // ── 2. the transcript's text column ─────────────────────────────────────
+    // The operator's request: on a wide dock the transcript's padding is the
+    // composer's measure, so the text runs the composer box's width. Restated
+    // per width here so a regression names the rung it broke at.
+    assert.equal(
+      report.transcriptColumn.present,
+      true,
+      "the thread transcript body or its content box was not measurable",
+    );
+    // T3 — the scrollbar's space is reserved by the scroller itself, so the
+    // column does not change width as the conversation grows.
+    assert.equal(
+      report.transcriptColumn.bodyScrollbarGutter,
+      "stable",
+      `the transcript scroller's scrollbar-gutter is ${report.transcriptColumn.bodyScrollbarGutter}, not stable`,
+    );
+    assert.deepEqual(
+      report.transcriptColumn.samples.map((entry) => entry.width),
+      report.widths,
+      "the transcript column was not measured at every dock width",
+    );
+    for (const entry of report.transcriptColumn.samples) {
+      // T5 — the 300px floor is the one rung where the body's 0.875rem minimum
+      // outruns the composer's 12px gutter; the column may be up to 4px narrower
+      // there. Every other rung must align within 2px.
+      const tolerance =
+        entry.width === 300
+          ? report.transcriptColumn.narrowTolerancePx
+          : report.transcriptColumn.tolerancePx;
+      assert.ok(
+        entry.leftDeltaPx !== null && Math.abs(entry.leftDeltaPx) <= tolerance,
+        `the transcript's text starts ${entry.leftDeltaPx}px from the composer box's left at ` +
+          `${entry.width}px (tolerance ${tolerance}px)`,
+      );
+      assert.ok(
+        entry.rightDeltaPx !== null && Math.abs(entry.rightDeltaPx) <= tolerance,
+        `the transcript's text ends ${entry.rightDeltaPx}px from the composer box's right at ` +
+          `${entry.width}px (tolerance ${tolerance}px) — a scrollbar's width left in the ` +
+          `column shows up here`,
+      );
+      assert.ok(
+        entry.widthDeltaPx !== null && Math.abs(entry.widthDeltaPx) <= tolerance,
+        `the transcript's text column is ${entry.widthDeltaPx}px wider than the composer box at ` +
+          `${entry.width}px (tolerance ${tolerance}px)`,
+      );
+      // T4 — the text really sits in that column: the operator's bubble starts
+      // on the column's leading edge and the companion's ends on its trailing
+      // edge, so a padding that moved the rows but not the text would fail.
+      assert.equal(
+        entry.bubblePresent,
+        true,
+        `the transcript had no user+assistant bubble pair to witness the column at ${entry.width}px`,
+      );
+      assert.ok(
+        entry.bubbleLeftDeltaPx !== null && Math.abs(entry.bubbleLeftDeltaPx) <= 2,
+        `the user bubble's left edge is ${entry.bubbleLeftDeltaPx}px from the text column's left ` +
+          `at ${entry.width}px`,
+      );
+      assert.ok(
+        entry.bubbleRightDeltaPx !== null && Math.abs(entry.bubbleRightDeltaPx) <= 2,
+        `the assistant bubble's right edge is ${entry.bubbleRightDeltaPx}px from the text ` +
+          `column's right at ${entry.width}px`,
+      );
+    }
 
     // ── 1. the name chip ────────────────────────────────────────────────────
     // C1 — it rendered at all, inside the old header wrapper.
