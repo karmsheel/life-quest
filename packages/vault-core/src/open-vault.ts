@@ -11,6 +11,7 @@ import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
 import { listPlanningIndex } from "./planning-stubs.ts";
 import { listReviewIndex } from "./reviews.ts";
+import { reviewAvailabilityFromUnknown } from "./review-availability.ts";
 import {
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
@@ -72,6 +73,13 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       // tolerant read gives it both defaults rather than leaving the renderer to
       // guess, so the settings page and the watcher never disagree.
       decisionInbox: decisionInboxFromUnknown(parsedSettings.decisionInbox),
+      // Same rule for the review windows: a vault written before they existed
+      // has no key, and reading must not rewrite settings.json. The tolerant
+      // read gives it the shipped defaults so the Review page, the period pack
+      // and the write gate all agree on which review is open.
+      reviewAvailability: reviewAvailabilityFromUnknown(
+        parsedSettings.reviewAvailability,
+      ),
     };
 
     const agentsRaw = await fs.readFile(paths.agentsJson, "utf8");
