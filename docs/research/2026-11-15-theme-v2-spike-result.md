@@ -75,20 +75,56 @@ R3 scene and R4 widget composition were not attempted.
    current theme, WCAG contrast enforcement, and a real companion **tool** for
    writing themes (the rig writes the file to stand in for the agent). The
    showcase theme in the artifact is written by the rig, not by a turn.
+   **All of those except R3/R4 are now closed — see the closure below.**
+
+## Closure — the authoring loop (next task, same branch)
+
+The spike left two gate questions open: whether a real agent can author a theme
+without seeing pixels, and whether moving chrome stays correct for keyboard and
+aria in every placement. Both are now answered on the same branch.
+
+What changed:
+
+- **Contrast is enforced, not suggested.** The shared model
+  (`apps/desktop/shared/theme-file.ts`) proves a palette against WCAG AA on the
+  eight text pairs the shell paints and refuses it with the failing pair and
+  ratio named. The renderer, main's tools and the rigs share that one rule.
+- **The companion has the tools.** `get_theme`, `validate_theme` and
+  `write_theme` are registered on the same MCP door the companion already uses
+  (`electron/theme-tools.ts`, wired in `pairing-door.ts` and `map-tools.ts`);
+  paired agents are refused by name because a theme belongs to the studio, not
+  a domain. Every turn's instructions carry the theme vocabulary, so the agent
+  can compose from it.
+- **Settings → Appearance is the operator's side.** Theme files are listed with
+  Try / Keep / Kept / Remove (two presses), Open folder, and Export current
+  theme. Try enters the same ten-second preview gate; Remove deletes the file
+  and, if it was the kept one, returns the shell to the default chrome.
+- **The kept name lives in main** (`theme-state.json`), not localStorage, so the
+  tools and the window agree; the v1 key is migrated once.
+- **The restart bug is fixed.** An installed skin is now an accepted stored
+  choice (`storage.ts`), not silently reverted to the default.
+- **The rig presses the keys.** It now exercises every wing place
+  (`rail-top` / `titlebar-left` / `floating-left` / `hidden`) and every area
+  place (`titlebar-center` / `below-titlebar` / `bottom-center` /
+  `floating-bottom-right` / `hidden`), both variants, arrow keys in the two
+  moved controls, the hidden-chrome escape hatch, the contrast refusal, and the
+  whole agent loop through the real MCP door: list tools → `get_theme` →
+  `validate_theme` (refused pair) → `write_theme` → live preview → operator
+  Keep → state. Settings is exercised in the real sheet.
 
 ## Evidence
 
 - Rig: `apps/desktop/e2e/theme-chrome.electron.mjs`; wrapper
   `apps/desktop/tests/theme-chrome-e2e.test.ts`.
-- Report: `apps/desktop/e2e/artifacts/themes-v2.json` (10 checks, 0 failures).
-- Pictures: `apps/desktop/e2e/artifacts/themes-v2-preview.png` (the preview bar
-  over the moved chrome) and `themes-v2-kept.png` (the same chrome after Keep
-  and a reload).
+- Report: `apps/desktop/e2e/artifacts/themes-v2.json` (27 checks, 0 failures).
+- Pictures: `themes-v2-preview.png` (preview bar over moved chrome),
+  `themes-v2-kept.png` (after Keep and a reload), `themes-v2-floating.png`
+  (floating-left wing + floating-bottom-right pill), and
+  `themes-v2-settings.png` (Settings → Appearance's theme-file list).
 - Run: `/root/.local/bin/lifequest-e2e <checkout> tests/theme-chrome-e2e.test.ts`.
 
 ## Next step
 
 Phase 1 (R1 material tokens, R2 chrome placements as first-class theming) per
 the design doc, starting with the "chrome host lives inside the shell providers"
-constraint, a Settings/appearance surface for theme files, and a rig that
-exercises keyboard and ARIA in every placement.
+constraint. R3 (scenes) and R4 (widget composition) remain unbuilt.

@@ -776,6 +776,24 @@ const lifequest = {
    */
   themesList: () =>
     ipcRenderer.invoke("theme:list") as Promise<Result<ThemeFileEntry[]>>,
+  themeGetState: () =>
+    ipcRenderer.invoke("theme:getState") as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeSetKept: (file: string | null) =>
+    ipcRenderer.invoke("theme:setKept", file) as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeDelete: (file: string) =>
+    ipcRenderer.invoke("theme:delete", file) as Promise<
+      Result<{ deleted: boolean }>
+    >,
+  themeOpenFolder: () =>
+    ipcRenderer.invoke("theme:openFolder") as Promise<Result<boolean>>,
+  themeExport: (theme: unknown) =>
+    ipcRenderer.invoke("theme:export", theme) as Promise<
+      Result<{ path: string } | null>
+    >,
   onThemesChanged: (cb: () => void) => {
     const listener = () => {
       cb();

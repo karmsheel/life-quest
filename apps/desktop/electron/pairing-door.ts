@@ -36,6 +36,7 @@ import {
   type ConnectedAgent,
   type ConnectedGrant,
 } from "@lifequest/vault-core";
+import { THEME_TOOL_DEFS } from "./theme-tools.ts";
 import {
   checkInvite,
   companionBearer,
@@ -888,7 +889,7 @@ function fullServer(
   grant?: ConnectedGrant,
 ): McpServer {
   const mcp = new McpServer({ name: "lifequest-map", version: "0.1.0" });
-  for (const def of ALL_TOOL_DEFS) {
+  for (const def of [...ALL_TOOL_DEFS, ...THEME_TOOL_DEFS]) {
     mcp.registerTool(
       def.name,
       // A loose object, not `{}`. The SDK validates arguments against this
@@ -963,7 +964,7 @@ function fullServer(
   // same reason it does for an agent: the companion's host caches this manifest,
   // and a tool set that grows must be able to reach it.
   mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: ALL_TOOL_DEFS.map(advertisedTool),
+    tools: [...ALL_TOOL_DEFS, ...THEME_TOOL_DEFS].map(advertisedTool),
     ttlMs: TOOL_MANIFEST_TTL_MS,
   }));
   return mcp;

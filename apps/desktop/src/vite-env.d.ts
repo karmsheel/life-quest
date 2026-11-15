@@ -1036,6 +1036,14 @@ type LifequestApi = {
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   /** The app profile's `themes/` directory, as main last read it. */
   themesList: () => Promise<Result<ThemeFileEntry[]>>;
+  /** The kept theme's file name, stored in main so the companion tools agree. */
+  themeGetState: () => Promise<Result<{ keptFile: string | null }>>;
+  themeSetKept: (
+    file: string | null,
+  ) => Promise<Result<{ keptFile: string | null }>>;
+  themeDelete: (file: string) => Promise<Result<{ deleted: boolean }>>;
+  themeOpenFolder: () => Promise<Result<boolean>>;
+  themeExport: (theme: unknown) => Promise<Result<{ path: string } | null>>;
   /** Main saw the directory move; the renderer reads it again. */
   onThemesChanged: (cb: () => void) => () => void;
   /**

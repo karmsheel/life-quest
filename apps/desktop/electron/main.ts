@@ -28,6 +28,7 @@ import * as companion from "./companion.js";
 import * as harness from "./harness/facade.js";
 import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted } from "./harness/pi-settings.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
+import { parseThemeFile } from "../shared/theme-file.ts";
 import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
@@ -1557,6 +1558,81 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     }
   });
 
+  /** The kept theme's file name, in the app profile; the tools read it too. */
+  const themeStateFile = (): string => path.join(app.getPath("userData"), "theme-state.json");
+  const readThemeState = async (): Promise<{ keptFile: string | null }> => {
+    try {
+      const raw = JSON.parse(await fs.promises.readFile(themeStateFile(), "utf8"));
+      const kept = raw && typeof raw.keptFile === "string" ? raw.keptFile : null;
+      return { keptFile: kept && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(kept) ? kept : null };
+    } catch {
+      return { keptFile: null };
+    }
+  };
+  const writeThemeState = async (keptFile: string | null): Promise<void> => {
+    const next = { keptFile };
+    await fs.promises.writeFile(`${themeStateFile()}.tmp`, `${JSON.stringify(next, null, 2)}\n`);
+    await fs.promises.rename(`${themeStateFile()}.tmp`, themeStateFile());
+  };
+  const safeThemeFile = (file: unknown): string | null =>
+    typeof file === "string" && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(file) ? file : null;
+
+  ipcMain.handle("theme:getState", () => readThemeState().then((value) => ({ ok: true as const, value })));
+
+  ipcMain.handle("theme:setKept", async (_event, file: unknown) => {
+    const safe = file === null ? null : safeThemeFile(file);
+    if (file !== null && safe === null) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    try {
+      await writeThemeState(safe);
+      return { ok: true as const, value: { keptFile: safe } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("theme:delete", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    try {
+      await fs.promises.rm(path.join(app.getPath("userData"), "themes", safe), { force: true });
+      const state = await readThemeState();
+      if (state.keptFile === safe) await writeThemeState(null);
+      return { ok: true as const, value: { deleted: true } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("theme:openFolder", async () => {
+    const dir = path.join(app.getPath("userData"), "themes");
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      const failure = await shell.openPath(dir);
+      return failure ? { ok: false as const, error: failure } : { ok: true as const, value: true };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("theme:export", async (_event, theme: unknown) => {
+    const parsed = parseThemeFile(theme);
+    if (!parsed.ok) return { ok: false as const, error: parsed.error };
+    const result = await dialog.showSaveDialog({
+      title: "Export theme",
+      defaultPath: path.join(app.getPath("documents"), `${parsed.theme.name}.json`),
+      filters: [{ name: "LifeQuest theme", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: true as const, value: null };
+    try {
+      await fs.promises.writeFile(result.filePath, `${JSON.stringify(parsed.theme, null, 2)}\n`);
+      return { ok: true as const, value: { path: result.filePath } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   ipcMain.handle("window:getChrome", () => ({
     overlay: usesTitleBarOverlay(),
     platform: process.platform,
@@ -1786,6 +1862,23 @@ function startFxRefreshLoop(): void {
 }
 
 /** Exported for the e2e seam: a rig should not wait an hour to see a refresh. */
+/**
+ * E2E seam: the companion's MCP door, so a rig can exercise the real tool path
+ * (transport, schema advertising, dispatch) instead of calling a tool body.
+ *
+ * Same shape as `fxRefreshForE2e`: exported only for the rigs, and only after
+ * `bootForE2e` has opened a vault — before that the token has no vault to pair.
+ */
+export async function e2eCompanionDoor(): Promise<{
+  url: string;
+  token: string;
+} | null> {
+  const url = vault.getMcpUrl();
+  const token = await vault.ensureCurrentCompanionToken();
+  if (!url || !token.ok) return null;
+  return { url, token: token.value };
+}
+
 export async function fxRefreshForE2e(): Promise<void> {
   await refreshFxNow();
 }

@@ -91,9 +91,26 @@ starred, so it is in the quick menu immediately; installed themes are listed und
 **Installed** with **Remove**. A file that is not JSON, or not a valid theme, is
 refused with the reason naming the field that failed.
 
+**Theme files** are a narrower, more structural thing than a skin. A theme file
+lives in the app profile's `themes/` folder — never in the vault — and can move
+the wing switcher and the area lens between placements, and set the radius
+family, density and motion. The companion can write one for you, or you can drop
+a `.json` in that folder. A new or changed file is worn for ten seconds as a
+**preview** with **Keep** and **Revert**; if you do nothing it hands the window
+back by itself. The **Theme files** list on this page shows every file the app
+could read, with **Try** (enter the preview again), **Keep** (wear it from now
+on), **Kept** on the file you kept, and **Remove** (two presses: Remove →
+Remove?). **Open folder** opens the profile's `themes/` folder and **Export
+current theme** saves the palette, material and chrome you are wearing as one
+JSON file you can share. A file whose placement is not one of the declared
+values, or whose palette fails WCAG AA contrast, is refused with the field — or
+the failing colour pair — named.
+
 Theme, skin, starred list and installed themes are stored in the window's local
 storage, not in the vault: they are this installation's look, and they do not
-travel with the folder.
+travel with the folder. The name of the kept theme file is stored in the app
+profile instead (`theme-state.json`), because the companion's theme tools run
+outside the window and must see the same answer.
 
 ## Keyboard
 

@@ -49,8 +49,12 @@ import {
   type ThemeMaterial,
 } from "@/lib/themes/theme-file";
 
-/** The worn theme file's name, kept in the renderer like the skin's. */
-const THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
+/**
+ * The v1 spike kept the worn theme's name in localStorage. Main now owns that
+ * answer (`theme-state.json`) so the companion's `get_theme` can read it; this
+ * key is read once at startup and migrated.
+ */
+const LEGACY_THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
 /**
  * How long a theme the companion just wrote is shown before it hands the window
  * back. Ten seconds is long enough to look at, short enough that a bad write
@@ -58,13 +62,6 @@ const THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
  */
 const THEME_PREVIEW_MS = 10_000;
 
-function readStoredThemeFile(): string | null {
-  try {
-    return localStorage.getItem(THEME_FILE_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -103,6 +100,25 @@ interface ThemeContextValue {
   themeError: string | null;
   keepThemePreview: () => void;
   revertThemePreview: () => void;
+  /** Every valid theme file in the profile, in name order — the Settings list. */
+  themeFiles: { file: string; theme: ThemeFile }[];
+  /** The file the operator kept, as stored in main so the tools can read it. */
+  keptFile: string | null;
+  /** Wear one file as a preview (ten-second countdown). */
+  applyThemeFile: (file: string) => void;
+  /** Wear one file and keep it at once — the Settings "Keep" action. */
+  keepThemeFile: (file: string) => void;
+  /** Remove a theme file from the profile, clearing the kept name if it was it. */
+  removeThemeFile: (file: string) => Promise<void>;
+  /** Read the profile's themes/ directory again. */
+  refreshThemeFiles: () => Promise<void>;
+  /** Open the profile's themes/ directory in the OS file manager. */
+  openThemesFolder: () => Promise<void>;
+  /**
+   * Write the theme this window is wearing as one JSON file: palette, material
+   * and chrome. Returns the saved path, null when the operator cancelled.
+   */
+  exportCurrentTheme: () => Promise<{ path: string } | null>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -195,11 +211,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     label: string;
   } | null>(null);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [themeFiles, setThemeFiles] = useState<
+    { file: string; theme: ThemeFile }[]
+  >([]);
+  const [keptFile, setKeptFile] = useState<string | null>(null);
   const themePreviewTimer = useRef<number | null>(null);
   /** Last mtime seen per file, so a hot reload can name what actually changed. */
   const themeMtimes = useRef<Map<string, number>>(new Map());
   /** The theme this window reverts to; the rendered `themeFile` moves on preview. */
   const keptTheme = useRef<ThemeFile | null>(null);
+  /** The kept file name, readable from callbacks that must not go stale. */
+  const keptFileRef = useRef<string | null>(null);
   /** The theme currently painted, read from callbacks that must not go stale. */
   const paintedTheme = useRef<ThemeFile | null>(null);
   const previewRef = useRef<{ file: string; label: string } | null>(null);
@@ -269,7 +291,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [paintTheme, revertThemePreview],
   );
 
-  /** Keep the previewed theme: persisted by file name, worn from now on. */
+  /**
+   * Keep the previewed theme: persisted by file name in main (so the companion's
+   * `get_theme` sees the same answer), worn from now on.
+   */
   const keepThemePreview = useCallback(() => {
     const preview = previewRef.current;
     if (!preview) return;
@@ -277,12 +302,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(themePreviewTimer.current);
       themePreviewTimer.current = null;
     }
-    try {
-      localStorage.setItem(THEME_FILE_STORAGE_KEY, preview.file);
-    } catch {
-      /* ignore */
-    }
     keptTheme.current = paintedTheme.current;
+    keptFileRef.current = preview.file;
+    setKeptFile(preview.file);
+    void window.lifequest?.themeSetKept?.(preview.file);
     previewRef.current = null;
     setThemePreview(null);
     setThemeError(null);
@@ -292,6 +315,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
    * Read the directory, paint what the operator kept, and preview anything the
    * companion just wrote. `preview: false` is the first read of the session: a
    * kept theme is worn without the ten-second countdown.
+   *
+   * What is kept lives in main (`theme-state.json`), not in this window: the
+   * companion's `get_theme` runs in main and must see the same answer the
+   * operator does. The v1 spike's localStorage key is read once and migrated.
    */
   const loadThemeFiles = useCallback(
     async (options?: { preview?: boolean }) => {
@@ -308,13 +335,35 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      let keptName: string | null = null;
+      try {
+        const state = await bridge.themeGetState?.();
+        if (state?.ok) keptName = state.value.keptFile;
+      } catch {
+        /* main state unreadable: fall through to the legacy key */
+      }
+      if (!keptName) {
+        try {
+          const legacy = localStorage.getItem(LEGACY_THEME_FILE_STORAGE_KEY);
+          if (legacy) {
+            keptName = legacy;
+            void bridge.themeSetKept?.(legacy);
+            localStorage.removeItem(LEGACY_THEME_FILE_STORAGE_KEY);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      keptFileRef.current = keptName;
+      setKeptFile(keptName);
+
       const known = themeMtimes.current;
-      const keptName = readStoredThemeFile();
       let changed: { file: string; theme: ThemeFile } | null = null;
       let keptChanged = false;
       let kept: { file: string; theme: ThemeFile } | null = null;
       let failure: string | null = null;
       const seen = new Set<string>();
+      const valid: { file: string; theme: ThemeFile }[] = [];
 
       for (const entry of answer.value) {
         seen.add(entry.file);
@@ -344,6 +393,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           invalid(parsed.error);
           continue;
         }
+        valid.push({ file: entry.file, theme: parsed.theme });
         if (entry.file === keptName) {
           kept = { file: entry.file, theme: parsed.theme };
           if (previous !== undefined && previous !== entry.mtime) {
@@ -356,9 +406,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       for (const file of [...known.keys()]) {
         if (!seen.has(file)) known.delete(file);
       }
+      setThemeFiles(valid.sort((a, b) => a.file.localeCompare(b.file)));
 
       if (kept) keptTheme.current = kept.theme;
       if (options?.preview === false) {
+        // A live preview owns the window: Settings opening (or any other
+        // preview-disabled read) must not repaint the kept theme under it while
+        // the preview bar is still counting down.
+        if (previewRef.current) return;
         setThemeFile(kept?.theme ?? null);
         paintTheme(kept?.theme ?? null);
         return;
@@ -372,6 +427,90 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     },
     [paintTheme, revertThemePreview, showPreview],
   );
+
+  /** Wear one file at once (Settings "Try" and the notification its own path). */
+  const applyThemeFile = useCallback(
+    (file: string) => {
+      const entry = themeFiles.find((candidate) => candidate.file === file);
+      if (entry) showPreview({ file: entry.file, theme: entry.theme });
+    },
+    [showPreview, themeFiles],
+  );
+
+  /** Wear one file and persist it without waiting out the preview. */
+  const keepThemeFile = useCallback(
+    (file: string) => {
+      const entry = themeFiles.find((candidate) => candidate.file === file);
+      if (!entry) return;
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+        themePreviewTimer.current = null;
+      }
+      keptTheme.current = entry.theme;
+      keptFileRef.current = file;
+      setKeptFile(file);
+      void window.lifequest?.themeSetKept?.(file);
+      previewRef.current = null;
+      setThemePreview(null);
+      setThemeError(null);
+      setThemeFile(entry.theme);
+      paintTheme(entry.theme);
+    },
+    [paintTheme, themeFiles],
+  );
+
+  /** Delete one file from the profile; a kept name that pointed at it is cleared. */
+  const removeThemeFile = useCallback(
+    async (file: string) => {
+      const bridge = window.lifequest;
+      const answer = await bridge?.themeDelete?.(file);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not remove the theme");
+        return;
+      }
+      if (keptFileRef.current === file) {
+        keptFileRef.current = null;
+        setKeptFile(null);
+        keptTheme.current = null;
+        setThemeFile(null);
+        paintTheme(null);
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles({ preview: false });
+    },
+    [loadThemeFiles, paintTheme],
+  );
+
+  const refreshThemeFiles = useCallback(
+    () => loadThemeFiles({ preview: false }),
+    [loadThemeFiles],
+  );
+
+  const openThemesFolder = useCallback(async () => {
+    const answer = await window.lifequest?.themeOpenFolder?.();
+    if (answer && !answer.ok) setThemeError(answer.error);
+  }, []);
+
+  const exportCurrentTheme = useCallback(async () => {
+    const worn = paintedTheme.current ?? themeFile;
+    const base = resolveSkin(skinName);
+    const exported = {
+      name: worn?.name ?? "current",
+      label: worn?.label ?? "Current theme",
+      ...(worn?.description ? { description: worn.description } : {}),
+      colors: base.colors,
+      ...(base.darkColors ? { darkColors: base.darkColors } : {}),
+      chrome: resolveChrome(worn?.chrome ?? chrome),
+      material: resolveMaterial(worn?.material ?? material),
+    };
+    const answer = await window.lifequest?.themeExport?.(exported);
+    if (!answer) return null;
+    if (!answer.ok) {
+      setThemeError(answer.error);
+      return null;
+    }
+    return answer.value;
+  }, [chrome, material, skinName, themeFile]);
 
   useEffect(() => {
     void loadThemeFiles({ preview: false });
@@ -542,6 +681,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       themeError,
       keepThemePreview,
       revertThemePreview,
+      themeFiles,
+      keptFile,
+      applyThemeFile,
+      keepThemeFile,
+      removeThemeFile,
+      refreshThemeFiles,
+      openThemesFolder,
+      exportCurrentTheme,
     }),
     [
       availableSkins,
@@ -550,9 +697,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       installSkin,
       installedSkins,
       isSkinFavorite,
+      applyThemeFile,
+      exportCurrentTheme,
+      keepThemeFile,
       keepThemePreview,
+      keptFile,
       material,
+      openThemesFolder,
       preference,
+      refreshThemeFiles,
+      removeThemeFile,
+      themeFiles,
       resolved,
       revertThemePreview,
       setPreference,

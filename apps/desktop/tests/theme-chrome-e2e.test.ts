@@ -25,7 +25,7 @@ type Report = {
   checks: Check[];
   failures: string[];
   pass: boolean;
-  artifacts: { preview: string; kept: string };
+  artifacts: { preview: string; kept: string; floating: string; settings: string };
   theme: unknown;
   refused: unknown;
 };
@@ -109,7 +109,12 @@ describe("theme files v2", () => {
       assert.deepEqual(report.failures, []);
       assert.equal(code, 0);
       assert.equal(report.pass, true);
-      for (const artifact of [report.artifacts.preview, report.artifacts.kept]) {
+      for (const artifact of [
+        report.artifacts.preview,
+        report.artifacts.kept,
+        report.artifacts.floating,
+        report.artifacts.settings,
+      ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),
           `missing artifact ${artifact}`,

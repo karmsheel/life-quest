@@ -122,7 +122,7 @@ export function DomainSwitcher({
           role="radio"
           aria-checked={overviewSelected}
           tabIndex={overviewSelected ? 0 : -1}
-          disabled={pending}
+          aria-disabled={pending || undefined}
           className={`ui-segmented__option${overviewSelected ? " is-active" : ""}`}
           ref={(el) => {
             refs.current[OVERVIEW_KEY] = el;
@@ -141,7 +141,7 @@ export function DomainSwitcher({
               role="radio"
               aria-checked={selected}
               tabIndex={selected ? 0 : -1}
-              disabled={pending}
+              aria-disabled={pending || undefined}
               className={`ui-segmented__option${selected ? " is-active" : ""}`}
               ref={(el) => {
                 refs.current[d.slug] = el;

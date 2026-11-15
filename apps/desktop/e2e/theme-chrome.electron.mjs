@@ -57,6 +57,8 @@ const DEV_URL = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173";
 const REPORT = path.join(artifactsDir, "themes-v2.json");
 const PREVIEW_PNG = path.join(artifactsDir, "themes-v2-preview.png");
 const KEPT_PNG = path.join(artifactsDir, "themes-v2-kept.png");
+const FLOATING_PNG = path.join(artifactsDir, "themes-v2-floating.png");
+const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
 
 const failures = [];
 const checks = [];
@@ -135,10 +137,17 @@ function writeHermesStub(binDir) {
   );
 }
 
-const SAMPLE = `(() => {
+const SAMPLE = `(async () => {
   const previewBar = document.querySelector('[data-testid="theme-preview-bar"]');
   const errorBar = document.querySelector('[data-testid="theme-error"]');
   const radius = getComputedStyle(document.documentElement).getPropertyValue("--radius-lg").trim();
+  const wingHost =
+    document.querySelector('[data-chrome-place="titlebar-left"]') ||
+    document.querySelector('[data-chrome-place="floating-left"]');
+  const wingText = wingHost
+    ? (wingHost.querySelector('[role="radio"]')?.textContent ?? "").trim()
+    : null;
+  const state = await window.lifequest?.themeGetState?.();
   return {
     hash: location.hash,
     errors: (window.__lqErrors ?? []).slice(-4),
@@ -149,11 +158,15 @@ const SAMPLE = `(() => {
     railWings: Boolean(document.querySelector(".nav-rail__wings-band")),
     wingTitlebar: Boolean(document.querySelector('[data-chrome-place="titlebar-left"]')),
     wingFloating: Boolean(document.querySelector('[data-chrome-place="floating-left"]')),
+    wingText,
     domainBottom: Boolean(document.querySelector('[data-chrome-place="bottom-center"]')),
+    domainBelow: Boolean(document.querySelector('[data-chrome-place="below-titlebar"]')),
     domainFloating: Boolean(document.querySelector('[data-chrome-place="floating-bottom-right"]')),
+    domainPill: Boolean(document.querySelector(".domain-switcher--pill")),
     lensInStrip: Boolean(document.querySelector(".window-titlebar__lens")),
+    settingsEntry: Boolean(document.querySelector(".window-titlebar__settings")),
     areaNames: [...document.querySelectorAll(".domain-switcher__name")].map((n) => n.textContent.trim()),
-    kept: (() => { try { return localStorage.getItem("lifequest-theme-file"); } catch { return null; } })(),
+    kept: state && state.ok ? state.value.keptFile : null,
     density: document.documentElement.dataset.materialDensity ?? null,
     motion: document.documentElement.dataset.materialMotion ?? null,
     radiusLg: radius,
@@ -175,6 +188,47 @@ const BAD_THEME = {
   name: "bad-chrome",
   label: "Bad Chrome",
   chrome: { wingSwitcher: { place: "sidebar-top" } },
+};
+
+/** A complete palette with one pair at 1:1 — the contrast refusal's subject. */
+const LOW_CONTRAST_THEME = {
+  name: "low-contrast",
+  label: "Low Contrast",
+  colors: Object.fromEntries(
+    [
+      "background",
+      "foreground",
+      "card",
+      "cardForeground",
+      "muted",
+      "mutedForeground",
+      "popover",
+      "popoverForeground",
+      "primary",
+      "primaryForeground",
+      "secondary",
+      "secondaryForeground",
+      "accent",
+      "accentForeground",
+      "border",
+      "input",
+      "ring",
+      "destructive",
+      "destructiveForeground",
+    ].map((key) => [key, key === "background" || key === "foreground" ? "#ffffff" : "#000000"]),
+  ),
+};
+
+/** What the companion's own write_theme call puts on screen. */
+const AGENT_THEME = {
+  name: "agent-written",
+  label: "Agent Written",
+  description: "Written by a tool call through the MCP door, not by the rig's pen.",
+  chrome: {
+    wingSwitcher: { place: "floating-left", variant: "labels" },
+    domainSwitcher: { place: "below-titlebar", variant: "segmented" },
+  },
+  material: { radius: "round", density: "airy", motion: "calm" },
 };
 
 async function main() {
@@ -458,6 +512,351 @@ async function main() {
     "(() => { const b = document.querySelector('[data-testid=\"theme-dismiss\"]'); if (b) b.click(); return true; })()",
   );
 
+  // ── 6: the rest of the matrix ───────────────────────────────────────────
+  const writeThemeFile = (file, theme) =>
+    fs.writeFileSync(path.join(themesDir, file), `${JSON.stringify(theme, null, 2)}\n`);
+  const waitFor = async (predicate, timeout = 12_000) => {
+    const until = Date.now() + timeout;
+    let last = null;
+    while (Date.now() < until) {
+      last = await evaluate(SAMPLE);
+      if (predicate(last)) return last;
+      await sleep(100);
+    }
+    return last;
+  };
+
+  writeThemeFile("matrix-icons.json", {
+    name: "matrix-icons",
+    label: "Icons On The Strip",
+    chrome: {
+      wingSwitcher: { place: "titlebar-left", variant: "icons" },
+      domainSwitcher: { place: "below-titlebar", variant: "segmented" },
+    },
+  });
+  const icons = await waitFor((s) => s.wingTitlebar && s.domainBelow && s.preview);
+  check(
+    "the-second-placement-moves-and-swaps-variant",
+    icons &&
+      icons.wingTitlebar &&
+      icons.wingText === "H" &&
+      icons.domainBelow &&
+      icons.lensInStrip === false,
+    JSON.stringify({ wingText: icons?.wingText, below: icons?.domainBelow, strip: icons?.lensInStrip }),
+  );
+
+  // Keyboard and aria where a moved control now lives: both switchers are radio
+  // groups, so ArrowRight must move the checked choice and keep focus inside.
+  const keyboard = await evaluate(`(async () => {
+    const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const probe = async (selector) => {
+      const host = document.querySelector(selector);
+      if (!host) return null;
+      const radios = [...host.querySelectorAll('[role="radio"]')];
+      const before = radios.findIndex((el) => el.getAttribute("aria-checked") === "true");
+      if (before < 0) return { before: -1 };
+      radios[before].focus();
+      const focusedBefore = document.activeElement === radios[before];
+      radios[before].dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      );
+      await settle(700);
+      const hostAfter = document.querySelector(selector);
+      if (!hostAfter) return { before, focusedBefore, now: -1, focusedInside: false, count: 0 };
+      const afterRadios = [...hostAfter.querySelectorAll('[role="radio"]')];
+      return {
+        before,
+        focusedBefore,
+        now: afterRadios.findIndex((el) => el.getAttribute("aria-checked") === "true"),
+        focusedInside: hostAfter.contains(document.activeElement),
+        count: afterRadios.length,
+      };
+    };
+    // One after the other, never at once: focusing the area lens would otherwise
+    // take the focus away from the wing switcher before it is measured.
+    const wing = await probe('[data-chrome-place="titlebar-left"]');
+    const domain = await probe('[data-chrome-place="below-titlebar"]');
+    return { wing, domain };
+  })()`);
+  check(
+    "keyboard-moves-the-moved-wing-switcher",
+    keyboard?.wing &&
+      keyboard.wing.focusedBefore === true &&
+      keyboard.wing.now > -1 &&
+      keyboard.wing.now !== keyboard.wing.before &&
+      keyboard.wing.focusedInside === true,
+    JSON.stringify(keyboard?.wing),
+  );
+  check(
+    "keyboard-moves-the-moved-area-lens",
+    keyboard?.domain &&
+      keyboard.domain.focusedBefore === true &&
+      keyboard.domain.now > -1 &&
+      keyboard.domain.now !== keyboard.domain.before &&
+      keyboard.domain.focusedInside === true,
+    JSON.stringify(keyboard?.domain),
+  );
+
+  writeThemeFile("matrix-floating.json", {
+    name: "matrix-floating",
+    label: "Floating Edges",
+    chrome: {
+      wingSwitcher: { place: "floating-left", variant: "labels" },
+      domainSwitcher: { place: "floating-bottom-right", variant: "pill" },
+    },
+  });
+  const floating = await waitFor(
+    (s) => s.wingFloating && s.domainFloating && s.domainPill && s.preview,
+  );
+  check(
+    "the-floating-corners-hold-the-pill",
+    floating &&
+      floating.wingFloating &&
+      floating.wingTitlebar === false &&
+      floating.domainFloating &&
+      floating.domainPill &&
+      floating.areaNames.length >= 2,
+    JSON.stringify({ wing: floating?.wingFloating, domain: floating?.domainFloating, pill: floating?.domainPill, areas: floating?.areaNames }),
+  );
+  const floatingShot = await win.webContents.capturePage();
+  fs.writeFileSync(FLOATING_PNG, floatingShot.toPNG());
+
+  writeThemeFile("matrix-hidden.json", {
+    name: "matrix-hidden",
+    label: "Hidden Chrome",
+    chrome: {
+      wingSwitcher: { place: "hidden", variant: "labels" },
+      domainSwitcher: { place: "hidden", variant: "segmented" },
+    },
+  });
+  const hidden = await waitFor(
+    (s) =>
+      !s.railWings &&
+      !s.wingTitlebar &&
+      !s.wingFloating &&
+      !s.lensInStrip &&
+      !s.domainBelow &&
+      !s.domainBottom &&
+      !s.domainFloating &&
+      s.preview,
+  );
+  check(
+    "hidden-chrome-still-leaves-the-way-out",
+    hidden &&
+      hidden.railWings === false &&
+      hidden.wingTitlebar === false &&
+      hidden.wingFloating === false &&
+      hidden.lensInStrip === false &&
+      hidden.domainBelow === false &&
+      hidden.domainBottom === false &&
+      hidden.domainFloating === false &&
+      hidden.settingsEntry === true,
+    JSON.stringify({ settings: hidden?.settingsEntry, shell: hidden?.shell, preview: hidden?.preview }),
+  );
+  // The preview bar is the escape hatch while the chrome is hidden: Revert.
+  const revertedAgain = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backToKept = await waitFor((s) => !s.preview && s.wingTitlebar && s.domainBottom);
+  check(
+    "the-escape-hatch-returns-the-kept-theme",
+    revertedAgain === true && backToKept?.kept === "solar-system.json" && backToKept.wingTitlebar && backToKept.domainBottom,
+    JSON.stringify({ revertedAgain, kept: backToKept?.kept, wing: backToKept?.wingTitlebar, domain: backToKept?.domainBottom }),
+  );
+
+  // ── 7: the companion's own tools, through the real MCP door ─────────────
+  const { e2eCompanionDoor } = await import("../dist-electron/main.js");
+  const door = await e2eCompanionDoor();
+  check(
+    "the-companion-door-answers",
+    Boolean(door?.url && door?.token),
+    JSON.stringify({ url: door?.url ?? null, token: Boolean(door?.token) }),
+  );
+  let client = null;
+  try {
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StreamableHTTPClientTransport } = await import(
+      "@modelcontextprotocol/sdk/client/streamableHttp.js"
+    );
+    client = new Client({ name: "theme-rig", version: "0.1.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(door.url), {
+        requestInit: { headers: { Authorization: `Bearer ${door.token}` } },
+      }),
+    );
+    const listed = await client.listTools();
+    const names = (listed.tools ?? []).map((tool) => tool.name);
+    check(
+      "the-theme-tools-are-on-the-companion-door",
+      ["get_theme", "validate_theme", "write_theme"].every((name) => names.includes(name)),
+      names.slice(-10).join(","),
+    );
+
+    const callJson = async (name, args) => {
+      const result = await client.callTool({ name, arguments: args });
+      const text =
+        result.content?.find((part) => part.type === "text")?.text ?? "{}";
+      try {
+        return { json: JSON.parse(text), isError: result.isError === true };
+      } catch {
+        return { json: null, isError: true };
+      }
+    };
+
+    const getTheme = await callJson("get_theme", {});
+    check(
+      "get-theme-names-what-is-kept",
+      getTheme.json?.keptFile === "solar-system.json",
+      JSON.stringify(getTheme.json?.keptFile ?? null),
+    );
+
+    const contrast = await callJson("validate_theme", { theme: LOW_CONTRAST_THEME });
+    const contrastMessage = contrast.json?.error?.message ?? "";
+    check(
+      "validate-theme-refuses-a-palette-it-cannot-read",
+      contrastMessage.includes("WCAG AA contrast"),
+      contrastMessage.slice(0, 220),
+    );
+
+    const written = await callJson("write_theme", { theme: AGENT_THEME });
+    check(
+      "write-theme-names-the-file-it-wrote",
+      written.json?.written === "agent-written.json",
+      JSON.stringify(written.json),
+    );
+
+    const agentPreview = await waitFor(
+      (s) =>
+        s.preview &&
+        s.wingFloating &&
+        s.domainBelow &&
+        (s.previewText ?? "").includes("agent-written.json"),
+    );
+    check(
+      "the-agents-write-previews-in-the-real-window",
+      Boolean(agentPreview?.preview) &&
+        agentPreview.wingFloating &&
+        agentPreview.domainBelow,
+      JSON.stringify({
+        preview: agentPreview?.previewText,
+        wing: agentPreview?.wingFloating,
+        domain: agentPreview?.domainBelow,
+      }),
+    );
+
+    const pressedKeep = await evaluate(
+      `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+    );
+    const agentKept = await waitFor(
+      (s) => s.kept === "agent-written.json" && !s.preview,
+    );
+    check(
+      "the-agents-write-is-kept-through-the-preview-bar",
+      pressedKeep === true && agentKept?.kept === "agent-written.json",
+      JSON.stringify({ pressedKeep, kept: agentKept?.kept }),
+    );
+  } finally {
+    if (client) await client.close().catch(() => {});
+  }
+
+  // ── 8: the operator's side of the gate, in Settings → Appearance ─────────
+  const openedSettings = await evaluate(`(() => {
+    const trigger = document.querySelector(".settings-menu__trigger");
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  let filesPanel = null;
+  for (let i = 0; i < 100; i += 1) {
+    filesPanel = await evaluate(`(() => {
+      const panel = document.querySelector('[data-testid="theme-files"]');
+      if (!panel) return null;
+      return {
+        rows: [...panel.querySelectorAll('[data-testid^="theme-file-row-"]')].map((row) => row.getAttribute("data-testid")),
+        agentRow: Boolean(document.querySelector('[data-testid="theme-file-row-agent-written"]')),
+        agentKept: Boolean(document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-kept"]')),
+        solarRow: Boolean(document.querySelector('[data-testid="theme-file-row-solar-system"]')),
+        text: panel.textContent.slice(0, 300),
+      };
+    })()`);
+    if (filesPanel?.agentRow) break;
+    await evaluate(`(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`);
+    await sleep(150);
+  }
+  check(
+    "settings-lists-the-theme-files",
+    openedSettings === true &&
+      filesPanel?.agentRow === true &&
+      filesPanel.agentKept === true &&
+      filesPanel.solarRow === true,
+    JSON.stringify(filesPanel ? { rows: filesPanel.rows, agentKept: filesPanel.agentKept } : null),
+  );
+  const settingsShot = await win.webContents.capturePage();
+  fs.writeFileSync(SETTINGS_PNG, settingsShot.toPNG());
+
+  // Try a file from the list: it must enter the same ten-second preview gate,
+  // not jump straight to kept.
+  const triedFromSettings = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="theme-file-row-solar-system"] [data-testid="theme-file-try"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const tried = await waitFor(
+    (s) => s.preview && (s.previewText ?? "").includes("solar-system.json") && s.wingTitlebar,
+  );
+  check(
+    "try-from-settings-enters-the-preview-gate",
+    triedFromSettings === true && Boolean(tried?.preview) && tried.wingTitlebar && tried.kept === "agent-written.json",
+    JSON.stringify({ tried: tried?.previewText, kept: tried?.kept }),
+  );
+  const revertedFromSettings = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backToAgent = await waitFor((s) => !s.preview && s.wingFloating && s.kept === "agent-written.json");
+  check(
+    "reverting-from-settings-returns-the-kept-theme",
+    revertedFromSettings === true && Boolean(backToAgent?.wingFloating) && backToAgent.kept === "agent-written.json",
+    JSON.stringify({ wing: backToAgent?.wingFloating, kept: backToAgent?.kept }),
+  );
+
+  // Remove the agent's file where the operator would: two presses, then gone.
+  const firstRemove = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
+    if (!b) return false;
+    b.click();
+    return b.textContent.trim();
+  })()`);
+  const confirming = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
+    return b ? b.textContent.trim() : null;
+  })()`);
+  await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
+    if (b) b.click();
+    return true;
+  })()`);
+  const removed = await waitFor(
+    (s) => !s.wingFloating && !s.wingTitlebar && s.railWings && s.kept === null,
+    15_000,
+  );
+  check(
+    "settings-removes-a-theme-and-restores-the-default",
+    firstRemove !== false &&
+      confirming !== null &&
+      confirming !== "Remove" &&
+      fs.existsSync(path.join(themesDir, "agent-written.json")) === false &&
+      removed?.railWings === true &&
+      removed.wingFloating === false &&
+      removed.kept === null,
+    JSON.stringify({
+      confirm: confirming,
+      fileGone: !fs.existsSync(path.join(themesDir, "agent-written.json")),
+      wing: removed?.wingFloating,
+      kept: removed?.kept,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -467,6 +866,8 @@ async function main() {
     artifacts: {
       preview: path.relative(desktopRoot, PREVIEW_PNG),
       kept: path.relative(desktopRoot, KEPT_PNG),
+      floating: path.relative(desktopRoot, FLOATING_PNG),
+      settings: path.relative(desktopRoot, SETTINGS_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

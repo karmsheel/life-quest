@@ -12632,3 +12632,173 @@ button.chat-panel__activity-line:hover {
 [data-material-density="airy"] .shell {
   --shell-nav-pad: 0.65rem;
 }
+
+/* ——— theme files (Settings → Appearance) ———————————————————————————————————————
+   The v2 theme file's Settings surface: where files from the profile's themes/
+   folder are tried, kept and removed. It sits below the skin grid and is ruled
+   off from it like the install section, because it is a second kind of theme —
+   files from disk rather than themes the app ships. */
+
+.theme-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-files__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-files__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-files__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-files__intro,
+.theme-files__empty {
+  margin: 0.3rem 0 0;
+  max-width: 40rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-files__intro code,
+.theme-files__empty code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.theme-files__actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.theme-files__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-files__message {
+  margin: 0;
+}
+
+.theme-files__empty {
+  margin-top: 0.15rem;
+}
+
+.theme-files__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-files__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.theme-files__copy {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-files__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+}
+
+.theme-files__label {
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.theme-files__file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-files__desc {
+  max-width: 36rem;
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+/* Where the theme puts the two switchers, in the theme file's own vocabulary —
+   the same words the companion reads, so the two can talk about one file. */
+.theme-files__chrome {
+  margin: 0.25rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+}
+
+.theme-files__chrome code {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.theme-files__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* The row's controls are compact: Try, Keep and Remove share one line beside the
+   file's own copy, so they take a smaller step than a page's control. */
+.theme-files__row-actions .btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.theme-files__kept {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.72rem;
+}
