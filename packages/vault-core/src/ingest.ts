@@ -835,6 +835,34 @@ export async function editIngestRow(
   }
 }
 
+/**
+ * A CSV cell is text; the column it is mapped to says what the value means.
+ * Without this cast an amount arrives as "-450" and every mapped statement
+ * fails validation at accept time with "Column amount expects finite number".
+ * Same rule the adapter sync's `convertCell` applies to a pulled row.
+ */
+function coerceIngestCells(
+  db: DatabaseMeta,
+  cells: Record<string, unknown>,
+): Record<string, unknown> {
+  const colById = new Map(db.columns.map((column) => [column.id, column]));
+  const out = { ...cells };
+  for (const [columnId, value] of Object.entries(out)) {
+    const column = colById.get(columnId);
+    if (!column || typeof value !== "string") continue;
+    if (column.type === "number") {
+      const trimmed = value.trim();
+      if (trimmed === "") continue;
+      const n = Number(trimmed);
+      if (Number.isFinite(n)) out[columnId] = n;
+    } else if (column.type === "checkbox") {
+      if (value === "true") out[columnId] = true;
+      else if (value === "false") out[columnId] = false;
+    }
+  }
+  return out;
+}
+
 export async function acceptIngestRows(
   root: string,
   slug: string,
@@ -887,7 +915,7 @@ export async function acceptIngestRows(
       )?.id;
 
       for (const row of rows) {
-        const cells = JSON.parse(row.cells) as Record<string, unknown>;
+        const cells = coerceIngestCells(dbMeta, JSON.parse(row.cells) as Record<string, unknown>);
         // Ensure external_id is set
         if (row.external_id && externalIdColId) {
           cells[externalIdColId] = row.external_id;

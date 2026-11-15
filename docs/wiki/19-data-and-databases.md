@@ -68,6 +68,12 @@ same tables through its tools; the rules about what lands are the app's, not the
    real table. **Reject** / **Reject all** discard the batch's proposed rows and keep the
    batch out of the way.
 
+A statement description mapped to `payee` is normalised to the merchant or item: a date, a
+known account name, a category word or filler such as **spent on** is stripped. The full
+description is kept in `notes` — a statement's own wording is never destroyed, and an
+existing `notes` cell is left alone. The same cleaning runs on every write, so an accepted
+statement row and a row typed by hand are held to one payee rule.
+
 A PDF needs its rows extracted before it can be imported; the Data page's **Import** panel
 sends the file without an extraction, so a PDF dropped there returns **Could not extract rows
 from PDF**. In this build CSV (a spreadsheet export) is the reliable path from the Data page;

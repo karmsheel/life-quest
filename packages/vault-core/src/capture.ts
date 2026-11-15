@@ -13,6 +13,7 @@ import {
 } from "./domain-databases.ts";
 import { readRegistry } from "./domain-databases.ts";
 import { listInstalledKits } from "./finance-kit.ts";
+import { sanitisePayee } from "./payee.ts";
 import {
   FINANCE_KIT_ID,
   FINANCE_DOMAIN_SLUG,
@@ -77,10 +78,76 @@ function parseCurrency(text: string): "ZAR" | "USD" {
   return "ZAR";
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+function isoDate(year: number, month: number, day: number): string | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    return null;
+  }
+  const y = String(year).padStart(4, "0");
+  const m = String(month).padStart(2, "0");
+  const dayPart = String(day).padStart(2, "0");
+  return `${y}-${m}-${dayPart}`;
+}
+
+function expandYear(raw: string): number {
+  const n = Number(raw);
+  return raw.length <= 2 ? 2000 + n : n;
+}
+
+/** A numeric date in the sentence: 9/28/26, 28/09/2026, 2026.11.06. */
+function parseNumericDate(text: string): string | null {
+  const match = text.match(/\b(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})\b/);
+  if (!match) return null;
+  const [a, b, c] = [Number(match[1]), Number(match[2]), match[3]!];
+  // A four-digit first number is the year; otherwise the day/month order is
+  // resolved by which number cannot be a month, and day-then-month when both
+  // could be (South African order).
+  if (match[1]!.length === 4) return isoDate(Number(match[1]), Number(match[2]), Number(c));
+  const year = expandYear(c);
+  if (a > 12) return isoDate(year, b, a);
+  if (b > 12) return isoDate(year, a, b);
+  return isoDate(year, b, a);
+}
+
+function monthIndex(name: string): number | null {
+  return MONTH_NAMES[name.slice(0, 3).toLowerCase()] ?? null;
+}
+
+/** A month-name date: 28 Sep 2026, Sep 28, 2026, 28 September 2026. */
+function parseMonthNameDate(text: string): string | null {
+  const dayFirst = text.match(
+    /\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{2,4})\b/i,
+  );
+  if (dayFirst) {
+    const month = monthIndex(dayFirst[2]!);
+    if (month) return isoDate(expandYear(dayFirst[3]!), month, Number(dayFirst[1]));
+  }
+  const monthFirst = text.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2}),?\s+(\d{2,4})\b/i,
+  );
+  if (monthFirst) {
+    const month = monthIndex(monthFirst[1]!);
+    if (month) return isoDate(expandYear(monthFirst[3]!), month, Number(monthFirst[2]));
+  }
+  return null;
+}
+
 function parseDate(text: string, today: string): string {
   // Explicit YYYY-MM-DD wins
   const explicit = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
   if (explicit) return explicit[1];
+
+  const numeric = parseNumericDate(text);
+  if (numeric) return numeric;
+  const monthName = parseMonthNameDate(text);
+  if (monthName) return monthName;
 
   if (/\byesterday\b/i.test(text)) {
     const d = new Date(today + "T00:00:00");
@@ -209,21 +276,80 @@ function selectAccount(
   };
 }
 
+/**
+ * The categoriser's keyword rules: a word the operator typed that the category
+ * name itself does not contain. Without these, "petrol" and "meat" fell into
+ * Uncategorized unless the sentence happened to name the category by hand.
+ */
+const CATEGORY_KEYWORD_RULES: Array<{ target: string; words: string[] }> = [
+  { target: "Fuel", words: ["petrol", "fuel", "diesel", "garage", "engen", "shell", "sasol"] },
+  { target: "Meat", words: ["meat", "butcher", "steak"] },
+  { target: "Food", words: ["coffee"] },
+];
+
+function escapeKeyword(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function wordPresent(text: string, word: string): boolean {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeKeyword(word)}(?![\\p{L}\\p{N}])`, "iu").test(text);
+}
+
+/**
+ * A rule names a category by intent, and the operator may have named it more
+ * precisely: "Food" has to reach "Food & Drink" without also reaching "Foodie
+ * supplies". Exact name first, then a word-prefix.
+ */
+function ruleTargetCategory(
+  target: string,
+  categories: Array<{ id: string; name: string }>,
+): string | null {
+  const exact = categories.find(
+    (c) => c.name && c.name.toLowerCase() === target.toLowerCase(),
+  );
+  if (exact) return exact.id;
+  const prefix = new RegExp(`^${escapeKeyword(target)}(?![\\p{L}\\p{N}])`, "iu");
+  const named = categories.find((c) => c.name && prefix.test(c.name));
+  return named ? named.id : null;
+}
+
 function selectCategory(
   text: string,
   categories: Array<{ id: string; name: string }>,
 ): string {
   const lower = text.toLowerCase();
-  for (const cat of categories) {
+  // An explicitly named category is the operator's own choice and wins.
+  for (const cat of [...categories].sort((a, b) => b.name.length - a.name.length)) {
     if (cat.name && lower.includes(cat.name.toLowerCase())) {
       return cat.id;
     }
+  }
+  for (const rule of CATEGORY_KEYWORD_RULES) {
+    if (!rule.words.some((word) => wordPresent(text, word))) continue;
+    const id = ruleTargetCategory(rule.target, categories);
+    if (id) return id;
   }
   // Uncategorized
   const uncategorized = categories.find(
     (c) => c.name.toLowerCase() === "uncategorized",
   );
   return uncategorized ? uncategorized.id : "uncategorized";
+}
+
+/** The payee the operator's sentence should store: merchant or item only. */
+function cleanPayee(
+  raw: string | null,
+  accounts: Array<{ id: string; name: string }>,
+  categories: Array<{ id: string; name: string }>,
+  categoryName: string | null,
+): string | null {
+  const result = sanitisePayee({
+    raw,
+    accountNames: accounts.map((a) => a.name),
+    categoryNames: categories.map((c) => c.name),
+    assignedCategoryName: categoryName,
+  });
+  return result.payee;
 }
 
 async function ensureUncategorized(
@@ -430,14 +556,20 @@ export async function captureUtterance(
 
     const accountName =
       accounts.find((a) => a.id === accountId)?.name ?? "";
+    // The payee the operator sees on the receipt is the stored one: merchant or
+    // item only. The write funnel applies the same rule to the row; computing it
+    // here keeps the receipt from naming a field the row does not hold.
+    const payee = cleanPayee(parsed.payee, accounts, categories, categoryName);
 
     const cells = {
       date: parsed.date,
       amount,
       account: accountId,
       category: categoryId,
+      // The raw payee goes through the write funnel, which normalises it and
+      // records the lint; `notes` carries the operator's verbatim sentence.
       payee: parsed.payee,
-      notes: null,
+      notes: text,
       source_file: sourceFile,
       provenance: `chat:${threadId}`,
       external_id: null,
@@ -455,7 +587,7 @@ export async function captureUtterance(
     threads[threadId] = rowId;
     await writeCaptureThreads(root, threads);
 
-    const payeeBit = parsed.payee ? ` • ${parsed.payee}` : "";
+    const payeeBit = payee ? ` • ${payee}` : "";
     const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}${payeeBit}`;
 
     // KAR-9: a posted capture is a vault write, so the life log records who wrote it.
@@ -470,7 +602,7 @@ export async function captureUtterance(
         date: parsed.date,
         accountName,
         categoryName,
-        payee: parsed.payee,
+        payee,
       },
       actor,
     });
@@ -486,7 +618,7 @@ export async function captureUtterance(
         date: parsed.date,
         accountName,
         categoryName,
-        payee: parsed.payee,
+        payee,
       },
     };
   } catch (e) {
@@ -686,6 +818,7 @@ export async function correctCapture(
 
     const accountName =
       accounts.find((a) => a.id === accountId)?.name ?? "";
+    const payee = cleanPayee(parsed.payee, accounts, categories, categoryName);
 
     const cells = {
       date: parsed.date,
@@ -693,7 +826,8 @@ export async function correctCapture(
       account: accountId,
       category: categoryId,
       payee: parsed.payee,
-      notes: null,
+      // A correction is a new sentence: keep that sentence, not the old payee.
+      notes: text,
       source_file: existingSourceFile,
       provenance: `chat:${threadId}`,
       external_id: null,
@@ -707,7 +841,7 @@ export async function correctCapture(
     );
     if (!upserted.ok) return { ok: false, error: upserted.error };
 
-    const payeeBit = parsed.payee ? ` • ${parsed.payee}` : "";
+    const payeeBit = payee ? ` • ${payee}` : "";
     const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}${payeeBit}`;
 
     return {
@@ -721,7 +855,7 @@ export async function correctCapture(
         date: parsed.date,
         accountName,
         categoryName,
-        payee: parsed.payee,
+        payee,
       },
     };
   } catch (e) {

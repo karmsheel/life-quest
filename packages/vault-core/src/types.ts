@@ -1156,6 +1156,11 @@ export type FinanceKitSettings = {
   defaultCaptureAccountId: string | null;
   /** Null until the operator changes it; the default source is used instead. */
   fxSource?: FxRateSource | null;
+  /**
+   * The last payee-sanitiser migration this vault has run. Absent means the
+   * one-time history repair has not run yet; the app runs it on vault open.
+   */
+  payeeSanitiserVersion?: number;
 };
 
 export type CaptureOutcome =
@@ -1206,6 +1211,11 @@ export type DatabaseRow = {
   createdAt: string;
   updatedAt: string;
   cells: Record<string, unknown>;
+  /**
+   * What the write path had to change to make the row honest — the payee
+   * sanitiser reports here rather than storing a polluted field silently.
+   */
+  warnings?: string[];
 };
 
 export type DatabaseListEntry = {

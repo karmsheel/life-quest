@@ -63,6 +63,7 @@ import {
   markConnectedAgent,
   markReviewDone,
   openVault,
+  normaliseFinancePayeeHistory,
   projectCreate,
   projectGet,
   projectList,
@@ -719,6 +720,17 @@ export async function vaultOpen(
     const res = await openVault(abs);
     if (!res.ok) return res;
     await rememberOpen(res.value);
+    // The payee repair the old capture and import paths made necessary: one
+    // pass over finance history, once per vault. It is a normalisation the app
+    // can define, so it must not sit in the approval queue — and it must run
+    // before linked adapters sync, so a repair is never read as a local edit
+    // and pushed over a remote row.
+    try {
+      await normaliseFinancePayeeHistory(res.value.rootPath);
+    } catch {
+      // A repair that cannot run is not a reason to refuse the vault; the next
+      // open tries again because the marker was never written.
+    }
     // KAR-59: sync linked adapters on open (try/catch — sync failure must not block open)
     try {
       const secretStore = adapterSecretStore();

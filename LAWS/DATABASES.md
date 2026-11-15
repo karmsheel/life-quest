@@ -15,6 +15,10 @@ Domain databases and pages live in the vault folder. The desktop book is that fo
 - Ingest batch rows MUST NOT post until the operator accepts the batch.
 - Conversational capture MUST NOT post when the amount or the account is missing.
 - Conversational capture MUST name what was logged when it posts.
+- Every finance transaction write MUST normalise the payee to the merchant or item.
+- The operator's verbatim sentence MUST be stored in `notes`.
+- Repairing polluted payee history MUST be a one-time app-side migration and MUST NOT
+  be queued through Decisions.
 - A kit install proposed by an agent MUST go through Decisions.
 - JSON restore MUST require an explicit confirmed Settings action.
 - Home MUST keep goal progress and deadline available as pins.
