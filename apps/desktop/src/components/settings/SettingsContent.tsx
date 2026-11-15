@@ -17,6 +17,7 @@ import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsDeveloper } from "./SettingsDeveloper";
 import { SettingsQuestions } from "./SettingsQuestions";
 import { SettingsDecisions } from "./SettingsDecisions";
+import { SettingsReview } from "./SettingsReview";
 import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
@@ -64,6 +65,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsHermes />;
     case "agent":
       return <SettingsCompanionPrompts />;
+    case "review":
+      return <SettingsReview />;
     case "questions":
       return <SettingsQuestions />;
     case "decisions":

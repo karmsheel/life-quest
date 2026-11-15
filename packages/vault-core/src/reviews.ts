@@ -2,14 +2,21 @@ import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
-import { isFuturePeriod, periodBounds, periodTitle } from "./period.ts";
+import { periodBounds, periodTitle } from "./period.ts";
 import { listDomains } from "./domains.ts";
 import { unlockedAreas } from "./domain-lens.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  defaultReviewAvailability,
+  formatReviewOpening,
+  reviewAvailabilityFromUnknown,
+  reviewOpensAt,
+} from "./review-availability.ts";
+import {
   USER_ACTOR,
   type Actor,
   type Result,
+  type ReviewAvailability,
   type ReviewCadence,
   type ReviewIndexEntry,
   type ReviewRecord,
@@ -97,15 +104,60 @@ function todayIso(): string {
   return new Date().toISOString();
 }
 
-async function readSettings(rootPath: string): Promise<WeekStartDay> {
+/**
+ * The two settings this module needs: which day a week starts on (it decides a
+ * weekly period's bounds) and when each cadence's review opens.
+ *
+ * A missing or unreadable settings.json is not an error here — the review read
+ * path must keep working on a vault whose settings are being repaired — so the
+ * defaults answer instead. The value is read on every gate rather than cached,
+ * because the operator can change a window from Settings while the Review page
+ * is open and the next write has to see the new one.
+ */
+type ReviewSettings = {
+  weekStartDay: WeekStartDay;
+  availability: ReviewAvailability;
+};
+
+async function readSettings(rootPath: string): Promise<ReviewSettings> {
   const paths = vaultPaths(rootPath);
   try {
     const raw = await fs.readFile(paths.settingsJson, "utf8");
-    const parsed = JSON.parse(raw) as { weekStartDay?: string };
-    return parsed.weekStartDay === "sunday" ? "sunday" : "monday";
+    const parsed = JSON.parse(raw) as {
+      weekStartDay?: string;
+      reviewAvailability?: unknown;
+    };
+    return {
+      weekStartDay: parsed.weekStartDay === "sunday" ? "sunday" : "monday",
+      availability: reviewAvailabilityFromUnknown(parsed.reviewAvailability),
+    };
   } catch {
-    return "monday";
+    return {
+      weekStartDay: "monday",
+      availability: defaultReviewAvailability(),
+    };
   }
+}
+
+/**
+ * Why a review of this period may not be written yet, or null when it may.
+ *
+ * The one sentence the operator reads comes from one place: `ensureReview` and
+ * `writeReview` both gate on this, so the board page (which ensures first) and a
+ * direct autosave refuse with exactly the same words. A period that cannot be
+ * dated at all is refused with the parser's own error rather than being treated
+ * as open, because a malformed key is not a window anyone opened.
+ */
+function reviewNotOpenError(
+  settings: ReviewSettings,
+  cadence: ReviewCadence,
+  period: string,
+  now: Date = new Date(),
+): string | null {
+  const opensAt = reviewOpensAt(cadence, period, settings.weekStartDay, settings.availability);
+  if (!opensAt.ok) return opensAt.error;
+  if (opensAt.value.getTime() <= now.getTime()) return null;
+  return `This review is not available yet: it opens ${formatReviewOpening(opensAt.value)}.`;
 }
 
 async function readDomainNames(rootPath: string): Promise<Map<string, string>> {
@@ -211,7 +263,7 @@ async function parseReviewFile(
         weekStartDay: (typeof data.weekStartDay === "string" ? data.weekStartDay : "monday") as WeekStartDay,
         locked: data.locked === true,
         updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : todayIso(),
-        title: typeof data.title === "string" ? data.title : periodTitle(cadence as ReviewCadence, period, await readSettings(rootPath)),
+        title: typeof data.title === "string" ? data.title : periodTitle(cadence as ReviewCadence, period, (await readSettings(rootPath)).weekStartDay),
         scopes,
         bodyMarkdown: body,
       },
@@ -396,10 +448,15 @@ export async function ensureReview(
     if (input.cadence === "daily" && !isOverall(input.scope)) {
       return { ok: false, error: DAILY_REVIEW_NO_AREAS };
     }
-    const weekStartDay = await readSettings(rootPath);
-    const future = isFuturePeriod(input.cadence, input.period, weekStartDay);
-    if (future) {
-      return { ok: false, error: "Cannot create a future review" };
+    const settings = await readSettings(rootPath);
+    const weekStartDay = settings.weekStartDay;
+    // A review may only be started once its own window has opened. This replaced
+    // the old "not a future period" check: the window is a stricter question
+    // than the calendar's, because a weekly review is not writable merely
+    // because its week has started.
+    const notOpen = reviewNotOpenError(settings, input.cadence, input.period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
     }
 
     const paths = vaultPaths(rootPath);
@@ -537,6 +594,16 @@ export async function writeReview(
 
     if (record.locked) {
       return { ok: false, error: "LOCKED" };
+    }
+
+    // Writing is gated after the read and lock checks and before canonicalizing
+    // anything: the page autosaves as the operator types, and an autosave that
+    // raced the window's opening must not write a body the review page would
+    // then refuse to draw. The same sentence `ensureReview` uses is returned.
+    const settings = await readSettings(rootPath);
+    const notOpen = reviewNotOpenError(settings, input.cadence, input.period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
     }
 
     // Validate required headings
@@ -801,6 +868,15 @@ export async function applyLockedReviewBody(
     const existing = await parseReviewFile(rootPath, cadence, period);
     if (!existing.ok) return existing;
     const record = existing.value;
+
+    // Approving an edited body is still a write, so it obeys the same window
+    // rule as `writeReview`: a Decision filed against a period whose review has
+    // not opened yet cannot land its body ahead of the review.
+    const settings = await readSettings(rootPath);
+    const notOpen = reviewNotOpenError(settings, cadence, period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
+    }
 
     // Validate required headings before applying — a decision must not
     // break the skeleton the same way writeReview rejects it.

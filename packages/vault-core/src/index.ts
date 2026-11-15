@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./chat-questions.ts";
 export * from "./decision-inbox.ts";
+export * from "./review-availability.ts";
 export type { AutoApproveInsert } from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";

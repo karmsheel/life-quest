@@ -168,12 +168,14 @@ vault's own binding.
    is already working. To line a message up behind it, choose **Queue**; queued
    rows appear under the composer labelled **Queued**, each with **Remove queued
    message**. Ctrl/Cmd+Enter steers while a turn is running.
-4. Read the turn as a work log. Your messages are labelled **You**, the
-   companion's **Pi** or **Hermes**; a steered message wears a `steered` mark, and
-   each bubble has a time and a copy control (**Copy message**, then **Copied**).
-   Between the question and the answer sits the turn's process: its reasoning (a
-   **Thought** row, or **Thinking preview** when the agent only samples it), any
-   commentary or narration, and one row per tool call such as
+4. Read the turn as a work log. Your message sits on the right as a bubble in the
+   accent tint, labelled **You**. The companion's answer is not a bubble: it rests
+   on the panel as plain prose, left aligned and full width, labelled **Pi** or
+   **Hermes**. Both carry their label above and a footer with the time and a copy
+   control (**Copy message**, then **Copied**); a steered message wears a
+   `steered` mark. Between the question and the answer sits the turn's process:
+   its reasoning (a **Thought** row, or **Thinking preview** when the agent only
+   samples it), any commentary or narration, and one row per tool call such as
    "get_database · 4e89…" with its state, its duration and, on click, its
    arguments and result. While the turn runs the process stays open; when it
    settles it folds to one header such as "Worked for 1s · Used 4e89…", and
@@ -181,10 +183,11 @@ vault's own binding.
 5. Below the process is the answer, never inside it, and a footer with the
    outcome: **Completed · 1s · 1.4k tokens** (past a million tokens the count
    reads in millions, **1.2M tokens**), or **Stopped**, **Failed** or **Ended
-   before finishing** with the reason. A failed, stopped or incomplete
-   turn keeps its process open so the cut-short work stays visible. Reloading the
-   chat rebuilds the same rows, fold, footer and token count from the companion's
-   own transcript.
+   before finishing** with the reason. Until the answer arrives the turn shows
+   only its work log: no empty bubble stands in for the prose. A failed, stopped
+   or incomplete turn keeps its process open so the cut-short work stays visible.
+   Reloading the chat rebuilds the same rows, fold, footer and token count from
+   the companion's own transcript.
 6. The same work log is drawn for both agents, but only from what the agent can
    honestly report: Pi streams results, real reasoning and its own tool timings as
    they happen; Hermes' session stream delivers results with the turn's final
@@ -278,7 +281,7 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
 | Dock header | The active chat's name with **Pin chat** / **Rename chat** / **Archive chat** (the archive control steps away while pinned). |
-| Transcript | Bubbles with **You** / **Pi** or **Hermes**, times, copy controls, the `steered` mark; the tool activity line; approval and error panels. |
+| Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. |
 | Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 

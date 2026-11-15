@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import {
+  DEFAULT_REVIEW_AVAILABILITY,
   currentPeriod,
-  isCurrentPeriod,
-  isFuturePeriod,
+  formatReviewOpening,
   nextPeriod,
+  openReviewPeriod,
   previousPeriod,
   periodTitle,
+  reviewOpensAt,
   type ReviewCadence,
   type ReviewPrepopulateResult,
   type ReviewRecord,
@@ -68,6 +70,15 @@ function resolveCadence(param: string | undefined): ReviewCadence | null {
  * neither the document nor the interview. Now the document is open and filled
  * whatever the agent is doing, and a gateway that is down is reported as the one
  * thing that failed, in words that name where to fix it.
+ *
+ * THE PAGE OPENS ON AN OPEN WINDOW, NOT ON THE CALENDAR. Each cadence's review
+ * becomes writable a little before its period ends — how long, and at what wall
+ * clock time, is the operator's to set in Settings › Review. Until the window
+ * for the calendar's own period opens, the page stays on the previous period,
+ * which is still theirs to write; the latest period whose window is open is the
+ * page's base, the pager cannot move past it, and a note under the header says
+ * when the calendar's period opens. Everything else here — autosave, Prev/Next,
+ * Start, lock, rules, daily notes — behaves as it did.
  */
 export default function ReviewPage() {
   const { cadence: rawCadence } = useParams<{ cadence: string }>();
@@ -79,6 +90,12 @@ export default function ReviewPage() {
   const chatDock = useChatDock();
 
   const weekStartDay = snapshot?.settings.weekStartDay ?? "monday";
+
+  // The windows the operator has configured, one per cadence. A vault written
+  // before the setting existed has no key here, so the built-in windows stand in
+  // rather than the page showing a period that in fact cannot be written.
+  const availability =
+    snapshot?.settings.reviewAvailability ?? DEFAULT_REVIEW_AVAILABILITY;
 
   const [record, setRecord] = useState<ReviewRecord | null>(null);
   const [draft, setDraft] = useState("");
@@ -98,9 +115,12 @@ export default function ReviewPage() {
   /** The area slug whose section the page should bring into view, if any. */
   const [scrollToArea, setScrollToArea] = useState<string | null>(null);
 
+  // The latest period whose window is open — where the page lands and the wall
+  // the pager cannot pass. Memoised on the availability object so a settings
+  // change that moves a window also moves the page.
   const basePeriod = useMemo(
-    () => currentPeriod(cadence, weekStartDay),
-    [cadence, weekStartDay],
+    () => openReviewPeriod(cadence, weekStartDay, availability),
+    [cadence, weekStartDay, availability],
   );
 
   const [period, setPeriod] = useState(basePeriod);
@@ -110,11 +130,39 @@ export default function ReviewPage() {
   }, [basePeriod]);
 
   useEffect(() => {
-    if (isFuturePeriod(cadence, period, weekStartDay)) {
-      setPeriod(currentPeriod(cadence, weekStartDay));
-      setError("That period is in the future. Showing the current period.");
+    // A period after the open one cannot be written yet: its review window has
+    // not begun. The pager does not offer it (Next stops at the base), so this
+    // catches a stale period from an earlier navigation or a settings change
+    // that closes a window the page was sitting on.
+    if (period > basePeriod) {
+      setPeriod(basePeriod);
+      setError("That period has not opened yet. Showing the latest open period.");
     }
-  }, [cadence, period, weekStartDay]);
+  }, [basePeriod, period]);
+
+  // The calendar's own period, which is the one the note under the header talks
+  // about: when the page is on an earlier one, the operator is waiting for this
+  // period's window to open.
+  const calendarCurrent = useMemo(
+    () => currentPeriod(cadence, weekStartDay),
+    [cadence, weekStartDay],
+  );
+
+  // Said only while the calendar-current period is still closed: once the window
+  // opens the page is already on that period and there is nothing to wait for.
+  // `reviewOpensAt` answers a Result; a period the engine cannot place simply
+  // shows no note rather than a sentence with an empty date in it.
+  const windowNote = useMemo(() => {
+    if (!snapshot || calendarCurrent === basePeriod) return null;
+    const opensAt = reviewOpensAt(
+      cadence,
+      calendarCurrent,
+      weekStartDay,
+      availability,
+    );
+    if (!opensAt.ok) return null;
+    return `The ${cadence} review for the current period opens ${formatReviewOpening(opensAt.value)}.`;
+  }, [availability, basePeriod, cadence, calendarCurrent, snapshot, weekStartDay]);
 
   /**
    * The daily review is one general review: it has a single `overall` scope, no
@@ -637,10 +685,14 @@ export default function ReviewPage() {
 
   const onNext = useCallback(() => {
     const next = nextPeriod(cadence, period, weekStartDay);
-    if (next.ok) void goToPeriod(next.value);
-  }, [cadence, goToPeriod, period, weekStartDay]);
+    if (!next.ok) return;
+    // Next stops at the latest open period: anything after it has no window yet,
+    // so stepping there would open a review the vault will not let anyone write.
+    if (next.value > basePeriod) return;
+    void goToPeriod(next.value);
+  }, [basePeriod, cadence, goToPeriod, period, weekStartDay]);
 
-  const isOnCurrentPeriod = isCurrentPeriod(cadence, period, weekStartDay);
+  const isOnBasePeriod = period === basePeriod;
   const title = useMemo(
     () => periodTitle(cadence, period, weekStartDay),
     [cadence, period, weekStartDay],
@@ -738,7 +790,7 @@ export default function ReviewPage() {
               variant="outline"
               data-testid="review-next"
               onClick={onNext}
-              disabled={isOnCurrentPeriod}
+              disabled={isOnBasePeriod}
             >
               Next ›
             </Button>
@@ -747,6 +799,15 @@ export default function ReviewPage() {
             ) : null}
           </div>
         </header>
+
+        {/* Why the page is on an earlier period than the calendar's: its window
+            has not opened. Kept under the header, above any error, because it is
+            context for what is on screen rather than a report about it. */}
+        {windowNote ? (
+          <p className="review-page__window" data-testid="review-window-note">
+            {windowNote}
+          </p>
+        ) : null}
 
         {error ? (
           <p className="form-error" role="alert" data-testid="review-error">

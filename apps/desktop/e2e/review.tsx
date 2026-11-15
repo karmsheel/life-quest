@@ -56,7 +56,10 @@ import type {
   ReviewSkill,
   VaultSnapshot,
 } from "@lifequest/vault-core";
-import { periodTitle } from "@lifequest/vault-core/pure";
+import {
+  DEFAULT_REVIEW_AVAILABILITY,
+  periodTitle,
+} from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import ReviewPage from "@/pages/ReviewPage";
@@ -447,6 +450,13 @@ const SNAPSHOT: VaultSnapshot = {
     theme: "dark",
     weekStartDay: "monday",
     autoApproveInserts: [],
+    /**
+     * The page now opens on the latest OPEN period, so it reads the vault's
+     * windows. This harness serves whatever period it is asked for rather than
+     * pinning a clock, so the shipped defaults keep it on the current week; a
+     * snapshot without the key would leave the page to guess.
+     */
+    reviewAvailability: DEFAULT_REVIEW_AVAILABILITY,
   },
   domains: [
     domainRecord("life", "Life", 0, UNLOCKED_AT),

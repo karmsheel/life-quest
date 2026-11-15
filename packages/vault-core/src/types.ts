@@ -57,6 +57,26 @@ export const REVIEW_CADENCES = [
 ] as const;
 export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
 
+/**
+ * When a cadence's next review becomes writable.
+ *
+ * A review looks back on a period that has not finished yet, so writing it the
+ * instant the period starts would mean writing it from nothing. A window is
+ * when the period is far enough along: `daysBeforeEnd` counts backwards from the
+ * period's last calendar day (0 = the last day itself) and `timeOfDay` is the
+ * local wall-clock moment it opens. Before that instant the app shows the
+ * PREVIOUS period's review, which is the one whose window has opened.
+ */
+export type ReviewWindow = {
+  /** Whole days before the period's last day on which the review opens. 0 = its last day. */
+  daysBeforeEnd: number;
+  /** Local wall-clock time, "HH:MM" 24h. */
+  timeOfDay: string;
+};
+
+/** One window per cadence, the value of `settings.json`'s `reviewAvailability`. */
+export type ReviewAvailability = Record<ReviewCadence, ReviewWindow>;
+
 export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
@@ -346,6 +366,12 @@ export type VaultSettings = {
   chatQuestions: ChatQuestion[];
   /** Whether the Decisions inbox opens and closes itself. */
   decisionInbox: DecisionInboxSettings;
+  /**
+   * When each cadence's new review becomes writable. Before a period's window
+   * opens the app keeps showing the previous period's review, so a review is
+   * never written against a period that has barely begun.
+   */
+  reviewAvailability: ReviewAvailability;
   /**
    * Which domains each agent is offered in, and where it is the domain's
    * default. Absent/empty means every agent is offered everywhere and none is a

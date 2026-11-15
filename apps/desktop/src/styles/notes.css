@@ -1341,6 +1341,16 @@
   color: var(--muted);
 }
 
+/* Why the page is on an earlier period than the calendar's: its window has not
+   opened yet. Quiet like the notice above — it is context for what is on
+   screen, not a report about something that failed. */
+.review-page__window {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 /* Document / Preview, and the autosave line that shares the row. */
 .review-page__modes {
   display: flex;
