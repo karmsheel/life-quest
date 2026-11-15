@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "A delete_database Decision, exactly in the shape `database-tools.ts` files",
+    "it (`op: \"delete-database\"`, the doomed database's name and row count, and",
+    "the row fingerprint the apply path re-checks). There is only one shape for",
+    "these ops: the propose path sets every name the card needs, and",
+    "`decision-labels.ts` refreshes them, so nothing is added on read.",
+    "The scenario is the reported gap — one of four same-named \"Supplement log\"",
+    "tables in Health, holding 4 rows. Ids and fingerprints are neutral stand-ins;",
+    "the shape is not."
+  ],
+  "target": {
+    "type": "database",
+    "domainSlug": "health",
+    "databaseId": "eac1854d-e7b7-4e7c-a972-413111eaea67"
+  },
+  "body": {
+    "op": "delete-database",
+    "databaseName": "Supplement log",
+    "rowLabel": null,
+    "previousCells": null,
+    "cells": null,
+    "expectedUpdatedAt": null,
+    "rowCount": 4,
+    "fingerprint": "d4639d56d7d13f53b43757600aa4f7416435dcc772a8bb577fe26f51f5b3f641"
+  }
+}

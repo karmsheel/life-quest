@@ -118,6 +118,35 @@ async function withDatabaseLabels(
   } else if (body.op === "add-column" && typeof body.relationDatabaseId === "string") {
     const relation = await getDatabase(root, target.domainSlug, body.relationDatabaseId);
     if (relation.ok) added.relationDatabaseName = relation.value.name;
+  } else if (body.op === "delete-database" || body.op === "merge-databases") {
+    // A lifecycle card names the doomed database (a delete) or the surviving
+    // target (a merge) as prose, and a merge also names every source it removes.
+    // Refresh those names from the registry so a rename since the card was filed
+    // reads as the operator's current name — the ids beside them stay exactly as
+    // stored, because the apply path writes from them. A name that no longer
+    // resolves keeps the one the proposal recorded: a source that is already
+    // gone is history, not a name to invent.
+    if (typeof body.databaseName !== "string" || body.databaseName !== db.value.name) {
+      added.databaseName = db.value.name;
+    }
+    if (body.op === "merge-databases" && Array.isArray(body.sources)) {
+      const refreshed: unknown[] = [];
+      let renamed = false;
+      for (const source of body.sources) {
+        if (!isRecord(source) || typeof source.databaseId !== "string") {
+          refreshed.push(source);
+          continue;
+        }
+        const meta = await getDatabase(root, target.domainSlug, source.databaseId);
+        if (!meta.ok || meta.value.name === source.name) {
+          refreshed.push(source);
+          continue;
+        }
+        refreshed.push({ ...source, name: meta.value.name });
+        renamed = true;
+      }
+      if (renamed) added.sources = refreshed;
+    }
   }
 
   if (Object.keys(added).length === 0) return decision;

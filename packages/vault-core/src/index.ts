@@ -219,14 +219,17 @@ export {
   listDatabases,
   getDatabase,
   addDatabaseColumn,
+  updateDatabaseColumnOptions,
   listRows,
   countRows,
   getRow,
   upsertRow,
   insertRows,
+  insertMovedRows,
   updateRowCellsBulk,
   normaliseFinancePayeeCells,
   deleteRow,
+  deleteDatabase,
   checkDatabaseCells,
   validateRowCells,
   rowDisplayLabel,
@@ -235,6 +238,19 @@ export {
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
 } from "./domain-databases.ts";
+export {
+  MERGE_SOURCES_MAX,
+  applyDatabaseDelete,
+  applyDatabaseMerge,
+  columnSignatureKey,
+  databaseRowFingerprint,
+  describeDatabaseLifecycleRefusal,
+  isFinanceDatabase,
+  isTerminalDatabaseLifecycleError,
+  planDatabaseMerge,
+  readDatabaseColumnSignature,
+} from "./database-lifecycle.ts";
+export type { MergePlan } from "./database-lifecycle.ts";
 export {
   listPages,
   getPage,
