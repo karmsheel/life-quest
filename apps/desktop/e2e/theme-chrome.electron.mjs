@@ -195,6 +195,18 @@ const SAMPLE = `(async () => {
     areaInitials: [...document.querySelectorAll(".domain-switcher__initial")].map((el) =>
       (el.textContent ?? "").trim(),
     ),
+    contentPadTop: (() => {
+      const el = document.querySelector(".shell__content");
+      return el ? Math.round(parseFloat(getComputedStyle(el).paddingTop)) : null;
+    })(),
+    railLinkPadY: (() => {
+      const el = document.querySelector(".nav-rail__link");
+      return el ? Math.round(parseFloat(getComputedStyle(el).paddingTop)) : null;
+    })(),
+    chatPad: (() => {
+      const el = document.querySelector(".chat-panel__body");
+      return el ? Math.round(parseFloat(getComputedStyle(el).paddingTop)) : null;
+    })(),
     dockLeft: Boolean(document.querySelector(".shell--chat-left")),
     navPlaceAttr: document.documentElement.dataset.chromeNavPlace ?? null,
     innerWidth: window.innerWidth,
@@ -593,6 +605,14 @@ async function main() {
     }
     return last;
   };
+
+  const click = (testId) =>
+    evaluate(`(() => {
+      const b = document.querySelector('[data-testid="${testId}"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
 
   writeThemeFile("matrix-icons.json", {
     name: "matrix-icons",
@@ -1025,7 +1045,9 @@ async function main() {
       materialTheme.fontSize === "17px" &&
       materialTheme.durQuick === "90ms" &&
       materialTheme.shadowSm !== "none" &&
-      (materialTheme.backdrop ?? "").includes("linear-gradient"),
+      (materialTheme.backdrop ?? "").includes("linear-gradient") &&
+      (materialTheme.contentPadTop ?? 0) >= 25 &&
+      (materialTheme.railLinkPadY ?? 0) >= 8,
     JSON.stringify({
       shadow: materialTheme?.shadowAttr,
       backdrop: materialTheme?.backdropAttr,
@@ -1034,6 +1056,8 @@ async function main() {
       durQuick: materialTheme?.durQuick,
       shadowSm: (materialTheme?.shadowSm ?? "").slice(0, 40),
       bg: (materialTheme?.backdrop ?? "").slice(0, 40),
+      pagePad: materialTheme?.contentPadTop,
+      railPad: materialTheme?.railLinkPadY,
     }),
   );
 
@@ -1120,11 +1144,25 @@ async function main() {
     b.click();
     return true;
   })()`);
-  const overridden = await waitFor((s) => s.radiusLg === "8px");
+  const pressedCompact = await click("material-option-density-compact");
+  const overridden = await waitFor(
+    (s) => s.radiusLg === "8px" && (s.contentPadTop ?? 99) <= 20 && (s.railLinkPadY ?? 99) <= 7,
+  );
   check(
     "operator-material-overrides-the-theme",
-    pressedSharp === true && overridden?.radiusLg === "8px" && overridden.kept === "agent-written.json",
-    JSON.stringify({ pressedSharp, radiusLg: overridden?.radiusLg, kept: overridden?.kept }),
+    pressedSharp === true &&
+      pressedCompact === true &&
+      overridden?.radiusLg === "8px" &&
+      (overridden.contentPadTop ?? 99) <= 20 &&
+      overridden.kept === "agent-written.json",
+    JSON.stringify({
+      pressedSharp,
+      pressedCompact,
+      radiusLg: overridden?.radiusLg,
+      pagePad: overridden?.contentPadTop,
+      railPad: overridden?.railLinkPadY,
+      kept: overridden?.kept,
+    }),
   );
   const materialShot = await win.webContents.capturePage();
   fs.writeFileSync(MATERIAL_PNG, materialShot.toPNG());
@@ -1158,18 +1196,19 @@ async function main() {
   const reset = await waitFor((s) => s.radiusLg === "28px");
   check(
     "reset-returns-the-themes-material",
-    pressedReset === true && reset?.radiusLg === "28px" && reset.kept === "agent-written.json",
-    JSON.stringify({ pressedReset, radiusLg: reset?.radiusLg, kept: reset?.kept }),
+    pressedReset === true &&
+      reset?.radiusLg === "28px" &&
+      (reset.contentPadTop ?? 0) >= 25 &&
+      reset.kept === "agent-written.json",
+    JSON.stringify({
+      pressedReset,
+      radiusLg: reset?.radiusLg,
+      pagePad: reset?.contentPadTop,
+      kept: reset?.kept,
+    }),
   );
 
   // ── 10: the operator's own chrome overrides, above the theme's ──────────
-  const click = (testId) =>
-    evaluate(`(() => {
-      const b = document.querySelector('[data-testid="${testId}"]');
-      if (!b) return false;
-      b.click();
-      return true;
-    })()`);
   const pressedWing = await click("chrome-wing-place-titlebar-left");
   const pressedWingVariant = await click("chrome-wing-variant-icons");
   const pressedDomain = await click("chrome-domain-place-bottom-center");

@@ -125,6 +125,20 @@
     0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
   --stroke-nous: color-mix(in srgb, var(--foreground) 8%, transparent);
 
+  /* Density: the material layer's spacing ladder. Shell components consume
+     these and nothing else; a theme picks a named step and the stylesheet owns
+     what each step means, exactly as it does for radius and elevation. */
+  --density-pad-page-x: 1.5rem;
+  --density-pad-page-y: 1.25rem;
+  --density-pad-page-bottom: 1.5rem;
+  --density-pad-rail-x: 0.35rem;
+  --density-gap-rail: 0.2rem;
+  --density-pad-row-x: 0.55rem;
+  --density-pad-row-y: 0.42rem;
+  --density-pad-dock-x: 0.75rem;
+  --density-pad-chat: 0.875rem;
+  --density-gap-chat: 0.875rem;
+
   --radius-xs: 6px;
   --radius-sm: 12px;
   --radius: 12px;
