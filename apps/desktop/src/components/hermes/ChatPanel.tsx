@@ -1769,7 +1769,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       aria-label={`${companionName} chat`}
       data-chat-surface={view}
     >
-        <AgentSwitcher />
         <div className="chat-panel__open">
           {/*
             The open chats, as tabs, in the dock's top band. The strip leads the
@@ -1970,7 +1969,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     aria-label="Save name"
                     title="Save name"
                   >
-                    <Check size={16} aria-hidden />
+                    <Check size={13} aria-hidden />
                   </button>
                   <button
                     type="button"
@@ -1979,18 +1978,36 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     title="Cancel rename"
                     onClick={cancelRename}
                   >
-                    <X size={16} aria-hidden />
+                    <X size={13} aria-hidden />
                   </button>
                 </form>
               ) : (
-                <>
-                  <p
+                /*
+                  The name row is the name's own chip, not a band: the tab above
+                  already names the chat, so the row only has to offer the one
+                  verb the name needs — rename — without spending a full band of
+                  chrome on it. The box hangs flush off the strip's bottom edge
+                  and is centred on the dock; the pencil at its trailing end
+                  opens the same field the tab menu's Rename does.
+                */
+                <div className="chat-panel__name" data-testid="chat-name-chip">
+                  <span
                     className="chat-panel__heading chat-panel__heading--thread"
                     title={activeLabel}
                   >
                     {activeLabel}
-                  </p>
-                </>
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-panel__name-edit"
+                    data-testid="chat-name-edit"
+                    aria-label={`Rename ${activeLabel}`}
+                    title="Rename chat"
+                    onClick={startRename}
+                  >
+                    <Pencil size={11} aria-hidden />
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -2331,6 +2348,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
+                {/* The same switcher on the chain's own composer, anchored to
+                    the form it belongs to: see the thread composer's copy. */}
+                <AgentSwitcher />
               </form>
             ) : (
               <form
@@ -2738,6 +2758,20 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ))}
                   </ul>
                 ) : null}
+                {/*
+                  The agent switcher lives on the composer, not over the
+                  transcript. The composer form is what owns the band's gutters,
+                  so the switcher can stand in the empty column the composer
+                  leaves on the dock's trailing side when the dock is wide, and
+                  ride just above the composer itself when the dock is too narrow
+                  to hold that column — the placement is the stylesheet's, keyed
+                  on the band's width. It is inside the form only for that
+                  anchor: every control in it is `type="button"`, so a pill can
+                  never submit the field above it. The chain surface draws the
+                  same switcher on its own composer, and the shortcuts reference,
+                  which has no composer, has none.
+                */}
+                <AgentSwitcher />
               </form>
             )}
           </div>

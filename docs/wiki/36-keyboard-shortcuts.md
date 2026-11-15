@@ -63,9 +63,10 @@ operator's hands are not the default operator's hands.
 3. The header pencil — **Change in Settings** — opens the full Settings page over
    the app. **Back to chat** returns the dock to the thread it left (or the
    thread's blank state when no chat is open).
-4. Any other dock action replaces the reference as usual. The dock's own browser
-   gestures are listed at the foot of the reference rather than as rows, because
-   they cannot be rebound.
+4. The agent switcher is not on this surface: it lives on the composer, and the
+   reference has no composer to send from. Any other dock action replaces the
+   reference as usual. The dock's own browser gestures are listed at the foot of
+   the reference rather than as rows, because they cannot be rebound.
 
 ## The screen
 
