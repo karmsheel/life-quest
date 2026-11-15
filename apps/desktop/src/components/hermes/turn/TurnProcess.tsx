@@ -95,7 +95,7 @@ export function TurnProcess({
               capabilities={capabilities}
             />
           ))}
-          {running && turn.blocks.length === 0 && !turn.answer ? (
+          {running && turn.blocks.length === 0 && !turn.answer.trim() ? (
             <p className="chat-panel__thinking muted">Thinking…</p>
           ) : null}
           {running ? <LiveStatus turn={turn} /> : null}

@@ -7886,17 +7886,21 @@ a.home-mini-list__link:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  align-self: flex-start;
+  align-self: stretch;
   gap: 0.2rem;
-  max-width: 88%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-/* The operator's own turn sits left; the companion answers from the right.
-   The role label and the stamp ride the bubble's edge, so the side is read at
-   a glance without a second alignment rule for each child. */
-.chat-panel__message--assistant {
+/* The operator speaks in a bubble against the transcript's trailing edge; the
+   companion's answer is not a bubble — it rests on the panel as plain prose —
+   so its row stretches the full column and its label and footer sit on the
+   leading edge. The side is the whole difference between the two speakers, and
+   the role label and the stamp ride it with the row. */
+.chat-panel__message--user {
   align-items: flex-end;
   align-self: flex-end;
+  max-width: 88%;
 }
 
 .chat-panel__message-role {
@@ -7925,26 +7929,32 @@ a.home-mini-list__link:hover {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.55rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--fg);
 }
 
-/* The colour schemes trade places: the operator's turn is the striking one and
-   Hermes's reply rests on the quieter fill. */
+/* The operator's bubble wears the accent tint. This is the speech-bubble scheme
+   the transcript used to wear on the agent's side; it moved here when the reply
+   stopped being a bubble, and the tail follows the bubble to the trailing
+   edge. */
 .chat-panel__message--user .chat-panel__message-content {
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
-  border-color: var(--border);
-  border-bottom-left-radius: 0.15rem;
-}
-
-.chat-panel__message--assistant .chat-panel__message-content {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-bottom-right-radius: 0.15rem;
 }
 
-/* The stamp and its copy control, under the bubble. Both are quiet: the copy
+/* The companion's answer is overlaid on the panel: no box, no padding, and the
+   full width of the transcript column so the prose wraps like the page it rests
+   on rather than like a message card. */
+.chat-panel__message--assistant .chat-panel__message-content {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The stamp and its copy control, under its message. Both are quiet: the copy
    icon is always present so the shortcut is discoverable, and it comes up to
    full ink on hover or focus rather than appearing from nowhere. */
 .chat-panel__message-meta {
@@ -8437,16 +8447,18 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The outcome line. It is a receipt, not chrome: quiet, at the turn's own edge,
-   and absent while a turn is still running. */
+   and absent while a turn is still running. The companion's answer now rests on
+   the leading edge, so the receipt that closes the turn follows it there rather
+   than floating under the operator's bubble on the other side. */
 .chat-panel__turn-footer {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.15rem;
   min-width: 0;
-  max-width: 88%;
-  align-self: flex-end;
-  text-align: right;
+  max-width: 100%;
+  align-self: flex-start;
+  text-align: left;
 }
 
 .chat-panel__turn-footer-line {
@@ -8465,7 +8477,7 @@ button.chat-panel__activity-line:hover {
 
 .chat-panel__turn-footer .chat-panel__turn-note,
 .chat-panel__turn-footer .chat-panel__turn-remark {
-  text-align: right;
+  text-align: left;
 }
 
 /* The composer's band is a plain gutter — no fill of its own, no hairline. The
