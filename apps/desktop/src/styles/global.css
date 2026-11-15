@@ -8007,8 +8007,17 @@ a.home-mini-list__link:hover {
   color: var(--destructive);
 }
 
+/* The placeholder before the turn's first frame lands. It is a process line,
+   not transcript prose: it inherits the panel's 16px body size with the
+   browser's paragraph margins otherwise, so it painted twice the size of the
+   work log and floated away from the status line under it. Set it exactly like
+   the live status row, one line of its own, and let the flex gap own the
+   spacing. */
 .chat-panel__thinking {
+  margin: 0;
+  font-size: 0.6875rem;
   font-style: italic;
+  color: var(--muted);
 }
 
 /* A turn's tool calls, standing in as one grey line (see `lib/tool-run.ts`).

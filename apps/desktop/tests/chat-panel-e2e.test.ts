@@ -844,6 +844,23 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
     insideTranscript?: boolean;
   };
 
+  /** One line of the work log, read as type rather than as text. */
+  type TypeLine = {
+    text: string;
+    fontSize: number;
+    fontSizeCss: string;
+    fontStyle: string;
+    fontWeight: string;
+    color: string;
+    marginTop: number;
+    marginBottom: number;
+    lineHeight: string;
+    boxHeight: number;
+    top: number;
+    bottom: number;
+    display: string;
+  };
+
   type ToolRunReport = {
     pass: boolean;
     failures: string[];
@@ -873,6 +890,13 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       opened: { expanded: string; rows: string[]; caretOpen: boolean };
     };
     thinking: { beforeTools: boolean; withActivity: boolean; nextTurn: boolean };
+    /** The live `Thinking…` line's type, against the status row under it. */
+    thinkingType: {
+      thinking: TypeLine | null;
+      status: TypeLine | null;
+      bodyFontSize: string | null;
+      stacked: boolean;
+    };
     /** What the one row carrying underscores + descenders actually painted. */
     rowInk: {
       missing?: boolean;
@@ -1042,6 +1066,36 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       assert.equal(report.decode.stringArgs.target, "ls -la");
       assert.equal(report.decode.nameOnly.name, "read_file");
       assert.equal(report.decode.completion.ok, undefined, "a completion claimed a status");
+
+      // The placeholder is a work-log line, not prose: it is set at the same
+      // size as the `Working… 1s` row it sits above, keeps that row's quiet
+      // italic face, carries no paragraph margins of its own (the flex gap owns
+      // the spacing), and occupies its own line. The measured contrast is the
+      // body size the panel would otherwise hand it.
+      const thinkingLine = report.thinkingType.thinking;
+      const statusLine = report.thinkingType.status;
+      assert.ok(thinkingLine && statusLine, "the live placeholder or its status row was missing");
+      assert.equal(thinkingLine.text, "Thinking…");
+      assert.equal(thinkingLine.fontSize, statusLine.fontSize);
+      assert.ok(
+        thinkingLine.fontSize < parseFloat(report.thinkingType.bodyFontSize ?? "0"),
+        `the placeholder paints at ${thinkingLine.fontSizeCss}, the panel's prose size`,
+      );
+      assert.equal(thinkingLine.fontStyle, "italic");
+      assert.equal(thinkingLine.fontStyle, statusLine.fontStyle);
+      assert.ok(
+        Math.abs(thinkingLine.boxHeight - statusLine.boxHeight) <= 1,
+        `the placeholder's line box is ${thinkingLine.boxHeight}px against the status row's ${statusLine.boxHeight}px`,
+      );
+      assert.ok(
+        thinkingLine.marginTop === 0 && thinkingLine.marginBottom === 0,
+        `the placeholder carries paragraph margins (${thinkingLine.marginTop}px/${thinkingLine.marginBottom}px), ` +
+          `which float it away from the work log`,
+      );
+      assert.equal(report.thinkingType.stacked, true, "the status row did not start below the placeholder");
+      const thinkingShot = report.screenshots.find((file) => file.endsWith("tool-run-thinking.png"));
+      assert.ok(thinkingShot, "the rig took no picture of the live placeholder");
+      assert.equal(fs.existsSync(thinkingShot), true, "the live-placeholder picture was not written");
 
       // The live markers, and the two resets.
       assert.equal(report.thinking.beforeTools, true);
