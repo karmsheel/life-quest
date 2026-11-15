@@ -108,6 +108,12 @@ type ChatDockContextValue = {
    */
   swapSide: () => void;
   /**
+   * Wear the side the worn theme asks for, unless the operator has already
+   * swapped the dock themselves this session — a theme proposes the layout, the
+   * operator's own gesture wins for as long as the window is open.
+   */
+  setThemeSide: (side: ChatDockSide) => void;
+  /**
    * How wide the operator has dragged the dock's column, in px, or null while it
    * is still the width the tokens ask for.
    *
@@ -315,8 +321,17 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     clearRequestedSession();
   }, [vaultId, commitContextCards, clearRequestedSession]);
 
+  /** Set once the operator uses the dock's own swap control. */
+  const operatorChoseSide = useRef(false);
+
   const swapSide = useCallback(() => {
+    operatorChoseSide.current = true;
     setSide((current) => (current === "left" ? "right" : "left"));
+  }, []);
+
+  const setThemeSide = useCallback((next: ChatDockSide) => {
+    if (operatorChoseSide.current) return;
+    setSide(next);
   }, []);
 
   const pageLabel = useMemo(() => pageLabelFor(pathname), [pathname]);
@@ -331,6 +346,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       surface,
       setSurface,
       swapSide,
+      setThemeSide,
       width,
       setWidth,
       requestedSessionId,
@@ -354,6 +370,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       side,
       surface,
       swapSide,
+      setThemeSide,
       width,
       requestedSessionId,
       requestedKickoff,

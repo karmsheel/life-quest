@@ -63,6 +63,7 @@ const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
 const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
 const VARIANTS_PNG = path.join(artifactsDir, "themes-v2-variants.png");
 const SIDEBAR_RIGHT_PNG = path.join(artifactsDir, "themes-v2-sidebar-right.png");
+const DOCK_LEFT_PNG = path.join(artifactsDir, "themes-v2-dock-left.png");
 
 const failures = [];
 const checks = [];
@@ -194,6 +195,7 @@ const SAMPLE = `(async () => {
     areaInitials: [...document.querySelectorAll(".domain-switcher__initial")].map((el) =>
       (el.textContent ?? "").trim(),
     ),
+    dockLeft: Boolean(document.querySelector(".shell--chat-left")),
     navPlaceAttr: document.documentElement.dataset.chromeNavPlace ?? null,
     innerWidth: window.innerWidth,
     railRect: (() => {
@@ -865,6 +867,52 @@ async function main() {
     }),
   );
 
+  // ── 6d: the dock on the page's leading edge ──────────────────────────────
+  writeThemeFile("dock-left.json", {
+    name: "dock-left",
+    label: "Dock Left",
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "labels" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+      chatDock: { side: "left" },
+    },
+  });
+  const dockLeft = await waitFor(
+    (s) => s.dockLeft && s.chatRect && s.mainRect && s.chatRect.left < s.mainRect.left && s.preview,
+  );
+  check(
+    "chat-dock-can-sit-on-the-left",
+    dockLeft?.dockLeft === true &&
+      dockLeft.chatRect.left < dockLeft.mainRect.left &&
+      dockLeft.mainRect.right > dockLeft.chatRect.right,
+    JSON.stringify({
+      dockLeft: dockLeft?.dockLeft,
+      chat: dockLeft?.chatRect,
+      main: dockLeft?.mainRect,
+    }),
+  );
+
+  const dockShot = await win.webContents.capturePage();
+  fs.writeFileSync(DOCK_LEFT_PNG, dockShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromDock = await waitFor(
+    (s) => !s.preview && !s.dockLeft && s.wingTitlebar && s.domainBottom,
+  );
+  check(
+    "dock-side-reverts-to-the-kept-theme",
+    backFromDock?.kept === "solar-system.json" &&
+      backFromDock.dockLeft === false &&
+      backFromDock.domainBottom === true,
+    JSON.stringify({
+      kept: backFromDock?.kept,
+      dockLeft: backFromDock?.dockLeft,
+      wing: backFromDock?.wingTitlebar,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -1127,6 +1175,7 @@ async function main() {
   const pressedDomain = await click("chrome-domain-place-bottom-center");
   const pressedDomainVariant = await click("chrome-domain-variant-pill");
   const pressedRight = await click("chrome-nav-place-right");
+  const pressedDockLeft = await click("chrome-chat-side-left");
   const pressedNarrow = await click("chrome-nav-width-narrow");
   const overriddenChrome = await waitFor(
     (s) =>
@@ -1136,9 +1185,10 @@ async function main() {
       !s.domainBelow &&
       s.navWidthAttr === "narrow" &&
       s.navPlaceAttr === "right" &&
+      s.dockLeft &&
       s.railRect &&
       s.mainRect &&
-      s.railRect.left > s.mainRect.right &&
+      s.railRect.left >= s.mainRect.right - 16 &&
       s.wingText === "H" &&
       s.domainPill,
   );
@@ -1149,6 +1199,7 @@ async function main() {
       pressedDomain === true &&
       pressedDomainVariant === true &&
       pressedRight === true &&
+      pressedDockLeft === true &&
       pressedNarrow === true &&
       overriddenChrome?.wingTitlebar === true &&
       overriddenChrome.wingFloating === false &&
@@ -1158,7 +1209,8 @@ async function main() {
       overriddenChrome.domainPill === true &&
       overriddenChrome.navWidthAttr === "narrow" &&
       overriddenChrome.navPlaceAttr === "right" &&
-      overriddenChrome.railRect.left > overriddenChrome.mainRect.right,
+      overriddenChrome.dockLeft === true &&
+      overriddenChrome.railRect.left >= overriddenChrome.mainRect.right - 16,
     JSON.stringify({
       pressed:
         pressedWing &&
@@ -1166,11 +1218,13 @@ async function main() {
         pressedDomain &&
         pressedDomainVariant &&
         pressedRight &&
+        pressedDockLeft &&
         pressedNarrow,
       wingTitlebar: overriddenChrome?.wingTitlebar,
       wingText: overriddenChrome?.wingText,
       pill: overriddenChrome?.domainPill,
       navPlace: overriddenChrome?.navPlaceAttr,
+      dockLeft: overriddenChrome?.dockLeft,
       railLeft: overriddenChrome?.railRect?.left,
       mainRight: overriddenChrome?.mainRect?.right,
       wingFloating: overriddenChrome?.wingFloating,
@@ -1192,7 +1246,8 @@ async function main() {
       s.wingTitlebar &&
       s.domainBottom &&
       s.navWidthAttr === "narrow" &&
-      s.navPlaceAttr === "right",
+      s.navPlaceAttr === "right" &&
+      s.dockLeft,
     20_000,
   );
   check(
@@ -1200,12 +1255,14 @@ async function main() {
     afterChromeReload?.wingTitlebar === true &&
       afterChromeReload.domainBottom === true &&
       afterChromeReload.navWidthAttr === "narrow" &&
-      afterChromeReload.navPlaceAttr === "right",
+      afterChromeReload.navPlaceAttr === "right" &&
+      afterChromeReload.dockLeft === true,
     JSON.stringify({
       wingTitlebar: afterChromeReload?.wingTitlebar,
       domainBottom: afterChromeReload?.domainBottom,
       nav: afterChromeReload?.navWidthAttr,
       navPlace: afterChromeReload?.navPlaceAttr,
+      dockLeft: afterChromeReload?.dockLeft,
     }),
   );
 
@@ -1224,7 +1281,8 @@ async function main() {
       !s.wingTitlebar &&
       s.domainBelow &&
       s.navWidthAttr === "wide" &&
-      s.navPlaceAttr === "left",
+      s.navPlaceAttr === "left" &&
+      !s.dockLeft,
   );
   check(
     "reset-returns-the-themes-chrome",
@@ -1233,13 +1291,15 @@ async function main() {
       resetChrome.wingTitlebar === false &&
       resetChrome.domainBelow === true &&
       resetChrome.navWidthAttr === "wide" &&
-      resetChrome.navPlaceAttr === "left",
+      resetChrome.navPlaceAttr === "left" &&
+      resetChrome.dockLeft === false,
     JSON.stringify({
       pressed: pressedChromeReset,
       wingFloating: resetChrome?.wingFloating,
       domainBelow: resetChrome?.domainBelow,
       nav: resetChrome?.navWidthAttr,
       navPlace: resetChrome?.navPlaceAttr,
+      dockLeft: resetChrome?.dockLeft,
     }),
   );
 
@@ -1295,6 +1355,7 @@ async function main() {
       layout: path.relative(desktopRoot, LAYOUT_PNG),
       variants: path.relative(desktopRoot, VARIANTS_PNG),
       sidebarRight: path.relative(desktopRoot, SIDEBAR_RIGHT_PNG),
+      dockLeft: path.relative(desktopRoot, DOCK_LEFT_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

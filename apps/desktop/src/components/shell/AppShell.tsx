@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { ChatDivider } from "./ChatDivider";
 import { ChromeHosts } from "./ChromeHosts";
@@ -19,7 +20,9 @@ export function AppShell() {
     setOpen: setChatOpen,
     setPresent: setChatPresent,
     side: chatSide,
+    setThemeSide,
   } = useChatDock();
+  const { chrome } = useTheme();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
   const { pathname } = useLocation();
   const chartBleed = pathname === "/chart";
@@ -27,6 +30,12 @@ export function AppShell() {
   // dragged width is written to.
   const shellRef = useRef<HTMLDivElement | null>(null);
   const chatColumn = useChatColumn(shellRef);
+
+  // The worn theme proposes which side the dock lives on. The dock's own swap
+  // control still wins for the session once the operator touches it.
+  useEffect(() => {
+    setThemeSide(chrome.chatDock.side);
+  }, [chrome.chatDock.side, setThemeSide]);
 
   useEffect(() => {
     setChatPresent(true);

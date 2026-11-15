@@ -33,6 +33,7 @@ export type DomainSwitcherPlace =
 export type DomainSwitcherVariant = "segmented" | "pill" | "icons" | "list";
 
 export type NavRailPlace = "left" | "right";
+export type ChatDockSide = "left" | "right";
 export type NavRailWidth = "narrow" | "default" | "wide";
 
 export type ThemeChrome = {
@@ -43,6 +44,8 @@ export type ThemeChrome = {
   };
   /** The sidebar's own column: which edge it holds and how much room it keeps. */
   navRail: { place: NavRailPlace; width: NavRailWidth };
+  /** The dock's edge: which side of the page the operator's chat lives on. */
+  chatDock: { side: ChatDockSide };
 };
 
 /**
@@ -55,6 +58,7 @@ export type ThemeChromeOverride = {
   wingSwitcher?: Partial<ThemeChrome["wingSwitcher"]>;
   domainSwitcher?: Partial<ThemeChrome["domainSwitcher"]>;
   navRail?: Partial<ThemeChrome["navRail"]>;
+  chatDock?: Partial<ThemeChrome["chatDock"]>;
 };
 
 export type ThemeShadow = "flat" | "soft" | "deep";
@@ -88,6 +92,7 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
   wingSwitcher: { place: "rail-top", variant: "labels" },
   domainSwitcher: { place: "titlebar-center", variant: "segmented" },
   navRail: { place: "left", width: "default" },
+  chatDock: { side: "right" },
 };
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
@@ -125,6 +130,7 @@ export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "list",
 ];
 export const NAV_RAIL_PLACES: readonly NavRailPlace[] = ["left", "right"];
+export const CHAT_DOCK_SIDES: readonly ChatDockSide[] = ["left", "right"];
 export const NAV_RAIL_WIDTHS: readonly NavRailWidth[] = [
   "narrow",
   "default",
@@ -410,6 +416,25 @@ export function parseThemeFile(raw: unknown): ParseResult {
         variant: (variant as DomainSwitcherVariant) ?? "segmented",
       };
     }
+    const chatDock = raw.chrome.chatDock;
+    if (chatDock !== undefined) {
+      if (!isRecord(chatDock)) {
+        return { ok: false, error: "chrome.chatDock must be an object" };
+      }
+      const side = chatDock.side;
+      if (side !== undefined) {
+        if (
+          typeof side !== "string" ||
+          !(CHAT_DOCK_SIDES as readonly string[]).includes(side)
+        ) {
+          return {
+            ok: false,
+            error: `chrome.chatDock.side must be one of ${CHAT_DOCK_SIDES.join(", ")}`,
+          };
+        }
+        chrome.chatDock = { side: side as ChatDockSide };
+      }
+    }
     const navRail = raw.chrome.navRail;
     if (navRail !== undefined) {
       if (!isRecord(navRail)) {
@@ -504,6 +529,10 @@ export function resolveChrome(chrome?: Partial<ThemeChrome>): ThemeChrome {
       ...DEFAULT_THEME_CHROME.navRail,
       ...chrome?.navRail,
     },
+    chatDock: {
+      ...DEFAULT_THEME_CHROME.chatDock,
+      ...chrome?.chatDock,
+    },
   };
 }
 
@@ -516,6 +545,7 @@ export function layerChrome(
     wingSwitcher: { ...theme?.wingSwitcher, ...override?.wingSwitcher },
     domainSwitcher: { ...theme?.domainSwitcher, ...override?.domainSwitcher },
     navRail: { ...theme?.navRail, ...override?.navRail },
+    chatDock: { ...theme?.chatDock, ...override?.chatDock },
   } as Partial<ThemeChrome>);
 }
 
@@ -536,7 +566,7 @@ export const THEME_VOCABULARY = [
   "Shape: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
-  "chrome.navRail.place: left | right; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
+  "chrome.chatDock.side: left | right; chrome.navRail.place: left | right; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

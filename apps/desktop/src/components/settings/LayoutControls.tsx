@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import {
   DOMAIN_PLACES,
   DOMAIN_VARIANTS,
+  CHAT_DOCK_SIDES,
   NAV_RAIL_PLACES,
   NAV_RAIL_WIDTHS,
   WING_PLACES,
@@ -65,6 +66,10 @@ const DOMAIN_VARIANT_LABELS: Record<
   pill: "Pill",
   icons: "Icons",
   list: "List",
+};
+const CHAT_DOCK_SIDE_LABELS: Record<ThemeChrome["chatDock"]["side"], string> = {
+  left: "Left",
+  right: "Right",
 };
 const NAV_RAIL_PLACE_LABELS: Record<ThemeChrome["navRail"]["place"], string> = {
   left: "Left",
@@ -168,6 +173,21 @@ export function LayoutControls() {
           domainSwitcher: {
             variant: value as ThemeChrome["domainSwitcher"]["variant"],
           },
+        }),
+    },
+    {
+      key: "chat-side",
+      component: "chatDock",
+      testIdPrefix: "chrome-chat-side",
+      label: "Chat dock side",
+      options: CHAT_DOCK_SIDES.map((value) => ({
+        value,
+        label: CHAT_DOCK_SIDE_LABELS[value],
+      })),
+      selected: chrome.chatDock.side,
+      onPick: (value) =>
+        setChromeOverride({
+          chatDock: { side: value as ThemeChrome["chatDock"]["side"] },
         }),
     },
     {

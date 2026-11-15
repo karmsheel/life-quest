@@ -41,6 +41,7 @@ import {
   applyChrome,
   applyMaterial,
   BACKDROPS,
+  CHAT_DOCK_SIDES,
   DEFAULT_THEME_CHROME,
   DEFAULT_THEME_MATERIAL,
   DENSITIES,
@@ -152,6 +153,10 @@ function readStoredChromeOverride(): ThemeChromeOverride {
           : {}),
       };
       if (Object.keys(domain).length > 0) override.domainSwitcher = domain;
+    }
+    if (isRecord(raw.chatDock)) {
+      const side = pick(raw.chatDock.side, CHAT_DOCK_SIDES);
+      if (side) override.chatDock = { side };
     }
     if (isRecord(raw.navRail)) {
       const place = pick(raw.navRail.place, NAV_RAIL_PLACES);
@@ -480,6 +485,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           ...patch.domainSwitcher,
         },
         navRail: { ...chromeOverrideRef.current.navRail, ...patch.navRail },
+        chatDock: { ...chromeOverrideRef.current.chatDock, ...patch.chatDock },
       };
       // Drop empty branches so "no overrides" stays a clean empty object.
       for (const key of Object.keys(next) as (keyof ThemeChromeOverride)[]) {
