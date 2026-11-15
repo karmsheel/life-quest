@@ -286,12 +286,12 @@ The dialog's buttons are **Not now**, **Release page** and **Download and instal
 without an installer it offers **Open release page**. On failure it offers **Close**
 and **Try again** (or **Check again** when you are up to date).
 
-### The update notice appears while you work
+### The build number starts glowing while you work
 
-That is the hourly watch finding a release: **LifeQuest 0.3.0 is available**, with
-**View update** and a dismissal. It is announced once per release per session, a
-dismissal is final for that release, and a release the feed stops offering clears the
-notice. If the window is not focused you also get a native notification. A collapsed
+That is the hourly watch finding a release: the dock's version chip gains the accent
+glow and an **Update available** caption. There is no in-window pop-up — click the
+glowing number to see the offer — and a release the feed stops offering clears the
+glow. If the window is not focused you also get a native notification. A collapsed
 dock hides the build number; reopen the dock from its launcher. Nothing installs
 without your **Download and install** and the native confirmation.
 

@@ -107,7 +107,6 @@ the Node barrel. That rule keeps `node:fs` out of the browser bundle.
 HashRouter
   ThemeProvider
     UpdateProvider            ← the launch's check and the watch's pushes
-      UpdateNotice            ← the in-app release notice, above the routes
       CompanionProvider       ← harness status, the ensure, the switcher
         VaultProvider         ← the open vault snapshot, files-changed banner
           LiveDataProvider    ← the revision a dashboard card re-runs on

@@ -82,13 +82,13 @@ It prints the size and SHA-256 of each, and writes `release/release-manifest.jso
 
 ### Who hears about a release
 
-The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, an in-app notice says so — naming the release and the build you are running, with *View update* and a dismissal — and the version number at the foot of the left rail glows. The notice opens the same popup the build number does: both versions, the release's notes, and the installer, with an offer to download it and run it. After the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
+The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the trailing end of the chat dock's bottom bar glows and an *Update available* caption appears beside it — including when the release lands while the app is open. Clicking the glowing number opens one dialog: both versions, the release's notes, and the installer, with an offer to download it and run it. There is no in-window pop-up for the news; after the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
 
 The release repository is public, so the check is one anonymous read and the app holds no token for it. With nothing to read, it reports that it could not check — it never claims to be up to date.
 
 Two things it will not do. It never offers a version that is not strictly newer, so an older or unreadable tag is reported rather than installed. And it only ever downloads an installer from a GitHub host, checked again after redirects; anything else is refused before a byte moves.
 
-**Settings → Developer** carries one switch, *Preview the update badge*, which makes the rail glow and opens the popup as if a release had been published. The preview carries no installer, so nothing can be downloaded from it; Settings → Updates still reports what the feed really said; and a real release outranks the preview. It is the only way to look at the upgrade affordance without cutting a release.
+**Settings → Developer** carries one switch, *Preview the update badge*, which makes the build number glow and opens the popup as if a release had been published. The preview carries no installer, so nothing can be downloaded from it; Settings → Updates still reports what the feed really said; and a real release outranks the preview. It is the only way to look at the upgrade affordance without cutting a release.
 
 `node apps/desktop/e2e/update-live-feed.mjs` reads the real feed, through the real main process and the real network, and prints what the app would decide — *up to date*, or what it would offer. It is deliberately not in `npm test`, because it needs GitHub to answer; run it before cutting a release, and again after publishing one.
 

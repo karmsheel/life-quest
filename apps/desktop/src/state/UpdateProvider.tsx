@@ -7,8 +7,9 @@
  * operator clicked the version number — and they had no reason to click it,
  * because nothing said there was news. Main now reads the feed every
  * `UPDATE_POLL_MS` and pushes what it finds over `onUpdateDecision`; this provider
- * turns that push into a state change *and* a notice, so the operator is told
- * without asking.
+ * turns that push into a state change, so the dock's build number glows without
+ * the operator asking. There is no in-window notice card: the glow, its caption
+ * and the build number's own dialog are the whole surface.
  *
  * This is a system-in-isolation rig's worth of work done in the renderer, so the
  * ways it can fail are written down before the code:
@@ -33,11 +34,7 @@
  *     watch's answer is the newer fact, so the older check must not overwrite it
  *     when it finally resolves. `pollSeq` is the guard: an answer that started
  *     before a push is dropped rather than allowed to land last.
- *  8. The same release pushed twice, or pushed after the operator dismissed the
- *     notice — announced once per version, and a dismissed notice stays
- *     dismissed. Only a release that disappears and comes back is announced
- *     again.
- *  9. A bridge that does not know `onUpdateDecision` (the badge harness's proxy,
+ *  8. A bridge that does not know `onUpdateDecision` (the badge harness's proxy,
  *     or an older preload) — subscribe only when it is a function; a missing
  *     channel is a quiet app, not a thrown rail.
  */
@@ -56,13 +53,6 @@ import { api } from "@/lib/ipc";
 import type { UpdateDecision } from "@/vite-env";
 
 type Phase = "checking" | "ready" | "failed";
-
-/** What the notice says about the release main's watch reported. */
-export type UpdateNotice = {
-  latest: string;
-  title: string | null;
-  publishedAt: string | null;
-};
 
 /** Where the Developer page keeps its preview switch. */
 const PREVIEW_KEY = "lifequest-update-preview";
@@ -121,12 +111,6 @@ export type UpdateValue = {
   /** The Developer page's switch. Persisted, and off to begin with. */
   preview: boolean;
   setPreview: (on: boolean) => void;
-  /**
-   * The release main's watch reported while the app was open, and that the
-   * operator has not dismissed. Null before any news, and after a dismissal.
-   */
-  notice: UpdateNotice | null;
-  dismissNotice: () => void;
   installing: boolean;
   progress: { downloaded: number; total: number } | null;
   installError: string | null;
@@ -162,7 +146,6 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState<UpdateValue["progress"]>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [preview, setPreviewState] = useState(readPreviewPreference);
-  const [notice, setNotice] = useState<UpdateNotice | null>(null);
 
   const setPreview = useCallback((on: boolean) => {
     setPreviewState(on);
@@ -175,34 +158,12 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * The last release the notice announced, so one release is announced once —
-   * across the launch check, every watch push, and any manual check. It is a ref,
-   * not state: the guard has to hold between renders and survive a dismissal
-   * without causing one.
-   */
-  const announced = useRef<string | null>(null);
-
-  /**
    * A counter of feed answers that arrived *after* a check started. A manual or
    * launch check is an answer to a question asked at a moment; a watch push is a
    * newer fact that landed while it was in flight. The older answer is dropped
    * rather than allowed to overwrite the newer one, whichever resolves last.
    */
   const newsSeq = useRef(0);
-
-  /** Raise the notice for a release, unless it was already announced. */
-  const announce = useCallback((next: UpdateDecision) => {
-    if (next.state !== "available") return;
-    if (announced.current === next.latest) return;
-    announced.current = next.latest;
-    setNotice({
-      latest: next.latest,
-      title: next.title,
-      publishedAt: next.publishedAt,
-    });
-  }, []);
-
-  const dismissNotice = useCallback(() => setNotice(null), []);
 
   // One check per launch. The ref, not state: StrictMode's second mount effect
   // must find the first request already made rather than make its own.
@@ -255,10 +216,6 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         setDecision(parsed);
         setError(null);
         setPhase("ready");
-        // An answer that offers a release is news even when it came from the
-        // launch's own check: that is exactly the update the operator used to
-        // have to click the build number to discover.
-        announce(parsed);
       } catch (err) {
         if (newsSeq.current !== newsWhenAsked) return;
         setDecision(null);
@@ -272,7 +229,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     });
     inFlight.current = tracked;
     return tracked;
-  }, [announce]);
+  }, []);
 
   useEffect(() => {
     if (checked.current) return;
@@ -297,16 +254,12 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
           setDecision(parsed);
           setError(null);
           setPhase("ready");
-          announce(parsed);
           return;
         }
         if (parsed.state !== "current") return;
-        // A release that was announced is not offered any more. The glow and the
-        // notice go with the offer: the feed's latest answer is the one on
-        // screen. A later release is news again, so the guard is cleared.
+        // The release is not offered any more: the glow goes with the offer, and
+        // the feed's latest answer is the one on screen.
         newsSeq.current += 1;
-        announced.current = null;
-        setNotice(null);
         setDecision(parsed);
         setError(null);
         setPhase("ready");
@@ -319,7 +272,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       // than an unsubscribe. Calling it would take the app down.
       if (typeof off === "function") (off as () => void)();
     };
-  }, [announce]);
+  }, []);
 
   // Progress is pushed while the download runs. Only the install's own view of
   // it lives here; the file itself never crosses this bridge.
@@ -401,8 +354,6 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       available: shown?.state === "available",
       preview,
       setPreview,
-      notice,
-      dismissNotice,
       installing,
       progress,
       installError,
@@ -418,8 +369,6 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       previewing,
       preview,
       setPreview,
-      notice,
-      dismissNotice,
       installing,
       progress,
       installError,
@@ -455,8 +404,6 @@ export function useUpdate(): UpdateValue {
     available: false,
     preview: false,
     setPreview: () => {},
-    notice: null,
-    dismissNotice: () => {},
     installing: false,
     progress: null,
     installError: null,
