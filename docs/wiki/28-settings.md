@@ -1,11 +1,11 @@
 # Settings
 
-Settings is one sheet over the app, not a page in the rail. It holds eleven tabs
+Settings is one sheet over the app, not a page in the rail. It holds twelve tabs
 in a fixed order: from the theme you wear and the keys you move with, through the
-areas and the vault, to the companion, the prompt the agent is given, the
-Decisions inbox, updates, your own context, and the Developer bench. A search
-field above the tab list narrows the list in place, so a setting you can name is
-two keystrokes away. [The wiki home](./index.md) has the page index.
+areas and the vault, to the companion, the prompt the agent is given, the review
+windows, the Decisions inbox, updates, your own context, and the Developer bench.
+A search field above the tab list narrows the list in place, so a setting you can
+name is two keystrokes away. [The wiki home](./index.md) has the page index.
 
 ## Where it lives
 
@@ -28,7 +28,8 @@ Some settings belong to a vault (its week start, saved questions, Decisions
 inbox, agent scopes); some belong to this installation (the recent-vault list,
 the companion, the theme, the keyboard); and some are read-only views of what the
 companion is being told. The sheet keeps those scopes apart, one tab each, and
-applies every change immediately — there is no Save button for the sheet.
+applies every change immediately — there is no Save button for the sheet itself,
+though a tab with a draft (the Review windows) saves with its own button.
 
 ## How to use it
 
@@ -50,7 +51,7 @@ panel. Its only floating chrome is the search pill (*Search settings*), a short
 field sitting on the panel's top border, half in and half out, with the section
 column starting at the panel's top edge and no title band above it; the close
 cross (**Close settings**) floats over the panel's top-right padding. The left
-column carries the kicker **App** and the title **Settings**, then the eleven
+column carries the kicker **App** and the title **Settings**, then the twelve
 tabs with their icons, and the panel shows the selected tab, titled by its own
 heading and subtitle, in a card of rows: name and description on the leading
 edge, control on the trailing edge, a hairline ruling one row off the next.
@@ -227,6 +228,34 @@ receives it:
   lens you are on, so re-read after a switch if you are checking what the companion
   would be told.
 
+## Review
+
+**Review** — *When each review opens*. The Review wing's five cadences do not
+become available at the first instant of their period; each has a window, and
+this tab is where you change it. There is a row for **Daily review**, **Weekly
+review**, **Monthly review**, **Quarterly review** and **Yearly review**, each
+with two controls:
+
+- **Days before the period ends** — a whole number from 0 to 60. `0` means the
+  period's own last day; `1` the second-last day; `6` a week before the end.
+- **Opens at** — the local wall-clock time, `HH:MM`.
+
+Under each row, a one-line preview states the result, for example *Opens each day
+at 18:00.*, *Opens on the week's last day at 08:00.* or *Opens 1 day before the
+period ends, at 00:00.* The shipped defaults are: daily `0` at `18:00`; weekly
+`0` at `08:00`; monthly `1` at `00:00`; quarterly `2` at `00:00`; yearly `6`
+(25 December) at `00:00`. For the weekly cadence the "last day" follows the
+vault's **Week starts on** setting in the Vault tab.
+
+**Save review windows** writes the whole set to the vault, and **Restore
+defaults** puts the shipped values back in the fields (press Save to apply). An
+invalid day count or a malformed time is refused in the error banner and nothing
+is written. Until the window opens, the Review page shows the previous period
+and **Next ›** stops there; the vault engine refuses a companion's write before
+the window too, naming the opening time. The values live in the vault's
+`settings.json` under `reviewAvailability`, so they follow the vault folder. See
+[Reviews](./18-reviews.md).
+
 ## Questions
 
 The tab is labelled **Questions**; its panel is **Chat questions** — *Saved
@@ -297,9 +326,10 @@ feed, and a real release outranks the preview.
 
 ## Rules and behaviour
 
-- The tab order is fixed (11): **Appearance**, **Keyboard**, **Areas**, **Vault**,
-  **Hermes**, **Agent**, **Questions**, **Decisions**, **Updates**, **About me**,
-  **Developer**. An unknown or missing `tab` value falls back to Appearance.
+- The tab order is fixed (12): **Appearance**, **Keyboard**, **Areas**, **Vault**,
+  **Hermes**, **Agent**, **Review**, **Questions**, **Decisions**, **Updates**,
+  **About me**, **Developer**. An unknown or missing `tab` value falls back to
+  Appearance.
 - The tab lives in the URL, so a tab is linkable. A tab change rewrites the query
   string in place (`replace`) rather than adding history, so the back button
   leaves the sheet instead of walking back through tabs. The sheet is not a page:
@@ -310,9 +340,9 @@ feed, and a real release outranks the preview.
 - **Escape** unwinds one step: a settings search is cleared first, only an empty
   sheet closes. A confirmation dialog raised over the sheet takes Escape first.
 - Settings that belong to the vault are written to `.lifequest/settings.json`
-  (`weekStartDay`, `chatQuestions`, `decisionInbox`, `agentScopes`). **About me**
-  is `.lifequest/about.md`. Theme, starred list and keyboard bindings are window
-  storage.
+  (`weekStartDay`, `chatQuestions`, `decisionInbox`, `agentScopes`,
+  `reviewAvailability`). **About me** is `.lifequest/about.md`. Theme, starred
+  list and keyboard bindings are window storage.
 - The agent each vault uses is app user data: `vaultAgents` in
   `%APPDATA%\LifeQuest\recent.json` records the vault's Pi/Hermes choice and, for
   Hermes, the profile bound to it. Pi's endpoint, sealed key and transcripts are

@@ -2,6 +2,9 @@
 export * from "./types.ts";
 export * from "./chat-questions.ts";
 export * from "./decision-inbox.ts";
+// Browser-safe: imports only `period.ts`/`types.ts`, so the renderer can answer
+// "which review is open" with the same rules the engine gates writes with.
+export * from "./review-availability.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
 export * from "./unlock.ts";
