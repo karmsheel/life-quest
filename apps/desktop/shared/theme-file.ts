@@ -22,14 +22,15 @@ export type WingSwitcherPlace =
   | "titlebar-left"
   | "floating-left"
   | "hidden";
-export type WingSwitcherVariant = "labels" | "icons";
+export type WingSwitcherVariant = "labels" | "icons" | "compact";
 export type DomainSwitcherPlace =
   | "titlebar-center"
+  | "left-rail"
   | "below-titlebar"
   | "bottom-center"
   | "floating-bottom-right"
   | "hidden";
-export type DomainSwitcherVariant = "segmented" | "pill";
+export type DomainSwitcherVariant = "segmented" | "pill" | "icons" | "list";
 
 export type NavRailWidth = "narrow" | "default" | "wide";
 
@@ -103,9 +104,14 @@ export const WING_PLACES: readonly WingSwitcherPlace[] = [
   "floating-left",
   "hidden",
 ];
-export const WING_VARIANTS: readonly WingSwitcherVariant[] = ["labels", "icons"];
+export const WING_VARIANTS: readonly WingSwitcherVariant[] = [
+  "labels",
+  "icons",
+  "compact",
+];
 export const DOMAIN_PLACES: readonly DomainSwitcherPlace[] = [
   "titlebar-center",
+  "left-rail",
   "below-titlebar",
   "bottom-center",
   "floating-bottom-right",
@@ -114,6 +120,8 @@ export const DOMAIN_PLACES: readonly DomainSwitcherPlace[] = [
 export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "segmented",
   "pill",
+  "icons",
+  "list",
 ];
 export const NAV_RAIL_WIDTHS: readonly NavRailWidth[] = [
   "narrow",

@@ -61,6 +61,7 @@ const FLOATING_PNG = path.join(artifactsDir, "themes-v2-floating.png");
 const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
 const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
 const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
+const VARIANTS_PNG = path.join(artifactsDir, "themes-v2-variants.png");
 
 const failures = [];
 const checks = [];
@@ -182,6 +183,16 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).backgroundImage.slice(0, 80) : null;
     })(),
     radiusLg: radius,
+    wingCompact: Boolean(document.querySelector(".nav-rail__wings--compact")),
+    railWingLabels: [...document.querySelectorAll(".nav-rail__wings [role='radio']")].map((el) =>
+      (el.textContent ?? "").trim(),
+    ),
+    domainLeftRail: Boolean(document.querySelector('[data-chrome-place="left-rail"]')),
+    domainIcons: Boolean(document.querySelector(".domain-switcher--icons")),
+    domainList: Boolean(document.querySelector(".domain-switcher--list")),
+    areaInitials: [...document.querySelectorAll(".domain-switcher__initial")].map((el) =>
+      (el.textContent ?? "").trim(),
+    ),
     navWidthAttr: document.documentElement.dataset.chromeNavWidth ?? null,
     navWidthVar: getComputedStyle(document.documentElement)
       .getPropertyValue("--shell-sidebar-width")
@@ -692,6 +703,84 @@ async function main() {
     JSON.stringify({ revertedAgain, kept: backToKept?.kept, wing: backToKept?.wingTitlebar, domain: backToKept?.domainBottom }),
   );
 
+  // ── 6b: the remaining variants — compact wings, the rail's lens, icons, lists
+  writeThemeFile("variant-lab.json", {
+    name: "variant-lab",
+    label: "Variant Lab",
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "compact" },
+      domainSwitcher: { place: "left-rail", variant: "icons" },
+    },
+  });
+  const variants = await waitFor(
+    (s) => s.railWings && s.wingCompact && s.domainLeftRail && s.domainIcons && s.preview,
+  );
+  check(
+    "compact-wings-and-the-rail-lens",
+    variants &&
+      variants.railWings === true &&
+      variants.wingCompact === true &&
+      variants.railWingLabels.join(",") === "Home,Def,Plan,Exec,Rev" &&
+      variants.domainLeftRail === true &&
+      variants.domainIcons === true &&
+      variants.lensInStrip === false &&
+      variants.areaInitials.length >= 2 &&
+      variants.areaInitials[0] === "L",
+    JSON.stringify({
+      compact: variants?.wingCompact,
+      labels: variants?.railWingLabels,
+      railLens: variants?.domainLeftRail,
+      icons: variants?.areaInitials,
+      strip: variants?.lensInStrip,
+    }),
+  );
+  const variantsShot = await win.webContents.capturePage();
+  fs.writeFileSync(VARIANTS_PNG, variantsShot.toPNG());
+
+  writeThemeFile("variant-list.json", {
+    name: "variant-list",
+    label: "Variant List",
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "labels" },
+      domainSwitcher: { place: "left-rail", variant: "list" },
+    },
+  });
+  const listed = await waitFor(
+    (s) => s.railWings && s.domainLeftRail && s.domainList && s.preview,
+  );
+  check(
+    "list-lens-stacks-in-the-rail",
+    listed &&
+      listed.domainList === true &&
+      listed.domainLeftRail === true &&
+      listed.areaNames.length >= 3,
+    JSON.stringify({
+      list: listed?.domainList,
+      railLens: listed?.domainLeftRail,
+      areas: listed?.areaNames,
+    }),
+  );
+
+  // The escape hatch still returns the kept theme from a variant preview.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromVariants = await waitFor(
+    (s) => !s.preview && s.wingTitlebar && s.domainBottom && !s.domainLeftRail,
+  );
+  check(
+    "variants-revert-to-the-kept-theme",
+    backFromVariants?.kept === "solar-system.json" &&
+      backFromVariants.wingTitlebar === true &&
+      backFromVariants.domainBottom === true &&
+      backFromVariants.domainLeftRail === false,
+    JSON.stringify({
+      kept: backFromVariants?.kept,
+      wing: backFromVariants?.wingTitlebar,
+      domain: backFromVariants?.domainBottom,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -950,24 +1039,40 @@ async function main() {
       return true;
     })()`);
   const pressedWing = await click("chrome-wing-place-titlebar-left");
+  const pressedWingVariant = await click("chrome-wing-variant-icons");
   const pressedDomain = await click("chrome-domain-place-bottom-center");
+  const pressedDomainVariant = await click("chrome-domain-variant-pill");
   const pressedNarrow = await click("chrome-nav-width-narrow");
   const overriddenChrome = await waitFor(
-    (s) => s.wingTitlebar && !s.wingFloating && s.domainBottom && !s.domainBelow && s.navWidthAttr === "narrow",
+    (s) =>
+      s.wingTitlebar &&
+      !s.wingFloating &&
+      s.domainBottom &&
+      !s.domainBelow &&
+      s.navWidthAttr === "narrow" &&
+      s.wingText === "H" &&
+      s.domainPill,
   );
   check(
     "operator-chrome-overrides-the-theme",
     pressedWing === true &&
+      pressedWingVariant === true &&
       pressedDomain === true &&
+      pressedDomainVariant === true &&
       pressedNarrow === true &&
       overriddenChrome?.wingTitlebar === true &&
       overriddenChrome.wingFloating === false &&
+      overriddenChrome.wingText === "H" &&
       overriddenChrome.domainBottom === true &&
       overriddenChrome.domainBelow === false &&
+      overriddenChrome.domainPill === true &&
       overriddenChrome.navWidthAttr === "narrow",
     JSON.stringify({
-      pressed: pressedWing && pressedDomain && pressedNarrow,
+      pressed:
+        pressedWing && pressedWingVariant && pressedDomain && pressedDomainVariant && pressedNarrow,
       wingTitlebar: overriddenChrome?.wingTitlebar,
+      wingText: overriddenChrome?.wingText,
+      pill: overriddenChrome?.domainPill,
       wingFloating: overriddenChrome?.wingFloating,
       domainBottom: overriddenChrome?.domainBottom,
       domainBelow: overriddenChrome?.domainBelow,
@@ -1073,6 +1178,7 @@ async function main() {
       settings: path.relative(desktopRoot, SETTINGS_PNG),
       material: path.relative(desktopRoot, MATERIAL_PNG),
       layout: path.relative(desktopRoot, LAYOUT_PNG),
+      variants: path.relative(desktopRoot, VARIANTS_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

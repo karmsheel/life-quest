@@ -9,6 +9,7 @@ import { NavCollapseButton } from "./NavCollapseButton";
 import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
+import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
 
@@ -165,6 +166,21 @@ export function NavRail() {
       {chrome.wingSwitcher.place === "rail-top" ? (
         <div className="nav-rail__wings-band" data-nav-group="wings">
           <WingTabs variant={chrome.wingSwitcher.variant} />
+        </div>
+      ) : null}
+      {/*
+        The area lens can live in the rail's own column: under the wings, above
+        the pages. It is the rail's second level of navigation when the operator
+        (or a theme) asks for it, and it keeps the same radio group and arrow
+        keys it has in the strip — only the frame changes.
+      */}
+      {chrome.domainSwitcher.place === "left-rail" ? (
+        <div
+          className="nav-rail__lens"
+          data-chrome-slot="domain"
+          data-chrome-place="left-rail"
+        >
+          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
         </div>
       ) : null}
       {topPinned.length > 0 ? (

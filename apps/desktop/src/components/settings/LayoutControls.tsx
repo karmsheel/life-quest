@@ -43,12 +43,14 @@ const WING_VARIANT_LABELS: Record<
 > = {
   labels: "Labels",
   icons: "Icons",
+  compact: "Compact",
 };
 const DOMAIN_PLACE_LABELS: Record<
   ThemeChrome["domainSwitcher"]["place"],
   string
 > = {
   "titlebar-center": "Titlebar centre",
+  "left-rail": "Sidebar rail",
   "below-titlebar": "Below titlebar",
   "bottom-center": "Bottom centre",
   "floating-bottom-right": "Floating bottom right",
@@ -60,6 +62,8 @@ const DOMAIN_VARIANT_LABELS: Record<
 > = {
   segmented: "Segmented",
   pill: "Pill",
+  icons: "Icons",
+  list: "List",
 };
 const NAV_RAIL_WIDTH_LABELS: Record<ThemeChrome["navRail"]["width"], string> = {
   narrow: "Narrow",

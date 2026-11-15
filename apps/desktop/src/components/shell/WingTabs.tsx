@@ -1,4 +1,5 @@
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
+import type { WingSwitcherVariant } from "@/lib/themes/theme-file";
 import { WING_IDS, WING_LABELS, type WingId } from "./wing.ts";
 import { useWing } from "./WingProvider";
 
@@ -9,6 +10,15 @@ const WING_INITIALS: Record<WingId, string> = {
   plan: "P",
   execute: "A",
   review: "R",
+};
+
+/** The compact variant's word: the fewest letters that still name the wing. */
+const WING_SHORT: Record<WingId, string> = {
+  home: "Home",
+  define: "Def",
+  plan: "Plan",
+  execute: "Exec",
+  review: "Rev",
 };
 
 /**
@@ -25,12 +35,16 @@ const WING_INITIALS: Record<WingId, string> = {
  * app's. A theme may ask for the compact `icons` variant; it changes the label,
  * never the value the shell stores.
  */
-export function WingTabs({ variant = "labels" }: { variant?: "labels" | "icons" }) {
+export function WingTabs({
+  variant = "labels",
+}: {
+  variant?: WingSwitcherVariant;
+}) {
   const { active, selectWing } = useWing();
 
   return (
     <SegmentedControl
-      className="ui-segmented nav-rail__wings"
+      className={`ui-segmented nav-rail__wings nav-rail__wings--${variant}`}
       aria-label="App wing"
       value={active}
       onValueChange={(next) => {
@@ -42,11 +56,15 @@ export function WingTabs({ variant = "labels" }: { variant?: "labels" | "icons" 
           key={wing}
           className="ui-segmented__option"
           value={wing}
-          aria-label={variant === "icons" ? WING_LABELS[wing] : undefined}
+          aria-label={variant === "labels" ? undefined : WING_LABELS[wing]}
         >
           {variant === "icons" ? (
             <span className="nav-rail__wing-initial" aria-hidden="true">
               {WING_INITIALS[wing]}
+            </span>
+          ) : variant === "compact" ? (
+            <span className="nav-rail__wing-short" aria-hidden="true">
+              {WING_SHORT[wing]}
             </span>
           ) : (
             WING_LABELS[wing]

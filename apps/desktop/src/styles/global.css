@@ -13102,3 +13102,75 @@ button.chat-panel__activity-line:hover {
   font-size: 0.6875rem;
   line-height: 1.45;
 }
+
+/* ——— variant matrix: compact wings, the rail's lens, icons and lists ————————
+   The theme file's third rung: the same controls, wearing their declared
+   variants. Every rule here is a variant of an existing control — none of them
+   invents a new component, and none of them can be reached by a theme file
+   except through the closed enums in the shared theme model. */
+
+/* The compact wing switcher: the fewest letters that still name each wing, at
+   the rail's tight padding. The full word stays in the option's aria-label. */
+.nav-rail__wings--compact .ui-segmented__option {
+  padding: 0.45rem 0.15rem;
+  font-size: 0.5625rem;
+}
+
+/* The area lens in the rail's column: under the wings, above the pages, full
+   width — the rail's second level of navigation. */
+.nav-rail__lens {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0.15rem 0 0.3rem;
+  min-width: 0;
+}
+
+.nav-rail__lens .domain-switcher {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.nav-rail__lens .domain-switcher__tabs {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The icon lens: one initial per area, the name kept for the screen reader. */
+.domain-switcher--icons .domain-switcher__initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+/* The list lens: the same radio group stacked in a column, for the rail's
+   column or a bottom dock that wants rows rather than a strip. */
+.domain-switcher--list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 0.15rem;
+}
+
+.domain-switcher--list .domain-switcher__tabs {
+  flex-direction: column;
+  width: 100%;
+  gap: 0.15rem;
+}
+
+.domain-switcher--list .ui-segmented__option {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.domain-switcher--list .domain-switcher__name {
+  max-width: 100%;
+}

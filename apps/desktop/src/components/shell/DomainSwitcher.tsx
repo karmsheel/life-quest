@@ -5,6 +5,7 @@ import {
   unlockedAreas,
 } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
+import type { DomainSwitcherVariant } from "@/lib/themes/theme-file";
 import { useDomainLens } from "./useActiveDomain";
 
 const OVERVIEW_KEY = "__overview__";
@@ -20,8 +21,12 @@ const OVERVIEW_KEY = "__overview__";
 export function DomainSwitcher({
   variant = "segmented",
 }: {
-  /** `pill` is the floating dock's rounded variant; `segmented` is the strip's. */
-  variant?: "segmented" | "pill";
+  /**
+   * `segmented` is the strip's, `pill` the floating dock's rounded face,
+   * `icons` trades names for one letter, and `list` stacks the areas in a
+   * column (the rail's own layout).
+   */
+  variant?: DomainSwitcherVariant;
 } = {}) {
   const { snapshot, setLens, booting } = useVault();
   const lens = useDomainLens();
@@ -107,10 +112,13 @@ export function DomainSwitcher({
   }
 
   const overviewSelected = lens.kind === "overview";
+  const initial = (name: string) => name.trim().charAt(0).toUpperCase();
 
   return (
     <div
-      className={`domain-switcher${variant === "pill" ? " domain-switcher--pill" : ""}`}
+      className={`domain-switcher${
+        variant === "segmented" ? "" : ` domain-switcher--${variant}`
+      }`}
     >
       <div
         className="ui-segmented domain-switcher__tabs"
@@ -130,7 +138,13 @@ export function DomainSwitcher({
           onClick={() => void onChange(null)}
           onKeyDown={(event) => onKeyDown(null, event)}
         >
-          <span className="domain-switcher__name">Life</span>
+          {variant === "icons" ? (
+            <span className="domain-switcher__initial" aria-hidden="true">
+              {initial("Life")}
+            </span>
+          ) : (
+            <span className="domain-switcher__name">Life</span>
+          )}
         </button>
         {areas.map((d) => {
           const selected = lens.kind === "domain" && lens.slug === d.slug;
@@ -149,7 +163,13 @@ export function DomainSwitcher({
               onClick={() => void onChange(d.slug)}
               onKeyDown={(event) => onKeyDown(d.slug, event)}
             >
-              <span className="domain-switcher__name">{d.meta.name}</span>
+              {variant === "icons" ? (
+                <span className="domain-switcher__initial" aria-hidden="true">
+                  {initial(d.meta.name)}
+                </span>
+              ) : (
+                <span className="domain-switcher__name">{d.meta.name}</span>
+              )}
             </button>
           );
         })}
