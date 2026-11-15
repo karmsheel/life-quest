@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -36,6 +37,34 @@ import {
   type InstallResult,
 } from "@/lib/themes/user-themes";
 import type { ForgeSkin } from "@/lib/themes/types";
+import {
+  applyMaterial,
+  DEFAULT_THEME_CHROME,
+  DEFAULT_THEME_MATERIAL,
+  parseThemeFile,
+  resolveChrome,
+  resolveMaterial,
+  type ThemeChrome,
+  type ThemeFile,
+  type ThemeMaterial,
+} from "@/lib/themes/theme-file";
+
+/** The worn theme file's name, kept in the renderer like the skin's. */
+const THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
+/**
+ * How long a theme the companion just wrote is shown before it hands the window
+ * back. Ten seconds is long enough to look at, short enough that a bad write
+ * cannot strand the operator in a shell they cannot navigate.
+ */
+const THEME_PREVIEW_MS = 10_000;
+
+function readStoredThemeFile(): string | null {
+  try {
+    return localStorage.getItem(THEME_FILE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -59,6 +88,21 @@ interface ThemeContextValue {
   installSkin: (raw: unknown) => InstallResult;
   /** Take an installed theme back out, unstarring it and leaving it if it is worn. */
   uninstallSkin: (skinName: string) => void;
+  /**
+   * The v2 theme file this window is wearing. `null` means the shell's default
+   * chrome — a window that has never been given a theme file.
+   */
+  themeFile: ThemeFile | null;
+  /** Where the shell's own components live, resolved from `themeFile`. */
+  chrome: ThemeChrome;
+  /** The material layer (radius, density, motion), resolved from `themeFile`. */
+  material: ThemeMaterial;
+  /** A file the companion just wrote: worn, but not yet kept. */
+  themePreview: { file: string; label: string } | null;
+  /** Why the newest theme file was refused, if it was. */
+  themeError: string | null;
+  keepThemePreview: () => void;
+  revertThemePreview: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -137,6 +181,211 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const skin = resolveSkin(name);
     return skinSupportsMode(skin, mode) ? skin.name : FALLBACK_SKIN_NAME;
   }, []);
+
+  /*
+   * The v2 theme file: chrome placement and material, loaded from the app
+   * profile's `themes/` directory. The palette stays the skin's, so a theme file
+   * may add colour on top but never has to own the whole look.
+   */
+  const [themeFile, setThemeFile] = useState<ThemeFile | null>(null);
+  const [chrome, setChrome] = useState<ThemeChrome>(DEFAULT_THEME_CHROME);
+  const [material, setMaterial] = useState<ThemeMaterial>(DEFAULT_THEME_MATERIAL);
+  const [themePreview, setThemePreview] = useState<{
+    file: string;
+    label: string;
+  } | null>(null);
+  const [themeError, setThemeError] = useState<string | null>(null);
+  const themePreviewTimer = useRef<number | null>(null);
+  /** Last mtime seen per file, so a hot reload can name what actually changed. */
+  const themeMtimes = useRef<Map<string, number>>(new Map());
+  /** The theme this window reverts to; the rendered `themeFile` moves on preview. */
+  const keptTheme = useRef<ThemeFile | null>(null);
+  /** The theme currently painted, read from callbacks that must not go stale. */
+  const paintedTheme = useRef<ThemeFile | null>(null);
+  const previewRef = useRef<{ file: string; label: string } | null>(null);
+
+  /**
+   * Paint one theme: resolve its defaults, write the material layer, and (when
+   * it carries colours) layer its palette over the skin it sits on.
+   *
+   * The palette is layered rather than replaced: a theme file is allowed to name
+   * three colours and inherit the rest, which is what makes a small theme file
+   * possible at all.
+   */
+  const paintTheme = useCallback(
+    (next: ThemeFile | null) => {
+      paintedTheme.current = next;
+      const nextMaterial = resolveMaterial(next?.material);
+      setChrome(resolveChrome(next?.chrome));
+      setMaterial(nextMaterial);
+      applyMaterial(nextMaterial, document.documentElement);
+      if (next?.colors) {
+        const base = resolveSkin(skinName);
+        applySkin(
+          {
+            ...base,
+            colors: { ...base.colors, ...next.colors },
+            ...(next.darkColors && base.darkColors
+              ? { darkColors: { ...base.darkColors, ...next.darkColors } }
+              : {}),
+          } as ForgeSkin,
+          resolved,
+        );
+      }
+    },
+    [resolved, skinName],
+  );
+
+  /** Stop the countdown and give the window back the theme it had kept. */
+  const revertThemePreview = useCallback(() => {
+    if (themePreviewTimer.current !== null) {
+      window.clearTimeout(themePreviewTimer.current);
+      themePreviewTimer.current = null;
+    }
+    previewRef.current = null;
+    setThemePreview(null);
+    setThemeError(null);
+    setThemeFile(keptTheme.current);
+    paintTheme(keptTheme.current);
+  }, [paintTheme]);
+
+  /** Wear one file as a preview; after ten seconds it reverts by itself. */
+  const showPreview = useCallback(
+    (next: { file: string; theme: ThemeFile }) => {
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+      }
+      const preview = { file: next.file, label: next.theme.label };
+      previewRef.current = preview;
+      setThemePreview(preview);
+      setThemeError(null);
+      setThemeFile(next.theme);
+      paintTheme(next.theme);
+      themePreviewTimer.current = window.setTimeout(() => {
+        themePreviewTimer.current = null;
+        revertThemePreview();
+      }, THEME_PREVIEW_MS);
+    },
+    [paintTheme, revertThemePreview],
+  );
+
+  /** Keep the previewed theme: persisted by file name, worn from now on. */
+  const keepThemePreview = useCallback(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    if (themePreviewTimer.current !== null) {
+      window.clearTimeout(themePreviewTimer.current);
+      themePreviewTimer.current = null;
+    }
+    try {
+      localStorage.setItem(THEME_FILE_STORAGE_KEY, preview.file);
+    } catch {
+      /* ignore */
+    }
+    keptTheme.current = paintedTheme.current;
+    previewRef.current = null;
+    setThemePreview(null);
+    setThemeError(null);
+  }, []);
+
+  /**
+   * Read the directory, paint what the operator kept, and preview anything the
+   * companion just wrote. `preview: false` is the first read of the session: a
+   * kept theme is worn without the ten-second countdown.
+   */
+  const loadThemeFiles = useCallback(
+    async (options?: { preview?: boolean }) => {
+      const bridge = window.lifequest;
+      if (!bridge?.themesList) return;
+      let answer: Awaited<ReturnType<typeof bridge.themesList>>;
+      try {
+        answer = await bridge.themesList();
+      } catch {
+        return;
+      }
+      if (!answer.ok) {
+        setThemeError(answer.error);
+        return;
+      }
+
+      const known = themeMtimes.current;
+      const keptName = readStoredThemeFile();
+      let changed: { file: string; theme: ThemeFile } | null = null;
+      let keptChanged = false;
+      let kept: { file: string; theme: ThemeFile } | null = null;
+      let failure: string | null = null;
+      const seen = new Set<string>();
+
+      for (const entry of answer.value) {
+        seen.add(entry.file);
+        const previous = known.get(entry.file);
+        if ("error" in entry) {
+          if (previous !== undefined || entry.file === keptName) {
+            failure = `${entry.file}: ${entry.error}`;
+          }
+          continue;
+        }
+        const isNewOrChanged = previous === undefined || previous !== entry.mtime;
+        const invalid = (detail: string) => {
+          if (isNewOrChanged || entry.file === keptName) {
+            failure = `${entry.file}: ${detail}`;
+          }
+        };
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(entry.raw);
+        } catch {
+          invalid("not valid JSON");
+          continue;
+        }
+        known.set(entry.file, entry.mtime);
+        const parsed = parseThemeFile(parsedJson);
+        if (!parsed.ok) {
+          invalid(parsed.error);
+          continue;
+        }
+        if (entry.file === keptName) {
+          kept = { file: entry.file, theme: parsed.theme };
+          if (previous !== undefined && previous !== entry.mtime) {
+            keptChanged = true;
+          }
+        } else if (isNewOrChanged) {
+          changed = { file: entry.file, theme: parsed.theme };
+        }
+      }
+      for (const file of [...known.keys()]) {
+        if (!seen.has(file)) known.delete(file);
+      }
+
+      if (kept) keptTheme.current = kept.theme;
+      if (options?.preview === false) {
+        setThemeFile(kept?.theme ?? null);
+        paintTheme(kept?.theme ?? null);
+        return;
+      }
+      if (keptChanged) {
+        revertThemePreview();
+        return;
+      }
+      if (changed) showPreview(changed);
+      if (failure) setThemeError(failure);
+    },
+    [paintTheme, revertThemePreview, showPreview],
+  );
+
+  useEffect(() => {
+    void loadThemeFiles({ preview: false });
+    const unsubscribe = window.lifequest?.onThemesChanged?.(() => {
+      void loadThemeFiles();
+    });
+    return () => {
+      unsubscribe?.();
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+        themePreviewTimer.current = null;
+      }
+    };
+  }, [loadThemeFiles]);
 
   useLayoutEffect(() => {
     applyThemePreference(preference);
@@ -286,19 +535,33 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       toggleSkinFavorite: toggleFavoriteSkin,
       installSkin,
       uninstallSkin,
+      themeFile,
+      chrome,
+      material,
+      themePreview,
+      themeError,
+      keepThemePreview,
+      revertThemePreview,
     }),
     [
       availableSkins,
+      chrome,
       favoriteSkins,
       installSkin,
       installedSkins,
       isSkinFavorite,
+      keepThemePreview,
+      material,
       preference,
       resolved,
+      revertThemePreview,
       setPreference,
       setSkin,
       skin,
       skinName,
+      themeError,
+      themeFile,
+      themePreview,
       toggleFavoriteSkin,
       uninstallSkin,
     ],

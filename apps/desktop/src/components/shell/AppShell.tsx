@@ -5,6 +5,8 @@ import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { ChatDivider } from "./ChatDivider";
+import { ChromeHosts } from "./ChromeHosts";
+import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
@@ -110,6 +112,12 @@ export function AppShell() {
             >
               {chatColumn.announce}
             </p>
+            {/* The chrome the worn theme moved here, and the bar that asks
+                before a previewed theme stays. Both paint over the shell, not
+                in its grid: a theme may move a control without relaying out the
+                page underneath it. */}
+            <ChromeHosts />
+            <ThemePreviewBar />
           </div>
         </ChatSessionsProvider>
       </WingProvider>

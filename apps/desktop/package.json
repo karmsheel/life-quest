@@ -36,5 +36,9 @@
     "typescript": "^5.8.0",
     "vite": "^6.3.0",
     "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@ui-sdk/core": "^0.1.0-beta.5",
+    "@ui-sdk/react": "^0.1.0-beta.5"
   }
 }

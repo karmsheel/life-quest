@@ -1514,6 +1514,49 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     return { ok: true as const, value: true as const };
   });
 
+  /**
+   * Theme files, v2.
+   *
+   * A theme is presentation, not life: it lives in the app profile's `themes/`
+   * directory, never in the vault, so it is not part of the repository the
+   * operator syncs or hands to the companion. The companion authors one by
+   * writing a file; this read is how the window learns it changed.
+   */
+  ipcMain.handle("theme:list", async () => {
+    const dir = path.join(app.getPath("userData"), "themes");
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      const entries = (await fs.promises.readdir(dir))
+        .filter((file) => file.endsWith(".json"))
+        .sort();
+      const files: Array<
+        | { file: string; raw: string; mtime: number }
+        | { file: string; error: string }
+      > = [];
+      for (const file of entries) {
+        const full = path.join(dir, file);
+        try {
+          const [raw, stat] = await Promise.all([
+            fs.promises.readFile(full, "utf8"),
+            fs.promises.stat(full),
+          ]);
+          files.push({ file, raw, mtime: stat.mtimeMs });
+        } catch (error) {
+          files.push({
+            file,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return { ok: true as const, value: files };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
   ipcMain.handle("window:getChrome", () => ({
     overlay: usesTitleBarOverlay(),
     platform: process.platform,
@@ -1549,6 +1592,37 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
   });
+}
+
+/**
+ * Watch the profile's `themes/` directory and tell the window when it moves.
+ *
+ * Hot reload is the whole authoring loop: the companion writes a theme file and
+ * the window wearing it repaints, without a restart and without an IPC call from
+ * the renderer. `fs.watch` is deliberately unconditional — the renderer reads
+ * the directory itself when it hears this, so a spurious event costs one read.
+ */
+let themeWatcher: fs.FSWatcher | null = null;
+
+function startThemeWatcher(win: BrowserWindow): void {
+  if (themeWatcher) return;
+  const dir = path.join(app.getPath("userData"), "themes");
+  void fs.promises
+    .mkdir(dir, { recursive: true })
+    .then(() => {
+      try {
+        themeWatcher = fs.watch(dir, { persistent: false }, () => {
+          if (win.isDestroyed()) return;
+          win.webContents.send("theme:changed");
+        });
+      } catch {
+        // A missing watch only costs hot reload; the next launch reads the
+        // directory anyway.
+      }
+    })
+    .catch(() => {
+      // Same: an unwritable profile is a bigger problem than a theme.
+    });
 }
 
 /**
@@ -1615,6 +1689,7 @@ async function createWindow() {
   win.on("closed", () => {
     if (productWindow === win) productWindow = null;
   });
+  startThemeWatcher(win);
 
   if (process.platform !== "darwin") {
     win.removeMenu();

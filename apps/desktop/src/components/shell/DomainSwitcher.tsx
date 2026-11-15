@@ -17,7 +17,12 @@ const OVERVIEW_KEY = "__overview__";
  * areas the same band becomes the segmented control: Life first, then the areas
  * the operator can actually see. Locked and archived areas are never chips.
  */
-export function DomainSwitcher() {
+export function DomainSwitcher({
+  variant = "segmented",
+}: {
+  /** `pill` is the floating dock's rounded variant; `segmented` is the strip's. */
+  variant?: "segmented" | "pill";
+} = {}) {
   const { snapshot, setLens, booting } = useVault();
   const lens = useDomainLens();
   const [pending, setPending] = useState(false);
@@ -104,7 +109,9 @@ export function DomainSwitcher() {
   const overviewSelected = lens.kind === "overview";
 
   return (
-    <div className="domain-switcher">
+    <div
+      className={`domain-switcher${variant === "pill" ? " domain-switcher--pill" : ""}`}
+    >
       <div
         className="ui-segmented domain-switcher__tabs"
         role="radiogroup"

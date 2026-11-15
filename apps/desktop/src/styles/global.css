@@ -12443,3 +12443,192 @@ button.chat-panel__activity-line:hover {
   opacity: 0.6;
   cursor: default;
 }
+
+/* ——— theme chrome, v2 ——————————————————————————————————————————————————————
+   Where the shell's own components go when a theme file says something other
+   than the two default homes (the rail's top band and the lens in the strip).
+   Every host paints over the shell instead of taking part in its grid: moving a
+   switcher must not re-solve the page's columns, which is exactly what a
+   `display: contents`-style host would do. */
+
+.chrome-floating--wing {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 5.5rem;
+  z-index: 40;
+  max-width: min(22rem, 80vw);
+  padding: 0.25rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-bar--titlebar-left {
+  position: fixed;
+  top: 0.3rem;
+  left: calc(var(--shell-nav-width, 11rem) + 0.6rem);
+  z-index: 41;
+  max-width: min(24rem, 40vw);
+  padding: 0.1rem 0.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.chrome-bar--below-titlebar {
+  position: fixed;
+  top: var(--window-titlebar-height, 2rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: min(40rem, 90vw);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-dock--bottom {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-dock--floating {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.window-titlebar__leading--wings {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.domain-switcher--pill .domain-switcher__tabs {
+  border-radius: 999px;
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+}
+
+.domain-switcher--pill .ui-segmented__option {
+  border-radius: 999px;
+}
+
+/* The wing control's checked item. The ui-sdk segmented control exposes its
+   state as ARIA (a radio group); the app's own palette lives in the class. */
+.ui-segmented__option[aria-checked="true"] {
+  color: var(--text-strong);
+  background: var(--bg-elevated);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-xs);
+}
+
+.ui-segmented__option[aria-checked="true"]:hover {
+  background: var(--bg-elevated);
+}
+
+.nav-rail__wing-initial {
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+/* ——— theme preview bar —————————————————————————————————————————————————————
+   The consent gate: a theme the companion just wrote is worn for ten seconds
+   unless the operator keeps it. Bottom-centre, above the dock's own bottom
+   band, and never part of the page's layout. */
+
+.theme-preview-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(46rem, 92vw);
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.theme-preview-bar--error {
+  border-color: var(--danger, #8b3b3b);
+}
+
+.theme-preview-bar__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-preview-bar__text code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7em;
+}
+
+.theme-preview-bar__button {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--bg-muted);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.theme-preview-bar__button--keep {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+}
+
+/* ——— material layer ———————————————————————————————————————————————————————
+   Density and motion are theme state, not free CSS: a theme picks one of three
+   named steps and the stylesheet owns what each means. A theme therefore cannot
+   ship a transition or a gap of its own choosing. */
+
+[data-material-motion="none"] *,
+[data-material-motion="none"] *::before,
+[data-material-motion="none"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-material-density="compact"] .shell {
+  --shell-nav-pad: 0.35rem;
+}
+
+[data-material-density="airy"] .shell {
+  --shell-nav-pad: 0.65rem;
+}
