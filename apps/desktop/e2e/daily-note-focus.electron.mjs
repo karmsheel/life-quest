@@ -17,24 +17,36 @@
  * stubbed. The driver waits on `window.dailyNoteReady` before it samples, so a
  * slow first Vite transform is never mistaken for a page that never painted.
  *
- * What is measured that a screenshot cannot show: the trigger's place in the
- * title row and its distance from Analyze note; the sheet's own frame, panel
- * measure and centring in a 1280px window; the title's centre against the panel's
- * centre; the cross's corner; the scrim's computed backdrop-filter and its dim;
- * that the page behind is still mounted; that the page of paper is headed by the
- * day's date and footed by the autosave band and the day's own acts, each in its
- * own place; which of the three dismissals closed it; that a sentence typed in
- * the modal reaches the day's autosave ledger on the day the page was showing,
- * then reads back in the page editor behind; and that pressing the day's act on
- * the page of paper leaves the sheet and puts the act's chat, with its first
- * turn on screen, in the dock behind.
+ * What is measured that a screenshot cannot show: the page's own keys — the focus
+ * key's place at the trailing end of the title row's cluster, its square frame,
+ * the height it shares with the cluster's token, and the cluster's order ("back
+ * to today", then focus mode) both on today and off it; the day's act at the
+ * box's foot — under the editor, on the editor's trailing edge, inside the box's
+ * column, one type step down from the page's chrome, inert on an empty day and
+ * live on a written one; the sheet's own frame, panel measure and centring in a
+ * 1280px window; the title's centre against the panel's centre; the cross's
+ * corner; the scrim's computed backdrop-filter and its dim; that the page behind
+ * is still mounted; that the page of paper is headed by the day's date and footed
+ * by the autosave band and the day's own acts, each in its own place; which of the
+ * three dismissals closed it; that a sentence typed in the modal reaches the
+ * day's autosave ledger on the day the page was showing, then reads back in the
+ * page editor behind; and that pressing the day's act on the page of paper leaves
+ * the sheet and puts the act's chat, with its first turn on screen, in the dock
+ * behind.
  *
  * ── How this rig can fail (written before the assertions) ────────────────────
  *
- *  1. The trigger is missing, is not in the header's title row, is not the last
- *     control before Analyze note, or is not the icon-only button it claims to
- *     be (a labelled word, no aria-label, no icon, or an icon squeezed to a
- *     sliver inside a box that is otherwise the right size).
+ *  1. The page's keys are not the page's: focus mode is missing, is not in the
+ *     header's title row, is not in the actions cluster, is not that cluster's
+ *     last key, is not the icon-only square framed button it claims to be (a
+ *     labelled word, no aria-label, no icon, or an icon squeezed to a sliver), is
+ *     not the height of the cluster's own token, or the cluster's right edge is
+ *     not on the title row's trailing edge.
+ *  1a. The day's act is still the page's: Analyze note sits in the title row's
+ *     cluster, beside focus mode, instead of on the box's foot; or it is not
+ *     below the editor, not on the editor's trailing edge, outside the box's
+ *     column, not one type step down in label and height, or live on a day with
+ *     nothing written in it (or inert on a written one).
  *  2. Clicking it paints no sheet, or the sheet is not the shared frame: the
  *     root must carry both `data-focus-overlay` and `data-sheet-overlay`, and the
  *     panel must be `.focus-overlay__panel`.
@@ -127,6 +139,12 @@ const SAMPLE = `(() => {
   const trigger = document.querySelector('[data-testid="daily-note-focus"]');
   const automations = document.querySelector(".daily-note__automations");
   const analyze = automations ? automations.querySelector("button") : null;
+  // The box and its foot: the day's act belongs to the foot now, judged against
+  // the editor's own trailing edge in the same viewport. (pageEditor below is
+  // the box's own note-live element; this is the column that holds it.)
+  const editorWrap = document.querySelector(".daily-note__editor");
+  const pageFooter = document.querySelector(".daily-note__footer");
+  const pageStatus = document.querySelector('[data-testid="daily-note-status"]');
 
   const overlay = document.querySelector("[data-focus-overlay]");
   const panel = document.querySelector(".focus-overlay__panel");
@@ -185,6 +203,10 @@ const SAMPLE = `(() => {
   const analyzeBox = box(analyze);
   const panelBox = box(panel);
   const footBox = box(foot);
+  const editorBox = box(editorWrap);
+  const pageFooterBox = box(pageFooter);
+  const titleRowBox = box(titleRow);
+  const actionsBox = box(actions);
 
   return {
     path: location.pathname,
@@ -213,27 +235,41 @@ const SAMPLE = `(() => {
           inHeader: Boolean(header && header.contains(trigger)),
           inTitleRow: Boolean(titleRow && titleRow.contains(trigger)),
           inActions: Boolean(actions && actions.contains(trigger)),
-          // The contract's "immediately after the automations": same cluster,
-          // with the automations standing directly before it. Focus mode is the
-          // day's LAST act — it takes the day as it is and writes it on its own
-          // — so it sits after the control that commits the day to the vault.
-          // The key is given a slot to fill so it can take the row's height and
-          // stay square, so the order is read from the positions of the two in
-          // the cluster rather than from raw sibling identity.
-          immediatelyAfterAutomations: Boolean(
-            triggerBox &&
-              automationsBox &&
-              triggerBox.left >= automationsBox.right - 1 &&
-              triggerBox.top < automationsBox.bottom &&
-              triggerBox.bottom > automationsBox.top
+          // Focus mode is the page's own key: the cluster holds the way back to
+          // today (only off today) and this key, and nothing else. It is the
+          // trailing end of the title row's chrome; the day's verb — the act that
+          // commits the note — is not beside it any more.
+          lastInActions: Boolean(
+            actions && actions.contains(trigger) && actions.lastElementChild === trigger,
           ),
+          // The cluster's own dims, resolved from the stylesheet through a probe
+          // rather than copied into the rig: a key that stopped wearing the
+          // token would fail against the token the sheet still resolves to.
+          actHeight: (() => {
+            if (!actions) return null;
+            const probe = document.createElement("div");
+            probe.style.height = "var(--daily-note-act-height)";
+            actions.appendChild(probe);
+            const resolved = parseFloat(getComputedStyle(probe).height);
+            probe.remove();
+            return Number.isFinite(resolved) ? round(resolved) : null;
+          })(),
           // The square framed key: a visible border, and a box that stands the
-          // height of the control beside it and no wider than it is tall.
+          // height of the cluster's token and no wider than it is tall.
           borderStyle: getComputedStyle(trigger).borderStyle,
           borderWidth: parseFloat(getComputedStyle(trigger).borderTopWidth),
           radius: parseFloat(getComputedStyle(trigger).borderTopLeftRadius),
         }
       : { present: false },
+    // The box the page's own keys sit on: the trailing end of the title row.
+    actionCluster: actionsBox
+      ? {
+          box: actionsBox,
+          rightGap: titleRowBox
+            ? round(Math.abs(actionsBox.right - titleRowBox.right))
+            : null,
+        }
+      : null,
     automations: automations
       ? {
           present: true,
@@ -241,12 +277,57 @@ const SAMPLE = `(() => {
           centre: centre(automationsBox),
           analyzeBox,
           analyzeTestId: analyze ? analyze.getAttribute("data-testid") : null,
+          analyzeText: analyze ? text(analyze) : null,
+          analyzeDisabled: analyze ? Boolean(analyze.disabled) : null,
+          // The operator asked for the act one step down from the page's chrome:
+          // a smaller label and a shorter key. Both are read off the painted
+          // control, not off the class that was meant to set them.
+          analyzeFontSize: analyze ? parseFloat(getComputedStyle(analyze).fontSize) : null,
+          analyzeHeight: analyzeBox ? round(analyzeBox.height) : null,
+          // Where the act's cluster is: it belongs to the box's foot now, not to
+          // the title row's keys.
+          inHeader: Boolean(header && header.contains(automations)),
+          inTitleRow: Boolean(titleRow && titleRow.contains(automations)),
+          inActions: Boolean(actions && actions.contains(automations)),
+          inFooter: Boolean(pageFooter && pageFooter.contains(automations)),
         }
-      : { present: false, box: null, centre: null, analyzeBox: null, analyzeTestId: null },
-    // The cluster's own order, as the DOM has it: the day's acts read left to
-    // right as "back to today, then commit the day, then write it on its own".
-    // A slot wrapping a key is read through to the key it holds, so the order is
-    // the order of the acts rather than of the boxes holding them.
+      : {
+          present: false,
+          box: null,
+          centre: null,
+          analyzeBox: null,
+          analyzeTestId: null,
+          analyzeText: null,
+          analyzeDisabled: null,
+          analyzeFontSize: null,
+          analyzeHeight: null,
+          inHeader: false,
+          inTitleRow: false,
+          inActions: false,
+          inFooter: false,
+        },
+    // The box's own column and the foot under it: the act is placed against the
+    // editor, so the editor's rendered box is part of the claim's evidence.
+    editorBox,
+    pageFooter: pageFooter
+      ? {
+          present: true,
+          box: pageFooterBox,
+          belowEditor: Boolean(editorBox && pageFooterBox.top >= editorBox.bottom - 1),
+          statusInFooter: Boolean(pageStatus && pageFooter.contains(pageStatus)),
+          statusText: pageStatus ? text(pageStatus) : null,
+        }
+      : {
+          present: false,
+          box: null,
+          belowEditor: false,
+          statusInFooter: false,
+          statusText: null,
+        },
+    // The cluster's own order, as the DOM has it: the page's keys read left to
+    // right as "back to today (when off it), then focus mode". The day's act is
+    // not among them. A slot wrapping a key is read through to the key it holds,
+    // so the order is the order of the keys rather than of the boxes holding them.
     actionOrder: actions
       ? Array.from(actions.children).map((el) => {
           const inner = el.matches("button") ? el : el.querySelector("button");
@@ -494,6 +575,17 @@ async function main() {
   const step = (name, value) => {
     steps[name] = value;
     return value;
+  };
+
+  /**
+   * A named claim, measured in the driver because the red run has to be able to
+   * fail here: the report's `failures` are what the test file refuses, and a
+   * claim that cannot fail in the driver cannot prove its own falsifiability.
+   * Each name is a state of the page, and the detail carries the numbers.
+   */
+  const claim = (name, condition, detail) => {
+    if (!condition) failures.push(`${name}: ${detail}`);
+    return Boolean(condition);
   };
 
   const screenshots = [];
@@ -759,12 +851,124 @@ async function main() {
     report.checks.today = today;
     if (!today) throw new Error("the harness named no today");
 
-    // 1 — the page as it stands: the trigger in the header's title row, directly
-    //     before the automations, and the page it belongs to.
+    // 1 — the page as it stands: the page's own keys on the title row, and the
+    //     day's act at the box's foot. These are claims, measured here so the red
+    //     run can fail on them: on the baseline the act still sits in the title
+    //     row, beside focus mode, at the page's own type.
     record("landing", await settle());
     const landing = states.landing;
     if (!landing.trigger.present) throw new Error("the page draws no focus-mode trigger");
     step("triggerPresent", true);
+
+    const landingTrigger = landing.trigger;
+    const dayAct = landing.automations;
+    const pageEditorBox = landing.editorBox;
+    claim(
+      "focus-key-title-row",
+      landingTrigger.inTitleRow === true &&
+        landingTrigger.inActions === true &&
+        landingTrigger.lastInActions === true &&
+        landingTrigger.disabled === false &&
+        typeof landingTrigger.actHeight === "number" &&
+        Math.abs(landingTrigger.box.width - landingTrigger.box.height) <= 1 &&
+        Math.abs(landingTrigger.box.height - landingTrigger.actHeight) <= 1 &&
+        Math.abs(landingTrigger.box.width - landingTrigger.actHeight) <= 1 &&
+        landingTrigger.borderStyle !== "none" &&
+        landingTrigger.borderWidth >= 1 &&
+        landing.actionCluster !== null &&
+        landing.actionCluster.rightGap <= 2,
+      `the focus key reads inTitleRow=${landingTrigger.inTitleRow} inActions=${landingTrigger.inActions} ` +
+        `last=${landingTrigger.lastInActions} box=${landingTrigger.box?.width}x${landingTrigger.box?.height} ` +
+        `token=${landingTrigger.actHeight} border=${landingTrigger.borderStyle}/${landingTrigger.borderWidth} ` +
+        `disabled=${landingTrigger.disabled} cluster-right-gap=${landing.actionCluster?.rightGap}`,
+    );
+    claim(
+      "focus-cluster-only-today-and-focus",
+      Array.isArray(landing.actionOrder) &&
+        landing.actionOrder.at(-1) === "daily-note-focus" &&
+        !landing.actionOrder.some((entry) => /analyze|automations/.test(String(entry))),
+      `the title row's cluster reads ${JSON.stringify(landing.actionOrder)} — the day's act is not the page's key`,
+    );
+    claim(
+      "day-act-under-box",
+      dayAct.present === true &&
+        dayAct.inFooter === true &&
+        dayAct.inHeader === false &&
+        dayAct.inTitleRow === false &&
+        dayAct.inActions === false &&
+        landing.pageFooter?.present === true &&
+        landing.pageFooter?.belowEditor === true &&
+        Boolean(dayAct.box && pageEditorBox) &&
+        dayAct.box.top >= pageEditorBox.bottom - 1 &&
+        Math.abs(dayAct.box.right - pageEditorBox.right) <= 2 &&
+        dayAct.box.left >= pageEditorBox.left - 1 &&
+        dayAct.box.right <= pageEditorBox.right + 2,
+      `the day's act ${dayAct.present ? `is at x[${dayAct.box?.left},${dayAct.box?.right}] y${dayAct.box?.top} inFooter=${dayAct.inFooter} inHeader=${dayAct.inHeader} inActions=${dayAct.inActions}` : "is missing"}; ` +
+        `editor ${pageEditorBox ? `x[${pageEditorBox.left},${pageEditorBox.right}] bottom=${pageEditorBox.bottom}` : "missing"}; ` +
+        `footer=${JSON.stringify(landing.pageFooter?.box)} belowEditor=${landing.pageFooter?.belowEditor}`,
+    );
+    claim(
+      "day-act-size",
+      dayAct.present === true &&
+        dayAct.analyzeFontSize >= 13 &&
+        dayAct.analyzeFontSize <= 14.5 &&
+        dayAct.analyzeHeight >= 33 &&
+        dayAct.analyzeHeight <= 37,
+      `the day's act is ${dayAct.analyzeFontSize}px label / ${dayAct.analyzeHeight}px tall; expected 13–14.5 / 33–37`,
+    );
+    claim(
+      "day-act-disabled-on-empty-day",
+      dayAct.present === true && dayAct.analyzeDisabled === true,
+      `today has no note yet, so the day's act must be inert — disabled=${dayAct.analyzeDisabled}`,
+    );
+    // The picture of the moved act: the page at rest, the box, and the act on
+    // the box's foot.
+    step("footerShot", await shot("daily-note-footer.png"));
+
+    // Off today, the title row's cluster reads "back to today, then focus mode":
+    // the page's other key is the way back, and the act that commits the note is
+    // still the box's. Yesterday's seeded note is also the written day the act
+    // has to be live on — an empty day is the only day it is inert.
+    step("prevDayClick", await click('[data-testid="daily-note-prev"]'));
+    await waitFor(
+      win,
+      `document.querySelector('[data-testid="daily-note-day"]')?.getAttribute("data-date") !== ${JSON.stringify(today)} &&
+       !document.querySelector(".daily-note__loading") &&
+       (document.querySelector('[data-testid="daily-note-focus"]') || {}).disabled === false`,
+      "the day before today to load",
+    );
+    const offToday = record("offToday", await settle());
+    claim(
+      "focus-cluster-off-today",
+      Array.isArray(offToday.actionOrder) &&
+        offToday.actionOrder.length === 2 &&
+        offToday.actionOrder[0] === "daily-note-today" &&
+        offToday.actionOrder[1] === "daily-note-focus" &&
+        offToday.trigger.present === true &&
+        offToday.trigger.inTitleRow === true &&
+        offToday.trigger.lastInActions === true &&
+        offToday.automations.inFooter === true &&
+        offToday.automations.inActions === false,
+      `off today the title row reads ${JSON.stringify(offToday.actionOrder)} ` +
+        `(focus last=${offToday.trigger.present ? offToday.trigger.lastInActions : "missing"}), ` +
+        `the day's act inFooter=${offToday.automations.inFooter} inActions=${offToday.automations.inActions}`,
+    );
+    claim(
+      "day-act-enabled-on-written-day",
+      offToday.automations.present === true &&
+        offToday.automations.inFooter === true &&
+        offToday.automations.analyzeDisabled === false,
+      `on yesterday's written note the day's act reads inFooter=${offToday.automations.inFooter} disabled=${offToday.automations.analyzeDisabled}`,
+    );
+    step("todayClick", await click('[data-testid="daily-note-today"]'));
+    await waitFor(
+      win,
+      `document.querySelector('[data-testid="daily-note-day"]')?.getAttribute("data-date") === ${JSON.stringify(today)} &&
+       !document.querySelector(".daily-note__loading") &&
+       (document.querySelector('[data-testid="daily-note-focus"]') || {}).disabled === false`,
+      "today to finish loading after the trip off it",
+    );
+    record("backToToday", await settle());
 
     // 2 — open it from the app, not from a URL: that is how it is reached.
     const openedSample = await openFocus();
@@ -917,6 +1121,21 @@ async function main() {
   );
   for (const row of table) {
     console.log(row.map((cell, i) => String(cell).padEnd(widths[i])).join("  "));
+  }
+
+  const landingSummary = states.landing;
+  if (landingSummary?.trigger?.present) {
+    const key = landingSummary.trigger;
+    const act = landingSummary.automations;
+    console.log(
+      `page keys: focus ${key.box.width}x${key.box.height} (cluster token ${key.actHeight}px), ` +
+        `title-row cluster ${JSON.stringify(landingSummary.actionOrder)} / off today ${JSON.stringify(states.offToday?.actionOrder)}`,
+    );
+    console.log(
+      `day act:   ${act.present ? `${act.analyzeFontSize}px label, ${act.analyzeHeight}px tall, ` : "MISSING, "}` +
+        `footer=${act.inFooter} header=${act.inHeader} right-gap=${act.box && landingSummary.editorBox ? Math.round((act.box.right - landingSummary.editorBox.right) * 100) / 100 : "—"}px, ` +
+        `empty-day disabled=${act.analyzeDisabled}, written-day disabled=${states.offToday?.automations.analyzeDisabled}`,
+    );
   }
 
   console.log(`report: ${reportFile}`);

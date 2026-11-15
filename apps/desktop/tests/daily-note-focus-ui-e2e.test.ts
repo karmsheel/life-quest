@@ -30,6 +30,8 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.json");
 const SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.png");
+/** The page at rest: the box and the day's act on the box's foot. */
+const FOOTER_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-footer.png");
 /** The page and the act's chat, after the sheet was asked to leave. */
 const ANALYZE_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus-analyze.png");
 /** The page of paper's own measure: 56rem at the app's 16px root. */
@@ -60,7 +62,10 @@ type TriggerSample =
       inHeader: boolean;
       inTitleRow: boolean;
       inActions: boolean;
-      immediatelyAfterAutomations: boolean;
+      /** Focus mode is the cluster's trailing key: Today (off-today), then it. */
+      lastInActions: boolean;
+      /** The cluster's `--daily-note-act-height`, resolved from the stylesheet. */
+      actHeight: number | null;
       borderStyle: string;
       borderWidth: number;
       radius: number;
@@ -71,6 +76,14 @@ type AutomationsSample = {
   centre: Centre | null;
   analyzeBox: Box | null;
   analyzeTestId: string | null;
+  analyzeText?: string | null;
+  analyzeDisabled?: boolean | null;
+  analyzeFontSize?: number | null;
+  analyzeHeight?: number | null;
+  inHeader: boolean;
+  inTitleRow: boolean;
+  inActions: boolean;
+  inFooter: boolean;
 };
 type OverlaySample = {
   present: true;
@@ -94,6 +107,18 @@ type Sample = {
   pageEditorBody: string | null;
   trigger: TriggerSample;
   automations: AutomationsSample;
+  /** The title row's cluster: the page's own keys, on the row's trailing edge. */
+  actionCluster: { box: Box; rightGap: number | null } | null;
+  /** The box's own column, which the day's act is placed against. */
+  editorBox: Box | null;
+  /** The foot under the box: the autosave line and the day's act. */
+  pageFooter: {
+    present: boolean;
+    box: Box | null;
+    belowEditor: boolean;
+    statusInFooter: boolean;
+    statusText: string | null;
+  } | null;
   actionOrder: string[];
   titleRow: Box | null;
   overlay: OverlaySample | null;
@@ -230,6 +255,16 @@ type Report = {
       whileOpen: boolean;
     } | null;
     screenshotWhileOpen?: boolean;
+    /** The page at rest, captured before the sheet is opened. */
+    footerShot?: {
+      file: string;
+      bytes: number;
+      width: number;
+      height: number;
+    } | null;
+    /** The off-today trip that proves the cluster's order. */
+    prevDayClick?: boolean;
+    todayClick?: boolean;
     analyzeClicked?: boolean;
     analyzeShot?: {
       file: string;
@@ -288,11 +323,6 @@ function runDriver(): Promise<number> {
   });
 }
 
-/** The gap between two boxes' facing edges, in viewport pixels. */
-function edgeGap(left: Box, right: Box): number {
-  return right.left - left.right;
-}
-
 describe("daily note focus mode", () => {
   it("opens the day's note alone over the blurred page, and writes the same draft", async (t) => {
     if (!(await devServerUp())) {
@@ -304,6 +334,7 @@ describe("daily note focus mode", () => {
 
     fs.rmSync(REPORT, { force: true });
     fs.rmSync(SHOT, { force: true });
+    fs.rmSync(FOOTER_SHOT, { force: true });
     fs.rmSync(ANALYZE_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
@@ -320,6 +351,8 @@ describe("daily note focus mode", () => {
 
     const {
       landing,
+      backToToday,
+      offToday,
       opened,
       closedByCross,
       reopenedForScrim,
@@ -334,12 +367,13 @@ describe("daily note focus mode", () => {
       pageAfterFocus,
     } = report.states;
 
-    // ── 1. the trigger: in the header's title row, directly after Analyze ────
-    // Falsifiable from the DOM order and the rendered boxes: it must be a button
-    // (not a word or an icon), carry the label the operator was told it has, and
-    // sit no more than the row's own gap away from the automations on its left.
-    // Focus mode is the day's LAST act — it takes the day as it is and writes it
-    // on its own — so it reads after the control that commits the day.
+    // ── 1. the page's own keys: focus mode at the title row's trailing end ───
+    // Falsifiable from the DOM order and the rendered boxes: focus mode must be a
+    // button (not a word or an icon), carry the label the operator was told it
+    // has, sit in the title row's action cluster as that cluster's LAST key, be
+    // square and framed, and stand exactly the height the cluster's own token
+    // resolves to. The day's act is not in this cluster — claim 1a reads it off
+    // the box's foot.
     assert.ok(landing.trigger.present, "the page draws no focus-mode trigger");
     if (!landing.trigger.present) return;
     const trigger = landing.trigger;
@@ -375,24 +409,27 @@ describe("daily note focus mode", () => {
     assert.equal(trigger.inTitleRow, true, "the trigger is not on the title row");
     assert.equal(trigger.inActions, true, "the trigger is outside the title row's action cluster");
     assert.equal(
-      trigger.immediatelyAfterAutomations,
+      trigger.lastInActions,
       true,
-      "the automations do not stand immediately left of the trigger — Analyze note is not immediately before it",
+      `focus mode is not the title row's last key: ${JSON.stringify(landing.actionOrder)}`,
     );
-    // The cluster reads in the order the day's acts happen: the commit first,
-    // then the page that writes the day on its own.
-    const order = landing.actionOrder;
-    // The automations cluster is read through to the key it holds, so the act
-    // itself — Analyze note — is the entry that stands before focus mode.
-    const automationIndex = order.findIndex(
-      (entry) => entry.includes("daily-note-analyze") || entry.includes("daily-note__automations"),
-    );
-    const focusIndex = order.findIndex((entry) => entry.includes("daily-note-focus"));
+    // Nothing of the day's act is left in the cluster: no Analyze note key and no
+    // automations slot among the page's keys.
     assert.ok(
-      automationIndex >= 0 && focusIndex === automationIndex + 1,
-      `the acts are out of order: ${JSON.stringify(order)} — Analyze note must come directly before focus mode`,
+      !landing.actionOrder.some(
+        (entry) =>
+          entry.includes("daily-note-analyze") || entry.includes("daily-note__automations"),
+      ),
+      `the day's act is still in the title row's cluster: ${JSON.stringify(landing.actionOrder)}`,
     );
     assert.equal(trigger.disabled, false, "the trigger is disabled on a loaded day");
+    // The keys live on the page's trailing edge: the cluster must end where the
+    // title row ends, or they float in the middle of the row.
+    assert.ok(landing.actionCluster, "the title row has no action cluster");
+    assert.ok(
+      (landing.actionCluster!.rightGap ?? Number.POSITIVE_INFINITY) <= 2,
+      `the keys' cluster ends ${landing.actionCluster!.rightGap}px off the title row's trailing edge`,
+    );
 
     // The square framed key: the operator asked for a button-like border and a
     // square UI, so the frame has to be there and the box has to be square.
@@ -410,38 +447,121 @@ describe("daily note focus mode", () => {
       Math.abs(trigger.box.width - trigger.box.height) <= 1,
       `the trigger's box is ${trigger.box.width}x${trigger.box.height} — not a square`,
     );
+    // Both dimensions are the cluster's own token, resolved from the stylesheet in
+    // the page: a key that stopped wearing the token would fail against it.
+    assert.ok(
+      typeof trigger.actHeight === "number" && trigger.actHeight > 0,
+      `the cluster's --daily-note-act-height did not resolve: ${trigger.actHeight}`,
+    );
+    assert.ok(
+      Math.abs(trigger.box.height - (trigger.actHeight ?? Number.NaN)) <= 1,
+      `the key is ${trigger.box.height}px tall and the cluster's token is ${trigger.actHeight}px`,
+    );
+    assert.ok(
+      Math.abs(trigger.box.width - (trigger.actHeight ?? Number.NaN)) <= 1,
+      `the key is ${trigger.box.width}px wide and the cluster's token is ${trigger.actHeight}px`,
+    );
 
-    assert.equal(landing.automations.present, true, "Analyze note's container is not on the page");
-    assert.ok(landing.automations.analyzeBox, "Analyze note's button could not be measured");
-    // On the heading's row: same vertical band as the automations cluster.
-    const rowDelta = Math.abs(
-      trigger.centre.y - (landing.automations.centre?.y ?? Number.NaN),
+    // ── 1a. the day's act: on the box's foot, at the box's bottom-right ──────
+    // The operator asked for Analyze note under the box, one type step down from
+    // the page's chrome. Every part is measured: the act's cluster in the foot,
+    // the editor's rendered edge, the label's size and the key's height.
+    const act = landing.automations;
+    assert.equal(act.present, true, "Analyze note's container is not on the page");
+    assert.ok(act.box, "Analyze note's cluster could not be measured");
+    assert.ok(act.analyzeBox, "Analyze note's button could not be measured");
+    assert.equal(act.inFooter, true, "Analyze note is not in the box's foot");
+    assert.equal(act.inHeader, false, "Analyze note is still in the page's header");
+    assert.equal(act.inTitleRow, false, "Analyze note is still on the title row");
+    assert.equal(act.inActions, false, "Analyze note is still in the title row's keys cluster");
+    assert.equal(landing.pageFooter?.present, true, "the page draws no foot under the box");
+    assert.equal(
+      landing.pageFooter?.belowEditor,
+      true,
+      "the foot sits above the editor it belongs to",
+    );
+    assert.equal(
+      landing.pageFooter?.statusInFooter,
+      true,
+      "the autosave line is not in the foot with the act",
+    );
+    const pageEditor = landing.editorBox;
+    assert.ok(pageEditor, "the page editor's box could not be measured");
+    assert.ok(
+      act.box!.top >= pageEditor!.bottom - 1,
+      `the act's row (top ${act.box!.top}) is not below the editor (bottom ${pageEditor!.bottom})`,
     );
     assert.ok(
-      rowDelta <= 6,
-      `the trigger is ${rowDelta}px off Analyze note's row`,
+      Math.abs(act.box!.right - pageEditor!.right) <= 2,
+      `the act's right edge (${act.box!.right}) is ${act.box!.right - pageEditor!.right}px off the editor's (${pageEditor!.right})`,
     );
     assert.ok(
-      edgeGap(landing.automations.box!, trigger.box) >= 0,
-      "the trigger is not right of the automations",
+      act.box!.left >= pageEditor!.left - 1 && act.box!.right <= pageEditor!.right + 2,
+      `the act [${act.box!.left}, ${act.box!.right}] leaves the box's column [${pageEditor!.left}, ${pageEditor!.right}]`,
     );
-    const gap = edgeGap(landing.automations.box!, trigger.box);
+    // One step down: a 0.875rem label (13–14.5px at the app's 16px root) and a
+    // shorter key (33–37px), against the title row's own key.
     assert.ok(
-      gap <= 12.5,
-      `the trigger sits ${gap}px from Analyze note — not immediately right of it`,
+      (act.analyzeFontSize ?? 0) >= 13 && (act.analyzeFontSize ?? 0) <= 14.5,
+      `the act's label is ${act.analyzeFontSize}px, not the one step down the operator asked for`,
     );
-    // The key stands the height of the control beside it, so the row reads as one
-    // line of keys rather than as a row with one short square in it.
-    const analyzeHeight = landing.automations.analyzeBox!.height;
     assert.ok(
-      Math.abs(trigger.box.height - analyzeHeight) <= 1,
-      `the trigger is ${trigger.box.height}px tall and Analyze note is ${analyzeHeight}px — not the same height`,
+      (act.analyzeHeight ?? 0) >= 33 && (act.analyzeHeight ?? 0) <= 37,
+      `the act is ${act.analyzeHeight}px tall, not the shorter key the operator asked for`,
     );
+    assert.ok(
+      Math.abs((act.analyzeHeight ?? 0) - trigger.box.height) >= 2,
+      `the act is ${act.analyzeHeight}px tall and the title row's key ${trigger.box.height}px — not a step down`,
+    );
+    // An empty day has nothing to commit, so its act is inert; the written day
+    // below (claim 1b) is where it must be live.
+    assert.equal(act.analyzeDisabled, true, "the act is live on a day with nothing written in it");
+
     // The page behind is where it was, and no sheet was up before the press.
     assert.equal(landing.overlay, null, "a sheet was open on arrival");
     assert.notEqual(landing.bodyOverflowStyle, "hidden", "the page was locked before the press");
     assert.equal(landing.pageMounted, true, "the daily-note page is missing at landing");
     assert.equal(landing.railMounted, true, "the nav rail is missing at landing");
+
+    // ── 1b. off today: "back to today, then focus mode", and the act is live ──
+    // The cluster's order is read on a day that is not today, because that is the
+    // only day the Today key exists. The rig steps back one day through the
+    // page's own pager, reads the row, then steps back to today with the page's
+    // own key.
+    assert.equal(report.steps.prevDayClick, true, "the rig could not step off today");
+    assert.equal(report.steps.todayClick, true, "the rig could not step back to today");
+    assert.deepEqual(
+      offToday.actionOrder,
+      ["daily-note-today", "daily-note-focus"],
+      `the title row's cluster reads ${JSON.stringify(offToday.actionOrder)} off today — expected the way back, then focus mode`,
+    );
+    assert.ok(offToday.trigger.present, "the off-today page draws no focus-mode trigger");
+    if (offToday.trigger.present) {
+      assert.equal(offToday.trigger.inTitleRow, true, "the focus key left the title row off today");
+      assert.equal(
+        offToday.trigger.lastInActions,
+        true,
+        "the focus key is not the title row's last key off today",
+      );
+    }
+    assert.equal(offToday.automations.present, true, "the off-today page has no day act");
+    assert.equal(offToday.automations.inFooter, true, "the day's act left the box's foot off today");
+    assert.equal(
+      offToday.automations.inActions,
+      false,
+      "the day's act is in the title row's keys off today",
+    );
+    assert.equal(
+      offToday.automations.analyzeDisabled,
+      false,
+      "yesterday holds a written note, yet the day's act is inert",
+    );
+    // Back on today, the page came back whole: the keys and the foot are still
+    // the ones the claims above measured.
+    assert.equal(backToToday.overlay, null, "the trip off today left a sheet up");
+    assert.equal(backToToday.trigger.present, true, "coming back to today lost the focus key");
+    assert.equal(backToToday.pageEditorMounted, true, "coming back to today lost the editor");
+    assert.equal(backToToday.pageFooter?.present, true, "coming back to today lost the box's foot");
 
     // ── 2. the sheet: the shared frame, at the Daily Note's measure ──────────
     assert.equal(report.steps.openedClick, true, "the rig could not press the trigger");
@@ -855,6 +975,32 @@ describe("daily note focus mode", () => {
     assert.ok(
       report.screenshots.includes("daily-note-focus-analyze.png"),
       "the run recorded no picture of the page the act handed back",
+    );
+    // The picture of the moved act: the page at rest, the box, and Analyze note
+    // on the box's foot.
+    assert.ok(
+      report.screenshots.includes("daily-note-footer.png"),
+      "the run recorded no picture of the box's foot",
+    );
+    assert.equal(
+      report.steps.footerShot?.file,
+      "daily-note-footer.png",
+      `the foot's picture is ${JSON.stringify(report.steps.footerShot?.file)}`,
+    );
+    assert.ok(
+      (report.steps.footerShot?.bytes ?? 0) > 10_000,
+      `the foot's picture is ${report.steps.footerShot?.bytes} bytes`,
+    );
+    assert.equal(fs.existsSync(FOOTER_SHOT), true, "driver captured no picture of the box's foot");
+    const footerPng = fs.readFileSync(FOOTER_SHOT);
+    assert.equal(
+      footerPng.subarray(0, 8).toString("hex"),
+      "89504e470d0a1a0a",
+      "the foot's picture is not a PNG",
+    );
+    assert.ok(
+      footerPng.length > 10_000,
+      `the foot's picture is only ${footerPng.length} bytes`,
     );
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no act picture");
     assert.ok(fs.statSync(ANALYZE_SHOT).size > 10_000, "the act picture is empty");
