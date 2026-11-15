@@ -1,0 +1,81 @@
+{
+  "_comment": [
+    "A merge_databases Decision, exactly in the shape `database-tools.ts` files",
+    "it: three sources moved into the target, each with its row count, row",
+    "fingerprint and column signature (`{id,name,type}` — a signature names a",
+    "column, it does not carry its select options), the columns the merge adds",
+    "(`DatabaseColumnSpec`s, so a new select keeps its options), the target select",
+    "column whose options widen, the target schema at propose time (the staleness",
+    "guard), the dedupe flag, and one sha256 over the sorted source fingerprints.",
+    "All four tables share the reported duplicate name (\"Supplement log\"), which",
+    "is the drift the op exists to collapse — the card keys each source row by",
+    "database id and labels it with the source's name.",
+    "Ids and fingerprints are neutral stand-ins; the shape is not."
+  ],
+  "target": {
+    "type": "database",
+    "domainSlug": "health",
+    "databaseId": "eac1854d-e7b7-4e7c-a972-413111eaea67"
+  },
+  "body": {
+    "op": "merge-databases",
+    "databaseName": "Supplement log",
+    "rowLabel": null,
+    "previousCells": null,
+    "cells": null,
+    "expectedUpdatedAt": null,
+    "sources": [
+      {
+        "databaseId": "d530198d-d94c-4468-9afb-d888092603f2",
+        "name": "Supplement log",
+        "rowCount": 1,
+        "fingerprint": "435e280ac0411adc964ea05c50fee9bf1c4396b56676dd334779988a11b2117f",
+        "columns": [
+          { "id": "1fbc8db7-25a2-4cb0-a1ca-6d4864ddde52", "name": "Supplement", "type": "text" },
+          { "id": "fe523c8c-e411-44e4-8ad7-17dab5e3df08", "name": "Taken on", "type": "date" },
+          { "id": "8e1c11f9-2be3-4923-8314-2fa5c6c3e1f2", "name": "Mood", "type": "select" },
+          { "id": "e32608af-b129-4c59-b314-bc4e8d93a5dc", "name": "Notes", "type": "text" }
+        ]
+      },
+      {
+        "databaseId": "fe417e27-fbbb-4f52-841d-2045a188f30b",
+        "name": "Supplement log",
+        "rowCount": 2,
+        "fingerprint": "91ec8fced23ea52949b0f92d33765404f73f1a19abbe5d778649fec091db1e24",
+        "columns": [
+          { "id": "9ad27b71-685b-485b-a6f0-44ad1e0f8dc9", "name": "Supplement", "type": "text" },
+          { "id": "c9ff0f6f-f43b-4a97-b258-5ff7d303f933", "name": "Taken on", "type": "date" },
+          { "id": "9c80b164-a059-4bd8-b5d8-db42c8cbf0a9", "name": "Mood", "type": "select" },
+          { "id": "68910a4b-841e-49e4-935d-65d66eb38111", "name": "Notes", "type": "text" },
+          { "id": "1c762935-0795-4637-8c5d-77344537f562", "name": "Unit", "type": "select" }
+        ]
+      },
+      {
+        "databaseId": "b78e80d9-df36-409c-9e3a-5efa1924b029",
+        "name": "Supplement log",
+        "rowCount": 1,
+        "fingerprint": "25d852bb7b8144fe2fa5cc4ffb673179ec65a97642f89afd915844094e52739c",
+        "columns": [
+          { "id": "64dd42dc-5414-4136-b621-08ba471bf001", "name": "Supplement", "type": "text" },
+          { "id": "6cc901f4-34b4-4c76-9af9-5094a8c531a5", "name": "Dose", "type": "number" },
+          { "id": "6b66e956-664c-4a8c-93cd-66580135ea4f", "name": "Taken on", "type": "date" }
+        ]
+      }
+    ],
+    "newColumns": [
+      { "name": "Mood", "type": "select", "options": ["Low", "Medium", "High"] },
+      { "name": "Notes", "type": "text" }
+    ],
+    "widenedColumns": [
+      { "columnId": "b1226002-0887-456e-bf0c-67ed56c42cd2", "options": ["Tablet", "Capsule"] }
+    ],
+    "expectedColumns": [
+      { "id": "45d854de-96d0-4c36-9640-c34b33af5563", "name": "Supplement", "type": "text" },
+      { "id": "641d0f7a-a3e2-4012-81c4-81dc90805711", "name": "Dose", "type": "number" },
+      { "id": "b1226002-0887-456e-bf0c-67ed56c42cd2", "name": "Unit", "type": "select" },
+      { "id": "99504694-f1fd-4d99-8438-5dd49253b8cf", "name": "Taken on", "type": "date" }
+    ],
+    "dedupe": true,
+    "fingerprint": "4482c859c528453668a5f10f49dd481c7b1f8e060e16b8b80dd774fc1aecba36"
+  }
+}

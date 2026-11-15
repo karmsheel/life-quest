@@ -3,10 +3,10 @@
 Decisions is the approval queue for changes an agent proposes to the vault, plus
 the log of decisions you make yourself. Every agent write that can change meaning
 — doctrine, a library note, a review, a project, a goal, a template, an ingest
-mapping, a row update, a dashboard view, an agent pairing — is frozen into a
-proposal file and waits here. Approving it writes the change; rejecting it leaves
-the vault exactly as it was. The shelf is global: a proposal is never hidden
-because of the area lens you are standing in.
+mapping, a row update, a database merge or deletion, a dashboard view, an agent
+pairing — is frozen into a proposal file and waits here. Approving it writes the
+change; rejecting it leaves the vault exactly as it was. The shelf is global: a
+proposal is never hidden because of the area lens you are standing in.
 
 One family of agent writes no longer comes here at all: adding data. A new
 database, a new row and a batch of new rows are written as soon as you agree to
@@ -202,15 +202,19 @@ proposal path. The targets the shipped companion tools file are: doctrine
 documents, library notes (title, body and areas), reviews, projects (create,
 update, close), goals, Architecture templates (day types, default week, default
 weekly items), dashboard pin boards, ingest mappings, assumption sets, row
-updates and deletes, column additions, agent-built dashboard views, and the
-agent-pairing request a new MCP caller files on first contact.
+updates and deletes, column additions, database merges and whole-database
+deletions, agent-built dashboard views, and the agent-pairing request a new MCP
+caller files on first contact.
 
 Adding data is the exception. `create_database`, `insert_rows`, and `upsert_row`
 without an `id` write immediately after the confirmation in the chat — that
 confirmation is the yes — and each logs `database.created`, `database.row.created`
 or `database.rows.created`, because there is no card to show the write afterwards.
-`upsert_row` with an `id` (an update), `delete_row` and `add_column` keep the full
-gate and write nothing until you approve them. The old `autoApproveInserts`
+`create_database` refuses a second database whose name already exists in the area,
+so the companion reuses that one or asks for a different name.
+`upsert_row` with an `id` (an update), `delete_row`, `add_column`,
+`delete_database` and `merge_databases` keep the full gate and write nothing until
+you approve them. The old `autoApproveInserts`
 allowlist is retired; Settings → Hermes describes the split in its **Database
 writes** row instead. See [Data and databases](./19-data-and-databases.md).
 

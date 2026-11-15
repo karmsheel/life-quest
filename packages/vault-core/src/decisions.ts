@@ -1787,6 +1787,69 @@ async function applyApprovedBody(
         return { ok: true, value: undefined };
       }
 
+      if (body.op === "delete-database") {
+        // The whole check-and-write lives in database-lifecycle.ts: the propose
+        // path and this path must agree about the guards, the fingerprint and
+        // what "changed since this was proposed" means. Everything it refuses is
+        // a fact about the vault, so re-approving changes nothing and the outcome
+        // is terminal; anything else is I/O and stays retryable.
+        const { applyDatabaseDelete, isTerminalDatabaseLifecycleError } = await import(
+          "./database-lifecycle.ts"
+        );
+        const applied = await applyDatabaseDelete(
+          rootPath,
+          domainSlug,
+          databaseId,
+          decision.domainSlugs,
+          body,
+          decision.actor,
+        );
+        if (!applied.ok) {
+          return {
+            ok: false,
+            error: applied.error,
+            terminal: isTerminalDatabaseLifecycleError(applied.error),
+          };
+        }
+        return { ok: true, value: undefined };
+      }
+
+      if (body.op === "merge-databases") {
+        const { applyDatabaseMerge, isTerminalDatabaseLifecycleError } = await import(
+          "./database-lifecycle.ts"
+        );
+        // The body names its sources; a malformed list is a Decision that can
+        // never apply, but it is not the vault's fault — the amend path can still
+        // correct it, so it is reported as retryable exactly as an unknown op is.
+        const proposedSources = Array.isArray(body.sources) ? body.sources : [];
+        const sourceIds = proposedSources.map((source) =>
+          source && typeof source.databaseId === "string" ? source.databaseId : "",
+        );
+        if (sourceIds.length === 0 || sourceIds.some((id) => !id)) {
+          return {
+            ok: false,
+            error: "A merge Decision names at least one source database",
+            terminal: false,
+          };
+        }
+        const applied = await applyDatabaseMerge(
+          rootPath,
+          domainSlug,
+          databaseId,
+          sourceIds,
+          body,
+          decision.actor,
+        );
+        if (!applied.ok) {
+          return {
+            ok: false,
+            error: applied.error,
+            terminal: isTerminalDatabaseLifecycleError(applied.error),
+          };
+        }
+        return { ok: true, value: undefined };
+      }
+
       return { ok: false, error: `Unknown database op: ${body.op}`, terminal: false };
     }
     if (decision.target.type === "doctrine") {

@@ -15,6 +15,7 @@ import {
   DATABASE_SOT_MODES,
   FINANCE_DB_IDS,
   FINANCE_DOMAIN_SLUG,
+  type Actor,
   type DatabaseColumn,
   type DatabaseColumnType,
   type DatabaseMeta,
@@ -390,6 +391,50 @@ export async function addDatabaseColumn(
       db.columns.push(col);
       db.updatedAt = new Date().toISOString();
 
+      await assertPhysicalContainment(root, registryPath, "write");
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+      return { ok: true as const, value: db };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Rewrite one column's `select` options in the registry.
+ *
+ * Used by an approved merge, which unions a source column's choices into the
+ * target's before moving rows whose cells may rely on them. Logs nothing of its
+ * own: the merge writes one `database.merged` line, and a schema tweak that is
+ * one half of that operation must not read to the operator as a second change.
+ */
+export async function updateDatabaseColumnOptions(
+  root: string,
+  slug: string,
+  dbId: string,
+  columnId: string,
+  options: string[],
+): Promise<Result<DatabaseMeta>> {
+  try {
+    if (!Array.isArray(options)) return { ok: false, error: "options must be an array" };
+    const paths = vaultPaths(root);
+    const registryPath = paths.domainRegistry(slug);
+    // Same read-modify-write cycle as addDatabaseColumn: re-read *inside* the
+    // lock so a concurrent writer's column cannot be lost.
+    return await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      const db = registry.databases.find((d) => d.id === dbId);
+      if (!db) return { ok: false as const, error: `Database not found: ${dbId}` };
+      const col = db.columns.find((c) => c.id === columnId);
+      if (!col) return { ok: false as const, error: `Column not found: ${columnId}` };
+      if (col.type !== "select") {
+        return { ok: false as const, error: `Column ${col.name} is not a select` };
+      }
+      // The caller computed the union; this only stores it. Duplicates are
+      // dropped because two sources offering the same choice is still one row
+      // in the operator's options list.
+      col.options = [...new Set(options.map(String))];
+      db.updatedAt = new Date().toISOString();
       await assertPhysicalContainment(root, registryPath, "write");
       await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
       return { ok: true as const, value: db };
@@ -1119,6 +1164,119 @@ export async function insertRows(
   }
 }
 
+/**
+ * Move a merge's rows into the surviving database in ONE sqlite transaction.
+ *
+ * The approved merge already mapped every source cell onto a target column id;
+ * this primitive is the write, and it refuses to write half a move:
+ *
+ *  - first it re-counts each source's stored rows and requires exactly the rows
+ *    it was given. The merge checked fingerprints a moment ago, but the vault is
+ *    live: a row added between the check and this transaction would otherwise be
+ *    deleted with the source without ever reaching the target. A mismatch rolls
+ *    the whole move back.
+ *  - then it inserts each moved row under a fresh UUID, keeping the source's own
+ *    `created_at` and `updated_at`. A merged time-ordered table must keep its
+ *    order; re-stamping the rows would file everything as "added today".
+ *  - finally it deletes each listed source row, including the duplicates the
+ *    merge chose not to insert (`skip`): a skipped row is redundant in the
+ *    target, not preserved in a database that is about to disappear.
+ *
+ * The per-source row counts are verified against the full row list, skipped
+ * rows included — `skip` changes what is inserted, never what must be present.
+ */
+export async function insertMovedRows(
+  root: string,
+  slug: string,
+  targetDbId: string,
+  sources: Array<{
+    sourceDatabaseId: string;
+    rows: Array<{
+      sourceRowId: string;
+      cells: Record<string, unknown>;
+      createdAt: string;
+      updatedAt: string;
+      /** A duplicate the merge is not inserting but is removing with its source. */
+      skip?: boolean;
+    }>;
+  }>,
+): Promise<Result<{ inserted: number }>> {
+  try {
+    if (sources.length === 0) return { ok: false, error: "sources must not be empty" };
+    if (sources.some((source) => source.sourceDatabaseId === targetDbId)) {
+      return { ok: false, error: "A database cannot be merged into itself" };
+    }
+    const paths = vaultPaths(root);
+    // Validate against the registry as it stands *after* the merge added its new
+    // columns: a mapped cell that still does not fit the target is a schema the
+    // operator never approved, so it is refused rather than stored.
+    const registry = await readRegistry(paths.domainRegistry(slug));
+    for (const source of sources) {
+      for (const row of source.rows) {
+        if (typeof row.sourceRowId !== "string" || !row.sourceRowId.trim()) {
+          return { ok: false, error: "Row id is required" };
+        }
+        const validation = validateCells(registry, targetDbId, slug, row.cells);
+        if (!validation.ok) return validation;
+      }
+    }
+
+    await assertPhysicalContainment(root, paths.domainSqlite(slug), "write");
+    const sqlite = await openSqlite(root, slug);
+    try {
+      sqlite.exec("BEGIN");
+      const countStmt = sqlite.prepare("SELECT COUNT(*) AS n FROM rows WHERE database_id = ?");
+      for (const source of sources) {
+        const stored = countStmt.get(source.sourceDatabaseId) as { n: number } | undefined;
+        const now = stored?.n ?? 0;
+        if (now !== source.rows.length) {
+          sqlite.exec("ROLLBACK");
+          return {
+            ok: false,
+            error:
+              `Database ${source.sourceDatabaseId} changed since this was proposed ` +
+              `(it now has ${now} rows). Re-read it and propose again.`,
+          };
+        }
+      }
+
+      const insert = sqlite.prepare(
+        "INSERT INTO rows (database_id, id, created_at, updated_at, cells) VALUES (?, ?, ?, ?, ?)",
+      );
+      const remove = sqlite.prepare("DELETE FROM rows WHERE database_id = ? AND id = ?");
+      let inserted = 0;
+      for (const source of sources) {
+        for (const row of source.rows) {
+          if (!row.skip) {
+            insert.run(
+              targetDbId,
+              randomUUID(),
+              row.createdAt,
+              row.updatedAt,
+              JSON.stringify(row.cells),
+            );
+            inserted += 1;
+          }
+          remove.run(source.sourceDatabaseId, row.sourceRowId);
+        }
+      }
+      sqlite.exec("COMMIT");
+      return { ok: true, value: { inserted } };
+    } catch (e) {
+      try {
+        sqlite.exec("ROLLBACK");
+      } catch {
+        // The transaction is already closed.
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      sqlite.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function deleteRow(
   root: string,
   slug: string,
@@ -1140,6 +1298,93 @@ export async function deleteRow(
     } finally {
       sqlite.close();
     }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Delete a whole database: its rows, then its registry entry.
+ *
+ * Operator-only until 2026-11-15, when the Decision-gated `delete_database` tool
+ * gave the approval queue a way to reach it. The rows go first and the registry
+ * entry second on purpose: a crash between the two leaves an EMPTY database the
+ * operator can see and delete again, never rows with no registry entry to reach
+ * them. A row-count mismatch after such a crash is what the Decision's
+ * fingerprint guard reports, instead of deleting a database the operator never
+ * reviewed.
+ *
+ * `actor` is optional because the engine has no propose/approve context of its
+ * own; an approved Decision passes the proposing actor so the Life log names who
+ * asked for the deletion rather than nobody.
+ */
+export async function deleteDatabase(
+  root: string,
+  slug: string,
+  dbId: string,
+  actor?: Actor,
+): Promise<Result<{ id: string; name: string; rowCount: number; columnCount: number }>> {
+  try {
+    const paths = vaultPaths(root);
+    const registryPath = paths.domainRegistry(slug);
+    const removed = await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      const index = registry.databases.findIndex((d) => d.id === dbId);
+      if (index < 0) {
+        return { ok: false as const, error: `Database not found: ${dbId}` };
+      }
+      const db = registry.databases[index]!;
+
+      // Rows before registry: a database whose sqlite file never existed has no
+      // rows to delete, and this guard keeps the call from opening (and so
+      // creating) a file for a database that was only ever a registry entry.
+      let rowCount = 0;
+      const sqlitePath = paths.domainSqlite(slug);
+      await assertPhysicalContainment(root, sqlitePath, "write");
+      let hasSqlite = true;
+      try {
+        await fs.access(sqlitePath);
+      } catch {
+        hasSqlite = false;
+      }
+      if (hasSqlite) {
+        const sqlite = await openSqlite(root, slug);
+        try {
+          const info = sqlite
+            .prepare("DELETE FROM rows WHERE database_id = ?")
+            .run(dbId);
+          rowCount = Number(info.changes ?? 0);
+        } finally {
+          sqlite.close();
+        }
+      }
+
+      registry.databases.splice(index, 1);
+      await assertPhysicalContainment(root, registryPath, "write");
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+      return {
+        ok: true as const,
+        value: { id: db.id, name: db.name, rowCount, columnCount: db.columns.length },
+      };
+    });
+    if (!removed.ok) return removed;
+
+    // A log line that cannot be appended must not fail a deletion that already
+    // happened: the next approval would find nothing and call the operator's own
+    // yes a stale proposal.
+    await appendLog(root, {
+      domainSlug: slug,
+      type: "database.deleted",
+      summary: `Deleted database "${removed.value.name}" in ${slug}`,
+      payload: {
+        databaseId: removed.value.id,
+        name: removed.value.name,
+        rowCount: removed.value.rowCount,
+        columnCount: removed.value.columnCount,
+      },
+      actor: actor ?? null,
+    });
+    return removed;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
