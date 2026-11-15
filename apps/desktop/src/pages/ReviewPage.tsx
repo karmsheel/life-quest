@@ -21,8 +21,8 @@ import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { MarkdownView } from "@/components/documents/MarkdownView";
+import { AreaReviewsPanel } from "@/components/reviews/AreaReviewsPanel";
 import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
-import { ReviewPreview } from "@/components/reviews/ReviewPreview";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import type { EyebrowPage } from "@/components/shell/wing-eyebrow";
 
@@ -95,6 +95,8 @@ export default function ReviewPage() {
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillDraft, setSkillDraft] = useState("");
   const [skillSaving, setSkillSaving] = useState(false);
+  /** The area slug whose section the page should bring into view, if any. */
+  const [scrollToArea, setScrollToArea] = useState<string | null>(null);
 
   const basePeriod = useMemo(
     () => currentPeriod(cadence, weekStartDay),
@@ -114,11 +116,35 @@ export default function ReviewPage() {
     }
   }, [cadence, period, weekStartDay]);
 
-  // Active scope: overall when overview/unassigned/non-domain, domain slug otherwise
+  /**
+   * The daily review is one general review: it has a single `overall` scope, no
+   * area sections, and it deliberately ignores the title-bar area lens.
+   */
+  const isDaily = cadence === "daily";
+
+  // Active scope: overall when daily/overview/unassigned/non-domain, domain slug
+  // otherwise.
   const activeScope: "overall" | string = useMemo(() => {
+    if (isDaily) return "overall";
     if (!lens || lens.kind !== "domain" || !lens.slug) return "overall";
     return lens.slug;
-  }, [lens]);
+  }, [isDaily, lens]);
+
+  // The live areas: the checklist's rows, and the set the life review is gated
+  // on. The base `life` area is the whole-vault container, not a scoped review,
+  // so `unlockedAreas` leaves it out.
+  const liveAreas = useMemo(
+    () => (snapshot ? unlockedAreas(snapshot.domains) : []),
+    [snapshot],
+  );
+
+  const activeDomainName = useMemo(() => {
+    if (activeScope === "overall") return null;
+    return (
+      snapshot?.domains.find((domain) => domain.slug === activeScope)?.meta
+        .name ?? null
+    );
+  }, [activeScope, snapshot]);
 
   // A load for a period the operator has already left must not land in the editor.
   const loadToken = useRef(0);
@@ -365,92 +391,167 @@ export default function ReviewPage() {
     }
   }, [activeScope, cadence, period, snapshot]);
 
-  const onStart = useCallback(async () => {
-    if (!snapshot) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      // 0. Whatever the operator has already typed reaches the vault first: the
-      //    snapshot pass rewrites the body, and a draft it never saw would go
-      //    under it.
-      if ((await flush()) === "failed") return;
+  /**
+   * Start one scope of this review — the whole review, or one area's part of it.
+   *
+   * `scope` is a parameter rather than the page's `activeScope` on purpose: the
+   * checklist sets the lens and then starts, and the start has to be for the
+   * scope the operator pressed even though the lens lands on the next render.
+   */
+  const runStart = useCallback(
+    async (scope: "overall" | string) => {
+      if (!snapshot) return;
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        // 0. Whatever the operator has already typed reaches the vault first: the
+        //    snapshot pass rewrites the body, and a draft it never saw would go
+        //    under it.
+        if ((await flush()) === "failed") return;
 
-      // 1. The document exists. Everything else is optional next to this.
-      const ensure = await api().reviewEnsure(cadence, period, activeScope);
-      if (!ensure.ok) {
-        setError(ensure.error);
-        return;
-      }
-      setRecord(ensure.value);
-      setDraft(asHeld(ensure.value.bodyMarkdown));
-      setSavedBody(asHeld(ensure.value.bodyMarkdown));
-      setLoadedPeriod(period);
-      setMode("document");
-
-      // 2. The figures the cadence's rules ask for, filled by the app rather
-      //    than the model, so they are there whether or not an agent is.
-      const filled = await api().reviewPrepopulate(cadence, period, activeScope);
-      let filledLine: string | null = null;
-      if (filled.ok) {
-        if (filled.value.applied > 0 || filled.value.planted.length > 0) {
-          setRecord((current) =>
-            current ? { ...current, bodyMarkdown: filled.value.bodyMarkdown } : current,
-          );
-          setDraft(asHeld(filled.value.bodyMarkdown));
-          setSavedBody(asHeld(filled.value.bodyMarkdown));
+        // 1. The document exists. Everything else is optional next to this.
+        const ensure = await api().reviewEnsure(cadence, period, scope);
+        if (!ensure.ok) {
+          setError(ensure.error);
+          return;
         }
-        filledLine = describeSnapshots(filled.value);
-      } else {
-        filledLine = `Snapshots could not run: ${filled.error}`;
-      }
-      setNotice(filledLine);
+        setRecord(ensure.value);
+        setDraft(asHeld(ensure.value.bodyMarkdown));
+        setSavedBody(asHeld(ensure.value.bodyMarkdown));
+        setLoadedPeriod(period);
+        setMode("document");
 
-      // 3. The interview, which needs the agent and is the only part that does.
-      //    A gateway that is down leaves the document open and filled, and says
-      //    so as the one thing that failed.
-      const start = await api().reviewStartOrResume(cadence, period, activeScope);
-      if (!start.ok) {
-        setError(start.error);
-        return;
+        // 2. The figures the cadence's rules ask for, filled by the app rather
+        //    than the model, so they are there whether or not an agent is.
+        const filled = await api().reviewPrepopulate(cadence, period, scope);
+        let filledLine: string | null = null;
+        if (filled.ok) {
+          if (filled.value.applied > 0 || filled.value.planted.length > 0) {
+            setRecord((current) =>
+              current ? { ...current, bodyMarkdown: filled.value.bodyMarkdown } : current,
+            );
+            setDraft(asHeld(filled.value.bodyMarkdown));
+            setSavedBody(asHeld(filled.value.bodyMarkdown));
+          }
+          filledLine = describeSnapshots(filled.value);
+        } else {
+          filledLine = `Snapshots could not run: ${filled.error}`;
+        }
+        setNotice(filledLine);
+
+        // 3. The interview, which needs the agent and is the only part that does.
+        //    A gateway that is down leaves the document open and filled, and says
+        //    so as the one thing that failed.
+        const start = await api().reviewStartOrResume(cadence, period, scope);
+        if (!start.ok) {
+          setError(start.error);
+          return;
+        }
+        const kickoff = start.value.created ? start.value.kickoff : undefined;
+        chatDock.requestSession({ id: start.value.sessionId, kickoff });
+        setNotice(
+          [
+            filledLine,
+            start.value.created ? "Started this review's chat." : "Opened this review's chat.",
+          ]
+            .filter(Boolean)
+            .join(" · ") || null,
+        );
+        // Bring the area's own section into view. The file is one long document
+        // and the interview is about the section that was just started, so
+        // opening on the top of the file would hide the very part in play.
+        if (!isDaily && scope !== "overall") setScrollToArea(scope);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
       }
-      const kickoff = start.value.created ? start.value.kickoff : undefined;
-      chatDock.requestSession({ id: start.value.sessionId, kickoff });
-      setNotice(
-        [
-          filledLine,
-          start.value.created ? "Started this review's chat." : "Opened this review's chat.",
-        ]
-          .filter(Boolean)
-          .join(" · ") || null,
-      );
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+    },
+    [
+      cadence,
+      chatDock,
+      describeSnapshots,
+      flush,
+      isDaily,
+      period,
+      refresh,
+      snapshot,
+    ],
+  );
+
+  /** A checklist row: set the lens first, then start that scope's review. */
+  const startFromRail = useCallback(
+    async (scope: "overall" | string) => {
+      await setActiveSlug(scope === "overall" ? null : scope);
+      await runStart(scope);
+    },
+    [runStart, setActiveSlug],
+  );
+
+  /** The scope line's way back to the whole-life review: no session is started. */
+  const onOpenLifeScope = useCallback(() => {
+    void setActiveSlug(null);
+  }, [setActiveSlug]);
+
+  // The area section a checked-out row asked for, brought into view once the
+  // document has committed the body that holds it. Best effort by design: the
+  // editor is a whole-file box, so the heading is found in the rendered blocks
+  // and scrolled to; a heading that is not drawn is simply not scrolled to.
+  useEffect(() => {
+    if (!scrollToArea || mode !== "document") return;
+    const area = liveAreas.find((item) => item.slug === scrollToArea);
+    if (!area) {
+      setScrollToArea(null);
+      return;
     }
-  }, [
-    activeScope,
-    cadence,
-    chatDock,
-    describeSnapshots,
-    flush,
-    period,
-    refresh,
-    snapshot,
-  ]);
+    const frame = window.requestAnimationFrame(() => {
+      const box = document.querySelector('[data-testid="review-editor"]');
+      if (box) {
+        const name = area.meta.name.trim().toLowerCase();
+        const heading = Array.from(box.querySelectorAll("h1, h2, h3, h4")).find(
+          (element) => (element.textContent ?? "").trim().toLowerCase() === name,
+        );
+        const target = heading?.closest("[data-note-block]") ?? heading;
+        target?.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+      setScrollToArea(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollToArea, mode, liveAreas, draft, loadedPeriod, period]);
 
   const onMarkDone = useCallback(async () => {
     if (!snapshot) return;
     if ((await flush()) === "failed") return;
     setBusy(true);
     setError(null);
+    const scope = activeScope;
     try {
-      const result = await api().reviewMarkDone(cadence, period, activeScope);
+      const result = await api().reviewMarkDone(cadence, period, scope);
       if (!result.ok) {
         setError(result.error);
         return;
+      }
+      const after = result.value;
+      const allDoneNow =
+        liveAreas.length === 0 ||
+        liveAreas.every((area) => after.scopes[area.slug]?.status === "done");
+      const wasAllDone =
+        liveAreas.length === 0 ||
+        liveAreas.every((area) => record?.scopes[area.slug]?.status === "done");
+      if (isDaily) {
+        setNotice("Review complete.");
+      } else if (scope === "overall") {
+        setNotice("Life review complete.");
+      } else {
+        const name =
+          liveAreas.find((area) => area.slug === scope)?.meta.name ?? "Area";
+        setNotice(
+          allDoneNow && !wasAllDone
+            ? "Every area is reviewed — the life review is ready."
+            : `${name} review complete.`,
+        );
       }
       await refresh();
       await loadRecord(period);
@@ -459,7 +560,18 @@ export default function ReviewPage() {
     } finally {
       setBusy(false);
     }
-  }, [activeScope, cadence, flush, loadRecord, period, refresh, snapshot]);
+  }, [
+    activeScope,
+    cadence,
+    flush,
+    isDaily,
+    liveAreas,
+    loadRecord,
+    period,
+    record,
+    refresh,
+    snapshot,
+  ]);
 
   const onUnlock = useCallback(async () => {
     if (!snapshot) return;
@@ -506,13 +618,6 @@ export default function ReviewPage() {
     }
   }, [activeScope, cadence, chatDock, flush, navigate, period, snapshot, weekStartDay]);
 
-  const onSetActiveSlug = useCallback(
-    (slug: string) => {
-      void setActiveSlug(slug);
-    },
-    [setActiveSlug],
-  );
-
   const goToPeriod = useCallback(
     async (target: string) => {
       if (target === period) return;
@@ -541,12 +646,6 @@ export default function ReviewPage() {
     [cadence, period, weekStartDay],
   );
 
-  const domainName =
-    activeScope === "overall"
-      ? null
-      : snapshot?.domains.find((d) => d.slug === activeScope)?.meta.name ??
-        null;
-
   /**
    * The eyebrow names the cadence's own page: "Daily" for the daily review,
    * "Weekly" for the weekly one, and so on. The cadence is
@@ -564,11 +663,46 @@ export default function ReviewPage() {
     return <p className="muted">No vault open.</p>;
   }
 
-  // The overall review covers every area the operator can see. The base `life`
-  // area is the whole-vault container, not a scoped review, so it is not a row.
-  const liveDomains = unlockedAreas(snapshot.domains);
-
   const locked = record?.locked === true;
+
+  // The life review is gated on the areas, and derived exactly as the rail derives
+  // it: a live area whose scope is not `done` gates the whole-life review, and a
+  // period with no file has nothing done, so it is gated too. No live areas means
+  // there is nothing to gate behind.
+  const allAreasDone =
+    liveAreas.length === 0 ||
+    liveAreas.every((area) => record?.scopes[area.slug]?.status === "done");
+  const lifeReviewGated =
+    !isDaily && activeScope === "overall" && !allAreasDone;
+  const lifeReviewGateHint = "Finish every area review first";
+
+  // The first area whose review is not done: what the empty state's one button
+  // starts when the period has no file yet. When there are none — or no areas at
+  // all — that button is the life review's.
+  const firstUnfinishedArea = liveAreas.find(
+    (area) => record?.scopes[area.slug]?.status !== "done",
+  );
+
+  const markDoneLabel = isDaily
+    ? "Mark review complete"
+    : activeScope === "overall"
+      ? "Mark life review complete"
+      : `Mark ${activeDomainName ?? "area"} review complete`;
+
+  const emptyStartLabel = isDaily
+    ? "Start the interview"
+    : firstUnfinishedArea
+      ? `Start the ${firstUnfinishedArea.meta.name} review`
+      : "Start the life review";
+
+  const startFromEmpty = () => {
+    if (isDaily) {
+      void runStart("overall");
+      return;
+    }
+    void startFromRail(firstUnfinishedArea?.slug ?? "overall");
+  };
+
   const dirty = !sameNote(draft, savedBody);
   const status = locked
     ? "Locked"
@@ -583,241 +717,287 @@ export default function ReviewPage() {
           : "No review for this period yet";
 
   return (
-    <div className="review-page">
-      <header className="review-page__header">
-        <WingEyebrow page={cadenceLabel as EyebrowPage} />
-        <h1 className="review-page__title">
-          {cadence.charAt(0).toUpperCase() + cadence.slice(1)} review
-        </h1>
-        <div className="review-page__pager">
-          <Button variant="outline" data-testid="review-prev" onClick={onPrev}>
-            ‹ Prev
-          </Button>
-          <span className="review-page__period" data-testid="review-period">
-            {title}
-          </span>
-          <Button
-            variant="outline"
-            data-testid="review-next"
-            onClick={onNext}
-            disabled={isOnCurrentPeriod}
-          >
-            Next ›
-          </Button>
-          {locked ? (
-            <span className="review-page__lock-badge">Locked</span>
-          ) : null}
-        </div>
-      </header>
-
-      {error ? (
-        <p className="form-error" role="alert" data-testid="review-error">
-          {error}
-        </p>
-      ) : null}
-
-      {notice ? (
-        <p className="review-page__notice" data-testid="review-notice" role="status">
-          {notice}
-        </p>
-      ) : null}
-
-      {loading ? (
-        <p className="muted">Loading review…</p>
-      ) : !record ? (
-        // A period nobody has reviewed yet. There is no file to write into, so
-        // there is no box: the two ways to make one are the whole page.
-        <div className="review-page__empty" data-testid="review-empty">
-          <p className="muted">No review for this period yet.</p>
-          <div className="review-page__actions">
-            <Button
-              variant="primary"
-              data-testid="review-start"
-              onClick={onStart}
-              disabled={busy}
-            >
-              {busy ? "Starting…" : "Start the interview"}
+    <div
+      className={`review-page-layout${isDaily ? " review-page-layout--single" : ""}`}
+      data-testid="review-layout"
+    >
+      <div className="review-page">
+        <header className="review-page__header">
+          <WingEyebrow page={cadenceLabel as EyebrowPage} />
+          <h1 className="review-page__title">
+            {cadence.charAt(0).toUpperCase() + cadence.slice(1)} review
+          </h1>
+          <div className="review-page__pager">
+            <Button variant="outline" data-testid="review-prev" onClick={onPrev}>
+              ‹ Prev
             </Button>
-            <Button
-              variant="outline"
-              data-testid="review-open-document"
-              onClick={onOpenDocument}
-              disabled={busy}
-            >
-              Write it myself
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="review-page__modes" role="group" aria-label="Review view">
-            <Button
-              variant={mode === "document" ? "primary" : "outline"}
-              data-testid="review-mode-document"
-              onClick={() => setMode("document")}
-            >
-              Document
-            </Button>
-            <Button
-              variant={mode === "preview" ? "primary" : "outline"}
-              data-testid="review-mode-preview"
-              onClick={() => setMode("preview")}
-            >
-              Preview
-            </Button>
-            <span className="muted review-page__status" data-testid="review-status">
-              {status}
+            <span className="review-page__period" data-testid="review-period">
+              {title}
             </span>
-          </div>
-
-          {mode === "document" ? (
-            <div
-              className="review-page__editor"
-              // The pointer leaving the box — for another pane, another app — is
-              // the operator stepping away, so the review is written then rather
-              // than at the end of the debounce. Moving between paragraphs stays
-              // inside.
-              onBlur={(event) => {
-                if (event.currentTarget.contains(event.relatedTarget)) return;
-                void flush();
-              }}
-            >
-              <LiveMarkdownEditor
-                testId="review-editor"
-                value={draft}
-                onChange={onDraftChange}
-                slug={`review-${cadence}-${period}`}
-                ariaLabel={`${title} review`}
-                placeholder="Write this review."
-                readOnly={locked}
-              />
-            </div>
-          ) : (
-            // The whole file, rendered — not an extract of the four required
-            // headings. A heading the operator typed is their document, and a
-            // preview that dropped it is what made the editor feel like it was
-            // ignoring what they wrote.
-            <div className="review-page__preview" data-testid="review-preview">
-              <MarkdownView
-                markdown={record.bodyMarkdown}
-                slug={`review-${cadence}-${period}`}
-              />
-              <ReviewPreview
-                record={record}
-                scope={activeScope}
-                domainName={domainName}
-                liveDomains={liveDomains}
-                onSetActiveSlug={onSetActiveSlug}
-                domainsOnly
-              />
-            </div>
-          )}
-
-          <div className="review-page__actions">
-            <Button
-              variant="primary"
-              data-testid="review-start"
-              onClick={onStart}
-              disabled={busy}
-            >
-              {busy ? "Starting…" : "Start interview"}
-            </Button>
             <Button
               variant="outline"
-              data-testid="review-plan-next"
-              onClick={onPlanNext}
-              disabled={busy}
+              data-testid="review-next"
+              onClick={onNext}
+              disabled={isOnCurrentPeriod}
             >
-              Plan next period
-            </Button>
-            <Button
-              variant="outline"
-              data-testid="review-mark-done"
-              onClick={onMarkDone}
-              disabled={busy || !record}
-            >
-              Mark done
+              Next ›
             </Button>
             {locked ? (
-              <Button
-                variant="outline"
-                data-testid="review-unlock"
-                onClick={onUnlock}
-                disabled={busy}
-              >
-                Unlock
-              </Button>
+              <span className="review-page__lock-badge">Locked</span>
             ) : null}
           </div>
+        </header>
 
-          {/* The cadence's standing rules: what every review of this cadence is
-              told, and the snapshot rules the app runs before the interview. The
-              operator can add a rule here directly, or ask the companion to. */}
-          <section className="review-page__skill">
-            <button
-              type="button"
-              className="review-page__skill-toggle"
-              data-testid="review-skill-toggle"
-              aria-expanded={skillOpen}
-              onClick={() => {
-                const next = !skillOpen;
-                setSkillOpen(next);
-                if (next && !skill) void loadSkill();
-              }}
-            >
-              <span>Review rules</span>
-              <span className="muted">
-                {skill
-                  ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
-                  : "what this review session is told"}
+        {error ? (
+          <p className="form-error" role="alert" data-testid="review-error">
+            {error}
+          </p>
+        ) : null}
+
+        {notice ? (
+          <p className="review-page__notice" data-testid="review-notice" role="status">
+            {notice}
+          </p>
+        ) : null}
+
+        {loading ? (
+          <p className="muted">Loading review…</p>
+        ) : !record ? (
+          // A period nobody has reviewed yet. There is no file to write into, so
+          // there is no box: the two ways to make one are the whole page.
+          <div className="review-page__empty" data-testid="review-empty">
+            <p className="muted">
+              {isDaily
+                ? "No review for this period yet."
+                : "No review for this period yet — pick an area in the checklist to start its review."}
+            </p>
+            <div className="review-page__actions">
+              <Button
+                variant="primary"
+                data-testid="review-start"
+                onClick={startFromEmpty}
+                disabled={busy}
+              >
+                {busy ? "Starting…" : emptyStartLabel}
+              </Button>
+              <Button
+                variant="outline"
+                data-testid="review-open-document"
+                onClick={onOpenDocument}
+                disabled={busy}
+              >
+                Write it myself
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="review-page__modes" role="group" aria-label="Review view">
+              <Button
+                variant={mode === "document" ? "primary" : "outline"}
+                data-testid="review-mode-document"
+                onClick={() => setMode("document")}
+              >
+                Document
+              </Button>
+              <Button
+                variant={mode === "preview" ? "primary" : "outline"}
+                data-testid="review-mode-preview"
+                onClick={() => setMode("preview")}
+              >
+                Preview
+              </Button>
+              <span className="muted review-page__status" data-testid="review-status">
+                {status}
               </span>
-            </button>
-            {skillOpen ? (
-              <div className="review-page__skill-body">
-                <p className="muted review-page__skill-hint">
-                  Every line here is handed to this cadence&rsquo;s review session,
-                  and a <code>lifequest-snapshot</code> block is a figure the app
-                  fills into the review itself. Ask the companion to add a rule, or
-                  write one here.
-                </p>
-                <LiveMarkdownEditor
-                  testId="review-skill-editor"
-                  value={skillDraft}
-                  onChange={setSkillDraft}
-                  slug={`review-skill-${cadence}`}
-                  ariaLabel={`${cadence} review rules`}
-                />
-                {skill && skill.problems.length > 0 ? (
-                  <ul className="review-page__skill-problems">
-                    {skill.problems.map((problem) => (
-                      <li key={problem}>{problem}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="review-page__actions">
-                  <Button
-                    variant="primary"
-                    data-testid="review-skill-save"
-                    onClick={onSaveSkill}
-                    disabled={skillSaving || !skill}
-                  >
-                    {skillSaving ? "Saving…" : "Save rules"}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </section>
-        </>
-      )}
+            </div>
 
-      {/* The days the operator wrote, under the review body and its controls:
-          the same notes the companion's period pack carries. Scope-independent
-          by design — a note belongs to no domain. */}
-      <DailyNotesPanel
-        cadence={cadence}
-        period={period}
-        weekStartDay={weekStartDay}
-      />
+            {/* What this box is: the whole-life review, or one area's section of
+                it. The line is the page's one statement of the active scope, and
+                an area's line offers the way back to the whole review without
+                starting anything. The daily review says neither — it is one
+                general review with no scope to name. */}
+            {isDaily ? null : (
+              <div className="review-page__scope" data-testid="review-scope">
+                <span className="review-page__scope-label">Reviewing</span>
+                <span
+                  className="review-page__scope-name"
+                  data-testid="review-scope-name"
+                >
+                  {activeDomainName ?? "Life"}
+                </span>
+                {activeScope === "overall" ? null : (
+                  <button
+                    type="button"
+                    className="review-page__scope-link"
+                    data-testid="review-scope-life"
+                    onClick={onOpenLifeScope}
+                  >
+                    Whole-life review
+                  </button>
+                )}
+              </div>
+            )}
+
+            {mode === "document" ? (
+              <div
+                className="review-page__editor"
+                // The pointer leaving the box — for another pane, another app — is
+                // the operator stepping away, so the review is written then rather
+                // than at the end of the debounce. Moving between paragraphs stays
+                // inside.
+                onBlur={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget)) return;
+                  void flush();
+                }}
+              >
+                <LiveMarkdownEditor
+                  testId="review-editor"
+                  value={draft}
+                  onChange={onDraftChange}
+                  slug={`review-${cadence}-${period}`}
+                  ariaLabel={`${title} review`}
+                  placeholder="Write this review."
+                  readOnly={locked}
+                />
+              </div>
+            ) : (
+              // The whole file, rendered — not an extract of the four required
+              // headings. A heading the operator typed is their document, and a
+              // preview that dropped it is what made the editor feel like it was
+              // ignoring what they wrote.
+              <div className="review-page__preview" data-testid="review-preview">
+                <MarkdownView
+                  markdown={record.bodyMarkdown}
+                  slug={`review-${cadence}-${period}`}
+                />
+              </div>
+            )}
+
+            <div className="review-page__actions">
+              <Button
+                variant="primary"
+                data-testid="review-start"
+                onClick={() => void runStart(activeScope)}
+                disabled={busy || lifeReviewGated}
+                title={lifeReviewGated ? lifeReviewGateHint : undefined}
+              >
+                {busy ? "Starting…" : "Start interview"}
+              </Button>
+              <Button
+                variant="outline"
+                data-testid="review-plan-next"
+                onClick={onPlanNext}
+                disabled={busy}
+              >
+                Plan next period
+              </Button>
+              <Button
+                variant="outline"
+                data-testid="review-mark-done"
+                onClick={onMarkDone}
+                disabled={busy || !record || lifeReviewGated}
+                title={lifeReviewGated ? lifeReviewGateHint : undefined}
+              >
+                {markDoneLabel}
+              </Button>
+              {locked ? (
+                <Button
+                  variant="outline"
+                  data-testid="review-unlock"
+                  onClick={onUnlock}
+                  disabled={busy}
+                >
+                  Unlock
+                </Button>
+              ) : null}
+            </div>
+
+            {/* The cadence's standing rules: what every review of this cadence is
+                told, and the snapshot rules the app runs before the interview. The
+                operator can add a rule here directly, or ask the companion to. */}
+            <section className="review-page__skill">
+              <button
+                type="button"
+                className="review-page__skill-toggle"
+                data-testid="review-skill-toggle"
+                aria-expanded={skillOpen}
+                onClick={() => {
+                  const next = !skillOpen;
+                  setSkillOpen(next);
+                  if (next && !skill) void loadSkill();
+                }}
+              >
+                <span>Review rules</span>
+                <span className="muted">
+                  {skill
+                    ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
+                    : "what this review session is told"}
+                </span>
+              </button>
+              {skillOpen ? (
+                <div className="review-page__skill-body">
+                  <p className="muted review-page__skill-hint">
+                    Every line here is handed to this cadence&rsquo;s review session,
+                    and a <code>lifequest-snapshot</code> block is a figure the app
+                    fills into the review itself. Ask the companion to add a rule, or
+                    write one here.
+                  </p>
+                  <LiveMarkdownEditor
+                    testId="review-skill-editor"
+                    value={skillDraft}
+                    onChange={setSkillDraft}
+                    slug={`review-skill-${cadence}`}
+                    ariaLabel={`${cadence} review rules`}
+                  />
+                  {skill && skill.problems.length > 0 ? (
+                    <ul className="review-page__skill-problems">
+                      {skill.problems.map((problem) => (
+                        <li key={problem}>{problem}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="review-page__actions">
+                    <Button
+                      variant="primary"
+                      data-testid="review-skill-save"
+                      onClick={onSaveSkill}
+                      disabled={skillSaving || !skill}
+                    >
+                      {skillSaving ? "Saving…" : "Save rules"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </>
+        )}
+
+        {/* The days the operator wrote, under the review body and its controls:
+            the same notes the companion's period pack carries. Scope-independent
+            by design — a note belongs to no domain. */}
+        <DailyNotesPanel
+          cadence={cadence}
+          period={period}
+          weekStartDay={weekStartDay}
+        />
+      </div>
+
+      {/* The checklist is the page's second column on a weekly-or-longer
+          review, and the daily review has none: a day is one general review, so
+          there is nothing to tick off beside it. */}
+      {isDaily ? null : (
+        <AreaReviewsPanel
+          record={record}
+          liveAreas={liveAreas}
+          activeScope={activeScope}
+          busy={busy}
+          locked={locked}
+          onStart={(scope) => {
+            void startFromRail(scope);
+          }}
+        />
+      )}
     </div>
   );
 }

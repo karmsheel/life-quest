@@ -4,6 +4,7 @@ import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { isFuturePeriod, periodBounds, periodTitle } from "./period.ts";
 import { listDomains } from "./domains.ts";
+import { unlockedAreas } from "./domain-lens.ts";
 import { vaultPaths } from "./paths.ts";
 import {
   USER_ACTOR,
@@ -39,6 +40,54 @@ async function logReview(
 
 const OVERALL = "overall";
 const DOMAIN_HEADINGS = ["Look-back", "Keep", "Change", "Next-period intent"] as const;
+
+/**
+ * The daily review's shape, stated once. Both `ensureReview` and
+ * `markReviewDone` refuse an area scope on the daily cadence with this exact
+ * sentence, so the page and the companion quote the same rule.
+ */
+export const DAILY_REVIEW_NO_AREAS = "The daily review is one general review — it has no area sections.";
+
+/** One live area's slice of a review file, as the checklist reports it. */
+export type ReviewAreaState = {
+  slug: string;
+  name: string;
+  status: "missing" | "draft" | "done";
+};
+
+/**
+ * The review file's area checklist: which live areas exist, which have a
+ * section (draft) and which are done. This is the read the page's rail and the
+ * overall review's gate share, so "every area is reviewed" cannot mean two
+ * different things in two places.
+ */
+export type ReviewAreaChecklist = {
+  cadence: ReviewCadence;
+  period: string;
+  areas: ReviewAreaState[];
+  done: number;
+  total: number;
+  allDone: boolean;
+  /** Display names of the areas not done, in vault order. */
+  remaining: string[];
+};
+
+function areaStatus(state: ReviewScopeState | undefined): ReviewAreaState["status"] {
+  if (!state) return "missing";
+  return state.status === "done" ? "done" : "draft";
+}
+
+/**
+ * The overall review's refusal, built from the checklist's live areas in vault
+ * order. The prefix is part of the operator-facing contract: the page and the
+ * rig assert it, so it is spelled once here.
+ */
+function overallReviewRefusal(remaining: ReviewAreaState[]): string {
+  const parts = remaining.map(
+    (area) => `${area.name}: ${area.status === "draft" ? "in progress" : "not started"}`,
+  );
+  return `Finish every area review first — ${parts.join("; ")}.`;
+}
 
 function isOverall(scope: string): boolean {
   return scope === OVERALL;
@@ -175,6 +224,69 @@ async function parseReviewFile(
   }
 }
 
+/**
+ * The area checklist for one review file: one entry per live area (the
+ * `unlockedAreas` the rest of the app offers, in vault order), with the scope's
+ * own status. A file that does not exist yet is not an error — it is every
+ * area missing, which is exactly what a fresh period looks like. A file that
+ * exists but cannot be parsed keeps its read error, so a broken review is
+ * reported rather than silently read as unreviewed.
+ */
+export async function getReviewAreaChecklist(
+  rootPath: string,
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<ReviewAreaChecklist>> {
+  // Daily has no area sections at all: the checklist is empty and complete.
+  if (cadence === "daily") {
+    return {
+      ok: true,
+      value: {
+        cadence,
+        period,
+        areas: [],
+        done: 0,
+        total: 0,
+        allDone: true,
+        remaining: [],
+      },
+    };
+  }
+  try {
+    const listed = await listDomains(rootPath);
+    if (!listed.ok) return listed;
+
+    const parsed = await parseReviewFile(rootPath, cadence, period);
+    let scopes: Record<string, ReviewScopeState> | null = null;
+    if (parsed.ok) {
+      scopes = parsed.value.scopes;
+    } else if (parsed.error !== "Review file not found") {
+      return parsed;
+    }
+
+    const areas: ReviewAreaState[] = unlockedAreas(listed.value).map((domain) => ({
+      slug: domain.slug,
+      name: domain.meta.name,
+      status: areaStatus(scopes?.[domain.slug]),
+    }));
+    const done = areas.filter((area) => area.status === "done").length;
+    return {
+      ok: true,
+      value: {
+        cadence,
+        period,
+        areas,
+        done,
+        total: areas.length,
+        allDone: done === areas.length,
+        remaining: areas.filter((area) => area.status !== "done").map((area) => area.name),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 function canonicalizeBody(
   body: string,
   record: ReviewRecord,
@@ -278,6 +390,12 @@ export async function ensureReview(
   input: { cadence: ReviewCadence; period: string; scope: string },
 ): Promise<Result<ReviewRecord>> {
   try {
+    // The daily cadence is one general review: it has no area scopes, so an
+    // area section would be a heading the page never shows and the companion
+    // would then be asked to fill. Refuse before touching the file.
+    if (input.cadence === "daily" && !isOverall(input.scope)) {
+      return { ok: false, error: DAILY_REVIEW_NO_AREAS };
+    }
     const weekStartDay = await readSettings(rootPath);
     const future = isFuturePeriod(input.cadence, input.period, weekStartDay);
     if (future) {
@@ -478,11 +596,25 @@ export async function markReviewDone(
   input: { cadence: ReviewCadence; period: string; scope: string; actor?: Actor },
 ): Promise<Result<ReviewRecord>> {
   try {
+    if (input.cadence === "daily" && !isOverall(input.scope)) {
+      return { ok: false, error: DAILY_REVIEW_NO_AREAS };
+    }
     const existing = await parseReviewFile(rootPath, input.cadence, input.period);
     if (!existing.ok) return existing;
     const record = existing.value;
 
     if (isOverall(input.scope)) {
+      // The life review is the summary of the area reviews, so it cannot be
+      // finished before they are. Daily has no area sections and is never
+      // gated: its one general review is the whole file.
+      if (input.cadence !== "daily") {
+        const checklist = await getReviewAreaChecklist(rootPath, input.cadence, input.period);
+        if (!checklist.ok) return checklist;
+        const notDone = checklist.value.areas.filter((area) => area.status !== "done");
+        if (notDone.length > 0) {
+          return { ok: false, error: overallReviewRefusal(notDone) };
+        }
+      }
       record.scopes.overall.status = "done";
       record.locked = true;
     } else {

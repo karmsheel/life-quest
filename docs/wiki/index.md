@@ -79,7 +79,7 @@ wants to know what is on disk and what runs where.
 
 | Page | What it covers |
 |---|---|
-| [18 · Reviews](./18-reviews.md) | Daily through yearly cadences, period packs, companion sessions, done/lock, planning stubs |
+| [18 · Reviews](./18-reviews.md) | Daily through yearly cadences, the per-area review checklist, the life review, period packs, companion sessions, done/lock, planning stubs |
 
 ### Shelf
 

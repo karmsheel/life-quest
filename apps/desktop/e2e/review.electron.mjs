@@ -1,50 +1,72 @@
 /**
  * Drives the review harness in a real Electron window and turns what the Review
- * page actually renders into `e2e/artifacts/review.{json,png}`.
+ * page actually renders into `e2e/artifacts/review.json` plus seven pictures.
  *
- * Run with the dev server up (`npm run dev`):
+ * Run with the dev server up (`npm run dev`, or the repository's e2e runner):
  *
  *   node e2e/review.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
- * artifact: same command, same claims. It ships with four pictures of the same
- * run: the review document as the page opens (`review-document.png`), the same
- * page after Start filled it in (`review-started.png`), the cadence's rules
- * panel open (`review-rules.png`), and the same page in a window far wider than
- * its reading column (`review-wide.png`) — the column centred with empty page on
- * both sides.
+ * artifact: same command, same claims. The pictures, all from this same run:
+ *
+ *   review-document.png   the weekly review as the page opens: the 48rem reading
+ *                         column with the Review checklist beside it
+ *   review-checklist.png  the same moment, framed on the checklist: mixed
+ *                         statuses, the gate on the Life review, the progress
+ *   review-started.png    after the Finance row ran the snapshot pass: the
+ *                         figures are in the file and the document is still open
+ *   review-life-ready.png after the last area was completed: every row Done, the
+ *                         Life review unlocked, the "ready" hint showing
+ *   review-daily.png      the daily review: one general review, no checklist
+ *   review-rules.png      the cadence's rules panel, read and written from the page
+ *   review-wide.png       a wide window: the column keeps its measure and the
+ *                         page+checklist pair is centred with room on both sides
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
- *  1. The review IS the document: one `.note-live` on arrival, no Edit control
- *     to press first and no Save control to press after, and the file's own
- *     prose rendered as prose.
- *  2. A blank line the operator typed survives being written down. The file is
- *     read straight off the stub after a real edit elsewhere in the note, so a
- *     parser that eats the empty block fails here and nowhere else.
- *  3. The formatting keys work on the selection: Ctrl+B wraps it, Ctrl+U writes
- *     the one mark markdown has no syntax for, and Ctrl+2 replaces a heading
- *     rather than stacking one.
- *  4. Start fills the cadence's snapshot under the right heading, inside its own
- *     marker pair, and clicking Start twice fills it once — the second pass
- *     rewrites the block in place rather than appending a second copy.
- *  5. An agent that is not answering does NOT take the document down with it:
- *     the review stays open, keeps the figures Start just filled, and the page
- *     says where to fix the agent. This is the reported `fetch failed` failure.
- *  6. The cadence's own rules can be read and written from the page, so "add a
- *     rule over time" does not depend on the agent being reachable.
- *  7. The snapshot markers the app writes are not printed: they are comments,
- *     and a review that showed them would be showing its own bookkeeping.
- *  8. The page is ONE CENTRED READING COLUMN: capped at its 48rem measure and
- *     centred in the sheet's own content box, with the header, body, actions and
- *     daily-notes strip all riding that column. A window wider than the column
- *     gets the leftover width as empty page on both sides, split evenly, rather
- *     than one long line run from the leading edge.
- *  9. No bridge call this rig does not model, and no console error.
+ *  1. The document is the page and the checklist is BESIDE it: one `.note-live`
+ *     on arrival, no Edit/Save pair, and on a weekly review a rail to the right
+ *     of a reading column that is still 48rem, with the pair centred in the
+ *     sheet. A rail that is a second document, sits under the column at a window
+ *     with room, or steals the column's measure fails here.
+ *  2. The rail is the LIVE areas, in the vault's order, Life first: the fixture
+ *     also has a locked `spirit` area on disk, so a rail built from every domain
+ *     file gains a row and changes the progress denominator.
+ *  3. The rail's statuses are the review file's own scopes: the fixture opens
+ *     with one area Done and one In progress, so the three words and the progress
+ *     count must all appear at once. It also means the rail can be checked
+ *     against `window.reviewRigScopes()`, not just against its own text.
+ *  4. The Life review is GATED until every live area is Done, and the gate is
+ *     lifted by the last completion: the button is disabled at open, the hint
+ *     counts the areas left, and it is enabled with "all areas reviewed" after
+ *     the last `Done`.
+ *  5. A rail row starts THAT row's review: pressing Finance asks for scope
+ *     `financial`, binds the page's scope line to Finance, and the kickoff the
+ *     dock receives names the area's own `## Finance` section. A page that
+ *     starts the overall review from an area row hands over the wrong scope.
+ *  6. The life review is the SUMMARY: its session is asked for scope `overall`
+ *     and its kickoff says `whole-life review` across the areas, which is what
+ *     the operator asked for when every area is done.
+ *  7. Completing the life review LOCKS the file: the Locked badge appears, every
+ *     rail row is disabled, the file reports locked, and a write attempted
+ *     through the bridge afterwards is refused and leaves the body untouched.
+ *  8. The daily review is ONE GENERAL REVIEW: no rail, no `review-area-*`
+ *     controls, no scope line, one `Start the interview`, and the session it
+ *     starts is scope `overall` with a kickoff that says there are no area
+ *     sections. The file it creates has no `###` area headings either.
+ *  9. The daily review ignores the title-bar area lens: the rig is on an area
+ *     lens (Relationships) when it navigates to Daily, and the daily review still
+ *     starts `overall`. Back on the weekly page the lens is still there.
+ * 10. The old claims survive the new surface: the document's blocks and the
+ *     blank line the operator typed, Ctrl+B/U/2/3 on the selection, the snapshot
+ *     filled once inside its markers in the right section with the agent down,
+ *     Preview rendering the whole file (and no longer a domains list), and the
+ *     cadence's rules read and written from the page.
+ * 11. No bridge call this rig does not model, and no console error.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
- * `tests/review-snapshot-e2e.test.ts`) and the companion's own transport rules
- * (that is `tests/companion-*`).
+ * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
+ * the companion's own transport rules (that is `tests/companion-*`).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -60,15 +82,49 @@ app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/review.html";
-const DEFAULT_SIZE = { width: 1280, height: 900 };
+
 /**
- * A window with more room than the reading column needs. 1800px leaves the
- * 768px column roughly a third of the sheet on either side, which is the shape
- * the operator asked about: a wide monitor should not stretch the prose.
+ * The default window. The review page's pair needs the sheet's room — a 48rem
+ * reading column beside a 17rem checklist, plus the shell's 16rem sidebar and
+ * the sheet's padding — so this is the smallest ordinary window where the column
+ * can still be its measure. The chat dock is folded away before the layout
+ * claims (that is what the operator's own dock control does, and the review
+ * feature is not the dock's claim); when Start opens the dock again the review
+ * page gives width back, which is the app's own graceful answer and not this
+ * rig's claim.
+ */
+const DEFAULT_SIZE = { width: 1440, height: 900 };
+/**
+ * A window with more room than the pair needs. 1920px leaves the 1064px pair
+ * more than 180px of page on either side, which is the shape the operator asked
+ * about: a wide monitor should not stretch the prose, and the pair should read
+ * as one centred block rather than as a page with a panel bolted to an edge.
  */
 const WIDE_SIZE = { width: 1800, height: 1000 };
+/** Narrower than the stylesheet's 78rem threshold: the rail must stack above. */
+const NARROW_SIZE = { width: 900, height: 900 };
 
 const INPUT = ".note-live textarea";
+
+/** The measure the reading column and the inside of the checklist are drawn for. */
+const READING_MEASURE = 48 * 16;
+/** `--sidebar 16rem`/.review-page columns; the rail's own width sanity bounds. */
+const RAIL_MIN_WIDTH = 180;
+const RAIL_MAX_WIDTH = 420;
+/** The rail's gap to the column (`1.5rem`), with a pixel of paint tolerance. */
+const RAIL_GAP_MIN = 16;
+
+/** The rail's rows, in order: the life review first, then the live areas. */
+const AREA_ROWS = [
+  { slug: "health", name: "Health" },
+  { slug: "mind", name: "Mind" },
+  { slug: "financial", name: "Finance" },
+  { slug: "business", name: "Business" },
+  { slug: "relationships", name: "Relationships" },
+];
+const RAIL_ROWS = ["review-area-overall", ...AREA_ROWS.map((a) => `review-area-${a.slug}`)];
+const LOCKED_ROW = "review-area-spirit";
+const TOTAL_AREAS = AREA_ROWS.length;
 
 /** Read the review page and the box straight off the rendered DOM. */
 const SAMPLE = `(() => {
@@ -83,6 +139,26 @@ const SAMPLE = `(() => {
     if (el.querySelector(".note-live__blank")) return "";
     return el.textContent || "";
   });
+  const rect = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  };
+  const item = (testId) => {
+    const el = document.querySelector('[data-testid="' + testId + '"]');
+    if (!el) return null;
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: text(el),
+      disabled: el.disabled === true,
+      ariaCurrent: el.getAttribute("aria-current"),
+      className: el.className,
+    };
+  };
+  const status = (testId) => text(document.querySelector('[data-testid="' + testId + '"]'));
+  const railButtons = Array.from(
+    document.querySelectorAll('button[data-testid^="review-area-"]'),
+  ).map((el) => el.getAttribute("data-testid"));
   return {
     boxes: document.querySelectorAll(".note-live").length,
     blockCount: blocks.length,
@@ -105,6 +181,7 @@ const SAMPLE = `(() => {
     notice: text(document.querySelector(".review-page__notice")),
     error: text(document.querySelector(".form-error")),
     status: text(document.querySelector(".review-page__status")),
+    lockedBadge: text(document.querySelector(".review-page__lock-badge")),
     actions: Array.from(document.querySelectorAll(".review-page__actions button")).map(
       (b) => (b.textContent || "").trim(),
     ),
@@ -123,36 +200,82 @@ const SAMPLE = `(() => {
         .join("\\n\\n")
         .trim();
     })(),
+    // The new surface: the wrapper, the rail, its rows, the progress and the
+    // scope line. Each is read by the testids the UI contract names, so a page
+    // that renames or drops one fails the run rather than silently passing.
+    layoutPresent: Boolean(document.querySelector('[data-testid="review-layout"]')),
+    layoutSingle: (() => {
+      const el = document.querySelector('[data-testid="review-layout"]');
+      return el
+        ? el.className.split(/\\s+/).includes("review-page-layout--single")
+        : null;
+    })(),
+    railPresent: Boolean(document.querySelector('[data-testid="review-area-rail"]')),
+    railLabel: (() => {
+      const el = document.querySelector('[data-testid="review-area-rail"]');
+      return el ? el.getAttribute("aria-label") : null;
+    })(),
+    progress: text(document.querySelector('[data-testid="review-area-progress"]')),
+    hint: text(document.querySelector('[data-testid="review-area-hint"]')),
+    railButtons,
+    lifeItem: item("review-area-overall"),
+    lifeStatus: status("review-area-overall-status"),
+    healthItem: item("review-area-health"),
+    healthStatus: status("review-area-health-status"),
+    mindItem: item("review-area-mind"),
+    mindStatus: status("review-area-mind-status"),
+    financeItem: item("review-area-financial"),
+    financeStatus: status("review-area-financial-status"),
+    businessItem: item("review-area-business"),
+    businessStatus: status("review-area-business-status"),
+    relationshipsItem: item("review-area-relationships"),
+    relationshipsStatus: status("review-area-relationships-status"),
+    scopeLine: text(document.querySelector('[data-testid="review-scope"]')),
+    scopeName: text(document.querySelector('[data-testid="review-scope-name"]')),
+    scopeWholeLifeLink: Boolean(document.querySelector('[data-testid="review-scope-life"]')),
+    markDoneLabel: (() => {
+      const el = document.querySelector('[data-testid="review-mark-done"]');
+      return el ? text(el) : null;
+    })(),
+    markDoneDisabled: (() => {
+      const el = document.querySelector('[data-testid="review-mark-done"]');
+      return el ? el.disabled === true : null;
+    })(),
+    startLabel: (() => {
+      const el = document.querySelector('[data-testid="review-start"]');
+      return el ? text(el) : null;
+    })(),
+    unlockPresent: Boolean(document.querySelector('[data-testid="review-unlock"]')),
+    emptyPresent: Boolean(document.querySelector('[data-testid="review-empty"]')),
     // How the page is standing, read off the boxes rather than computed styles:
-    // the sheet's own content box, the page's column, and the parts that must
-    // ride it. The centre is solved from the content box's client width so a
-    // vertical scrollbar does not read as an off-centre page.
+    // the sheet's own content box, the reading column, the checklist beside it,
+    // and the parts of the page that must ride the column. The centre is solved
+    // from the content box's client width so a vertical scrollbar does not read
+    // as an off-centre page.
     layout: (() => {
-      const rect = (el) => {
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { left: r.left, top: r.top, width: r.width, height: r.height };
-      };
       const content = document.querySelector(".shell__content");
+      const shell = document.querySelector(".shell");
+      const layoutEl = document.querySelector('[data-testid="review-layout"]');
       const page = document.querySelector(".review-page");
+      const rail = document.querySelector('[data-testid="review-area-rail"]');
       return {
-        shellClass: (() => {
-          const shell = document.querySelector(".shell");
-          return shell ? shell.className : null;
-        })(),
+        shellClass: shell ? shell.className : null,
         content: content
           ? {
               ...rect(content),
               clientWidth: content.clientWidth,
-              centerX:
-                content.getBoundingClientRect().left + content.clientWidth / 2,
+              centerX: content.getBoundingClientRect().left + content.clientWidth / 2,
             }
           : null,
+        layout: rect(layoutEl),
         page: rect(page),
         pageMaxWidth: page ? getComputedStyle(page).maxWidth : null,
+        rail: rect(rail),
+        railPosition: rail ? getComputedStyle(rail).position : null,
         header: rect(document.querySelector(".review-page__header")),
         modes: rect(document.querySelector(".review-page__modes")),
         editor: rect(document.querySelector(".review-page__editor")),
+        scope: rect(document.querySelector('[data-testid="review-scope"]')),
         pageActions: rect(document.querySelector(".review-page__actions")),
         notes: rect(document.querySelector(".review-notes")),
       };
@@ -203,6 +326,43 @@ function sample(win) {
 /** The review body as the file holds it, off the stub that stands in for disk. */
 function fileBody(win) {
   return win.webContents.executeJavaScript("window.reviewRigBody()");
+}
+
+/** The loaded review file's scope states, so rail text can be cross-checked. */
+function fileScopes(win) {
+  return win.webContents.executeJavaScript("window.reviewRigScopes()");
+}
+
+/** Whether the loaded review file is locked. */
+function fileLocked(win) {
+  return win.webContents.executeJavaScript("window.reviewRigLocked()");
+}
+
+/** The status text of one rail row, or null when the row is not drawn. */
+function railStatus(win, slug) {
+  return win.webContents.executeJavaScript(
+    `(() => { const el = document.querySelector('[data-testid="review-area-${slug}-status"]'); return el ? el.textContent.trim() : null; })()`,
+  );
+}
+
+/** Wait for one rail row to read a given status. */
+function waitForRailStatus(win, slug, expected, timeoutMs = 10_000) {
+  return waitFor(
+    win,
+    `(document.querySelector('[data-testid="review-area-${slug}-status"]')?.textContent ?? "").trim() === ${JSON.stringify(expected)}`,
+    `${slug} to read "${expected}"`,
+    timeoutMs,
+  );
+}
+
+/** Wait for the chat dock to have received N kickoff turns. */
+function waitForDockKickoffs(win, expected, timeoutMs = 8_000) {
+  return waitFor(
+    win,
+    `(window.reviewRigKickoffs ?? []).length === ${expected}`,
+    `the dock to receive ${expected} kickoff turn(s)`,
+    timeoutMs,
+  );
 }
 
 /** Open a paragraph the way a person does — a click on the prose. */
@@ -330,102 +490,271 @@ function occurrences(haystack, needle) {
 }
 
 /**
- * The review page is one reading column. These are its numbers, read off the
- * boxes rather than the stylesheet: where the column sits against the sheet's
- * own centre, how wide it is, and whether every part of the page starts on it.
- * `offBy` is the one that matters — positive means the column sits towards the
- * dock, negative towards the rail.
+ * The numbers the layout claims are made of, read off the boxes rather than the
+ * stylesheet: the sheet's content box, the reading column, the checklist beside
+ * it, and the gap between the two.
  */
-function columnReport(layout) {
+function layoutReport(layout) {
   const page = layout?.page ?? null;
+  const rail = layout?.rail ?? null;
   const content = layout?.content ?? null;
-  const pageCentre = page ? page.left + page.width / 2 : null;
-  const contentCentre = content ? content.centerX : null;
+  const pageRight = page ? page.left + page.width : null;
+  const railRight = rail ? rail.left + rail.width : null;
   return {
-    contentCentre,
-    pageCentre,
-    offBy:
-      pageCentre === null || contentCentre === null ? null : pageCentre - contentCentre,
-    pageWidth: page ? page.width : null,
-    pageLeft: page ? page.left : null,
-    pageRight: page ? page.left + page.width : null,
-    pageMaxWidth: layout?.pageMaxWidth ?? null,
+    shellClass: layout?.shellClass ?? null,
     contentLeft: content ? content.left : null,
-    contentClientWidth: content ? content.clientWidth : null,
     contentRight: content ? content.left + content.clientWidth : null,
+    contentClientWidth: content ? content.clientWidth : null,
+    contentCentre: content ? content.centerX : null,
+    layoutLeft: layout?.layout?.left ?? null,
+    layoutWidth: layout?.layout?.width ?? null,
+    pageLeft: page ? page.left : null,
+    pageRight,
+    pageWidth: page ? page.width : null,
+    pageTop: page ? page.top : null,
+    pageMaxWidth: layout?.pageMaxWidth ?? null,
+    railLeft: rail ? rail.left : null,
+    railRight,
+    railWidth: rail ? rail.width : null,
+    railTop: rail ? rail.top : null,
+    railBottom: rail ? rail.top + rail.height : null,
+    railPosition: layout?.railPosition ?? null,
+    gap: page && rail ? rail.left - pageRight : null,
+    groupCentre: page && rail ? (page.left + railRight) / 2 : null,
     headerLeft: layout?.header?.left ?? null,
+    modesLeft: layout?.modes?.left ?? null,
     editorLeft: layout?.editor?.left ?? null,
+    scopeLeft: layout?.scope?.left ?? null,
     actionsLeft: layout?.pageActions?.left ?? null,
     notesLeft: layout?.notes?.left ?? null,
-    shellClass: layout?.shellClass ?? null,
   };
 }
 
-/** The measure the shared note box and the Daily Note column are drawn for. */
-const READING_MEASURE = 48 * 16;
-
 /**
- * Claim the centred column, and return the numbers whether they hold or not.
+ * Claim the two-column reading page: the column keeps its 48rem measure where the
+ * sheet has room for it, the checklist is a real column to its right with the
+ * stylesheet's gap, and the pair is centred together — not the page centred with
+ * the rail hung off one edge.
  *
- * `expectRoom` is for a window wider than the column: there, the column must be
- * exactly its measure and the leftover width must be empty page on both sides,
- * split evenly. Without it, the window may be narrower than the column, so only
- * the centre and the shared leading edge are claimed.
+ * `spareFloor` is the empty page the claim demands on each side of the pair; it
+ * is only meaningful when the window is wider than the pair needs.
  */
-function assertCentredColumn(layout, when, { expectRoom = false } = {}) {
-  const report = columnReport(layout);
-  if (report.pageWidth === null || report.contentCentre === null) {
-    failure(`${when}: the page's own layout boxes could not be read`);
+function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
+  const report = layoutReport(layout);
+  if (report.pageLeft === null || report.pageWidth === null || report.pageTop === null) {
+    failure(`${when}: the reading column's own layout box could not be read`);
     return report;
   }
-  // The measure: a page wider than the column is the page stretched to the
-  // window, which is the layout this claim exists to keep out.
+  if (report.railLeft === null || report.railWidth === null) {
+    failure(`${when}: the Review checklist rail was not drawn`);
+    return report;
+  }
+  if (report.contentCentre === null || report.contentLeft === null) {
+    failure(`${when}: the sheet's content box could not be read`);
+    return report;
+  }
+  // The measure: the column never grows past 48rem.
   if (report.pageWidth > READING_MEASURE + 1) {
     failure(
-      `${when}: the page column is ${report.pageWidth}px wide, past its ${READING_MEASURE}px measure`,
+      `${when}: the reading column is ${report.pageWidth}px wide, past its ${READING_MEASURE}px measure`,
     );
   }
-  if (expectRoom) {
-    if (report.pageWidth < READING_MEASURE - 1) {
-      failure(
-        `${when}: the page column narrowed to ${report.pageWidth}px although the sheet had room for its ${READING_MEASURE}px measure`,
-      );
-    }
-    const before = report.pageLeft - report.contentLeft;
-    const after = report.contentRight - report.pageRight;
-    checks.wideGaps = { before, after };
-    if (!(before > 100) || !(after > 100)) {
-      failure(
-        `${when}: the column left no page either side (${before}px before, ${after}px after)`,
-      );
-    }
-    if (Math.abs(before - after) > 2) {
-      failure(
-        `${when}: the room around the column is lopsided — ${before}px before it and ${after}px after it`,
-      );
-    }
-  }
-  if (Math.abs(report.offBy ?? Infinity) > 2) {
+  // Where the sheet has room, the column is exactly its measure: a column that
+  // also narrows here is the layout this claim exists to keep out.
+  if (spareFloor > 0 && report.pageWidth < READING_MEASURE - 1) {
     failure(
-      `${when}: the page column's centre is ${report.pageCentre}, ${report.offBy}px from the sheet's ${report.contentCentre}`,
+      `${when}: the reading column narrowed to ${report.pageWidth}px although the sheet had room for its ${READING_MEASURE}px measure`,
     );
   }
-  // Every part of the page is the same column: a centred title over a body run
+  if (report.railWidth < RAIL_MIN_WIDTH || report.railWidth > RAIL_MAX_WIDTH) {
+    failure(
+      `${when}: the checklist is ${report.railWidth}px wide — not the ~17rem column the page is drawn for`,
+    );
+  }
+  // The rail is to the RIGHT of the column, with the stylesheet's own gap. A
+  // stack under a wide window, or an overlap, fails both halves of this.
+  if (report.railLeft < (report.pageRight ?? Infinity) + RAIL_GAP_MIN) {
+    failure(
+      `${when}: the checklist starts at ${report.railLeft}, not to the right of the column's ${report.pageRight} with a gap (gap ${report.gap}px)`,
+    );
+  }
+  const offBy = report.groupCentre === null ? null : report.groupCentre - report.contentCentre;
+  if (offBy === null || Math.abs(offBy) > 2) {
+    failure(
+      `${when}: the page+checklist group's centre is ${report.groupCentre}, ${offBy}px from the sheet's ${report.contentCentre}`,
+    );
+  }
+  // Every part of the page rides the column: a centred title over a body run
   // from the leading edge would be a page divided against itself.
   for (const [part, left] of [
     ["header", report.headerLeft],
+    ["modes", report.modesLeft],
     ["editor", report.editorLeft],
+    ["scope line", report.scopeLeft],
     ["actions", report.actionsLeft],
     ["daily notes", report.notesLeft],
   ]) {
     if (left === null) continue;
     if (Math.abs(left - report.pageLeft) > 1) {
       failure(
-        `${when}: the ${part} starts at ${left}, ${left - report.pageLeft}px off the page column's ${report.pageLeft}`,
+        `${when}: the ${part} starts at ${left}, ${left - report.pageLeft}px off the column's ${report.pageLeft}`,
+      );
+    }
+  }
+  // The leftover room is empty page on both sides of the pair, split evenly.
+  const before = report.pageLeft - (report.contentLeft ?? 0);
+  const after = (report.contentRight ?? 0) - (report.railRight ?? 0);
+  checks[`${when}:gaps`] = { before, after };
+  if (spareFloor > 0) {
+    if (!(before > spareFloor) || !(after > spareFloor)) {
+      failure(
+        `${when}: the pair did not leave its window's spare room as page on both sides (${before}px before, ${after}px after)`,
+      );
+    }
+    if (Math.abs(before - after) > 2) {
+      failure(
+        `${when}: the room around the pair is lopsided — ${before}px before it and ${after}px after it`,
       );
     }
   }
   return report;
+}
+
+/**
+ * Claim the narrow window: the checklist stacks ABOVE the reading column, spans
+ * the same column, and the two do not overlap. This is the stylesheet's 78rem
+ * answer to "there is no room for a page beside a rail".
+ */
+function assertStacked(layout, when) {
+  const report = layoutReport(layout);
+  if (report.pageTop === null || report.railTop === null) {
+    failure(`${when}: the stacked layout boxes could not be read`);
+    return report;
+  }
+  if (!(report.railTop < report.pageTop)) {
+    failure(
+      `${when}: the checklist starts at ${report.railTop}, not above the reading column's ${report.pageTop}`,
+    );
+  }
+  if (!((report.railBottom ?? Infinity) <= report.pageTop + 1)) {
+    failure(
+      `${when}: the checklist (bottom ${report.railBottom}) overlaps the reading column (top ${report.pageTop})`,
+    );
+  }
+  // It is the same column, not a floating card beside it.
+  const overlap =
+    Math.min(report.railRight ?? 0, report.pageRight ?? 0) -
+    Math.max(report.railLeft ?? 0, report.pageLeft ?? 0);
+  if (!(overlap > 100)) {
+    failure(
+      `${when}: the checklist spans ${overlap}px of the reading column's width — it is not stacked in the same column`,
+    );
+  }
+  if (report.contentClientWidth !== null && (report.pageWidth ?? 0) > report.contentClientWidth + 1) {
+    failure(
+      `${when}: the reading column is ${report.pageWidth}px wide inside a ${report.contentClientWidth}px sheet`,
+    );
+  }
+  return report;
+}
+
+/**
+ * Fold the chat dock away, the way the operator's own collapse control does.
+ *
+ * The dock opens by default and takes a 22.5rem column out of the sheet. That is
+ * not part of the review page's claim: the checklist and the 48rem column are
+ * measured with the sheet's room available, exactly as the operator can arrange
+ * before opening a review.
+ */
+async function foldDock(win) {
+  const open = await win.webContents.executeJavaScript(
+    `Boolean(document.querySelector('[data-testid="chat-collapse"]'))`,
+  );
+  if (!open) return;
+  await click(win, '[data-testid="chat-collapse"]');
+  await waitFor(
+    win,
+    `(document.querySelector(".shell")?.className ?? "").includes("shell--chat-collapsed")`,
+    "the chat dock to fold away",
+  );
+  await frames(win);
+}
+
+/** The rail state as one small object, for both the driver's checks and the report. */
+function railState(page) {
+  return {
+    progress: page.progress,
+    hint: page.hint,
+    rows: page.railButtons,
+    lifeStatus: page.lifeStatus,
+    lifeDisabled: page.lifeItem ? page.lifeItem.disabled : null,
+    statuses: {
+      health: page.healthStatus,
+      mind: page.mindStatus,
+      financial: page.financeStatus,
+      business: page.businessStatus,
+      relationships: page.relationshipsStatus,
+    },
+  };
+}
+
+/** Claim the checklist's rows, order and statuses as one falsifiable block. */
+function assertRail(page, when, { statuses, progress, lifeStatus, lifeDisabled, lifeEnabled = false }) {
+  if (!page.railPresent) failure(`${when}: the Review checklist rail is not on the page`);
+  if (page.railLabel !== "Review checklist") {
+    failure(`${when}: the checklist's aria-label read ${JSON.stringify(page.railLabel)}`);
+  }
+  if (!page.layoutPresent) failure(`${when}: the page's review-page-layout wrapper is not on the page`);
+  if (page.layoutSingle === true) failure(`${when}: a weekly review was rendered as a single column`);
+  if (JSON.stringify(page.railButtons) !== JSON.stringify(RAIL_ROWS)) {
+    failure(
+      `${when}: the checklist's rows are ${JSON.stringify(page.railButtons)}, expected ${JSON.stringify(RAIL_ROWS)} (Life first, then the live areas in vault order)`,
+    );
+  }
+  if (page.railButtons.includes(LOCKED_ROW)) {
+    failure(`${when}: the checklist offers a review for the locked spirit area`);
+  }
+  if (page.progress !== progress) {
+    failure(`${when}: the checklist's progress reads ${JSON.stringify(page.progress)}, expected ${JSON.stringify(progress)}`);
+  }
+  for (const [slug, expected] of Object.entries(statuses)) {
+    const actual = page[`${slug === "financial" ? "finance" : slug}Status`];
+    if (actual !== expected) {
+      failure(`${when}: the ${slug} row reads ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+    }
+  }
+  if (lifeStatus !== undefined && page.lifeStatus !== lifeStatus) {
+    failure(`${when}: the Life review's status reads ${JSON.stringify(page.lifeStatus)}, expected ${JSON.stringify(lifeStatus)}`);
+  }
+  if (lifeDisabled !== undefined && (!page.lifeItem || page.lifeItem.disabled !== lifeDisabled)) {
+    failure(
+      `${when}: the Life review button is ${page.lifeItem ? (page.lifeItem.disabled ? "disabled" : "enabled") : "missing"}, expected ${lifeDisabled ? "disabled" : "enabled"}`,
+    );
+  }
+  if (lifeEnabled && page.lifeItem && page.lifeItem.disabled) {
+    failure(`${when}: the Life review is still disabled although every area is done`);
+  }
+}
+
+/** Claim the document surface the feature must not regress. */
+function assertDocument(page, when, { blocks }) {
+  if (page.boxes !== 1) failure(`${when}: the review page drew ${page.boxes} editor boxes`);
+  if (page.editing) failure(`${when}: the review page opened a writing line on arrival`);
+  if (page.blockCount !== blocks) {
+    failure(`${when}: the review opened with ${page.blockCount} block(s), expected ${blocks}`);
+  }
+  if (page.blanks !== 1) {
+    failure(`${when}: the review drew ${page.blanks} blank line(s), expected 1`);
+  }
+  if (!page.boxText.includes("Two walks, and one late night.")) {
+    failure(`${when}: the rendered review read ${JSON.stringify(page.boxText.slice(0, 160))}`);
+  }
+  if (page.boxText.includes("**")) {
+    failure(`${when}: raw markdown markers are painted in the review box`);
+  }
+  if (page.actions.includes("Edit") || page.actions.includes("Save")) {
+    failure(`${when}: the review page still offers an Edit/Save pair: ${JSON.stringify(page.actions)}`);
+  }
 }
 
 async function main() {
@@ -450,40 +779,124 @@ async function main() {
   });
   await win.loadURL(`${url}?v=${Date.now()}`);
   await waitFor(win, "Boolean(window.reviewRigReady)", "reviewRigReady");
+  await foldDock(win);
+  // With the dock out of the way the sheet is wide enough for the column's full
+  // measure; without this wait the first picture could be of a mid-reflow page.
+  await waitFor(
+    win,
+    `(document.querySelector(".shell__content")?.clientWidth ?? 0) > 1050`,
+    "the sheet to take the window without the dock",
+  );
+  await frames(win);
 
-  // ── 1. the review is the document, on arrival ────────────────────────────
+  // ── 1. the weekly review: the document, and the checklist beside it ───────
   const opened = await sample(win);
   checks.opened = opened;
-  if (opened.boxes !== 1) failure(`the review page drew ${opened.boxes} editor boxes`);
-  if (opened.editing) failure("the review opened a writing line on arrival");
-  if (opened.blockCount !== 15) {
-    failure(`the review opened with ${opened.blockCount} block(s), expected 15`);
-  }
-  // The blank line between the two Look-back paragraphs is one block of its own,
-  // and it draws as a blank line rather than as nothing.
-  if (opened.blanks !== 1) {
-    failure(`the review drew ${opened.blanks} blank line(s), expected 1`);
-  }
-  if (!opened.boxText.includes("Two walks, and one late night.")) {
-    failure(`the rendered review read ${JSON.stringify(opened.boxText.slice(0, 160))}`);
-  }
-  if (opened.boxText.includes("**")) {
-    failure("raw markdown markers are painted in the review box");
-  }
-  if (opened.actions.includes("Edit") || opened.actions.includes("Save")) {
-    failure(`the review page still offers an Edit/Save pair: ${JSON.stringify(opened.actions)}`);
-  }
+  checks.openedRail = railState(opened);
+  assertDocument(opened, "on arrival", { blocks: 35 });
   if (opened.title !== "Weekly review") {
     failure(`the review's title read ${JSON.stringify(opened.title)}`);
   }
-  // ── 1a. the page is one centred reading column ───────────────────────────
-  // The centre is the sheet's own content box, not the window's: the rail and
-  // the dock have already taken their columns, and a page centred in the window
-  // would sit under one of them.
-  checks.centering = assertCentredColumn(opened.layout, "at the default window");
+  // The page opens on the CURRENT week, which is whatever week the suite runs
+  // in: the claim is the shape of its own label, not a pinned date.
+  if (!/^Weekly review · Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.period))) {
+    failure(`the review page does not label its period: ${JSON.stringify(opened.period)}`);
+  }
+  assertRail(opened, "on arrival", {
+    statuses: {
+      health: "Done",
+      mind: "Not started",
+      financial: "In progress",
+      business: "Not started",
+      relationships: "Not started",
+    },
+    progress: `1 of ${TOTAL_AREAS} areas done`,
+    // Four areas are not done: the Life review must say how many are left and
+    // must be unusable until there are none.
+    lifeStatus: `${TOTAL_AREAS - 1} areas left`,
+    lifeDisabled: true,
+  });
+  // The scope line names the scope the page is on, and only an area scope offers
+  // the way back to the whole-life review.
+  if (opened.scopeName !== "Life") {
+    failure(`the scope line's name read ${JSON.stringify(opened.scopeName)}, expected "Life"`);
+  }
+  if (!String(opened.scopeLine).includes("Reviewing")) {
+    failure(`the scope line does not say what is being reviewed: ${JSON.stringify(opened.scopeLine)}`);
+  }
+  if (opened.scopeWholeLifeLink) {
+    failure("the whole-life link is offered while the page IS the whole-life review");
+  }
+  if (opened.markDoneLabel !== "Mark life review complete") {
+    failure(`the mark-done button reads ${JSON.stringify(opened.markDoneLabel)}`);
+  }
+  // The pair must be centred at the default window, where the sheet has room for
+  // the column's full measure.
+  checks.centering = assertTwoColumn(opened.layout, "at the default window", {
+    spareFloor: 4,
+  });
   await shot(win, "review-document.png");
+  await shot(win, "review-checklist.png");
 
-  // ── 2. a blank line the operator typed reaches the file ──────────────────
+  // ── 2. a wide window: the column keeps its measure, the pair centres ──────
+  // The operator's report is about wide monitors: a page run from the leading
+  // edge leaves every spare pixel on one side, and a rail pinned to the window's
+  // edge leaves the pair split apart. The window is widened past what the pair
+  // needs, so the only way both claims hold is if the column stayed 48rem and
+  // the pair's own spare room is empty page on both sides, split evenly.
+  win.setContentSize(WIDE_SIZE.width, WIDE_SIZE.height);
+  await waitFor(
+    win,
+    `(document.querySelector(".shell__content")?.clientWidth ?? 0) > 1200`,
+    "the sheet to take the wide window",
+  );
+  await frames(win);
+  const wide = await sample(win);
+  checks.wide = wide;
+  checks.wideCentering = assertTwoColumn(wide.layout, "in a wide window", {
+    spareFloor: 100,
+  });
+  await shot(win, "review-wide.png");
+
+  // ── 3. a narrow window: no room for a rail beside the column, so it stacks ─
+  win.setContentSize(NARROW_SIZE.width, NARROW_SIZE.height);
+  await waitFor(
+    win,
+    `(() => {
+      const rail = document.querySelector('[data-testid="review-area-rail"]');
+      const page = document.querySelector(".review-page");
+      if (!rail || !page) return false;
+      return rail.getBoundingClientRect().bottom <= page.getBoundingClientRect().top + 1;
+    })()`,
+    "the checklist to stack above the reading column",
+  );
+  await frames(win);
+  const narrow = await sample(win);
+  checks.narrow = narrow;
+  checks.narrowColumns = assertStacked(narrow.layout, "in a narrow window");
+  // The rail is still the checklist, just moved: the rows and statuses do not
+  // change with the layout.
+  assertRail(narrow, "in a narrow window", {
+    statuses: {
+      health: "Done",
+      mind: "Not started",
+      financial: "In progress",
+      business: "Not started",
+      relationships: "Not started",
+    },
+    progress: `1 of ${TOTAL_AREAS} areas done`,
+    lifeStatus: `${TOTAL_AREAS - 1} areas left`,
+    lifeDisabled: true,
+  });
+  win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+  await waitFor(
+    win,
+    `(document.querySelector(".shell__content")?.clientWidth ?? 0) > 900`,
+    "the default window back",
+  );
+  await frames(win);
+
+  // ── 4. a blank line the operator typed reaches the file ──────────────────
   // Edited at the paragraph BELOW the blank line, so the write is caused by a
   // real change and the blank line has to survive the box's own re-cut of the
   // note — which is exactly what used to collapse it.
@@ -512,7 +925,7 @@ async function main() {
     failure(`the blank line disappeared from the box: ${blanksAfter.blanks} drawn`);
   }
 
-  // ── 3. the formatting keys ───────────────────────────────────────────────
+  // ── 5. the formatting keys ───────────────────────────────────────────────
   await openBlock(win, 2);
   await type(win, "alpha beta gamma");
   await select(win, 6, 10);
@@ -559,17 +972,26 @@ async function main() {
     failure("the underline tag is printed literally in the box");
   }
 
-  // ── 4. Start fills the snapshot, with the agent down ─────────────────────
+  // ── 6. the Finance row starts Finance — even with the agent down ─────────
+  // A rail row is a start request, so the snapshot pass must run for the scope
+  // the row names before the agent is asked for anything: the document is the
+  // operator's and must be open and filled whether or not a gateway is up.
   await setHarness(win, "window.reviewRigAgentDown = true");
-  await click(win, '[data-testid="review-start"]');
-  await waitFor(win, `Boolean(document.querySelector(".form-error"))`, "the agent error");
+  await click(win, '[data-testid="review-area-financial"]');
+  await waitFor(
+    win,
+    `(document.querySelector(".form-error")?.textContent ?? "").includes("Settings › Hermes")`,
+    "the agent error",
+  );
   await waitFor(
     win,
     "(window.reviewRigSnapshotCalls ?? []).length > 0",
     "the snapshot pass to run",
   );
+  await frames(win);
   const agentDown = await sample(win);
   checks.agentDown = agentDown;
+  checks.agentDownRail = railState(agentDown);
   if (!agentDown.error || !agentDown.error.includes("Settings › Hermes")) {
     failure(`the agent failure did not say where to fix it: ${JSON.stringify(agentDown.error)}`);
   }
@@ -579,6 +1001,28 @@ async function main() {
   if (agentDown.boxes !== 1 || agentDown.editing) {
     failure("an agent that is not answering took the review document away");
   }
+  // Pressing a row puts the page on that area: the scope line and the selected
+  // row must agree, or the kickoff and the box are about different sections.
+  if (agentDown.scopeName !== "Finance") {
+    failure(`the rail press left the scope line on ${JSON.stringify(agentDown.scopeName)}`);
+  }
+  if (!agentDown.financeItem || !String(agentDown.financeItem.className).includes("is-active")) {
+    failure("the Finance row is not the selected row after it was pressed");
+  }
+  if (!String(agentDown.scopeLine).includes("Whole-life review")) {
+    failure(
+      `an area scope does not offer the way back to the whole-life review: ${JSON.stringify(agentDown.scopeLine)}`,
+    );
+  }
+  const snapshotCalls = await setHarness(win, "window.reviewRigSnapshotCalls");
+  checks.agentDownSnapshotCalls = snapshotCalls;
+  if (snapshotCalls.length !== 1) {
+    failure(`the failed start ran the snapshot pass ${snapshotCalls.length} time(s), expected 1`);
+  } else if (snapshotCalls[0]?.scope !== "financial") {
+    failure(
+      `the Finance row ran the snapshot pass for scope ${JSON.stringify(snapshotCalls[0]?.scope)}`,
+    );
+  }
   const filledBody = await fileBody(win);
   checks.filledBody = filledBody;
   if (occurrences(filledBody, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
@@ -587,12 +1031,15 @@ async function main() {
   if (!filledBody.includes("| Groceries | 1,234.56 |")) {
     failure("the snapshot did not carry the figure the rule asked for");
   }
-  const lookback = filledBody.indexOf("### Look-back");
+  // The block belongs under `## Finance` / `### Look-back`, not under the overall
+  // `## Look-back`: the rule names the financial domain's section.
+  const financeAt = filledBody.indexOf("## Finance");
+  const financeLookback = filledBody.indexOf("### Look-back", Math.max(financeAt, 0));
   const snapshotAt = filledBody.indexOf("<!-- lifequest:snapshot:finance-spend -->");
-  const keepAt = filledBody.indexOf("### Keep");
-  if (!(lookback !== -1 && snapshotAt > lookback && snapshotAt < keepAt)) {
+  const financeKeep = filledBody.indexOf("### Keep", Math.max(financeLookback, 0));
+  if (!(financeAt !== -1 && financeLookback !== -1 && snapshotAt > financeLookback && snapshotAt < financeKeep)) {
     failure(
-      `the snapshot did not land in the Financial Look-back section (lookback ${lookback}, snapshot ${snapshotAt}, keep ${keepAt})`,
+      `the snapshot did not land in Finance's Look-back section (finance ${financeAt}, lookback ${financeLookback}, snapshot ${snapshotAt}, keep ${financeKeep})`,
     );
   }
   // The markers are comments: the box prints the figure and hides the machinery.
@@ -604,9 +1051,7 @@ async function main() {
   }
   // And the figure is a TABLE, not a paragraph of pipes: a snapshot drawn as
   // `| Category | Total | | --- | --- |` is worse than no snapshot at all.
-  if (agentDown.tables < 1) {
-    failure("the snapshot's table is not drawn as a table");
-  }
+  if (agentDown.tables < 1) failure("the snapshot's table is not drawn as a table");
   if (!agentDown.headers.includes("Category") || !agentDown.headers.includes("Total (ZAR)")) {
     failure(`the snapshot's table headers read ${JSON.stringify(agentDown.headers)}`);
   }
@@ -615,68 +1060,287 @@ async function main() {
   }
   await shot(win, "review-started.png");
 
-  // ── 5. the second Start fills once, and opens the interview ──────────────
+  // ── 7. the Finance row opens the Finance interview, and finishing it flips
+  //       the row ────────────────────────────────────────────────────────────
   await setHarness(win, "window.reviewRigAgentDown = false");
-  await click(win, '[data-testid="review-start"]');
+  await click(win, '[data-testid="review-area-financial"]');
   await waitFor(
     win,
-    "(window.reviewRigStarts ?? []).length > 0",
-    "the review session to be requested",
+    "(window.reviewRigStarts ?? []).length === 1",
+    "the Finance review session to be requested",
   );
   await frames(win);
   const started = await sample(win);
   checks.started = started;
-  if (started.error) failure(`the second Start reported ${JSON.stringify(started.error)}`);
+  const starts = await setHarness(win, "window.reviewRigStarts");
+  checks.starts = starts;
+  if (started.error) failure(`the second Finance start reported ${JSON.stringify(started.error)}`);
+  if (starts[0]?.scope !== "financial") {
+    failure(`the Finance row started scope ${JSON.stringify(starts[0]?.scope)}`);
+  }
+  if (starts[0]?.cadence !== "weekly") {
+    failure(`the Finance row started a ${JSON.stringify(starts[0]?.cadence)} review`);
+  }
+  // The kickoff is the interview's first turn, so it must name the section this
+  // row is about — and say to leave the others alone.
+  if (!String(starts[0]?.kickoff).includes("## Finance")) {
+    failure(`the Finance kickoff does not name its own section: ${JSON.stringify(starts[0]?.kickoff)}`);
+  }
+  if (!String(starts[0]?.kickoff).includes("only")) {
+    failure(`the Finance kickoff does not scope the companion to one section: ${JSON.stringify(starts[0]?.kickoff)}`);
+  }
+  await waitForDockKickoffs(win, 1);
+  const kickoffs = await setHarness(win, "window.reviewRigKickoffs");
+  checks.financeKickoffs = kickoffs;
+  if (kickoffs.length !== 1 || !kickoffs[0].includes("## Finance")) {
+    failure(`the dock was sent ${kickoffs.length} kickoff(s), not the Finance one`);
+  }
   if (!started.notice || !/snapshot/i.test(started.notice)) {
     failure(`the page did not say what it filled: ${JSON.stringify(started.notice)}`);
   }
   if (!started.notice || !/chat/i.test(started.notice)) {
     failure(`the page did not say the interview opened: ${JSON.stringify(started.notice)}`);
   }
+  if (started.markDoneLabel !== "Mark Finance review complete") {
+    failure(`the mark-done button reads ${JSON.stringify(started.markDoneLabel)}, expected the Finance form`);
+  }
   const twice = await fileBody(win);
   checks.startedTwiceBody = twice;
   if (occurrences(twice, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
-    failure("a second Start appended a second snapshot block");
+    failure("a second start appended a second snapshot block");
   }
   if (occurrences(twice, "| Groceries | 1,234.56 |") !== 1) {
-    failure("a second Start appended the snapshot's own table again");
+    failure("a second start appended the snapshot's own table again");
   }
-  const starts = await setHarness(win, "window.reviewRigStarts");
-  checks.starts = starts;
-  if (starts.length !== 1) failure(`Start requested ${starts.length} sessions, expected 1`);
+  // Completing the area completes ONLY that area: the rail says so, and the file
+  // it is reading says so — one scope `done`, not the file locked.
+  await click(win, '[data-testid="review-mark-done"]');
+  await waitForRailStatus(win, "financial", "Done");
+  await frames(win);
+  const financeDone = await sample(win);
+  checks.financeDone = financeDone;
+  checks.financeDoneRail = railState(financeDone);
+  if (financeDone.notice && !/Finance review complete/.test(financeDone.notice)) {
+    failure(`finishing Finance said ${JSON.stringify(financeDone.notice)}`);
+  }
+  if (financeDone.progress !== `2 of ${TOTAL_AREAS} areas done`) {
+    failure(`the progress after Finance reads ${JSON.stringify(financeDone.progress)}, expected 2 of ${TOTAL_AREAS}`);
+  }
+  const scopesAfterFinance = await fileScopes(win);
+  checks.scopesAfterFinance = scopesAfterFinance;
+  if (scopesAfterFinance.financial?.status !== "done") {
+    failure(`the review file's financial scope is ${JSON.stringify(scopesAfterFinance.financial)}, expected done`);
+  }
+  if (await fileLocked(win)) failure("marking one area done locked the whole file");
 
-  // ── 6. Preview shows the whole document, markers and all hidden ──────────
-  await click(win, '[data-testid="review-mode-preview"]');
-  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-preview"]'))`, "the preview");
-  const preview = await sample(win);
-  checks.preview = preview;
-  if (!preview.previewShown) failure("the preview mode drew no preview");
-  if (preview.boxes !== 0) failure("the preview mode left the editor box on the page");
-  const previewText = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="review-preview"]').textContent`,
+  // ── 8. finish the remaining areas; the last one unlocks the life review ──
+  // Each remaining row starts its own scope and then completes it. The progress
+  // line must count up, and the area that is last must be the one that lifts the
+  // Life review's gate — not any earlier one.
+  const remaining = [
+    { slug: "mind", name: "Mind" },
+    { slug: "business", name: "Business" },
+    { slug: "relationships", name: "Relationships" },
+  ];
+  let completed = 2; // Health (fixture) and Finance.
+  for (const area of remaining) {
+    const expectedStarts = 1 + remaining.findIndex((r) => r.slug === area.slug);
+    await click(win, `[data-testid="review-area-${area.slug}"]`);
+    await waitFor(
+      win,
+      `(window.reviewRigStarts ?? []).length === ${expectedStarts + 1}`,
+      `the ${area.name} review session to be requested`,
+    );
+    await frames(win);
+    const areaStart = await sample(win);
+    const areaStarts = await setHarness(win, "window.reviewRigStarts");
+    const last = areaStarts[areaStarts.length - 1];
+    checks[`started${area.name}`] = { page: areaStart, start: last };
+    if (last?.scope !== area.slug) {
+      failure(`the ${area.name} row started scope ${JSON.stringify(last?.scope)}`);
+    }
+    if (!String(last?.kickoff).includes(`## ${area.name}`)) {
+      failure(`the ${area.name} kickoff does not name its own section: ${JSON.stringify(last?.kickoff)}`);
+    }
+    if (areaStart.scopeName !== area.name) {
+      failure(`the ${area.name} row left the scope line on ${JSON.stringify(areaStart.scopeName)}`);
+    }
+    if (areaStart.markDoneLabel !== `Mark ${area.name} review complete`) {
+      failure(`the mark-done button reads ${JSON.stringify(areaStart.markDoneLabel)}`);
+    }
+    if (areaStart.scopeWholeLifeLink !== true) {
+      failure(`the ${area.name} scope does not offer the whole-life review link`);
+    }
+    await click(win, '[data-testid="review-mark-done"]');
+    await waitForRailStatus(win, area.slug, "Done");
+    await frames(win);
+    completed += 1;
+    const donePage = await sample(win);
+    checks[`completed${area.name}`] = donePage;
+    if (donePage.progress !== `${completed} of ${TOTAL_AREAS} areas done`) {
+      failure(
+        `the progress after ${area.name} reads ${JSON.stringify(donePage.progress)}, expected ${completed} of ${TOTAL_AREAS}`,
+      );
+    }
+    const isLast = area.slug === remaining[remaining.length - 1].slug;
+    if (isLast) {
+      if (!/Every area is reviewed/.test(String(donePage.notice))) {
+        failure(`finishing the last area said ${JSON.stringify(donePage.notice)}, not that every area is reviewed`);
+      }
+      if (!/All areas are reviewed/i.test(String(donePage.hint))) {
+        failure(`the checklist hint after the last area reads ${JSON.stringify(donePage.hint)}`);
+      }
+      if (!donePage.lifeItem || donePage.lifeItem.disabled) {
+        failure("the Life review is still disabled after the last area was completed");
+      }
+      if (donePage.lifeStatus !== "In progress") {
+        failure(`the Life review's status reads ${JSON.stringify(donePage.lifeStatus)}, expected "In progress" (the file's overall scope is planted but unstarted)`);
+      }
+    } else if (!String(donePage.notice).includes(`${area.name} review complete`)) {
+      failure(`finishing ${area.name} said ${JSON.stringify(donePage.notice)}`);
+    }
+  }
+  const allDone = await sample(win);
+  checks.allDone = allDone;
+  checks.allDoneRail = railState(allDone);
+  if (allDone.progress !== `${TOTAL_AREAS} of ${TOTAL_AREAS} areas done`) {
+    failure(`every area is done but the progress reads ${JSON.stringify(allDone.progress)}`);
+  }
+  for (const area of AREA_ROWS) {
+    const status = allDone[`${area.slug === "financial" ? "finance" : area.slug}Status`];
+    if (status !== "Done") failure(`the ${area.name} row reads ${JSON.stringify(status)} after every area was completed`);
+  }
+  // The picture is of the checklist, not of the dock the starts opened.
+  await foldDock(win);
+  await shot(win, "review-life-ready.png");
+
+  // ── 9. the daily review is one general review, with no checklist ─────────
+  // The rig is on an area lens (Relationships, pressed in step 8) when it
+  // navigates to Daily: the daily page must ignore it — one general review,
+  // scope `overall`, and a kickoff that says there are no area sections.
+  await setHarness(win, 'window.reviewRigGoto("/review/daily")');
+  await waitFor(
+    win,
+    `(() => {
+      const title = document.querySelector(".review-page__title");
+      return Boolean(title) && title.textContent.trim() === "Daily review";
+    })()`,
+    "the daily review page",
   );
-  checks.previewText = previewText.slice(0, 600);
-  // The sectioned summary this page used to draw extracted the four required
-  // headings and nothing else, so this paragraph — and the `## Notes` heading
-  // above it — were simply not there. The preview is the whole file now.
-  if (!previewText.includes("A note outside the skeleton.")) {
-    failure("the preview dropped a section the operator wrote");
+  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-empty"]'))`, "the daily empty state");
+  await frames(win);
+  const dailyOpen = await sample(win);
+  checks.dailyOpen = dailyOpen;
+  if (dailyOpen.railPresent) failure("the daily review drew an area checklist");
+  if (dailyOpen.railButtons.length > 0) {
+    failure(`the daily review drew area controls: ${JSON.stringify(dailyOpen.railButtons)}`);
   }
-  // The heading the formatting keys wrote, one section up, in the same file.
-  if (!previewText.includes("alpha beta gamma")) {
-    failure("the preview dropped the heading the operator wrote");
+  if (dailyOpen.scopeLine !== null || dailyOpen.scopeName !== null) {
+    failure(`the daily review drew a scope line: ${JSON.stringify(dailyOpen.scopeLine)}`);
   }
-  if (previewText.includes("lifequest:snapshot")) {
-    failure("the preview printed the snapshot marker");
+  if (!dailyOpen.layoutPresent || dailyOpen.layoutSingle !== true) {
+    failure("the daily review is not rendered as the single-column review-page-layout");
   }
-  await click(win, '[data-testid="review-mode-document"]');
-  await waitFor(win, `Boolean(document.querySelector(".note-live"))`, "the document mode");
+  if (dailyOpen.startLabel !== "Start the interview") {
+    failure(`the daily review's empty-state button reads ${JSON.stringify(dailyOpen.startLabel)}`);
+  }
+  if (dailyOpen.emptyPresent !== true) {
+    failure("the daily review did not draw its empty state for a day with no file");
+  }
+  const dailyStartCount = async () => (await setHarness(win, "window.reviewRigStarts")).length;
+  const beforeDaily = await dailyStartCount();
+  await click(win, '[data-testid="review-start"]');
+  await waitFor(
+    win,
+    `(window.reviewRigStarts ?? []).length === ${beforeDaily + 1}`,
+    "the daily review session to be requested",
+  );
+  await frames(win);
+  const dailyStarted = await sample(win);
+  checks.dailyStarted = dailyStarted;
+  const dailyStarts = await setHarness(win, "window.reviewRigStarts");
+  const dailyStart = dailyStarts[dailyStarts.length - 1];
+  checks.dailyStart = dailyStart;
+  if (dailyStart?.cadence !== "daily") {
+    failure(`the daily start asked for a ${JSON.stringify(dailyStart?.cadence)} review`);
+  }
+  // The lens was Relationships; a daily review that honoured it would start an
+  // area scope. It must start the one general `overall` scope.
+  if (dailyStart?.scope !== "overall") {
+    failure(`the daily review started scope ${JSON.stringify(dailyStart?.scope)}, expected overall (the lens must be ignored)`);
+  }
+  if (!String(dailyStart?.kickoff).includes("one general review")) {
+    failure(`the daily kickoff does not say it is one general review: ${JSON.stringify(dailyStart?.kickoff)}`);
+  }
+  if (!String(dailyStart?.kickoff).includes("no area sections")) {
+    failure(`the daily kickoff does not say there are no area sections: ${JSON.stringify(dailyStart?.kickoff)}`);
+  }
+  await waitForDockKickoffs(win, dailyStarts.length);
+  const dailyKickoffs = await setHarness(win, "window.reviewRigKickoffs");
+  if (!String(dailyKickoffs[dailyKickoffs.length - 1]).includes("no area sections")) {
+    failure("the dock was not told the daily review has no area sections");
+  }
+  const dailyBody = await fileBody(win);
+  checks.dailyBody = dailyBody;
+  if (!dailyBody.includes("## Look-back")) {
+    failure("the daily review file does not hold the overall skeleton");
+  }
+  if (dailyBody.includes("### ")) {
+    failure("the daily review file grew area (###) sections");
+  }
+  for (const area of AREA_ROWS) {
+    if (dailyBody.includes(`## ${area.name}`)) {
+      failure(`the daily review file grew a ${area.name} section`);
+    }
+  }
+  if (dailyStarted.railPresent || dailyStarted.railButtons.length > 0) {
+    failure("the daily review grew a checklist after its interview started");
+  }
+  if (dailyStarted.markDoneLabel !== "Mark review complete") {
+    failure(`the daily review's mark-done button reads ${JSON.stringify(dailyStarted.markDoneLabel)}`);
+  }
+  if (dailyStarted.boxes !== 1) failure("the started daily review is not one document box");
+  await foldDock(win);
+  await shot(win, "review-daily.png");
 
-  // ── 7. the cadence's rules, read and written from the page ───────────────
+  // ── 10. back on the weekly review: rules and Preview still work ──────────
+  // The daily review ignored the lens but did not consume it: the weekly page is
+  // still on the area that was pressed last, which is the whole point of the
+  // title-bar lens surviving a page that has no areas.
+  await setHarness(win, 'window.reviewRigGoto("/review/weekly")');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="review-area-rail"]'))`,
+    "back on the weekly review",
+  );
+  await frames(win);
+  const back = await sample(win);
+  checks.back = back;
+  if (back.scopeName !== "Relationships") {
+    failure(`returning to the weekly review left the scope on ${JSON.stringify(back.scopeName)}, expected Relationships`);
+  }
+  if (back.markDoneLabel !== "Mark Relationships review complete") {
+    failure(`the weekly mark-done button reads ${JSON.stringify(back.markDoneLabel)}`);
+  }
+  assertRail(back, "back on the weekly review", {
+    statuses: {
+      health: "Done",
+      mind: "Done",
+      financial: "Done",
+      business: "Done",
+      relationships: "Done",
+    },
+    progress: `${TOTAL_AREAS} of ${TOTAL_AREAS} areas done`,
+    lifeStatus: "In progress",
+    lifeEnabled: true,
+  });
+  // The cadence's own rules: read from the page, written from the page.
   await click(win, '[data-testid="review-skill-toggle"]');
-  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-skill-editor"]'))`, "the rules panel");
-  // The panel opens before the file is read, so the wait is on the rules being
-  // IN it rather than on the box existing.
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="review-skill-editor"]'))`,
+    "the rules panel",
+  );
   await waitFor(
     win,
     `(document.querySelector('[data-testid="review-skill-editor"]')?.textContent ?? "").includes("Keep it to a page.")`,
@@ -687,6 +1351,7 @@ async function main() {
   if (!(rules.skillValue ?? "").includes("Keep it to a page.")) {
     failure(`the rules panel did not show the cadence's rules: ${JSON.stringify(rules.skillValue)}`);
   }
+  await foldDock(win);
   await shot(win, "review-rules.png");
   const nextRules = "# Weekly review skill\n\n- Always ask about sleep.\n";
   await win.webContents.executeJavaScript(`(() => {
@@ -716,40 +1381,191 @@ async function main() {
   if (!String(skillWrites[0] ?? "").includes("Always ask about sleep.")) {
     failure(`the rules write carried ${JSON.stringify(skillWrites[0])}`);
   }
-
-  // ── 8. a wide window: the column keeps its measure, and centres ──────────
-  // The operator's report is about wide monitors: a page run from the leading
-  // edge leaves every spare pixel on one side. The window is widened past the
-  // column's measure, so the only way the page can still be the 48rem column is
-  // if the auto margins are splitting the leftover room evenly.
   await click(win, '[data-testid="review-skill-toggle"]');
   await waitFor(
     win,
     `!document.querySelector('[data-testid="review-skill-editor"]')`,
     "the rules panel to fold away",
   );
-  win.setContentSize(WIDE_SIZE.width, WIDE_SIZE.height);
+
+  // ── 11. Preview is the whole file, and no longer a domains list ──────────
+  await click(win, '[data-testid="review-mode-preview"]');
+  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-preview"]'))`, "the preview");
+  await frames(win);
+  const preview = await sample(win);
+  checks.preview = preview;
+  if (!preview.previewShown) failure("the preview mode drew no preview");
+  if (preview.boxes !== 0) failure("the preview mode left the editor box on the page");
+  const previewText = await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="review-preview"]').textContent`,
+  );
+  checks.previewText = previewText.slice(0, 600);
+  // The preview is the whole file: the paragraph and heading the operator wrote,
+  // and the area sections the rail maps, are all in it.
+  if (!previewText.includes("A note outside the skeleton.")) {
+    failure("the preview dropped a section the operator wrote");
+  }
+  if (!previewText.includes("alpha beta gamma")) {
+    failure("the preview dropped the heading the operator wrote");
+  }
+  if (!previewText.includes("Relationships")) {
+    failure("the preview dropped an area section the checklist maps");
+  }
+  if (previewText.includes("lifequest:snapshot")) {
+    failure("the preview printed the snapshot marker");
+  }
+  // The old `ReviewPreview` drew a domains list with Not started/Done chips
+  // inside Preview. The checklist is the one place statuses live now.
+  if (previewText.includes("Not started")) {
+    failure("the preview still draws the old domains/status list");
+  }
+  await click(win, '[data-testid="review-mode-document"]');
+  await waitFor(win, `Boolean(document.querySelector(".note-live"))`, "the document mode");
+
+  // ── 12. the life review: summarise across the areas, then lock the file ──
+  // The daily review also started scope `overall`, so the wait is for a NEW
+  // session at the next index, not merely for the last one to be `overall`.
+  const startsBeforeLife = (await setHarness(win, "window.reviewRigStarts")).length;
+  await click(win, '[data-testid="review-area-overall"]');
   await waitFor(
     win,
-    `(document.querySelector(".shell__content")?.clientWidth ?? 0) > 900`,
-    "the sheet to take the wide window",
+    `(window.reviewRigStarts ?? []).length === ${startsBeforeLife + 1} &&
+      window.reviewRigStarts[${startsBeforeLife}].scope === "overall"`,
+    "the life review session to be requested",
   );
   await frames(win);
-  const wide = await sample(win);
-  checks.wide = wide;
-  checks.wideCentering = assertCentredColumn(wide.layout, "in a wide window", {
-    expectRoom: true,
-  });
-  await shot(win, "review-wide.png");
+  const lifeStarted = await sample(win);
+  checks.lifeStarted = lifeStarted;
+  const lifeStarts = await setHarness(win, "window.reviewRigStarts");
+  const lifeStart = lifeStarts[lifeStarts.length - 1];
+  checks.lifeStart = lifeStart;
+  if (lifeStart?.scope !== "overall") {
+    failure(`the Life review row started scope ${JSON.stringify(lifeStart?.scope)}`);
+  }
+  // The life review is the summary pass: its kickoff must tell the companion to
+  // read across the area sections, not to write one of them.
+  if (!String(lifeStart?.kickoff).includes("whole-life review")) {
+    failure(`the life-review kickoff is not the whole-life one: ${JSON.stringify(lifeStart?.kickoff)}`);
+  }
+  if (!String(lifeStart?.kickoff).includes("area")) {
+    failure(`the life-review kickoff does not speak about the areas: ${JSON.stringify(lifeStart?.kickoff)}`);
+  }
+  await waitForDockKickoffs(win, lifeStarts.length);
+  const lifeKickoffs = await setHarness(win, "window.reviewRigKickoffs");
+  if (!String(lifeKickoffs[lifeKickoffs.length - 1]).includes("whole-life review")) {
+    failure("the dock was not sent the whole-life kickoff");
+  }
+  if (lifeStarted.lifeStatus !== "In progress") {
+    failure(`the Life review's status while it is being worked reads ${JSON.stringify(lifeStarted.lifeStatus)}`);
+  }
+  if (lifeStarted.scopeName !== "Life") {
+    failure(`the life review left the scope line on ${JSON.stringify(lifeStarted.scopeName)}`);
+  }
+  if (lifeStarted.scopeWholeLifeLink) {
+    failure("the whole-life link is offered while the page IS the whole-life review");
+  }
+  if (lifeStarted.markDoneLabel !== "Mark life review complete") {
+    failure(`the life review's mark-done button reads ${JSON.stringify(lifeStarted.markDoneLabel)}`);
+  }
+  // Marking it complete is the only thing that locks the file. Every rail row
+  // must be dead afterwards, and a write through the bridge must be refused.
+  await click(win, '[data-testid="review-mark-done"]');
+  await waitFor(
+    win,
+    `(document.querySelector(".review-page__lock-badge")?.textContent ?? "").trim() === "Locked"`,
+    "the locked badge",
+  );
+  await waitForRailStatus(win, "overall", "Done");
+  await frames(win);
+  const locked = await sample(win);
+  checks.locked = locked;
+  checks.lockedRail = railState(locked);
+  if (locked.lockedBadge !== "Locked") failure("the review did not show its Locked badge");
+  if (locked.lifeStatus !== "Done") failure(`the Life review's status reads ${JSON.stringify(locked.lifeStatus)}`);
+  if (locked.progress !== `${TOTAL_AREAS} of ${TOTAL_AREAS} areas done`) {
+    failure(`the locked review's progress reads ${JSON.stringify(locked.progress)}`);
+  }
+  for (const row of [...AREA_ROWS, { slug: "overall", name: "Life" }]) {
+    const item = row.slug === "overall" ? locked.lifeItem : locked[`${row.slug === "financial" ? "finance" : row.slug}Item`];
+    if (!item || item.disabled !== true) {
+      failure(`the ${row.name} row is still pressable on a locked review`);
+    }
+  }
+  if (!locked.unlockPresent) failure("the locked review offers no way to unlock it");
+  if (locked.status !== "Locked") failure(`the page's status line reads ${JSON.stringify(locked.status)}`);
+  if (!(await fileLocked(win))) failure("the file is not locked after the life review was marked complete");
+  const lockedScopes = await fileScopes(win);
+  checks.lockedScopes = lockedScopes;
+  if (lockedScopes.overall?.status !== "done") {
+    failure(`the review file's overall scope is ${JSON.stringify(lockedScopes.overall)}, expected done`);
+  }
+  // The lock is on the FILE, not only on the badge: a write attempted through
+  // the bridge is refused, and the body does not move.
+  const period = String(lifeStart?.period ?? "");
+  const refusedWrite = await win.webContents.executeJavaScript(
+    `window.lifequest.reviewWrite("weekly", ${JSON.stringify(period)}, "tampered after lock").then((r) => r.ok === false && typeof r.error === "string")`,
+  );
+  checks.refusedWrite = refusedWrite;
+  if (refusedWrite !== true) failure("a write to the locked review was accepted");
+  const lockedBody = await fileBody(win);
+  checks.lockedBody = lockedBody;
+  if (lockedBody.includes("tampered after lock")) failure("the refused write reached the locked review file");
+  for (const area of AREA_ROWS) {
+    if (occurrences(lockedBody, `\n## ${area.name}\n`) !== 1) {
+      failure(`the locked review holds ${occurrences(lockedBody, `\n## ${area.name}\n`)} ${area.name} sections, expected 1`);
+    }
+  }
+  if (occurrences(lockedBody, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
+    failure("the lock changed the snapshot block");
+  }
 
-  // ── 9. nothing unexpected, nothing on fire ───────────────────────────────
-  checks.kickoffs = await setHarness(win, "window.reviewRigKickoffs");
+  // ── 13. nothing unexpected, nothing on fire ──────────────────────────────
+  const finalStarts = await setHarness(win, "window.reviewRigStarts");
+  checks.startsAll = finalStarts;
+  const finalKickoffs = await setHarness(win, "window.reviewRigKickoffs");
+  checks.kickoffsAll = finalKickoffs;
+  const scopeSequence = finalStarts.map((entry) => `${entry.cadence}:${entry.scope}`);
+  checks.scopeSequence = scopeSequence;
+  const expectedSequence = [
+    "weekly:financial",
+    "weekly:mind",
+    "weekly:business",
+    "weekly:relationships",
+    "daily:overall",
+    "weekly:overall",
+  ];
+  if (JSON.stringify(scopeSequence) !== JSON.stringify(expectedSequence)) {
+    failure(
+      `the sessions the page started are ${JSON.stringify(scopeSequence)}, expected ${JSON.stringify(expectedSequence)} (each row its own scope, the day general, the life review last)`,
+    );
+  }
+  await waitFor(
+    win,
+    `(window.reviewRigKickoffs ?? []).length === ${finalStarts.length}`,
+    "every start to hand its kickoff to the dock",
+    5_000,
+  );
+  const kickoffsNow = await setHarness(win, "window.reviewRigKickoffs");
+  checks.kickoffsMatched = kickoffsNow.length;
+  if (kickoffsNow.length !== finalStarts.length) {
+    failure(`${kickoffsNow.length} kickoff(s) reached the dock for ${finalStarts.length} start(s)`);
+  }
+  // One failed start (the agent-down press) attempted a session without opening
+  // one; the successful Finance press is the only finance start.
+  const calls = await setHarness(win, "window.reviewRigCalls");
+  checks.calls = calls;
+  const failedFinanceStarts = calls.filter(
+    (call) => call === "reviewStartOrResume:weekly:" + period + ":financial",
+  ).length;
+  checks.failedFinanceStarts = failedFinanceStarts;
+  if (failedFinanceStarts !== 2) {
+    failure(`the Finance row asked for a session ${failedFinanceStarts} time(s), expected 2 (agent down, then up)`);
+  }
   const unexpected = await setHarness(win, "window.reviewRigUnexpectedCalls");
   checks.unexpectedBridgeCalls = unexpected;
   if (unexpected.length > 0) {
     failure(`the page called bridge methods this rig does not model: ${unexpected.join(", ")}`);
   }
-  checks.calls = await setHarness(win, "window.reviewRigCalls");
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
@@ -775,7 +1591,7 @@ async function main() {
 setTimeout(() => {
   console.error("review rig timed out");
   app.exit(1);
-}, 90_000);
+}, 120_000);
 
 app
   .whenReady()

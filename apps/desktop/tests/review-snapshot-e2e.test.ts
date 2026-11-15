@@ -403,6 +403,20 @@ describe("review snapshot e2e", () => {
       );
 
       // ── 8. a locked review is left alone ─────────────────────────────────
+      // The overall review is gated on every live area's section being done.
+      // This vault has one live area, Financial, and the snapshot pass left its
+      // scope in draft — so complete that area first; the overall mark below
+      // must then succeed and lock, which is what this step is about.
+      const financeDone = await executeReviewTool(vaultRoot, ACTOR, "mark_review_done", {
+        cadence: "weekly",
+        period: PERIOD,
+        scope: "financial",
+      });
+      assert.equal(
+        (financeDone as { error?: unknown }).error,
+        undefined,
+        "the Financial review could not be marked done",
+      );
       const marked = await executeReviewTool(vaultRoot, ACTOR, "mark_review_done", {
         cadence: "weekly",
         period: PERIOD,
