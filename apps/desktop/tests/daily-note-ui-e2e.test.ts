@@ -280,13 +280,30 @@ type AutomationSample =
   | {
       present: true;
       inHeader: boolean;
+      inTitleRow: boolean;
+      inActions: boolean;
       inCompose: boolean;
-      aboveBox: boolean;
-      gapAboveBox: number;
-      levelWithHeading: boolean;
+      inFooter: boolean;
+      footerHasStatus: boolean;
+      statusLeftOfRow: boolean;
+      levelWithStatus: boolean;
+      focusInTitleRow: boolean;
+      focusInHeader: boolean;
+      analyzeInActions: boolean;
+      belowBox: boolean;
+      gapBelowBox: number;
       rightEdgeOffBy: number;
-      automationsRightEdgeOffBy: number;
       insideBoxColumn: boolean;
+      /** The label's computed size, and the page's own base it steps down from. */
+      fontSize: number;
+      pageFontSize: number;
+      lineHeight: number;
+      paddingBlockTop: number;
+      paddingBlockBottom: number;
+      /** The key's border-box height, and the title row's square key beside it. */
+      height: number;
+      focusHeight: number | null;
+      heightBelowFocus: number | null;
       buttonRadius: number;
       step: number;
       backgroundImage: string;
@@ -542,39 +559,80 @@ describe("daily note ui e2e", () => {
     }
 
     // ── the day's act: in the header's title row, above the box, a key ──────
-    // The operator's report was a control that read black-on-black in Nous and
-    // sat up with the pager. It now stands level with the day's heading, above
-    // the prose it commits. The driver measures both the placement and the face
-    // against the painted DOM — a gradient face is a fill, an inset shadow is a
-    // bevel, a hue off grey is the skin's accent actually arriving — and its
-    // picture is the screen they will see.
+    // The operator asked for the act to come off the title row's top-right and
+    // sit at the box's foot: under the prose it commits, level with the autosave
+    // line, one type step down and a shorter key — while Today and the square
+    // focus key keep the title row. The driver measures the placement from the
+    // page's own boxes, the size from the button's box and computed styles, and
+    // its picture is the screen they will see.
     const automation = report.checks.automation;
     assert.equal(automation.present, true, "the Analyze note control is not on the page");
     if (!automation.present) return;
-    assert.equal(automation.inHeader, true, "the Analyze note control is not in the header");
     assert.equal(
-      automation.inCompose,
+      automation.inHeader || automation.inTitleRow || automation.inActions,
       false,
-      "the Analyze note control is still down in the box's own column",
+      "the Analyze note control is still up in the page's title row",
     );
     assert.equal(
-      automation.aboveBox,
+      automation.inCompose && automation.inFooter,
       true,
-      `the Analyze note control sits ${automation.gapAboveBox}px below the box's top edge`,
+      "the Analyze note control is not in the box's foot inside the compose column",
     );
     assert.equal(
-      automation.levelWithHeading,
+      automation.footerHasStatus,
       true,
-      "the Analyze note control is not on the heading's own line",
+      "the box's foot does not hold the autosave line beside the day's act",
+    );
+    assert.equal(
+      automation.analyzeInActions,
+      false,
+      "the Analyze note control is still in the title row's action cluster",
+    );
+    assert.equal(
+      automation.focusInTitleRow && automation.focusInHeader,
+      true,
+      "focus mode did not stay in the title row",
+    );
+    assert.equal(
+      automation.belowBox,
+      true,
+      `the Analyze note control sits ${automation.gapBelowBox}px from the box's bottom edge, not below it`,
+    );
+    assert.equal(
+      automation.statusLeftOfRow,
+      true,
+      "the autosave line is not on the foot's leading edge beside the day's act",
+    );
+    assert.equal(
+      automation.levelWithStatus,
+      true,
+      "the Analyze note control is not level with the autosave line",
     );
     assert.ok(
       Math.abs(automation.rightEdgeOffBy) <= 2,
-      `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge`,
+      `the day's act ends ${automation.rightEdgeOffBy}px from the box's trailing edge`,
     );
     assert.equal(
       automation.insideBoxColumn,
       true,
       "the Analyze note control reaches outside the box's own column",
+    );
+    assert.ok(
+      automation.fontSize >= 13 && automation.fontSize <= 14.5,
+      `the Analyze note label is ${automation.fontSize}px, not the 0.875rem step`,
+    );
+    assert.ok(
+      automation.fontSize <= 0.9 * automation.pageFontSize,
+      `the Analyze note label is ${automation.fontSize}px against the page's ${automation.pageFontSize}px base`,
+    );
+    assert.ok(
+      automation.height >= 33 && automation.height <= 37,
+      `the Analyze note button is ${automation.height}px tall, not the ~35.5px foot key`,
+    );
+    assert.ok(
+      automation.focusHeight !== null &&
+        automation.height <= automation.focusHeight - 2,
+      `the Analyze note button is ${automation.height}px against the ${automation.focusHeight}px focus key — not at least 2px shorter`,
     );
     assert.ok(
       automation.buttonRadius <= automation.step,

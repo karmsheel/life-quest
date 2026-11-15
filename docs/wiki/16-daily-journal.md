@@ -47,12 +47,15 @@ to remember, because the date is the filename.
    every future day is drawn inert, the next-month arrow stops at the month today is in, and
    choosing a day writes the day you are leaving first. A write that failed holds you where
    you are; a refused one does not.
-6. The day's acts sit at the trailing end of the title row, in the order a day happens:
+6. The title row's trailing end holds the page's own keys, in the order a day happens:
    - **Today** — only when you are on a day that is not today (title "Go to today").
-   - **Analyze note** — the day's built-in manual job, wearing the raised key that commits
-     the note. While the chat opens it reads **Opening chat…**.
    - **Focus mode** — the square framed key at the trailing end (accessible name
      **Focus mode**). See step 7.
+   The day's own act sits at the box's foot, on its trailing edge under the prose it
+   commits, level with the autosave line:
+   - **Analyze note** — the day's built-in manual job, wearing the raised key. It is
+     drawn one step smaller than the title row's keys so it reads as the box's own act
+     rather than as page chrome. While the chat opens it reads **Opening chat…**.
 7. Choose **Focus mode** to write the day on its own. The page blurs behind a sheet of paper
    56rem wide: the day prints at the top as the page's heading, the editor fills the rest,
    and the autosave band and the day's acts sit at the foot. The sheet's own title, **Daily
@@ -75,11 +78,12 @@ An empty day is an empty editor, not an error and not a page of instructions.
 |---|---|
 | **Daily Journal** eyebrow | The page's name as the shell's one grey label; the day below is the page's heading. |
 | Day heading | The date and weekday, with "(Today)" on today — the page's one `h1`. |
-| Act row | **Today** (only off today), the day's manual jobs (**Analyze note** by default), then **Focus mode**, at the trailing end of the title row. They wrap rather than squeeze when the column is narrow. |
+| Act row | **Today** (only off today) and **Focus mode**, at the trailing end of the title row. |
+| The day's act | The manual jobs hosted on the day (**Analyze note** by default), on the box's foot under the prose, right-aligned with the box's trailing edge and level with the autosave line; drawn one step smaller than the title row's keys. The acts wrap rather than squeeze when the column is narrow. |
 | Pager | Two chevron keys on the box's own edges: **Previous day** on the leading edge, **Next day** on the trailing edge, the latter drawn only when there is a day to go to. |
 | **Choose a day** | The calendar key beside the date; opens the month with the future disabled and the next-month arrow stopping at today's month. |
 | Editor | A live markdown box, focused on an empty day. |
-| Status line | **Saving…**, **Saved**, **Not saved**, or **No note for this day yet**; the box's foot holds only the autosave line. |
+| Status line | **Saving…**, **Saved**, **Not saved**, or **No note for this day yet**; it keeps the box's foot's leading edge, level with the day's act. |
 | **Earlier notes** | The journal index: **Date**, **Day**, **Last edited**; this week open, earlier weeks folded; unreadable files shown in place as "unreadable". |
 | **Focus mode** | A 56rem page of paper over the blurred page: the date as its one heading, the editor filling the measure, a reserved autosave band and the day's acts at the foot. |
 
@@ -162,9 +166,10 @@ These rules are the Daily Notes law:
 ### Analyze note
 
 - The built-in **Analyze note** automation is a manual automation hosted on the Daily
-  Journal. It asks the agent to break the note into tasks for the board, goals at different
-  horizons, and details that could update documents — and to name a new document or database
-  only when an existing home does not fit.
+  Journal. Its key sits at the box's foot, under the prose it commits, on the box's trailing
+  edge and level with the autosave line. It asks the agent to break the note into tasks for
+  the board, goals at different horizons, and details that could update documents — and to
+  name a new document or database only when an existing home does not fit.
 - Choosing it writes the day first, then creates a new chat named after the automation and
   the date. The chat opens in a tab of its own in the dock — the conversation already on
   screen keeps its tab, and the new chat is listed in **Chats** under its name from its first

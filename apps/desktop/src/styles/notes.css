@@ -67,11 +67,11 @@
   color: var(--fg);
 }
 
-/* The title row: the page's name and the day's own acts on one line. The name
-   keeps the leading edge and the acts take the trailing one, so the day's
-   verbs read level with it, over the box they commit, rather than as
-   controls left under the prose. It wraps instead of squeezing the buttons when
-   the column is narrow. */
+/* The title row: the page's name and the page's own keys on one line. The name
+   keeps the leading edge and the keys take the trailing one: the way back to
+   today when off it, and focus mode. The day's verb — the automation that commits
+   the note — is not here: it sits at the box's foot, under the prose it commits.
+   The row wraps instead of squeezing the buttons when the column is narrow. */
 .daily-note__title-row {
   display: flex;
   flex-wrap: wrap;
@@ -285,8 +285,12 @@
   cursor: default;
 }
 
-/* The box's foot: the autosave line alone. The day's own automations live up in
-   the title row now, level with the heading. */
+/* The box's foot: the autosave line on the leading edge and the day's own act on
+   the trailing one, under the prose it commits. The act is the one control that
+   acts on the day, so it sits with the day's writing rather than up among the
+   page's chrome — level with the line that says whether the writing reached the
+   vault. Focus mode and the way back to today are the page's own keys and keep
+   the title row. */
 .daily-note__footer {
   display: flex;
   flex-wrap: wrap;
@@ -296,6 +300,9 @@
   width: 100%;
 }
 
+/* The day's own acts, at the box's trailing edge. There is one of them by default
+   — Analyze note — and any other manual job hosted on the day joins the cluster,
+   which keeps the edge however many there are. */
 .daily-note__automations {
   display: flex;
   flex-wrap: wrap;
@@ -304,18 +311,29 @@
   gap: 0.5rem;
 }
 
-.daily-note__analyze {
+/* The day's act, one step down from the page's chrome and the title row's keys.
+   It belongs to the box's foot rather than to the heading: its label is 0.875rem
+   instead of the page's own 1rem, and its height comes from a shorter block
+   padding, so it sits quietly beside the autosave line instead of towering over
+   it. The face, the bevel and the page's `--radius-xs` step are the primitive's,
+   unchanged. */
+.daily-note .daily-note__analyze {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  padding-block: 0.5rem;
 }
 
-/* The day's acts share the header's trailing end, in the order they happen:
-   back to today, then the act that commits the note to the vault, then focus
-   mode, which takes the day as it is and writes it on its own. The cluster takes
-   the row's free space so the acts stay on the box's trailing edge, which the
-   cluster's own right edge has to keep matching. The gap is the row's own
-   rhythm: enough air that the three read as three controls and not as one band.
+/* The page's own keys share the title row's trailing end, in the order they
+   happen: back to today (only off today), then focus mode, which takes the day as
+   it is and writes it on its own. The day's matter — the automation that commits
+   the note — is not in this cluster: it sits at the box's foot, under the prose
+   it commits. The cluster takes the row's free space so the keys stay on the
+   box's trailing edge, which the cluster's own right edge has to keep matching.
+   The gap is the row's own rhythm: enough air that the two read as two controls
+   and not as one band.
 
    A key's height is the primitive's padding twice over plus the line its words
    sit on. That line is pinned on the cluster rather than left to the type's own
@@ -338,12 +356,12 @@
   line-height: 1.25;
 }
 
-/* The icon-only key at the trailing end of the day's acts. It is the outline
+/* The icon-only key at the trailing end of the page's keys. It is the outline
    primitive at the page's square step — a key with a visible frame, square
    rather than a pill because a control with no word in it should read as the
-   same family as the pager below it — and it stands the height of the control
-   beside it, so the row reads as one line of keys rather than as a row with one
-   short one in it.
+   same family as the pager below it — and it stands the height the page's key
+   step declares, so the title row reads as one line of keys rather than as a row
+   with one short one in it.
 
    Both dimensions are that shared height, so the icon sits in a true square
    rather than in a rectangle. The selector carries the page's class so the size
@@ -393,8 +411,9 @@
 }
 
 /* The autosave line. There is no Save control: this one quiet line is the whole
-   of what the page says about the day reaching the vault. It has the box's foot
-   to itself now, so it simply fills the row beneath the prose. */
+   of what the page says about the day reaching the vault. It keeps the foot's
+   leading edge and fills the room the day's act leaves, so the act stays on the
+   box's trailing edge however long the status line reads. */
 .daily-note__status {
   margin: 0;
   min-height: 1.1rem;

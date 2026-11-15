@@ -96,10 +96,14 @@
  *     box, and the gutter between the two as wide as the room between the box and
  *     the dock. Swapping the dock swaps only the strip's side. The header and
  *     pager keep their place over the box.
- * 22. The day's own automation — the built-in Analyze note control — sits in the
- *     header on the heading's own line, at the box's trailing edge and above it,
- *     and it is a key rather than an outline chip: the page's own square step,
- *     the skin's accent as a filled face and the primitive's bevel and lip. The
+ * 22. The day's own automation — the built-in Analyze note control — sits on the
+ *     box's foot now: inside the compose column's footer, below the editor and
+ *     on its trailing edge, level with the autosave line, while Today and the
+ *     square focus key keep the title row. It is one step down from the page's
+ *     chrome: its label is 0.875rem against the page's 1rem, and its key is
+ *     ~35.5px — at least 2px shorter than the title row's square keys — while it
+ *     stays a key rather than an outline chip: the page's own square step, the
+ *     skin's accent as a filled face and the primitive's bevel and lip. The
  *     whole run is judged in Nous, the palette the operator asked about, because
  *     a control that reads black-on-black in the theme they run is the defect
  *     this claim exists to catch.
@@ -2664,25 +2668,27 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // ── 10. the day's act sits level with the heading, above the box ──────────
-  // The operator asked for the Analyze note control above the box, in line with
-  // the page's heading, where it had been left under the prose. The position is
-  // measured here — inside the header, above the box, on the heading's own line
-  // — and the face is still measured in the palette the page is painted in, so
-  // the key stays legible wherever it sits.
-  //
-  // The heading is the date now, and the date rides in the pager below the
-  // title row; the day's acts stay on the title row's own line, level with the
-  // page's name above them. So the level is measured against that row rather
-  // than against the date.
+  // ── 10. the day's act sits on the box's foot, one step down ────────────────
+  // The operator asked for the Analyze note control to come off the title row's
+  // top-right and sit at the box's bottom-right, under the prose it commits and
+  // level with the autosave line — with a quieter label (0.875rem, not the
+  // page's own 1rem) and a shorter key (~35.5px, not the ~39.6px the title row's
+  // square keys wear). Today and the square focus key stay up in the title row.
+  // The position is measured from the boxes the page draws — inside the compose
+  // column, below the editor, on its trailing edge — and the size from the
+  // button's own computed styles and box; the raised face is measured in the
+  // palette the page is painted in, because a key that sits quietly still has to
+  // read as a key.
   const automation = await win.webContents.executeJavaScript(`(() => {
     const row = document.querySelector(".daily-note__automations");
     const actions = document.querySelector(".daily-note__actions");
+    const footer = document.querySelector(".daily-note__footer");
+    const status = document.querySelector('[data-testid="daily-note-status"]');
     const editor = document.querySelector(".daily-note__editor");
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
     const titleRow = document.querySelector(".daily-note__title-row");
-    const eyebrow = document.querySelector(".daily-note .wing-eyebrow");
+    const focus = document.querySelector(".daily-note__focus-mode");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {
@@ -2701,6 +2707,9 @@ async function main() {
     const root = getComputedStyle(document.documentElement);
     const rowBox = rect(row);
     const editorBox = rect(editor);
+    const statusBox = status ? rect(status) : null;
+    const focusBox = focus ? rect(focus) : null;
+    const buttonBox = rect(button);
     const style = getComputedStyle(button);
     // The face is read off the painted gradient (a real property, so the engine
     // has resolved its colors) rather than off the custom property that fed it.
@@ -2712,38 +2721,43 @@ async function main() {
     return {
       present: true,
       inHeader: Boolean(header && header.contains(row)),
+      inTitleRow: Boolean(titleRow && titleRow.contains(row)),
+      inActions: Boolean(actions && actions.contains(row)),
       inCompose: Boolean(compose && compose.contains(row)),
+      inFooter: Boolean(footer && footer.contains(row)),
+      footerHasStatus: Boolean(footer && status && footer.contains(status)),
+      // The autosave line keeps the foot's leading edge; the act takes its
+      // trailing one, level with it.
+      statusLeftOfRow: Boolean(statusBox && statusBox.right <= rowBox.left + 1),
+      levelWithStatus: Boolean(
+        statusBox &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 - (statusBox.top + statusBox.bottom) / 2,
+          ) <= 8,
+      ),
+      // The title row keeps the page's own keys: focus mode is still up there.
+      // Today is read by the day claims, which see it only off today.
+      focusInTitleRow: Boolean(focus && actions && actions.contains(focus)),
+      focusInHeader: Boolean(focus && header && header.contains(focus)),
+      analyzeInActions: Boolean(actions && actions.contains(button)),
       belowBox: rowBox.top >= editorBox.bottom - 1,
-      gapBelowBox: Math.round(rowBox.top - editorBox.bottom),
-      aboveBox: rowBox.bottom <= editorBox.top + 1,
-      gapAboveBox: Math.round(editorBox.top - rowBox.bottom),
-      levelWithHeading: Boolean(
-        titleRow &&
-          Math.abs(
-            (rowBox.top + rowBox.bottom) / 2 -
-              (titleRow.getBoundingClientRect().top +
-                titleRow.getBoundingClientRect().bottom) /
-                2,
-          ) <= 8,
-      ),
-      levelWithEyebrow: Boolean(
-        eyebrow &&
-          Math.abs(
-            (rowBox.top + rowBox.bottom) / 2 -
-              (eyebrow.getBoundingClientRect().top +
-                eyebrow.getBoundingClientRect().bottom) /
-                2,
-          ) <= 8,
-      ),
-      // The day's acts end on the box's trailing edge — the whole cluster does,
-      // not the automations alone: focus mode is the last key in it, so it is
-      // the cluster's trailing edge that answers.
-      rightEdgeOffBy: Math.round(
-        (actions ? rect(actions).right : rowBox.right) - editorBox.right,
-      ),
-      automationsRightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
+      gapBelowBox: Math.round((rowBox.top - editorBox.bottom) * 10) / 10,
+      // The cluster ends on the editor's own trailing edge, not the window's.
+      rightEdgeOffBy: Math.round((rowBox.right - editorBox.right) * 10) / 10,
       insideBoxColumn:
         rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
+      // The act's size: a step down from the page's own type, and a shorter key
+      // than the title row's square ones, measured from its box and styles.
+      fontSize: Number.parseFloat(style.fontSize),
+      pageFontSize: Number.parseFloat(root.fontSize),
+      lineHeight: Number.parseFloat(style.lineHeight),
+      paddingBlockTop: Number.parseFloat(style.paddingTop),
+      paddingBlockBottom: Number.parseFloat(style.paddingBottom),
+      height: Math.round(buttonBox.height * 100) / 100,
+      focusHeight: focusBox ? Math.round(focusBox.height * 100) / 100 : null,
+      heightBelowFocus: focusBox
+        ? Math.round((focusBox.height - buttonBox.height) * 100) / 100
+        : null,
       buttonRadius: parseFloat(style.borderTopLeftRadius),
       step: parseFloat(root.getPropertyValue("--radius-xs")),
       backgroundImage: style.backgroundImage,
@@ -2770,27 +2784,69 @@ async function main() {
   if (!automation.present) {
     failure("the day's Analyze note button is not on the page at all");
   } else {
-    if (!automation.inHeader) {
-      failure("the day's automation is not in the header, level with the heading");
-    }
-    if (!automation.aboveBox) {
+    // The act belongs to the box's foot now, not the title row's top-right —
+    // and the page's own keys stay where they were.
+    if (automation.inHeader || automation.inTitleRow || automation.inActions) {
       failure(
-        `the day's automation sits ${automation.gapAboveBox}px below the box's top edge, not above it`,
+        "the day's automation is still up in the page's title row rather than on the box's foot",
       );
     }
-    if (!automation.levelWithHeading) {
-      failure("the day's automation is not on the heading's own line");
+    if (!automation.inCompose || !automation.inFooter) {
+      failure(
+        "the day's automation is not in the box's foot: it is outside the compose column's footer",
+      );
     }
-    if (automation.inCompose) {
-      failure("the day's automation is still down in the box's own column");
+    if (!automation.footerHasStatus) {
+      failure("the box's foot does not hold the autosave line beside the day's act");
+    }
+    if (automation.analyzeInActions) {
+      failure("the day's automation is still in the title row's action cluster");
+    }
+    if (!automation.focusInTitleRow || !automation.focusInHeader) {
+      failure("focus mode did not stay in the title row as the page's own key");
+    }
+    if (!automation.belowBox) {
+      failure(
+        `the day's automation sits ${automation.gapBelowBox}px from the box's bottom edge, not below it`,
+      );
+    }
+    if (!automation.statusLeftOfRow) {
+      failure("the autosave line is not on the foot's leading edge beside the day's act");
+    }
+    if (!automation.levelWithStatus) {
+      failure("the day's act is not level with the autosave line on the box's foot");
     }
     if (Math.abs(automation.rightEdgeOffBy) > 2) {
       failure(
-        `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+        `the day's act ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
       );
     }
     if (!automation.insideBoxColumn) {
       failure("the day's automation reaches outside the box's own column");
+    }
+    // One step down: the label is the 0.875rem rung, not the page's own 1rem.
+    if (!(automation.fontSize >= 13 && automation.fontSize <= 14.5)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px, not the 0.875rem step (13–14.5px)`,
+      );
+    }
+    if (!(automation.fontSize <= 0.9 * automation.pageFontSize)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px against the page's ${automation.pageFontSize}px base — not a step down`,
+      );
+    }
+    // And a shorter key than the title row's square ones.
+    if (!(automation.height >= 33 && automation.height <= 37)) {
+      failure(
+        `the Analyze note button is ${automation.height}px tall, not the ~35.5px foot key`,
+      );
+    }
+    if (automation.focusHeight === null) {
+      failure("the focus key's box could not be measured to compare the act's height");
+    } else if (!(automation.height <= automation.focusHeight - 2)) {
+      failure(
+        `the Analyze note button is ${automation.height}px against the ${automation.focusHeight}px focus key — not at least 2px shorter`,
+      );
     }
     if (!(automation.buttonRadius <= automation.step)) {
       failure(
@@ -2968,7 +3024,7 @@ async function main() {
   );
 
   // The artifact for this claim: the day's page with the note written, the act
-  // beside the heading, in the operator's own palette.
+  // on the box's foot under the prose, in the operator's own palette.
   await win.webContents.executeJavaScript(
     `document.querySelector(".daily-note__automations").scrollIntoView({ block: "nearest" })`,
   );
