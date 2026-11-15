@@ -39,11 +39,17 @@ import {
 import type { ForgeSkin } from "@/lib/themes/types";
 import {
   applyMaterial,
+  BACKDROPS,
   DEFAULT_THEME_CHROME,
   DEFAULT_THEME_MATERIAL,
+  DENSITIES,
+  MOTIONS,
   parseThemeFile,
+  RADII,
   resolveChrome,
   resolveMaterial,
+  SHADOWS,
+  TYPE_SCALES,
   type ThemeChrome,
   type ThemeFile,
   type ThemeMaterial,
@@ -61,6 +67,56 @@ const LEGACY_THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
  * cannot strand the operator in a shell they cannot navigate.
  */
 const THEME_PREVIEW_MS = 10_000;
+
+/**
+ * The operator's own material overrides, kept per window like the skin.
+ *
+ * A theme (or the companion that wrote it) chooses the material, but the
+ * operator is the one looking at it: Settings → Appearance can tune any of the
+ * six axes and the choice is layered over whatever theme is worn. It is not a
+ * theme file and never enters the vault; `Reset` returns to the theme's own
+ * material.
+ */
+const MATERIAL_OVERRIDE_STORAGE_KEY = "lifequest-material-override";
+
+const MATERIAL_ENUMS = {
+  radius: RADII,
+  density: DENSITIES,
+  motion: MOTIONS,
+  shadow: SHADOWS,
+  typeScale: TYPE_SCALES,
+  backdrop: BACKDROPS,
+} as const;
+
+function readStoredMaterialOverride(): Partial<ThemeMaterial> {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(MATERIAL_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: Partial<ThemeMaterial> = {};
+    for (const [key, allowed] of Object.entries(MATERIAL_ENUMS)) {
+      const value = raw[key];
+      if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {
+        (override as Record<string, string>)[key] = value;
+      }
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function persistMaterialOverride(override: Partial<ThemeMaterial>): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(MATERIAL_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(MATERIAL_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 
 interface ThemeContextValue {
@@ -92,8 +148,14 @@ interface ThemeContextValue {
   themeFile: ThemeFile | null;
   /** Where the shell's own components live, resolved from `themeFile`. */
   chrome: ThemeChrome;
-  /** The material layer (radius, density, motion), resolved from `themeFile`. */
+  /** The material layer the window is actually wearing (theme + overrides). */
   material: ThemeMaterial;
+  /** The operator's own material picks, layered over the theme's. */
+  materialOverride: Partial<ThemeMaterial>;
+  /** Set one or more material axes and wear the result at once. */
+  setMaterialOverride: (patch: Partial<ThemeMaterial>) => void;
+  /** Drop every operator override and hand the axes back to the theme. */
+  resetMaterialOverride: () => void;
   /** A file the companion just wrote: worn, but not yet kept. */
   themePreview: { file: string; label: string } | null;
   /** Why the newest theme file was refused, if it was. */
@@ -206,6 +268,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeFile, setThemeFile] = useState<ThemeFile | null>(null);
   const [chrome, setChrome] = useState<ThemeChrome>(DEFAULT_THEME_CHROME);
   const [material, setMaterial] = useState<ThemeMaterial>(DEFAULT_THEME_MATERIAL);
+  const [materialOverride, setMaterialOverrideState] = useState<
+    Partial<ThemeMaterial>
+  >(readStoredMaterialOverride);
+  /** Read from paintTheme without making it depend on override changes. */
+  const materialOverrideRef = useRef<Partial<ThemeMaterial>>(materialOverride);
   const [themePreview, setThemePreview] = useState<{
     file: string;
     label: string;
@@ -237,7 +304,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const paintTheme = useCallback(
     (next: ThemeFile | null) => {
       paintedTheme.current = next;
-      const nextMaterial = resolveMaterial(next?.material);
+      // Theme first, operator second: Settings' own picks always win, which is
+      // what makes "a theme can never take the window away" true for material
+      // too — a loud theme can be calmed without editing its file.
+      const nextMaterial = resolveMaterial({
+        ...next?.material,
+        ...materialOverrideRef.current,
+      });
       setChrome(resolveChrome(next?.chrome));
       setMaterial(nextMaterial);
       applyMaterial(nextMaterial, document.documentElement);
@@ -269,6 +342,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeError(null);
     setThemeFile(keptTheme.current);
     paintTheme(keptTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change one or more material axes. This is an operator preference, not a
+   * theme write: it is layered over every theme (including previews) and
+   * persisted per window, so trying a theme does not silently drop the
+   * operator's own picks.
+   */
+  const setMaterialOverride = useCallback(
+    (patch: Partial<ThemeMaterial>) => {
+      const next = { ...materialOverrideRef.current, ...patch };
+      materialOverrideRef.current = next;
+      setMaterialOverrideState(next);
+      persistMaterialOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetMaterialOverride = useCallback(() => {
+    materialOverrideRef.current = {};
+    setMaterialOverrideState({});
+    persistMaterialOverride({});
+    paintTheme(paintedTheme.current);
   }, [paintTheme]);
 
   /** Wear one file as a preview; after ten seconds it reverts by itself. */
@@ -501,7 +598,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       colors: base.colors,
       ...(base.darkColors ? { darkColors: base.darkColors } : {}),
       chrome: resolveChrome(worn?.chrome ?? chrome),
-      material: resolveMaterial(worn?.material ?? material),
+      material,
     };
     const answer = await window.lifequest?.themeExport?.(exported);
     if (!answer) return null;
@@ -677,6 +774,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       themeFile,
       chrome,
       material,
+      materialOverride,
+      setMaterialOverride,
+      resetMaterialOverride,
       themePreview,
       themeError,
       keepThemePreview,
@@ -703,8 +803,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       keepThemePreview,
       keptFile,
       material,
+      materialOverride,
       openThemesFolder,
       preference,
+      resetMaterialOverride,
+      setMaterialOverride,
       refreshThemeFiles,
       removeThemeFile,
       themeFiles,

@@ -12625,12 +12625,83 @@ button.chat-panel__activity-line:hover {
   scroll-behavior: auto !important;
 }
 
+/* Lively keeps the same motions and changes their tempo: shorter durations and
+   a springier exit curve. It cannot invent a movement the app does not have. */
+[data-material-motion="lively"] {
+  --dur-quick: 90ms;
+  --dur-enter: 160ms;
+  --dur-exit: 110ms;
+  --ease-out: cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+/* Elevation. The sheet's own shadow plus the two surfaces that stand off it
+   (the Decisions card, the Nous mat). The colours are mixed from the palette's
+   ink, not baked black, so a dark skin's shadow is its own. */
+[data-material-shadow="flat"] {
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-card: 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+  --shadow-nous: none;
+}
+
+[data-material-shadow="deep"] {
+  --shadow-xs: 0 1px 1px color-mix(in srgb, var(--foreground) 9%, transparent);
+  --shadow-sm:
+    0 2px 4px color-mix(in srgb, var(--foreground) 9%, transparent),
+    0 6px 18px -8px color-mix(in srgb, var(--foreground) 14%, transparent);
+  --shadow-md:
+    0 12px 40px color-mix(in srgb, var(--foreground) 16%, transparent),
+    0 4px 10px color-mix(in srgb, var(--foreground) 8%, transparent);
+  --shadow-card:
+    0 2px 4px color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 18px 40px -16px color-mix(in srgb, var(--foreground) 32%, transparent);
+  --shadow-nous:
+    0 0.25rem 0.5rem -0.25rem color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 0.75rem 1.25rem -0.5rem color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 1.75rem 2.5rem -1rem color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* Procedural canvas. Two bundled gradients and one hairline grid — no imagery,
+   no remote URL, no per-theme CSS. They paint the page's own surface so a card
+   still sits on top of it rather than being tinted with it. */
+[data-material-backdrop="wash"] .shell__main {
+  background-image:
+    radial-gradient(
+      70rem 30rem at 8% -12%,
+      color-mix(in srgb, var(--primary) 13%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      52rem 26rem at 108% 4%,
+      color-mix(in srgb, var(--primary) 9%, transparent),
+      transparent 58%
+    );
+  background-repeat: no-repeat;
+}
+
+[data-material-backdrop="grid"] .shell__main {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 2rem 2rem;
+}
+
 [data-material-density="compact"] .shell {
   --shell-nav-pad: 0.35rem;
+  --shell-topbar-height: 2.5rem;
 }
 
 [data-material-density="airy"] .shell {
   --shell-nav-pad: 0.65rem;
+  --shell-topbar-height: 3rem;
 }
 
 /* ——— theme files (Settings → Appearance) ———————————————————————————————————————
@@ -12801,4 +12872,113 @@ button.chat-panel__activity-line:hover {
   background: var(--accent-fill);
   color: var(--text-strong);
   font-size: 0.72rem;
+}
+
+/* ——— material (Settings → Appearance) ————————————————————————————————————————
+   The operator's side of the material layer: six named-step controls, each one
+   a pick above the theme's. Ruled off from the skin grid above and the theme
+   files below, the same way those two sections separate themselves. */
+
+.theme-material {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-material__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-material__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-material__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-material__intro {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-material__intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.theme-material__reset {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-material__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Six compact rows in one block: the settings hairline stays between them, but
+   the spacing is a step tighter than the page's one-row-per-setting measure. */
+.theme-material__rows .theme-material__row + .theme-material__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+.theme-material__row {
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+}
+
+.theme-material__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+}
+
+/* The operator's marker: a dot and the word, kept small so it annotates the
+   axis name rather than competing with it. Shown only for a picked axis, so an
+   untouched control reads as the theme's own. */
+.theme-material__yours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.theme-material__yours-dot {
+  flex: 0 0 auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.theme-material__control {
+  flex: 0 0 auto;
 }

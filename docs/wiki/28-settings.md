@@ -91,6 +91,8 @@ starred, so it is in the quick menu immediately; installed themes are listed und
 **Installed** with **Remove**. A file that is not JSON, or not a valid theme, is
 refused with the reason naming the field that failed.
 
+**Material** sits directly under the theme grid: six segmented controls — Radius, Elevation, Type scale, Density, Motion and Backdrop — that pick the named steps the shell was built against. A theme file proposes its own steps, but your pick here always wins, is marked as yours, and survives swapping, keeping or removing the theme. **Reset to theme** hands the axes back to whatever theme is worn.
+
 **Theme files** are a narrower, more structural thing than a skin. A theme file
 lives in the app profile's `themes/` folder — never in the vault — and can move
 the wing switcher and the area lens between placements, and set the radius

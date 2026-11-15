@@ -39,10 +39,20 @@ export type ThemeChrome = {
   };
 };
 
+export type ThemeShadow = "flat" | "soft" | "deep";
+export type ThemeTypeScale = "compact" | "default" | "airy";
+export type ThemeBackdrop = "plain" | "wash" | "grid";
+
 export type ThemeMaterial = {
   radius: "sharp" | "soft" | "round";
   density: "compact" | "default" | "airy";
   motion: "none" | "calm" | "lively";
+  /** Elevation: how far the sheet and its cards stand off the canvas. */
+  shadow: ThemeShadow;
+  /** Type scale: the whole rem ladder, set on the document root. */
+  typeScale: ThemeTypeScale;
+  /** Procedural canvas backdrop: flat, a palette wash, or a hairline grid. */
+  backdrop: ThemeBackdrop;
 };
 
 /** A theme file as it arrives from disk, before defaults fill the gaps. */
@@ -65,6 +75,9 @@ export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
   radius: "soft",
   density: "default",
   motion: "calm",
+  shadow: "soft",
+  typeScale: "default",
+  backdrop: "plain",
 };
 
 export const WING_PLACES: readonly WingSwitcherPlace[] = [
@@ -100,6 +113,13 @@ export const MOTIONS: readonly ThemeMaterial["motion"][] = [
   "calm",
   "lively",
 ];
+export const SHADOWS: readonly ThemeShadow[] = ["flat", "soft", "deep"];
+export const TYPE_SCALES: readonly ThemeTypeScale[] = [
+  "compact",
+  "default",
+  "airy",
+];
+export const BACKDROPS: readonly ThemeBackdrop[] = ["plain", "wash", "grid"];
 
 /** Every colour `applySkin` reads without a fallback. */
 export const THEME_REQUIRED_COLORS: readonly (keyof SkinColors)[] = [
@@ -369,6 +389,9 @@ export function parseThemeFile(raw: unknown): ParseResult {
       ["radius", RADII],
       ["density", DENSITIES],
       ["motion", MOTIONS],
+      ["shadow", SHADOWS],
+      ["typeScale", TYPE_SCALES],
+      ["backdrop", BACKDROPS],
     ] as const) {
       const value = raw.material[key];
       if (value === undefined) continue;
@@ -431,7 +454,7 @@ export const THEME_VOCABULARY = [
   "Shape: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
-  "material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively.",
+  "material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

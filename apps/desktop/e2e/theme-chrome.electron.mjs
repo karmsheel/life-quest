@@ -59,6 +59,7 @@ const PREVIEW_PNG = path.join(artifactsDir, "themes-v2-preview.png");
 const KEPT_PNG = path.join(artifactsDir, "themes-v2-kept.png");
 const FLOATING_PNG = path.join(artifactsDir, "themes-v2-floating.png");
 const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
+const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
 
 const failures = [];
 const checks = [];
@@ -169,6 +170,16 @@ const SAMPLE = `(async () => {
     kept: state && state.ok ? state.value.keptFile : null,
     density: document.documentElement.dataset.materialDensity ?? null,
     motion: document.documentElement.dataset.materialMotion ?? null,
+    shadowAttr: document.documentElement.dataset.materialShadow ?? null,
+    backdropAttr: document.documentElement.dataset.materialBackdrop ?? null,
+    typeScaleAttr: document.documentElement.dataset.materialTypeScale ?? null,
+    fontSize: getComputedStyle(document.documentElement).fontSize,
+    durQuick: getComputedStyle(document.documentElement).getPropertyValue("--dur-quick").trim(),
+    shadowSm: getComputedStyle(document.documentElement).getPropertyValue("--shadow-sm").trim(),
+    backdrop: (() => {
+      const main = document.querySelector(".shell__main");
+      return main ? getComputedStyle(main).backgroundImage.slice(0, 80) : null;
+    })(),
     radiusLg: radius,
   };
 })()`;
@@ -228,7 +239,14 @@ const AGENT_THEME = {
     wingSwitcher: { place: "floating-left", variant: "labels" },
     domainSwitcher: { place: "below-titlebar", variant: "segmented" },
   },
-  material: { radius: "round", density: "airy", motion: "calm" },
+  material: {
+    radius: "round",
+    density: "airy",
+    motion: "lively",
+    shadow: "deep",
+    typeScale: "airy",
+    backdrop: "grid",
+  },
 };
 
 async function main() {
@@ -759,6 +777,35 @@ async function main() {
     if (client) await client.close().catch(() => {});
   }
 
+  // ── 7b: the R1 material tokens, on the real document ───────────────────
+  const materialTheme = await waitFor(
+    (s) =>
+      s.shadowAttr === "deep" &&
+      s.backdropAttr === "grid" &&
+      s.typeScaleAttr === "airy" &&
+      s.fontSize === "17px",
+  );
+  check(
+    "material-tokens-land-on-the-document",
+    materialTheme &&
+      materialTheme.shadowAttr === "deep" &&
+      materialTheme.backdropAttr === "grid" &&
+      materialTheme.typeScaleAttr === "airy" &&
+      materialTheme.fontSize === "17px" &&
+      materialTheme.durQuick === "90ms" &&
+      materialTheme.shadowSm !== "none" &&
+      (materialTheme.backdrop ?? "").includes("linear-gradient"),
+    JSON.stringify({
+      shadow: materialTheme?.shadowAttr,
+      backdrop: materialTheme?.backdropAttr,
+      typeScale: materialTheme?.typeScaleAttr,
+      fontSize: materialTheme?.fontSize,
+      durQuick: materialTheme?.durQuick,
+      shadowSm: (materialTheme?.shadowSm ?? "").slice(0, 40),
+      bg: (materialTheme?.backdrop ?? "").slice(0, 40),
+    }),
+  );
+
   // ── 8: the operator's side of the gate, in Settings → Appearance ─────────
   const openedSettings = await evaluate(`(() => {
     const trigger = document.querySelector(".settings-menu__trigger");
@@ -820,6 +867,55 @@ async function main() {
     JSON.stringify({ wing: backToAgent?.wingFloating, kept: backToAgent?.kept }),
   );
 
+  // ── 9: the operator's own material overrides, above the theme's ─────────
+  const pressedSharp = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="material-option-radius-sharp"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const overridden = await waitFor((s) => s.radiusLg === "8px");
+  check(
+    "operator-material-overrides-the-theme",
+    pressedSharp === true && overridden?.radiusLg === "8px" && overridden.kept === "agent-written.json",
+    JSON.stringify({ pressedSharp, radiusLg: overridden?.radiusLg, kept: overridden?.kept }),
+  );
+  const materialShot = await win.webContents.capturePage();
+  fs.writeFileSync(MATERIAL_PNG, materialShot.toPNG());
+
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const afterMaterialReload = await waitFor(
+    (s) => s.shell && s.kept === "agent-written.json" && s.radiusLg === "8px",
+    20_000,
+  );
+  check(
+    "operator-material-survives-a-reload",
+    afterMaterialReload?.radiusLg === "8px" && afterMaterialReload.kept === "agent-written.json",
+    JSON.stringify({ radiusLg: afterMaterialReload?.radiusLg, kept: afterMaterialReload?.kept }),
+  );
+
+  // Reopen Settings to reset and remove.
+  await evaluate(`(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`);
+  for (let i = 0; i < 100; i += 1) {
+    const ready = await evaluate(`Boolean(document.querySelector('[data-testid="material-reset"]'))`);
+    if (ready) break;
+    await evaluate(`(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`);
+    await sleep(150);
+  }
+  const pressedReset = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="material-reset"]');
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  })()`);
+  const reset = await waitFor((s) => s.radiusLg === "28px");
+  check(
+    "reset-returns-the-themes-material",
+    pressedReset === true && reset?.radiusLg === "28px" && reset.kept === "agent-written.json",
+    JSON.stringify({ pressedReset, radiusLg: reset?.radiusLg, kept: reset?.kept }),
+  );
+
   // Remove the agent's file where the operator would: two presses, then gone.
   const firstRemove = await evaluate(`(() => {
     const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
@@ -868,6 +964,7 @@ async function main() {
       kept: path.relative(desktopRoot, KEPT_PNG),
       floating: path.relative(desktopRoot, FLOATING_PNG),
       settings: path.relative(desktopRoot, SETTINGS_PNG),
+      material: path.relative(desktopRoot, MATERIAL_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

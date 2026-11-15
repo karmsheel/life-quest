@@ -15,10 +15,25 @@ const RADIUS_SCALES: Record<ThemeMaterial["radius"], string[]> = {
 };
 
 /**
+ * The type scale is the whole rem ladder, so it is set once on the document
+ * root and every `rem` in every stylesheet follows. Pixels stay pixels: the
+ * window strip and other fixed chrome keep their exact size, which is what
+ * makes a scale feel like type instead of a zoom.
+ */
+const TYPE_SCALES: Record<ThemeMaterial["typeScale"], string> = {
+  compact: "15px",
+  default: "16px",
+  airy: "17px",
+};
+
+/**
  * Write the material layer onto the document, exactly where `applySkin` writes
- * the palette. Radius is set inline because no skin owns it; density and motion
- * are state attributes the stylesheet reads, so a theme cannot invent arbitrary
- * CSS.
+ * the palette.
+ *
+ * Radius and type size are written inline because no skin owns them; the
+ * shadow family, density, motion and backdrop are state attributes the
+ * stylesheet reads, so a theme picks a named step and the stylesheet owns what
+ * each step means. A theme therefore cannot ship arbitrary CSS.
  */
 export function applyMaterial(
   material: ThemeMaterial,
@@ -30,6 +45,10 @@ export function applyMaterial(
   root.style.setProperty("--radius", base!);
   root.style.setProperty("--radius-md", md!);
   root.style.setProperty("--radius-lg", lg!);
+  root.style.fontSize = TYPE_SCALES[material.typeScale];
   root.dataset.materialDensity = material.density;
   root.dataset.materialMotion = material.motion;
+  root.dataset.materialShadow = material.shadow;
+  root.dataset.materialBackdrop = material.backdrop;
+  root.dataset.materialTypeScale = material.typeScale;
 }

@@ -25,7 +25,13 @@ type Report = {
   checks: Check[];
   failures: string[];
   pass: boolean;
-  artifacts: { preview: string; kept: string; floating: string; settings: string };
+  artifacts: {
+    preview: string;
+    kept: string;
+    floating: string;
+    settings: string;
+    material: string;
+  };
   theme: unknown;
   refused: unknown;
 };
@@ -114,6 +120,7 @@ describe("theme files v2", () => {
         report.artifacts.kept,
         report.artifacts.floating,
         report.artifacts.settings,
+        report.artifacts.material,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),
