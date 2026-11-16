@@ -13367,3 +13367,176 @@ button.chat-panel__activity-line:hover {
 :root[data-chrome-nav-place="floating"] .chrome-bar--titlebar-left {
   left: 0.6rem;
 }
+
+/* ——— the scene behind the page ————————————————————————————————————————————
+   A theme may name a sky. The vocabulary is the app's: presets, not pixels.
+   The layer sits inside the page canvas, under the page's content, and behind
+   a palette scrim — decoration must never cost the text its contrast. An
+   arguing theme cannot: a scene is only ever a preset and an intensity.
+
+   The layer is positioned only while a scene is on, so the default shell keeps
+   the layout it had; a plain scene leaves no positioning context behind. */
+:root:not([data-scene-backdrop="plain"]) .shell__main {
+  position: relative;
+}
+
+:root:not([data-scene-backdrop="plain"]) .shell__content {
+  position: relative;
+  z-index: 1;
+}
+
+.scene-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* How lively the scene runs, and how loud it may paint. The intensity is the
+     theme's word; these two are what the renderer reads. */
+  --scene-speed: 1;
+  --scene-opacity: 0.5;
+}
+
+/* The scrim: the page's own ink, most of the way opaque, so a starfield is
+   something the welcome page is sitting on rather than something it fights. */
+.scene-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--background) 74%, transparent);
+}
+
+:root[data-scene-intensity="calm"] .scene-backdrop {
+  --scene-speed: 1.7;
+  --scene-opacity: 0.36;
+}
+
+:root[data-scene-intensity="default"] .scene-backdrop {
+  --scene-speed: 1;
+  --scene-opacity: 0.5;
+}
+
+:root[data-scene-intensity="lively"] .scene-backdrop {
+  --scene-speed: 0.55;
+  --scene-opacity: 0.66;
+}
+
+/* — starfield — */
+.scene-backdrop__star {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: var(--scene-opacity);
+  animation: scene-twinkle calc(var(--duration) * var(--scene-speed))
+    ease-in-out var(--delay) infinite;
+  will-change: opacity;
+}
+
+@keyframes scene-twinkle {
+  0%,
+  100% {
+    opacity: calc(var(--scene-opacity) * 0.35);
+  }
+  50% {
+    opacity: var(--scene-opacity);
+  }
+}
+
+/* — orbit — */
+.scene-backdrop__system {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.scene-backdrop__ring,
+.scene-backdrop__planet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--rx) * 2);
+  height: calc(var(--ry) * 2);
+  margin-left: calc(var(--rx) * -1);
+  margin-top: calc(var(--ry) * -1);
+  border-radius: 50%;
+}
+
+.scene-backdrop__ring {
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  transform: rotate(var(--rotate));
+  animation: scene-spin calc(120s * var(--scene-speed)) linear
+    calc(var(--delay) * -1s) infinite;
+  will-change: transform;
+}
+
+.scene-backdrop__planet {
+  animation: scene-spin calc(74s * var(--scene-speed)) linear
+    calc(var(--delay) * -1s) infinite;
+  will-change: transform;
+}
+
+.scene-backdrop__planet::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+@keyframes scene-spin {
+  to {
+    transform: rotate(calc(var(--rotate) + 360deg));
+  }
+}
+
+/* — aurora — */
+.scene-backdrop__aurora {
+  position: absolute;
+  inset: 0;
+}
+
+.scene-backdrop__band {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: var(--top);
+  height: var(--height);
+  background: linear-gradient(
+    100deg,
+    transparent,
+    hsl(var(--hue) 85% 62% / 0.3),
+    transparent
+  );
+  filter: blur(26px);
+  animation: scene-aurora calc(23s * var(--scene-speed)) ease-in-out
+    var(--delay) infinite alternate;
+  will-change: transform;
+}
+
+@keyframes scene-aurora {
+  from {
+    transform: translate3d(-3%, 0, 0) scaleY(1);
+  }
+  to {
+    transform: translate3d(3%, 0, 0) scaleY(1.18);
+  }
+}
+
+/* Decoration is never worth a vestibular cost or a frame the operator feels
+   while typing: reduced motion holds the whole scene dead still. */
+@media (prefers-reduced-motion: reduce) {
+  .scene-backdrop,
+  .scene-backdrop * {
+    animation: none !important;
+  }
+}

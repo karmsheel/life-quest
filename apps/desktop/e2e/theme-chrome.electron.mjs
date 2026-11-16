@@ -66,6 +66,7 @@ const SIDEBAR_RIGHT_PNG = path.join(artifactsDir, "themes-v2-sidebar-right.png")
 const DOCK_LEFT_PNG = path.join(artifactsDir, "themes-v2-dock-left.png");
 const FLOATING_RAIL_PNG = path.join(artifactsDir, "themes-v2-floating-rail.png");
 const OUTSIDE_PNG = path.join(artifactsDir, "themes-v2-outside-theme.png");
+const SCENE_PNG = path.join(artifactsDir, "themes-v2-scene.png");
 
 const failures = [];
 const checks = [];
@@ -229,6 +230,24 @@ const SAMPLE = `(async () => {
     })(),
     titlebarSizeAttr: document.documentElement.dataset.chromeTitlebarSize ?? null,
     accentVar: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
+    scenePresetAttr: document.documentElement.dataset.sceneBackdrop ?? null,
+    sceneIntensityAttr: document.documentElement.dataset.sceneIntensity ?? null,
+    sceneLayer: Boolean(document.querySelector(".scene-backdrop")),
+    sceneNodes: (() => {
+      const layer = document.querySelector(".scene-backdrop");
+      if (!layer) return 0;
+      return layer.querySelectorAll(".scene-backdrop__star, .scene-backdrop__ring, .scene-backdrop__planet, .scene-backdrop__band").length;
+    })(),
+    sceneDuration: (() => {
+      const node = document.querySelector(".scene-backdrop__star, .scene-backdrop__band");
+      if (!node) return null;
+      const seconds = parseFloat(getComputedStyle(node).animationDuration);
+      return Number.isFinite(seconds) ? Math.round(seconds * 100) / 100 : null;
+    })(),
+    slotPositioned: (() => {
+      const main = document.querySelector(".shell__main");
+      return main ? getComputedStyle(main).position : null;
+    })(),
     stripPainted: Boolean(document.querySelector(".window-titlebar")),
     titlebarVar: document.documentElement.style.getPropertyValue("--window-titlebar-height") ?? null,
     mainRect: (() => {
@@ -1043,6 +1062,99 @@ async function main() {
     }),
   );
 
+  // ── 6f: the scene behind the page ───────────────────────────────────────
+  writeThemeFile("scene-lab.json", {
+    name: "scene-lab",
+    label: "Scene Lab",
+    chrome: {
+      wingSwitcher: { place: "titlebar-left", variant: "labels" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+    },
+    scene: { background: { preset: "starfield", intensity: "lively" } },
+  });
+  const sceneStarfield = await waitFor(
+    (s) =>
+      s.preview &&
+      s.scenePresetAttr === "starfield" &&
+      s.sceneIntensityAttr === "lively" &&
+      s.sceneLayer &&
+      s.sceneNodes >= 60 &&
+      s.slotPositioned === "relative" &&
+      typeof s.sceneDuration === "number" &&
+      s.sceneDuration > 0 &&
+      s.sceneDuration < 4,
+    20_000,
+  );
+  check(
+    "a-theme-can-name-a-starfield",
+    sceneStarfield?.scenePresetAttr === "starfield" &&
+      sceneStarfield.sceneIntensityAttr === "lively" &&
+      sceneStarfield.sceneLayer === true &&
+      sceneStarfield.sceneNodes >= 60 &&
+      sceneStarfield.slotPositioned === "relative" &&
+      sceneStarfield.sceneDuration > 0 &&
+      sceneStarfield.sceneDuration < 4,
+    JSON.stringify({
+      preset: sceneStarfield?.scenePresetAttr,
+      intensity: sceneStarfield?.sceneIntensityAttr,
+      layer: sceneStarfield?.sceneLayer,
+      nodes: sceneStarfield?.sceneNodes,
+      duration: sceneStarfield?.sceneDuration,
+      positioned: sceneStarfield?.slotPositioned,
+    }),
+  );
+  const sceneShot = await win.webContents.capturePage();
+  fs.writeFileSync(SCENE_PNG, sceneShot.toPNG());
+
+  writeThemeFile("aurora-lab.json", {
+    name: "aurora-lab",
+    label: "Aurora Lab",
+    scene: { background: { preset: "aurora", intensity: "calm" } },
+  });
+  const sceneAurora = await waitFor(
+    (s) =>
+      s.preview &&
+      s.scenePresetAttr === "aurora" &&
+      s.sceneIntensityAttr === "calm" &&
+      s.sceneLayer &&
+      s.sceneNodes >= 3,
+    20_000,
+  );
+  check(
+    "an-aurora-replaces-the-stars",
+    sceneAurora?.scenePresetAttr === "aurora" &&
+      sceneAurora.sceneIntensityAttr === "calm" &&
+      sceneAurora.sceneLayer === true &&
+      sceneAurora.sceneNodes >= 3,
+    JSON.stringify({
+      preset: sceneAurora?.scenePresetAttr,
+      intensity: sceneAurora?.sceneIntensityAttr,
+      nodes: sceneAurora?.sceneNodes,
+    }),
+  );
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromScene = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "solar-system.json" &&
+      s.scenePresetAttr === "plain" &&
+      !s.sceneLayer,
+  );
+  check(
+    "a-scene-reverts-with-its-theme",
+    backFromScene?.kept === "solar-system.json" &&
+      backFromScene.scenePresetAttr === "plain" &&
+      backFromScene.sceneLayer === false,
+    JSON.stringify({
+      kept: backFromScene?.kept,
+      preset: backFromScene?.scenePresetAttr,
+      layer: backFromScene?.sceneLayer,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -1095,6 +1207,20 @@ async function main() {
       "validate-theme-refuses-a-palette-it-cannot-read",
       contrastMessage.includes("WCAG AA contrast"),
       contrastMessage.slice(0, 220),
+    );
+
+    const badScene = await callJson("validate_theme", {
+      theme: {
+        name: "bad-scene",
+        label: "Bad Scene",
+        scene: { background: { preset: "nebula" } },
+      },
+    });
+    const badSceneMessage = badScene.json?.error?.message ?? "";
+    check(
+      "validate-theme-refuses-a-scene-it-cannot-draw",
+      badSceneMessage.includes("scene.background.preset must be one of"),
+      badSceneMessage.slice(0, 220),
     );
 
     const written = await callJson("write_theme", { theme: AGENT_THEME });
@@ -1466,6 +1592,49 @@ async function main() {
     }),
   );
 
+  // The operator's own scene pick, above the theme's: the kept agent theme has
+  // no scene, so this is the operator's sky and Reset must take it away again.
+  const pressedSceneOrbit = await click("scene-option-preset-orbit");
+  const pressedSceneCalm = await click("scene-option-intensity-calm");
+  const overriddenScene = await waitFor(
+    (s) =>
+      s.scenePresetAttr === "orbit" &&
+      s.sceneIntensityAttr === "calm" &&
+      s.sceneLayer &&
+      s.sceneNodes >= 5,
+  );
+  check(
+    "operator-scene-overrides-the-theme",
+    pressedSceneOrbit === true &&
+      pressedSceneCalm === true &&
+      overriddenScene?.scenePresetAttr === "orbit" &&
+      overriddenScene.sceneIntensityAttr === "calm" &&
+      overriddenScene.sceneLayer === true &&
+      overriddenScene.sceneNodes >= 5,
+    JSON.stringify({
+      pressed: pressedSceneOrbit && pressedSceneCalm,
+      preset: overriddenScene?.scenePresetAttr,
+      intensity: overriddenScene?.sceneIntensityAttr,
+      nodes: overriddenScene?.sceneNodes,
+    }),
+  );
+
+  const pressedSceneReset = await click("scene-reset");
+  const resetScene = await waitFor(
+    (s) => s.scenePresetAttr === "plain" && !s.sceneLayer,
+  );
+  check(
+    "reset-returns-the-themes-scene",
+    pressedSceneReset === true &&
+      resetScene?.scenePresetAttr === "plain" &&
+      resetScene.sceneLayer === false,
+    JSON.stringify({
+      pressed: pressedSceneReset,
+      preset: resetScene?.scenePresetAttr,
+      layer: resetScene?.sceneLayer,
+    }),
+  );
+
   // Remove the agent's file where the operator would: two presses, then gone.
   const firstRemove = await evaluate(`(() => {
     const b = document.querySelector('[data-testid="theme-file-row-agent-written"] [data-testid="theme-file-remove"]');
@@ -1662,6 +1831,7 @@ async function main() {
       dockLeft: path.relative(desktopRoot, DOCK_LEFT_PNG),
       floatingRail: path.relative(desktopRoot, FLOATING_RAIL_PNG),
       outsideTheme: path.relative(desktopRoot, OUTSIDE_PNG),
+      scene: path.relative(desktopRoot, SCENE_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

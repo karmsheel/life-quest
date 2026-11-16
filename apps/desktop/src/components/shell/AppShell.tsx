@@ -9,6 +9,7 @@ import { ChatDivider } from "./ChatDivider";
 import { ChromeHosts } from "./ChromeHosts";
 import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
+import { SceneBackdrop } from "./SceneBackdrop";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -87,6 +88,9 @@ export function AppShell() {
           >
             <NavRail />
             <div className="shell__main">
+              {/* The theme's decoration layer, behind the page and under the
+                  content; it is not part of the page's structure. */}
+              <SceneBackdrop />
               <div
                 className={[
                   "shell__content",

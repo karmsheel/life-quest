@@ -40,14 +40,17 @@ import type { ForgeSkin } from "@/lib/themes/types";
 import {
   applyChrome,
   applyMaterial,
+  applyScene,
   BACKDROPS,
   CHAT_DOCK_SIDES,
   DEFAULT_THEME_CHROME,
   DEFAULT_THEME_MATERIAL,
+  DEFAULT_THEME_SCENE,
   DENSITIES,
   DOMAIN_PLACES,
   DOMAIN_VARIANTS,
   layerChrome,
+  layerScene,
   MOTIONS,
   parseThemeFile,
   RADII,
@@ -55,6 +58,9 @@ import {
   NAV_RAIL_WIDTHS,
   resolveChrome,
   resolveMaterial,
+  resolveScene,
+  SCENE_BACKDROPS,
+  SCENE_INTENSITIES,
   SHADOWS,
   TITLEBAR_SIZES,
   TYPE_SCALES,
@@ -64,6 +70,8 @@ import {
   type ThemeChromeOverride,
   type ThemeFile,
   type ThemeMaterial,
+  type ThemeScene,
+  type ThemeSceneOverride,
 } from "@/lib/themes/theme-file";
 
 /**
@@ -92,6 +100,14 @@ const MATERIAL_OVERRIDE_STORAGE_KEY = "lifequest-material-override";
 
 /** The operator's own chrome picks, per window, layered over the theme's. */
 const CHROME_OVERRIDE_STORAGE_KEY = "lifequest-chrome-override";
+
+/**
+ * The operator's own scene pick, per window, layered over the theme's.
+ *
+ * A scene is decoration the operator is the one looking at; a theme may name a
+ * sky, but Settings can quiet it without editing the file. Never a theme file.
+ */
+const SCENE_OVERRIDE_STORAGE_KEY = "lifequest-scene-override";
 
 const MATERIAL_ENUMS = {
   radius: RADII,
@@ -208,6 +224,45 @@ function persistMaterialOverride(override: Partial<ThemeMaterial>): void {
 }
 
 
+function readStoredSceneOverride(): ThemeSceneOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(SCENE_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: ThemeSceneOverride = {};
+    if (isRecord(raw.background)) {
+      const preset = raw.background.preset;
+      const intensity = raw.background.intensity;
+      override.background = {
+        ...(typeof preset === "string" &&
+        (SCENE_BACKDROPS as readonly string[]).includes(preset)
+          ? { preset: preset as ThemeScene["background"]["preset"] }
+          : {}),
+        ...(typeof intensity === "string" &&
+        (SCENE_INTENSITIES as readonly string[]).includes(intensity)
+          ? { intensity: intensity as ThemeScene["background"]["intensity"] }
+          : {}),
+      };
+      if (Object.keys(override.background).length === 0) delete override.background;
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function persistSceneOverride(override: ThemeSceneOverride): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(SCENE_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(SCENE_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 interface ThemeContextValue {
   preference: ThemePreference;
   resolved: "light" | "dark";
@@ -251,6 +306,14 @@ interface ThemeContextValue {
   setMaterialOverride: (patch: Partial<ThemeMaterial>) => void;
   /** Drop every operator override and hand the axes back to the theme. */
   resetMaterialOverride: () => void;
+  /** The scene layer the window is actually wearing (theme + operator pick). */
+  scene: ThemeScene;
+  /** The operator's own scene pick, layered over the theme's. */
+  sceneOverride: ThemeSceneOverride;
+  /** Set the background preset or intensity and wear the result at once. */
+  setSceneOverride: (patch: ThemeSceneOverride) => void;
+  /** Drop the operator's scene pick and hand the backdrop back to the theme. */
+  resetSceneOverride: () => void;
   /** A file the companion just wrote: worn, but not yet kept. */
   themePreview: { file: string; label: string } | null;
   /** Why the newest theme file was refused, if it was. */
@@ -372,6 +435,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   >(readStoredMaterialOverride);
   /** Read from paintTheme without making it depend on override changes. */
   const materialOverrideRef = useRef<Partial<ThemeMaterial>>(materialOverride);
+  const [scene, setScene] = useState<ThemeScene>(DEFAULT_THEME_SCENE);
+  const [sceneOverride, setSceneOverrideState] = useState<ThemeSceneOverride>(
+    readStoredSceneOverride,
+  );
+  const sceneOverrideRef = useRef<ThemeSceneOverride>(sceneOverride);
   const [themePreview, setThemePreview] = useState<{
     file: string;
     label: string;
@@ -420,6 +488,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       applyChrome(nextChrome, document.documentElement);
       setMaterial(nextMaterial);
       applyMaterial(nextMaterial, document.documentElement);
+      // Theme first, operator second — the scene is decoration the operator is
+      // the one looking at, so their pick outranks the theme's like the rest.
+      const nextScene = layerScene(next?.scene, sceneOverrideRef.current);
+      setScene(nextScene);
+      applyScene(nextScene, document.documentElement);
       if (next?.colors) {
         const base = resolveSkin(skinName);
         applySkin(
@@ -471,6 +544,34 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     materialOverrideRef.current = {};
     setMaterialOverrideState({});
     persistMaterialOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change the scene layer. Layered over the theme for every paint (including
+   * previews) and persisted per window, exactly as material and chrome are.
+   */
+  const setSceneOverride = useCallback(
+    (patch: ThemeSceneOverride) => {
+      const next: ThemeSceneOverride = {
+        background: {
+          ...sceneOverrideRef.current.background,
+          ...patch.background,
+        },
+      };
+      if (Object.keys(next.background ?? {}).length === 0) delete next.background;
+      sceneOverrideRef.current = next;
+      setSceneOverrideState(next);
+      persistSceneOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetSceneOverride = useCallback(() => {
+    sceneOverrideRef.current = {};
+    setSceneOverrideState({});
+    persistSceneOverride({});
     paintTheme(paintedTheme.current);
   }, [paintTheme]);
 
@@ -744,6 +845,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       chrome,
       chromeOverride,
       material,
+      scene,
+      sceneOverride,
     };
     const answer = await window.lifequest?.themeExport?.(exported);
     if (!answer) return null;
@@ -752,7 +855,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return null;
     }
     return answer.value;
-  }, [chrome, material, skinName, themeFile]);
+  }, [chrome, material, scene, sceneOverride, skinName, themeFile]);
 
   useEffect(() => {
     void loadThemeFiles({ preview: false });
@@ -925,6 +1028,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setChromeOverride,
       setMaterialOverride,
       resetMaterialOverride,
+      scene,
+      sceneOverride,
+      setSceneOverride,
+      resetSceneOverride,
       themePreview,
       themeError,
       keepThemePreview,
@@ -958,7 +1065,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       openThemesFolder,
       preference,
       resetMaterialOverride,
+      resetSceneOverride,
       setMaterialOverride,
+      setSceneOverride,
+      scene,
+      sceneOverride,
       refreshThemeFiles,
       removeThemeFile,
       themeFiles,

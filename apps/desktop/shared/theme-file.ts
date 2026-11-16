@@ -9,6 +9,8 @@
  *                 wear. Only closed enums: a typo is a named error, never a
  *                 shell that cannot find its own controls.
  *  - `material` — radius, density, motion. The first rung above colour.
+ *  - `scene`    — the decoration layer behind the page. Data names a preset and
+ *                 an intensity; the app owns the pixels.
  *
  * It lives in `shared/` because three callers need the same rules: the renderer
  * that wears a theme, main's theme tools the companion calls, and the E2E rigs.
@@ -65,6 +67,32 @@ export type ThemeChromeOverride = {
   titlebar?: Partial<ThemeChrome["titlebar"]>;
 };
 
+export type SceneBackdropPreset = "plain" | "starfield" | "orbit" | "aurora";
+export type SceneIntensity = "calm" | "default" | "lively";
+
+/**
+ * The scene layer: decoration, never structure.
+ *
+ * A theme names one of the bundled procedural backgrounds and how lively it
+ * runs. It cannot ship an image, a canvas, or a shader — the vocabulary is
+ * closed and the renderer is the app's, which is what keeps the page legible,
+ * the CSP narrow and the frame budget honest.
+ */
+export type ThemeScene = {
+  background: {
+    preset: SceneBackdropPreset;
+    intensity: SceneIntensity;
+  };
+};
+
+/** What a theme file may say about the scene: any field left out is defaulted. */
+export type ThemeSceneFile = {
+  background?: Partial<ThemeScene["background"]>;
+};
+
+/** The operator's own scene picks, layered over the theme's. */
+export type ThemeSceneOverride = ThemeSceneFile;
+
 export type ThemeShadow = "flat" | "soft" | "deep";
 export type ThemeTypeScale = "compact" | "default" | "airy";
 export type ThemeBackdrop = "plain" | "wash" | "grid";
@@ -90,6 +118,7 @@ export type ThemeFile = {
   darkColors?: SkinColors;
   chrome?: Partial<ThemeChrome>;
   material?: Partial<ThemeMaterial>;
+  scene?: ThemeSceneFile;
 };
 
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
@@ -99,6 +128,22 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
   chatDock: { side: "right" },
   titlebar: { size: "default" },
 };
+
+export const DEFAULT_THEME_SCENE: ThemeScene = {
+  background: { preset: "plain", intensity: "calm" },
+};
+
+export const SCENE_BACKDROPS: readonly SceneBackdropPreset[] = [
+  "plain",
+  "starfield",
+  "orbit",
+  "aurora",
+];
+export const SCENE_INTENSITIES: readonly SceneIntensity[] = [
+  "calm",
+  "default",
+  "lively",
+];
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
   radius: "soft",
@@ -504,6 +549,45 @@ export function parseThemeFile(raw: unknown): ParseResult {
     }
   }
 
+  const scene: ThemeSceneFile = {};
+  if (raw.scene !== undefined) {
+    if (!isRecord(raw.scene)) {
+      return { ok: false, error: "scene must be an object" };
+    }
+    const background = raw.scene.background;
+    if (background !== undefined) {
+      if (!isRecord(background)) {
+        return { ok: false, error: "scene.background must be an object" };
+      }
+      const preset = background.preset;
+      const intensity = background.intensity;
+      if (
+        preset !== undefined &&
+        (typeof preset !== "string" ||
+          !(SCENE_BACKDROPS as readonly string[]).includes(preset))
+      ) {
+        return {
+          ok: false,
+          error: `scene.background.preset must be one of ${SCENE_BACKDROPS.join(", ")}`,
+        };
+      }
+      if (
+        intensity !== undefined &&
+        (typeof intensity !== "string" ||
+          !(SCENE_INTENSITIES as readonly string[]).includes(intensity))
+      ) {
+        return {
+          ok: false,
+          error: `scene.background.intensity must be one of ${SCENE_INTENSITIES.join(", ")}`,
+        };
+      }
+      scene.background = {
+        ...(preset ? { preset: preset as SceneBackdropPreset } : {}),
+        ...(intensity ? { intensity: intensity as SceneIntensity } : {}),
+      };
+    }
+  }
+
   const material: Partial<ThemeMaterial> = {};
   if (raw.material !== undefined) {
     if (!isRecord(raw.material)) {
@@ -540,6 +624,7 @@ export function parseThemeFile(raw: unknown): ParseResult {
       ...(typeof raw.description === "string"
         ? { description: raw.description }
         : {}),
+      ...(scene.background ? { scene } : {}),
       ...(colors ? { colors } : {}),
       ...(darkColors ? { darkColors } : {}),
       ...(Object.keys(chrome).length > 0 ? { chrome } : {}),
@@ -587,6 +672,26 @@ export function layerChrome(
   } as Partial<ThemeChrome>);
 }
 
+export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
+  return {
+    background: {
+      preset: scene?.background?.preset ?? DEFAULT_THEME_SCENE.background.preset,
+      intensity:
+        scene?.background?.intensity ?? DEFAULT_THEME_SCENE.background.intensity,
+    },
+  };
+}
+
+/** Layer the operator's scene picks over the worn theme's scene. */
+export function layerScene(
+  theme?: ThemeSceneFile,
+  override?: ThemeSceneOverride,
+): ThemeScene {
+  return resolveScene({
+    background: { ...theme?.background, ...override?.background },
+  });
+}
+
 export function resolveMaterial(
   material?: Partial<ThemeMaterial>,
 ): ThemeMaterial {
@@ -601,10 +706,11 @@ export function resolveMaterial(
  */
 export const THEME_VOCABULARY = [
   "A theme is presentation only: a JSON file at <app profile>/themes/<name>.json, never in the vault, and it needs no Decision.",
-  "Shape: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
+  "Shape: { name (slug), label, description?, chrome?, material?, scene?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
-  "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
+  "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
+  "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

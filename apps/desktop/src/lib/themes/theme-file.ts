@@ -9,6 +9,7 @@ export * from "../../../shared/theme-file.ts";
 import type {
   ThemeChrome,
   ThemeMaterial,
+  ThemeScene,
 } from "../../../shared/theme-file.ts";
 
 const RADIUS_SCALES: Record<ThemeMaterial["radius"], string[]> = {
@@ -57,6 +58,18 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
   root.dataset.chromeNavPlace = chrome.navRail.place;
   root.style.setProperty("--window-titlebar-height", TITLEBAR_SIZES[chrome.titlebar.size]);
   root.dataset.chromeTitlebarSize = chrome.titlebar.size;
+}
+
+/**
+ * Write the scene layer onto the document.
+ *
+ * Two state attributes and nothing else: which preset the renderer should draw
+ * and how lively it runs. The pixels belong to the bundled component, so a
+ * theme can ask for a starfield but never for a file, a shader or a stylesheet.
+ */
+export function applyScene(scene: ThemeScene, root: HTMLElement): void {
+  root.dataset.sceneBackdrop = scene.background.preset;
+  root.dataset.sceneIntensity = scene.background.intensity;
 }
 
 /**
