@@ -41,6 +41,7 @@ type Report = {
     frames: string;
     showcase: string;
     r3Gate: string;
+    focusFloating: string;
   };
   theme: unknown;
   refused: unknown;
@@ -141,6 +142,7 @@ describe("theme files v2", () => {
         report.artifacts.frames,
         report.artifacts.showcase,
         report.artifacts.r3Gate,
+        report.artifacts.focusFloating,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

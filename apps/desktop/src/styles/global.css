@@ -13486,6 +13486,10 @@ button.chat-panel__activity-line:hover {
    the collapsed column still works as a thin launcher. */
 :root[data-chrome-nav-place="floating"] .shell {
   --nav-column: 0px;
+  /* The floating card's own width, which the focus arrangement below needs:
+     `--nav-column` is zero here because the rail left the grid, and a collapsed
+     card is narrower than the token the theme picked. */
+  --floating-rail-width: var(--shell-sidebar-width);
   grid-template-columns: 0 1fr var(--chat-column);
 }
 
@@ -13530,7 +13534,11 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-md);
 }
 
-:root[data-chrome-nav-place="floating"] .shell.shell--nav-collapsed > .nav-rail {
+:root[data-chrome-nav-place="floating"] .shell.shell--nav-collapsed {
+  --floating-rail-width: var(--shell-nav-width-collapsed);
+}
+
+ :root[data-chrome-nav-place="floating"] .shell.shell--nav-collapsed > .nav-rail {
   width: var(--shell-nav-width-collapsed);
 }
 
@@ -13875,3 +13883,44 @@ button.chat-panel__activity-line:hover {
   border-top: 1px solid var(--border-soft);
 }
 
+
+/* —— Full-screen chat beside a moved rail ————————————————————————————————
+   Two features that arrived separately: R2 lets the theme move the rail out of
+   the leading column (a floating card, or the trailing edge), and the full-screen
+   dock takes the workspace beside the rail. The mode's own rule assumes the rail
+   owns a leading column, so with a moved rail it won the page away and left the
+   dock in its 23rem column: a "full-screen" mode with a blank sheet on screen.
+   These rules restate the arrangement in each placement's geometry; they sit
+   after the placement blocks and carry one class more, so they win by specificity
+   rather than by file order.
+
+   The floating card stays the window's leading edge, insets and all: the dock
+   starts at the card's trailing edge plus the same 0.75rem breathing room it has
+   above the strip, and runs to the window's trailing edge. The card keeps its
+   bottom inset, so it never sits over the transcript's own frame.
+   The right-hand rail keeps its trailing column; the dock takes the leading one
+   and meets the rail's edge, exactly as it met the left rail's. */
+:root[data-chrome-nav-place="floating"] .shell.shell--chat-focus {
+  grid-template-columns: 0 1fr;
+}
+
+:root[data-chrome-nav-place="floating"] .shell.shell--chat-focus > .chat-panel {
+  grid-column: 2;
+  margin-left: calc(1.5rem + var(--floating-rail-width));
+  /* The tray pads its trailing edge by the frame slack; the dock carries that
+     slack out to the glass, exactly as the base focus rule does. */
+  width: calc(100% - 1.5rem - var(--floating-rail-width) + var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--chat-focus {
+  grid-template-columns: 1fr var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--chat-focus > .nav-rail {
+  grid-column: 2;
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--chat-focus > .chat-panel {
+  grid-column: 1;
+  width: 100%;
+}
