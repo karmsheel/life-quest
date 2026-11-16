@@ -400,6 +400,16 @@ interface ThemeContextValue {
    * and chrome. Returns the saved path, null when the operator cancelled.
    */
   exportCurrentTheme: () => Promise<{ path: string } | null>;
+  /** Read one theme file's raw JSON text — the Extensions editor's load. */
+  readThemeFile: (file: string) => Promise<string | null>;
+  /**
+   * Save an edited theme file. Main parses it with the same shared rules, so a
+   * refusal names the field before anything reaches disk, and a changed file
+   * previews through the same gate as a companion write.
+   */
+  writeThemeFile: (file: string, raw: string) => Promise<boolean>;
+  /** Stop wearing the kept file: the window returns to the shell's default look. */
+  clearKeptTheme: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -972,6 +982,46 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     themeFile,
   ]);
 
+  /** Read one file for the Extensions editor. */
+  const readThemeFile = useCallback(async (file: string) => {
+    const answer = await window.lifequest?.themeRead?.(file);
+    if (!answer || !answer.ok) {
+      setThemeError(answer?.error ?? "could not read the theme file");
+      return null;
+    }
+    return answer.value;
+  }, []);
+
+  /**
+   * Save an edited file. The write is cleared from the mtime map before the
+   * read so the file that just changed proves as "changed" even when the
+   * operator saves twice inside one second.
+   */
+  const writeThemeFile = useCallback(
+    async (file: string, raw: string) => {
+      const answer = await window.lifequest?.themeWrite?.(file, raw);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not write the theme file");
+        return false;
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles();
+      return true;
+    },
+    [loadThemeFiles],
+  );
+
+  /** Hand the window back its default look — the Extensions page's off switch. */
+  const clearKeptTheme = useCallback(async () => {
+    await window.lifequest?.themeSetKept?.(null);
+    keptFileRef.current = null;
+    keptTheme.current = null;
+    setKeptFile(null);
+    if (previewRef.current) return;
+    setThemeFile(null);
+    paintTheme(null);
+  }, [paintTheme]);
+
   // Hold the latest reader in a ref and subscribe once. `loadThemeFiles`
   // changes identity whenever theme state changes; depending on it re-ran this
   // effect, and each re-run did a *preview-disabled* read — which records file
@@ -1174,6 +1224,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       refreshThemeFiles,
       openThemesFolder,
       exportCurrentTheme,
+      readThemeFile,
+      writeThemeFile,
+      clearKeptTheme,
     }),
     [
       availableSkins,
@@ -1187,6 +1240,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resetChromeOverride,
       setChromeOverride,
       exportCurrentTheme,
+      readThemeFile,
+      writeThemeFile,
+      clearKeptTheme,
       keepThemeFile,
       keepThemePreview,
       keptFile,

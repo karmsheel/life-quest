@@ -1,0 +1,331 @@
+/* Extensions — the workshop for the data-only customisation files.
+   One card is one file: what it changes, whether it is the active one, and the
+   four verbs the operator owns — switch, try, edit, remove. The editor is the
+   same card's file opened as text, with the validation verdict underneath. */
+.extensions-page {
+  width: 100%;
+  max-width: 56rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  container-type: inline-size;
+}
+
+.extensions-page__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem 1rem;
+}
+
+.extensions-page__header > div {
+  min-width: 0;
+}
+
+.extensions-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.extensions-page__summary {
+  margin: -0.4rem 0 0;
+  font-size: 0.8rem;
+}
+
+.extensions-page__summary code {
+  font-size: 0.78rem;
+}
+
+.extensions-page__empty {
+  margin: 0;
+  padding: 1.4rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+
+/* Create panel */
+.extensions-page__create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.extensions-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.extensions-page__field input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+}
+
+.extensions-page__source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0.82rem;
+}
+
+.extensions-page__source legend {
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+}
+
+.extensions-page__source label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.extensions-page__create-actions,
+.extensions-page__editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Editor */
+.extensions-page__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.extensions-page__editor-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.extensions-page__editor-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+}
+
+.extensions-page__editor-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.extensions-page__editor-title code {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.extensions-page__editor-raw {
+  width: 100%;
+  min-height: 16rem;
+  resize: vertical;
+  padding: 0.7rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.extensions-page__valid {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+/* Cards */
+.extensions-page__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.extension-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.extension-card--active {
+  border-color: var(--ring);
+  box-shadow: var(--shadow-sm);
+}
+
+.extension-card__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.extension-card__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.extension-card__icon {
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+}
+
+.extension-card__label {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.extension-card__file {
+  font-size: 0.74rem;
+  color: var(--muted-foreground);
+}
+
+.extension-card__pill {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.extension-card__pill--active {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+
+.extension-card__desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.extension-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.extension-chip {
+  padding: 0.02rem 0.38rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.extension-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The switch: a native toggle, not a button that lies about its role. */
+.extension-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.extension-switch__control {
+  position: relative;
+  width: 2rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+  cursor: pointer;
+}
+
+.extension-switch__control[aria-checked="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.extension-switch__knob {
+  position: absolute;
+  top: 50%;
+  left: 0.12rem;
+  width: 0.78rem;
+  height: 0.78rem;
+  border-radius: 50%;
+  background: var(--card);
+  transform: translateY(-50%);
+  transition: left 120ms ease;
+}
+
+.extension-switch__control[aria-checked="true"] .extension-switch__knob {
+  left: calc(100% - 0.9rem);
+}
+
+.extension-switch__control:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@container (max-width: 40rem) {
+  .extensions-page__header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .extensions-page__header-actions {
+    justify-content: flex-start;
+  }
+
+  .extension-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .extension-card__actions {
+    justify-content: flex-start;
+  }
+}

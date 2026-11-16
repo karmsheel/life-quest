@@ -49,6 +49,7 @@ type Report = {
     compositionGrid: string;
     compositionVocabulary: string;
     helios: string;
+    extensions: string;
   };
   theme: unknown;
   refused: unknown;
@@ -157,6 +158,7 @@ describe("theme files v2", () => {
         report.artifacts.compositionGrid,
         report.artifacts.compositionVocabulary,
         report.artifacts.helios,
+        report.artifacts.extensions,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

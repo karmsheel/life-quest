@@ -131,3 +131,13 @@ Rig: **106 checks, 0 failures**; artifact `themes-v2-helios.png` captured after 
 What still is **not** in R4, and would be the next decision rather than a defect: authoring by direct manipulation (drag on a canvas, orbit editor), free-form animation, sub-page composition, and code-bearing packs — the last is R5 and was never planned; it needs a sandbox, signing identity, publisher identity and a review flow before it can even be scoped.
 
 The estimate held in shape: R4.0/R4.1 in days, R4.2 and R4.3 in weeks, R4.4 a day's gate once the vocabulary existed; the whole ladder remains inside the 8–12+ week product-analysis envelope for a personal, data-only theming studio.
+
+## After the gate — R4.5: the Extensions page (2026-11-16)
+
+The rung needed a place to live, and the naming question had a product answer. **Extensions** is the umbrella and the page; a single file stays a **theme**. Reasons sketched in the wiki page: the shipped model is data, not code, and calling it a *plugin* would promise an execution and trust model the app refuses (no pack code, strict CSP, one privileged window). Extensions leaves room for a second kind of extension later while the theme tools keep their names.
+
+`/extensions` (rail row under Automations) is the operator's workshop over the profile's `themes/` files: list with labels, descriptions and feature chips; **Active** switch (a real `role="switch"`, on = keep, off = default look); **Try** (same ten-second preview gate as a companion write); **Edit** (raw JSON in a textarea, live validation using the shared parser, Save sent to main which re-parses and writes atomically; an invalid file disables Save); **Remove** (two presses); and **New extension** (blank material baseline, or a copy of the active look, slugged and uniquified). Nothing here is a second write path: the IPC handlers are `theme:read` / `theme:write`, `theme:write` validates with the same `parseThemeFile` the companion's tools use and only then touches disk.
+
+Rig: **109 checks, 0 failures**, including the new page's three claims — the list shows the profile's files, a file can be created and edited in the app (with invalid JSON refused before disk and Save disabled), and it can be switched on/off and removed. Artifact `themes-v2-extensions.png` shows the page with the created extension active. The existing R4.0–R4.4 assertions stayed green in the same run.
+
+What this slice does **not** claim: a third-party distribution channel, signing/publisher identity, or any executable code. Those remain the R5 conversation that was never planned; the Extensions page is where such packs would appear, not evidence that they exist.

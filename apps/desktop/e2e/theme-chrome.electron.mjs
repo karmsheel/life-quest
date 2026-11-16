@@ -95,6 +95,7 @@ const COMPOSITION_VOCABULARY_PNG = path.join(
   "themes-v2-composition-vocabulary.png",
 );
 const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
+const EXTENSIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
 
 const failures = [];
 const checks = [];
@@ -505,6 +506,13 @@ const SAMPLE = `(async () => {
       const rail = document.querySelector(".nav-rail");
       return rail ? Math.round(rail.getBoundingClientRect().width) : null;
     })(),
+    extensionsPage: Boolean(document.querySelector('[data-testid="extensions-page"]')),
+    extensionsRows: document.querySelectorAll(
+      '[data-testid="extensions-page"] li[data-testid^="extension-"]',
+    ).length,
+    extensionsCountText:
+      document.querySelector('[data-testid="extensions-count"]')?.textContent?.trim() ?? null,
+    extensionsActive: Boolean(document.querySelector('[data-testid="extension-active"]')),
   };
 })()`;
 
@@ -3832,6 +3840,210 @@ async function main() {
     JSON.stringify({ isError: heliosSpoof.isError, error: heliosSpoofError }),
   );
 
+  // ── 12g: Extensions — the workshop, on the real page ─────────────────────
+  // The rail gains the row; the page must list the profile's files, create a new
+  // one inside the app (not by the rig's pen on the folder), edit it, refuse
+  // invalid JSON before anything reaches disk, switch it on and off, and remove
+  // it. The screenshot is taken while the created file is active.
+  const untilTrue = async (expression, timeout = 10_000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if ((await evaluate(expression)) === true) return true;
+      await sleep(120);
+    }
+    return false;
+  };
+  await evaluate(`(() => {
+    const link = [...document.querySelectorAll(".nav-rail__link")].find((el) =>
+      (el.textContent ?? "").includes("Extensions"),
+    );
+    if (link) link.click();
+    else location.hash = "#/extensions";
+    return true;
+  })()`);
+  const extensionsReady = await waitFor(
+    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) >= 6,
+    15_000,
+  );
+  check(
+    "the-extensions-page-lists-the-profile-extensions",
+    extensionsReady?.extensionsPage === true &&
+      (extensionsReady.extensionsRows ?? 0) >= 6 &&
+      (extensionsReady.extensionsCountText ?? "").includes("extension"),
+    JSON.stringify({
+      rows: extensionsReady?.extensionsRows,
+      count: extensionsReady?.extensionsCountText,
+      hash: extensionsReady?.hash,
+    }),
+  );
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extensions-create"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const panelOpen = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-create-panel"]'))`,
+  );
+  const typedLabel = await evaluate(`(() => {
+    const input = document.querySelector('[data-testid="extension-create-label"]');
+    if (!input) return false;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setter.call(input, "Rig Workshop");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(120);
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-create-submit"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const createdPreview = await waitFor(
+    (s) =>
+      (s.previewText ?? "").includes("rig-workshop.json") &&
+      (s.extensionsRows ?? 0) >= 7,
+    20_000,
+  );
+  const createdFile = path.join(themesDir, "rig-workshop.json");
+  let createdOnDisk = null;
+  try {
+    createdOnDisk = JSON.parse(fs.readFileSync(createdFile, "utf8"));
+  } catch {
+    createdOnDisk = null;
+  }
+  const createdRow = await evaluate(
+    `Boolean(document.querySelector('[data-testid="extension-rig-workshop"]'))`,
+  );
+
+  // Edit: open the file as text, prove the live verdict refuses bad JSON, then
+  // save a real change and find it on disk. The invalid state must disable Save.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-edit"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const editorOpen = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+  );
+  const validBefore = await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension")`,
+  );
+  const setEditorSource = async (text) =>
+    evaluate(`(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(area, ${JSON.stringify(text)});
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+  await setEditorSource("{ not json");
+  const refusedInvalid = await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Not JSON")`,
+  );
+  const saveDisabled = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); return Boolean(b && b.disabled); })()`,
+  );
+  await setEditorSource(
+    createdOnDisk === null
+      ? "{}"
+      : JSON.stringify({ ...createdOnDisk, label: "Rig Workshop Edited" }, null, 2),
+  );
+  await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension — Rig Workshop Edited")`,
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const editorClosed = await untilTrue(
+    `!document.querySelector('[data-testid="extension-editor"]')`,
+  );
+  let editedOnDisk = null;
+  try {
+    editedOnDisk = JSON.parse(fs.readFileSync(createdFile, "utf8"));
+  } catch {
+    editedOnDisk = null;
+  }
+  check(
+    "an-extension-can-be-created-and-edited-in-the-app",
+    panelOpen === true &&
+      typedLabel === true &&
+      createdRow === true &&
+      createdOnDisk?.label === "Rig Workshop" &&
+      (createdPreview?.previewText ?? "").includes("rig-workshop.json") &&
+      editorOpen === true &&
+      validBefore === true &&
+      refusedInvalid === true &&
+      saveDisabled === true &&
+      editorClosed === true &&
+      editedOnDisk?.label === "Rig Workshop Edited",
+    JSON.stringify({
+      panelOpen,
+      createdRow,
+      createdLabel: createdOnDisk?.label,
+      previewed: (createdPreview?.previewText ?? "").slice(0, 80),
+      editorOpen,
+      validBefore,
+      refusedInvalid,
+      saveDisabled,
+      editedLabel: editedOnDisk?.label,
+    }),
+  );
+
+  // Switch it on: the created file becomes the active extension, the preview
+  // bar goes away because the choice is now kept. Then switch it off: the shell
+  // returns to its default look.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const switchedOn = await waitFor(
+    (s) =>
+      s.kept === "rig-workshop.json" &&
+      !s.preview &&
+      s.extensionsActive === true,
+    20_000,
+  );
+  const extensionsShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_PNG, extensionsShot.toPNG());
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const switchedOff = await waitFor(
+    (s) => s.kept === null && s.extensionsActive === false,
+    20_000,
+  );
+
+  // Remove: two presses, and the file leaves the profile.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  await sleep(200);
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const removedRow = await untilTrue(
+    `!document.querySelector('[data-testid="extension-rig-workshop"]')`,
+    15_000,
+  );
+  check(
+    "an-extension-can-be-switched-on-off-and-removed",
+    switchedOn?.kept === "rig-workshop.json" &&
+      switchedOn.extensionsActive === true &&
+      switchedOff?.kept === null &&
+      switchedOff.extensionsActive === false &&
+      removedRow === true &&
+      !fs.existsSync(createdFile),
+    JSON.stringify({
+      on: switchedOn?.kept,
+      onActive: switchedOn?.extensionsActive,
+      off: switchedOff?.kept,
+      offActive: switchedOff?.extensionsActive,
+      removedRow,
+      fileGone: !fs.existsSync(createdFile),
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -3868,6 +4080,7 @@ async function main() {
         COMPOSITION_VOCABULARY_PNG,
       ),
       helios: path.relative(desktopRoot, HELIOS_PNG),
+      extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

@@ -1590,6 +1590,71 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     }
   });
 
+  /*
+   * Read/write one theme file on the operator's behalf — the two calls the
+   * Extensions page needs to edit and create without leaving the app.
+   *
+   * Writing is the companion's own door in main, re-used: the raw text is
+   * parsed with the same shared rules (`parseThemeFile`), a refusal names the
+   * field, and only a valid file is written (atomically, so a half-written
+   * file can never be watched). The renderer is told immediately; the fs
+   * watcher is for files that appear from outside, not for this window's own
+   * budgeted writes.
+   */
+  ipcMain.handle("theme:read", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    try {
+      const raw = await fs.promises.readFile(
+        path.join(app.getPath("userData"), "themes", safe),
+        "utf8",
+      );
+      return { ok: true as const, value: raw };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  ipcMain.handle("theme:write", async (event, file: unknown, raw: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    if (typeof raw !== "string") {
+      return { ok: false as const, error: "theme source must be a JSON string" };
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "theme source is not JSON",
+      };
+    }
+    const parsed = parseThemeFile(json);
+    if (!parsed.ok) return { ok: false as const, error: parsed.error };
+    try {
+      const dir = path.join(app.getPath("userData"), "themes");
+      await fs.promises.mkdir(dir, { recursive: true });
+      const target = path.join(dir, safe);
+      await fs.promises.writeFile(`${target}.tmp`, `${raw.trim()}\n`);
+      await fs.promises.rename(`${target}.tmp`, target);
+      BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+      return { ok: true as const, value: { file: safe } };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
   ipcMain.handle("theme:openFolder", async () => {
     const dir = path.join(app.getPath("userData"), "themes");
     try {
