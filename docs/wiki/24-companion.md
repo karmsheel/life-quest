@@ -16,9 +16,15 @@ vault, the tools that read and write it, the locks, and the
 - The **chat dock** is the right-hand pane of the three-pane studio; the side
   switch in its bottom bar swaps it to the left. It is present on every page,
   collapses to a launcher mark, and its width is dragged with the divider between
-  it and the page.
-- A vertical **agent switcher** strip sits at the dock's top-right edge: one block
-  per agent this vault has, offered in the area you are looking at.
+  it and the page. **Full screen chat** at the trailing end of its top row
+  collapses the main page and gives the dock the workspace right of the rail —
+  the rail and its **Chats** list stay — and the title bar's **Collapse main
+  page** / **Restore main page** is the same mode, with **Mod+Shift+F** as the
+  shortcut.
+- A vertical **agent switcher** strip stands in the composer's trailing margin: in
+  the empty gutter beside the composer when the dock is wide, and just above the
+  composer box when the dock is too narrow to hold it. One block per agent this
+  vault has, offered in the area you are looking at.
 - The **Chats** list is the middle of the rail, under the wing's pages and above
   the governed shelf. It lists every conversation of the vault and agent you are
   using.
@@ -125,11 +131,14 @@ vault's own binding.
    or **Chat actions** then **Open in new tab** — opens a second tab beside the
    current one.
 4. The **tab strip** leads the dock, above the name of the chat in front, and is
-   drawn whenever the thread has a tab, even a single one. The **+** at its
-   trailing edge (**New chat tab**) opens a fresh chat in a tab of its own. Tabs
-   are remembered per vault and agent: quit and reopen and every tab returns in
-   the same order, with the chat that was in front still in front. A remembered
-   chat that was archived or deleted in the meantime loses its tab.
+   drawn whenever the thread has a tab, even a single one. The chat's name sits
+   under the strip in a small chip hung off its bottom edge, with a pencil
+   (**Rename chat**) at the chip's end — the quick way into the same rename field
+   the tab menu opens. The **+** at the strip's trailing edge (**New chat tab**)
+   opens a fresh chat in a tab of its own. Tabs are remembered per vault and
+   agent: quit and reopen and every tab returns in the same order, with the chat
+   that was in front still in front. A remembered chat that was archived or
+   deleted in the meantime loses its tab.
 5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
@@ -142,6 +151,14 @@ vault's own binding.
 7. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable flags on
    that companion, so its other surfaces see them too.
+8. **Give the chat the workspace.** Choose **Full screen chat** at the trailing
+   end of the dock's top row — the tab strip when a tab is drawn, the header row
+   when it is not. The main page collapses, the chat takes the workspace right of
+   the rail, and the rail with its chats list stays; the control now reads **Exit
+   full screen chat**. The title bar's **Collapse main page** / **Restore main
+   page** is the second door and **Mod+Shift+F** the shortcut. The mode is
+   session-only — it resets on relaunch, and collapsing the dock leaves it and
+   brings the page back.
 
 ### Search and the archive
 
@@ -168,22 +185,26 @@ vault's own binding.
    is already working. To line a message up behind it, choose **Queue**; queued
    rows appear under the composer labelled **Queued**, each with **Remove queued
    message**. Ctrl/Cmd+Enter steers while a turn is running.
-4. Read the turn as a work log. Your messages are labelled **You**, the
-   companion's **Pi** or **Hermes**; a steered message wears a `steered` mark, and
-   each bubble has a time and a copy control (**Copy message**, then **Copied**).
-   Between the question and the answer sits the turn's process: its reasoning (a
-   **Thought** row, or **Thinking preview** when the agent only samples it), any
-   commentary or narration, and one row per tool call such as
+4. Read the turn as a work log. Your message sits on the right as a bubble in the
+   accent tint, labelled **You**. The companion's answer is not a bubble: it rests
+   on the panel as plain prose, left aligned and full width, labelled **Pi** or
+   **Hermes**. Both carry their label above and a footer with the time and a copy
+   control (**Copy message**, then **Copied**); a steered message wears a
+   `steered` mark. Between the question and the answer sits the turn's process:
+   its reasoning (a **Thought** row, or **Thinking preview** when the agent only
+   samples it), any commentary or narration, and one row per tool call such as
    "get_database · 4e89…" with its state, its duration and, on click, its
    arguments and result. While the turn runs the process stays open; when it
    settles it folds to one header such as "Worked for 1s · Used 4e89…", and
    clicking the header reopens it.
 5. Below the process is the answer, never inside it, and a footer with the
-   outcome: **Completed · 1s · 1.4k tokens**, or **Stopped**, **Failed** or
-   **Ended before finishing** with the reason. A failed, stopped or incomplete
-   turn keeps its process open so the cut-short work stays visible. Reloading the
-   chat rebuilds the same rows, fold, footer and token count from the companion's
-   own transcript.
+   outcome: **Completed · 1s · 1.4k tokens** (past a million tokens the count
+   reads in millions, **1.2M tokens**), or **Stopped**, **Failed** or **Ended
+   before finishing** with the reason. Until the answer arrives the turn shows
+   only its work log: no empty bubble stands in for the prose. A failed, stopped
+   or incomplete turn keeps its process open so the cut-short work stays visible.
+   Reloading the chat rebuilds the same rows, fold, footer and token count from
+   the companion's own transcript.
 6. The same work log is drawn for both agents, but only from what the agent can
    honestly report: Pi streams results, real reasoning and its own tool timings as
    they happen; Hermes' session stream delivers results with the turn's final
@@ -269,16 +290,23 @@ the dock included. Running one of the day's acts from it closes the sheet first 
 then opens the chat tab in the dock behind, so the result is never started where
 you cannot see it. See [Daily Journal](./16-daily-journal.md).
 
+Focus mode and full-screen chat are different arrangements. Focus mode is a sheet
+lying over everything, so it covers the dock, full screen or not; full-screen chat
+is a shell mode in which the main page is gone and the dock takes its place, the
+dock itself staying live, scrollable and typeable. Closing the sheet gives back
+the arrangement you left; leaving full-screen chat gives back the split.
+
 ## The screen
 
 | Part | What it does |
 |---|---|
-| Agent switcher (dock top-right) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. |
+| Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
-| Dock header | The active chat's name with **Pin chat** / **Rename chat** / **Archive chat** (the archive control steps away while pinned). |
-| Transcript | Bubbles with **You** / **Pi** or **Hermes**, times, copy controls, the `steered` mark; the tool activity line; approval and error panels. |
-| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. |
+| Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
+| Chat name chip | The active chat's name in a small box hung off the strip's bottom edge, centred on the dock, with a pencil (**Rename chat**) at its end. Pin and archive live in the tab's right-click menu. |
+| Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
+| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
 | Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour
@@ -300,15 +328,16 @@ you cannot see it. See [Daily Journal](./16-daily-journal.md).
   page they open — the pill re-arms on every navigation.
 - **The companion can read anything in the vault and most writes wait.** Reads
   need no approval. Writes to doctrine, library notes, reviews, projects, goal
-  records, Architecture templates, pins, ingest mappings, posted ledger edits and
-  dashboard views go through [Decisions](./23-decisions.md). Direct writes are
-  adding data (a new database, a new row, a batch of rows — after the confirmation
-  in chat), Daily Schedule tasks, a conversational transaction whose amount and
-  account are unambiguous, page script blocks, and the companion brief — and each
-  is named in chat afterwards. If an amount or an account is missing, the companion
-  asks and does not post. Pages other than script blocks and Finance kit installs
-  are not agent-writable surfaces: the shipped tools have no page-write or
-  kit-install call.
+  records, Architecture templates, pins, ingest mappings, posted ledger edits,
+  database merges and whole-database deletions, and dashboard views go through
+  [Decisions](./23-decisions.md). Direct writes are adding data (a new database, a
+  new row, a batch of rows — after the confirmation in chat, and a database name
+  must be new in that area), Daily Schedule tasks, a conversational transaction
+  whose amount and account are unambiguous, page script blocks, and the companion
+  brief — and each is named in chat afterwards. If an amount or an account is
+  missing, the companion asks and does not post. Pages other than script blocks and
+  Finance kit installs are not agent-writable surfaces: the shipped tools have no
+  page-write or kit-install call.
 - **The companion brief is the one card the companion owns.** It is written with
   `set_companion_brief` — a replacement of at most five typed, sourced, expiring
   items (watch, prompt, ahead, commitment, pattern) — read with

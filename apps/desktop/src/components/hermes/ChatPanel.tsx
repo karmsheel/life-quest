@@ -61,6 +61,7 @@ import {
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -1761,6 +1762,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     );
   }
 
+  /*
+    The dock's own full-screen door. It is drawn at the trailing end of the top
+    row — the tab strip when the thread has one, the header row on the chain and
+    shortcuts surfaces and on a thread with no tab yet — so the control is always
+    one click away whichever surface of the dock is in front. The class differs
+    only in size: the strip's band is tighter than a header row.
+  */
+  const focusToggle = (className: string) => (
+    <ChatFocusToggle
+      className={className}
+      testId="chat-fullscreen"
+      offLabel="Full screen chat"
+      onLabel="Exit full screen chat"
+    />
+  );
+
   return (
     <aside
       ref={panelRef}
@@ -1769,7 +1786,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       aria-label={`${companionName} chat`}
       data-chat-surface={view}
     >
-        <AgentSwitcher />
         <div className="chat-panel__open">
           {/*
             The open chats, as tabs, in the dock's top band. The strip leads the
@@ -1897,20 +1913,33 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 plus. It sticks to the band's trailing edge while the strip
                 scrolls, so a full strip never hides the way to a new one.
               */}
-              <button
-                type="button"
-                className="chat-panel__tab-new"
-                aria-label="New chat tab"
-                title="New chat tab"
-                onClick={() => void newSession()}
-              >
-                <Plus size={13} aria-hidden />
-              </button>
+              {/*
+                The strip's trailing corner: the way to a new tab, then the way
+                to the whole workspace. Both stick to the band's trailing edge
+                while the strip scrolls — a full strip must not hide either door
+                — so they travel in one sticky group rather than as two marks
+                that could paint over each other.
+              */}
+              <div className="chat-panel__tabs-trailing">
+                <button
+                  type="button"
+                  className="chat-panel__tab-new"
+                  aria-label="New chat tab"
+                  title="New chat tab"
+                  onClick={() => void newSession()}
+                >
+                  <Plus size={13} aria-hidden />
+                </button>
+                {focusToggle("chat-panel__icon-btn chat-panel__tab-focus")}
+              </div>
             </div>
           ) : null}
           {view === "chain" ? (
             <div className="chat-panel__header">
               <p className="chat-panel__heading">Quick Notes</p>
+              <div className="chat-panel__header-actions">
+                {focusToggle("chat-panel__icon-btn")}
+              </div>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -1942,6 +1971,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 >
                   <Pencil size={16} aria-hidden />
                 </Link>
+                {focusToggle("chat-panel__icon-btn")}
               </div>
             </div>
           ) : (
@@ -1970,7 +2000,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     aria-label="Save name"
                     title="Save name"
                   >
-                    <Check size={16} aria-hidden />
+                    <Check size={13} aria-hidden />
                   </button>
                   <button
                     type="button"
@@ -1979,19 +2009,46 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     title="Cancel rename"
                     onClick={cancelRename}
                   >
-                    <X size={16} aria-hidden />
+                    <X size={13} aria-hidden />
                   </button>
                 </form>
               ) : (
-                <>
-                  <p
+                /*
+                  The name row is the name's own chip, not a band: the tab above
+                  already names the chat, so the row only has to offer the one
+                  verb the name needs — rename — without spending a full band of
+                  chrome on it. The box hangs flush off the strip's bottom edge
+                  and is centred on the dock; the pencil at its trailing end
+                  opens the same field the tab menu's Rename does.
+                */
+                <div className="chat-panel__name" data-testid="chat-name-chip">
+                  <span
                     className="chat-panel__heading chat-panel__heading--thread"
                     title={activeLabel}
                   >
                     {activeLabel}
-                  </p>
-                </>
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-panel__name-edit"
+                    data-testid="chat-name-edit"
+                    aria-label={`Rename ${activeLabel}`}
+                    title="Rename chat"
+                    onClick={startRename}
+                  >
+                    <Pencil size={11} aria-hidden />
+                  </button>
+                </div>
               )}
+              {/*
+                A thread with no tab draws no strip, so the full-screen door
+                moves down into the name row rather than disappearing; a thread
+                with a tab keeps it in the strip above, where the operator's
+                pointer already is for the tabs themselves.
+              */}
+              <div className="chat-panel__header-actions">
+                {tabIds.length === 0 ? focusToggle("chat-panel__icon-btn") : null}
+              </div>
             </div>
           )}
           {/*
@@ -2331,6 +2388,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
+                {/* The same switcher on the chain's own composer, anchored to
+                    the form it belongs to: see the thread composer's copy. */}
+                <AgentSwitcher />
               </form>
             ) : (
               <form
@@ -2738,6 +2798,20 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ))}
                   </ul>
                 ) : null}
+                {/*
+                  The agent switcher lives on the composer, not over the
+                  transcript. The composer form is what owns the band's gutters,
+                  so the switcher can stand in the empty column the composer
+                  leaves on the dock's trailing side when the dock is wide, and
+                  ride just above the composer itself when the dock is too narrow
+                  to hold that column — the placement is the stylesheet's, keyed
+                  on the band's width. It is inside the form only for that
+                  anchor: every control in it is `type="button"`, so a pill can
+                  never submit the field above it. The chain surface draws the
+                  same switcher on its own composer, and the shortcuts reference,
+                  which has no composer, has none.
+                */}
+                <AgentSwitcher />
               </form>
             )}
           </div>

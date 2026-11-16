@@ -16,7 +16,7 @@ import { describe, it } from "node:test";
  * The rig needs the Vite dev server. With the server down the test skips;
  * `npm run dev` in another terminal brings it up.
  *
- * The artifact is `e2e/artifacts/live-editor.json` plus the four `.png`s the
+ * The artifact is `e2e/artifacts/live-editor.json` plus the five `.png`s the
  * driver captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -34,6 +34,7 @@ const SHOTS = [
   "live-editor-menu.png",
   "live-editor-locked.png",
   "live-editor-review.png",
+  "live-editor-arrow-visual.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 function devServerUp(): Promise<boolean> {

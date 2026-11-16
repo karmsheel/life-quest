@@ -7,43 +7,59 @@
  * else answers `{ ok: false }` and is NAMED in `reviewRigUnexpectedCalls`, so a
  * page that grows a dependency this rig does not model fails the run loudly.
  *
- * The stub is also the *vault*: `reviewWrite` and `reviewPrepopulate` mutate the
- * one in-memory review body, exactly as the file would, so "the document still
- * holds what Start filled in" is a claim about state rather than about a call
- * having happened.
+ * The stub is also the *vault*: every review is one in-memory file per
+ * cadence+period with a body, per-scope state (`draft` / `done`), and a lock, and
+ * the methods mutate those files exactly as the engine does. So "the rail says
+ * Done" is a claim about the file the page loaded, not about a call that
+ * happened, and "Start filled the snapshot" is checked by reading the body the
+ * page wrote through the bridge.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
- *  1. Start is all-or-nothing again: an agent that is not running loses the
- *     document, the snapshot and the interview together, and the operator reads
- *     the transport's own words ("fetch failed") instead of what to do.
- *  2. The snapshot is not filled, or is filled outside the marker pair, so the
- *     figure the operator asked for is missing or the file grows a second copy
- *     on every Start.
- *  3. A blank line the operator typed does not survive: the box re-cuts the file
- *     and the paragraph break is gone, which is the reported "I cannot place
- *     empty lines between paragraphs".
- *  4. The formatting keys do nothing, or do the wrong thing: a heading is
- *     stacked rather than replaced, an underline mark is lost, or a mark is
- *     written where the caret was instead of around the selection.
- *  5. The cadence's own rules cannot be read or written from the page, so the
- *     operator has no way to add a rule except through the agent.
- *  6. A bridge call this rig does not model, or a console error, passes
+ *  1. The checklist is drawn from every domain on disk instead of the live areas
+ *     (`unlockedAreas`), so a locked area offers a review and the progress
+ *     denominator is not the operator's areas.
+ *  2. The rail's statuses are someone else's truth — always "Not started", or
+ *     read off the current lens — so an unfinished area can launch the life
+ *     review, or a finished one is asked for again.
+ *  3. The Life review is not gated: it starts while areas are missing, which is
+ *     the exact thing the operator asked to be impossible.
+ *  4. A rail click starts the wrong scope: it opens the overall interview, or
+ *     the page's active scope disagrees with the row that was pressed, so the
+ *     kickoff and the page are about different sections.
+ *  5. The life review's kickoff is another area-style kickoff instead of one
+ *     that tells the companion to summarise across every area section.
+ *  6. The daily review grows area sections: a rail, an area start, or a kickoff
+ *     that tells the companion to write per-area headings.
+ *  7. Marking the life review complete does not lock the file (it can still be
+ *     written through the bridge), or marking one area locks it.
+ *  8. The checklist is a second document: it steals the reading column's
+ *     measure, sits under it at a window with room, or overlaps it when the
+ *     window is narrow.
+ *  9. An existing claim regresses while the new surface is added: the document
+ *     box, blank-line fidelity, the formatting keys, the snapshot pass (filled
+ *     once, inside its markers, under its heading), Preview's whole file, or the
+ *     cadence's rules read/written from the page.
+ * 10. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
- * The driver waits on `reviewRigReady`, set after the shell and the page have
- * committed, so it never samples a half-rendered page.
+ * The driver waits on `reviewRigReady`, set after the shell, the page and the
+ * checklist have committed, so it never samples a half-rendered page.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type {
+  ReviewCadence,
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
   VaultSnapshot,
 } from "@lifequest/vault-core";
-import { periodTitle } from "@lifequest/vault-core/pure";
+import {
+  DEFAULT_REVIEW_AVAILABILITY,
+  periodTitle,
+} from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import ReviewPage from "@/pages/ReviewPage";
@@ -60,37 +76,81 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: string): Result<never> => ({ ok: false, error });
 
-const CADENCE = "weekly";
+const CADENCE: ReviewCadence = "weekly";
+const WEEK_START_DAY = "monday" as const;
 
-/** Each period the page asks about, with the file it would find on disk. */
-const bodies = new Map<string, string>();
-let activePeriod: string | null = null;
+/** The exact sentence the engine returns for a daily area scope. */
+const DAILY_NO_AREAS =
+  "The daily review is one general review — it has no area sections.";
 
-function bodyOf(period: string): string {
-  let body = bodies.get(period);
-  if (body === undefined) {
-    body = blocksFor(period).join("\n\n");
-    bodies.set(period, body);
-  }
-  return body;
+/**
+ * The areas this vault shows, in its own order.
+ *
+ * `spirit` exists on disk but is locked (below), which is the fixture that
+ * proves the rail is drawn from `unlockedAreas`: if the component counts every
+ * domain file, the rail gains a sixth row and the progress denominator changes.
+ * `life` is the base area and is not an area review of its own.
+ */
+const AREAS = [
+  { slug: "health", name: "Health", sortOrder: 1 },
+  { slug: "mind", name: "Mind", sortOrder: 2 },
+  { slug: "financial", name: "Finance", sortOrder: 3 },
+  { slug: "business", name: "Business", sortOrder: 4 },
+  { slug: "relationships", name: "Relationships", sortOrder: 5 },
+] as const;
+
+/** On disk and deliberately locked: never a row in the checklist. */
+const LOCKED_AREA = { slug: "spirit", name: "Spirit", sortOrder: 6 } as const;
+
+const AREA_NAME = new Map<string, string>(AREAS.map((area) => [area.slug, area.name]));
+
+const OVERALL_HEADINGS = ["Look-back", "Keep", "Change", "Next-period intent"] as const;
+
+type ScopeState = { status: "draft" | "done"; sessionId: string | null };
+
+/** One review as the vault would hold it: the file, its scopes, and its lock. */
+type StoredReview = {
+  cadence: ReviewCadence;
+  period: string;
+  body: string;
+  scopes: Record<string, ScopeState>;
+  locked: boolean;
+};
+
+const files = new Map<string, StoredReview>();
+/** The file the page last named, so the driver reads the file it is looking at. */
+let activeKey: string | null = null;
+
+function fileKey(cadence: string, period: string): string {
+  return `${cadence}\u0000${period}`;
+}
+
+function titleFor(cadence: ReviewCadence, period: string): string {
+  return periodTitle(cadence, period, WEEK_START_DAY);
+}
+
+function overallSkeleton(): string {
+  return OVERALL_HEADINGS.map((heading) => `## ${heading}`).join("\n\n");
+}
+
+function areaSkeleton(name: string): string {
+  return [`## ${name}`, ...OVERALL_HEADINGS.map((heading) => `### ${heading}`)].join(
+    "\n\n",
+  );
 }
 
 /**
- * The review as a real file holds it, written the way the box writes it: blocks
- * joined by one blank line, with a block of its own that holds nothing between
- * the two Look-back paragraphs — the blank line the operator typed.
+ * The weekly fixture: one file holding the overall skeleton, one section per live
+ * area, and a `## Notes` heading outside the skeleton — the operator's own
+ * heading, which a summary that extracted only the required four used to drop.
  *
- * `## Notes` is here on purpose. It is not one of the four headings the review
- * skeleton plants, so a summary that extracted only those four dropped it, which
- * is how a heading the operator wrote could vanish from their own review.
- *
- * The heading is the period's own title, because the page opens on the CURRENT
- * week: the rig serves whatever period it is asked for rather than pinning a
- * date, so the same run passes on any day the suite happens to run.
+ * The blank block between the two Look-back paragraphs is deliberate: it is the
+ * paragraph break the operator typed, and the claim that it survives a write is
+ * only falsifiable if the file opens with it.
  */
-function blocksFor(period: string): string[] {
+function weeklyBlocks(period: string): string[] {
   return [
-    `# ${periodTitle("weekly", period, "monday")}`,
+    `# ${titleFor("weekly", period)}`,
     "## Look-back",
     "Two walks, and **one** late night.",
     "",
@@ -98,17 +158,94 @@ function blocksFor(period: string): string[] {
     "## Keep",
     "## Change",
     "## Next-period intent",
-    "## Financial",
-    "### Look-back",
-    "### Keep",
-    "### Change",
-    "### Next-period intent",
+    ...AREAS.flatMap((area) => [
+      `## ${area.name}`,
+      "### Look-back",
+      "### Keep",
+      "### Change",
+      "### Next-period intent",
+    ]),
     "## Notes",
     "A note outside the skeleton.",
   ];
 }
 
-/** What the app's snapshot pass writes into the Financial Look-back. */
+/**
+ * The review the page opens on.
+ *
+ * It is mid-flight on purpose: `Health` is done and `Finance` is in progress, so
+ * the rail must show `Done`, `In progress` and `Not started` at once and the
+ * progress line must count one finished area of five. The overall scope is
+ * planted (as the engine plants it when the file is created) but never started,
+ * which is the state the life review's gate has to unlock from.
+ */
+function seedReview(cadence: ReviewCadence, period: string): StoredReview {
+  const weekly = cadence === "weekly";
+  return {
+    cadence,
+    period,
+    body: weekly
+      ? weeklyBlocks(period).join("\n\n")
+      : `# ${titleFor(cadence, period)}\n\n${overallSkeleton()}`,
+    scopes: weekly
+      ? {
+          // The engine plants the overall scope when it creates the file, which
+          // is why the Life row reads "In progress" once the gate lifts: the
+          // file has the scope, nobody has started it. The areas are mid-flight:
+          // Health finished, Finance started, the rest untouched.
+          overall: { status: "draft", sessionId: null },
+          health: { status: "done", sessionId: null },
+          financial: { status: "draft", sessionId: null },
+        }
+      : { overall: { status: "draft", sessionId: null } },
+    locked: false,
+  };
+}
+
+function getOrSeed(cadence: ReviewCadence, period: string): StoredReview {
+  const key = fileKey(cadence, period);
+  let stored = files.get(key);
+  if (!stored) {
+    stored = seedReview(cadence, period);
+    files.set(key, stored);
+  }
+  activeKey = key;
+  return stored;
+}
+
+/**
+ * The record a bridge call answers with.
+ *
+ * The scopes are copied rather than handed over by reference. The real bridge
+ * crosses a process boundary and structured-clones its answer, so the page can
+ * never hold the engine's own mutable object; in this same-realm stub, handing
+ * the reference over would let a later `reviewMarkDone` rewrite the scopes a
+ * page already holds — which quietly turned the "was every area already done?"
+ * check inside `onMarkDone` into a no. The copy is what makes the stub behave
+ * like the process boundary it stands in for.
+ */
+function recordOf(stored: StoredReview): ReviewRecord {
+  const scopes: Record<string, { status: "draft" | "done"; sessionId: string | null }> = {};
+  for (const [scope, state] of Object.entries(stored.scopes)) {
+    scopes[scope] = { status: state.status, sessionId: state.sessionId };
+  }
+  return {
+    cadence: stored.cadence,
+    period: stored.period,
+    weekStartDay: WEEK_START_DAY,
+    locked: stored.locked,
+    updatedAt: "2026-10-18T00:00:00.000Z",
+    title: titleFor(stored.cadence, stored.period),
+    scopes,
+    bodyMarkdown: stored.body,
+  };
+}
+
+function hasAreaSection(body: string, name: string): boolean {
+  return body.split("\n").some((line) => line.trim() === `## ${name}`);
+}
+
+/** What the app's snapshot pass writes into Finance's Look-back. */
 const SNAPSHOT_MARKER_OPEN = "<!-- lifequest:snapshot:finance-spend -->";
 const SNAPSHOT_MARKER_CLOSE = "<!-- /lifequest:snapshot:finance-spend -->";
 const SNAPSHOT_BLOCK = [
@@ -122,6 +259,55 @@ const SNAPSHOT_BLOCK = [
   ``,
   SNAPSHOT_MARKER_CLOSE,
 ].join("\n");
+
+/**
+ * Write the snapshot block into the Finance area's Look-back, or rewrite the
+ * block where it already is.
+ *
+ * The directive names the financial domain, so the block belongs under
+ * `## Finance` / `### Look-back` — not under the overall `## Look-back`. Writing
+ * it in the right section is the claim; a stub that dropped it anywhere would
+ * let a page that never scoped the pass pass.
+ */
+function writeSnapshot(body: string): { body: string; applied: boolean } {
+  if (body.includes(SNAPSHOT_MARKER_OPEN)) {
+    const lines = body.split("\n");
+    const open = lines.indexOf(SNAPSHOT_MARKER_OPEN);
+    const close = lines.indexOf(SNAPSHOT_MARKER_CLOSE);
+    if (open !== -1 && close !== -1) {
+      const next = [
+        ...lines.slice(0, open),
+        ...SNAPSHOT_BLOCK.split("\n"),
+        ...lines.slice(close + 1),
+      ];
+      return { body: next.join("\n"), applied: true };
+    }
+  }
+  const lines = body.split("\n");
+  const financeAt = lines.indexOf("## Finance");
+  if (financeAt === -1) return { body, applied: false };
+  let lookbackAt = -1;
+  for (let i = financeAt + 1; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (/^##\s/.test(line)) break;
+    if (line.trim() === "### Look-back") {
+      lookbackAt = i;
+      break;
+    }
+  }
+  if (lookbackAt === -1) return { body, applied: false };
+  let at = lookbackAt + 1;
+  while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  return {
+    body: [
+      ...lines.slice(0, at),
+      ...SNAPSHOT_BLOCK.split("\n"),
+      "",
+      ...lines.slice(at),
+    ].join("\n"),
+    applied: true,
+  };
+}
 
 const SKILL_MARKDOWN = [
   `---`,
@@ -137,34 +323,48 @@ const SKILL_MARKDOWN = [
   ``,
 ].join("\n");
 
-/** The one place a snapshot block belongs, as a line-indexed insert. */
-function writeSnapshot(body: string): string {
-  if (body.includes(SNAPSHOT_MARKER_OPEN)) {
-    const lines = body.split("\n");
-    const open = lines.indexOf(SNAPSHOT_MARKER_OPEN);
-    const close = lines.indexOf(SNAPSHOT_MARKER_CLOSE);
-    const next = [
-      ...lines.slice(0, open),
-      ...SNAPSHOT_BLOCK.split("\n"),
-      ...lines.slice(close + 1),
-    ];
-    return next.join("\n");
+/**
+ * A kickoff shaped like the engine's, for the cadence and scope the page asked
+ * for. The driver asserts the fragments the engine contract fixes — the daily
+ * line says there are no area sections, the life line says it is the whole-life
+ * review, the area line names the area's own `##` section — so a page that
+ * binds a different scope than the row it pressed hands the dock the wrong text.
+ */
+function kickoffFor(cadence: ReviewCadence, period: string, scope: string): string {
+  const title = titleFor(cadence, period);
+  const figures =
+    "Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers. Use get_period_pack for the period's own days.";
+  if (cadence === "daily") {
+    return `Let's assemble the ${title}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
-  const lines = body.split("\n");
-  const heading = lines.indexOf("### Look-back");
-  if (heading === -1) return body;
-  let at = heading + 1;
-  while (at < lines.length && lines[at]!.trim() === "") at += 1;
-  return [
-    ...lines.slice(0, at),
-    ...SNAPSHOT_BLOCK.split("\n"),
-    "",
-    ...lines.slice(at),
-  ].join("\n");
+  if (scope === "overall") {
+    return `Let's assemble the ${title}. This is the whole-life review: every area review for this period is complete (${AREAS.length} areas). Read the file with get_review and go across each area's Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall sections only, synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+  }
+  const name = AREA_NAME.get(scope) ?? scope;
+  return `Let's assemble the ${title}. This is the ${name} review — this period's part of the life review. Write into the ## ${name} section only and leave the other sections alone. Interview me through the four ### headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
+}
+
+/** The refusal the engine builds when the life review is pressed too early. */
+function overallRefusal(stored: StoredReview): string | null {
+  const remaining = AREAS.filter((area) => stored.scopes[area.slug]?.status !== "done");
+  if (remaining.length === 0) return null;
+  const parts = remaining.map((area) => {
+    const status =
+      stored.scopes[area.slug]?.status === "draft" ? "in progress" : "not started";
+    return `${area.name}: ${status}`;
+  });
+  return `Finish every area review first — ${parts.join("; ")}.`;
 }
 
 type ReviewWrite = { cadence: string; period: string; body: string };
 type SnapshotCall = { cadence: string; period: string; scope: string };
+type StartCall = {
+  cadence: string;
+  period: string;
+  scope: string;
+  sessionId: string;
+  kickoff: string;
+};
 
 type HarnessWindow = Window & {
   reviewRigReady?: boolean;
@@ -174,14 +374,19 @@ type HarnessWindow = Window & {
   reviewRigUnexpectedCalls?: string[];
   reviewRigWrites?: ReviewWrite[];
   reviewRigSnapshotCalls?: SnapshotCall[];
-  reviewRigStarts?: { sessionId: string; kickoff: string | null }[];
-  /** The turn text the dock sent when Start opened the interview. */
+  /** Every session the page asked Start to open, with the scope it named. */
+  reviewRigStarts?: StartCall[];
+  /** The turn text the dock sent when a start opened the interview. */
   reviewRigKickoffs?: string[];
   reviewRigSkillWrites?: string[];
   /** Flipped by the driver: makes `reviewStartOrResume` answer "agent down". */
   reviewRigAgentDown?: boolean;
   /** The review body as the file holds it, for the driver to assert against. */
   reviewRigBody?: () => string;
+  /** The loaded file's scope states, so "the rail said Done" can be cross-checked. */
+  reviewRigScopes?: () => Record<string, ScopeState>;
+  /** The loaded file's lock, so the lock claim is about the file, not just a badge. */
+  reviewRigLocked?: () => boolean;
 };
 
 const harness = window as HarnessWindow;
@@ -194,27 +399,12 @@ harness.reviewRigKickoffs = [];
 harness.reviewRigSkillWrites = [];
 harness.reviewRigAgentDown = false;
 
-let body = "";
-let locked = false;
-let skillMarkdown: string | null = null;
-
-harness.reviewRigBody = () => (activePeriod ? bodyOf(activePeriod) : body);
-
-function record(period: string): ReviewRecord {
-  return {
-    cadence: CADENCE,
-    period,
-    weekStartDay: "monday",
-    locked,
-    updatedAt: "2026-10-18T00:00:00.000Z",
-    title: periodTitle(CADENCE, period, "monday"),
-    scopes: {
-      overall: { status: "draft", sessionId: null },
-      financial: { status: "draft", sessionId: null },
-    },
-    bodyMarkdown: bodyOf(period),
-  };
-}
+harness.reviewRigBody = () => (activeKey ? (files.get(activeKey)?.body ?? "") : "");
+harness.reviewRigScopes = () => {
+  const stored = activeKey ? files.get(activeKey) : undefined;
+  return stored ? { ...stored.scopes } : {};
+};
+harness.reviewRigLocked = () => Boolean(activeKey && files.get(activeKey)?.locked);
 
 const SESSION = {
   id: "review-rig-session",
@@ -222,6 +412,30 @@ const SESSION = {
   preview: "Review rig",
   lastActive: 1_700_000_000,
 };
+
+const UNLOCKED_AT = "2026-02-01T00:00:00.000Z";
+
+function domainRecord(
+  slug: string,
+  name: string,
+  sortOrder: number,
+  unlockedAt: string | null,
+): VaultSnapshot["domains"][number] {
+  return {
+    slug,
+    meta: {
+      name,
+      description: null,
+      color: null,
+      sortOrder,
+      archivedAt: null,
+      unlockedAt,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    documents: {} as VaultSnapshot["domains"][number]["documents"],
+  };
+}
 
 const SNAPSHOT: VaultSnapshot = {
   rootPath: "C:\\harness\\vault",
@@ -236,22 +450,20 @@ const SNAPSHOT: VaultSnapshot = {
     theme: "dark",
     weekStartDay: "monday",
     autoApproveInserts: [],
+    /**
+     * The page now opens on the latest OPEN period, so it reads the vault's
+     * windows. This harness serves whatever period it is asked for rather than
+     * pinning a clock, so the shipped defaults keep it on the current week; a
+     * snapshot without the key would leave the page to guess.
+     */
+    reviewAvailability: DEFAULT_REVIEW_AVAILABILITY,
   },
   domains: [
-    {
-      slug: "financial",
-      meta: {
-        slug: "financial",
-        name: "Financial",
-        description: null,
-        color: null,
-        sortOrder: 0,
-        archivedAt: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-      documents: {},
-    },
+    domainRecord("life", "Life", 0, UNLOCKED_AT),
+    ...AREAS.map((area) => domainRecord(area.slug, area.name, area.sortOrder, UNLOCKED_AT)),
+    // Seeded on disk and locked: `unlockedAreas` excludes it, and the checklist
+    // must not offer a review for an area the operator cannot see.
+    domainRecord(LOCKED_AREA.slug, LOCKED_AREA.name, LOCKED_AREA.sortOrder, null),
   ],
   agents: [],
   decisions: [],
@@ -264,6 +476,8 @@ const SNAPSHOT: VaultSnapshot = {
   planning: [],
   weeklyFileCount: 0,
 };
+
+let skillMarkdown: string | null = null;
 
 /** Every bridge method the page is allowed to reach. Anything else is named. */
 const bridge: Record<string, unknown> = {
@@ -278,9 +492,10 @@ const bridge: Record<string, unknown> = {
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
   /**
-   * Start opens the interview, which means the dock sends the kickoff turn. This
-   * rig is not about the chat: the turn is accepted and recorded, and no stream
-   * events are emitted, so the page settles rather than waiting on an agent.
+   * A start opens the interview, which means the dock sends the kickoff turn.
+   * This rig is not about the chat: the turn is accepted and recorded, and no
+   * stream events are emitted, so the page settles rather than waiting on an
+   * agent.
    */
   companionChatStream: (payload: { sessionId: string; input: string }) => {
     harness.reviewRigCalls?.push(`companionChatStream:${payload.sessionId}`);
@@ -306,49 +521,118 @@ const bridge: Record<string, unknown> = {
 
   reviewGet: (cadence: string, period: string) => {
     harness.reviewRigCalls?.push(`reviewGet:${cadence}:${period}`);
-    activePeriod = period;
-    return Promise.resolve(ok(record(period)));
+    const key = fileKey(cadence, period);
+    const stored = files.get(key);
+    // A daily period the rig has no file for is the empty state, not an error:
+    // the page treats "not found" as "nobody has reviewed this day yet".
+    if (!stored && cadence === "daily") {
+      activeKey = key;
+      return Promise.resolve(fail("Review file not found"));
+    }
+    const found = stored ?? getOrSeed(cadence as ReviewCadence, period);
+    activeKey = key;
+    return Promise.resolve(ok(recordOf(found)));
   },
   reviewEnsure: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewEnsure:${cadence}:${period}:${scope}`);
-    activePeriod = period;
-    return Promise.resolve(ok(record(period)));
+    if (cadence === "daily" && scope !== "overall") {
+      return Promise.resolve(fail(DAILY_NO_AREAS));
+    }
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    if (!stored.scopes.overall) {
+      stored.scopes.overall = { status: "draft", sessionId: null };
+    }
+    if (scope !== "overall") {
+      const name = AREA_NAME.get(scope) ?? scope;
+      if (!hasAreaSection(stored.body, name)) {
+        stored.body = `${stored.body}\n\n${areaSkeleton(name)}`;
+      }
+      if (!stored.scopes[scope]) {
+        stored.scopes[scope] = { status: "draft", sessionId: null };
+      }
+    }
+    return Promise.resolve(ok(recordOf(stored)));
   },
   reviewWrite: (cadence: string, period: string, next: string) => {
     harness.reviewRigCalls?.push(`reviewWrite:${cadence}:${period}`);
     harness.reviewRigWrites?.push({ cadence, period, body: next });
-    activePeriod = period;
-    bodies.set(period, next);
-    body = next;
-    return Promise.resolve(ok(record(period)));
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    // Locking means "this is finished": the engine refuses a write to a locked
+    // file, and the rig models that so "marking the life review complete locks
+    // it" is checked against the file rather than against a badge.
+    if (stored.locked) return Promise.resolve(fail("This review is locked."));
+    stored.body = next;
+    return Promise.resolve(ok(recordOf(stored)));
   },
   reviewPrepopulate: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewPrepopulate:${cadence}:${period}:${scope}`);
     harness.reviewRigSnapshotCalls?.push({ cadence, period, scope });
-    activePeriod = period;
-    const next = writeSnapshot(bodyOf(period));
-    bodies.set(period, next);
-    body = next;
-    const value: ReviewPrepopulateResult = {
-      cadence: CADENCE,
-      period,
-      scope,
-      outcomes: [
-        {
-          id: "finance-spend",
-          domain: "financial",
-          section: "Look-back",
-          title: "Spending this period",
-          status: "written",
-          groups: 2,
-        },
-      ],
-      applied: 1,
-      planted: [],
-      locked: false,
-      bodyMarkdown: next,
-    };
-    return Promise.resolve(ok(value));
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    const value = (patch: Partial<ReviewPrepopulateResult>): Result<ReviewPrepopulateResult> =>
+      ok({
+        cadence: cadence as ReviewCadence,
+        period,
+        scope,
+        outcomes: [],
+        applied: 0,
+        planted: [],
+        locked: stored.locked,
+        bodyMarkdown: stored.body,
+        ...patch,
+      });
+    if (stored.locked) return Promise.resolve(value({}));
+    // The daily review has no area sections, so the app's finance rule has
+    // nowhere to go: it is reported as skipped rather than planting a section
+    // the design says must not exist.
+    if (cadence === "daily") {
+      return Promise.resolve(
+        value({
+          outcomes: [
+            {
+              id: "finance-spend",
+              domain: "financial",
+              section: "Look-back",
+              title: "Spending this period",
+              status: "skipped",
+              reason: 'this review has no "Look-back" section under Finance',
+            },
+          ],
+        }),
+      );
+    }
+    // The directive names the financial domain, so an area scope only runs for
+    // that area; the overall scope runs every directive in the skill.
+    if (scope !== "overall" && scope !== "financial") {
+      return Promise.resolve(value({}));
+    }
+    const written = writeSnapshot(stored.body);
+    if (written.applied) stored.body = written.body;
+    return Promise.resolve(
+      value({
+        applied: written.applied ? 1 : 0,
+        outcomes: written.applied
+          ? [
+              {
+                id: "finance-spend",
+                domain: "financial",
+                section: "Look-back",
+                title: "Spending this period",
+                status: "written",
+                groups: 2,
+              },
+            ]
+          : [
+              {
+                id: "finance-spend",
+                domain: "financial",
+                section: "Look-back",
+                title: "Spending this period",
+                status: "skipped",
+                reason: 'this review has no "Look-back" section under Finance',
+              },
+            ],
+      }),
+    );
   },
   reviewStartOrResume: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewStartOrResume:${cadence}:${period}:${scope}`);
@@ -359,24 +643,56 @@ const bridge: Record<string, unknown> = {
         ),
       );
     }
+    activeKey = fileKey(cadence, period);
+    const kickoff = kickoffFor(cadence as ReviewCadence, period, scope);
     harness.reviewRigStarts?.push({
+      cadence,
+      period,
+      scope,
       sessionId: SESSION.id,
-      kickoff: `Let's assemble the Week of 12 Oct 2026.`,
+      kickoff,
     });
-    return Promise.resolve(ok({ sessionId: SESSION.id, created: true, kickoff: `go` }));
+    return Promise.resolve(
+      ok({ sessionId: SESSION.id, created: true, kickoff }),
+    );
   },
-  reviewMarkDone: (cadence: string, period: string) => {
-    locked = true;
-    return Promise.resolve(ok(record(period)));
+  reviewMarkDone: (cadence: string, period: string, scope: string) => {
+    harness.reviewRigCalls?.push(`reviewMarkDone:${cadence}:${period}:${scope}`);
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    if (cadence === "daily" && scope !== "overall") {
+      return Promise.resolve(fail(DAILY_NO_AREAS));
+    }
+    if (scope === "overall") {
+      // The life review is the summary of the area reviews, so it cannot be
+      // marked done before they are — daily has no areas and is never gated.
+      if (cadence !== "daily") {
+        const refusal = overallRefusal(stored);
+        if (refusal) return Promise.resolve(fail(refusal));
+      }
+      stored.scopes.overall = {
+        status: "done",
+        sessionId: stored.scopes.overall?.sessionId ?? null,
+      };
+      stored.locked = true;
+    } else {
+      const scopeState = stored.scopes[scope];
+      if (!scopeState) {
+        return Promise.resolve(fail(`Domain scope not found: ${scope}`));
+      }
+      scopeState.status = "done";
+    }
+    return Promise.resolve(ok(recordOf(stored)));
   },
   reviewUnlock: (cadence: string, period: string) => {
-    locked = false;
-    return Promise.resolve(ok(record(period)));
+    harness.reviewRigCalls?.push(`reviewUnlock:${cadence}:${period}`);
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    stored.locked = false;
+    return Promise.resolve(ok(recordOf(stored)));
   },
   reviewSkillGet: (cadence: string) => {
     harness.reviewRigCalls?.push(`reviewSkillGet:${cadence}`);
     const value: ReviewSkill = {
-      cadence: CADENCE,
+      cadence: cadence as ReviewCadence,
       markdown: skillMarkdown ?? SKILL_MARKDOWN,
       snapshots: [
         {
@@ -419,7 +735,7 @@ const bridge: Record<string, unknown> = {
       ? []
       : ["snapshot 1: not valid JSON (Unexpected end of JSON input)"];
     const value: ReviewSkill = {
-      cadence: CADENCE,
+      cadence: cadence as ReviewCadence,
       markdown,
       snapshots: [],
       problems,
@@ -497,7 +813,8 @@ harness.reviewRigSkin = skinName;
 const waitForPage = () => {
   const rail = document.querySelector(".nav-rail");
   const box = document.querySelector(".note-live");
-  if (!rail || !box) {
+  const checklist = document.querySelector('[data-testid="review-area-rail"]');
+  if (!rail || !box || !checklist) {
     requestAnimationFrame(waitForPage);
     return;
   }

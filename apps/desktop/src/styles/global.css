@@ -674,7 +674,8 @@ a {
 }
 
 .window-titlebar__trailing .theme-mode-toggle svg,
-.window-titlebar__trailing .settings-menu__trigger svg {
+.window-titlebar__trailing .settings-menu__trigger svg,
+.window-titlebar__trailing .chat-focus-toggle svg {
   width: 14px;
   height: 14px;
 }
@@ -762,6 +763,45 @@ a {
 
 .shell--chat-left > .chat-panel {
   grid-column: 2;
+}
+
+/* Full-screen chat: the page pane leaves the tray and the dock takes everything
+   beside the rail. The rail holds the window's leading edge either way — it is
+   chrome, and it carries the chats list the conversation is chosen from — so the
+   focus arrangement is the same two tracks as the normal one with a page-sized
+   dock in the second. The compound selectors are deliberate: they win over the
+   swapped arrangement's rules below (`.shell--chat-left > .chat-panel`) whatever
+   the side the dock was on when the mode was entered, and over the dock's own
+   width token further down the sheet. */
+.shell.shell--chat-focus {
+  grid-template-columns: var(--nav-column) 1fr;
+}
+
+/* The page is not a zero-width pane: it is not drawn at all. A hidden track would
+   still pay its hairline and its frame, and the dock would stop short of the
+   seam it is supposed to own. */
+.shell.shell--chat-focus > .shell__main {
+  display: none;
+}
+
+/* The dock starts at the rail's trailing edge and carries the frame's slack out
+   to the window's own trailing edge, exactly as it does in the normal
+   arrangement. Its height already reaches the window's bottom edge. */
+.shell.shell--chat-focus > .chat-panel {
+  grid-column: 2;
+  width: calc(100% + var(--shell-frame));
+}
+
+/* A conversation is read, not stretched: with the page gone the dock can be most
+   of a wide window, so the transcript and the composer sit in a centred measure
+   instead of running the full width of the glass. The tab strip, the name row
+   and the bottom action bar stay full width — they are chrome, and they are where
+   the doors are. */
+.shell--chat-focus .chat-panel__body,
+.shell--chat-focus .chat-panel__footer {
+  width: 100%;
+  max-width: 56rem;
+  margin-inline: auto;
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
@@ -1321,18 +1361,28 @@ a {
 
    It wears the state ink for the same reason the pill does: this is not
    decoration, it is "there is something for you to do". Nothing is tabbable
-   here; the pill beside it is the control, and the words are its reason. */
+   here; the pill beside it is the control, and the words are its reason.
+
+   The caption sits *on* the pill's shoulder rather than a gap away from it: the
+   row already carries five action controls and the build number, and the words
+   are the one thing in it that may retreat (the container query below hides them
+   when the bar cannot hold them at full width). The shrink is a last resort under
+   a wider font, so the caption can never push the pill out of the bar's padding —
+   the pill is the control and the halo needs that room. */
 .update-badge__label {
-  margin: 0 0 0 0.4rem;
+  margin: 0 0 0 0.15rem;
   padding: 0;
   color: var(--accent);
   font-size: 0.55rem;
   font-weight: 600;
   line-height: 1.15;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The build number at the trailing end of the dock's action bar, to the right of
@@ -1349,8 +1399,11 @@ a {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin: 0 0.1rem 0 0.35rem;
-  padding: 0.2rem 0.45rem;
+  /* The trailing 0.1rem is the halo's room at the bar's edge; the leading 0.2rem
+     puts the pill on the caption's shoulder. Neither may be eaten by a flex
+     deficit — the caption gives way first, and the pill and its halo stay put. */
+  margin: 0 0.1rem 0 0.2rem;
+  padding: 0.2rem 0.35rem;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
@@ -1360,7 +1413,7 @@ a {
   line-height: 1.1;
   text-align: center;
   cursor: pointer;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .update-badge:hover {
@@ -1413,6 +1466,19 @@ a {
 
 .update-badge--available:hover {
   background: var(--accent-soft);
+}
+
+/* The bar is a container so the caption can be measured against the row it has
+   to fit in. Below this width the five action controls and the build number
+   already fill the row; the glow alone is the signal, and the words retreat
+   rather than squeezing the pill out of the bar's padding. The threshold is the
+   width at which the full caption fits with its spacing (the row's content box,
+   not the window): a dock at its shipped 22.5rem keeps the words, a dock dragged
+   down to its floor keeps the glow. */
+@container dock-actions (max-width: 21.75rem) {
+  .update-badge__label {
+    display: none;
+  }
 }
 
 /* A slow, shallow breath: enough that the eye finds it in the bar, never enough to
@@ -2807,126 +2873,6 @@ a {
 }
 
 /* —— Update notice —— */
-/* The watch's own words, for an operator who is already inside the studio.
-   Main reads the feed on a clock; this is the piece that says so out loud, so a
-   release published while they were working no longer waits for a click on the
-   build number in the dock's bottom bar.
-
-   A floating card at the foot of the content column: above the page it
-   interrupts, below every dialog (the update popup is 70, the sheet 90), and
-   through a portal on `body`, so no shell grid or scroll box can clip it. It is
-   news, not a decision — no focus is taken and nothing is blocked. */
-.update-notice {
-  position: fixed;
-  z-index: 65;
-  left: 50%;
-  bottom: 1.25rem;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: min(34rem, calc(100vw - 2rem));
-  padding: 0.8rem 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-  border-radius: var(--radius-sm);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  animation: update-notice-in var(--dur-enter) var(--ease-out);
-}
-
-/* The same accent the rail's glow wears: this card and that build number are
-   one fact told in two places. */
-.update-notice__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: var(--radius-pill);
-  background: var(--accent-fill);
-  color: var(--accent);
-}
-
-.update-notice__text {
-  min-width: 0;
-  flex: 1;
-}
-
-.update-notice__title {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: 0.85rem;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.update-notice__body {
-  margin: 0.15rem 0 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.update-notice__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
-.update-notice__dismiss {
-  appearance: none;
-  border: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.update-notice__dismiss:hover {
-  background: var(--selected-soft);
-  color: var(--fg);
-}
-
-.update-notice__dismiss:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-}
-
-@keyframes update-notice-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 0.5rem);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .update-notice {
-    animation: none;
-  }
-}
-
-/* A narrow window has no room for three columns in a row; the actions wrap
-   under the words rather than squeezing the release's name to an ellipsis. */
-@media (max-width: 40rem) {
-  .update-notice {
-    flex-wrap: wrap;
-  }
-  .update-notice__actions {
-    margin-left: auto;
-  }
-}
-
 /* —— Documents page cards —— */
 .documents-page {
   max-width: 48rem;
@@ -7219,7 +7165,29 @@ a.home-mini-list__link:hover {
    any edge: the sheet's trailing hairline is the seam's only divider, and the top
    edge is read by the fill alone — no radius or shadow survives a flush panel
    either. */
+/* The dock's own measure: the room each band leaves empty beside its content,
+   and the band's scrollbar.
+
+   `--composer-gutter` is the space left empty on each side of the composer box.
+   At the 300px floor it is 12px — the composer fills the dock, as it always did
+   — and as the operator drags the dock wider it grows with the extra width until
+   each side is 12.5% of the band. It lives on the dock rather than on the
+   composer band because the transcript column is inset by the same measure (see
+   `.chat-panel__body` below): one token, so the composer and the text it belongs
+   to cannot drift apart. The cap is the same number a 12.5% padding resolved to
+   — 12.5% of the band's content box is `0.125 * chat-column - 1.5px` — written
+   as a length so the field and the transcript read one value. */
 .chat-panel {
+  --composer-gutter: clamp(
+    0.75rem,
+    calc(0.75rem + (var(--chat-column) - 18.75rem) * 0.16),
+    calc(var(--chat-column) * 0.125 - 1.5px)
+  );
+  /* The text column's inset: the composer's on a wide dock, and never less than
+     the transcript's own 0.875rem gutter on a narrow one. */
+  --transcript-gutter: max(0.875rem, var(--composer-gutter));
+  /* The app's scrollbar width (see the global `::-webkit-scrollbar` rule). */
+  --dock-scrollbar: 0.5rem;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -7398,12 +7366,86 @@ a.home-mini-list__link:hover {
   display: none;
 }
 
+/* The thread's name row, as a chip rather than a band.
+
+   The row used to be a full-width band under the tab strip holding one line of
+   text — 44px of chrome for a name the tab already carries. It is now the name's
+   own box: a small, bordered rectangle sized to the text, centred on the dock,
+   hanging flush off the strip's bottom edge, with the rename pencil at its
+   trailing end. The band around it is only the room the chip needs under the
+   strip and over the transcript; it paints no hairline of its own, so the strip's
+   bottom edge is the only line between the two rows. */
 .chat-panel__header--thread {
   gap: 0.35rem;
-  justify-content: flex-start;
+  justify-content: center;
+  /* Flush under the strip: the chip's top edge must meet the strip's bottom. */
+  min-height: 0;
+  padding: 0 0.75rem 0.45rem;
+  border-bottom: 0;
+}
+
+/* The box around the name: its width is the name's width, up to the row's own.
+   A long title keeps the box inside the dock and ellipsizes its own text, so the
+   pencil is never pushed off the edge it belongs to. */
+.chat-panel__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.13rem 0.26rem 0.13rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+  /* The name stays as bright as the tab above it: the row is smaller, not
+     quieter. The pencil is the quiet part. */
+  color: var(--fg);
+}
+
+.chat-panel__name:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+/* The pencil at the chip's end: the quick way into the rename field the tab
+   menu also offers. It is the chip's one control, so it stays a quiet glyph
+   until the pointer is on it. */
+.chat-panel__name-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* The glyph is chip-sized, but its pressable box is not: the pad widens the
+   target to the 24px a pointer (and WCAG 2.2) expects without growing the chip. */
+.chat-panel__name-edit::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+}
+
+.chat-panel__name-edit:hover {
+  background: var(--selected-soft);
+  color: var(--accent);
+}
+
+.chat-panel__name-edit:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .chat-panel__heading--thread {
+  /* Shared with the shortcuts reference's title, so this stays the heading the
+     dock has always drawn; the thread's chip steps it down below. */
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -7412,24 +7454,48 @@ a.home-mini-list__link:hover {
   font-size: 0.85rem;
 }
 
+.chat-panel__header--thread .chat-panel__heading--thread {
+  /* The chip is the box; the label is the text in it. One step down from the
+     heading's 0.85rem, so the row reads as a caption of the tab above it rather
+     than as a second title. */
+  flex: 0 1 auto;
+  max-width: 100%;
+  font-size: 0.7rem;
+  letter-spacing: 0.01em;
+}
+
+/* Renaming happens in the same chip: the field and its two keys replace the name
+   inside the box, so the row does not jump when the pencil is pressed. */
 .chat-panel__rename {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  flex: 1 1 auto;
+  gap: 0.2rem;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
+  padding: 0.08rem 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
 }
 
 .chat-panel__rename-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0.2rem 0.4rem;
-  border: 1px solid var(--input);
+  flex: 0 1 13rem;
+  min-width: 5rem;
+  max-width: 100%;
+  padding: 0.1rem 0.3rem;
+  border: 0;
   border-radius: 2px;
-  background: var(--background);
+  background: transparent;
   color: var(--fg);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.72rem;
+}
+
+/* The rename keys are chip-sized: the row is one small box, not a band. */
+.chat-panel__header--thread .chat-panel__icon-btn {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .chat-panel__rename-input:focus-visible {
@@ -7489,6 +7555,20 @@ a.home-mini-list__link:hover {
   display: flex;
   flex-direction: column;
   gap: var(--density-gap-chat);
+}
+
+/* The text keeps the composer's margins, so a wide dock is one column: the
+   transcript's content box is exactly the composer box's width, and the two
+   edges line up over a long conversation. The scroller keeps its bar at the
+   dock's edge — `scrollbar-gutter` reserves it whether or not the chat overflows
+   — and the trailing padding gives that bar its 0.5rem back, so the text's right
+   edge lands on the composer box's right edge rather than a scrollbar's width
+   inside it. The shortcuts reference is a page of its own, with no composer to
+   line up with, and keeps its plain gutter. */
+.chat-panel__body:not(.chat-panel__body--shortcuts) {
+  padding-inline: var(--transcript-gutter)
+    calc(var(--transcript-gutter) - var(--dock-scrollbar));
+  scrollbar-gutter: stable;
 }
 
 .chat-panel__error {
@@ -7891,17 +7971,21 @@ a.home-mini-list__link:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  align-self: flex-start;
+  align-self: stretch;
   gap: 0.2rem;
-  max-width: 88%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-/* The operator's own turn sits left; the companion answers from the right.
-   The role label and the stamp ride the bubble's edge, so the side is read at
-   a glance without a second alignment rule for each child. */
-.chat-panel__message--assistant {
+/* The operator speaks in a bubble against the transcript's trailing edge; the
+   companion's answer is not a bubble — it rests on the panel as plain prose —
+   so its row stretches the full column and its label and footer sit on the
+   leading edge. The side is the whole difference between the two speakers, and
+   the role label and the stamp ride it with the row. */
+.chat-panel__message--user {
   align-items: flex-end;
   align-self: flex-end;
+  max-width: 88%;
 }
 
 .chat-panel__message-role {
@@ -7930,26 +8014,32 @@ a.home-mini-list__link:hover {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.55rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--fg);
 }
 
-/* The colour schemes trade places: the operator's turn is the striking one and
-   Hermes's reply rests on the quieter fill. */
+/* The operator's bubble wears the accent tint. This is the speech-bubble scheme
+   the transcript used to wear on the agent's side; it moved here when the reply
+   stopped being a bubble, and the tail follows the bubble to the trailing
+   edge. */
 .chat-panel__message--user .chat-panel__message-content {
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
-  border-color: var(--border);
-  border-bottom-left-radius: 0.15rem;
-}
-
-.chat-panel__message--assistant .chat-panel__message-content {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-bottom-right-radius: 0.15rem;
 }
 
-/* The stamp and its copy control, under the bubble. Both are quiet: the copy
+/* The companion's answer is overlaid on the panel: no box, no padding, and the
+   full width of the transcript column so the prose wraps like the page it rests
+   on rather than like a message card. */
+.chat-panel__message--assistant .chat-panel__message-content {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The stamp and its copy control, under its message. Both are quiet: the copy
    icon is always present so the shortcut is discoverable, and it comes up to
    full ink on hover or focus rather than appearing from nowhere. */
 .chat-panel__message-meta {
@@ -8012,8 +8102,17 @@ a.home-mini-list__link:hover {
   color: var(--destructive);
 }
 
+/* The placeholder before the turn's first frame lands. It is a process line,
+   not transcript prose: it inherits the panel's 16px body size with the
+   browser's paragraph margins otherwise, so it painted twice the size of the
+   work log and floated away from the status line under it. Set it exactly like
+   the live status row, one line of its own, and let the flex gap own the
+   spacing. */
 .chat-panel__thinking {
+  margin: 0;
+  font-size: 0.6875rem;
   font-style: italic;
+  color: var(--muted);
 }
 
 /* A turn's tool calls, standing in as one grey line (see `lib/tool-run.ts`).
@@ -8433,16 +8532,18 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The outcome line. It is a receipt, not chrome: quiet, at the turn's own edge,
-   and absent while a turn is still running. */
+   and absent while a turn is still running. The companion's answer now rests on
+   the leading edge, so the receipt that closes the turn follows it there rather
+   than floating under the operator's bubble on the other side. */
 .chat-panel__turn-footer {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.15rem;
   min-width: 0;
-  max-width: 88%;
-  align-self: flex-end;
-  text-align: right;
+  max-width: 100%;
+  align-self: flex-start;
+  text-align: left;
 }
 
 .chat-panel__turn-footer-line {
@@ -8461,16 +8562,31 @@ button.chat-panel__activity-line:hover {
 
 .chat-panel__turn-footer .chat-panel__turn-note,
 .chat-panel__turn-footer .chat-panel__turn-remark {
-  text-align: right;
+  text-align: left;
 }
 
 /* The composer's band is a plain gutter — no fill of its own, no hairline. The
    accent it used to wear as a tinted frame around the field lives on the
    composer box instead: one crisp box that is the field and its control row, not
-   a box inside a box. */
+   a box inside a box.
+
+   The band owns the composer's share of the dock's width. `--composer-gutter` is
+   the room left empty on each side of the composer box, and it scales with the
+   column: at the 300px floor it is the band's own 12px — the composer fills the
+   dock, as it always did — and as the operator drags the dock wider it grows
+   with the extra width until each gutter is 12.5% of the dock. A wide dock is
+   then a column with a centred composer in it rather than one field stretched
+   edge to edge, while a narrow one keeps the field's whole writing width. The
+   cap is a percentage resolved by the padding itself, which is why the token is
+   only ever used inside a padding or an inset. */
 .chat-panel__footer {
   flex-shrink: 0;
   padding: 0.75rem;
+  /* The agent switcher's wide/narrow switch is a container query on this band:
+     its width is the gutter's world, so the layout that cannot hold the switcher
+     is the layout the query names. */
+  container-type: inline-size;
+  container-name: composer-band;
 }
 
 /* Bottom chrome of the bar: the dock's own actions, shared by both views. A
@@ -8481,13 +8597,20 @@ button.chat-panel__activity-line:hover {
 .chat-panel__actions {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  /* One step tighter than the dock's other gaps on purpose: the bar is the one
+     row that has to hold five navigation controls, the update caption and the
+     build number inside the dock's narrowest practical width. */
+  gap: 0.2rem;
   flex-shrink: 0;
   padding: 0.35rem 0.5rem;
   border-top: 1px solid var(--border);
   /* Deliberately NOT the composer's accent. The composer's accent is its own
      field's border, two elements up; this is neutral chrome below it. */
   background: var(--titlebar-bg);
+  /* The update caption measures itself against this row (see the container query
+     beside `.update-badge--available`). */
+  container-type: inline-size;
+  container-name: dock-actions;
 }
 
 /* Larger than the thread header's utilities (1.75rem/16px): the bar is primary
@@ -8804,10 +8927,18 @@ button.chat-panel__activity-line:hover {
   font-size: 0.78rem;
 }
 
+/* The composer's share of the band: the field and every row that rides it take
+   `--composer-gutter` off each side. The band keeps its own 0.75rem padding, so
+   the form adds only the part above it — which is zero at the dock's floor and
+   grows with the column. The form is also the agent switcher's box: the switcher
+   stands in the gutter the form leaves or rides above the form itself, so the
+   form must be the containing block for it. */
 .chat-panel__composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  padding-inline: calc(var(--composer-gutter) - 0.75rem);
 }
 
 /* The composer's surface: the field the operator writes in and the control row
@@ -12062,16 +12193,32 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's own door to a new chat: the browser's plus, set after the last tab
- * and a share of the band rather than a tab itself — it opens a conversation, it
- * does not represent one. It sticks to the band's trailing edge, so a strip with
- * more tabs than the dock is wide still ends with the one control that makes
- * another; the dock's canvas behind it keeps a tab sliding under it from showing
- * through.
+ * The strip's trailing corner, as one sticky group: the plus that opens a new
+ * chat, then the full-screen door. It sticks to the band's trailing edge, so a
+ * strip with more tabs than the dock is wide still ends with both controls; the
+ * dock's canvas behind it keeps a tab sliding under it from showing through.
+ * One sticky box rather than two sticky children, or the two marks would paint
+ * over each other at the same `right: 0`.
  */
-.chat-panel__tab-new {
+.chat-panel__tabs-trailing {
   position: sticky;
   right: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 0.3rem;
+  background: var(--background);
+}
+
+/*
+ * The strip's own door to a new chat: the browser's plus, set after the last tab
+ * and a share of the band rather than a tab itself — it opens a conversation, it
+ * does not represent one.
+ */
+.chat-panel__tab-new {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12083,7 +12230,7 @@ button.chat-panel__activity-line:hover {
   padding: 0;
   border: 0;
   border-radius: 0.35rem;
-  background: var(--background);
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
@@ -12092,6 +12239,14 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-new:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
+}
+
+/* The strip's full-screen door, sized to the band rather than to the header's
+   utility row: the plus beside it is 1.6rem, and the two controls are one group. */
+.chat-panel__tab-focus {
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--muted);
 }
 
 /*
@@ -12233,14 +12388,39 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
-/* The agent switcher: a vertical pill of icon blocks in the dock's top corner.
-   One block per agent offered in the current domain; the active one wears the
-   accent ring, so the answering agent is legible without reading a label. */
+/* The agent switcher: one block per agent offered in the current domain, now in
+   the composer's margin rather than over the transcript. The active block wears
+   the accent ring, so the answering agent is legible without reading a label.
+
+   The block is a child of the composer form, which is the box it belongs to. Wide
+   dock: it stands in the right-hand gutter the composer leaves, its bottom edge
+   level with the composer box's and its centre on the gutter's own centre — the
+   one column of empty space the bar has, put to work. Narrow dock: that gutter is
+   too thin to hold it (the 300px floor leaves 12px a side), so the same block
+   steps up above the form and takes the corner over the transcript's
+   bottom-right, where it still reads as the dock's agent control. The form, not
+   the whole band, is the anchor on purpose: the band also holds the interview
+   card and the retired-model notice, and a switcher that drifted up over those
+   would no longer be above the composer at all.
+
+   The switch is the container query under this rule: the band's width is the
+   gutter's world, so the layout that cannot hold the block is the layout the
+   query names. */
 .agent-switcher {
   position: absolute;
-  top: calc(var(--shell-topbar-height) + 0.7rem);
-  right: 0.7rem;
-  z-index: 24;
+  /* The gutter's centre, measured from the form's trailing edge (the form stops
+     one 0.75rem inside the band, which is the band's own padding). `right` puts
+     the trailing edge at half the gutter inside that line, and the transform
+     lifts it by half its own width, so the block centres in the empty column
+     instead of touching either edge of it. */
+  right: calc(var(--composer-gutter) / 2 - 0.75rem);
+  bottom: 0;
+  transform: translateX(50%);
+  /* Under the composer's own menus (they wear z-index 3), so a model or
+     thinking menu opened upward at the dock's floor paints over the floating
+     block instead of being covered by it. The whole composer band paints after
+     the transcript, so this still floats above the chat. */
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -12251,11 +12431,16 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-sm);
 }
 
-/* When the thread draws its tab strip, the strip and the name row stack: the
-   floating switcher clears both bands. A thread with no tab draws no strip and
-   keeps the single-band offset, as do the chain and shortcuts surfaces. */
-.chat-panel[data-chat-surface="thread"]:has(.chat-panel__tabs) .agent-switcher {
-  top: calc(var(--shell-topbar-height) * 2 + 0.7rem);
+/* The narrow dock: no gutter to stand in, so the block steps up above the
+   composer, over the transcript's bottom-right corner, and keeps the dock's
+   trailing 0.75rem inset (the form is already that far inside the band). It
+   floats over the chat rather than covering the composer's own controls. */
+@container composer-band (max-width: 34rem) {
+  .agent-switcher {
+    right: 0;
+    bottom: calc(100% + 0.35rem);
+    transform: none;
+  }
 }
 
 .agent-switcher__pill {
@@ -13612,3 +13797,81 @@ button.chat-panel__activity-line:hover {
     0 14px 30px -20px color-mix(in srgb, var(--fg) 42%, transparent),
     0 2px 6px -3px color-mix(in srgb, var(--fg) 18%, transparent);
 }
+
+/* —— Review windows (Settings › Review) ——
+   Five rows, one per cadence: the control is a pair — how many days before the
+   period ends, and the wall-clock time it opens — with the rule those two make
+   said in one line under the row's copy. The row pair and the hairline between
+   rows are `SettingsRow`'s layout; this page owns only the control cluster, the
+   fields' measures and the preview line. */
+.settings-review {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The page's own framing copy, above the rows: what a window is, in one
+   paragraph, before five controls that assume the reader knows. */
+.settings-review__intro {
+  margin: 0 0 1.25rem;
+  max-width: 42rem;
+}
+
+.settings-review__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Keep the copy to a column so it wraps before the trailing controls are
+   squeezed: a row is label, description, preview and a two-field control. */
+.settings-review__row .settings-card__copy {
+  max-width: 30rem;
+}
+
+.settings-review__row .settings-card__desc {
+  max-width: none;
+}
+
+/* Both fields on the row's trailing edge, each label above its input. */
+.settings-review__controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.settings-review__field {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.settings-review__field input {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.8125rem;
+}
+
+/* A count of days is two digits at most; a time input is the wider of the two. */
+.settings-review__field input[type="number"] {
+  width: 4.5rem;
+}
+
+.settings-review__field input[type="time"] {
+  width: 7.5rem;
+}
+
+/* The live preview: the window the two controls above make, in words. */
+.settings-review__preview {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The page's own act — Save — and the escape back to the shipped windows,
+   separated from the last row by the same hairline the rows wear. */
+.settings-review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+

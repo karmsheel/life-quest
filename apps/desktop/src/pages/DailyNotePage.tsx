@@ -643,14 +643,14 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          {/* The title row: the page's name as a quiet label, and the day's own
-              acts on the same line. The day's date is the page's one heading and
-              rides below, centred over the prose it heads — a journal's page is
-              headed by the day, not by the word "Daily Note", so the date takes
-              the heading's size and the page's name steps down to a label. The
-              automations sit here, level with the name, so the day's verb reads
-              as the page's own rather than as a stray control under the prose —
-              above the box it commits rather than below it. */}
+          {/* The title row: the page's name as a quiet label, and the day's
+              chrome on the same line. The day's date is the page's one heading
+              and rides below, centred over the prose it heads — a journal's page
+              is headed by the day, not by the word "Daily Note", so the date
+              takes the heading's size and the page's name steps down to a label.
+              The keys here are the page's own: the way back to today when off it,
+              and focus mode. The day's verb — the automation that commits the
+              note — sits at the box's foot, under the prose it commits. */}
           <div className="daily-note__title-row">
             {/* The page's name, in the shell's one grey eyebrow: the day below
                 it is the page's heading, so the name is a label rather than a
@@ -675,30 +675,9 @@ export default function DailyNotePage() {
                   Today
                 </Button>
               ) : null}
-              {manualAutomations.length > 0 ? (
-                <div className="daily-note__automations">
-                  {manualAutomations.map((automation) => (
-                    <Button
-                      key={automation.id}
-                      variant="raised"
-                      className="daily-note__analyze"
-                      data-testid={dailyNoteAutomationTestId(automation.id)}
-                      onClick={() => void onRunAutomation(automation)}
-                      disabled={!canRunAutomation}
-                      title={
-                        automation.description ||
-                        "Open a new chat with this note in context"
-                      }
-                    >
-                      <Sparkles size={14} aria-hidden />
-                      {runningId === automation.id ? "Opening chat…" : automation.name}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-              {/* Focus mode is the day's last act: it takes the day as it is and
-                  writes it on its own, so it sits after the control that commits
-                  the day to the vault. */}
+              {/* Focus mode is the page's own key: it takes the day as it is and
+                  writes it on its own. It is the trailing end of the day's
+                  chrome; the act that commits the note lives at the box's foot. */}
               <Button
                 variant="outline"
                 className="daily-note__focus-mode"
@@ -803,8 +782,12 @@ export default function DailyNotePage() {
                 />
               </div>
 
-              {/* The box's foot: the autosave line, and nothing else. The day's own
-                  act moved up to the title row, level with the heading. */}
+              {/* The box's foot: the autosave line on the leading edge, and the
+                  day's own act on the trailing one. The act is the one control
+                  that acts on the day, so it belongs under the prose it commits
+                  rather than up among the page's chrome — level with the line
+                  that says whether the prose has reached the vault. Today and
+                  focus mode are the page's own keys and keep the title row. */}
               <div className="daily-note__footer">
                 <p
                   className="daily-note__status muted"
@@ -813,6 +796,27 @@ export default function DailyNotePage() {
                 >
                   {status}
                 </p>
+                {manualAutomations.length > 0 ? (
+                  <div className="daily-note__automations">
+                    {manualAutomations.map((automation) => (
+                      <Button
+                        key={automation.id}
+                        variant="raised"
+                        className="daily-note__analyze"
+                        data-testid={dailyNoteAutomationTestId(automation.id)}
+                        onClick={() => void onRunAutomation(automation)}
+                        disabled={!canRunAutomation}
+                        title={
+                          automation.description ||
+                          "Open a new chat with this note in context"
+                        }
+                      >
+                        <Sparkles size={14} aria-hidden />
+                        {runningId === automation.id ? "Opening chat…" : automation.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

@@ -2,6 +2,7 @@ import {
   ensurePlanningStub,
   ensureReview,
   getPeriodPack,
+  getReviewAreaChecklist,
   getReviewSkill,
   openVault,
   periodTitle,
@@ -105,13 +106,38 @@ export function boundKickoff(input: {
   scope: "overall" | string;
   domainName?: string | null;
   weekStartDay: WeekStartDay;
+  /**
+   * How many live area reviews this period has, when the caller resolved the
+   * checklist. The life review's kickoff names the count so the companion knows
+   * it is summarising N sections rather than one.
+   */
+  areaCount?: number | null;
 }): string {
   const title = periodTitle(input.cadence, input.period, input.weekStartDay);
   const suffix = scopeSuffix(input.scope, input.domainName);
-  if (input.kind === "review") {
-    return `Let's assemble the ${title}${suffix}. Interview me through look-back, keep, change, and next-period intent. Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside \`<!-- lifequest:snapshot -->\` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days. When the report is ready, propose marking this review complete.`;
+  if (input.kind !== "review") {
+    return `Let's plan ${title}${suffix}. Previous period's review is in your instructions (or noted missing/draft). Ask what to focus on. Do not write a plan file yet.`;
   }
-  return `Let's plan ${title}${suffix}. Previous period's review is in your instructions (or noted missing/draft). Ask what to focus on. Do not write a plan file yet.`;
+  // The cadence's skill fills the figures; both cadences read them the same way.
+  const figures =
+    "Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
+  if (input.cadence === "daily") {
+    // One general review of the day: the daily cadence has no area scopes, and
+    // a kickoff that implied them would send the companion looking for sections
+    // the page never renders.
+    return `Let's assemble the ${title}${suffix}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+  }
+  if (input.scope === "overall") {
+    // The life review is the summary pass: it reads every area's section and
+    // speaks across them, so its kickoff is not the generic one.
+    const count =
+      typeof input.areaCount === "number" && input.areaCount > 0
+        ? ` (${input.areaCount} areas)`
+        : "";
+    return `Let's assemble the ${title}${suffix}. This is the whole-life review: every area review for this period is complete${count}. Read the file with get_review and go across each area's Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall sections only, synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+  }
+  const name = (input.domainName ?? input.scope).trim() || input.scope;
+  return `Let's assemble the ${title}${suffix}. This is the ${name} review — this period's part of the life review. Write into the ## ${name} section only and leave the other sections alone. Interview me through the four ### headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
 }
 
 export function findBoundSession(
@@ -146,6 +172,29 @@ export function findBoundSession(
 }
 
 /**
+ * The one line that tells the companion which slice of the review file it is
+ * writing. It is omitted when the caller does not name a scope, so the two
+ * older callers (and their tests) keep the exact context they had.
+ */
+function reviewScopeLine(input: {
+  cadence?: ReviewCadence;
+  scope?: "overall" | string;
+  domainName?: string | null;
+  pack: Result<PeriodPack>;
+}): string | null {
+  if (input.scope === undefined) return null;
+  const cadence = input.cadence ?? (input.pack.ok ? input.pack.value.cadence : undefined);
+  if (cadence === "daily") {
+    return "Review scope: the day as a whole — the daily review has no area sections; do not create any.";
+  }
+  if (input.scope === "overall") {
+    return "Review scope: the whole life — the overall review. The area sections in this file are complete: read every one and synthesise across them rather than repeating a single area.";
+  }
+  const name = (input.domainName ?? input.scope).trim() || input.scope;
+  return `Review scope: the ${name} area — write only the ## ${name} section and leave the other sections alone.`;
+}
+
+/**
  * What a bound session is told before its first turn.
  *
  * The cadence's own skill file is carried verbatim and ahead of everything else,
@@ -158,6 +207,15 @@ export function formatReviewContext(input: {
   kind: BoundSessionKind;
   pack: Result<PeriodPack>;
   skill?: { markdown: string; problems: string[] } | null;
+  /** The bound scope, when the caller knows it: "overall" or a domain slug. */
+  scope?: "overall" | string;
+  /** The scope's display name, for the `## <Name>` section line. */
+  domainName?: string | null;
+  /**
+   * The bound cadence. Optional because the pack carries it when the pack
+   * read succeeded; daily needs it to describe itself as the day as a whole.
+   */
+  cadence?: ReviewCadence;
 }): string {
   const lines = [`Bound session kind: ${input.kind}`];
   if (input.kind === "review" && input.skill) {
@@ -175,6 +233,10 @@ export function formatReviewContext(input: {
     lines.push(
       "Figures the app already filled in sit inside `<!-- lifequest:snapshot -->` markers in the review file. Refresh them rather than duplicating them, and leave the markers in place: they are how the next Start finds the block.",
     );
+  }
+  if (input.kind === "review") {
+    const scopeLine = reviewScopeLine(input);
+    if (scopeLine) lines.push(scopeLine);
   }
   lines.push(
     "Skeleton rules: overall uses ## Look-back / ## Keep / ## Change / ## Next-period intent; domain sections use the same four ### headings.",
@@ -246,6 +308,14 @@ async function startOrResumeBoundSession(
     domainName,
     weekStartDay,
   });
+  // The life review summarises the area reviews, so its kickoff names how many
+  // sections it is summarising. A checklist failure is not fatal to starting —
+  // the kickoff simply omits the count rather than taking the session down.
+  let areaCount: number | null = null;
+  if (kind === "review" && input.cadence !== "daily" && input.scope === "overall") {
+    const checklist = await getReviewAreaChecklist(root, input.cadence, input.period);
+    if (checklist.ok) areaCount = checklist.value.total;
+  }
   const kickoff = boundKickoff({
     kind,
     cadence: input.cadence,
@@ -253,6 +323,7 @@ async function startOrResumeBoundSession(
     scope: input.scope,
     domainName,
     weekStartDay,
+    areaCount,
   });
 
   const storedId = ensured.value.scopes[input.scope]?.sessionId ?? null;
@@ -318,11 +389,18 @@ export async function buildBoundReviewContext(
     return formatReviewContext({ kind: bound.kind, pack });
   }
   const skill = await getReviewSkill(root, bound.cadence);
+  // The context has to name the scope and its section the same way the kickoff
+  // and the page do, so resolve the display name here rather than letting the
+  // companion infer it from a slug.
+  const { domainName } = await resolveDomainName(root, bound.scope);
   return formatReviewContext({
     kind: bound.kind,
     pack,
     skill: skill.ok
       ? { markdown: skill.value.markdown, problems: skill.value.problems }
       : null,
+    scope: bound.scope,
+    domainName,
+    cadence: bound.cadence,
   });
 }

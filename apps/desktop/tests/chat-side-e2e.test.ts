@@ -315,14 +315,20 @@ describe("chat dock side switch", () => {
 
     // The control itself: in the dock's bottom action bar, immediately before the
     // collapse it belongs with, wearing the swap icon and naming the move it
-    // makes. The titlebar no longer carries a copy of either chat control.
+    // makes. The titlebar no longer carries a copy of either chat control; the
+    // one chat control it does carry is the full-screen door, which leads the
+    // trailing cluster.
     const rightTrailing = (right.trailing?.controls ?? []).map((row) => row.className);
     assert.deepEqual(
       rightTrailing.length,
-      2,
+      3,
       `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(rightTrailing)}`,
     );
-    for (const [index, needle] of ["theme-mode-toggle", "settings-menu"].entries()) {
+    for (const [index, needle] of [
+      "chat-focus-toggle",
+      "theme-mode-toggle",
+      "settings-menu",
+    ].entries()) {
       assert.ok(
         String(rightTrailing[index] ?? "").includes(needle),
         `the titlebar's trailing child ${index} is not ${needle}: ${JSON.stringify(rightTrailing)}`,

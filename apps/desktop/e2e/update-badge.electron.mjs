@@ -135,6 +135,7 @@ const SAMPLE = `(() => {
   probe.remove();
 
   return {
+    captionCount: document.querySelectorAll(".update-badge__label").length,
     viewport: { width: window.innerWidth, height: window.innerHeight },
     reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     search: window.location.search,
@@ -204,6 +205,11 @@ const SAMPLE = `(() => {
       ? {
           box: box(bar),
           padding: barPadding,
+          // The caption's narrow-dock rule is a container query on this bar: the
+          // rig reads the container identity back so "the caption retired" cannot
+          // be a media query or a width coincidence.
+          containerType: barStyle.containerType,
+          containerName: barStyle.containerName,
           background: barStyle.backgroundColor,
           display: barStyle.display,
           alignItems: barStyle.alignItems,
@@ -251,6 +257,8 @@ const SAMPLE = `(() => {
           dataLabel: label.getAttribute("data-update-label"),
           inBar: Boolean(bar && bar.contains(label)),
           nextToChip: label.nextElementSibling === chip,
+          display: getComputedStyle(label).display,
+          visibility: getComputedStyle(label).visibility,
           focusables: label.querySelectorAll(
             "button, a[href], input, select, textarea, [tabindex], [role=button], [role=link]"
           ).length,
@@ -945,6 +953,101 @@ async function main() {
 
     screenshots.push(await shootActionBar("update-badge-action-bar-glow.png"));
     screenshots.push(await shoot("update-badge-resting.png"));
+
+    // ── 1b — the narrow dock: the caption retreats, the chip stays whole ────
+    // The badge fix adds a container query on the action bar: when its content
+    // box cannot hold the five action controls, the caption and the build number,
+    // the caption steps out of the row instead of squeezing the chip out of the
+    // bar's padding, where the pane would clip its halo. Driving the dock's column
+    // down is the operator's seam drag; restoring it before the popup leg keeps
+    // every later state exactly as it was.
+    await run(`(() => {
+      document.querySelector(".shell")?.style.setProperty("--chatbar-width", "18rem");
+      return true;
+    })()`);
+    const narrow = await settle(360);
+    const narrowBar = narrow.bar;
+    const narrowLayers = parseShadowLayers(narrow.chip?.halo?.boxShadow ?? "");
+    const narrowReach = narrowLayers.length
+      ? Math.max(...narrowLayers.map((layer) => layer.blur + layer.spread))
+      : 0;
+    const narrowRoom =
+      narrowBar?.box && narrow.chip?.box
+        ? Math.min(
+            narrow.chip.box.left - narrowBar.box.left,
+            narrowBar.box.right - narrow.chip.box.right,
+            narrow.chip.box.top - narrowBar.box.top,
+            narrowBar.box.bottom - narrow.chip.box.bottom,
+          )
+        : 0;
+
+    check(
+      "the narrow dock really narrowed the action bar",
+      Boolean(narrowBar?.box) &&
+        (narrowBar?.box.width ?? Number.POSITIVE_INFINITY) <
+          (resting.bar?.box?.width ?? 0),
+      `bar ${JSON.stringify(narrowBar?.box)} vs resting ${JSON.stringify(resting.bar?.box)}`,
+    );
+    check(
+      "the action bar is the caption's own container",
+      typeof narrowBar?.containerType === "string" &&
+        narrowBar.containerType.includes("inline-size") &&
+        String(narrowBar.containerName ?? "").includes("dock-actions"),
+      `container-type ${JSON.stringify(narrowBar?.containerType)}, name ${JSON.stringify(narrowBar?.containerName)}`,
+    );
+    // The failure this catches: the caption does not retreat when the bar is too
+    // narrow, so it squeezes the chip out of the bar's padding and the halo gets
+    // clipped. The caption must leave the layout (`display: none`), not shrink to
+    // nothing, and it must still be the bar's only caption.
+    check(
+      "a narrow bar retires the caption instead of squeezing the chip",
+      narrow.captionCount === 1 &&
+        narrow.label?.display === "none" &&
+        narrow.label?.inBar === true,
+      `caption ${JSON.stringify(narrow.label)}, caption count ${narrow.captionCount}`,
+    );
+    check(
+      "the chip is still the narrow bar's trailing control",
+      narrowBar?.lastControlIsChip === true && narrowBar?.lastChildIsChip === true,
+      `bar controls ${JSON.stringify(narrowBar?.controls)}`,
+    );
+    const narrowChipBox = narrow.chip?.box ?? null;
+    const narrowBarBox = narrowBar?.box ?? null;
+    const narrowBarPadding = narrowBar?.padding ?? null;
+    const narrowCollapseBox = narrow.collapse?.box ?? null;
+    check(
+      "the chip stays inside the narrow bar's padding",
+      Boolean(narrowChipBox && narrowBarBox && narrowBarPadding) &&
+        narrowChipBox.right <= narrowBarBox.right - narrowBarPadding.right + 0.5 &&
+        narrowChipBox.left >= narrowBarBox.left + narrowBarPadding.left - 0.5,
+      `chip ${JSON.stringify(narrowChipBox)}, bar ${JSON.stringify(narrowBarBox)}, padding ${JSON.stringify(narrowBarPadding)}`,
+    );
+    check(
+      "the chip does not collide with the collapse control",
+      Boolean(narrowChipBox && narrowCollapseBox) &&
+        narrowChipBox.left >= narrowCollapseBox.right - 0.5,
+      `chip ${JSON.stringify(narrowChipBox)}, collapse ${JSON.stringify(narrowCollapseBox)}`,
+    );
+    check(
+      "the halo still fits the narrow bar's room",
+      narrowLayers.length > 0 && narrowReach <= narrowRoom,
+      `the halo reaches ${narrowReach.toFixed(1)}px into the ${narrowRoom}px the narrow bar gives it`,
+    );
+    // Restore the dock's own width before the popup leg: the states below are
+    // the shipped 1280px window's states and must not inherit this probe.
+    await run(`(() => {
+      document.querySelector(".shell")?.style.removeProperty("--chatbar-width");
+      return true;
+    })()`);
+    const narrowRestored = await settle(360);
+    check(
+      "the dock comes back wide with its caption and chip unchanged",
+      narrowRestored.label?.display !== "none" &&
+        narrowRestored.label?.text === "Update available" &&
+        sameBox(narrowRestored.bar?.box, resting.bar?.box) &&
+        sameBox(narrowRestored.chip?.box, resting.chip?.box),
+      `caption ${JSON.stringify(narrowRestored.label)}, bar ${JSON.stringify(narrowRestored.bar?.box)} vs ${JSON.stringify(resting.bar?.box)}, chip ${JSON.stringify(narrowRestored.chip?.box)} vs ${JSON.stringify(resting.chip?.box)}`,
+    );
 
     // ── 2 — the popup ───────────────────────────────────────────────────────
     const clicked = await click(".update-badge");
@@ -1641,6 +1744,8 @@ async function main() {
       window: { ...DEFAULT_SIZE },
       states: {
         available: resting,
+        narrow,
+        narrowRestored,
         opened,
         notesOpen,
         installing,
@@ -1668,6 +1773,12 @@ async function main() {
         shadowedDialog,
         developerOn,
         developerOff,
+      },
+      narrowGlow: {
+        reach: narrowReach,
+        room: narrowRoom,
+        captionDisplay: narrow.label?.display ?? null,
+        bar: narrowBar?.box ?? null,
       },
       glow: {
         accent: resting.chip?.tokens?.accent ?? null,

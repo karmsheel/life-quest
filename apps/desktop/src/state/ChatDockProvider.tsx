@@ -192,12 +192,36 @@ type ChatDockContextValue = {
    */
   pageContext: { route: string; label: string; on: boolean };
   setPageContextOn: (on: boolean) => void;
+  /**
+   * Full-screen chat: the main page pane is collapsed and the dock takes the
+   * workspace beside the rail.
+   *
+   * It is the dock's own arrangement, like `side` and `width`, and for the same
+   * reason: it is a way of looking at the same window for a moment, not a place
+   * the app navigates to. There is no route and no stored preference. The rail
+   * stays, because it holds the chats list the dock's own tabs cannot replace —
+   * the mode gives the conversation the room the page was using, and nothing
+   * else leaves.
+   *
+   * The two doors (the dock's top row and the window title bar) and the
+   * `panel.chat.focus` shortcut all toggle this one flag, so they cannot
+   * disagree about whether the mode is on.
+   */
+  focus: boolean;
+  /**
+   * Turn the mode on or off. Turning it on opens the dock if it is collapsed:
+   * a full-screen chat with no chat in it is not a mode, it is a blank window.
+   */
+  setFocus: (focus: boolean) => void;
+  /** Trade the mode for its opposite; the one action every door calls. */
+  toggleFocus: () => void;
 };
 
 const ChatDockContext = createContext<ChatDockContextValue | null>(null);
 
 export function ChatDockProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpenState] = useState(true);
+  const [focus, setFocusState] = useState(false);
   const [present, setPresent] = useState(false);
   const [side, setSide] = useState<ChatDockSide>("right");
   const [surface, setSurface] = useState<ChatSurface>("thread");
@@ -334,6 +358,29 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setSide(next);
   }, []);
 
+  /**
+   * The one writer of `open`, so the two facts cannot drift: a dock that left
+   * the layout takes the full-screen mode with it. Otherwise collapsing the
+   * chat while it held the whole workspace would leave the operator looking at
+   * a page-less window and a launcher — the mode would be on with nothing in it.
+   */
+  const setOpen = useCallback((next: boolean) => {
+    setOpenState(next);
+    if (!next) setFocusState(false);
+  }, []);
+
+  const setFocus = useCallback((next: boolean) => {
+    setFocusState(next);
+    if (next) setOpenState(true);
+  }, []);
+
+  const toggleFocus = useCallback(() => {
+    setFocusState((current) => !current);
+    // Every door to the mode and the shortcut go through here, and a mode turned
+    // on over a collapsed dock has to bring the dock back with it.
+    setOpenState(true);
+  }, []);
+
   const pageLabel = useMemo(() => pageLabelFor(pathname), [pathname]);
 
   const value = useMemo(
@@ -363,6 +410,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       setLivePinIds,
       pageContext: { route: pathname, label: pageLabel, on: pageContextOn },
       setPageContextOn,
+      focus,
+      setFocus,
+      toggleFocus,
     }),
     [
       open,
@@ -386,6 +436,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       pathname,
       pageLabel,
       pageContextOn,
+      focus,
+      setFocus,
+      toggleFocus,
     ],
   );
 

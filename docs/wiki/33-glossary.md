@@ -166,7 +166,7 @@ operator accepts it. See [Data and databases](./19-data-and-databases.md).
 **JSONL** — the line-per-entry format used for the append-only Life log at
 `.lifequest/log.jsonl`.
 
-**Keyboard movement** — one of fourteen bindable navigation actions in Settings →
+**Keyboard movement** — one of fifteen bindable navigation actions in Settings →
 **Keyboard**, grouped Wings, Pages, Panels and Surfaces. A movement has a
 portable default key, can be rebound or cleared to **Unassigned**, and lives in
 the browser's `localStorage` on this installation. See

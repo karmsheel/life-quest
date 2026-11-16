@@ -245,9 +245,9 @@ async function executeToolInner(
 
   // list_databases, get_database, list_rows, get_row, and the write tools —
   // create_database and insert_rows apply at once, while an upsert_row with an
-  // id, delete_row and add_column file a Decision — plus the read-only
-  // list_decisions. The actor is passed in from executeTool and is never read
-  // from args.
+  // id, delete_row, add_column, delete_database and merge_databases file a
+  // Decision — plus the read-only list_decisions. The actor is passed in from
+  // executeTool and is never read from args.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDatabaseTool(root, actor, name, rec);
   }
@@ -890,12 +890,21 @@ async function connectedWriteRefusal(
   }
 
   // ── databases ────────────────────────────────────────────────────────────
+  // Every database tool names its area as `domainSlug`, and a domain tool
+  // outside the grant must never reach the engine. create_database and
+  // insert_rows are additions and apply at once; the rest change or remove data
+  // that exists and file a Decision. delete_database and merge_databases are the
+  // same shape as the other Decision writes here: one area named, no second
+  // domain argument (a merge is same-area by contract), so the grant check is
+  // the one argument.
   if (
     name === "upsert_row" ||
     name === "delete_row" ||
     name === "create_database" ||
     name === "insert_rows" ||
-    name === "add_column"
+    name === "add_column" ||
+    name === "delete_database" ||
+    name === "merge_databases"
   ) {
     return allow([rec.domainSlug as string | null | undefined]);
   }

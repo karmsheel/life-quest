@@ -67,11 +67,11 @@
   color: var(--fg);
 }
 
-/* The title row: the page's name and the day's own acts on one line. The name
-   keeps the leading edge and the acts take the trailing one, so the day's
-   verbs read level with it, over the box they commit, rather than as
-   controls left under the prose. It wraps instead of squeezing the buttons when
-   the column is narrow. */
+/* The title row: the page's name and the page's own keys on one line. The name
+   keeps the leading edge and the keys take the trailing one: the way back to
+   today when off it, and focus mode. The day's verb — the automation that commits
+   the note — is not here: it sits at the box's foot, under the prose it commits.
+   The row wraps instead of squeezing the buttons when the column is narrow. */
 .daily-note__title-row {
   display: flex;
   flex-wrap: wrap;
@@ -285,8 +285,12 @@
   cursor: default;
 }
 
-/* The box's foot: the autosave line alone. The day's own automations live up in
-   the title row now, level with the heading. */
+/* The box's foot: the autosave line on the leading edge and the day's own act on
+   the trailing one, under the prose it commits. The act is the one control that
+   acts on the day, so it sits with the day's writing rather than up among the
+   page's chrome — level with the line that says whether the writing reached the
+   vault. Focus mode and the way back to today are the page's own keys and keep
+   the title row. */
 .daily-note__footer {
   display: flex;
   flex-wrap: wrap;
@@ -296,6 +300,9 @@
   width: 100%;
 }
 
+/* The day's own acts, at the box's trailing edge. There is one of them by default
+   — Analyze note — and any other manual job hosted on the day joins the cluster,
+   which keeps the edge however many there are. */
 .daily-note__automations {
   display: flex;
   flex-wrap: wrap;
@@ -304,18 +311,29 @@
   gap: 0.5rem;
 }
 
-.daily-note__analyze {
+/* The day's act, one step down from the page's chrome and the title row's keys.
+   It belongs to the box's foot rather than to the heading: its label is 0.875rem
+   instead of the page's own 1rem, and its height comes from a shorter block
+   padding, so it sits quietly beside the autosave line instead of towering over
+   it. The face, the bevel and the page's `--radius-xs` step are the primitive's,
+   unchanged. */
+.daily-note .daily-note__analyze {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  padding-block: 0.5rem;
 }
 
-/* The day's acts share the header's trailing end, in the order they happen:
-   back to today, then the act that commits the note to the vault, then focus
-   mode, which takes the day as it is and writes it on its own. The cluster takes
-   the row's free space so the acts stay on the box's trailing edge, which the
-   cluster's own right edge has to keep matching. The gap is the row's own
-   rhythm: enough air that the three read as three controls and not as one band.
+/* The page's own keys share the title row's trailing end, in the order they
+   happen: back to today (only off today), then focus mode, which takes the day as
+   it is and writes it on its own. The day's matter — the automation that commits
+   the note — is not in this cluster: it sits at the box's foot, under the prose
+   it commits. The cluster takes the row's free space so the keys stay on the
+   box's trailing edge, which the cluster's own right edge has to keep matching.
+   The gap is the row's own rhythm: enough air that the two read as two controls
+   and not as one band.
 
    A key's height is the primitive's padding twice over plus the line its words
    sit on. That line is pinned on the cluster rather than left to the type's own
@@ -338,12 +356,12 @@
   line-height: 1.25;
 }
 
-/* The icon-only key at the trailing end of the day's acts. It is the outline
+/* The icon-only key at the trailing end of the page's keys. It is the outline
    primitive at the page's square step — a key with a visible frame, square
    rather than a pill because a control with no word in it should read as the
-   same family as the pager below it — and it stands the height of the control
-   beside it, so the row reads as one line of keys rather than as a row with one
-   short one in it.
+   same family as the pager below it — and it stands the height the page's key
+   step declares, so the title row reads as one line of keys rather than as a row
+   with one short one in it.
 
    Both dimensions are that shared height, so the icon sits in a true square
    rather than in a rectangle. The selector carries the page's class so the size
@@ -393,8 +411,9 @@
 }
 
 /* The autosave line. There is no Save control: this one quiet line is the whole
-   of what the page says about the day reaching the vault. It has the box's foot
-   to itself now, so it simply fills the row beneath the prose. */
+   of what the page says about the day reaching the vault. It keeps the foot's
+   leading edge and fills the room the day's act leaves, so the act stays on the
+   box's trailing edge however long the status line reads. */
 .daily-note__status {
   margin: 0;
   min-height: 1.1rem;
@@ -1322,6 +1341,16 @@
   color: var(--muted);
 }
 
+/* Why the page is on an earlier period than the calendar's: its window has not
+   opened yet. Quiet like the notice above — it is context for what is on
+   screen, not a report about something that failed. */
+.review-page__window {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 /* Document / Preview, and the autosave line that shares the row. */
 .review-page__modes {
   display: flex;
@@ -1483,4 +1512,267 @@
 
 .review-notes__body {
   padding: 0.35rem 0.5rem 0.75rem;
+}
+
+/* —— The review's two columns ——
+   A weekly-or-longer review is one file of area sections, so the page grows a
+   second column beside the reading column: the Review checklist, where each area
+   is a button and the whole-life review waits behind them. The 48rem measure is
+   unchanged — it is the reading column's own width, declared once on
+   `.review-page` above — and the pair is centred together in whatever room the
+   sheet gives it, so the workshop reads as one block rather than as a page with
+   a panel bolted to one edge.
+
+   The threshold is the window's, not the sheet's: a window narrower than ~78rem
+   has no room for a 48rem page beside a 17rem rail worth reading, so below that
+   the checklist stacks ABOVE the reading column (the order of a review: tick the
+   parts off, then write the whole). The daily review is one general review and
+   has no checklist at all, which is what `--single` says. */
+.review-page-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* The reading column keeps its measure and gives width back when the window has
+   none to spare; its auto margins are the row's business now, not its own. */
+.review-page-layout > .review-page {
+  flex: 0 1 48rem;
+  min-width: 0;
+  margin-inline: 0;
+}
+
+/* The one-column daily review: the page is still the centred column it always
+   was, with nothing beside it. */
+.review-page-layout--single {
+  justify-content: center;
+}
+
+@media (max-width: 78rem) {
+  .review-page-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .review-page-layout > .review-page {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 100%;
+  }
+
+  .review-page-layout > .review-checklist {
+    position: static;
+    order: -1;
+    align-self: center;
+    width: 100%;
+    max-width: 48rem;
+    /* In a column the rail's base flex-basis would become its HEIGHT: stacked it
+       is as tall as its rows, not a 17rem scroll box. */
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* —— The Review checklist rail ——
+   A checklist, not a second document: compact rows, the name on the leading edge
+   and a quiet status on the trailing one, painted on the card step with one
+   hairline — the same card/panel language the rest of the studio uses. The Life
+   review is set apart by a rule below it because it is not another row of the
+   same kind: it is the summary that the rows unlock.
+
+   The rail is sticky under the page's pager on a tall window: the file it maps
+   is long, and the checklist is only useful while the operator is reading it. */
+.review-checklist {
+  position: sticky;
+  top: 1rem;
+  flex: 0 0 17rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 0.85rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.review-checklist__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* The rail's name and the progress line share the grey eyebrow's treatment: the
+   rail is chrome beside the prose, not a heading in it. */
+.review-checklist__title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.review-checklist__progress {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.review-checklist__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+/* One row: a button, squarely cornered like the rest of the page's controls. The
+   row's own frame is invisible at rest so the list reads as a checklist rather
+   than as a stack of cards; the selected row grows the page's accent hairline,
+   the same mark the shell gives the surface the operator is on. */
+.review-checklist__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-checklist__item:hover:not(:disabled) {
+  background: var(--muted-surface);
+}
+
+.review-checklist__item.is-active {
+  border-color: var(--primary);
+  background: var(--accent-fill);
+}
+
+.review-checklist__item.is-active .review-checklist__name {
+  font-weight: 600;
+}
+
+.review-checklist__item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.review-checklist__item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+}
+
+/* The Life review stands apart from the areas it summarises. */
+.review-checklist__item--life {
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
+.review-checklist__item--life.is-active {
+  border-bottom-color: var(--primary);
+}
+
+.review-checklist__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The status is the quiet half of the row. A count while the life review is
+   gated, then the same three words the areas use. */
+.review-checklist__status {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
+.review-checklist__status[data-status="draft"] {
+  color: var(--fg);
+}
+
+.review-checklist__status[data-status="done"]::before {
+  content: "✓ ";
+}
+
+.review-checklist__status[data-status="done"] {
+  color: var(--primary);
+}
+
+.review-checklist__hint {
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+/* —— The active scope line ——
+   Above the body: which review this box is, and — when it is one area's — the way
+   back to the whole-life review without starting anything. A line of chrome, the
+   same weight as the autosave status, not a banner. */
+.review-page__scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.review-page__scope-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.review-page__scope-name {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.review-page__scope-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.review-page__scope-link:hover {
+  color: var(--fg);
+}
+
+.review-page__scope-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

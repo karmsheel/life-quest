@@ -57,6 +57,26 @@ export const REVIEW_CADENCES = [
 ] as const;
 export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
 
+/**
+ * When a cadence's next review becomes writable.
+ *
+ * A review looks back on a period that has not finished yet, so writing it the
+ * instant the period starts would mean writing it from nothing. A window is
+ * when the period is far enough along: `daysBeforeEnd` counts backwards from the
+ * period's last calendar day (0 = the last day itself) and `timeOfDay` is the
+ * local wall-clock moment it opens. Before that instant the app shows the
+ * PREVIOUS period's review, which is the one whose window has opened.
+ */
+export type ReviewWindow = {
+  /** Whole days before the period's last day on which the review opens. 0 = its last day. */
+  daysBeforeEnd: number;
+  /** Local wall-clock time, "HH:MM" 24h. */
+  timeOfDay: string;
+};
+
+/** One window per cadence, the value of `settings.json`'s `reviewAvailability`. */
+export type ReviewAvailability = Record<ReviewCadence, ReviewWindow>;
+
 export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
@@ -89,12 +109,54 @@ export type DocumentTarget =
   | { type: "agent-pairing"; agentId: string };
 
 /**
+ * One column's identity, without its options or relation target.
+ *
+ * A merge plan matches columns by name, but the staleness guard is about the
+ * schema as a whole: an id, a name or a type that moved is a schema the operator
+ * never saw. `id` is what makes the signature order-insensitive — two reads of
+ * the same schema join in the same order.
+ */
+export type DatabaseColumnSignature = {
+  id: string;
+  name: string;
+  type: DatabaseColumnType;
+};
+
+/**
+ * One source database of a merge proposal, frozen at propose time.
+ *
+ * The apply path re-reads the vault and compares both halves of this record:
+ * `fingerprint`/`rowCount` catch moved rows, `columns` catches a schema that
+ * changed while the Decision sat pending. `name` is here because the card names
+ * the database, and a database can be gone by the time the card is redrawn.
+ */
+export type DatabaseMergeSource = {
+  databaseId: string;
+  name: string;
+  rowCount: number;
+  fingerprint: string;
+  columns: DatabaseColumnSignature[];
+};
+
+/**
  * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.
  * DecisionRecord has no cells field, so cells are serialised as JSON into the
  * markdown fields — the same pattern the page, pins, and mapping branches use.
+ *
+ * `delete-database` and `merge-databases` (2026-11-15) are the destructive
+ * database-level ops: both file ONE pending Decision and write nothing until the
+ * operator approves it (LAWS/DATABASES.md: a change to, or deletion of, existing
+ * data is gated). The target names the doomed database for a delete and the
+ * surviving target for a merge.
  */
 export type DatabaseDecisionBody = {
-  op: "upsert" | "delete" | "create-database" | "add-column";
+  op:
+    | "upsert"
+    | "delete"
+    | "create-database"
+    | "add-column"
+    | "delete-database"
+    | "merge-databases";
   /** Resolved at propose time for the operator's benefit. */
   databaseName: string | null;
   /** Human label for the affected row, or null. */
@@ -134,6 +196,20 @@ export type DatabaseDecisionBody = {
   columnNames?: Record<string, string>;
   /** add-column only, resolved on read: the relation target's name. */
   relationDatabaseName?: string;
+  /** delete-database only: the row count the operator is deleting. */
+  rowCount?: number;
+  /** delete-database and merge-databases: sha256 over the affected rows. */
+  fingerprint?: string;
+  /** merge-databases only. */
+  sources?: DatabaseMergeSource[];
+  /** merge-databases only: columns the merge will add to the target. */
+  newColumns?: DatabaseColumnSpec[];
+  /** merge-databases only: target select columns whose options widen. */
+  widenedColumns?: Array<{ columnId: string; options: string[] }>;
+  /** merge-databases only: target schema at propose time (staleness guard). */
+  expectedColumns?: DatabaseColumnSignature[];
+  /** merge-databases only. */
+  dedupe?: boolean;
 };
 
 /** A batch insert Decision. Cells live in proposedBodyMarkdown, same as a row write. */
@@ -290,6 +366,12 @@ export type VaultSettings = {
   chatQuestions: ChatQuestion[];
   /** Whether the Decisions inbox opens and closes itself. */
   decisionInbox: DecisionInboxSettings;
+  /**
+   * When each cadence's new review becomes writable. Before a period's window
+   * opens the app keeps showing the previous period's review, so a review is
+   * never written against a period that has barely begun.
+   */
+  reviewAvailability: ReviewAvailability;
   /**
    * Which domains each agent is offered in, and where it is the domain's
    * default. Absent/empty means every agent is offered everywhere and none is a

@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  CalendarClock,
   FlaskConical,
   Inbox,
   Keyboard,
@@ -20,6 +21,7 @@ export type SettingsViewId =
   | "vault"
   | "hermes"
   | "agent"
+  | "review"
   | "questions"
   | "decisions"
   | "updates"
@@ -126,6 +128,27 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "companion",
       "persona",
       "instruction",
+    ],
+  },
+  {
+    id: "review",
+    label: "Review",
+    icon: CalendarClock,
+    keywords: [
+      "review",
+      "reviews",
+      "daily",
+      "weekly",
+      "monthly",
+      "quarterly",
+      "yearly",
+      "cadence",
+      "opens",
+      "window",
+      "schedule",
+      "time",
+      "available",
+      "availability",
     ],
   },
   {

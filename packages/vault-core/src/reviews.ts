@@ -2,13 +2,21 @@ import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
-import { isFuturePeriod, periodBounds, periodTitle } from "./period.ts";
+import { periodBounds, periodTitle } from "./period.ts";
 import { listDomains } from "./domains.ts";
+import { unlockedAreas } from "./domain-lens.ts";
 import { vaultPaths } from "./paths.ts";
+import {
+  defaultReviewAvailability,
+  formatReviewOpening,
+  reviewAvailabilityFromUnknown,
+  reviewOpensAt,
+} from "./review-availability.ts";
 import {
   USER_ACTOR,
   type Actor,
   type Result,
+  type ReviewAvailability,
   type ReviewCadence,
   type ReviewIndexEntry,
   type ReviewRecord,
@@ -40,6 +48,54 @@ async function logReview(
 const OVERALL = "overall";
 const DOMAIN_HEADINGS = ["Look-back", "Keep", "Change", "Next-period intent"] as const;
 
+/**
+ * The daily review's shape, stated once. Both `ensureReview` and
+ * `markReviewDone` refuse an area scope on the daily cadence with this exact
+ * sentence, so the page and the companion quote the same rule.
+ */
+export const DAILY_REVIEW_NO_AREAS = "The daily review is one general review — it has no area sections.";
+
+/** One live area's slice of a review file, as the checklist reports it. */
+export type ReviewAreaState = {
+  slug: string;
+  name: string;
+  status: "missing" | "draft" | "done";
+};
+
+/**
+ * The review file's area checklist: which live areas exist, which have a
+ * section (draft) and which are done. This is the read the page's rail and the
+ * overall review's gate share, so "every area is reviewed" cannot mean two
+ * different things in two places.
+ */
+export type ReviewAreaChecklist = {
+  cadence: ReviewCadence;
+  period: string;
+  areas: ReviewAreaState[];
+  done: number;
+  total: number;
+  allDone: boolean;
+  /** Display names of the areas not done, in vault order. */
+  remaining: string[];
+};
+
+function areaStatus(state: ReviewScopeState | undefined): ReviewAreaState["status"] {
+  if (!state) return "missing";
+  return state.status === "done" ? "done" : "draft";
+}
+
+/**
+ * The overall review's refusal, built from the checklist's live areas in vault
+ * order. The prefix is part of the operator-facing contract: the page and the
+ * rig assert it, so it is spelled once here.
+ */
+function overallReviewRefusal(remaining: ReviewAreaState[]): string {
+  const parts = remaining.map(
+    (area) => `${area.name}: ${area.status === "draft" ? "in progress" : "not started"}`,
+  );
+  return `Finish every area review first — ${parts.join("; ")}.`;
+}
+
 function isOverall(scope: string): boolean {
   return scope === OVERALL;
 }
@@ -48,15 +104,60 @@ function todayIso(): string {
   return new Date().toISOString();
 }
 
-async function readSettings(rootPath: string): Promise<WeekStartDay> {
+/**
+ * The two settings this module needs: which day a week starts on (it decides a
+ * weekly period's bounds) and when each cadence's review opens.
+ *
+ * A missing or unreadable settings.json is not an error here — the review read
+ * path must keep working on a vault whose settings are being repaired — so the
+ * defaults answer instead. The value is read on every gate rather than cached,
+ * because the operator can change a window from Settings while the Review page
+ * is open and the next write has to see the new one.
+ */
+type ReviewSettings = {
+  weekStartDay: WeekStartDay;
+  availability: ReviewAvailability;
+};
+
+async function readSettings(rootPath: string): Promise<ReviewSettings> {
   const paths = vaultPaths(rootPath);
   try {
     const raw = await fs.readFile(paths.settingsJson, "utf8");
-    const parsed = JSON.parse(raw) as { weekStartDay?: string };
-    return parsed.weekStartDay === "sunday" ? "sunday" : "monday";
+    const parsed = JSON.parse(raw) as {
+      weekStartDay?: string;
+      reviewAvailability?: unknown;
+    };
+    return {
+      weekStartDay: parsed.weekStartDay === "sunday" ? "sunday" : "monday",
+      availability: reviewAvailabilityFromUnknown(parsed.reviewAvailability),
+    };
   } catch {
-    return "monday";
+    return {
+      weekStartDay: "monday",
+      availability: defaultReviewAvailability(),
+    };
   }
+}
+
+/**
+ * Why a review of this period may not be written yet, or null when it may.
+ *
+ * The one sentence the operator reads comes from one place: `ensureReview` and
+ * `writeReview` both gate on this, so the board page (which ensures first) and a
+ * direct autosave refuse with exactly the same words. A period that cannot be
+ * dated at all is refused with the parser's own error rather than being treated
+ * as open, because a malformed key is not a window anyone opened.
+ */
+function reviewNotOpenError(
+  settings: ReviewSettings,
+  cadence: ReviewCadence,
+  period: string,
+  now: Date = new Date(),
+): string | null {
+  const opensAt = reviewOpensAt(cadence, period, settings.weekStartDay, settings.availability);
+  if (!opensAt.ok) return opensAt.error;
+  if (opensAt.value.getTime() <= now.getTime()) return null;
+  return `This review is not available yet: it opens ${formatReviewOpening(opensAt.value)}.`;
 }
 
 async function readDomainNames(rootPath: string): Promise<Map<string, string>> {
@@ -162,7 +263,7 @@ async function parseReviewFile(
         weekStartDay: (typeof data.weekStartDay === "string" ? data.weekStartDay : "monday") as WeekStartDay,
         locked: data.locked === true,
         updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : todayIso(),
-        title: typeof data.title === "string" ? data.title : periodTitle(cadence as ReviewCadence, period, await readSettings(rootPath)),
+        title: typeof data.title === "string" ? data.title : periodTitle(cadence as ReviewCadence, period, (await readSettings(rootPath)).weekStartDay),
         scopes,
         bodyMarkdown: body,
       },
@@ -171,6 +272,69 @@ async function parseReviewFile(
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       return { ok: false, error: "Review file not found" };
     }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * The area checklist for one review file: one entry per live area (the
+ * `unlockedAreas` the rest of the app offers, in vault order), with the scope's
+ * own status. A file that does not exist yet is not an error — it is every
+ * area missing, which is exactly what a fresh period looks like. A file that
+ * exists but cannot be parsed keeps its read error, so a broken review is
+ * reported rather than silently read as unreviewed.
+ */
+export async function getReviewAreaChecklist(
+  rootPath: string,
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<ReviewAreaChecklist>> {
+  // Daily has no area sections at all: the checklist is empty and complete.
+  if (cadence === "daily") {
+    return {
+      ok: true,
+      value: {
+        cadence,
+        period,
+        areas: [],
+        done: 0,
+        total: 0,
+        allDone: true,
+        remaining: [],
+      },
+    };
+  }
+  try {
+    const listed = await listDomains(rootPath);
+    if (!listed.ok) return listed;
+
+    const parsed = await parseReviewFile(rootPath, cadence, period);
+    let scopes: Record<string, ReviewScopeState> | null = null;
+    if (parsed.ok) {
+      scopes = parsed.value.scopes;
+    } else if (parsed.error !== "Review file not found") {
+      return parsed;
+    }
+
+    const areas: ReviewAreaState[] = unlockedAreas(listed.value).map((domain) => ({
+      slug: domain.slug,
+      name: domain.meta.name,
+      status: areaStatus(scopes?.[domain.slug]),
+    }));
+    const done = areas.filter((area) => area.status === "done").length;
+    return {
+      ok: true,
+      value: {
+        cadence,
+        period,
+        areas,
+        done,
+        total: areas.length,
+        allDone: done === areas.length,
+        remaining: areas.filter((area) => area.status !== "done").map((area) => area.name),
+      },
+    };
+  } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -278,10 +442,21 @@ export async function ensureReview(
   input: { cadence: ReviewCadence; period: string; scope: string },
 ): Promise<Result<ReviewRecord>> {
   try {
-    const weekStartDay = await readSettings(rootPath);
-    const future = isFuturePeriod(input.cadence, input.period, weekStartDay);
-    if (future) {
-      return { ok: false, error: "Cannot create a future review" };
+    // The daily cadence is one general review: it has no area scopes, so an
+    // area section would be a heading the page never shows and the companion
+    // would then be asked to fill. Refuse before touching the file.
+    if (input.cadence === "daily" && !isOverall(input.scope)) {
+      return { ok: false, error: DAILY_REVIEW_NO_AREAS };
+    }
+    const settings = await readSettings(rootPath);
+    const weekStartDay = settings.weekStartDay;
+    // A review may only be started once its own window has opened. This replaced
+    // the old "not a future period" check: the window is a stricter question
+    // than the calendar's, because a weekly review is not writable merely
+    // because its week has started.
+    const notOpen = reviewNotOpenError(settings, input.cadence, input.period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
     }
 
     const paths = vaultPaths(rootPath);
@@ -421,6 +596,16 @@ export async function writeReview(
       return { ok: false, error: "LOCKED" };
     }
 
+    // Writing is gated after the read and lock checks and before canonicalizing
+    // anything: the page autosaves as the operator types, and an autosave that
+    // raced the window's opening must not write a body the review page would
+    // then refuse to draw. The same sentence `ensureReview` uses is returned.
+    const settings = await readSettings(rootPath);
+    const notOpen = reviewNotOpenError(settings, input.cadence, input.period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
+    }
+
     // Validate required headings
     const domainNames = await readDomainNames(rootPath);
     const missing: string[] = [];
@@ -478,11 +663,25 @@ export async function markReviewDone(
   input: { cadence: ReviewCadence; period: string; scope: string; actor?: Actor },
 ): Promise<Result<ReviewRecord>> {
   try {
+    if (input.cadence === "daily" && !isOverall(input.scope)) {
+      return { ok: false, error: DAILY_REVIEW_NO_AREAS };
+    }
     const existing = await parseReviewFile(rootPath, input.cadence, input.period);
     if (!existing.ok) return existing;
     const record = existing.value;
 
     if (isOverall(input.scope)) {
+      // The life review is the summary of the area reviews, so it cannot be
+      // finished before they are. Daily has no area sections and is never
+      // gated: its one general review is the whole file.
+      if (input.cadence !== "daily") {
+        const checklist = await getReviewAreaChecklist(rootPath, input.cadence, input.period);
+        if (!checklist.ok) return checklist;
+        const notDone = checklist.value.areas.filter((area) => area.status !== "done");
+        if (notDone.length > 0) {
+          return { ok: false, error: overallReviewRefusal(notDone) };
+        }
+      }
       record.scopes.overall.status = "done";
       record.locked = true;
     } else {
@@ -669,6 +868,15 @@ export async function applyLockedReviewBody(
     const existing = await parseReviewFile(rootPath, cadence, period);
     if (!existing.ok) return existing;
     const record = existing.value;
+
+    // Approving an edited body is still a write, so it obeys the same window
+    // rule as `writeReview`: a Decision filed against a period whose review has
+    // not opened yet cannot land its body ahead of the review.
+    const settings = await readSettings(rootPath);
+    const notOpen = reviewNotOpenError(settings, cadence, period);
+    if (notOpen) {
+      return { ok: false, error: notOpen };
+    }
 
     // Validate required headings before applying — a decision must not
     // break the skeleton the same way writeReview rejects it.

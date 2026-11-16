@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./chat-questions.ts";
 export * from "./decision-inbox.ts";
+export * from "./review-availability.ts";
 export type { AutoApproveInsert } from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
@@ -123,8 +124,10 @@ export {
   type IsoWeek,
 } from "./period.ts";
 export {
+  DAILY_REVIEW_NO_AREAS,
   ensureReview,
   getReview,
+  getReviewAreaChecklist,
   writeReview,
   markReviewDone,
   unlockReview,
@@ -132,6 +135,7 @@ export {
   listReviewIndex,
   applyLockedReviewBody,
 } from "./reviews.ts";
+export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
 export {
   REVIEW_SECTIONS,
   FINANCE_SNAPSHOT_ID,
@@ -219,14 +223,17 @@ export {
   listDatabases,
   getDatabase,
   addDatabaseColumn,
+  updateDatabaseColumnOptions,
   listRows,
   countRows,
   getRow,
   upsertRow,
   insertRows,
+  insertMovedRows,
   updateRowCellsBulk,
   normaliseFinancePayeeCells,
   deleteRow,
+  deleteDatabase,
   checkDatabaseCells,
   validateRowCells,
   rowDisplayLabel,
@@ -235,6 +242,19 @@ export {
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
 } from "./domain-databases.ts";
+export {
+  MERGE_SOURCES_MAX,
+  applyDatabaseDelete,
+  applyDatabaseMerge,
+  columnSignatureKey,
+  databaseRowFingerprint,
+  describeDatabaseLifecycleRefusal,
+  isFinanceDatabase,
+  isTerminalDatabaseLifecycleError,
+  planDatabaseMerge,
+  readDatabaseColumnSignature,
+} from "./database-lifecycle.ts";
+export type { MergePlan } from "./database-lifecycle.ts";
 export {
   listPages,
   getPage,

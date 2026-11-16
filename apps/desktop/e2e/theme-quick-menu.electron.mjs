@@ -474,11 +474,11 @@ async function main() {
       `theme ${JSON.stringify(landing.theme)}, menu ${JSON.stringify(landing.menu)}`,
     );
     check(
-      "the titlebar's trailing cluster is the theme control and settings",
-      same(landing.titlebar.classes, ["theme-mode-toggle window-titlebar__btn", "settings-menu window-titlebar__settings"]) ||
-        (landing.titlebar.classes.length === 2 &&
-          landing.titlebar.classes[0].includes("theme-mode-toggle") &&
-          landing.titlebar.classes[1].includes("settings-menu")),
+      "the titlebar's trailing cluster is the full-screen door, theme and settings",
+      landing.titlebar.classes.length === 3 &&
+        landing.titlebar.classes[0].includes("chat-focus-toggle") &&
+        landing.titlebar.classes[1].includes("theme-mode-toggle") &&
+        landing.titlebar.classes[2].includes("settings-menu"),
       `trailing ${JSON.stringify(landing.titlebar)}`,
     );
     check(

@@ -25,9 +25,9 @@ Back to [Wiki home](./index.md).
 
 Every navigation movement used to need a pointer. This page lets you put the ones
 you use on keys you can reach: jump straight to a wing, walk the rail of the wing
-you are in, go back a page, collapse the rail, open or close the dock, open
-settings. The defaults are portable and sensible; the page exists because the
-operator's hands are not the default operator's hands.
+you are in, go back a page, collapse the rail, open or close the dock, give the
+chat the workspace, open settings. The defaults are portable and sensible; the
+page exists because the operator's hands are not the default operator's hands.
 
 ## How to use it
 
@@ -63,9 +63,10 @@ operator's hands are not the default operator's hands.
 3. The header pencil — **Change in Settings** — opens the full Settings page over
    the app. **Back to chat** returns the dock to the thread it left (or the
    thread's blank state when no chat is open).
-4. Any other dock action replaces the reference as usual. The dock's own browser
-   gestures are listed at the foot of the reference rather than as rows, because
-   they cannot be rebound.
+4. The agent switcher is not on this surface: it lives on the composer, and the
+   reference has no composer to send from. Any other dock action replaces the
+   reference as usual. The dock's own browser gestures are listed at the foot of
+   the reference rather than as rows, because they cannot be rebound.
 
 ## The screen
 
@@ -93,7 +94,7 @@ The dock's reference
 | Rows | Movement, current keys, and a pencil (`Change shortcut for …`). |
 | Foot | *Pick a pencil, then press the keys you want. Escape cancels; Backspace clears a shortcut.* and the dock's browser-key note. |
 
-## The fourteen movements
+## The fifteen movements
 
 `Mod` is Ctrl on Windows and Cmd on a Mac. The keycaps print the platform's own
 name, so the same default reads Ctrl+1 on Windows and Cmd+1 on a Mac.
@@ -113,6 +114,7 @@ name, so the same default reads Ctrl+1 on Windows and Cmd+1 on a Mac.
 | Pages | Forward | `Alt+ArrowRight` | Router forward |
 | Panels | Toggle sidebar | `Mod+B` | Collapse or expand the nav rail |
 | Panels | Toggle chat | `Mod+J` | Open or close the chat dock |
+| Panels | Toggle full-screen chat | `Mod+Shift+F` | Collapse the main page and give the chat the workspace right of the rail, or restore the page |
 | Surfaces | Open settings | `Mod+,` | Open the settings sheet over the page |
 
 A wing jump lands on that wing's last page or its default, exactly as a tab click

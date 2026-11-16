@@ -114,7 +114,12 @@ export function ShortcutRunner() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { toggle: toggleSidebar } = useNavDock();
-  const { open: chatOpen, setOpen: setChatOpen, surface: chatSurface } = useChatDock();
+  const {
+    open: chatOpen,
+    setOpen: setChatOpen,
+    surface: chatSurface,
+    toggleFocus,
+  } = useChatDock();
   // The dock's tab strip. The close key is a fact about what is on screen, so
   // the runner reads the same two lists the strip draws from.
   const { activeId, activeSession, closeTab, pinnedTabIds, tabIds } = useChatSessions();
@@ -189,12 +194,24 @@ export function ShortcutRunner() {
         case "panel.chat.toggle":
           setChatOpen(!chatOpen);
           return;
+        case "panel.chat.focus":
+          toggleFocus();
+          return;
         case "surface.settings.open":
           navigate("/settings");
           return;
       }
     },
-    [active, chatOpen, navigate, pathname, selectWing, setChatOpen, toggleSidebar],
+    [
+      active,
+      chatOpen,
+      navigate,
+      pathname,
+      selectWing,
+      setChatOpen,
+      toggleFocus,
+      toggleSidebar,
+    ],
   );
 
   useEffect(() => {

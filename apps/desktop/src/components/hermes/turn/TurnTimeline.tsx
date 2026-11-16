@@ -91,7 +91,7 @@ export function TurnTimeline({
               capabilities={capabilities}
               onToggleFold={(next) => onToggleFold(turn.turnId, next)}
             />
-            {turn.answer ? (
+            {turn.answer.trim() ? (
               <TurnBubble
                 id={`${turn.turnId}:answer`}
                 role="assistant"
@@ -111,9 +111,13 @@ export function TurnTimeline({
 }
 
 /**
- * One bubble. Markup is the dock's own from before the timeline — the same
- * classes, role line, stamp and copy control — because the thread's look is not
- * what this change is about, and the panel's existing rigs measure it.
+ * One message of a turn: the operator's bubble or the companion's answer.
+ *
+ * Markup is the dock's own from before the timeline — the same classes, role
+ * line, stamp and copy control — because the thread's look is not what this
+ * change is about, and the panel's existing rigs measure it. The side and the
+ * surface live in the CSS: the operator sits right in the accent-tinted bubble,
+ * the companion rests on the panel as plain prose.
  */
 function TurnBubble({
   id,

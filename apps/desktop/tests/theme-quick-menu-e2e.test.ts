@@ -168,16 +168,20 @@ describe("titlebar theme quick menu", () => {
     assert.equal(landing.theme.attr, "dark", "the shipped palette is not night");
     assert.equal(landing.menu, null, "the menu is open before the pointer arrives");
     assert.equal(landing.titlebar?.shortcutsInStrip, false, "a shortcuts control is still in the strip");
+    // The strip's trailing cluster: the full-screen door leads it, then the
+    // day/night control and the gear it belongs with.
     assert.deepEqual(
       landing.titlebar?.classes.map((className) =>
-        className.includes("theme-mode-toggle")
-          ? "theme"
-          : className.includes("settings-menu")
-            ? "settings"
-            : className,
+        className.includes("chat-focus-toggle")
+          ? "full-screen"
+          : className.includes("theme-mode-toggle")
+            ? "theme"
+            : className.includes("settings-menu")
+              ? "settings"
+              : className,
       ),
-      ["theme", "settings"],
-      "the titlebar's trailing cluster is not theme + settings",
+      ["full-screen", "theme", "settings"],
+      "the titlebar's trailing cluster is not full screen + theme + settings",
     );
 
     // —— 2. Hover opens the menu: the mode switcher leads, the starred themes

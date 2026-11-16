@@ -1,7 +1,7 @@
 # Update polling — Design Spec
 
 **Date:** 2026-10-29  
-**Status:** Approved — implemented  
+**Status:** Approved — implemented; the in-app notice card was removed 2026-11-15 (the watch now surfaces through the dock's glowing build number, its caption and the native notification). The polling design below otherwise stands.  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Auto-update](./2026-10-12-auto-update-design.md)
 

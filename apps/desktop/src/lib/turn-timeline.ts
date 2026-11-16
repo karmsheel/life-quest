@@ -246,7 +246,7 @@ export function formatToolDuration(ms: number): string {
   return formatDuration(ms);
 }
 
-/** `842`, `14.2k` — token counts, when the harness accounted for them exactly. */
+/** `842`, `14.2k`, `1.2M` — token counts, when the harness accounted for them exactly. */
 export function formatTokens(usage: TurnUsage | undefined): string | null {
   const total =
     usage?.total ??
@@ -255,6 +255,12 @@ export function formatTokens(usage: TurnUsage | undefined): string | null {
       : undefined);
   if (total === undefined || !Number.isFinite(total) || total < 0) return null;
   if (total < 1000) return String(Math.round(total));
+  // Long chats cross a million, and four digits before a `k` ("1220k") hides
+  // how much the turn actually spent. The ladder climbs at the same one-decimal
+  // voice the thousands already use; `.0` is dropped as there too.
+  if (total >= 1_000_000) {
+    return `${(total / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
   return `${(total / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 
@@ -483,7 +489,15 @@ export function buildTurnTimeline(
   };
 
   const closeAnswerIntoNarration = (turn: TurnRecord) => {
-    if (!turn.answer.trim()) return;
+    // Whitespace alone is not narration: drop it rather than push a block that
+    // paints as blank lines.
+    if (!turn.answer.trim()) {
+      if (turn.answer) {
+        turn.answer = "";
+        turn.answerAt = undefined;
+      }
+      return;
+    }
     pushBlock(turn, {
       kind: "text",
       id: nextBlockId(),
@@ -637,6 +651,11 @@ export function applyTurnEvent(
   switch (evt.type) {
     case "assistant.delta":
       if (!evt.text) return turn;
+      // A whitespace-only delta before the reply has begun is formatting — the
+      // line breaks a model emits around a tool call — not prose. Keeping it
+      // would assemble an "answer" of blank lines, which painted as a tall,
+      // empty bubble for as long as the agent kept working.
+      if (!(turn.answer + evt.text).trim()) return turn;
       return appendAnswer(turn, evt.text, now);
 
     case "reasoning.delta":
@@ -763,9 +782,13 @@ function appendCommentary(
 }
 
 /** A tool call (or a reasoning/commentary beat) ends the open answer segment:
- *  from here on the assistant is narrating process, not replying. */
+ *  from here on the assistant is narrating process, not replying. A segment
+ *  holding only whitespace is formatting, not narration, so it is dropped
+ *  instead of becoming a blank block. */
 function closeOpenAnswer(turn: TurnRecord, now: number): TurnRecord {
-  if (!turn.answer.trim()) return turn;
+  if (!turn.answer.trim()) {
+    return turn.answer ? { ...turn, answer: "", answerAt: undefined } : turn;
+  }
   return {
     ...turn,
     answer: "",

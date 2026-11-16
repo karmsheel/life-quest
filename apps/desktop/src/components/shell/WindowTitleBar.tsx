@@ -6,6 +6,7 @@ import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
+import { ChatFocusToggle } from "./ChatFocusToggle";
 import { ThemeQuickMenu } from "./ThemeQuickMenu";
 import { windowTitleLabel } from "./window-title";
 
@@ -81,6 +82,21 @@ export function WindowTitleBar() {
         <div className="window-titlebar__trailing">
           {chatPresent ? (
             <>
+              {/*
+                The window's half of full-screen chat. The dock's own top row
+                carries the door from inside the conversation; this one is the
+                door the operator finds while reading a page, where the thing it
+                takes away is the page itself. It sits immediately before the
+                day/night control so the strip's old pair stays together and the
+                new control joins the cluster's leading end rather than pushing
+                the gear off the window's corner.
+              */}
+              <ChatFocusToggle
+                className="window-titlebar__btn"
+                testId="titlebar-main-page"
+                offLabel="Collapse main page"
+                onLabel="Restore main page"
+              />
               {/*
                 The day/night control, and the settings it belongs with. The
                 keyboard-shortcuts reference moved into the dock's own bottom

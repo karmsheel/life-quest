@@ -102,6 +102,50 @@ a PDF is accepted by the engine only when the caller supplies the extracted rows
    app validates the whole file first, backs up the current SQLite to `domain.sqlite.bak`, and
    only then replaces the live book. Restoring disarms the switch again when it completes.
 
+### Collapse duplicates or delete a database
+
+The Data page has no merge or delete control of its own — that path is the companion's, and it
+waits in [Decisions](./23-decisions.md) like every other change to data that already exists.
+
+1. Ask the companion for it in chat: "merge the three Supplement log databases into the newest
+   one" or "delete the empty Projects database".
+2. The companion reads the databases in that area first, then files **one** pending Decision
+   naming the target database and, for a merge, every source. Filing writes nothing; the reply
+   says a decision is waiting, not that the change is done.
+3. Open **Decisions**, read the card, and **Approve** it. Rejecting leaves every database
+   exactly as it was.
+
+A merge does all of this in one approved step:
+
+- Columns are matched **by name**, trimmed and case-insensitive. A source column the target
+  does not have is added to it with its type and options; the target's own columns stay.
+- A `select` column's options become the union of both sides; a `relation` column must point
+  at the same database on both sides.
+- Rows from every source are inserted into the target and keep their own dates, so a
+  time-ordered table keeps its order.
+- Exact duplicate rows are skipped — a row already in the target, or an earlier row of the
+  same merge, is not inserted twice. Ask the companion to keep the duplicates when you want
+  every row.
+- Each source database is removed from the area once its rows are in the target. One
+  Life-log line names the merge; one names each deleted database.
+
+Deleting a database removes the database and every row in it. Neither a merge nor a delete can
+be undone from the app, so approve only after reading the card's row counts.
+
+The companion refuses to file the Decision, and names the reason, when:
+
+- the database is linked to an outside source — **Unlink** it first, or the deleted local
+  replica would come back on the next sync;
+- the database belongs to the Finance kit;
+- another database in the area has a `relation` column pointing at it — remove that column
+  first;
+- a saved dashboard view reads it — delete or repoint the card on the Dashboard first.
+
+Two databases with the same name are what invited the duplicates in the first place, so the
+companion will not create a second database whose name (trimmed, case-insensitive) already
+exists in the area. It reuses the one that exists, or asks for a different name. The **New
+database** panel on this page is your own control and still allows a duplicate name.
+
 ## The screen
 
 Data page (`/data`)
@@ -132,7 +176,8 @@ Database page (`/data/:slug/:dbId`)
 The book lives in the vault. The law is that area databases live in the vault folder and the
 product must never require a hosted database; adding data — a new database, a new row, a batch
 of new rows — is the operator's agreement in chat and applies at once, while changing or
-deleting data that already exists waits in Decisions, and adding a column to an existing
+deleting data that already exists — including merging duplicate databases or deleting a whole
+one — waits in Decisions, and adding a column to an existing
 database is a schema change that waits too; a new or changed ingest mapping goes through
 Decisions; batch rows post only after the operator accepts;
 conversational capture refuses without an amount and an account; JSON restore needs an
@@ -166,15 +211,17 @@ The base area **Life** is always unlocked and owns records that name no narrower
 This is the 0.2.1 split, and it is the one rule that matters most on this page:
 
 - Writes that apply immediately after the chat confirmation. `create_database` (with its
-  columns, validated first), a new row through `upsert_row` without an `id`, and a batch
+  columns, validated first, and refused when the area already has a database with that name),
+  a new row through `upsert_row` without an `id`, and a batch
   of new rows through `insert_rows` (at most 200, no row ids) are written at once. The
   operator's agreement in the chat is the confirmation; there is no Decision card afterwards,
   so each write is logged instead: `database.created`, `database.row.created` or
   `database.rows.created`. The reply may claim a database or row exists only when the result
   said `applied: true` / `posted: true`.
 - Writes that still wait in Decisions. `upsert_row` with an `id` (an update),
-  `delete_row`, and `add_column` file one pending Decision and write nothing until you approve
-  it. A rejected proposal must not be silently retried.
+  `delete_row`, `add_column`, `delete_database` and `merge_databases` file one pending Decision
+  and write nothing until you approve it. A rejected proposal must not be silently retried.
+  The companion says a decision is waiting, never that the database is merged or deleted.
 - A `create_database` schema is validated before anything is written, and `insert_rows`
   validates every row and applies the batch in one transaction — a bad row is named in the
   error and nothing lands.
@@ -253,8 +300,9 @@ export.
 ## Tips and edge cases
 
 - A database has no rename or delete control in the studio. The list and the column set are
-  managed through the app and the companion; the SQLite file is not meant to be edited with an
-  external SQLite browser while the app is open.
+  managed through the app and the companion; a whole database is merged or deleted only through
+  a Decision the companion files — see **Collapse duplicates or delete a database** above. The
+  SQLite file is not meant to be edited with an external SQLite browser while the app is open.
 - Column deletion is not offered; new columns append to the right. If you need a different
   column set, create a new database and move rows through the companion.
 - A dropped PDF is not extracted by this page. If the import says **Could not extract rows

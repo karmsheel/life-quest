@@ -3,10 +3,10 @@
 LifeQuest tells you when a newer release exists, without installing anything you
 did not ask for. The build number lives in the chat dock's bottom bar: quiet text
 while you are current, a glowing chip with **Update available** beside it when
-GitHub names something newer, and an in-app notice the app raises when a release
-lands while you are working. Clicking either opens the one dialog that offers to
-download the installer, hand it to Windows, and step aside so it can replace the
-app. See also [Wiki home](./index.md).
+GitHub names something newer — including a release that lands while you are
+working. Clicking the chip opens the one dialog that offers to download the
+installer, hand it to Windows, and step aside so it can replace the app. See also
+[Wiki home](./index.md).
 
 ## Where it lives
 
@@ -14,11 +14,14 @@ app. See also [Wiki home](./index.md).
   action bar, after **Collapse chat**. The bar's accessible name is "Dock
   actions".
 - When an update is available, a small **Update available** line appears beside
-  the number and the number gains the accent glow.
+  the number and the number gains the accent glow. On a dock too narrow to hold
+  the words the caption gives way and the glow alone is the signal; the shipped
+  dock width keeps both.
+- There is no in-window notice, card or toast: the glowing chip is the app's own
+  surface for news, and a native notification covers the case where the window is
+  not focused.
 - With the dock collapsed the number is not on screen. Reopen the dock from its
   launcher to see the version and ask for a check.
-- The in-app notice is a card fixed at the foot of the window, portalled over the
-  app. It is not a page and does not take focus.
 - The dialog is an in-window modal portalled over the app, not a page and not an
   OS window.
 - **Settings → Updates** repeats what the feed said and adds **Check now**.
@@ -34,9 +37,10 @@ A release can be published and then sit unnoticed for weeks, because a
 local-first desktop app has no notification channel. The old behaviour read the
 feed once at launch and glowed the build number — which you had no reason to
 look at, because nothing said there was news. The app now reads the feed on an
-hourly clock as well, raises an in-app notice, and raises a native notification
-when the window is not focused. That closes the gap without turning the studio
-into something that installs on its own.
+hourly clock as well, so the chip glows (with **Update available** beside it)
+while you work, and raises a native notification when the window is not focused.
+That closes the gap without turning the studio into something that installs on
+its own, and without a pop-up over the page you are reading.
 
 The second rule is trust. The system reads a public feed and then runs a
 downloaded executable, so every failure is made to fail closed — a check that
@@ -48,23 +52,19 @@ byte moves.
 
 ### When a release lands while you are working
 
-1. Main reads the feed on its hourly clock. A release it has not announced before
-   raises a notice: **LifeQuest 0.3.0 is available** (the release's version),
-   with "You are running v0.2.11. The new release is ready to download."
-2. Choose **View update** to open the same dialog the build number opens, on the
-   offer already in hand.
-3. Or dismiss the notice with its cross (**Dismiss**). A dismissal is final for
-   that release in this session: the notice does not come back, though the dock's
-   chip still glows until you install or dismiss the dialog.
-4. If the window is not focused, main also raises a native notification —
+1. Main reads the feed on its hourly clock. A release it has not seen before
+   turns the dock's build number into the glowing chip: the number gains the
+   accent glow and an **Update available** caption appears beside it — "LifeQuest
+   0.3.0 is available" lives in the chip's own tooltip and dialog. Nothing covers
+   the page and nothing takes the focus.
+2. Click the glowing number to open the dialog on the offer already in hand.
+3. If the window is not focused, main also raises a native notification —
    **LifeQuest 0.3.0 is available**, "Open LifeQuest to download and install it."
-   Clicking it restores and focuses the window. A focused window gets the in-app
-   notice alone.
+   Clicking it restores and focuses the window.
 
-The notice is announced once per release per session. If the feed stops offering
-a release it already announced (withdrawn, unpublished, downgraded), the glow and
-the notice clear together and the news is forgotten — a release that comes back
-is news again.
+The glow follows the feed's latest answer. If the feed stops offering a release
+(withdrawn, unpublished, downgraded), the glow and its caption clear; a release
+that comes back glows again.
 
 ### When you ask for a check
 
@@ -124,7 +124,6 @@ makes when a release carries no Windows installer.
 |---|---|
 | **Update available** | Quiet label beside the build number, shown only while an offer (or the preview) is up. |
 | Version number | `v0.2.11`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.0 is available". Glows only when there is something to install. |
-| In-app notice | **LifeQuest 0.3.0 is available**, the build you are running, **View update**, and a dismissal. A polite status region: no focus, no blocking. |
 | Native notification | Title **LifeQuest 0.3.0 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |
 | Dialog title | The offered version, this build's version, or "Could not check for updates". |
@@ -146,8 +145,8 @@ makes when a release carries no Windows installer.
   and offered installer alone: an offer you can still install is not made stale by
   a check that did not happen.
 - **One answer reaches the UI.** Main pushes every watch answer over
-  `update:decision`; the dock's badge, the dialog and the notice all draw the
-  feed's latest answer instead of two views that can disagree.
+  `update:decision`; the dock's badge and the dialog both draw the feed's latest
+  answer instead of two views that can disagree.
 - **Only a strictly newer version is offered.** Versions are compared as numbers
   per component, so `0.10.0` beats `0.9.0`; a prerelease is older than the release
   it precedes; an equal, older or unparseable version produces no offer. An

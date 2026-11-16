@@ -528,9 +528,11 @@ function checkArrangement(label, state, side) {
 
 /**
  * Where the controls live. The titlebar's trailing cluster ends at the settings
- * menu — no chat control rides the drag band any more — and the dock's bottom
- * action bar carries the side switch immediately before the collapse it belongs
- * with, in the order the bar ships.
+ * menu — no chat side switch or collapse rides the drag band any more, and the
+ * one chat control that does ride it is the full-screen door, which is a window
+ * arrangement rather than a dock control — and the dock's bottom action bar
+ * carries the side switch immediately before the collapse it belongs with, in
+ * the order the bar ships.
  */
 function checkControls(label, state, side) {
   const controls = state.trailing?.controls ?? [];
@@ -540,14 +542,18 @@ function checkControls(label, state, side) {
       ? "Move chat to the right of the page"
       : "Move chat to the left of the page";
 
-  // The titlebar's trailing cluster is the theme control and the settings menu.
-  // The keyboard-shortcuts control, like the two chat controls that left before
-  // it, now lives in the dock's own bar; a stale copy anywhere in the strip is
-  // the regression this guards, because a "contained" control is not a correctly
-  // placed one.
-  const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
+  // The titlebar's trailing cluster is the full-screen door, the theme control
+  // and the settings menu. The keyboard-shortcuts control, like the two chat
+  // controls that left before it, now lives in the dock's own bar; a stale copy
+  // anywhere in the strip is the regression this guards, because a "contained"
+  // control is not a correctly placed one.
+  const expectedTrailing = [
+    "chat-focus-toggle",
+    "theme-mode-toggle",
+    "settings-menu",
+  ];
   check(
-    `${label}: the titlebar's trailing cluster is theme, shortcuts, settings`,
+    `${label}: the titlebar's trailing cluster is full screen, theme, settings`,
     controls.length === expectedTrailing.length &&
       expectedTrailing.every((needle, index) =>
         String(classes[index] ?? "").includes(needle),

@@ -7,14 +7,16 @@
  *   node e2e/daily-note.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims, no eyeballing the app required. It ships with six
+ * same command, same claims, no eyeballing the app required. It ships with
  * pictures of the same run: the day's page holding a written note
  * (`daily-note.png`), the box with one paragraph open as its own markdown
  * (`daily-note-editing.png`), the writing line a save landed in without touching
  * it (`daily-note-midsentence.png`), the Review panel (`daily-note-panel.png`),
- * and the wide page twice — the strip and the box as one centred block with the
+ * the wide page twice — the strip and the box as one centred block with the
  * dock on its shipped side (`daily-note-split-right.png`) and swapped
- * (`daily-note-split-left.png`).
+ * (`daily-note-split-left.png`), and the day's page with a soft-wrapped
+ * paragraph open as its writing line, the line the arrow claims walk
+ * (`daily-note-arrows.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -94,10 +96,14 @@
  *     box, and the gutter between the two as wide as the room between the box and
  *     the dock. Swapping the dock swaps only the strip's side. The header and
  *     pager keep their place over the box.
- * 22. The day's own automation — the built-in Analyze note control — sits in the
- *     header on the heading's own line, at the box's trailing edge and above it,
- *     and it is a key rather than an outline chip: the page's own square step,
- *     the skin's accent as a filled face and the primitive's bevel and lip. The
+ * 22. The day's own automation — the built-in Analyze note control — sits on the
+ *     box's foot now: inside the compose column's footer, below the editor and
+ *     on its trailing edge, level with the autosave line, while Today and the
+ *     square focus key keep the title row. It is one step down from the page's
+ *     chrome: its label is 0.875rem against the page's 1rem, and its key is
+ *     ~35.5px — at least 2px shorter than the title row's square keys — while it
+ *     stays a key rather than an outline chip: the page's own square step, the
+ *     skin's accent as a filled face and the primitive's bevel and lip. The
  *     whole run is judged in Nous, the palette the operator asked about, because
  *     a control that reads black-on-black in the theme they run is the defect
  *     this claim exists to catch.
@@ -111,6 +117,19 @@
  *     keys to match the cold window. `chroma` (the channel spread of the paint,
  *     oklab's a/b included) must stay at zero in the colourless theme, so any
  *     warm ink left behind is a failure rather than a matter of eye.
+ * 24. The arrows step a paragraph's VISUAL lines, not its logical newlines. In
+ *     the day's own box a long single-line paragraph soft-wraps to W visual
+ *     lines; the first W-1 ArrowDown presses keep the same writing line, the
+ *     caret moving down it, and only the Wth leaves for the next paragraph at
+ *     caret 0. Upward from the paragraph's end the same holds: W-1 presses stay
+ *     inside with the caret moving up, and the Wth focuses the paragraph above.
+ *     A Shift+Enter hard-broken paragraph whose two logical lines each wrap
+ *     steps the same way in both directions — the asymmetric case the operator
+ *     reported ("some skip to the bottom going down, go line by line going up;
+ *     others do the opposite"). The walk changes no text and writes no new body.
+ *     W is measured from the rendered box itself
+ *     (`round(scrollHeight / lineHeight)`), never from the handler, so the claim
+ *     is about the layout the operator sees rather than the page's own maths.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -658,6 +677,264 @@ function pressShortcut(win, key) {
   })()`);
 }
 
+/** The centre of a selector's box, in the CSS pixels `sendInputEvent` takes. */
+async function centreOf(win, selector) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return {
+      x: Math.round(box.left + box.width / 2),
+      y: Math.round(box.top + Math.min(box.height / 2, 12)),
+    };
+  })()`);
+}
+
+/** A real pointer press, through the window's own input pipeline. */
+async function clickOn(win, selector) {
+  const point = await centreOf(win, selector);
+  if (!point) return false;
+  win.webContents.sendInputEvent({
+    type: "mouseDown",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  win.webContents.sendInputEvent({
+    type: "mouseUp",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  return true;
+}
+
+/**
+ * A key press the *browser* performs.
+ *
+ * The page intercepts the arrows at a paragraph's edge and lets the browser step
+ * inside it; a synthetic `KeyboardEvent` reaches React but never runs the
+ * browser's default action, so a caret step forced with one would prove nothing
+ * about the operator's own arrow keys. The window's input pipeline is the only
+ * one whose caret is theirs. `char` is sent for keys that insert text (the hard
+ * break is a `char`), never for keys the page handles itself.
+ */
+function sendKey(win, keyCode, { modifiers = [], char = null } = {}) {
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+  if (char !== null) {
+    win.webContents.sendInputEvent({ type: "char", keyCode: char, modifiers });
+  }
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+}
+
+/** The one writing line: which paragraph holds it, where the caret is, its text. */
+function caretState(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const blocks = Array.from(document.querySelectorAll("[data-note-block]"));
+    const area = document.querySelector('${INPUT}');
+    if (!area) {
+      return { open: false, block: -1, caret: null, focused: false, value: null, tag: null };
+    }
+    return {
+      open: true,
+      block: blocks.indexOf(area.closest("[data-note-block]")),
+      caret: area.selectionStart,
+      focused: document.activeElement === area,
+      value: area.value,
+      tag: area.dataset.arrowWalk ?? null,
+    };
+  })()`);
+}
+
+/** Open one paragraph and wait for ITS own box to be the writing line. */
+async function openParagraph(win, index) {
+  await win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll("[data-note-block]")[${index}];
+    if (!block) return false;
+    block.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+    );
+    return true;
+  })()`);
+  await waitFor(
+    win,
+    `(() => {
+      const block = document.querySelectorAll("[data-note-block]")[${index}];
+      return Boolean(block && block.querySelector("textarea"));
+    })()`,
+    `paragraph ${index} to open as the writing line`,
+  );
+  return caretState(win);
+}
+
+/**
+ * Put the caret at one edge of a paragraph and stamp the writing line, so a walk
+ * can prove the SAME textarea received every press rather than a re-mount
+ * sitting where it stood.
+ */
+async function placeCaret(win, index, edge, tag) {
+  await openParagraph(win, index);
+  await win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return false;
+    area.focus();
+    const at = ${JSON.stringify(edge)} === "start" ? 0 : area.value.length;
+    area.setSelectionRange(at, at);
+    area.dataset.arrowWalk = ${JSON.stringify(tag)};
+    return true;
+  })()`);
+  return caretState(win);
+}
+
+/** Wait for a key to land: the caret stepped, or the writing line moved. */
+async function nextCaretStep(win, before) {
+  const deadline = Date.now() + 1_500;
+  let state = before;
+  while (Date.now() < deadline) {
+    state = await caretState(win);
+    if (
+      state.open &&
+      state.focused &&
+      (state.block !== before.block || state.caret !== before.caret)
+    ) {
+      return state;
+    }
+    await idle(win, 25);
+  }
+  return state;
+}
+
+/**
+ * Walk a paragraph's visual lines with the arrow keys, recording every press:
+ * the paragraph holding the writing line, the caret, and whether it is the same
+ * textarea. `onPlaced` runs with the paragraph open at the edge the walk starts
+ * from, before the first press — the state the artifact's picture wants.
+ */
+async function walkParagraphLines(win, index, direction, presses, tag, onPlaced) {
+  const placed = await placeCaret(
+    win,
+    index,
+    direction === "down" ? "start" : "end",
+    tag,
+  );
+  const walk = {
+    direction,
+    placed: {
+      block: placed.block,
+      caret: placed.caret,
+      focused: placed.focused,
+      value: placed.value,
+    },
+    steps: [],
+  };
+  if (!placed.open || placed.block !== index || !placed.focused) return walk;
+  if (onPlaced) await onPlaced(placed);
+  let before = placed;
+  for (let press = 1; press <= presses; press += 1) {
+    sendKey(win, direction === "down" ? "Down" : "Up");
+    const after = await nextCaretStep(win, before);
+    walk.steps.push({
+      press,
+      block: after.block,
+      caret: after.caret,
+      focused: after.focused,
+      sameLine: Boolean(after.open) && after.tag === tag,
+    });
+    before = after;
+  }
+  return walk;
+}
+
+/** Every paragraph's own markdown, read by opening it. Nothing is changed. */
+async function paragraphSources(win) {
+  const count = await win.webContents.executeJavaScript(
+    'document.querySelectorAll("[data-note-block]").length',
+  );
+  const sources = [];
+  for (let index = 0; index < count; index += 1) {
+    await openParagraph(win, index);
+    sources.push(
+      await win.webContents.executeJavaScript(`document.querySelector('${INPUT}').value`),
+    );
+  }
+  return sources;
+}
+
+/**
+ * The box's own visual-line count: W = round(scrollHeight / lineHeight), read
+ * from the rendered textarea with the caret in it. This is the number the claim
+ * is about, and it is the layout's: a handler that miscounts cannot move it.
+ */
+function measureWritingLine(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return null;
+    const style = getComputedStyle(area);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    return {
+      value: area.value,
+      lines: Math.round(area.scrollHeight / lineHeight),
+      lineHeight,
+      scrollHeight: area.scrollHeight,
+      width: area.clientWidth,
+      hardBreaks: (area.value.match(/\\n/g) ?? []).length,
+    };
+  })()`);
+}
+
+/**
+ * A hard-broken paragraph's shape: its logical lines, and how many visual lines
+ * each of them wraps to. The clone is a bare textarea wearing the box's own
+ * computed type and width, so the measurement is the layout's — the page's
+ * handler, fixed or not, never runs here.
+ */
+function measureHardBreakShape(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return null;
+    const style = getComputedStyle(area);
+    const wrappedLines = (text) => {
+      const clone = document.createElement("textarea");
+      clone.setAttribute("aria-hidden", "true");
+      clone.style.cssText = [
+        "position:absolute",
+        "top:0",
+        "left:-10000px",
+        "visibility:hidden",
+        "margin:0",
+        "padding:0",
+        "border:0",
+        "box-sizing:content-box",
+        "overflow:hidden",
+        "resize:none",
+        "white-space:pre-wrap",
+        "width:" + area.clientWidth + "px",
+        "font-family:" + style.fontFamily,
+        "font-size:" + style.fontSize,
+        "font-weight:" + style.fontWeight,
+        "line-height:" + style.lineHeight,
+        "letter-spacing:" + style.letterSpacing,
+        "word-spacing:" + style.wordSpacing,
+      ].join(";");
+      clone.value = text;
+      document.body.append(clone);
+      const lineHeight = Number.parseFloat(getComputedStyle(clone).lineHeight);
+      const lines = Math.round(clone.scrollHeight / lineHeight);
+      clone.remove();
+      return lines;
+    };
+    const logical = area.value.split("\\n");
+    return {
+      value: area.value,
+      logicalLines: logical.length,
+      wrapped: logical.map(wrappedLines),
+      lines: Math.round(area.scrollHeight / Number.parseFloat(style.lineHeight)),
+    };
+  })()`);
+}
+
 function click(win, testId) {
   return win.webContents.executeJavaScript(
     `(() => { const el = document.querySelector('[data-testid="${testId}"]'); if (!el) return false; el.click(); return true; })()`,
@@ -869,6 +1146,72 @@ function assertPagerOnBox(layout, when) {
   if (Math.abs(dayCentre - editorCentre) > 2) {
     failure(
       `${when}: the day is centred at ${dayCentre}, ${dayCentre - editorCentre}px from the box's ${editorCentre}`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * One arrow walk's claim.
+ *
+ * With `lines` visual lines drawn in the paragraph, the first `lines - 1`
+ * presses must step the caret inside it — same paragraph, same writing line, the
+ * caret moving strictly in the arrow's direction and not yet reaching the
+ * paragraph's far end — and the `lines`th must leave it for the neighbouring
+ * paragraph (`to`), at caret `toCaret` where the claim names one. Every press is
+ * in the report so a failure names the one that broke, not just the count.
+ */
+function assertVisualWalk({ when, walk, lines, direction, from, to, toCaret, length }) {
+  const steps = walk.steps;
+  const seen = steps
+    .map((step) => `${step.press}: block ${step.block}@${step.caret}`)
+    .join(" ");
+  if (!walk.placed?.focused || walk.placed.block !== from) {
+    return failure(`${when}: the paragraph never took the caret (${JSON.stringify(walk.placed)})`);
+  }
+  if (steps.length !== lines) {
+    return failure(
+      `${when}: walked ${steps.length} press(es) for the ${lines} visual line(s) the box draws — ${seen}`,
+    );
+  }
+  for (let index = 0; index < steps.length - 1; index += 1) {
+    const step = steps[index];
+    const previous =
+      index === 0 ? (direction === "down" ? 0 : length) : steps[index - 1].caret;
+    if (step.block !== from) {
+      return failure(
+        `${when}: press ${step.press} left the paragraph (block ${step.block}, expected ${from}) — ${seen}`,
+      );
+    }
+    if (!step.focused || !step.sameLine) {
+      return failure(
+        `${when}: press ${step.press} took the caret off the writing line — ${seen}`,
+      );
+    }
+    const stepped = direction === "down" ? step.caret > previous : step.caret < previous;
+    if (step.caret === null || !stepped) {
+      return failure(
+        `${when}: press ${step.press} did not step the caret ${direction} (was ${previous}, is ${step.caret}) — ${seen}`,
+      );
+    }
+    const stillInside = direction === "down" ? step.caret < length : step.caret > 0;
+    if (!stillInside) {
+      return failure(
+        `${when}: press ${step.press} moved the caret to the paragraph's ${
+          direction === "down" ? "end" : "start"
+        } (${step.caret} of ${length}) without leaving it — ${seen}`,
+      );
+    }
+  }
+  const last = steps[steps.length - 1];
+  if (last.block !== to || !last.focused) {
+    return failure(
+      `${when}: the ${lines}th press did not leave for paragraph ${to} (block ${last.block}) — ${seen}`,
+    );
+  }
+  if (toCaret !== null && last.caret !== toCaret) {
+    return failure(
+      `${when}: the ${lines}th press landed at caret ${last.caret} in paragraph ${to}, expected ${toCaret} — ${seen}`,
     );
   }
   return undefined;
@@ -2325,25 +2668,27 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // ── 10. the day's act sits level with the heading, above the box ──────────
-  // The operator asked for the Analyze note control above the box, in line with
-  // the page's heading, where it had been left under the prose. The position is
-  // measured here — inside the header, above the box, on the heading's own line
-  // — and the face is still measured in the palette the page is painted in, so
-  // the key stays legible wherever it sits.
-  //
-  // The heading is the date now, and the date rides in the pager below the
-  // title row; the day's acts stay on the title row's own line, level with the
-  // page's name above them. So the level is measured against that row rather
-  // than against the date.
+  // ── 10. the day's act sits on the box's foot, one step down ────────────────
+  // The operator asked for the Analyze note control to come off the title row's
+  // top-right and sit at the box's bottom-right, under the prose it commits and
+  // level with the autosave line — with a quieter label (0.875rem, not the
+  // page's own 1rem) and a shorter key (~35.5px, not the ~39.6px the title row's
+  // square keys wear). Today and the square focus key stay up in the title row.
+  // The position is measured from the boxes the page draws — inside the compose
+  // column, below the editor, on its trailing edge — and the size from the
+  // button's own computed styles and box; the raised face is measured in the
+  // palette the page is painted in, because a key that sits quietly still has to
+  // read as a key.
   const automation = await win.webContents.executeJavaScript(`(() => {
     const row = document.querySelector(".daily-note__automations");
     const actions = document.querySelector(".daily-note__actions");
+    const footer = document.querySelector(".daily-note__footer");
+    const status = document.querySelector('[data-testid="daily-note-status"]');
     const editor = document.querySelector(".daily-note__editor");
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
     const titleRow = document.querySelector(".daily-note__title-row");
-    const eyebrow = document.querySelector(".daily-note .wing-eyebrow");
+    const focus = document.querySelector(".daily-note__focus-mode");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {
@@ -2362,6 +2707,9 @@ async function main() {
     const root = getComputedStyle(document.documentElement);
     const rowBox = rect(row);
     const editorBox = rect(editor);
+    const statusBox = status ? rect(status) : null;
+    const focusBox = focus ? rect(focus) : null;
+    const buttonBox = rect(button);
     const style = getComputedStyle(button);
     // The face is read off the painted gradient (a real property, so the engine
     // has resolved its colors) rather than off the custom property that fed it.
@@ -2373,38 +2721,43 @@ async function main() {
     return {
       present: true,
       inHeader: Boolean(header && header.contains(row)),
+      inTitleRow: Boolean(titleRow && titleRow.contains(row)),
+      inActions: Boolean(actions && actions.contains(row)),
       inCompose: Boolean(compose && compose.contains(row)),
+      inFooter: Boolean(footer && footer.contains(row)),
+      footerHasStatus: Boolean(footer && status && footer.contains(status)),
+      // The autosave line keeps the foot's leading edge; the act takes its
+      // trailing one, level with it.
+      statusLeftOfRow: Boolean(statusBox && statusBox.right <= rowBox.left + 1),
+      levelWithStatus: Boolean(
+        statusBox &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 - (statusBox.top + statusBox.bottom) / 2,
+          ) <= 8,
+      ),
+      // The title row keeps the page's own keys: focus mode is still up there.
+      // Today is read by the day claims, which see it only off today.
+      focusInTitleRow: Boolean(focus && actions && actions.contains(focus)),
+      focusInHeader: Boolean(focus && header && header.contains(focus)),
+      analyzeInActions: Boolean(actions && actions.contains(button)),
       belowBox: rowBox.top >= editorBox.bottom - 1,
-      gapBelowBox: Math.round(rowBox.top - editorBox.bottom),
-      aboveBox: rowBox.bottom <= editorBox.top + 1,
-      gapAboveBox: Math.round(editorBox.top - rowBox.bottom),
-      levelWithHeading: Boolean(
-        titleRow &&
-          Math.abs(
-            (rowBox.top + rowBox.bottom) / 2 -
-              (titleRow.getBoundingClientRect().top +
-                titleRow.getBoundingClientRect().bottom) /
-                2,
-          ) <= 8,
-      ),
-      levelWithEyebrow: Boolean(
-        eyebrow &&
-          Math.abs(
-            (rowBox.top + rowBox.bottom) / 2 -
-              (eyebrow.getBoundingClientRect().top +
-                eyebrow.getBoundingClientRect().bottom) /
-                2,
-          ) <= 8,
-      ),
-      // The day's acts end on the box's trailing edge — the whole cluster does,
-      // not the automations alone: focus mode is the last key in it, so it is
-      // the cluster's trailing edge that answers.
-      rightEdgeOffBy: Math.round(
-        (actions ? rect(actions).right : rowBox.right) - editorBox.right,
-      ),
-      automationsRightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
+      gapBelowBox: Math.round((rowBox.top - editorBox.bottom) * 10) / 10,
+      // The cluster ends on the editor's own trailing edge, not the window's.
+      rightEdgeOffBy: Math.round((rowBox.right - editorBox.right) * 10) / 10,
       insideBoxColumn:
         rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
+      // The act's size: a step down from the page's own type, and a shorter key
+      // than the title row's square ones, measured from its box and styles.
+      fontSize: Number.parseFloat(style.fontSize),
+      pageFontSize: Number.parseFloat(root.fontSize),
+      lineHeight: Number.parseFloat(style.lineHeight),
+      paddingBlockTop: Number.parseFloat(style.paddingTop),
+      paddingBlockBottom: Number.parseFloat(style.paddingBottom),
+      height: Math.round(buttonBox.height * 100) / 100,
+      focusHeight: focusBox ? Math.round(focusBox.height * 100) / 100 : null,
+      heightBelowFocus: focusBox
+        ? Math.round((focusBox.height - buttonBox.height) * 100) / 100
+        : null,
       buttonRadius: parseFloat(style.borderTopLeftRadius),
       step: parseFloat(root.getPropertyValue("--radius-xs")),
       backgroundImage: style.backgroundImage,
@@ -2431,27 +2784,69 @@ async function main() {
   if (!automation.present) {
     failure("the day's Analyze note button is not on the page at all");
   } else {
-    if (!automation.inHeader) {
-      failure("the day's automation is not in the header, level with the heading");
-    }
-    if (!automation.aboveBox) {
+    // The act belongs to the box's foot now, not the title row's top-right —
+    // and the page's own keys stay where they were.
+    if (automation.inHeader || automation.inTitleRow || automation.inActions) {
       failure(
-        `the day's automation sits ${automation.gapAboveBox}px below the box's top edge, not above it`,
+        "the day's automation is still up in the page's title row rather than on the box's foot",
       );
     }
-    if (!automation.levelWithHeading) {
-      failure("the day's automation is not on the heading's own line");
+    if (!automation.inCompose || !automation.inFooter) {
+      failure(
+        "the day's automation is not in the box's foot: it is outside the compose column's footer",
+      );
     }
-    if (automation.inCompose) {
-      failure("the day's automation is still down in the box's own column");
+    if (!automation.footerHasStatus) {
+      failure("the box's foot does not hold the autosave line beside the day's act");
+    }
+    if (automation.analyzeInActions) {
+      failure("the day's automation is still in the title row's action cluster");
+    }
+    if (!automation.focusInTitleRow || !automation.focusInHeader) {
+      failure("focus mode did not stay in the title row as the page's own key");
+    }
+    if (!automation.belowBox) {
+      failure(
+        `the day's automation sits ${automation.gapBelowBox}px from the box's bottom edge, not below it`,
+      );
+    }
+    if (!automation.statusLeftOfRow) {
+      failure("the autosave line is not on the foot's leading edge beside the day's act");
+    }
+    if (!automation.levelWithStatus) {
+      failure("the day's act is not level with the autosave line on the box's foot");
     }
     if (Math.abs(automation.rightEdgeOffBy) > 2) {
       failure(
-        `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+        `the day's act ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
       );
     }
     if (!automation.insideBoxColumn) {
       failure("the day's automation reaches outside the box's own column");
+    }
+    // One step down: the label is the 0.875rem rung, not the page's own 1rem.
+    if (!(automation.fontSize >= 13 && automation.fontSize <= 14.5)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px, not the 0.875rem step (13–14.5px)`,
+      );
+    }
+    if (!(automation.fontSize <= 0.9 * automation.pageFontSize)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px against the page's ${automation.pageFontSize}px base — not a step down`,
+      );
+    }
+    // And a shorter key than the title row's square ones.
+    if (!(automation.height >= 33 && automation.height <= 37)) {
+      failure(
+        `the Analyze note button is ${automation.height}px tall, not the ~35.5px foot key`,
+      );
+    }
+    if (automation.focusHeight === null) {
+      failure("the focus key's box could not be measured to compare the act's height");
+    } else if (!(automation.height <= automation.focusHeight - 2)) {
+      failure(
+        `the Analyze note button is ${automation.height}px against the ${automation.focusHeight}px focus key — not at least 2px shorter`,
+      );
     }
     if (!(automation.buttonRadius <= automation.step)) {
       failure(
@@ -2629,7 +3024,7 @@ async function main() {
   );
 
   // The artifact for this claim: the day's page with the note written, the act
-  // beside the heading, in the operator's own palette.
+  // on the box's foot under the prose, in the operator's own palette.
   await win.webContents.executeJavaScript(
     `document.querySelector(".daily-note__automations").scrollIntoView({ block: "nearest" })`,
   );
@@ -2780,6 +3175,320 @@ async function main() {
         );
       }
     }
+  }
+
+  // ── 14. the arrows step VISUAL lines, and only leave from the true edges ───
+  // The operator's report: in the day's box, some paragraphs skipped to their
+  // bottom going down and went line by line going up, and others did the
+  // opposite. A paragraph is one textarea and the textarea soft-wraps, so a
+  // wrapped paragraph is several visual lines the old handler could not see: it
+  // stepped by the text's own newlines and left a wrapped paragraph on the first
+  // press. The claim is the operator's walk: a press steps one visual line, and
+  // only from the paragraph's true first / last visual line does it leave, into
+  // the neighbouring paragraph. The arrows are the browser's own key events
+  // (`sendKey`), never a synthetic event whose default action never happens; W
+  // is read from the rendered box itself, never from the handler's arithmetic.
+  //
+  // The scenario is built through the UI on a fresh day, with no harness
+  // seeding: click into today's empty writing line, type a long single-line
+  // paragraph that wraps to W >= 3, a hard-broken paragraph (Shift+Enter) whose
+  // two logical lines each wrap, and short paragraphs either side for the
+  // arrows to land in.
+  await win.loadURL(`${url}?v=${Date.now()}&skin=${SKIN}`);
+  await waitFor(win, "Boolean(window.dailyNoteReady)", "a fresh day's page");
+  const arrowsLanding = await sample(win);
+  checks.arrowsLanding = {
+    dayDate: arrowsLanding.dayDate,
+    editing: arrowsLanding.editing,
+    body: arrowsLanding.body,
+  };
+  if (arrowsLanding.dayDate !== today) {
+    failure(
+      `the arrow walk opened ${JSON.stringify(arrowsLanding.dayDate)}, not today (${today})`,
+    );
+  }
+  if (!arrowsLanding.editing || arrowsLanding.body !== "") {
+    failure(
+      `the arrow walk needs today's empty writing line: editing ${JSON.stringify(arrowsLanding.editing)}, body ${JSON.stringify(arrowsLanding.body)}`,
+    );
+  }
+  // A person opens the day by clicking into the box; the pointer press is the
+  // real one, so the page's own mousedown handling decides where the caret goes.
+  if (!(await clickOn(win, INPUT))) {
+    failure("the day's writing line could not be clicked into");
+  }
+  await waitFor(
+    win,
+    `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+    "the clicked writing line to take the caret",
+  );
+
+  const opening = "Opening short paragraph.";
+  // Well past one line: at the box's own width this wraps to four visual lines,
+  // and the claim below is about every one of them.
+  const longLine =
+    "The quick brown fox jumps over the lazy dog and keeps running through the meadow while the sun sets behind the hills and the river carries the last light of the day toward the sea where the boats are waiting.";
+  const hardFirst =
+    "The first hard-broken line goes on long enough that it wraps across more than one visual line in the editor without any newline of its own inside it.";
+  const hardSecond =
+    "The second hard-broken line also runs long enough to wrap over another visual line or two, which is the asymmetry the operator reported.";
+  const closing = "Closing short paragraph.";
+  const typedBlocks = [opening, longLine, `${hardFirst}\n${hardSecond}`, closing];
+  const typedBody = typedBlocks.join("\n\n");
+
+  const typeParagraph = async (text) => {
+    const line = await typeWithCaret(win, text);
+    if (!line?.focused) {
+      failure(
+        `the writing line lost the caret while typing ${JSON.stringify(text.slice(0, 24))}…`,
+      );
+    }
+  };
+  const enterParagraph = async (count) => {
+    sendKey(win, "Enter");
+    await waitFor(
+      win,
+      `document.querySelectorAll("[data-note-block]").length === ${count}`,
+      `${count} paragraphs`,
+    );
+  };
+
+  await typeParagraph(opening);
+  await enterParagraph(2);
+  await typeParagraph(longLine);
+  await enterParagraph(3);
+  // The hard break is a real Shift+Enter: the page leaves it to the browser, so
+  // the newline lands inside the line the way the operator's own does.
+  await typeParagraph(hardFirst);
+  sendKey(win, "Enter", { modifiers: ["shift"], char: "\r" });
+  await waitFor(
+    win,
+    `document.querySelector(${JSON.stringify(INPUT)}).value === ${JSON.stringify(`${hardFirst}\n`)}`,
+    "the Shift+Enter hard break",
+  );
+  win.webContents.insertText(hardSecond);
+  await waitFor(
+    win,
+    `document.querySelector(${JSON.stringify(INPUT)}).value === ${JSON.stringify(`${hardFirst}\n${hardSecond}`)}`,
+    "the hard-broken paragraph's second line",
+  );
+  await enterParagraph(4);
+  await typeParagraph(closing);
+
+  // The day writes itself, and the walk must not be a second draft: the body
+  // the vault receives is exactly the four paragraphs, read back off the
+  // harness's own ledger so "autosaved exactly the typed body" is a fact about
+  // this run rather than a string in the rig.
+  const typedWrites = await waitForWrite(win, 0, "the typed day to autosave");
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-status"]').textContent.trim() === "Saved"`,
+    "the typed day to report Saved",
+  );
+  checks.arrowsTyped = { blocks: typedBlocks, body: typedBody, writes: typedWrites };
+  if (typedWrites.length !== 1) {
+    failure(`typing the arrow scenario wrote the day ${typedWrites.length} time(s), expected 1`);
+  }
+  const typedWrite = typedWrites[typedWrites.length - 1];
+  if ((typedWrite?.body ?? null) !== typedBody) {
+    failure(
+      `the arrow scenario's autosave carried ${JSON.stringify(typedWrite?.body)}, expected ${JSON.stringify(typedBody)}`,
+    );
+  }
+  if (typedWrite?.date !== today) {
+    failure(
+      `the arrow scenario's autosave wrote ${JSON.stringify(typedWrite?.date)}, not today (${today})`,
+    );
+  }
+  if (typedWrite?.shown !== typedWrite?.date) {
+    failure(
+      `a write landed on ${JSON.stringify(typedWrite?.date)} while the page showed ${JSON.stringify(typedWrite?.shown)}`,
+    );
+  }
+  const arrowsOnDisk = await win.webContents.executeJavaScript(
+    `(window.dailyNoteJournal.get(${JSON.stringify(today)}) ?? {}).bodyMarkdown ?? null`,
+  );
+  checks.arrowsOnDisk = arrowsOnDisk;
+  if (arrowsOnDisk !== `${typedBody}\n`) {
+    failure(
+      `the vault holds ${JSON.stringify(arrowsOnDisk)} for the typed day, expected ${JSON.stringify(`${typedBody}\n`)}`,
+    );
+  }
+
+  // The note's own paragraphs, read back before the walk: the source the
+  // traversal must not change, compared again after it.
+  const sourcesBefore = await paragraphSources(win);
+  checks.arrowsSourcesBefore = sourcesBefore;
+  if (JSON.stringify(sourcesBefore) !== JSON.stringify(typedBlocks)) {
+    failure(
+      `the day's paragraphs read ${JSON.stringify(sourcesBefore)}, expected the typed ${JSON.stringify(typedBlocks)}`,
+    );
+  }
+
+  // W: the long paragraph's own visual lines, measured from the rendered box.
+  await openParagraph(win, 1);
+  await idle(win, 100);
+  const longMeasure = await measureWritingLine(win);
+  checks.arrowsLong = longMeasure;
+  if (longMeasure?.value !== longLine) {
+    failure(
+      `the long paragraph opened as ${JSON.stringify((longMeasure?.value ?? "").slice(0, 40))}…, not the typed line`,
+    );
+  }
+  if (longMeasure?.hardBreaks !== 0) {
+    failure(
+      `the long paragraph carries ${JSON.stringify(longMeasure?.hardBreaks)} newline(s), so it is not one soft-wrapped line`,
+    );
+  }
+  if (!(longMeasure?.lines >= 3)) {
+    failure(
+      `the long paragraph drew ${JSON.stringify(longMeasure?.lines)} visual line(s), not the 3 the claim needs`,
+    );
+  }
+  const longLines = longMeasure?.lines ?? 0;
+  if (longLines > 0) {
+    const downWalk = await walkParagraphLines(win, 1, "down", longLines, "long-down");
+    checks.arrowsLongDown = downWalk;
+    assertVisualWalk({
+      when: "walking the long wrapped paragraph down",
+      walk: downWalk,
+      lines: longLines,
+      direction: "down",
+      from: 1,
+      to: 2,
+      toCaret: 0,
+      length: longLine.length,
+    });
+
+    const upWalk = await walkParagraphLines(
+      win,
+      1,
+      "up",
+      longLines,
+      "long-up",
+      async () => {
+        // The artifact: the wrapped paragraph open as its writing line, caret on
+        // its own last visual line — the line an arrow press is supposed to step
+        // through rather than out of.
+        await win.webContents.executeJavaScript(
+          "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+        );
+        const shot = await win.webContents.capturePage();
+        fs.mkdirSync(artifactsDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(artifactsDir, "daily-note-arrows.png"),
+          shot.toPNG(),
+        );
+        checks.arrowsShot = path.join("e2e", "artifacts", "daily-note-arrows.png");
+      },
+    );
+    checks.arrowsLongUp = upWalk;
+    assertVisualWalk({
+      when: "walking the long wrapped paragraph up",
+      walk: upWalk,
+      lines: longLines,
+      direction: "up",
+      from: 1,
+      to: 0,
+      toCaret: null,
+      length: longLine.length,
+    });
+  }
+
+  // The hard-broken paragraph: two logical lines (one Shift+Enter), each
+  // wrapping into more than one visual line, so the old handler's first-line /
+  // last-line test reads the wrong edge in each direction — the operator's
+  // asymmetry.
+  await openParagraph(win, 2);
+  await idle(win, 100);
+  const hardShape = await measureHardBreakShape(win);
+  checks.arrowsHardBreak = hardShape;
+  if (!hardShape) {
+    failure("the hard-broken paragraph could not be measured");
+  } else {
+    if (hardShape.logicalLines !== 2) {
+      failure(
+        `the hard-broken paragraph holds ${hardShape.logicalLines} logical line(s), not the 2 the claim needs`,
+      );
+    }
+    for (const [index, wrapped] of hardShape.wrapped.entries()) {
+      if (!(wrapped >= 2)) {
+        failure(
+          `the hard-broken paragraph's logical line ${index + 1} draws ${wrapped} visual line(s), not the 2+ the claim needs`,
+        );
+      }
+    }
+    if (!(hardShape.lines >= 4)) {
+      failure(
+        `the hard-broken paragraph drew ${JSON.stringify(hardShape.lines)} visual line(s), not the 4 the claim needs`,
+      );
+    }
+  }
+  const hardLines = hardShape?.lines ?? 0;
+  if (hardLines > 0) {
+    const hardDown = await walkParagraphLines(win, 2, "down", hardLines, "hard-down");
+    checks.arrowsHardDown = hardDown;
+    assertVisualWalk({
+      when: "walking the hard-broken paragraph down",
+      walk: hardDown,
+      lines: hardLines,
+      direction: "down",
+      from: 2,
+      to: 3,
+      toCaret: 0,
+      length: `${hardFirst}\n${hardSecond}`.length,
+    });
+
+    const hardUp = await walkParagraphLines(win, 2, "up", hardLines, "hard-up");
+    checks.arrowsHardUp = hardUp;
+    assertVisualWalk({
+      when: "walking the hard-broken paragraph up",
+      walk: hardUp,
+      lines: hardLines,
+      direction: "up",
+      from: 2,
+      to: 1,
+      toCaret: null,
+      length: `${hardFirst}\n${hardSecond}`.length,
+    });
+  }
+
+  // The walk changed no text, and the day on disk is still exactly the body that
+  // was typed — the arrows move a caret, not a document.
+  const sourcesAfter = await paragraphSources(win);
+  checks.arrowsSourcesAfter = sourcesAfter;
+  if (JSON.stringify(sourcesAfter) !== JSON.stringify(sourcesBefore)) {
+    failure(
+      `the arrow walk changed the note: ${JSON.stringify(sourcesAfter)} differs from ${JSON.stringify(sourcesBefore)}`,
+    );
+  }
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-status"]').textContent.trim() === "Saved"`,
+    "the day to be Saved after the walk",
+  );
+  await idle(win, AUTOSAVE_SETTLE_MS);
+  const afterWrites = await writesOf(win);
+  checks.arrowsWrites = afterWrites;
+  const wandered = afterWrites.find(
+    (write) => write.body !== typedBody || write.date !== today,
+  );
+  if (wandered) {
+    failure(`the arrow walk wrote ${JSON.stringify(wandered)} instead of the typed day`);
+  }
+  if (afterWrites.length !== typedWrites.length) {
+    failure(
+      `the arrow walk added ${afterWrites.length - typedWrites.length} write(s) for text it did not change`,
+    );
+  }
+  const stillOnDisk = await win.webContents.executeJavaScript(
+    `(window.dailyNoteJournal.get(${JSON.stringify(today)}) ?? {}).bodyMarkdown ?? null`,
+  );
+  checks.arrowsOnDiskAfter = stillOnDisk;
+  if (stillOnDisk !== `${typedBody}\n`) {
+    failure(
+      `the day's file holds ${JSON.stringify(stillOnDisk)} after the walk, expected the typed body`,
+    );
   }
 
   const report = {

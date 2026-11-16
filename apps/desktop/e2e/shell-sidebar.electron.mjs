@@ -105,6 +105,13 @@ const SAMPLE = `(() => {
   const dockActions = document.querySelector(".chat-panel__actions");
   const chatHeader = document.querySelector(".chat-panel__header");
   const chatStrip = document.querySelector(".chat-panel__tabs");
+  // The thread's name row is a chip now, not a band: the box around the title,
+  // hung flush off the tab strip, with the pencil at its end. Measured beside the
+  // row so "chip, not band" can be read off two boxes instead of one.
+  const chatChip = document.querySelector('[data-testid="chat-name-chip"]');
+  const chatHeaderLabel = document.querySelector(
+    ".chat-panel__header--thread .chat-panel__heading--thread",
+  );
   const shell = document.querySelector(".shell");
   const wings = document.querySelector(".nav-rail__wings");
   const wingsBand = document.querySelector(".nav-rail__wings-band");
@@ -112,10 +119,11 @@ const SAMPLE = `(() => {
   const domainSwitcher = document.querySelector(".window-titlebar__lens .domain-switcher");
   const lensTabsEl = lens ? lens.querySelector(".domain-switcher__tabs") : null;
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
-  // The band the rail's wing switcher and the dock's header still wear under the
-  // strip — the 44px the page gave back. Measured through a probe box, not rounded
-  // from the token text: --shell-topbar-height is 2.75rem, and parseFloat on
-  // that string is 2.75, not 44.
+  // The band the rail's wing switcher still wears under the strip — the 44px the
+  // page gave back. (The dock's tab strip is the same height; the thread's name
+  // row below it is a chip now, not a band.) Measured through a probe box, not
+  // rounded from the token text: --shell-topbar-height is 2.75rem, and parseFloat
+  // on that string is 2.75, not 44.
   const measureHeight = (value) => {
     const probe = document.createElement("div");
     probe.style.cssText = "position:absolute;left:-9999px;top:0;width:0;height:" + value;
@@ -601,6 +609,23 @@ const SAMPLE = `(() => {
           borderBottomWidth: getComputedStyle(chatHeader).borderBottomWidth,
           borderBottomColor: getComputedStyle(chatHeader).borderBottomColor,
           background: getComputedStyle(chatHeader).backgroundColor
+        }
+      : null,
+    // The name the row carries: a compact bordered box sized to its text. The
+    // label's own font size is recorded because the chip's type is one step down
+    // from the old band's; the row is the chip's parent and still starts at the
+    // strip's bottom edge.
+    chatChip: chatChip
+      ? {
+          box: box(chatChip),
+          display: getComputedStyle(chatChip).display,
+          borderTopWidth: getComputedStyle(chatChip).borderTopWidth,
+          label: chatHeaderLabel
+            ? {
+                text: (chatHeaderLabel.textContent || "").trim(),
+                fontSizePx: parseFloat(getComputedStyle(chatHeaderLabel).fontSize)
+              }
+            : null
         }
       : null,
     // The strip that replaced the header as the dock's top band: the tabs lead
@@ -1200,7 +1225,7 @@ async function main() {
 
     // 2b — the sidebar's first level: the five-wing switcher in its own band,
     // above the wing's pages and directly under the window strip. The band paints
-    // no line of its own: the hairline in that row is the dock's own header rule.
+    // no line of its own: the hairline in that row is the dock's tab strip's rule.
     const wingBand = expanded.wingsBand;
     const switcher = expanded.wingSwitcher;
     check(
@@ -1272,22 +1297,53 @@ async function main() {
     );
     // The sheet gave its band back: the page now starts at the strip's bottom
     // edge, 44px higher than it did when `.top-bar` sat in the sheet. The rail's
-    // wing band did NOT give its band back, and the dock's band is now the tab
-    // strip — both start at the strip's bottom and keep the 44px, so the two
-    // chrome rows stay level across the pane seam. The thread's name row sits
-    // directly under the tab strip, inside the dock only.
+    // wing band did NOT give its band back: it starts at the strip's bottom and
+    // keeps its 44px, level with the dock's tab strip across the pane seam. The
+    // dock's own 44px band is GONE — below that strip the thread's name row is a
+    // chip's row, not a second band — so the level claim is between the rail's
+    // band and the strip, and the name row is asserted on its own underneath.
     check(
-      "the rail's band and the dock's tab strip keep their 44px band under the strip",
-      Boolean(wingBand && expanded.chatStrip && expanded.chatHeader) &&
+      "the rail's band keeps its 44px beside the dock's tab strip",
+      Boolean(wingBand && expanded.chatStrip) &&
         wingBand.box.top === titlebarHeight &&
         wingBand.box.bottom === titlebarHeight + expanded.tokens.topbarHeight &&
         expanded.chatStrip.box.top === titlebarHeight &&
         expanded.chatStrip.box.bottom ===
-          titlebarHeight + expanded.tokens.topbarHeight &&
-        expanded.chatHeader.box.top === expanded.chatStrip.box.bottom &&
-        expanded.chatHeader.box.bottom ===
-          expanded.chatStrip.box.bottom + expanded.tokens.topbarHeight,
-      `rail band ${JSON.stringify(wingBand?.box)}, dock strip ${JSON.stringify(expanded.chatStrip?.box)}, dock header ${JSON.stringify(expanded.chatHeader?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
+          titlebarHeight + expanded.tokens.topbarHeight,
+      `rail band ${JSON.stringify(wingBand?.box)}, dock strip ${JSON.stringify(expanded.chatStrip?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
+    );
+    // The name row is the chip under the strip now: it starts where the strip
+    // ends (the seam is unchanged), it is a chip's row rather than the old 44px
+    // band, and the chip hangs flush off the strip's bottom edge inside it. The
+    // failure this catches: the name row regressed to a full band, or the chip
+    // left the strip's bottom edge (a margin/padding reappeared above it).
+    const chatRow = expanded.chatHeader;
+    const chatChipBox = expanded.chatChip?.box ?? null;
+    check(
+      "the thread's name row is a chip under the strip, not a second band",
+      Boolean(chatRow && chatChipBox && expanded.chatStrip) &&
+        chatRow.box.top === expanded.chatStrip.box.bottom &&
+        chatRow.box.height < expanded.tokens.topbarHeight &&
+        chatRow.box.height >= chatChipBox.height &&
+        Math.abs(chatChipBox.top - expanded.chatStrip.box.bottom) <= 1 &&
+        chatChipBox.left >= chatRow.box.left - 1 &&
+        chatChipBox.right <= chatRow.box.right + 1,
+      `name row ${JSON.stringify(chatRow?.box)}, chip ${JSON.stringify(chatChipBox)}, strip bottom ${expanded.chatStrip?.box.bottom}px, old band height ${expanded.tokens.topbarHeight}px`,
+    );
+    check(
+      "the name row paints no hairline of its own",
+      chatRow?.borderBottomWidth === "0px",
+      `name row underline ${chatRow?.borderBottomWidth} — the strip's bottom rule is the only line between the tabs and the transcript`,
+    );
+    check(
+      "the name row spans the dock and the chip sits inside it",
+      Boolean(chatRow && chatChipBox && expanded.chat) &&
+        Math.abs(chatRow.box.width - expanded.chat.box.width) <= 1 &&
+        chatChipBox.left >= chatRow.box.left - 1 &&
+        chatChipBox.right <= chatRow.box.right + 1 &&
+        chatChipBox.top >= chatRow.box.top - 1 &&
+        chatChipBox.bottom <= chatRow.box.bottom + 1,
+      `row ${JSON.stringify(chatRow?.box)}, dock ${JSON.stringify(expanded.chat?.box)}, chip ${JSON.stringify(chatChipBox)}`,
     );
     check(
       "the rail's band paints no line of its own",
@@ -1582,16 +1638,16 @@ async function main() {
       expanded.sheet?.box.top === titlebarHeight,
       `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px`,
     );
-    // The dock's header keeps its hairline. That line is the dock's own now — the
-    // sheet has no band under the strip to share it with — and it still sits in
-    // the same 44px band as the rail's wing switcher, so the two chrome rows stay
-    // level across the pane seam while the page reclaims its band.
+    // The line between the tabs and the transcript belongs to the tab strip now.
+    // The thread's name row is a chip's row and paints no rule of its own, so a
+    // border under it — the retired band's hairline — must not come back.
     check(
-      "the dock's header keeps its own hairline",
-      Boolean(expanded.chatHeader) &&
-        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0 &&
-        parseFloat(expanded.chatHeader.borderBottomWidth || "0") <= 1,
-      `dock header underline ${expanded.chatHeader?.borderBottomWidth}, band ${JSON.stringify(expanded.chatHeader?.box)}`,
+      "the strip owns the only line between the tabs and the transcript",
+      Boolean(expanded.chatStrip && expanded.chatHeader) &&
+        parseFloat(expanded.chatStrip.borderBottomWidth || "0") > 0 &&
+        parseFloat(expanded.chatStrip.borderBottomWidth || "0") <= 1 &&
+        expanded.chatHeader.borderBottomWidth === "0px",
+      `strip underline ${expanded.chatStrip?.borderBottomWidth}, name row underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
     // The chip can no longer be measured against the sheet's leading edge — it
     // lives at the foot of the rail now, not on the titlebar row. What replaces
@@ -1851,7 +1907,8 @@ async function main() {
     const cornerFile = path.join(artifactsDir, "shell-sidebar-corner.png");
     fs.writeFileSync(cornerFile, cornerShot.toPNG());
     // The seam where the sheet and the dock meet under the strip, zoomed to the
-    // line they should share — the dock header's own hairline, in pixels.
+    // line the dock owns — the tab strip's bottom rule, with the name chip hanging
+    // under it — in pixels.
     const seamShot = await win.webContents.capturePage({
       x: Math.max(0, (expanded.chat?.box.left ?? 0) - 140),
       y: titlebarHeight,
