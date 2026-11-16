@@ -70,6 +70,8 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
 export function applyScene(scene: ThemeScene, root: HTMLElement): void {
   root.dataset.sceneBackdrop = scene.background.preset;
   root.dataset.sceneIntensity = scene.background.intensity;
+  root.dataset.sceneCanvasFrame = scene.frames.canvas;
+  root.dataset.sceneCardFrame = scene.frames.cards;
 }
 
 /**

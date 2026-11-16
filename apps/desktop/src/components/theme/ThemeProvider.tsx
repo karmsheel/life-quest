@@ -60,6 +60,8 @@ import {
   resolveMaterial,
   resolveScene,
   SCENE_BACKDROPS,
+  SCENE_CANVAS_FRAMES,
+  SCENE_CARD_FRAMES,
   SCENE_INTENSITIES,
   SHADOWS,
   TITLEBAR_SIZES,
@@ -230,6 +232,21 @@ function readStoredSceneOverride(): ThemeSceneOverride {
       localStorage.getItem(SCENE_OVERRIDE_STORAGE_KEY) ?? "{}",
     ) as Record<string, unknown>;
     const override: ThemeSceneOverride = {};
+    if (isRecord(raw.frames)) {
+      const canvas = raw.frames.canvas;
+      const cards = raw.frames.cards;
+      override.frames = {
+        ...(typeof canvas === "string" &&
+        (SCENE_CANVAS_FRAMES as readonly string[]).includes(canvas)
+          ? { canvas: canvas as ThemeScene["frames"]["canvas"] }
+          : {}),
+        ...(typeof cards === "string" &&
+        (SCENE_CARD_FRAMES as readonly string[]).includes(cards)
+          ? { cards: cards as ThemeScene["frames"]["cards"] }
+          : {}),
+      };
+      if (Object.keys(override.frames).length === 0) delete override.frames;
+    }
     if (isRecord(raw.background)) {
       const preset = raw.background.preset;
       const intensity = raw.background.intensity;
@@ -558,8 +575,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           ...sceneOverrideRef.current.background,
           ...patch.background,
         },
+        frames: {
+          ...sceneOverrideRef.current.frames,
+          ...patch.frames,
+        },
       };
       if (Object.keys(next.background ?? {}).length === 0) delete next.background;
+      if (Object.keys(next.frames ?? {}).length === 0) delete next.frames;
       sceneOverrideRef.current = next;
       setSceneOverrideState(next);
       persistSceneOverride(next);

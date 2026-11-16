@@ -13540,3 +13540,75 @@ button.chat-panel__activity-line:hover {
     animation: none !important;
   }
 }
+
+/* ——— the frame layer ————————————————————————————————————————————————————
+   Scene's second vocabulary: a decorative edge drawn inside the page canvas,
+   and a named treatment for the page's cards. Both are the app's pixels — the
+   theme picks a word, the stylesheet owns the drawing — so a frame can never
+   become an arbitrary outline, and the operator's Reset takes it away.
+
+   The edge is `pointer-events: none` and floats over scrolled content rather
+   than shrinking the page: a frame must not cost a control its target. */
+:root:not([data-scene-canvas-frame="none"]) .shell__main {
+  position: relative;
+}
+
+:root:not([data-scene-canvas-frame="none"]) .shell__main::after {
+  content: "";
+  position: absolute;
+  inset: 0.55rem;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: calc(var(--radius-md) - 2px);
+}
+
+:root[data-scene-canvas-frame="hairline"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+:root[data-scene-canvas-frame="double"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: inset 0 0 0 3px
+    color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+:root[data-scene-canvas-frame="halo"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow:
+    inset 0 0 30px color-mix(in srgb, var(--accent) 16%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* One card family per surface already exists in the stylesheet; the frame
+   variant restates only the three properties that make a card a card — fill,
+   edge and lift — so a card that owns a special shape keeps it. */
+:root[data-scene-card-frame="outline"]
+  :is(
+    .home-card,
+    .view-card,
+    .domain-card,
+    .personnel-card,
+    .doc-card,
+    .welcome-card,
+    .settings-card
+  ) {
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  box-shadow: none;
+}
+
+:root[data-scene-card-frame="raised"]
+  :is(
+    .home-card,
+    .view-card,
+    .domain-card,
+    .personnel-card,
+    .doc-card,
+    .welcome-card,
+    .settings-card
+  ) {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  box-shadow:
+    0 14px 30px -20px color-mix(in srgb, var(--fg) 42%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--fg) 18%, transparent);
+}

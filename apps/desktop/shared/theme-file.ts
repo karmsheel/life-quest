@@ -69,6 +69,8 @@ export type ThemeChromeOverride = {
 
 export type SceneBackdropPreset = "plain" | "starfield" | "orbit" | "aurora";
 export type SceneIntensity = "calm" | "default" | "lively";
+export type SceneCanvasFrame = "none" | "hairline" | "double" | "halo";
+export type SceneCardFrame = "theme" | "outline" | "raised";
 
 /**
  * The scene layer: decoration, never structure.
@@ -83,11 +85,21 @@ export type ThemeScene = {
     preset: SceneBackdropPreset;
     intensity: SceneIntensity;
   };
+  /**
+   * The frame layer: how the page's edge and its cards are drawn. Still a closed
+   * vocabulary — the theme picks a named treatment, the stylesheet owns what it
+   * looks like, so a frame can never become an arbitrary outline.
+   */
+  frames: {
+    canvas: SceneCanvasFrame;
+    cards: SceneCardFrame;
+  };
 };
 
 /** What a theme file may say about the scene: any field left out is defaulted. */
 export type ThemeSceneFile = {
   background?: Partial<ThemeScene["background"]>;
+  frames?: Partial<ThemeScene["frames"]>;
 };
 
 /** The operator's own scene picks, layered over the theme's. */
@@ -131,6 +143,7 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
 
 export const DEFAULT_THEME_SCENE: ThemeScene = {
   background: { preset: "plain", intensity: "calm" },
+  frames: { canvas: "none", cards: "theme" },
 };
 
 export const SCENE_BACKDROPS: readonly SceneBackdropPreset[] = [
@@ -143,6 +156,17 @@ export const SCENE_INTENSITIES: readonly SceneIntensity[] = [
   "calm",
   "default",
   "lively",
+];
+export const SCENE_CANVAS_FRAMES: readonly SceneCanvasFrame[] = [
+  "none",
+  "hairline",
+  "double",
+  "halo",
+];
+export const SCENE_CARD_FRAMES: readonly SceneCardFrame[] = [
+  "theme",
+  "outline",
+  "raised",
 ];
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
@@ -586,6 +610,38 @@ export function parseThemeFile(raw: unknown): ParseResult {
         ...(intensity ? { intensity: intensity as SceneIntensity } : {}),
       };
     }
+    const frames = raw.scene.frames;
+    if (frames !== undefined) {
+      if (!isRecord(frames)) {
+        return { ok: false, error: "scene.frames must be an object" };
+      }
+      const canvas = frames.canvas;
+      const cards = frames.cards;
+      if (
+        canvas !== undefined &&
+        (typeof canvas !== "string" ||
+          !(SCENE_CANVAS_FRAMES as readonly string[]).includes(canvas))
+      ) {
+        return {
+          ok: false,
+          error: `scene.frames.canvas must be one of ${SCENE_CANVAS_FRAMES.join(", ")}`,
+        };
+      }
+      if (
+        cards !== undefined &&
+        (typeof cards !== "string" ||
+          !(SCENE_CARD_FRAMES as readonly string[]).includes(cards))
+      ) {
+        return {
+          ok: false,
+          error: `scene.frames.cards must be one of ${SCENE_CARD_FRAMES.join(", ")}`,
+        };
+      }
+      scene.frames = {
+        ...(canvas ? { canvas: canvas as SceneCanvasFrame } : {}),
+        ...(cards ? { cards: cards as SceneCardFrame } : {}),
+      };
+    }
   }
 
   const material: Partial<ThemeMaterial> = {};
@@ -624,7 +680,7 @@ export function parseThemeFile(raw: unknown): ParseResult {
       ...(typeof raw.description === "string"
         ? { description: raw.description }
         : {}),
-      ...(scene.background ? { scene } : {}),
+      ...(scene.background || scene.frames ? { scene } : {}),
       ...(colors ? { colors } : {}),
       ...(darkColors ? { darkColors } : {}),
       ...(Object.keys(chrome).length > 0 ? { chrome } : {}),
@@ -679,6 +735,10 @@ export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
       intensity:
         scene?.background?.intensity ?? DEFAULT_THEME_SCENE.background.intensity,
     },
+    frames: {
+      canvas: scene?.frames?.canvas ?? DEFAULT_THEME_SCENE.frames.canvas,
+      cards: scene?.frames?.cards ?? DEFAULT_THEME_SCENE.frames.cards,
+    },
   };
 }
 
@@ -689,6 +749,7 @@ export function layerScene(
 ): ThemeScene {
   return resolveScene({
     background: { ...theme?.background, ...override?.background },
+    frames: { ...theme?.frames, ...override?.frames },
   });
 }
 
@@ -711,6 +772,7 @@ export const THEME_VOCABULARY = [
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
+  "scene.frames.canvas: none | hairline | double | halo (the page's decorative edge); scene.frames.cards: theme | outline | raised (how the page's cards are drawn).",
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

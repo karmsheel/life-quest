@@ -67,6 +67,7 @@ const DOCK_LEFT_PNG = path.join(artifactsDir, "themes-v2-dock-left.png");
 const FLOATING_RAIL_PNG = path.join(artifactsDir, "themes-v2-floating-rail.png");
 const OUTSIDE_PNG = path.join(artifactsDir, "themes-v2-outside-theme.png");
 const SCENE_PNG = path.join(artifactsDir, "themes-v2-scene.png");
+const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
 
 const failures = [];
 const checks = [];
@@ -231,6 +232,27 @@ const SAMPLE = `(async () => {
     titlebarSizeAttr: document.documentElement.dataset.chromeTitlebarSize ?? null,
     accentVar: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
     scenePresetAttr: document.documentElement.dataset.sceneBackdrop ?? null,
+    sceneCanvasFrameAttr: document.documentElement.dataset.sceneCanvasFrame ?? null,
+    sceneCardFrameAttr: document.documentElement.dataset.sceneCardFrame ?? null,
+    canvasFrameBorder: (() => {
+      const main = document.querySelector(".shell__main");
+      if (!main) return null;
+      const after = getComputedStyle(main, "::after");
+      const width = parseFloat(after.borderTopWidth);
+      return Number.isFinite(width) ? Math.round(width * 10) / 10 : null;
+    })(),
+    cardProbe: (() => {
+      const card = document.querySelector(
+        ".home-card, .view-card, .domain-card, .personnel-card, .doc-card, .welcome-card, .settings-card",
+      );
+      if (!card) return null;
+      const style = getComputedStyle(card);
+      return {
+        border: style.borderTopColor,
+        shadow: style.boxShadow,
+        background: style.backgroundColor,
+      };
+    })(),
     sceneIntensityAttr: document.documentElement.dataset.sceneIntensity ?? null,
     sceneLayer: Boolean(document.querySelector(".scene-backdrop")),
     sceneNodes: (() => {
@@ -1155,6 +1177,89 @@ async function main() {
     }),
   );
 
+  // ── 6g: the frame layer — a decorated edge and a named card treatment ───
+  // The cards live on the board, and the rig has been on the dream page; walk
+  // to /home for the card half of the contract, then put the route back so the
+  // sections after this one see the app as they left it.
+  const originHash = (await evaluate(SAMPLE)).hash;
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  const framesPage = await waitFor(
+    (s) => s.hash === "#/home" && s.cardProbe !== null,
+    20_000,
+  );
+  writeThemeFile("frame-lab.json", {
+    name: "frame-lab",
+    label: "Frame Lab",
+    scene: {
+      background: { preset: "orbit", intensity: "calm" },
+      frames: { canvas: "double", cards: "outline" },
+    },
+  });
+  const framesLab = await waitFor(
+    (s) =>
+      framesPage?.cardProbe !== null &&
+      s.preview &&
+      s.sceneCanvasFrameAttr === "double" &&
+      s.sceneCardFrameAttr === "outline" &&
+      (s.canvasFrameBorder ?? 0) >= 1 &&
+      s.cardProbe !== null &&
+      (s.cardProbe.shadow === "none" || s.cardProbe.shadow === ""),
+    20_000,
+  );
+  check(
+    "a-theme-can-frame-the-page-and-its-cards",
+    framesLab?.sceneCanvasFrameAttr === "double" &&
+      framesLab.sceneCardFrameAttr === "outline" &&
+      (framesLab.canvasFrameBorder ?? 0) >= 1 &&
+      framesLab.cardProbe !== null &&
+      (framesLab.cardProbe.shadow === "none" || framesLab.cardProbe.shadow === ""),
+    JSON.stringify({
+      canvas: framesLab?.sceneCanvasFrameAttr,
+      cards: framesLab?.sceneCardFrameAttr,
+      edge: framesLab?.canvasFrameBorder,
+      hash: framesLab?.hash,
+      card: framesLab?.cardProbe
+        ? { shadow: String(framesLab.cardProbe.shadow).slice(0, 40) }
+        : null,
+    }),
+  );
+  const framesShot = await win.webContents.capturePage();
+  fs.writeFileSync(FRAMES_PNG, framesShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const backFromFrames = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "solar-system.json" &&
+      s.sceneCanvasFrameAttr === "none" &&
+      s.sceneCardFrameAttr === "theme" &&
+      s.cardProbe !== null &&
+      s.cardProbe.shadow !== "none",
+  );
+  // Back to the page the rig was on before this section.
+  await evaluate(
+    `(() => { location.hash = ${JSON.stringify(originHash)}; return location.hash; })()`,
+  );
+  check(
+    "frames-revert-with-their-theme",
+    backFromFrames?.kept === "solar-system.json" &&
+      backFromFrames.sceneCanvasFrameAttr === "none" &&
+      backFromFrames.sceneCardFrameAttr === "theme" &&
+      backFromFrames.cardProbe !== null &&
+      backFromFrames.cardProbe.shadow !== "none",
+    JSON.stringify({
+      kept: backFromFrames?.kept,
+      canvas: backFromFrames?.sceneCanvasFrameAttr,
+      cards: backFromFrames?.sceneCardFrameAttr,
+      cardShadow: String(backFromFrames?.cardProbe?.shadow ?? "").slice(0, 40),
+      hash: backFromFrames?.hash,
+    }),
+  );
+
   // ── 7: the companion's own tools, through the real MCP door ─────────────
   const { e2eCompanionDoor } = await import("../dist-electron/main.js");
   const door = await e2eCompanionDoor();
@@ -1221,6 +1326,20 @@ async function main() {
       "validate-theme-refuses-a-scene-it-cannot-draw",
       badSceneMessage.includes("scene.background.preset must be one of"),
       badSceneMessage.slice(0, 220),
+    );
+
+    const badFrame = await callJson("validate_theme", {
+      theme: {
+        name: "bad-frame",
+        label: "Bad Frame",
+        scene: { frames: { canvas: "neon" } },
+      },
+    });
+    const badFrameMessage = badFrame.json?.error?.message ?? "";
+    check(
+      "validate-theme-refuses-a-frame-it-cannot-draw",
+      badFrameMessage.includes("scene.frames.canvas must be one of"),
+      badFrameMessage.slice(0, 220),
     );
 
     const written = await callJson("write_theme", { theme: AGENT_THEME });
@@ -1596,42 +1715,69 @@ async function main() {
   // no scene, so this is the operator's sky and Reset must take it away again.
   const pressedSceneOrbit = await click("scene-option-preset-orbit");
   const pressedSceneCalm = await click("scene-option-intensity-calm");
+  const pressedSceneHalo = await click("scene-option-canvas-halo");
+  const pressedSceneRaised = await click("scene-option-cards-raised");
   const overriddenScene = await waitFor(
     (s) =>
       s.scenePresetAttr === "orbit" &&
       s.sceneIntensityAttr === "calm" &&
       s.sceneLayer &&
-      s.sceneNodes >= 5,
+      s.sceneNodes >= 5 &&
+      s.sceneCanvasFrameAttr === "halo" &&
+      s.sceneCardFrameAttr === "raised" &&
+      (s.canvasFrameBorder ?? 0) >= 1 &&
+      s.cardProbe !== null &&
+      s.cardProbe.shadow !== "none",
   );
   check(
     "operator-scene-overrides-the-theme",
     pressedSceneOrbit === true &&
       pressedSceneCalm === true &&
+      pressedSceneHalo === true &&
+      pressedSceneRaised === true &&
       overriddenScene?.scenePresetAttr === "orbit" &&
       overriddenScene.sceneIntensityAttr === "calm" &&
       overriddenScene.sceneLayer === true &&
-      overriddenScene.sceneNodes >= 5,
+      overriddenScene.sceneNodes >= 5 &&
+      overriddenScene.sceneCanvasFrameAttr === "halo" &&
+      overriddenScene.sceneCardFrameAttr === "raised" &&
+      (overriddenScene.canvasFrameBorder ?? 0) >= 1 &&
+      overriddenScene.cardProbe !== null &&
+      overriddenScene.cardProbe.shadow !== "none",
     JSON.stringify({
-      pressed: pressedSceneOrbit && pressedSceneCalm,
+      pressed:
+        pressedSceneOrbit && pressedSceneCalm && pressedSceneHalo && pressedSceneRaised,
       preset: overriddenScene?.scenePresetAttr,
       intensity: overriddenScene?.sceneIntensityAttr,
       nodes: overriddenScene?.sceneNodes,
+      canvas: overriddenScene?.sceneCanvasFrameAttr,
+      cards: overriddenScene?.sceneCardFrameAttr,
+      card: overriddenScene?.cardProbe === null ? "none" : "found",
+      hash: overriddenScene?.hash,
     }),
   );
 
   const pressedSceneReset = await click("scene-reset");
   const resetScene = await waitFor(
-    (s) => s.scenePresetAttr === "plain" && !s.sceneLayer,
+    (s) =>
+      s.scenePresetAttr === "plain" &&
+      !s.sceneLayer &&
+      s.sceneCanvasFrameAttr === "none" &&
+      s.sceneCardFrameAttr === "theme",
   );
   check(
     "reset-returns-the-themes-scene",
     pressedSceneReset === true &&
       resetScene?.scenePresetAttr === "plain" &&
-      resetScene.sceneLayer === false,
+      resetScene.sceneLayer === false &&
+      resetScene.sceneCanvasFrameAttr === "none" &&
+      resetScene.sceneCardFrameAttr === "theme",
     JSON.stringify({
       pressed: pressedSceneReset,
       preset: resetScene?.scenePresetAttr,
       layer: resetScene?.sceneLayer,
+      canvas: resetScene?.sceneCanvasFrameAttr,
+      cards: resetScene?.sceneCardFrameAttr,
     }),
   );
 
@@ -1832,6 +1978,7 @@ async function main() {
       floatingRail: path.relative(desktopRoot, FLOATING_RAIL_PNG),
       outsideTheme: path.relative(desktopRoot, OUTSIDE_PNG),
       scene: path.relative(desktopRoot, SCENE_PNG),
+      frames: path.relative(desktopRoot, FRAMES_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

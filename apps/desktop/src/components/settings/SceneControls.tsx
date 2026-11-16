@@ -4,6 +4,8 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { Button } from "@/components/ui/Button";
 import {
   SCENE_BACKDROPS,
+  SCENE_CANVAS_FRAMES,
+  SCENE_CARD_FRAMES,
   SCENE_INTENSITIES,
   type ThemeScene,
   type ThemeSceneOverride,
@@ -33,12 +35,26 @@ const INTENSITY_LABELS: Record<ThemeScene["background"]["intensity"], string> = 
   default: "Default",
   lively: "Lively",
 };
+const CANVAS_FRAME_LABELS: Record<ThemeScene["frames"]["canvas"], string> = {
+  none: "None",
+  hairline: "Hairline",
+  double: "Double",
+  halo: "Halo",
+};
+const CARD_FRAME_LABELS: Record<ThemeScene["frames"]["cards"], string> = {
+  theme: "Theme",
+  outline: "Outline",
+  raised: "Raised",
+};
 
-type Axis = keyof ThemeScene["background"];
-type AxisValue = ThemeScene["background"][Axis];
+type Group = keyof ThemeScene;
+type AxisValue =
+  | ThemeScene["background"][keyof ThemeScene["background"]]
+  | ThemeScene["frames"][keyof ThemeScene["frames"]];
 
 interface SceneAxis {
-  axis: Axis;
+  group: Group;
+  axis: string;
   testId: string;
   label: string;
   options: readonly { value: AxisValue; label: string }[];
@@ -47,6 +63,7 @@ interface SceneAxis {
 
 const AXES: readonly SceneAxis[] = [
   {
+    group: "background",
     axis: "preset",
     testId: "scene-background",
     label: "Background",
@@ -57,6 +74,7 @@ const AXES: readonly SceneAxis[] = [
     })),
   },
   {
+    group: "background",
     axis: "intensity",
     testId: "scene-intensity",
     label: "Intensity",
@@ -64,6 +82,28 @@ const AXES: readonly SceneAxis[] = [
     options: SCENE_INTENSITIES.map((value) => ({
       value,
       label: INTENSITY_LABELS[value],
+    })),
+  },
+  {
+    group: "frames",
+    axis: "canvas",
+    testId: "scene-canvas-frame",
+    label: "Page frame",
+    hint: "A decorative edge inside the page canvas; it never eats a control's space.",
+    options: SCENE_CANVAS_FRAMES.map((value) => ({
+      value,
+      label: CANVAS_FRAME_LABELS[value],
+    })),
+  },
+  {
+    group: "frames",
+    axis: "cards",
+    testId: "scene-card-frame",
+    label: "Card frame",
+    hint: "How the page's cards are drawn: as the theme's own, outlined, or lifted.",
+    options: SCENE_CARD_FRAMES.map((value) => ({
+      value,
+      label: CARD_FRAME_LABELS[value],
     })),
   },
 ];
@@ -106,8 +146,11 @@ export function SceneControls() {
 
       <div className="theme-material__rows">
         {AXES.map((spec) => {
-          const effective = scene.background[spec.axis];
-          const overridden = spec.axis in (sceneOverride.background ?? {});
+          const group = scene[spec.group] as Record<string, AxisValue>;
+          const effective = group[spec.axis];
+          const overridden =
+            spec.axis in
+            ((sceneOverride[spec.group] ?? {}) as Record<string, unknown>);
           const labelId = `${labelPrefix}-${spec.axis}`;
           return (
             <div
@@ -152,9 +195,7 @@ export function SceneControls() {
                       data-testid={`scene-option-${spec.axis}-${option.value}`}
                       onClick={() =>
                         setSceneOverride({
-                          background: {
-                            [spec.axis]: option.value,
-                          },
+                          [spec.group]: { [spec.axis]: option.value },
                         } as ThemeSceneOverride)
                       }
                     >
