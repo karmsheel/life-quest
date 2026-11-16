@@ -103,7 +103,11 @@ the wing switcher and the area lens between placements, and set the radius
 family, density and motion. The companion can write one for you, or you can drop
 a `.json` in that folder. A new or changed file is worn for ten seconds as a
 **preview** with **Keep** and **Revert**; if you do nothing it hands the window
-back by itself. The **Theme files** list on this page shows every file the app
+back by itself. A fresh profile also starts with one **showcase** theme — *Solar
+System*, a dark-orbit sky with a haloed page and raised cards — copied into the
+folder on first run so you can see the whole ladder without asking an agent for
+anything; it is a normal file from then on, and if you Remove it, it stays
+removed. The **Theme files** list on this page shows every file the app
 could read, with **Try** (enter the preview again), **Keep** (wear it from now
 on), **Kept** on the file you kept, and **Remove** (two presses: Remove →
 Remove?). **Open folder** opens the profile's `themes/` folder and **Export

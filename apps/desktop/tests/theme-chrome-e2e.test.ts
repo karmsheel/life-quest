@@ -39,6 +39,7 @@ type Report = {
     outsideTheme: string;
     scene: string;
     frames: string;
+    showcase: string;
   };
   theme: unknown;
   refused: unknown;
@@ -137,6 +138,7 @@ describe("theme files v2", () => {
         report.artifacts.outsideTheme,
         report.artifacts.scene,
         report.artifacts.frames,
+        report.artifacts.showcase,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

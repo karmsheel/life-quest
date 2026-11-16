@@ -68,6 +68,7 @@ const FLOATING_RAIL_PNG = path.join(artifactsDir, "themes-v2-floating-rail.png")
 const OUTSIDE_PNG = path.join(artifactsDir, "themes-v2-outside-theme.png");
 const SCENE_PNG = path.join(artifactsDir, "themes-v2-scene.png");
 const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
+const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
 
 const failures = [];
 const checks = [];
@@ -231,6 +232,7 @@ const SAMPLE = `(async () => {
     })(),
     titlebarSizeAttr: document.documentElement.dataset.chromeTitlebarSize ?? null,
     accentVar: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
+    bgVar: getComputedStyle(document.documentElement).getPropertyValue("--background").trim(),
     scenePresetAttr: document.documentElement.dataset.sceneBackdrop ?? null,
     sceneCanvasFrameAttr: document.documentElement.dataset.sceneCanvasFrame ?? null,
     sceneCardFrameAttr: document.documentElement.dataset.sceneCardFrame ?? null,
@@ -1818,6 +1820,144 @@ async function main() {
     }),
   );
 
+  // ── 11b: the bundled showcase — seeded once, worn, kept ─────────────────
+  // R3 asked for one "solar system" theme that shows the whole ladder without
+  // an agent: it ships in the app and is copied into a fresh profile's themes
+  // directory on first run. Here the operator finds it in the list and wears
+  // it — the app must not wear it for them.
+  const showcaseFile = path.join(themesDir, "showcase-solar-system.json");
+  const showcaseOnDisk = fs.existsSync(showcaseFile)
+    ? JSON.parse(fs.readFileSync(showcaseFile, "utf8"))
+    : null;
+  check(
+    "first-run-seeds-the-showcase-theme",
+    showcaseOnDisk?.name === "showcase-solar-system" &&
+      showcaseOnDisk?.scene?.background?.preset === "orbit" &&
+      showcaseOnDisk?.scene?.frames?.canvas === "halo" &&
+      showcaseOnDisk?.chrome?.navRail?.place === "floating" &&
+      typeof showcaseOnDisk?.colors?.accent === "string",
+    JSON.stringify({
+      file: fs.existsSync(showcaseFile),
+      name: showcaseOnDisk?.name,
+      preset: showcaseOnDisk?.scene?.background?.preset,
+      canvas: showcaseOnDisk?.scene?.frames?.canvas,
+      nav: showcaseOnDisk?.chrome?.navRail?.place,
+    }),
+  );
+
+  const showcaseRow = await evaluate(`(() => {
+    const row = document.querySelector('[data-testid="theme-file-row-showcase-solar-system"]');
+    return row ? Boolean(row.querySelector('[data-testid="theme-file-try"]')) : false;
+  })()`);
+  const showcaseClicked = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="theme-file-row-showcase-solar-system"] [data-testid="theme-file-try"]');
+    if (!b) return "missing";
+    b.click();
+    return b.getAttribute("data-testid");
+  })()`);
+  await sleep(500);
+  const showcaseProbe = await evaluate(`(() => ({
+    preview: Boolean(document.querySelector('[data-testid="theme-preview-bar"]')),
+    previewText: document.querySelector('[data-testid="theme-preview-bar"]')?.textContent ?? null,
+    fileError: document.querySelector('[data-testid="theme-file-error"]')?.textContent ?? null,
+    fileStatus: document.querySelector('[data-testid="theme-file-status"]')?.textContent ?? null,
+    rowText: document.querySelector('[data-testid="theme-file-row-showcase-solar-system"]')?.textContent?.slice(0, 160) ?? null,
+    preset: document.documentElement.dataset.sceneBackdrop ?? null,
+  }))()`);
+  await sleep(900);
+  const showcaseProbe2 = await evaluate(`(() => {
+    const root = document.documentElement;
+    const bar = document.querySelector(".window-titlebar");
+    return {
+      preview: Boolean(document.querySelector('[data-testid="theme-preview-bar"]')),
+      preset: root.dataset.sceneBackdrop ?? null,
+      canvas: root.dataset.sceneCanvasFrame ?? null,
+      cards: root.dataset.sceneCardFrame ?? null,
+      navPlace: root.dataset.chromeNavPlace ?? null,
+      navWidth: root.dataset.chromeNavWidth ?? null,
+      dockLeft: document.querySelector(".shell")?.classList.contains("shell--dock-left") ?? null,
+      titlebar: bar ? Math.round(bar.getBoundingClientRect().height) : null,
+      accent: getComputedStyle(root).getPropertyValue("--accent").trim(),
+      navWidthVar: getComputedStyle(root).getPropertyValue("--shell-sidebar-width").trim(),
+    };
+  })()`);
+  const showcase = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("showcase-solar-system.json") &&
+      s.scenePresetAttr === "orbit" &&
+      s.sceneCanvasFrameAttr === "halo" &&
+      s.sceneCardFrameAttr === "raised" &&
+      s.navPlaceAttr === "floating" &&
+      s.navWidthAttr === "wide" &&
+      s.titlebarHeight === 40 &&
+      ["#0a0e1f", "#070b17"].includes((s.bgVar ?? "").toLowerCase()),
+    25_000,
+  );
+  check(
+    "the-showcase-wears-its-whole-ladder",
+    showcaseRow === true &&
+      showcase?.kept === null &&
+      showcase.scenePresetAttr === "orbit" &&
+      showcase.sceneCanvasFrameAttr === "halo" &&
+      showcase.sceneCardFrameAttr === "raised" &&
+      showcase.navPlaceAttr === "floating" &&
+      showcase.navWidthAttr === "wide" &&
+      showcase.titlebarHeight === 40 &&
+      ["#0a0e1f", "#070b17"].includes((showcase.bgVar ?? "").toLowerCase()),
+    JSON.stringify({
+      row: showcaseRow,
+      clicked: showcaseClicked,
+      probe: showcaseProbe,
+      probe2: showcaseProbe2,
+      kept: showcase?.kept,
+      preset: showcase?.scenePresetAttr,
+      canvas: showcase?.sceneCanvasFrameAttr,
+      nav: showcase?.navPlaceAttr,
+      strip: showcase?.titlebarHeight,
+      bg: showcase?.bgVar,
+    }),
+  );
+  const showcaseShot = await win.webContents.capturePage();
+  fs.writeFileSync(SHOWCASE_PNG, showcaseShot.toPNG());
+
+  const keptShowcase = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const showcaseKept = await waitFor(
+    (s) => keptShowcase === true && !s.preview && s.kept === "showcase-solar-system.json",
+    15_000,
+  );
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const afterShowcaseReload = await waitFor(
+    (s) =>
+      s.shell &&
+      s.kept === "showcase-solar-system.json" &&
+      s.scenePresetAttr === "orbit" &&
+      s.sceneCanvasFrameAttr === "halo" &&
+      s.navPlaceAttr === "floating" &&
+      ["#0a0e1f", "#070b17"].includes((s.bgVar ?? "").toLowerCase()),
+    25_000,
+  );
+  check(
+    "the-showcase-keeps-and-survives-a-reload",
+    keptShowcase === true &&
+      showcaseKept?.kept === "showcase-solar-system.json" &&
+      afterShowcaseReload?.kept === "showcase-solar-system.json" &&
+      afterShowcaseReload.scenePresetAttr === "orbit" &&
+      afterShowcaseReload.sceneCanvasFrameAttr === "halo" &&
+      afterShowcaseReload.navPlaceAttr === "floating" &&
+      ["#0a0e1f", "#070b17"].includes((afterShowcaseReload.bgVar ?? "").toLowerCase()),
+    JSON.stringify({
+      kept: afterShowcaseReload?.kept,
+      preset: afterShowcaseReload?.scenePresetAttr,
+      canvas: afterShowcaseReload?.sceneCanvasFrameAttr,
+      nav: afterShowcaseReload?.navPlaceAttr,
+      bg: afterShowcaseReload?.bgVar,
+    }),
+  );
+
   // ── 12: the Phase 1 gate — a whole theme from outside, worn and kept ────
   // The first door client closed with its own section; the gate opens a fresh
   // one, which is also the companion's real shape: a call, not a session.
@@ -1841,6 +1981,20 @@ async function main() {
       return { json: null, isError: true };
     }
   };
+  const showcaseValidation = await gateCall("validate_theme", {
+    theme: showcaseOnDisk,
+  });
+  check(
+    "the-bundled-showcase-passes-the-companions-validator",
+    showcaseValidation.json?.ok === true &&
+      showcaseValidation.json?.theme?.scene?.background?.preset === "orbit",
+    JSON.stringify({
+      ok: showcaseValidation.json?.ok,
+      preset: showcaseValidation.json?.theme?.scene?.background?.preset,
+      error: showcaseValidation.json?.error?.message,
+    }),
+  );
+
   const outsideWritten = await gateCall("write_theme", { theme: OUTSIDE_THEME });
   const outside = await waitFor(
     (s) =>
@@ -1979,6 +2133,7 @@ async function main() {
       outsideTheme: path.relative(desktopRoot, OUTSIDE_PNG),
       scene: path.relative(desktopRoot, SCENE_PNG),
       frames: path.relative(desktopRoot, FRAMES_PNG),
+      showcase: path.relative(desktopRoot, SHOWCASE_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

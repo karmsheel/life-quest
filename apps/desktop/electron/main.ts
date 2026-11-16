@@ -29,6 +29,7 @@ import * as harness from "./harness/facade.js";
 import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted } from "./harness/pi-settings.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import { parseThemeFile } from "../shared/theme-file.ts";
+import { SHOWCASE_THEMES } from "../shared/showcase-themes.ts";
 import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
@@ -1558,22 +1559,6 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     }
   });
 
-  /** The kept theme's file name, in the app profile; the tools read it too. */
-  const themeStateFile = (): string => path.join(app.getPath("userData"), "theme-state.json");
-  const readThemeState = async (): Promise<{ keptFile: string | null }> => {
-    try {
-      const raw = JSON.parse(await fs.promises.readFile(themeStateFile(), "utf8"));
-      const kept = raw && typeof raw.keptFile === "string" ? raw.keptFile : null;
-      return { keptFile: kept && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(kept) ? kept : null };
-    } catch {
-      return { keptFile: null };
-    }
-  };
-  const writeThemeState = async (keptFile: string | null): Promise<void> => {
-    const next = { keptFile };
-    await fs.promises.writeFile(`${themeStateFile()}.tmp`, `${JSON.stringify(next, null, 2)}\n`);
-    await fs.promises.rename(`${themeStateFile()}.tmp`, themeStateFile());
-  };
   const safeThemeFile = (file: unknown): string | null =>
     typeof file === "string" && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(file) ? file : null;
 
@@ -1711,6 +1696,82 @@ function startThemeWatcher(win: BrowserWindow): void {
  * handlers are registered once behind this latch.
  */
 let ipcRegistered = false;
+
+/** The kept theme's file name, in the app profile; the tools read it too. */
+const themeStateFile = (): string => path.join(app.getPath("userData"), "theme-state.json");
+/**
+ * The file carries one extra, main-only fact: whether the bundled showcase
+ * theme has been seeded into this profile. It is remembered rather than
+ * re-checked, so an operator who deletes the showcase does not meet it again
+ * on the next launch — the seed is a first-run courtesy, not an entitlement.
+ */
+const readThemeStateFile = async (): Promise<{
+  keptFile: string | null;
+  showcaseSeeded: boolean;
+}> => {
+  try {
+    const raw = JSON.parse(await fs.promises.readFile(themeStateFile(), "utf8"));
+    const kept = raw && typeof raw.keptFile === "string" ? raw.keptFile : null;
+    return {
+      keptFile: kept && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(kept) ? kept : null,
+      showcaseSeeded: raw?.showcaseSeeded === true,
+    };
+  } catch {
+    return { keptFile: null, showcaseSeeded: false };
+  }
+};
+const readThemeState = async (): Promise<{ keptFile: string | null }> => {
+  const { keptFile } = await readThemeStateFile();
+  return { keptFile };
+};
+const writeThemeStateFile = async (state: {
+  keptFile: string | null;
+  showcaseSeeded: boolean;
+}): Promise<void> => {
+  const next = {
+    keptFile: state.keptFile,
+    ...(state.showcaseSeeded ? { showcaseSeeded: true } : {}),
+  };
+  await fs.promises.writeFile(`${themeStateFile()}.tmp`, `${JSON.stringify(next, null, 2)}\n`);
+  await fs.promises.rename(`${themeStateFile()}.tmp`, themeStateFile());
+};
+const writeThemeState = async (keptFile: string | null): Promise<void> => {
+  const previous = await readThemeStateFile();
+  await writeThemeStateFile({ keptFile, showcaseSeeded: previous.showcaseSeeded });
+};
+
+/**
+ * First run only: copy the bundled showcase theme into the profile's themes
+ * directory so the operator can try R3's whole surface without an agent.
+ *
+ * `wx` means an existing file is never overwritten: if the operator has
+ * already authored or edited a file of that name, it is theirs and stays.
+ * A failure here is not fatal — a missing showcase costs a nice-to-have, not
+ * the studio — but it is said out loud in the main log.
+ */
+const seedShowcaseThemes = async (): Promise<void> => {
+  const dir = path.join(app.getPath("userData"), "themes");
+  const state = await readThemeStateFile();
+  if (state.showcaseSeeded) return;
+  try {
+    await fs.promises.mkdir(dir, { recursive: true });
+    for (const theme of SHOWCASE_THEMES) {
+      const file = `${theme.name}.json`;
+      try {
+        await fs.promises.writeFile(
+          path.join(dir, file),
+          `${JSON.stringify(theme, null, 2)}\n`,
+          { flag: "wx" },
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
+    await writeThemeStateFile({ keptFile: state.keptFile, showcaseSeeded: true });
+  } catch (error) {
+    console.error("showcase seed failed:", error);
+  }
+};
 let windowReady: Promise<BrowserWindow> | null = null;
 
 /**
@@ -1729,6 +1790,9 @@ export async function bootForE2e(): Promise<BrowserWindow> {
   if (windowReady) return windowReady;
   windowReady = (async () => {
     await harness.loadHarnessSelection();
+    // Before the first window, so the theme list a fresh profile opens already
+    // holds the bundled showcase. It never wears it: data, not an act.
+    await seedShowcaseThemes();
     return createWindow();
   })();
   return windowReady;
@@ -1970,6 +2034,9 @@ app.whenReady().then(() => {
   // race the answer.
   windowReady = (async () => {
     await harness.loadHarnessSelection();
+    // Before the first window, so the theme list a fresh profile opens already
+    // holds the bundled showcase. It never wears it: data, not an act.
+    await seedShowcaseThemes();
     return createWindow();
   })();
   void windowReady;
