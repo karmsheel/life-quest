@@ -50,6 +50,7 @@ import {
   DOMAIN_PLACES,
   DOMAIN_VARIANTS,
   layerChrome,
+  layerComposition,
   layerScene,
   MOTIONS,
   parseThemeFile,
@@ -68,8 +69,10 @@ import {
   TYPE_SCALES,
   WING_PLACES,
   WING_VARIANTS,
+  type CompositionOverride,
   type ThemeChrome,
   type ThemeChromeOverride,
+  type ThemeComposition,
   type ThemeFile,
   type ThemeMaterial,
   type ThemeScene,
@@ -110,6 +113,13 @@ const CHROME_OVERRIDE_STORAGE_KEY = "lifequest-chrome-override";
  * sky, but Settings can quiet it without editing the file. Never a theme file.
  */
 const SCENE_OVERRIDE_STORAGE_KEY = "lifequest-scene-override";
+
+/**
+ * The operator's own composition pick, per window: wear the theme's widgets, or
+ * hide them. One axis on purpose — a composition is opt-out, never a drag-and-
+ * drop editor — and Reset hands it back to the theme like the other layers.
+ */
+const COMPOSITION_OVERRIDE_STORAGE_KEY = "lifequest-composition-override";
 
 const MATERIAL_ENUMS = {
   radius: RADII,
@@ -268,6 +278,32 @@ function readStoredSceneOverride(): ThemeSceneOverride {
   }
 }
 
+function readStoredCompositionOverride(): CompositionOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(COMPOSITION_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    return raw.enabled === false ? { enabled: false } : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCompositionOverride(override: CompositionOverride): void {
+  try {
+    if (override.enabled === false) {
+      localStorage.setItem(
+        COMPOSITION_OVERRIDE_STORAGE_KEY,
+        JSON.stringify({ enabled: false }),
+      );
+    } else {
+      localStorage.removeItem(COMPOSITION_OVERRIDE_STORAGE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function persistSceneOverride(override: ThemeSceneOverride): void {
   try {
     if (Object.keys(override).length === 0) {
@@ -331,6 +367,14 @@ interface ThemeContextValue {
   setSceneOverride: (patch: ThemeSceneOverride) => void;
   /** Drop the operator's scene pick and hand the backdrop back to the theme. */
   resetSceneOverride: () => void;
+  /** The composition the window is wearing (theme + operator pick); null = none. */
+  composition: ThemeComposition | null;
+  /** The operator's own composition pick: wear the theme's widgets, or hide them. */
+  compositionOverride: CompositionOverride;
+  /** Wear the theme's widgets or hide them — the one composition axis. */
+  setCompositionOverride: (override: CompositionOverride) => void;
+  /** Drop the operator's pick and hand composition back to the theme. */
+  resetCompositionOverride: () => void;
   /** A file the companion just wrote: worn, but not yet kept. */
   themePreview: { file: string; label: string } | null;
   /** Why the newest theme file was refused, if it was. */
@@ -356,6 +400,16 @@ interface ThemeContextValue {
    * and chrome. Returns the saved path, null when the operator cancelled.
    */
   exportCurrentTheme: () => Promise<{ path: string } | null>;
+  /** Read one theme file's raw JSON text — the Extensions editor's load. */
+  readThemeFile: (file: string) => Promise<string | null>;
+  /**
+   * Save an edited theme file. Main parses it with the same shared rules, so a
+   * refusal names the field before anything reaches disk, and a changed file
+   * previews through the same gate as a companion write.
+   */
+  writeThemeFile: (file: string, raw: string) => Promise<boolean>;
+  /** Stop wearing the kept file: the window returns to the shell's default look. */
+  clearKeptTheme: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -457,6 +511,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readStoredSceneOverride,
   );
   const sceneOverrideRef = useRef<ThemeSceneOverride>(sceneOverride);
+  const [composition, setComposition] = useState<ThemeComposition | null>(null);
+  const [compositionOverride, setCompositionOverrideState] =
+    useState<CompositionOverride>(readStoredCompositionOverride);
+  const compositionOverrideRef = useRef<CompositionOverride>(compositionOverride);
   const [themePreview, setThemePreview] = useState<{
     file: string;
     label: string;
@@ -510,6 +568,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const nextScene = layerScene(next?.scene, sceneOverrideRef.current);
       setScene(nextScene);
       applyScene(nextScene, document.documentElement);
+      // Composition rides the theme file exactly as scene does: previews wear
+      // it, Keep keeps it, Revert returns the kept theme's widgets, and the
+      // operator's one axis can hide it without touching the file.
+      setComposition(
+        layerComposition(next?.composition, compositionOverrideRef.current),
+      );
       if (next?.colors) {
         const base = resolveSkin(skinName);
         applySkin(
@@ -594,6 +658,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     sceneOverrideRef.current = {};
     setSceneOverrideState({});
     persistSceneOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * The operator's one composition axis: wear the theme's widgets, or hide
+   * them. Layered for every paint (previews included) and persisted per window,
+   * so trying a theme never silently keeps or drops the operator's pick.
+   */
+  const setCompositionOverride = useCallback(
+    (override: CompositionOverride) => {
+      const next: CompositionOverride =
+        override.enabled === false ? { enabled: false } : {};
+      compositionOverrideRef.current = next;
+      setCompositionOverrideState(next);
+      persistCompositionOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetCompositionOverride = useCallback(() => {
+    compositionOverrideRef.current = {};
+    setCompositionOverrideState({});
+    persistCompositionOverride({});
     paintTheme(paintedTheme.current);
   }, [paintTheme]);
 
@@ -778,6 +866,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // preview-disabled read) must not repaint the kept theme under it while
         // the preview bar is still counting down.
         if (previewRef.current) return;
+        // A preview-disabled read still parses every file. Never swallow the
+        // refusal it found: the file it just learned the mtime of will not look
+        // "changed" on the next watcher tick, so this is the only chance to say
+        // why a theme the operator wrote was not worn.
+        if (failure) setThemeError(failure);
         setThemeFile(kept?.theme ?? null);
         paintTheme(kept?.theme ?? null);
         return;
@@ -869,6 +962,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       material,
       scene,
       sceneOverride,
+      ...(worn?.composition ? { composition: worn.composition } : {}),
+      compositionOverride,
     };
     const answer = await window.lifequest?.themeExport?.(exported);
     if (!answer) return null;
@@ -877,12 +972,71 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return null;
     }
     return answer.value;
-  }, [chrome, material, scene, sceneOverride, skinName, themeFile]);
+  }, [
+    chrome,
+    compositionOverride,
+    material,
+    scene,
+    sceneOverride,
+    skinName,
+    themeFile,
+  ]);
+
+  /** Read one file for the Extensions editor. */
+  const readThemeFile = useCallback(async (file: string) => {
+    const answer = await window.lifequest?.themeRead?.(file);
+    if (!answer || !answer.ok) {
+      setThemeError(answer?.error ?? "could not read the theme file");
+      return null;
+    }
+    return answer.value;
+  }, []);
+
+  /**
+   * Save an edited file. The write is cleared from the mtime map before the
+   * read so the file that just changed proves as "changed" even when the
+   * operator saves twice inside one second.
+   */
+  const writeThemeFile = useCallback(
+    async (file: string, raw: string) => {
+      const answer = await window.lifequest?.themeWrite?.(file, raw);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not write the theme file");
+        return false;
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles();
+      return true;
+    },
+    [loadThemeFiles],
+  );
+
+  /** Hand the window back its default look — the Extensions page's off switch. */
+  const clearKeptTheme = useCallback(async () => {
+    await window.lifequest?.themeSetKept?.(null);
+    keptFileRef.current = null;
+    keptTheme.current = null;
+    setKeptFile(null);
+    if (previewRef.current) return;
+    setThemeFile(null);
+    paintTheme(null);
+  }, [paintTheme]);
+
+  // Hold the latest reader in a ref and subscribe once. `loadThemeFiles`
+  // changes identity whenever theme state changes; depending on it re-ran this
+  // effect, and each re-run did a *preview-disabled* read — which records file
+  // mtimes, so a write that landed between a state change and that read was
+  // silently consumed instead of previewed. The watcher must be a stable
+  // channel: writing a theme is the authoring loop's only input.
+  const loadThemeFilesRef = useRef(loadThemeFiles);
+  useEffect(() => {
+    loadThemeFilesRef.current = loadThemeFiles;
+  }, [loadThemeFiles]);
 
   useEffect(() => {
-    void loadThemeFiles({ preview: false });
+    void loadThemeFilesRef.current({ preview: false });
     const unsubscribe = window.lifequest?.onThemesChanged?.(() => {
-      void loadThemeFiles();
+      void loadThemeFilesRef.current();
     });
     return () => {
       unsubscribe?.();
@@ -891,7 +1045,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         themePreviewTimer.current = null;
       }
     };
-  }, [loadThemeFiles]);
+  }, []);
 
   useLayoutEffect(() => {
     applyThemePreference(preference);
@@ -1054,6 +1208,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       sceneOverride,
       setSceneOverride,
       resetSceneOverride,
+      composition,
+      compositionOverride,
+      setCompositionOverride,
+      resetCompositionOverride,
       themePreview,
       themeError,
       keepThemePreview,
@@ -1066,6 +1224,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       refreshThemeFiles,
       openThemesFolder,
       exportCurrentTheme,
+      readThemeFile,
+      writeThemeFile,
+      clearKeptTheme,
     }),
     [
       availableSkins,
@@ -1079,6 +1240,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resetChromeOverride,
       setChromeOverride,
       exportCurrentTheme,
+      readThemeFile,
+      writeThemeFile,
+      clearKeptTheme,
       keepThemeFile,
       keepThemePreview,
       keptFile,
@@ -1088,10 +1252,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       preference,
       resetMaterialOverride,
       resetSceneOverride,
+      resetCompositionOverride,
       setMaterialOverride,
       setSceneOverride,
+      setCompositionOverride,
       scene,
       sceneOverride,
+      composition,
+      compositionOverride,
       refreshThemeFiles,
       removeThemeFile,
       themeFiles,

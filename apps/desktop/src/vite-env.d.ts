@@ -1042,6 +1042,16 @@ type LifequestApi = {
     file: string | null,
   ) => Promise<Result<{ keptFile: string | null }>>;
   themeDelete: (file: string) => Promise<Result<{ deleted: boolean }>>;
+  /** Read one theme file's raw JSON text — the Extensions editor's load. */
+  themeRead: (file: string) => Promise<Result<string>>;
+  /**
+   * Write one theme file after main's own validation. The refusal names the
+   * field; only a valid file is written, and the renderer hears `theme:changed`.
+   */
+  themeWrite: (
+    file: string,
+    raw: string,
+  ) => Promise<Result<{ file: string }>>;
   themeOpenFolder: () => Promise<Result<boolean>>;
   themeExport: (theme: unknown) => Promise<Result<{ path: string } | null>>;
   /** Main saw the directory move; the renderer reads it again. */

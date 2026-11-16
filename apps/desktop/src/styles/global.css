@@ -7,6 +7,7 @@
 @import "./pages.css";
 @import "./projects.css";
 @import "./automations.css";
+@import "./extensions.css";
 @import "./vault-switcher.css";
 @import "./images.css";
 
@@ -13923,4 +13924,364 @@ button.chat-panel__activity-line:hover {
 :root[data-chrome-nav-place="right"] .shell.shell--chat-focus > .chat-panel {
   grid-column: 1;
   width: 100%;
+}
+
+/* —— Composition ————————————————————————————————————————————————————————
+   R4's widgets: a theme places a count or a bar on a named region, and the
+   shell draws it from tokens. No theme pixels here — the widget's whole input
+   is a label, a number, a denominator and a tone family, so the stylesheet is
+   the one place the look lives and a skin or material change repaints it for
+   free. The masthead/foot bands sit inside the page's own padding ladder so a
+   density change moves them with everything else; the rail bands follow the
+   rail's gap. */
+.composition-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.composition-slot--page-masthead {
+  padding: var(--density-pad-page-y) var(--density-pad-page-x) 0;
+}
+
+.composition-slot--page-footer {
+  padding: 0 var(--density-pad-page-x) var(--density-pad-page-bottom);
+}
+
+.composition-slot--rail-top {
+  padding-top: 0.15rem;
+}
+
+.composition-slot--rail-footer {
+  margin-top: auto;
+  padding-top: 0.15rem;
+}
+
+.composition-widget {
+  /* The tone is one custom property; every part of the widget reads it, so a
+     new tone is one line and never a second colour decision. */
+  --composition-tone: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: var(--foreground);
+}
+
+.composition-widget--accent {
+  --composition-tone: var(--accent);
+}
+
+.composition-widget--muted {
+  --composition-tone: var(--muted-foreground);
+}
+
+.composition-widget--success {
+  --composition-tone: var(--success);
+}
+
+.composition-widget--warning {
+  --composition-tone: var(--amber);
+}
+
+.composition-widget__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.composition-widget__value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.composition-widget__denominator {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.composition-widget--badge {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--composition-tone);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--meter {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 0.15rem 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--meter .composition-widget__value {
+  justify-self: end;
+}
+
+.composition-widget__track {
+  grid-column: 1 / -1;
+  height: 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.composition-widget__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--composition-tone);
+}
+
+/* The thin rail is an icon column: a widget keeps its number, drops its word,
+   so a long label can never decide the rail's width. */
+.shell--nav-collapsed .composition-slot--rail-top .composition-widget__label,
+.shell--nav-collapsed .composition-slot--rail-footer .composition-widget__label {
+  display: none;
+}
+
+/* ── R4.2: layouts ──────────────────────────────────────────────────────────
+   A composition's layout is theme data, but its a11y story is ours: stack
+   reads in order, grid is a real grid with a fixed column count, and polar is
+   a deterministic ring — top first, clockwise — of plain tabbable links. None
+   of them animate, so `prefers-reduced-motion` has nothing to stop. */
+.composition-slot--layout-grid {
+  display: grid;
+  gap: 0.5rem 0.6rem;
+}
+
+.composition-slot--layout-grid .composition-widget {
+  width: 100%;
+}
+
+.composition-slot--layout-polar {
+  position: relative;
+  min-height: 16rem;
+}
+
+/* The orbit is an overlay layer: it sits above the page's paint but takes no
+   pointer events itself, so the page underneath stays usable; only the ring's
+   own links are hit-testable. */
+.composition-slot--page-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.shell__main:has(> .composition-slot--page-orbit) {
+  position: relative;
+}
+
+.composition-slot--layout-polar .composition-widget {
+  --composition-radius: clamp(7rem, 26vmin, 15rem);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(var(--composition-angle))
+    translateY(calc(-1 * var(--composition-radius)))
+    rotate(calc(-1 * var(--composition-angle)));
+  pointer-events: auto;
+}
+
+.composition-slot--layout-polar.composition-slot--radius-tight .composition-widget {
+  --composition-radius: clamp(5rem, 18vmin, 10rem);
+}
+
+.composition-slot--layout-polar.composition-slot--radius-default .composition-widget {
+  --composition-radius: clamp(7rem, 26vmin, 15rem);
+}
+
+.composition-slot--layout-polar.composition-slot--radius-wide .composition-widget {
+  --composition-radius: clamp(9rem, 32vmin, 19rem);
+}
+
+.composition-quick-action {
+  --composition-tone: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: var(--foreground);
+}
+
+.composition-quick-action:hover {
+  border-color: color-mix(in srgb, var(--composition-tone) 55%, var(--border));
+}
+
+.composition-quick-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.composition-quick-action__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--composition-tone);
+}
+
+/* A ring drawn over a page must not sit on top of the operator's content at
+   phone width — the ring is the first thing to give way. */
+@media (max-width: 720px) {
+  .composition-slot--page-orbit {
+    display: none;
+  }
+}
+
+/* ── R4.3: the rest of the vocabulary ──────────────────────────────────────
+   Five more widgets, all drawn from tokens and from data the shell already
+   holds. None of them can be an image, a link or a piece of markup; their
+   whole visual range is type, spacing, one tone and the palette's own ink. */
+.composition-widget--avatar {
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-avatar__disc {
+  display: inline-grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--composition-tone) 18%, var(--card));
+  color: var(--composition-tone);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.composition-widget--list {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 7rem;
+  max-width: 13rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-list__items {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composition-list__item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--foreground);
+}
+
+.composition-list__item--empty {
+  color: var(--muted-foreground);
+}
+
+.composition-widget--clock {
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--clock .composition-widget__value {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.composition-widget--calendar {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-calendar__month {
+  margin-left: 0.35rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.composition-calendar__week {
+  display: grid;
+  grid-template-columns: repeat(7, 1.35rem);
+  gap: 0.1rem;
+}
+
+.composition-calendar__day {
+  display: grid;
+  place-items: center;
+  height: 1.35rem;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.composition-calendar__day--today {
+  background: color-mix(in srgb, var(--composition-tone) 16%, var(--card));
+  color: var(--composition-tone);
+  font-weight: 700;
+}
+
+.composition-widget--brief {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--composition-tone);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--brief .composition-widget__value {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.composition-brief__caption {
+  font-size: 0.65rem;
+  color: var(--muted-foreground);
 }

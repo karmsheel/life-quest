@@ -42,6 +42,14 @@ type Report = {
     showcase: string;
     r3Gate: string;
     focusFloating: string;
+    r4Validation: string;
+    composition: string;
+    compositionSettings: string;
+    compositionOrbit: string;
+    compositionGrid: string;
+    compositionVocabulary: string;
+    helios: string;
+    extensions: string;
   };
   theme: unknown;
   refused: unknown;
@@ -143,6 +151,14 @@ describe("theme files v2", () => {
         report.artifacts.showcase,
         report.artifacts.r3Gate,
         report.artifacts.focusFloating,
+        report.artifacts.r4Validation,
+        report.artifacts.composition,
+        report.artifacts.compositionSettings,
+        report.artifacts.compositionOrbit,
+        report.artifacts.compositionGrid,
+        report.artifacts.compositionVocabulary,
+        report.artifacts.helios,
+        report.artifacts.extensions,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

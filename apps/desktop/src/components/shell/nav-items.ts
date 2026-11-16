@@ -16,6 +16,7 @@ import {
   Goal,
   Image as ImageIcon,
   Map,
+  Puzzle,
   NotebookPen,
   Radio,
   ScrollText,
@@ -82,6 +83,18 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/automations",
     label: "Automations",
     icon: WandSparkles,
+    section: "governance",
+    pin: "bottom",
+  },
+  {
+    // Directly under Automations: the workshop where the data-only
+    // customisation files are selected, switched on or off, edited and created.
+    // It is governance like the shelf above it — the look of the app belongs to
+    // the operator, not to a wing.
+    id: "extensions",
+    href: "/extensions",
+    label: "Extensions",
+    icon: Puzzle,
     section: "governance",
     pin: "bottom",
   },

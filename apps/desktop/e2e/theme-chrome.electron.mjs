@@ -43,7 +43,12 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
-import { createVault } from "@lifequest/vault-core";
+import {
+  countWeeklyVaultFiles,
+  createDomain,
+  createVault,
+  vaultPaths,
+} from "@lifequest/vault-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.join(here, "..");
@@ -71,6 +76,26 @@ const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
 const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
 const R3_GATE_PNG = path.join(artifactsDir, "themes-v2-r3-gate.png");
 const FOCUS_FLOATING_PNG = path.join(artifactsDir, "themes-v2-focus-floating.png");
+const R4_VALIDATION_JSON = path.join(artifactsDir, "themes-v2-r4-validation.json");
+const COMPOSITION_PNG = path.join(artifactsDir, "themes-v2-composition.png");
+const COMPOSITION_SETTINGS_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-settings.png",
+);
+const COMPOSITION_ORBIT_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-orbit.png",
+);
+const COMPOSITION_GRID_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-grid.png",
+);
+const COMPOSITION_VOCABULARY_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-vocabulary.png",
+);
+const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
+const EXTENSIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
 
 const failures = [];
 const checks = [];
@@ -275,6 +300,157 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).position : null;
     })(),
     stripPainted: Boolean(document.querySelector(".window-titlebar")),
+    compositionMasthead: (() => {
+      const slot = document.querySelector('[data-composition-region="page.masthead"]');
+      if (!slot) return null;
+      return {
+        widgets: slot.querySelectorAll('[data-testid="composition-widget"]').length,
+        labels: [...slot.querySelectorAll(".composition-widget__label")].map((el) => (el.textContent ?? "").trim()),
+        values: [...slot.querySelectorAll(".composition-widget__value")].map((el) => (el.textContent ?? "").trim()),
+      };
+    })(),
+    compositionRailFooter: (() => {
+      const slot = document.querySelector('[data-composition-region="rail.footer"]');
+      if (!slot) return null;
+      return slot.querySelectorAll('[data-testid="composition-widget"]').length;
+    })(),
+    compositionMeterNow: (() => {
+      const meter = document.querySelector('[data-widget-type="meter"]');
+      return meter ? meter.getAttribute("aria-valuenow") : null;
+    })(),
+    compositionMeterMax: (() => {
+      const meter = document.querySelector('[data-widget-type="meter"]');
+      return meter ? meter.getAttribute("aria-valuemax") : null;
+    })(),
+    compositionSettings: Boolean(document.querySelector('[data-testid="theme-composition"]')),
+    compositionYours: Boolean(document.querySelector('[data-testid="composition-yours"]')),
+    compositionOrbit: (() => {
+      const slot = document.querySelector('[data-composition-region="page.orbit"]');
+      if (!slot) return null;
+      const box = slot.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      return {
+        tag: slot.tagName,
+        layout: slot.getAttribute("data-composition-layout"),
+        ariaLabel: slot.getAttribute("aria-label"),
+        links: [...slot.querySelectorAll('[data-testid="composition-quick-action"]')].map((el) => {
+          const r = el.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          return {
+            route: el.getAttribute("data-widget-route"),
+            href: el.getAttribute("href"),
+            label: (el.textContent ?? "").trim(),
+            x: Math.round(x),
+            y: Math.round(y),
+            angle: Math.round((Math.atan2(y - cy, x - cx) * 180) / Math.PI),
+          };
+        }),
+      };
+    })(),
+    compositionGrid: (() => {
+      const slot = document.querySelector('[data-composition-region="page.masthead"]');
+      if (!slot || !slot.classList.contains("composition-slot--layout-grid")) {
+        return null;
+      }
+      const widgets = [...slot.querySelectorAll('[data-testid="composition-widget"]')];
+      if (widgets.length === 0) return null;
+      const columns =
+        getComputedStyle(slot).gridTemplateColumns.trim().split(/\\s+/).length;
+      return {
+        layout: slot.getAttribute("data-composition-layout"),
+        columns,
+        boxes: widgets.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: Math.round(r.left), y: Math.round(r.top) };
+        }),
+      };
+    })(),
+    compositionAnimations: (() => {
+      const el = document.querySelector(
+        '.composition-slot--page-orbit .composition-widget',
+      );
+      if (!el) return null;
+      const style = getComputedStyle(el);
+      return {
+        animationName: style.animationName,
+        animationDuration: style.animationDuration,
+        transitionDuration: style.transitionDuration,
+      };
+    })(),
+    compositionVocabulary: (() => {
+      const slots = [...document.querySelectorAll("[data-composition-region]")];
+      if (slots.length === 0) return null;
+      const widgets = slots.flatMap((slot) => [
+        ...slot.querySelectorAll(
+          '[data-testid="composition-widget"], [data-testid="composition-quick-action"]',
+        ),
+      ]);
+      if (widgets.length === 0) return null;
+      const forbiddenTags = ["img", "iframe", "script", "video", "object", "embed", "button", "form", "input"];
+      const forbidden = Object.fromEntries(
+        forbiddenTags.map((tag) => [
+          tag,
+          document.querySelectorAll("[data-composition-region] " + tag).length,
+        ]),
+      );
+      const anchors = [...document.querySelectorAll("[data-composition-region] a")].map(
+        (anchor) => anchor.getAttribute("href"),
+      );
+      const avatar = document.querySelector('[data-widget-type="avatar"]');
+      const list = document.querySelector('[data-widget-type="list"]');
+      const clock = document.querySelector('[data-widget-type="clock"]');
+      const calendar = document.querySelector('[data-widget-type="calendar"]');
+      const brief = document.querySelector('[data-widget-type="brief"]');
+      return {
+        types: [...new Set(widgets.map((widget) => widget.getAttribute("data-widget-type")))].sort(),
+        nodes: slots.reduce((total, slot) => total + slot.querySelectorAll("*").length, 0),
+        forbidden,
+        anchors,
+        externalAnchors: anchors.filter((href) => !href || !href.startsWith("#/")),
+        urlBackedWidgets: widgets.filter((widget) =>
+          getComputedStyle(widget).backgroundImage.includes("url("),
+        ).length,
+        avatar: avatar
+          ? {
+              initials: (avatar.querySelector(".composition-avatar__disc")?.textContent ?? "").trim(),
+              aria: avatar.getAttribute("aria-label"),
+            }
+          : null,
+        list: list
+          ? {
+              items: [...list.querySelectorAll("li")].map((li) => (li.textContent ?? "").trim()),
+              aria: list.querySelector("ul")?.getAttribute("aria-label") ?? null,
+            }
+          : null,
+        clock: clock
+          ? {
+              text: (clock.textContent ?? "").trim(),
+              aria: clock.getAttribute("aria-label"),
+              dateTime: clock.getAttribute("dateTime"),
+              formatted: (clock.querySelector(".composition-widget__value")?.textContent ?? "").trim(),
+            }
+          : null,
+        calendar: calendar
+          ? {
+              days: [...calendar.querySelectorAll(".composition-calendar__day")].map((day) =>
+                (day.textContent ?? "").trim(),
+              ),
+              today: calendar.querySelectorAll('[aria-current="date"]').length,
+              aria: calendar.getAttribute("aria-label"),
+            }
+          : null,
+        brief: brief
+          ? {
+              value: (brief.querySelector(".composition-widget__value")?.textContent ?? "").trim(),
+              caption:
+                (brief.querySelector(".composition-brief__caption")?.textContent ?? "").trim(),
+            }
+          : null,
+      };
+    })(),
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     chatFocus: Boolean(document.querySelector(".shell--chat-focus")),
     pageVisible: (() => {
       const page = document.querySelector(".shell__content");
@@ -330,6 +506,13 @@ const SAMPLE = `(async () => {
       const rail = document.querySelector(".nav-rail");
       return rail ? Math.round(rail.getBoundingClientRect().width) : null;
     })(),
+    extensionsPage: Boolean(document.querySelector('[data-testid="extensions-page"]')),
+    extensionsRows: document.querySelectorAll(
+      '[data-testid="extensions-page"] li[data-testid^="extension-"]',
+    ).length,
+    extensionsCountText:
+      document.querySelector('[data-testid="extensions-count"]')?.textContent?.trim() ?? null,
+    extensionsActive: Boolean(document.querySelector('[data-testid="extension-active"]')),
   };
 })()`;
 
@@ -446,6 +629,25 @@ async function main() {
     const created = await createVault(vaultDir, "Theme Chrome");
     if (!created.ok) throw new Error(`createVault: ${created.error}`);
     vaultId = created.value.lifequest.id;
+    // R4.1 reads two closed count bindings from the snapshot; seed them with
+    // numbers a badge can be wrong about (two domains, two weekly files), so
+    // the gate is not satisfied by an accidental zero.
+    for (const name of ["Home", "Work"]) {
+      const domain = await createDomain(vaultDir, { name });
+      if (!domain.ok) throw new Error(`createDomain: ${domain.error}`);
+    }
+    const weeklyDir = vaultPaths(vaultDir).reviewsCadenceDir("weekly");
+    fs.mkdirSync(weeklyDir, { recursive: true });
+    for (const week of ["2026-W44", "2026-W45"]) {
+      fs.writeFileSync(
+        path.join(weeklyDir, `${week}.md`),
+        `# Weekly review ${week}\n`,
+      );
+    }
+    const seededWeekly = await countWeeklyVaultFiles(vaultDir);
+    if (seededWeekly !== 2) {
+      throw new Error(`weekly seed: expected 2 files, got ${seededWeekly}`);
+    }
   }
 
   fs.writeFileSync(
@@ -2440,6 +2642,326 @@ async function main() {
     }),
   );
 
+  // ── 12b: R4.0 — the composition contract is the whole gate ─────────────
+  // No renderer yet: this slice exists so a companion can author a composition
+  // and be told exactly which field is wrong, before anything is drawn. The
+  // closed sets are asserted from the validator's side, so the vocabulary the
+  // companion sees and the parser cannot drift apart.
+  const R4_WIDGETS = [
+    {
+      type: "badge",
+      region: "page.masthead",
+      data: "goals.count",
+      label: "Goals",
+      tone: "accent",
+    },
+    {
+      type: "meter",
+      region: "rail.footer",
+      data: "weekly.files",
+      label: "This week",
+      max: 7,
+    },
+  ];
+  const R4_THEME = {
+    name: "r4-contract",
+    label: "R4 contract",
+    composition: { layout: "stack", widgets: R4_WIDGETS },
+  };
+  const r4Valid = await gateCall("validate_theme", { theme: R4_THEME });
+  const r4Invalid = async (composition) =>
+    gateCall("validate_theme", {
+      theme: { ...R4_THEME, composition },
+    });
+  const r4BadType = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], type: "gauge" }],
+  });
+  const r4BadRegion = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], region: "sidebar.middle" }],
+  });
+  const r4BadData = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], data: "vault.secrets" }],
+  });
+  const r4BadLayout = await r4Invalid({
+    layout: "radial",
+    widgets: R4_WIDGETS,
+  });
+  const r4MeterNoMax = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[1], max: undefined }],
+  });
+  const r4TooMany = await r4Invalid({
+    layout: "stack",
+    widgets: Array.from({ length: 9 }, () => ({ ...R4_WIDGETS[0] })),
+  });
+  const r4BadColumnsOnStack = await r4Invalid({
+    layout: "stack",
+    columns: 2,
+    widgets: R4_WIDGETS,
+  });
+  const r4BadColumns = await r4Invalid({
+    layout: "grid",
+    columns: 4,
+    widgets: R4_WIDGETS,
+  });
+  const r4BadRadiusOnGrid = await r4Invalid({
+    layout: "grid",
+    radius: "wide",
+    widgets: R4_WIDGETS,
+  });
+  const r4BadRoute = await r4Invalid({
+    layout: "polar",
+    widgets: [
+      {
+        type: "quickAction",
+        region: "page.orbit",
+        route: "/etc/passwd",
+        label: "Pwn",
+      },
+    ],
+  });
+  const r4OrbitWithoutPolar = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      {
+        type: "quickAction",
+        region: "page.orbit",
+        route: "home",
+        label: "Home",
+      },
+    ],
+  });
+  const r4QuickActionValid = await gateCall("validate_theme", {
+    theme: {
+      ...R4_THEME,
+      composition: {
+        layout: "polar",
+        radius: "default",
+        widgets: [
+          {
+            type: "quickAction",
+            region: "page.orbit",
+            route: "home",
+            label: "Home",
+            tone: "accent",
+          },
+        ],
+      },
+    },
+  });
+  const R4_VOCABULARY = [
+    { type: "avatar", region: "page.masthead", data: "vault.name", label: "Operator" },
+    { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 3 },
+    { type: "clock", region: "page.masthead", label: "Clock", format: "24h" },
+    { type: "calendar", region: "page.footer", label: "Week" },
+    { type: "brief", region: "page.footer", data: "weekly.files", label: "Reviews", caption: "Files in the vault" },
+    { type: "badge", region: "page.footer", data: "goals.count", label: "Goals" },
+  ];
+  const r4VocabularyValid = await gateCall("validate_theme", {
+    theme: {
+      ...R4_THEME,
+      composition: { layout: "stack", widgets: R4_VOCABULARY },
+    },
+  });
+  const r4AvatarBadData = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "avatar", region: "page.masthead", data: "goals.count", label: "Me" },
+    ],
+  });
+  const r4ListBadData = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "list", region: "page.masthead", data: "vault.name", label: "Areas" },
+    ],
+  });
+  const r4ListLimit = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 9 },
+    ],
+  });
+  const r4ClockFormat = await r4Invalid({
+    layout: "stack",
+    widgets: [{ type: "clock", region: "page.masthead", label: "Clock", format: "moon" }],
+  });
+  const r4BriefCaption = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      {
+        type: "brief",
+        region: "page.masthead",
+        data: "goals.count",
+        label: "Goals",
+        caption: "x".repeat(49),
+      },
+    ],
+  });
+  const r4Error = (result) =>
+    String(result.json?.error?.message ?? result.json?.error ?? "");
+
+  check(
+    "r4-valid-composition-parses-back-field-for-field",
+    r4Valid.json?.ok === true &&
+      r4Valid.json?.theme?.composition?.layout === "stack" &&
+      r4Valid.json?.theme?.composition?.widgets?.length === 2 &&
+      r4Valid.json.theme.composition.widgets[0].type === "badge" &&
+      r4Valid.json.theme.composition.widgets[0].region === "page.masthead" &&
+      r4Valid.json.theme.composition.widgets[0].data === "goals.count" &&
+      r4Valid.json.theme.composition.widgets[0].label === "Goals" &&
+      r4Valid.json.theme.composition.widgets[0].tone === "accent" &&
+      r4Valid.json.theme.composition.widgets[1].type === "meter" &&
+      r4Valid.json.theme.composition.widgets[1].region === "rail.footer" &&
+      r4Valid.json.theme.composition.widgets[1].max === 7,
+    JSON.stringify(r4Valid.json),
+  );
+  check(
+    "r4-unknown-widget-type-is-refused-with-its-field",
+    r4Error(r4BadType).includes("composition.widgets[0].type must be one of"),
+    r4Error(r4BadType),
+  );
+  check(
+    "r4-unknown-region-is-refused-with-its-field",
+    r4Error(r4BadRegion).includes("composition.widgets[0].region must be one of"),
+    r4Error(r4BadRegion),
+  );
+  check(
+    "r4-unknown-data-source-is-refused-with-its-field",
+    r4Error(r4BadData).includes("composition.widgets[0].data must be one of"),
+    r4Error(r4BadData),
+  );
+  check(
+    "r4-undrawable-layout-is-refused",
+    r4Error(r4BadLayout).includes("composition.layout must be one of stack"),
+    r4Error(r4BadLayout),
+  );
+  check(
+    "r4-meter-without-a-denominator-is-refused",
+    r4Error(r4MeterNoMax).includes(
+      "composition.widgets[0].max must be an integer from 1 to 1000",
+    ),
+    r4Error(r4MeterNoMax),
+  );
+  check(
+    "r4-a-wall-of-widgets-is-refused",
+    r4Error(r4TooMany).includes("composition.widgets must hold 1–8 widgets"),
+    r4Error(r4TooMany),
+  );
+  check(
+    "r4-a-quick-action-parses-with-its-route",
+    r4QuickActionValid.json?.ok === true &&
+      r4QuickActionValid.json.theme.composition.layout === "polar" &&
+      r4QuickActionValid.json.theme.composition.radius === "default" &&
+      r4QuickActionValid.json.theme.composition.widgets[0].type ===
+        "quickAction" &&
+      r4QuickActionValid.json.theme.composition.widgets[0].route === "home",
+    JSON.stringify(r4QuickActionValid.json),
+  );
+  check(
+    "r4-columns-are-only-for-the-grid-layout",
+    r4Error(r4BadColumnsOnStack).includes(
+      "composition.columns is only for the grid layout",
+    ),
+    r4Error(r4BadColumnsOnStack),
+  );
+  check(
+    "r4-grid-columns-are-closed",
+    r4Error(r4BadColumns).includes("composition.columns must be 2 or 3"),
+    r4Error(r4BadColumns),
+  );
+  check(
+    "r4-radius-is-only-for-the-polar-layout",
+    r4Error(r4BadRadiusOnGrid).includes(
+      "composition.radius is only for the polar layout",
+    ),
+    r4Error(r4BadRadiusOnGrid),
+  );
+  check(
+    "r4-a-quick-action-route-is-closed",
+    r4Error(r4BadRoute).includes(
+      "composition.widgets[0].route must be one of",
+    ),
+    r4Error(r4BadRoute),
+  );
+  check(
+    "r4-the-orbit-region-requires-the-polar-layout",
+    r4Error(r4OrbitWithoutPolar).includes(
+      "composition.widgets[0].region page.orbit requires the polar layout",
+    ),
+    r4Error(r4OrbitWithoutPolar),
+  );
+  check(
+    "r4-the-bound-widget-vocabulary-parses-field-for-field",
+    r4VocabularyValid.json?.ok === true &&
+      r4VocabularyValid.json.theme.composition.widgets.length ===
+        R4_VOCABULARY.length &&
+      r4VocabularyValid.json.theme.composition.widgets.every(
+        (widget, index) => widget.type === R4_VOCABULARY[index].type,
+      ) &&
+      r4VocabularyValid.json.theme.composition.widgets[1].limit === 3 &&
+      r4VocabularyValid.json.theme.composition.widgets[2].format === "24h" &&
+      r4VocabularyValid.json.theme.composition.widgets[4].caption ===
+        "Files in the vault",
+    JSON.stringify(r4VocabularyValid.json),
+  );
+  check(
+    "r4-avatar-binds-only-the-vault-name",
+    r4Error(r4AvatarBadData).includes(
+      "composition.widgets[0].data must be one of vault.name",
+    ),
+    r4Error(r4AvatarBadData),
+  );
+  check(
+    "r4-list-binds-only-names",
+    r4Error(r4ListBadData).includes(
+      "composition.widgets[0].data must be one of domains.names, goals.titles",
+    ),
+    r4Error(r4ListBadData),
+  );
+  check(
+    "r4-list-limit-is-bounded",
+    r4Error(r4ListLimit).includes(
+      "composition.widgets[0].limit must be an integer from 1 to 5",
+    ),
+    r4Error(r4ListLimit),
+  );
+  check(
+    "r4-clock-format-is-closed",
+    r4Error(r4ClockFormat).includes(
+      "composition.widgets[0].format must be one of 24h, 12h",
+    ),
+    r4Error(r4ClockFormat),
+  );
+  check(
+    "r4-brief-caption-is-bounded",
+    r4Error(r4BriefCaption).includes(
+      "composition.widgets[0].caption must be a string of at most 48 chars",
+    ),
+    r4Error(r4BriefCaption),
+  );
+  fs.writeFileSync(
+    R4_VALIDATION_JSON,
+    `${JSON.stringify(
+      {
+        checkedAt: new Date().toISOString(),
+        valid: r4Valid.json,
+        refused: {
+          unknownType: r4Error(r4BadType),
+          unknownRegion: r4Error(r4BadRegion),
+          unknownData: r4Error(r4BadData),
+          unknownLayout: r4Error(r4BadLayout),
+          meterWithoutMax: r4Error(r4MeterNoMax),
+          sevenWidgets: r4Error(r4TooMany),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
   const outsideWritten = await gateCall("write_theme", { theme: OUTSIDE_THEME });
   const outside = await waitFor(
     (s) =>
@@ -2558,6 +3080,970 @@ async function main() {
   const outsideShot = await win.webContents.capturePage();
   fs.writeFileSync(OUTSIDE_PNG, outsideShot.toPNG());
 
+  // ── 12c: R4.1 — the walking skeleton, worn and taken back ───────────────
+  // R4.0 proved the validator; this slice proves the drawing. A composition
+  // rides the theme file, so it enters the same ten-second preview as any other
+  // theme: the page masthead and the rail foot wear the widgets, the operator
+  // hides and restores them from Settings, Keep makes them durable, a newer
+  // preview replaces them and Revert hands them back.
+  const COMPOSITION_THEME = {
+    name: "composition-lab",
+    label: "Composition Lab",
+    description:
+      "R4.1 walking skeleton — a badge and a meter in the page masthead, a count on the rail's foot.",
+    composition: {
+      layout: "stack",
+      widgets: [
+        {
+          type: "badge",
+          region: "page.masthead",
+          data: "weekly.files",
+          label: "Weekly",
+          tone: "accent",
+        },
+        {
+          type: "meter",
+          region: "page.masthead",
+          data: "weekly.files",
+          label: "This week",
+          max: 5,
+          tone: "success",
+        },
+        {
+          type: "badge",
+          region: "rail.footer",
+          data: "decisions.count",
+          label: "Decisions",
+          tone: "muted",
+        },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-lab.json"),
+    `${JSON.stringify(COMPOSITION_THEME, null, 2)}\n`,
+  );
+  const compositionWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-lab.json") &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1 &&
+      s.settingsEntry &&
+      s.stripPainted,
+    25_000,
+  );
+  check(
+    "a-theme-composition-paints-its-widgets",
+    compositionWorn?.preview === true &&
+      (compositionWorn.previewText ?? "").includes("composition-lab.json") &&
+      compositionWorn.compositionMasthead?.widgets === 2 &&
+      compositionWorn.compositionMasthead.labels[0] === "Weekly" &&
+      compositionWorn.compositionMasthead.labels[1] === "This week" &&
+      compositionWorn.compositionMasthead.values[0] === "2" &&
+      compositionWorn.compositionMasthead.values[1] === "2/5" &&
+      compositionWorn.compositionMeterNow === "2" &&
+      compositionWorn.compositionMeterMax === "5" &&
+      compositionWorn.compositionRailFooter === 1 &&
+      compositionWorn.settingsEntry === true &&
+      compositionWorn.stripPainted === true,
+    JSON.stringify({
+      preview: compositionWorn?.preview,
+      previewText: (compositionWorn?.previewText ?? "").slice(0, 120),
+      masthead: compositionWorn?.compositionMasthead,
+      rail: compositionWorn?.compositionRailFooter,
+      meter: [compositionWorn?.compositionMeterNow, compositionWorn?.compositionMeterMax],
+      settings: compositionWorn?.settingsEntry,
+      strip: compositionWorn?.stripPainted,
+    }),
+  );
+
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionMasthead?.widgets === 2, 15_000);
+  await sleep(300);
+  const compositionShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_PNG, compositionShot.toPNG());
+
+  // Keep makes the widgets durable before the longer operator walk below, so
+  // the ten-second countdown cannot decide the rest of the section.
+    const keptComposition = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const compositionKept = await waitFor(
+    (s) =>
+      keptComposition === true &&
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2,
+    15_000,
+  );
+
+  // The operator's one axis: hide the widgets, then hand them back with Reset.
+  const openedCompositionSettings = await evaluate(`(() => {
+    const trigger = document.querySelector(".settings-menu__trigger");
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  let compositionPanel = null;
+  for (let i = 0; i < 100; i += 1) {
+    compositionPanel = await evaluate(`(() => {
+      const panel = document.querySelector('[data-testid="theme-composition"]');
+      if (!panel) return null;
+      return { text: panel.textContent.slice(0, 220) };
+    })()`);
+    if (compositionPanel) break;
+    await evaluate(`(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`);
+    await sleep(150);
+  }
+  const compositionSettingsShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_SETTINGS_PNG, compositionSettingsShot.toPNG());
+
+  const hidComposition = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const compositionHidden = await waitFor(
+    (s) =>
+      hidComposition === true &&
+      s.compositionMasthead === null &&
+      s.compositionRailFooter === null &&
+      s.compositionYours === true,
+    15_000,
+  );
+  const resetComposition = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-reset"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const compositionRestored = await waitFor(
+    (s) =>
+      resetComposition === true &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1 &&
+      s.compositionYours === false,
+    15_000,
+  );
+  check(
+    "operator-hides-and-resets-a-theme-composition",
+    openedCompositionSettings === true &&
+      compositionPanel !== null &&
+      compositionHidden?.compositionMasthead === null &&
+      compositionHidden.compositionYours === true &&
+      compositionRestored?.compositionMasthead?.widgets === 2 &&
+      compositionRestored.compositionYours === false,
+    JSON.stringify({
+      panel: compositionPanel !== null,
+      hidden: compositionHidden?.compositionMasthead,
+      yours: compositionHidden?.compositionYours,
+      restored: compositionRestored?.compositionMasthead,
+    }),
+  );
+  // Leave Settings the way the operator does: pick a page in the rail. The
+  // sheet is a route, so the trigger only ever takes you *into* it.
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionMasthead?.widgets === 2, 10_000);
+  await sleep(200);
+
+  fs.writeFileSync(
+    path.join(themesDir, "composition-quiet.json"),
+    `${JSON.stringify(
+      {
+        name: "composition-quiet",
+        label: "Composition Quiet",
+        composition: {
+          layout: "stack",
+          widgets: [
+            {
+              type: "badge",
+              region: "rail.footer",
+              data: "agents.count",
+              label: "Agents",
+              tone: "muted",
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const quietPreview = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-quiet.json") &&
+      s.compositionMasthead === null &&
+      s.compositionRailFooter === 1,
+    20_000,
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const compositionBack = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1,
+    15_000,
+  );
+  check(
+    "a-kept-composition-survives-preview-and-revert",
+    compositionKept?.kept === "composition-lab.json" &&
+      compositionKept.compositionMasthead?.widgets === 2 &&
+      quietPreview?.compositionMasthead === null &&
+      quietPreview.compositionRailFooter === 1 &&
+      compositionBack?.kept === "composition-lab.json" &&
+      compositionBack.compositionMasthead?.widgets === 2,
+    JSON.stringify({
+      kept: compositionKept?.kept,
+      quiet: quietPreview?.compositionMasthead,
+      back: compositionBack?.compositionMasthead,
+    }),
+  );
+
+  // ── 12d: R4.2 — grid and polar, drawn and reached by keyboard ────────────
+  // The layout is theme data; everything that makes it usable is ours. Polar
+  // places its widgets on a deterministic ring (top first, clockwise) and each
+  // is a plain link in DOM order, so the keyboard reaches the whole ring with
+  // Tab and a screen reader hears the nav by name. Reduced motion leaves the
+  // ring still because nothing here animates. Grid is a real CSS grid whose
+  // column count the theme names.
+  const ORBIT_THEME = {
+    name: "composition-orbit",
+    label: "Composition Orbit",
+    composition: {
+      layout: "polar",
+      radius: "default",
+      widgets: [
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "home",
+          label: "Home",
+          tone: "accent",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "goals",
+          label: "Goals",
+          tone: "accent",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "projects",
+          label: "Projects",
+          tone: "muted",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "notes",
+          label: "Notes",
+          tone: "muted",
+        },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-orbit.json"),
+    `${JSON.stringify(ORBIT_THEME, null, 2)}\n`,
+  );
+  const orbitWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-orbit.json") &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionOrbit.layout === "polar",
+    25_000,
+  );
+  const ringExpectedAngles = [-90, 0, 90, 180];
+  const ringAnglesOk = (orbitWorn?.compositionOrbit?.links ?? []).every(
+    (link, index) =>
+      Math.abs(link.angle - ringExpectedAngles[index]) <= 40 ||
+      Math.abs(link.angle - ringExpectedAngles[index]) >= 320,
+  );
+  check(
+    "a-polar-composition-draws-a-deterministic-keyboard-ring",
+    orbitWorn?.compositionOrbit?.tag === "NAV" &&
+      orbitWorn.compositionOrbit.ariaLabel === "Quick actions" &&
+      orbitWorn.compositionOrbit.links.length === 4 &&
+      orbitWorn.compositionOrbit.links.map((l) => l.route).join(",") ===
+        "home,goals,projects,notes" &&
+      orbitWorn.compositionOrbit.links.map((l) => l.href).join(",") ===
+        "#/home,#/goals,#/projects,#/notes" &&
+      orbitWorn.compositionOrbit.links.every(
+        (l) => l.x > 0 && l.x < 1280 && l.y > 0 && l.y < 800,
+      ) &&
+      new Set(orbitWorn.compositionOrbit.links.map((l) => l.x)).size >= 2 &&
+      new Set(orbitWorn.compositionOrbit.links.map((l) => l.y)).size >= 2 &&
+      ringAnglesOk,
+    JSON.stringify(orbitWorn?.compositionOrbit),
+  );
+
+  // Keyboard: focus the first action, then Tab three times. If the ring is
+  // reachable, the active element stays inside it and visits every route in
+  // the order the ring draws them.
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor(
+    (s) => s.compositionOrbit?.links?.length === 4 && s.preview === true,
+    10_000,
+  );
+  await sleep(250);
+  win.webContents.focus();
+  const focusFirstAction = await evaluate(`(() => {
+    const link = document.querySelector('[data-testid="composition-quick-action"]');
+    if (!link) return { found: false };
+    link.focus({ preventScroll: true });
+    return {
+      found: true,
+      same: document.activeElement === link,
+      activeTag: document.activeElement ? document.activeElement.tagName : null,
+      activeRoute: document.activeElement
+        ? document.activeElement.getAttribute("data-widget-route")
+        : null,
+      hasFocus: document.hasFocus(),
+      tabIndex: link.tabIndex,
+    };
+  })()`);
+  const tabbedRoutes = [];
+  for (let step = 0; step < 3; step += 1) {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    await sleep(150);
+    const route = await evaluate(
+      `(() => { const el = document.activeElement; return el ? el.getAttribute("data-widget-route") : null; })()`,
+    );
+    tabbedRoutes.push(route);
+  }
+  check(
+    "the-orbital-ring-is-keyboard-complete",
+    focusFirstAction?.same === true &&
+      tabbedRoutes.join(",") === "goals,projects,notes",
+    JSON.stringify({ focusFirstAction, tabbedRoutes }),
+  );
+
+  // Reduced motion: the ring has no animation to stop, and the app honours the
+  // preference the moment the OS/frame says it is on.
+  let reducedAttached = false;
+  try {
+    win.webContents.debugger.attach("1.3");
+    reducedAttached = true;
+    await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+  } catch (error) {
+    console.error(`reduced-motion emulation failed: ${error.message}`);
+  }
+  const reducedSample = await waitFor((s) => s.reducedMotion === true, 8_000);
+  const stillAnimations = reducedSample?.compositionAnimations ?? null;
+  if (reducedAttached) {
+    try {
+      await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+        features: [],
+      });
+      win.webContents.debugger.detach();
+    } catch (error) {
+      console.error(`reduced-motion detach failed: ${error.message}`);
+    }
+  }
+  check(
+    "the-ring-is-still-under-reduced-motion",
+    reducedSample?.reducedMotion === true &&
+      stillAnimations?.animationName === "none" &&
+      stillAnimations?.animationDuration === "0s",
+    JSON.stringify({ reducedMotion: reducedSample?.reducedMotion, stillAnimations }),
+  );
+
+  await evaluate(
+    `(() => { if (document.activeElement) document.activeElement.blur(); location.hash = "#/home"; return true; })()`,
+  );
+  await waitFor(
+    (s) => s.compositionOrbit?.links?.length === 4 && s.preview === true,
+    10_000,
+  );
+  await sleep(250);
+  const orbitShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_ORBIT_PNG, orbitShot.toPNG());
+
+  // Grid: the theme names the column count; the shell draws a real grid.
+  const GRID_THEME = {
+    name: "composition-grid",
+    label: "Composition Grid",
+    composition: {
+      layout: "grid",
+      columns: 2,
+      widgets: [
+        { type: "badge", region: "page.masthead", data: "goals.count", label: "Goals", tone: "accent" },
+        { type: "badge", region: "page.masthead", data: "decisions.count", label: "Decisions", tone: "muted" },
+        { type: "badge", region: "page.masthead", data: "weekly.files", label: "Weekly", tone: "success" },
+        { type: "badge", region: "page.masthead", data: "agents.count", label: "Agents", tone: "warning" },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-grid.json"),
+    `${JSON.stringify(GRID_THEME, null, 2)}\n`,
+  );
+  const gridWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-grid.json") &&
+      s.compositionGrid?.boxes?.length === 4,
+    20_000,
+  );
+  const gridBoxes = gridWorn?.compositionGrid?.boxes ?? [];
+  check(
+    "a-grid-composition-draws-the-columns-the-theme-names",
+    gridWorn?.compositionGrid?.layout === "grid" &&
+      gridWorn?.compositionGrid?.columns === 2 &&
+      gridBoxes.length === 4 &&
+      new Set(gridBoxes.map((b) => b.x)).size === 2 &&
+      new Set(gridBoxes.map((b) => b.y)).size === 2,
+    JSON.stringify(gridWorn?.compositionGrid ?? null),
+  );
+  const gridShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_GRID_PNG, gridShot.toPNG());
+
+  // Revert hands the kept composition back — the layouts add no new state.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const layoutsReverted = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionOrbit === null,
+    15_000,
+  );
+  check(
+    "grid-and-polar-revert-to-the-kept-composition",
+    layoutsReverted?.kept === "composition-lab.json" &&
+      layoutsReverted.compositionMasthead?.widgets === 2 &&
+      layoutsReverted.compositionOrbit === null,
+    JSON.stringify({
+      kept: layoutsReverted?.kept,
+      masthead: layoutsReverted?.compositionMasthead,
+      orbit: layoutsReverted?.compositionOrbit,
+    }),
+  );
+
+  // ── 12e: R4.3 — the rest of the vocabulary, all of it bound and bounded ──
+  // Five more widgets join badge/meter/quickAction. Each reads a closed source
+  // the shell already holds; none can be an image, a URL, a form control or a
+  // script, and the whole eight-widget surface has a node budget so a theme
+  // cannot turn the page into a painting.
+  const VOCABULARY_THEME = {
+    name: "composition-vocabulary",
+    label: "Composition Vocabulary",
+    composition: {
+      layout: "stack",
+      widgets: [
+        { type: "avatar", region: "page.masthead", data: "vault.name", label: "Operator", tone: "accent" },
+        { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 3, tone: "muted" },
+        { type: "clock", region: "page.masthead", label: "Clock", format: "24h", tone: "muted" },
+        { type: "calendar", region: "page.footer", label: "Week", tone: "accent" },
+        { type: "brief", region: "page.footer", data: "weekly.files", label: "Reviews", caption: "Files in the vault", tone: "success" },
+        { type: "meter", region: "page.footer", data: "weekly.files", label: "This week", max: 5, tone: "success" },
+        { type: "badge", region: "page.footer", data: "goals.count", label: "Goals", tone: "warning" },
+        { type: "quickAction", region: "page.masthead", route: "home", label: "Home", tone: "accent" },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-vocabulary.json"),
+    `${JSON.stringify(VOCABULARY_THEME, null, 2)}\n`,
+  );
+  const vocabularyWorn = await waitFor(
+    (s) =>
+      (s.previewText ?? "").includes("composition-vocabulary.json") &&
+      s.compositionVocabulary?.types?.length === 8,
+    20_000,
+  );
+  const vocabulary = vocabularyWorn?.compositionVocabulary ?? null;
+  check(
+    "the-bound-vocabulary-draws-all-eight-widgets",
+    vocabulary !== null &&
+      vocabulary.types.join(",") ===
+        "avatar,badge,brief,calendar,clock,list,meter,quickAction" &&
+      vocabulary.avatar?.initials === "TC" &&
+      (vocabulary.avatar?.aria ?? "").includes("Theme Chrome") &&
+      vocabulary.list?.items.length === 3 &&
+      vocabulary.list.items.includes("Life") &&
+      vocabulary.list.aria === "Areas" &&
+      /^\d{1,2}:\d{2}$/.test(vocabulary.clock?.formatted ?? "") &&
+      (vocabulary.clock?.aria ?? "").startsWith("Clock: ") &&
+      Boolean(vocabulary.clock?.dateTime) &&
+      vocabulary.calendar?.days.length === 7 &&
+      vocabulary.calendar.today === 1 &&
+      (vocabulary.calendar.aria ?? "").startsWith("Week,") &&
+      vocabulary.brief?.value === "2" &&
+      vocabulary.brief.caption === "Files in the vault",
+    JSON.stringify(vocabulary),
+  );
+  check(
+    "the-vocabulary-is-a-spoof-proof-surface-with-a-node-budget",
+    vocabulary !== null &&
+      Object.values(vocabulary.forbidden).every((count) => count === 0) &&
+      vocabulary.anchors.length === 1 &&
+      vocabulary.anchors[0] === "#/home" &&
+      vocabulary.externalAnchors.length === 0 &&
+      vocabulary.urlBackedWidgets === 0 &&
+      vocabulary.nodes > 0 &&
+      vocabulary.nodes <= 120,
+    JSON.stringify({
+      forbidden: vocabulary?.forbidden,
+      anchors: vocabulary?.anchors,
+      external: vocabulary?.externalAnchors,
+      urlBacked: vocabulary?.urlBackedWidgets,
+      nodes: vocabulary?.nodes,
+      budget: 120,
+    }),
+  );
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionVocabulary?.types?.length === 8, 10_000);
+  await sleep(300);
+  const vocabularyShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_VOCABULARY_PNG, vocabularyShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const vocabularyReverted = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      !(s.compositionVocabulary?.types ?? []).includes("avatar"),
+    15_000,
+  );
+  check(
+    "the-vocabulary-reverts-to-the-kept-composition",
+    vocabularyReverted?.kept === "composition-lab.json" &&
+      vocabularyReverted.compositionMasthead?.widgets === 2 &&
+      !(vocabularyReverted.compositionVocabulary?.types ?? []).includes("avatar"),
+    JSON.stringify({
+      kept: vocabularyReverted?.kept,
+      masthead: vocabularyReverted?.compositionMasthead,
+      vocabulary: vocabularyReverted?.compositionVocabulary?.types,
+    }),
+  );
+
+  // ── 12f: R4.4 — Helios: the showcase, the authored file and the gate ─────
+  // The bundled showcase now includes Helios: a warm solar-orbit HUD whose
+  // composition is a polar ring of quick actions. The gate then authors its own
+  // Helios through the companion door, wears it, hides and restores the ring
+  // from Settings, keeps it, restarts the window and finds it still worn — and
+  // proves an undrawable widget is refused at the door, not drawn then blocked.
+  let bundledHelios = null;
+  try {
+    const raw = fs.readFileSync(
+      path.join(themesDir, "showcase-helios.json"),
+      "utf8",
+    );
+    const theme = JSON.parse(raw);
+    bundledHelios = {
+      label: theme.label,
+      layout: theme.composition?.layout ?? null,
+      widgets: theme.composition?.widgets?.length ?? 0,
+      preset: theme.scene?.background?.preset ?? null,
+      canvas: theme.scene?.frames?.canvas ?? null,
+    };
+  } catch (error) {
+    bundledHelios = { error: String(error) };
+  }
+  check(
+    "the-helios-showcase-ships-in-a-fresh-profile",
+    bundledHelios?.label === "Helios" &&
+      bundledHelios.layout === "polar" &&
+      bundledHelios.widgets === 6 &&
+      bundledHelios.preset === "orbit" &&
+      bundledHelios.canvas === "halo",
+    JSON.stringify(bundledHelios),
+  );
+
+  const heliosSource = JSON.parse(
+    fs.readFileSync(path.join(themesDir, "showcase-helios.json"), "utf8"),
+  );
+  const HELIOS_AUTHORED = {
+    ...heliosSource,
+    name: "helios-authored",
+    label: "Helios Authored",
+    description:
+      "Written through the companion door: the solar HUD, ring and all, without a line of code.",
+  };
+  const heliosWritten = await gateCall("write_theme", {
+    theme: HELIOS_AUTHORED,
+  });
+  const heliosWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("helios-authored.json") &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionOrbit.layout === "polar",
+    25_000,
+  );
+  check(
+    "a-companion-authored-helios-wears-its-ring",
+    heliosWritten.json?.written === "helios-authored.json" &&
+      heliosWorn?.previewText?.includes("helios-authored.json") === true &&
+      heliosWorn.compositionOrbit.links.map((link) => link.route).join(",") ===
+        "home,goals,projects,notes" &&
+      heliosWorn.compositionOrbit.ariaLabel === "Quick actions",
+    JSON.stringify({
+      written: heliosWritten.json?.written,
+      isError: heliosWritten.isError,
+      orbit: heliosWorn?.compositionOrbit,
+    }),
+  );
+
+  // The operator's escape hatch works on Helios exactly as on any composition:
+  // one axis, hide then Reset, and the ring comes back.
+  await evaluate(
+    `(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`,
+  );
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const panel = await evaluate(
+      `(() => Boolean(document.querySelector('[data-testid="theme-composition"]')))()`,
+    );
+    if (panel) break;
+    await evaluate(
+      `(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`,
+    );
+    await sleep(150);
+  }
+  const heliosHiddenByClick = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const heliosHidden = await waitFor(
+    (s) =>
+      heliosHiddenByClick === true &&
+      s.compositionOrbit === null &&
+      s.compositionYours === true,
+    15_000,
+  );
+  const heliosResetByClick = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-reset"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const heliosRestored = await waitFor(
+    (s) =>
+      heliosResetByClick === true &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionYours === false,
+    15_000,
+  );
+  check(
+    "the-operator-can-hide-and-restore-helios",
+    heliosHidden?.compositionOrbit === null &&
+      heliosHidden.compositionYours === true &&
+      heliosRestored?.compositionOrbit?.links?.length === 4,
+    JSON.stringify({
+      hidden: heliosHidden?.compositionOrbit,
+      restored: heliosRestored?.compositionOrbit?.links?.length,
+    }),
+  );
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionOrbit?.links?.length === 4, 10_000);
+
+  // Keep it, restart the window, and the ring is still there: the kept name
+  // lives in main, so a reload cannot lose it.
+  const heliosKeptByClick = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const heliosKept = await waitFor(
+    (s) =>
+      heliosKeptByClick === true &&
+      !s.preview &&
+      s.kept === "helios-authored.json" &&
+      s.compositionOrbit?.links?.length === 4,
+    15_000,
+  );
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const heliosAfterReload = await waitFor(
+    (s) =>
+      s.shell === true &&
+      s.kept === "helios-authored.json" &&
+      s.compositionOrbit?.links?.length === 4,
+    25_000,
+  );
+  check(
+    "a-kept-helios-survives-a-window-restart",
+    heliosKept?.kept === "helios-authored.json" &&
+      heliosKept.compositionOrbit?.links?.length === 4 &&
+      heliosAfterReload?.kept === "helios-authored.json" &&
+      heliosAfterReload.compositionOrbit?.links?.length === 4,
+    JSON.stringify({
+      kept: heliosKept?.kept,
+      beforeReload: heliosKept?.compositionOrbit?.links?.length,
+      afterReload: heliosAfterReload?.compositionOrbit?.links?.length,
+    }),
+  );
+  await sleep(400);
+  const heliosShot = await win.webContents.capturePage();
+  fs.writeFileSync(HELIOS_PNG, heliosShot.toPNG());
+
+  // The door refuses what it cannot draw. A spoofed Helios is not drawn and
+  // then blocked; it never becomes a theme at all.
+  const heliosSpoof = await gateCall("write_theme", {
+    theme: {
+      ...heliosSource,
+      name: "helios-spoof",
+      label: "Helios Spoof",
+      composition: {
+        layout: "grid",
+        widgets: [
+          {
+            type: "image",
+            region: "page.masthead",
+            data: "vault.secrets",
+            label: "Pwn",
+          },
+        ],
+      },
+    },
+  });
+  const heliosSpoofError = String(
+    heliosSpoof.json?.error?.message ??
+      heliosSpoof.json?.error ??
+      "no error returned",
+  );
+  // The tool answers refusals as a structured error object (not an MCP
+  // isError), so the contract under test is: it names the field, and no file
+  // appeared on disk.
+  check(
+    "helios-refuses-an-undrawable-widget-at-the-door",
+    heliosSpoofError.includes("composition.widgets[0].type must be one of") &&
+      !fs.existsSync(path.join(themesDir, "helios-spoof.json")),
+    JSON.stringify({ isError: heliosSpoof.isError, error: heliosSpoofError }),
+  );
+
+  // ── 12g: Extensions — the workshop, on the real page ─────────────────────
+  // The rail gains the row; the page must list the profile's files, create a new
+  // one inside the app (not by the rig's pen on the folder), edit it, refuse
+  // invalid JSON before anything reaches disk, switch it on and off, and remove
+  // it. The screenshot is taken while the created file is active.
+  const untilTrue = async (expression, timeout = 10_000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if ((await evaluate(expression)) === true) return true;
+      await sleep(120);
+    }
+    return false;
+  };
+  await evaluate(`(() => {
+    const link = [...document.querySelectorAll(".nav-rail__link")].find((el) =>
+      (el.textContent ?? "").includes("Extensions"),
+    );
+    if (link) link.click();
+    else location.hash = "#/extensions";
+    return true;
+  })()`);
+  const extensionsReady = await waitFor(
+    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) >= 6,
+    15_000,
+  );
+  check(
+    "the-extensions-page-lists-the-profile-extensions",
+    extensionsReady?.extensionsPage === true &&
+      (extensionsReady.extensionsRows ?? 0) >= 6 &&
+      (extensionsReady.extensionsCountText ?? "").includes("extension"),
+    JSON.stringify({
+      rows: extensionsReady?.extensionsRows,
+      count: extensionsReady?.extensionsCountText,
+      hash: extensionsReady?.hash,
+    }),
+  );
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extensions-create"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const panelOpen = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-create-panel"]'))`,
+  );
+  const typedLabel = await evaluate(`(() => {
+    const input = document.querySelector('[data-testid="extension-create-label"]');
+    if (!input) return false;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setter.call(input, "Rig Workshop");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(120);
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-create-submit"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const createdPreview = await waitFor(
+    (s) =>
+      (s.previewText ?? "").includes("rig-workshop.json") &&
+      (s.extensionsRows ?? 0) >= 7,
+    20_000,
+  );
+  const createdFile = path.join(themesDir, "rig-workshop.json");
+  let createdOnDisk = null;
+  try {
+    createdOnDisk = JSON.parse(fs.readFileSync(createdFile, "utf8"));
+  } catch {
+    createdOnDisk = null;
+  }
+  const createdRow = await evaluate(
+    `Boolean(document.querySelector('[data-testid="extension-rig-workshop"]'))`,
+  );
+
+  // Edit: open the file as text, prove the live verdict refuses bad JSON, then
+  // save a real change and find it on disk. The invalid state must disable Save.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-edit"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const editorOpen = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+  );
+  const validBefore = await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension")`,
+  );
+  const setEditorSource = async (text) =>
+    evaluate(`(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(area, ${JSON.stringify(text)});
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+  await setEditorSource("{ not json");
+  const refusedInvalid = await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Not JSON")`,
+  );
+  const saveDisabled = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); return Boolean(b && b.disabled); })()`,
+  );
+  await setEditorSource(
+    createdOnDisk === null
+      ? "{}"
+      : JSON.stringify({ ...createdOnDisk, label: "Rig Workshop Edited" }, null, 2),
+  );
+  await untilTrue(
+    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension — Rig Workshop Edited")`,
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const editorClosed = await untilTrue(
+    `!document.querySelector('[data-testid="extension-editor"]')`,
+  );
+  let editedOnDisk = null;
+  try {
+    editedOnDisk = JSON.parse(fs.readFileSync(createdFile, "utf8"));
+  } catch {
+    editedOnDisk = null;
+  }
+  check(
+    "an-extension-can-be-created-and-edited-in-the-app",
+    panelOpen === true &&
+      typedLabel === true &&
+      createdRow === true &&
+      createdOnDisk?.label === "Rig Workshop" &&
+      (createdPreview?.previewText ?? "").includes("rig-workshop.json") &&
+      editorOpen === true &&
+      validBefore === true &&
+      refusedInvalid === true &&
+      saveDisabled === true &&
+      editorClosed === true &&
+      editedOnDisk?.label === "Rig Workshop Edited",
+    JSON.stringify({
+      panelOpen,
+      createdRow,
+      createdLabel: createdOnDisk?.label,
+      previewed: (createdPreview?.previewText ?? "").slice(0, 80),
+      editorOpen,
+      validBefore,
+      refusedInvalid,
+      saveDisabled,
+      editedLabel: editedOnDisk?.label,
+    }),
+  );
+
+  // Switch it on: the created file becomes the active extension, the preview
+  // bar goes away because the choice is now kept. Then switch it off: the shell
+  // returns to its default look.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const switchedOn = await waitFor(
+    (s) =>
+      s.kept === "rig-workshop.json" &&
+      !s.preview &&
+      s.extensionsActive === true,
+    20_000,
+  );
+  const extensionsShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_PNG, extensionsShot.toPNG());
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const switchedOff = await waitFor(
+    (s) => s.kept === null && s.extensionsActive === false,
+    20_000,
+  );
+
+  // Remove: two presses, and the file leaves the profile.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  await sleep(200);
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const removedRow = await untilTrue(
+    `!document.querySelector('[data-testid="extension-rig-workshop"]')`,
+    15_000,
+  );
+  check(
+    "an-extension-can-be-switched-on-off-and-removed",
+    switchedOn?.kept === "rig-workshop.json" &&
+      switchedOn.extensionsActive === true &&
+      switchedOff?.kept === null &&
+      switchedOff.extensionsActive === false &&
+      removedRow === true &&
+      !fs.existsSync(createdFile),
+    JSON.stringify({
+      on: switchedOn?.kept,
+      onActive: switchedOn?.extensionsActive,
+      off: switchedOff?.kept,
+      offActive: switchedOff?.extensionsActive,
+      removedRow,
+      fileGone: !fs.existsSync(createdFile),
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -2581,6 +4067,20 @@ async function main() {
       showcase: path.relative(desktopRoot, SHOWCASE_PNG),
       r3Gate: path.relative(desktopRoot, R3_GATE_PNG),
       focusFloating: path.relative(desktopRoot, FOCUS_FLOATING_PNG),
+      r4Validation: path.relative(desktopRoot, R4_VALIDATION_JSON),
+      composition: path.relative(desktopRoot, COMPOSITION_PNG),
+      compositionSettings: path.relative(
+        desktopRoot,
+        COMPOSITION_SETTINGS_PNG,
+      ),
+      compositionOrbit: path.relative(desktopRoot, COMPOSITION_ORBIT_PNG),
+      compositionGrid: path.relative(desktopRoot, COMPOSITION_GRID_PNG),
+      compositionVocabulary: path.relative(
+        desktopRoot,
+        COMPOSITION_VOCABULARY_PNG,
+      ),
+      helios: path.relative(desktopRoot, HELIOS_PNG),
+      extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

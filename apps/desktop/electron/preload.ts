@@ -784,6 +784,12 @@ const lifequest = {
     ipcRenderer.invoke("theme:setKept", file) as Promise<
       Result<{ keptFile: string | null }>
     >,
+  themeRead: (file: string) =>
+    ipcRenderer.invoke("theme:read", file) as Promise<Result<string>>,
+  themeWrite: (file: string, raw: string) =>
+    ipcRenderer.invoke("theme:write", file, raw) as Promise<
+      Result<{ file: string }>
+    >,
   themeDelete: (file: string) =>
     ipcRenderer.invoke("theme:delete", file) as Promise<
       Result<{ deleted: boolean }>

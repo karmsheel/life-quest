@@ -11,6 +11,9 @@
  *  - `material` — radius, density, motion. The first rung above colour.
  *  - `scene`    — the decoration layer behind the page. Data names a preset and
  *                 an intensity; the app owns the pixels.
+ *  - `composition` — R4: a closed widget vocabulary on named regions. Data only;
+ *                 the widgets and their data bindings are closed sets (see
+ *                 `composition.ts`).
  *
  * It lives in `shared/` because three callers need the same rules: the renderer
  * that wears a theme, main's theme tools the companion calls, and the E2E rigs.
@@ -18,6 +21,13 @@
  * read from the app profile, not the life.
  */
 import type { SkinColors } from "../src/lib/themes/types.ts";
+import {
+  COMPOSITION_VOCABULARY,
+  parseComposition,
+  type ThemeComposition,
+} from "./composition.ts";
+
+export * from "./composition.ts";
 
 export type WingSwitcherPlace =
   | "rail-top"
@@ -131,6 +141,8 @@ export type ThemeFile = {
   chrome?: Partial<ThemeChrome>;
   material?: Partial<ThemeMaterial>;
   scene?: ThemeSceneFile;
+  /** R4: widgets on named regions; absent means a theme with no widgets. */
+  composition?: ThemeComposition;
 };
 
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
@@ -644,6 +656,13 @@ export function parseThemeFile(raw: unknown): ParseResult {
     }
   }
 
+  let composition: ThemeComposition | undefined;
+  if (raw.composition !== undefined) {
+    const parsed = parseComposition(raw.composition);
+    if (!parsed.ok) return parsed;
+    composition = parsed.composition;
+  }
+
   const material: Partial<ThemeMaterial> = {};
   if (raw.material !== undefined) {
     if (!isRecord(raw.material)) {
@@ -685,6 +704,7 @@ export function parseThemeFile(raw: unknown): ParseResult {
       ...(darkColors ? { darkColors } : {}),
       ...(Object.keys(chrome).length > 0 ? { chrome } : {}),
       ...(Object.keys(material).length > 0 ? { material } : {}),
+      ...(composition ? { composition } : {}),
     },
   };
 }
@@ -773,6 +793,7 @@ export const THEME_VOCABULARY = [
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
   "scene.frames.canvas: none | hairline | double | halo (the page's decorative edge); scene.frames.cards: theme | outline | raised (how the page's cards are drawn).",
+  COMPOSITION_VOCABULARY,
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",
   "Tools: get_theme (files + the one being worn), validate_theme (dry run: field errors and contrast), write_theme (write it; the operator sees a 10-second preview with Keep and Revert). Never take the window away: placement moves controls, it never removes Settings, window controls or the reset.",
 ].join("\n");

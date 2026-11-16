@@ -10,6 +10,7 @@ import { ChromeHosts } from "./ChromeHosts";
 import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
 import { SceneBackdrop } from "./SceneBackdrop";
+import { CompositionSlot } from "@/components/composition/CompositionSlot";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -97,6 +98,10 @@ export function AppShell() {
               {/* The theme's decoration layer, behind the page and under the
                   content; it is not part of the page's structure. */}
               <SceneBackdrop />
+              {/* The theme's composition widgets for the page's top band. They
+                  are page furniture, not chrome: they stand inside the sheet,
+                  above the routed content, and never take the way out. */}
+              <CompositionSlot region="page.masthead" />
               <div
                 className={[
                   "shell__content",
@@ -114,6 +119,11 @@ export function AppShell() {
               >
                 <Outlet />
               </div>
+              <CompositionSlot region="page.footer" />
+              {/* The polar/quick-action ring: an overlay above the page, not a
+                  band in it. It is navigation the theme placed, drawn behind
+                  nothing and blocking nothing. */}
+              <CompositionSlot region="page.orbit" />
             </div>
             <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
             {/* The handle on the seam, drawn only while there is a column to drag:

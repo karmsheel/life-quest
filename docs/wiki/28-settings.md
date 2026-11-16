@@ -92,6 +92,8 @@ starred, so it is in the quick menu immediately; installed themes are listed und
 **Installed** with **Remove**. A file that is not JSON, or not a valid theme, is
 refused with the reason naming the field that failed.
 
+**Composition** sits between Scene and Layout: small widgets a theme places on the page or the rail — a count, a bar or a quick action, in the page's top band, its foot, the rail's top and foot, or a page orbit layer. The vocabulary is closed and data-only: `badge`, `meter`, `quickAction`, `avatar`, `list`, `clock`, `calendar` and `brief`. A `badge`, `meter` or `brief` reads one of the counts the app already holds (`domains.count`, `agents.count`, `decisions.count`, `goals.count`, `reviews.count`, `weekly.files`); an `avatar` shows your vault's initials, a `list` shows the first few area or goal names the vault holds (`domains.names`, `goals.titles`), a `clock` shows the operator's time (24h or 12h), and a `calendar` draws this week with today marked. A `quickAction` is a link to one of the app's own routes (`home`, `goals`, `projects`, `data`, `notes`, `automations`), never a URL. Everything names a tone, never a colour; nothing in a composition is markup, CSS, an image or a new data source. Three layouts ship: **stack** (a wrapped row in reading order), **grid** (the theme names 2 or 3 columns) and **polar** — a ring, top first and clockwise, that only the page orbit region may use. A ring action is a plain tabbable link: Tab walks the ring in drawn order, the orbit is announced as “Quick actions”, and there is no drag, animation or keyboard trap (so reduced motion has nothing to stop). This section appears only when the worn theme carries a composition: **Hide widgets** stops them without touching the file (marked as yours), and **Reset to theme** hands them back. A composition rides the same preview/Keep/Revert gate as the theme file it arrived in. A theme with no composition — every theme before R4 — shows nothing here.
+
 **Scene** sits between Material and Layout: the decoration behind the page. A theme picks one of the bundled procedural skies — `Plain`, `Starfield`, `Orbit`, `Aurora` — and how lively it runs (`Calm` / `Default` / `Lively`); your pick here outranks it, is marked as yours, and **Reset to theme** hands it back. The scene is drawn by the app (no images, no stylesheets): it sits behind a palette scrim so text keeps its contrast, and `prefers-reduced-motion` stops it dead. The same section names the page's decorative edge (`None` / `Hairline` / `Double` / `Halo`) and how the page's cards are drawn (`Theme` / `Outline` / `Raised`).
 
 **Layout** sits under the skin grid: where the wing switcher (`Rail top`, `Titlebar left`, `Floating left`, `Hidden`) and the area lens (`Titlebar centre`, `Sidebar rail`, `Below titlebar`, `Bottom centre`, `Floating bottom right`, `Hidden`) live, what they look like (`Labels` / `Icons` / `Compact`; `Segmented` / `Pill` / `Icons` / `List`) how wide the sidebar is (`Narrow` / `Default` / `Wide`), which edge it holds (`Left` / `Right` / `Floating` — a rounded card riding above the page, with the page keeping the window's full width underneath), where the chat dock sits (`Left` / `Right`) and how tall the window strip is (`Compact` / `Default` / `Tall`; on Windows and Linux `Compact` cannot go below the caption strip the system draws). A theme file proposes all of it; your pick here wins, is marked as yours, and **Reset to theme** hands it back. `Hidden` is real — the preview bar, the Settings entry and the window controls are never hidden by a theme, so there is always a way out. Full-screen chat (`Ctrl+Shift+F`, or the dock's and strip's own controls) works in every placement: with the rail floating it starts at the card's trailing edge, with the rail on the right it takes the leading side, and leaving it puts the rail and the dock back on the exact boxes they had.
@@ -104,11 +106,14 @@ the wing switcher and the area lens between placements, and set the radius
 family, density and motion. The companion can write one for you, or you can drop
 a `.json` in that folder. A new or changed file is worn for ten seconds as a
 **preview** with **Keep** and **Revert**; if you do nothing it hands the window
-back by itself. A fresh profile also starts with one **showcase** theme — *Solar
-System*, a dark-orbit sky with a haloed page and raised cards — copied into the
-folder on first run so you can see the whole ladder without asking an agent for
-anything; it is a normal file from then on, and if you Remove it, it stays
-removed. The **Theme files** list on this page shows every file the app
+back by itself. A fresh profile also starts with two **showcase** themes —
+*Solar System*, a dark-orbit sky with a haloed page and raised cards, and
+*Helios*, a warm solar HUD whose page stands on a golden ring of quick actions —
+copied into the folder on first run so you can see the whole ladder without
+asking an agent for anything; they are normal files from then on, and if you
+Remove one, it stays removed. The **Extensions** page (route `/extensions`) is the workshop for those same
+files — select, switch active or off, edit the JSON with live validation, or
+create a new one. The **Theme files** list on this page shows every file the app
 could read, with **Try** (enter the preview again), **Keep** (wear it from now
 on), **Kept** on the file you kept, and **Remove** (two presses: Remove →
 Remove?). **Open folder** opens the profile's `themes/` folder and **Export
