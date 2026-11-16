@@ -35,7 +35,7 @@ export const THEME_TOOL_DEFS: MapToolDef[] = [
   {
     name: "get_theme",
     description:
-      "Read the app's theme files and the one currently kept. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the resolved chrome placement and material of the kept theme.",
+      "Read the app's theme files and the one currently kept. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the resolved chrome placement and material of the kept theme, and any composition widgets it carries.",
     parameters: { type: "object", properties: {}, required: [] },
   },
   {
@@ -48,7 +48,7 @@ export const THEME_TOOL_DEFS: MapToolDef[] = [
         theme: {
           type: "object",
           description:
-            "The theme object: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
+            "The theme object: { name (slug), label, description?, chrome?, material?, scene?, composition?, colors?, darkColors? }.",
         },
       },
       required: ["theme"],
@@ -64,7 +64,7 @@ export const THEME_TOOL_DEFS: MapToolDef[] = [
         theme: {
           type: "object",
           description:
-            "The theme object: { name (slug), label, description?, chrome?, material?, colors?, darkColors? }.",
+            "The theme object: { name (slug), label, description?, chrome?, material?, scene?, composition?, colors?, darkColors? }.",
         },
         file: {
           type: "string",
@@ -113,6 +113,7 @@ type ThemeSummary = {
   description?: string;
   chrome?: { wingSwitcher: { place: string; variant: string }; domainSwitcher: { place: string; variant: string } };
   material?: { radius: string; density: string; motion: string };
+  composition?: { layout: string; widgets: number };
   error?: string;
 };
 
@@ -139,6 +140,12 @@ async function listThemes(): Promise<ThemeSummary[]> {
         if (parsed.theme.description) summary.description = parsed.theme.description;
         summary.chrome = resolveChrome(parsed.theme.chrome);
         summary.material = resolveMaterial(parsed.theme.material);
+        if (parsed.theme.composition) {
+          summary.composition = {
+            layout: parsed.theme.composition.layout,
+            widgets: parsed.theme.composition.widgets.length,
+          };
+        }
       } else {
         summary.error = parsed.error;
       }
@@ -157,7 +164,15 @@ async function getTheme(): Promise<unknown> {
   return {
     keptFile,
     ...(kept
-      ? { current: { file: kept.file, label: kept.label, chrome: kept.chrome, material: kept.material } }
+      ? {
+          current: {
+            file: kept.file,
+            label: kept.label,
+            chrome: kept.chrome,
+            material: kept.material,
+            ...(kept.composition ? { composition: kept.composition } : {}),
+          },
+        }
       : { current: null }),
     themes,
     vocabulary: THEME_VOCABULARY,

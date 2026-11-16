@@ -71,6 +71,7 @@ const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
 const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
 const R3_GATE_PNG = path.join(artifactsDir, "themes-v2-r3-gate.png");
 const FOCUS_FLOATING_PNG = path.join(artifactsDir, "themes-v2-focus-floating.png");
+const R4_VALIDATION_JSON = path.join(artifactsDir, "themes-v2-r4-validation.json");
 
 const failures = [];
 const checks = [];
@@ -2440,6 +2441,131 @@ async function main() {
     }),
   );
 
+  // ── 12b: R4.0 — the composition contract is the whole gate ─────────────
+  // No renderer yet: this slice exists so a companion can author a composition
+  // and be told exactly which field is wrong, before anything is drawn. The
+  // closed sets are asserted from the validator's side, so the vocabulary the
+  // companion sees and the parser cannot drift apart.
+  const R4_WIDGETS = [
+    {
+      type: "badge",
+      region: "page.masthead",
+      data: "goals.count",
+      label: "Goals",
+      tone: "accent",
+    },
+    {
+      type: "meter",
+      region: "rail.footer",
+      data: "weekly.files",
+      label: "This week",
+      max: 7,
+    },
+  ];
+  const R4_THEME = {
+    name: "r4-contract",
+    label: "R4 contract",
+    composition: { layout: "stack", widgets: R4_WIDGETS },
+  };
+  const r4Valid = await gateCall("validate_theme", { theme: R4_THEME });
+  const r4Invalid = async (composition) =>
+    gateCall("validate_theme", {
+      theme: { ...R4_THEME, composition },
+    });
+  const r4BadType = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], type: "gauge" }],
+  });
+  const r4BadRegion = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], region: "sidebar.middle" }],
+  });
+  const r4BadData = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[0], data: "vault.secrets" }],
+  });
+  const r4BadLayout = await r4Invalid({
+    layout: "polar",
+    widgets: R4_WIDGETS,
+  });
+  const r4MeterNoMax = await r4Invalid({
+    layout: "stack",
+    widgets: [{ ...R4_WIDGETS[1], max: undefined }],
+  });
+  const r4TooMany = await r4Invalid({
+    layout: "stack",
+    widgets: Array.from({ length: 7 }, () => ({ ...R4_WIDGETS[0] })),
+  });
+  const r4Error = (result) =>
+    String(result.json?.error?.message ?? result.json?.error ?? "");
+
+  check(
+    "r4-valid-composition-parses-back-field-for-field",
+    r4Valid.json?.ok === true &&
+      r4Valid.json?.theme?.composition?.layout === "stack" &&
+      r4Valid.json?.theme?.composition?.widgets?.length === 2 &&
+      r4Valid.json.theme.composition.widgets[0].type === "badge" &&
+      r4Valid.json.theme.composition.widgets[0].region === "page.masthead" &&
+      r4Valid.json.theme.composition.widgets[0].data === "goals.count" &&
+      r4Valid.json.theme.composition.widgets[0].label === "Goals" &&
+      r4Valid.json.theme.composition.widgets[0].tone === "accent" &&
+      r4Valid.json.theme.composition.widgets[1].type === "meter" &&
+      r4Valid.json.theme.composition.widgets[1].region === "rail.footer" &&
+      r4Valid.json.theme.composition.widgets[1].max === 7,
+    JSON.stringify(r4Valid.json),
+  );
+  check(
+    "r4-unknown-widget-type-is-refused-with-its-field",
+    r4Error(r4BadType).includes("composition.widgets[0].type must be one of"),
+    r4Error(r4BadType),
+  );
+  check(
+    "r4-unknown-region-is-refused-with-its-field",
+    r4Error(r4BadRegion).includes("composition.widgets[0].region must be one of"),
+    r4Error(r4BadRegion),
+  );
+  check(
+    "r4-unknown-data-source-is-refused-with-its-field",
+    r4Error(r4BadData).includes("composition.widgets[0].data must be one of"),
+    r4Error(r4BadData),
+  );
+  check(
+    "r4-undrawable-layout-is-refused",
+    r4Error(r4BadLayout).includes("composition.layout must be one of stack"),
+    r4Error(r4BadLayout),
+  );
+  check(
+    "r4-meter-without-a-denominator-is-refused",
+    r4Error(r4MeterNoMax).includes(
+      "composition.widgets[0].max must be an integer from 1 to 1000",
+    ),
+    r4Error(r4MeterNoMax),
+  );
+  check(
+    "r4-a-wall-of-widgets-is-refused",
+    r4Error(r4TooMany).includes("composition.widgets must hold 1–6 widgets"),
+    r4Error(r4TooMany),
+  );
+  fs.writeFileSync(
+    R4_VALIDATION_JSON,
+    `${JSON.stringify(
+      {
+        checkedAt: new Date().toISOString(),
+        valid: r4Valid.json,
+        refused: {
+          unknownType: r4Error(r4BadType),
+          unknownRegion: r4Error(r4BadRegion),
+          unknownData: r4Error(r4BadData),
+          unknownLayout: r4Error(r4BadLayout),
+          meterWithoutMax: r4Error(r4MeterNoMax),
+          sevenWidgets: r4Error(r4TooMany),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
   const outsideWritten = await gateCall("write_theme", { theme: OUTSIDE_THEME });
   const outside = await waitFor(
     (s) =>
@@ -2581,6 +2707,7 @@ async function main() {
       showcase: path.relative(desktopRoot, SHOWCASE_PNG),
       r3Gate: path.relative(desktopRoot, R3_GATE_PNG),
       focusFloating: path.relative(desktopRoot, FOCUS_FLOATING_PNG),
+      r4Validation: path.relative(desktopRoot, R4_VALIDATION_JSON),
     },
     theme: THEME,
     refused: BAD_THEME,

@@ -1,0 +1,82 @@
+# R4 composition — spike contract (R4.0)
+
+- **Date:** 2026-11-16
+- **Branch:** `feat/r4-composition-spike` (off master `6a08030`)
+- **Decision it serves:** "the operator's interface becomes theirs" — after R0–R3 restyle the shell *around* the pages, R4 lets a theme place things *on* them. The ladder's own words: a gamified HUD or an orbital menu is an R4 theme file, not an R3 look.
+- **Why a spike:** R4 is the rung the analysis calls "this is a framework" (8–12+ weeks: DSL, renderer, pack design system, authoring UX). This spike buys evidence for a Go/No-Go before that money is spent. Its question is not "can it look nice" but **"can a closed, data-only vocabulary express a gamified interface without giving a theme a way to imitate chrome, hide the way out, or read anything it was not given?"**
+
+## What R4.0 ships
+
+1. The **contract** in `apps/desktop/shared/composition.ts`: three closed sets (regions, widget types, data sources), one layout enum, and a total field-named parser.
+2. `composition` is an **optional** section of the v2 theme file — every R0–R3 theme parses exactly as before, and a theme with no composition draws nothing.
+3. The companion's authoring loop learns it for free: `validate_theme` returns the parsed composition, `get_theme` reports which kept theme carries one, and `THEME_VOCABULARY` gains the composition lines (kept in `composition.ts` so enums and words cannot drift).
+4. **No renderer in R4.0.** The gate is validation-only: a companion can author a composition and be told exactly what is wrong, before anything is drawn.
+
+## The closed sets
+
+| Set | Values | Why closed |
+|---|---|---|
+| `composition.layout` | `stack` | Grid/polar land in R4.2 with their own a11y story; today's parser refuses what it cannot draw. |
+| `composition.widgets[].type` | `badge`, `meter` | Two primitives prove data binding and formatting (text count; count against a denominator). |
+| `composition.widgets[].region` | `page.masthead`, `page.footer`, `rail.top`, `rail.footer` | Named mount points in the shell; a theme names a region, never a selector. |
+| `composition.widgets[].data` | `domains.count`, `agents.count`, `decisions.count`, `goals.count`, `reviews.count`, `weekly.files` | Counts the shell already holds in the vault snapshot. A widget never fetches, subscribes or computes new state. |
+| `composition.widgets[].tone` | `accent`, `muted`, `success`, `warning` | Token families, never colours — palette and contrast stay the skin's business. |
+| `composition.widgets[].label` | ≤ 32 chars | A widget, not a page: the one place an author writes words, and it cannot carry markup. |
+| `composition.widgets[].max` | integer 1–1000 (meter only) | The denominator is data, not CSS. |
+| widget count | 1–6 | A region stops being a row and becomes a wall past six. |
+
+## Shape
+
+```jsonc
+{
+  "name": "helios",
+  "label": "Helios",
+  "composition": {
+    "layout": "stack",
+    "widgets": [
+      { "type": "badge", "region": "page.masthead", "data": "goals.count", "label": "Goals", "tone": "accent" },
+      { "type": "meter", "region": "rail.footer", "data": "weekly.files", "label": "This week", "max": 7 }
+    ]
+  }
+}
+```
+
+The badge draws `label value`; the meter draws `label value/max` as a bar (`role="progressbar"` at render time). Both are drawn by the shell from tokens — the theme supplies numbers, names and a tone, never pixels.
+
+## Validation rules (the R4.0 gate)
+
+Every failure names the field: `composition.widgets[1].region must be one of page.masthead, page.footer, rail.top, rail.footer`. In particular:
+
+- `composition` must be an object; `layout` must be `stack`; `widgets` must be an array of 1–6.
+- Each widget: known `type`, known `region`, known `data`, non-empty `label` ≤ 32, known `tone` when present; a `meter` also needs integer `max` 1–1000.
+- Unknown widget fields are ignored (the parser's existing posture); unknown enum values are refused.
+- A theme with no `composition` is valid and unchanged.
+
+## Operator semantics (R4.1, not this slice)
+
+- Composition is **theme data**, so preview / Keep / Revert applies unchanged.
+- The operator has one axis: wear the theme's widgets, or hide them; **Reset** hands the composition back to the theme. Reset lives in Settings, outside every theme's reach.
+- A theme still cannot draw shell chrome, a Decision, or a control that removes the way out: widgets render inside named regions, and the Settings entry, window controls and preview bar are hard-coded.
+
+## Non-goals (deliberately not in the spike)
+
+- No arbitrary CSS, HTML, SVG, images, scripts, URLs or vault paths in a composition — data-only stays the format.
+- No widget that acts (quick actions are R4.3, and even then they are a closed enum of routes, never a URL).
+- No page-content placement (a widget cannot take over the page body), no theme-defined regions, no theme-defined data sources.
+- No drag-and-drop authoring UI; the companion writes JSON, the operator previews it.
+
+## Gates and Go/No-Go
+
+| Slice | Gate | Evidence |
+|---|---|---|
+| **R4.0** (this far) | Companion authoring: `validate_theme` accepts a valid composition (layout + two widgets parsed back field-for-field) and refuses unknown type / region / data / layout, missing meter `max`, and a seven-widget list — each with the failing field named | rig report `r4Gate` checks + `themes-v2-r4-validation.json` |
+| **R4.1** | Walking skeleton: the same file is worn; badge and meter paint in `page.masthead` and `rail.footer`; the operator toggle hides them; Reset restores; preview/keep/revert applies; no theme can remove Settings/controls | rig with screenshot artifact |
+| **R4.2** | Grid + polar layouts, keyboard-complete orbital navigation, reduced-motion still, aria labels | rig with gamified HUD artifact |
+| **R4.3** | Full vocabulary with closed data bindings; spoof audit; perf budget (node count, no layout thrash) | rig + audit notes |
+
+**Go/No-Go questions the spike answers:**
+1. Does a two-widget stack read as "the interface is mine" without touching page content? (If the answer needs arbitrary placement, that is a different, riskier product decision.)
+2. Can the closed data bindings express what a gamified HUD needs without a fetch channel? (If not, the binding set grows — still closed, still listed.)
+3. Does the operator's one-axis override (wear/hide + Reset) survive preview/keep/revert without new state? (It does if composition rides the theme file, as scene does.)
+
+**Estimate for the rest:** R4.2 ~2–3 weeks, R4.3 ~3–4 weeks, showcase + gate ~1 week — matching the analysis' 8–12+ weeks; the spike is the part that tells us whether that budget buys a framework or a dead end.
