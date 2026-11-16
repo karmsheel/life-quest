@@ -45,6 +45,8 @@ type Report = {
     r4Validation: string;
     composition: string;
     compositionSettings: string;
+    compositionOrbit: string;
+    compositionGrid: string;
   };
   theme: unknown;
   refused: unknown;
@@ -149,6 +151,8 @@ describe("theme files v2", () => {
         report.artifacts.r4Validation,
         report.artifacts.composition,
         report.artifacts.compositionSettings,
+        report.artifacts.compositionOrbit,
+        report.artifacts.compositionGrid,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

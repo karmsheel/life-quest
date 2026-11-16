@@ -14056,3 +14056,99 @@ button.chat-panel__activity-line:hover {
 .shell--nav-collapsed .composition-slot--rail-footer .composition-widget__label {
   display: none;
 }
+
+/* ── R4.2: layouts ──────────────────────────────────────────────────────────
+   A composition's layout is theme data, but its a11y story is ours: stack
+   reads in order, grid is a real grid with a fixed column count, and polar is
+   a deterministic ring — top first, clockwise — of plain tabbable links. None
+   of them animate, so `prefers-reduced-motion` has nothing to stop. */
+.composition-slot--layout-grid {
+  display: grid;
+  gap: 0.5rem 0.6rem;
+}
+
+.composition-slot--layout-grid .composition-widget {
+  width: 100%;
+}
+
+.composition-slot--layout-polar {
+  position: relative;
+  min-height: 16rem;
+}
+
+/* The orbit is an overlay layer: it sits above the page's paint but takes no
+   pointer events itself, so the page underneath stays usable; only the ring's
+   own links are hit-testable. */
+.composition-slot--page-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.shell__main:has(> .composition-slot--page-orbit) {
+  position: relative;
+}
+
+.composition-slot--layout-polar .composition-widget {
+  --composition-radius: clamp(7rem, 26vmin, 15rem);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(var(--composition-angle))
+    translateY(calc(-1 * var(--composition-radius)))
+    rotate(calc(-1 * var(--composition-angle)));
+  pointer-events: auto;
+}
+
+.composition-slot--layout-polar.composition-slot--radius-tight .composition-widget {
+  --composition-radius: clamp(5rem, 18vmin, 10rem);
+}
+
+.composition-slot--layout-polar.composition-slot--radius-default .composition-widget {
+  --composition-radius: clamp(7rem, 26vmin, 15rem);
+}
+
+.composition-slot--layout-polar.composition-slot--radius-wide .composition-widget {
+  --composition-radius: clamp(9rem, 32vmin, 19rem);
+}
+
+.composition-quick-action {
+  --composition-tone: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: var(--foreground);
+}
+
+.composition-quick-action:hover {
+  border-color: color-mix(in srgb, var(--composition-tone) 55%, var(--border));
+}
+
+.composition-quick-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.composition-quick-action__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--composition-tone);
+}
+
+/* A ring drawn over a page must not sit on top of the operator's content at
+   phone width — the ring is the first thing to give way. */
+@media (max-width: 720px) {
+  .composition-slot--page-orbit {
+    display: none;
+  }
+}

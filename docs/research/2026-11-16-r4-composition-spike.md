@@ -91,3 +91,13 @@ The walking skeleton is worn, measured and taken back by the same rig:
 - Rig: **81 checks, 0 failures**; artifacts `themes-v2-composition.png` and `themes-v2-composition-settings.png` (1280x800, captured from the real window).
 
 **Preliminary Go/No-Go:** the closed vocabulary, closed data bindings and one-axis operator override are sufficient for a walking skeleton and do not need a fetch channel, a DSL compiler or a new persistence store. The remaining rungs' risk is in R4.2's layout/a11y (grid, polar/orbital navigation), not in the data model — the spike answers its three questions: composition reads as the operator's interface, the bindings suffice for a HUD-like band, and the override survives the theme gate unchanged. The renderer currently draws all four regions; the rig exercises the two the ladder needs first (page masthead, rail foot).
+
+## R4.2 result (2026-11-16)
+
+Grid and polar are drawn, measured and reached:
+
+- Contract: `COMPOSITION_LAYOUTS` is now `stack | grid | polar`; `grid` names `columns: 2|3`, `polar` names `radius: tight|default|wide`; the new `page.orbit` region is refused unless the layout is polar; the new `quickAction` widget points only at the six routes `COMPOSITION_ROUTES` admits. Widget ceiling raised 6 → 8 for a HUD-like band.
+- Renderer: `grid` is a real CSS grid with the theme's column count; `polar` places widgets on a deterministic ring (top first, clockwise) using a single `--composition-angle`, with each action a plain `<Link>` inside a `nav aria-label="Quick actions"`. The orbit layer takes no pointer events itself (page stays usable) and is hidden at phone width. Nothing animates, so reduced motion is still by construction.
+- Gate: the rig writes a polar theme, measures the four ring links' positions and DOM/href order, then focuses the first and sends three real `Tab` keystrokes (`webContents.sendInputEvent`) — the active element visits `goals, projects, notes`, i.e. the ring is keyboard-complete in drawn order. It emulates `prefers-reduced-motion: reduce` over CDP and asserts the widget's `animation-name: none`, then writes a 2-column grid theme and measures two columns × two rows. Revert returns the kept composition (no new state).
+- Rig: **92 checks, 0 failures**; artifacts `themes-v2-composition-orbit.png`, `themes-v2-composition-grid.png`.
+- **Go/No-Go after R4.2:** the remaining risk is vocabulary breadth (R4.3), not layout or navigation. The ring needed no runtime, no gesture model and no new persistence — a paper plan of positions and ordinary links. Keep grid/polar closed; do not add a drag/orbit control surface.

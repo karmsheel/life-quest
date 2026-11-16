@@ -120,6 +120,10 @@ export function AppShell() {
                 <Outlet />
               </div>
               <CompositionSlot region="page.footer" />
+              {/* The polar/quick-action ring: an overlay above the page, not a
+                  band in it. It is navigation the theme placed, drawn behind
+                  nothing and blocking nothing. */}
+              <CompositionSlot region="page.orbit" />
             </div>
             <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
             {/* The handle on the seam, drawn only while there is a column to drag:

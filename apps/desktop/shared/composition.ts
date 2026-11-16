@@ -1,6 +1,6 @@
 /**
  * Composition — the R4 rung: a theme may place a *closed* vocabulary of small
- * widgets on a *closed* vocabulary of named regions.
+ * widgets on a *closed* vocabulary of named regions, in one of a few layouts.
  *
  * This file is the contract, not the renderer. Everything here is data: no
  * code, no CSS, no DOM, no images. That is deliberate. The shell's promise is
@@ -8,59 +8,67 @@
  * place arbitrary markup it can imitate the Decisions surface, cover the way
  * out, or read things it was never given.
  *
- * The three closed sets are the whole surface an author (or the companion)
- * needs to know:
+ * The closed sets are the whole surface an author (or the companion) needs:
  *
- *  - `COMPOSITION_REGIONS`   — where a widget may stand.
- *  - `COMPOSITION_WIDGET_TYPES` — what it may be (badge, meter).
- *  - `COMPOSITION_DATA_SOURCES` — what it may read (counts the shell already
- *    holds; a widget never fetches, subscribes or computes new state).
+ *  - `COMPOSITION_REGIONS`      — where a widget may stand (page masthead/foot,
+ *                                 the rail's top/foot, and the page's orbit
+ *                                 overlay, which only polar arrangements use).
+ *  - `COMPOSITION_LAYOUTS`      — stack, grid, polar. Grid and polar ship with
+ *                                 their own keyboard and reduced-motion rules;
+ *                                 a layout the app cannot place is refused.
+ *  - `COMPOSITION_WIDGET_TYPES` — what it may be (badge, meter, quickAction).
+ *  - `COMPOSITION_DATA_SOURCES` — counts the shell already holds; a widget
+ *                                 never fetches, subscribes or computes state.
+ *  - `COMPOSITION_ROUTES`       — the only places a quick action may point.
  *
  * Parsing is total and field-named, in the same style as the palette and chrome
  * parsers: a typo comes back as `composition.widgets[1].region must be one of
  * …`, never as a half-worn theme.
- *
- * The renderer (R4.1) draws only what `resolveComposition` hands it, and the
- * operator's override is one axis — wear the theme's widgets, or none — so the
- * way back is always the same: Settings › Appearance › Composition › Reset.
  */
 
 /** Where a composition widget may stand. Closed. */
 export type CompositionRegion =
   | "page.masthead"
   | "page.footer"
+  | "page.orbit"
   | "rail.top"
   | "rail.footer";
 
 export const COMPOSITION_REGIONS: readonly CompositionRegion[] = [
   "page.masthead",
   "page.footer",
+  "page.orbit",
   "rail.top",
   "rail.footer",
 ];
 
 /**
- * How a region lays its widgets out. Closed, and grown one rung at a time:
- * `stack` ships with R4.1 (a vertical list in reading order); `grid` and
- * `polar` are the R4.2 constructs and are refused by today's parser rather than
- * silently ignored.
+ * How a composition lays its widgets out. Closed, and each one carries its own
+ * a11y story: `stack` is a wrapped row in reading order, `grid` a fixed column
+ * grid, `polar` a ring of nodes placed deterministically (top first, clockwise)
+ * whose links are plain tabbables — no orbital drag, no keyboard trap.
  */
-export type CompositionLayout = "stack";
+export type CompositionLayout = "stack" | "grid" | "polar";
 
-export const COMPOSITION_LAYOUTS: readonly CompositionLayout[] = ["stack"];
+export const COMPOSITION_LAYOUTS: readonly CompositionLayout[] = [
+  "stack",
+  "grid",
+  "polar",
+];
 
 /** The widget vocabulary. Closed: a theme cannot add to it. */
-export type CompositionWidgetType = "badge" | "meter";
+export type CompositionWidgetType = "badge" | "meter" | "quickAction";
 
 export const COMPOSITION_WIDGET_TYPES: readonly CompositionWidgetType[] = [
   "badge",
   "meter",
+  "quickAction",
 ];
 
 /**
  * The data a widget may read, bound to the vault snapshot the shell already
- * holds. A source is a count or a small integer; nothing here is a route, a
- * URL, a file path or free text from the vault.
+ * holds. A source is a count; nothing here is a route, a URL, a file path or
+ * free text from the vault.
  */
 export type CompositionDataSource =
   | "domains.count"
@@ -79,6 +87,38 @@ export const COMPOSITION_DATA_SOURCES: readonly CompositionDataSource[] = [
   "weekly.files",
 ];
 
+/**
+ * Where a quick action may point: routes the shell already owns. A closed set,
+ * so a composition can move the operator around the app but can never open a
+ * URL, a file or a page the app does not draw itself.
+ */
+export type CompositionRoute =
+  | "home"
+  | "goals"
+  | "projects"
+  | "data"
+  | "notes"
+  | "automations";
+
+export const COMPOSITION_ROUTES: readonly CompositionRoute[] = [
+  "home",
+  "goals",
+  "projects",
+  "data",
+  "notes",
+  "automations",
+];
+
+/** The one place the route enum becomes a path, shared with the rig. */
+export const COMPOSITION_ROUTE_PATHS: Record<CompositionRoute, string> = {
+  home: "/home",
+  goals: "/goals",
+  projects: "/projects",
+  data: "/data",
+  notes: "/notes",
+  automations: "/automations",
+};
+
 /** A widget's accent: named token families only, never a colour. */
 export type CompositionTone = "accent" | "muted" | "success" | "warning";
 
@@ -87,6 +127,15 @@ export const COMPOSITION_TONES: readonly CompositionTone[] = [
   "muted",
   "success",
   "warning",
+];
+
+/** The ring's breathing room, as named steps rather than pixels. */
+export type CompositionPolarRadius = "tight" | "default" | "wide";
+
+export const COMPOSITION_POLAR_RADII: readonly CompositionPolarRadius[] = [
+  "tight",
+  "default",
+  "wide",
 ];
 
 export type CompositionBadge = {
@@ -110,11 +159,28 @@ export type CompositionMeter = {
   tone?: CompositionTone;
 };
 
-export type CompositionWidget = CompositionBadge | CompositionMeter;
+export type CompositionQuickAction = {
+  type: "quickAction";
+  region: CompositionRegion;
+  /** One of the app's own routes; never a URL. */
+  route: CompositionRoute;
+  /** What the action is called (≤ 32 chars). */
+  label: string;
+  tone?: CompositionTone;
+};
+
+export type CompositionWidget =
+  | CompositionBadge
+  | CompositionMeter
+  | CompositionQuickAction;
 
 /** A composition as it arrives from a theme file, before defaults fill the gaps. */
 export type ThemeCompositionFile = {
   layout?: CompositionLayout;
+  /** Grid only: 2 or 3 columns. Refused for other layouts. */
+  columns?: number;
+  /** Polar only: the ring's breathing room. */
+  radius?: CompositionPolarRadius;
   widgets?: CompositionWidget[];
 };
 
@@ -122,6 +188,8 @@ export type ThemeCompositionFile = {
 export type ThemeComposition = {
   layout: CompositionLayout;
   widgets: CompositionWidget[];
+  columns?: 2 | 3;
+  radius?: CompositionPolarRadius;
 };
 
 /** The operator's own composition pick: wear the theme's widgets, or none. */
@@ -130,7 +198,7 @@ export type CompositionOverride = {
 };
 
 /** A region more crowded than this stops being a widget row and becomes a wall. */
-export const MAX_COMPOSITION_WIDGETS = 6;
+export const MAX_COMPOSITION_WIDGETS = 8;
 
 /** Labels are the one place an author writes words; keep them a widget, not a page. */
 export const MAX_COMPOSITION_LABEL = 32;
@@ -175,6 +243,39 @@ export function parseComposition(
     layout = parsed as CompositionLayout;
   }
 
+  let columns: 2 | 3 | undefined;
+  if (raw.columns !== undefined) {
+    if (layout !== "grid") {
+      return {
+        ok: false,
+        error: "composition.columns is only for the grid layout",
+      };
+    }
+    if (raw.columns !== 2 && raw.columns !== 3) {
+      return { ok: false, error: "composition.columns must be 2 or 3" };
+    }
+    columns = raw.columns;
+  }
+
+  let radius: CompositionPolarRadius | undefined;
+  if (raw.radius !== undefined) {
+    if (layout !== "polar") {
+      return {
+        ok: false,
+        error: "composition.radius is only for the polar layout",
+      };
+    }
+    const parsed = oneOf(
+      raw.radius,
+      COMPOSITION_POLAR_RADII,
+      "composition.radius",
+    );
+    if (!COMPOSITION_POLAR_RADII.includes(parsed as CompositionPolarRadius)) {
+      return { ok: false, error: parsed };
+    }
+    radius = parsed as CompositionPolarRadius;
+  }
+
   if (!Array.isArray(raw.widgets)) {
     return { ok: false, error: "composition.widgets must be an array" };
   }
@@ -206,10 +307,11 @@ export function parseComposition(
     if (!COMPOSITION_REGIONS.includes(region as CompositionRegion)) {
       return { ok: false, error: region };
     }
-
-    const data = oneOf(widget.data, COMPOSITION_DATA_SOURCES, `${field}.data`);
-    if (!COMPOSITION_DATA_SOURCES.includes(data as CompositionDataSource)) {
-      return { ok: false, error: data };
+    if (region === "page.orbit" && layout !== "polar") {
+      return {
+        ok: false,
+        error: `${field}.region page.orbit requires the polar layout`,
+      };
     }
 
     if (
@@ -230,6 +332,30 @@ export function parseComposition(
         return { ok: false, error: parsedTone };
       }
       tone = parsedTone as CompositionTone;
+    }
+
+    if (type === "quickAction") {
+      const route = oneOf(
+        widget.route,
+        COMPOSITION_ROUTES,
+        `${field}.route`,
+      );
+      if (!COMPOSITION_ROUTES.includes(route as CompositionRoute)) {
+        return { ok: false, error: route };
+      }
+      widgets.push({
+        type: "quickAction",
+        region: region as CompositionRegion,
+        route: route as CompositionRoute,
+        label: widget.label,
+        ...(tone ? { tone } : {}),
+      });
+      continue;
+    }
+
+    const data = oneOf(widget.data, COMPOSITION_DATA_SOURCES, `${field}.data`);
+    if (!COMPOSITION_DATA_SOURCES.includes(data as CompositionDataSource)) {
+      return { ok: false, error: data };
     }
 
     if (type === "meter") {
@@ -263,7 +389,15 @@ export function parseComposition(
     }
   }
 
-  return { ok: true, composition: { layout, widgets } };
+  return {
+    ok: true,
+    composition: {
+      layout,
+      widgets,
+      ...(columns ? { columns } : {}),
+      ...(radius ? { radius } : {}),
+    },
+  };
 }
 
 /** A theme with no widgets resolves to nothing to draw. */
@@ -273,13 +407,20 @@ export function resolveComposition(
   if (!composition || !composition.widgets || composition.widgets.length === 0) {
     return null;
   }
-  return { layout: composition.layout ?? "stack", widgets: composition.widgets };
+  return {
+    layout: composition.layout ?? "stack",
+    widgets: composition.widgets,
+    ...(composition.columns === 2 || composition.columns === 3
+      ? { columns: composition.columns }
+      : {}),
+    ...(composition.radius ? { radius: composition.radius } : {}),
+  };
 }
 
 /**
  * Layer the operator's pick over the theme's: composition is a single "wear it
- * or not" axis in R4.1. Hiding it is reversible by Reset, and Reset is outside
- * every theme's reach.
+ * or not" axis. Hiding it is reversible by Reset, and Reset is outside every
+ * theme's reach.
  */
 export function layerComposition(
   composition?: ThemeCompositionFile | null,
@@ -294,8 +435,9 @@ export function layerComposition(
  * closed sets and the words a companion is taught cannot drift apart.
  */
 export const COMPOSITION_VOCABULARY = [
-  "composition (optional): { layout: stack, widgets: [ …1–6 ] } places small widgets on named regions. No code, no CSS, no images, no arbitrary text beyond a 32-char label.",
-  "composition.widgets[].type: badge | meter; region: page.masthead | page.footer | rail.top | rail.footer; data: domains.count | agents.count | decisions.count | goals.count | reviews.count | weekly.files.",
-  "composition.widgets[].label: ≤32 chars. tone: accent | muted | success | warning (optional). meter also needs max: an integer 1–1000 — the badge draws 'label value', the meter draws 'label value/max' as a bar.",
+  "composition (optional): { layout: stack | grid | polar, columns?: 2|3 (grid), radius?: tight|default|wide (polar), widgets: [ …1–8 ] } places small widgets on named regions. No code, no CSS, no images, no arbitrary text beyond a 32-char label.",
+  "composition.widgets[].type: badge | meter | quickAction; region: page.masthead | page.footer | page.orbit | rail.top | rail.footer (page.orbit only with the polar layout).",
+  "badge/meter read one of: domains.count | agents.count | decisions.count | goals.count | reviews.count | weekly.files. meter also needs max: an integer 1–1000. quickAction is a link to one of the app's own routes: home | goals | projects | data | notes | automations.",
+  "composition.widgets[].label: ≤32 chars; tone: accent | muted | success | warning (optional). Polar places widgets on a ring, top first and clockwise, each a plain tabbable link — never a drag, never a keyboard trap.",
   "The operator can hide the composition in Settings › Appearance › Composition, and Reset hands it back to the theme; a composition never draws chrome, a Decision, or a control that can remove the way out.",
 ].join("\n");

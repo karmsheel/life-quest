@@ -82,6 +82,14 @@ const COMPOSITION_SETTINGS_PNG = path.join(
   artifactsDir,
   "themes-v2-composition-settings.png",
 );
+const COMPOSITION_ORBIT_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-orbit.png",
+);
+const COMPOSITION_GRID_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-grid.png",
+);
 
 const failures = [];
 const checks = [];
@@ -310,6 +318,62 @@ const SAMPLE = `(async () => {
     })(),
     compositionSettings: Boolean(document.querySelector('[data-testid="theme-composition"]')),
     compositionYours: Boolean(document.querySelector('[data-testid="composition-yours"]')),
+    compositionOrbit: (() => {
+      const slot = document.querySelector('[data-composition-region="page.orbit"]');
+      if (!slot) return null;
+      const box = slot.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      return {
+        tag: slot.tagName,
+        layout: slot.getAttribute("data-composition-layout"),
+        ariaLabel: slot.getAttribute("aria-label"),
+        links: [...slot.querySelectorAll('[data-testid="composition-quick-action"]')].map((el) => {
+          const r = el.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          return {
+            route: el.getAttribute("data-widget-route"),
+            href: el.getAttribute("href"),
+            label: (el.textContent ?? "").trim(),
+            x: Math.round(x),
+            y: Math.round(y),
+            angle: Math.round((Math.atan2(y - cy, x - cx) * 180) / Math.PI),
+          };
+        }),
+      };
+    })(),
+    compositionGrid: (() => {
+      const slot = document.querySelector('[data-composition-region="page.masthead"]');
+      if (!slot || !slot.classList.contains("composition-slot--layout-grid")) {
+        return null;
+      }
+      const widgets = [...slot.querySelectorAll('[data-testid="composition-widget"]')];
+      if (widgets.length === 0) return null;
+      const columns =
+        getComputedStyle(slot).gridTemplateColumns.trim().split(/\\s+/).length;
+      return {
+        layout: slot.getAttribute("data-composition-layout"),
+        columns,
+        boxes: widgets.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: Math.round(r.left), y: Math.round(r.top) };
+        }),
+      };
+    })(),
+    compositionAnimations: (() => {
+      const el = document.querySelector(
+        '.composition-slot--page-orbit .composition-widget',
+      );
+      if (!el) return null;
+      const style = getComputedStyle(el);
+      return {
+        animationName: style.animationName,
+        animationDuration: style.animationDuration,
+        transitionDuration: style.transitionDuration,
+      };
+    })(),
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     chatFocus: Boolean(document.querySelector(".shell--chat-focus")),
     pageVisible: (() => {
       const page = document.querySelector(".shell__content");
@@ -2538,7 +2602,7 @@ async function main() {
     widgets: [{ ...R4_WIDGETS[0], data: "vault.secrets" }],
   });
   const r4BadLayout = await r4Invalid({
-    layout: "polar",
+    layout: "radial",
     widgets: R4_WIDGETS,
   });
   const r4MeterNoMax = await r4Invalid({
@@ -2547,7 +2611,62 @@ async function main() {
   });
   const r4TooMany = await r4Invalid({
     layout: "stack",
-    widgets: Array.from({ length: 7 }, () => ({ ...R4_WIDGETS[0] })),
+    widgets: Array.from({ length: 9 }, () => ({ ...R4_WIDGETS[0] })),
+  });
+  const r4BadColumnsOnStack = await r4Invalid({
+    layout: "stack",
+    columns: 2,
+    widgets: R4_WIDGETS,
+  });
+  const r4BadColumns = await r4Invalid({
+    layout: "grid",
+    columns: 4,
+    widgets: R4_WIDGETS,
+  });
+  const r4BadRadiusOnGrid = await r4Invalid({
+    layout: "grid",
+    radius: "wide",
+    widgets: R4_WIDGETS,
+  });
+  const r4BadRoute = await r4Invalid({
+    layout: "polar",
+    widgets: [
+      {
+        type: "quickAction",
+        region: "page.orbit",
+        route: "/etc/passwd",
+        label: "Pwn",
+      },
+    ],
+  });
+  const r4OrbitWithoutPolar = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      {
+        type: "quickAction",
+        region: "page.orbit",
+        route: "home",
+        label: "Home",
+      },
+    ],
+  });
+  const r4QuickActionValid = await gateCall("validate_theme", {
+    theme: {
+      ...R4_THEME,
+      composition: {
+        layout: "polar",
+        radius: "default",
+        widgets: [
+          {
+            type: "quickAction",
+            region: "page.orbit",
+            route: "home",
+            label: "Home",
+            tone: "accent",
+          },
+        ],
+      },
+    },
   });
   const r4Error = (result) =>
     String(result.json?.error?.message ?? result.json?.error ?? "");
@@ -2596,8 +2715,51 @@ async function main() {
   );
   check(
     "r4-a-wall-of-widgets-is-refused",
-    r4Error(r4TooMany).includes("composition.widgets must hold 1–6 widgets"),
+    r4Error(r4TooMany).includes("composition.widgets must hold 1–8 widgets"),
     r4Error(r4TooMany),
+  );
+  check(
+    "r4-a-quick-action-parses-with-its-route",
+    r4QuickActionValid.json?.ok === true &&
+      r4QuickActionValid.json.theme.composition.layout === "polar" &&
+      r4QuickActionValid.json.theme.composition.radius === "default" &&
+      r4QuickActionValid.json.theme.composition.widgets[0].type ===
+        "quickAction" &&
+      r4QuickActionValid.json.theme.composition.widgets[0].route === "home",
+    JSON.stringify(r4QuickActionValid.json),
+  );
+  check(
+    "r4-columns-are-only-for-the-grid-layout",
+    r4Error(r4BadColumnsOnStack).includes(
+      "composition.columns is only for the grid layout",
+    ),
+    r4Error(r4BadColumnsOnStack),
+  );
+  check(
+    "r4-grid-columns-are-closed",
+    r4Error(r4BadColumns).includes("composition.columns must be 2 or 3"),
+    r4Error(r4BadColumns),
+  );
+  check(
+    "r4-radius-is-only-for-the-polar-layout",
+    r4Error(r4BadRadiusOnGrid).includes(
+      "composition.radius is only for the polar layout",
+    ),
+    r4Error(r4BadRadiusOnGrid),
+  );
+  check(
+    "r4-a-quick-action-route-is-closed",
+    r4Error(r4BadRoute).includes(
+      "composition.widgets[0].route must be one of",
+    ),
+    r4Error(r4BadRoute),
+  );
+  check(
+    "r4-the-orbit-region-requires-the-polar-layout",
+    r4Error(r4OrbitWithoutPolar).includes(
+      "composition.widgets[0].region page.orbit requires the polar layout",
+    ),
+    r4Error(r4OrbitWithoutPolar),
   );
   fs.writeFileSync(
     R4_VALIDATION_JSON,
@@ -2901,8 +3063,12 @@ async function main() {
       restored: compositionRestored?.compositionMasthead,
     }),
   );
-  // Leave Settings the same way the operator does.
-  await evaluate(`(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`);
+  // Leave Settings the way the operator does: pick a page in the rail. The
+  // sheet is a route, so the trigger only ever takes you *into* it.
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionMasthead?.widgets === 2, 10_000);
   await sleep(200);
 
   fs.writeFileSync(
@@ -2962,6 +3128,237 @@ async function main() {
     }),
   );
 
+  // ── 12d: R4.2 — grid and polar, drawn and reached by keyboard ────────────
+  // The layout is theme data; everything that makes it usable is ours. Polar
+  // places its widgets on a deterministic ring (top first, clockwise) and each
+  // is a plain link in DOM order, so the keyboard reaches the whole ring with
+  // Tab and a screen reader hears the nav by name. Reduced motion leaves the
+  // ring still because nothing here animates. Grid is a real CSS grid whose
+  // column count the theme names.
+  const ORBIT_THEME = {
+    name: "composition-orbit",
+    label: "Composition Orbit",
+    composition: {
+      layout: "polar",
+      radius: "default",
+      widgets: [
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "home",
+          label: "Home",
+          tone: "accent",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "goals",
+          label: "Goals",
+          tone: "accent",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "projects",
+          label: "Projects",
+          tone: "muted",
+        },
+        {
+          type: "quickAction",
+          region: "page.orbit",
+          route: "notes",
+          label: "Notes",
+          tone: "muted",
+        },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-orbit.json"),
+    `${JSON.stringify(ORBIT_THEME, null, 2)}\n`,
+  );
+  const orbitWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-orbit.json") &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionOrbit.layout === "polar",
+    25_000,
+  );
+  const ringExpectedAngles = [-90, 0, 90, 180];
+  const ringAnglesOk = (orbitWorn?.compositionOrbit?.links ?? []).every(
+    (link, index) =>
+      Math.abs(link.angle - ringExpectedAngles[index]) <= 40 ||
+      Math.abs(link.angle - ringExpectedAngles[index]) >= 320,
+  );
+  check(
+    "a-polar-composition-draws-a-deterministic-keyboard-ring",
+    orbitWorn?.compositionOrbit?.tag === "NAV" &&
+      orbitWorn.compositionOrbit.ariaLabel === "Quick actions" &&
+      orbitWorn.compositionOrbit.links.length === 4 &&
+      orbitWorn.compositionOrbit.links.map((l) => l.route).join(",") ===
+        "home,goals,projects,notes" &&
+      orbitWorn.compositionOrbit.links.map((l) => l.href).join(",") ===
+        "#/home,#/goals,#/projects,#/notes" &&
+      orbitWorn.compositionOrbit.links.every(
+        (l) => l.x > 0 && l.x < 1280 && l.y > 0 && l.y < 800,
+      ) &&
+      new Set(orbitWorn.compositionOrbit.links.map((l) => l.x)).size >= 2 &&
+      new Set(orbitWorn.compositionOrbit.links.map((l) => l.y)).size >= 2 &&
+      ringAnglesOk,
+    JSON.stringify(orbitWorn?.compositionOrbit),
+  );
+
+  // Keyboard: focus the first action, then Tab three times. If the ring is
+  // reachable, the active element stays inside it and visits every route in
+  // the order the ring draws them.
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor(
+    (s) => s.compositionOrbit?.links?.length === 4 && s.preview === true,
+    10_000,
+  );
+  await sleep(250);
+  win.webContents.focus();
+  const focusFirstAction = await evaluate(`(() => {
+    const link = document.querySelector('[data-testid="composition-quick-action"]');
+    if (!link) return { found: false };
+    link.focus({ preventScroll: true });
+    return {
+      found: true,
+      same: document.activeElement === link,
+      activeTag: document.activeElement ? document.activeElement.tagName : null,
+      activeRoute: document.activeElement
+        ? document.activeElement.getAttribute("data-widget-route")
+        : null,
+      hasFocus: document.hasFocus(),
+      tabIndex: link.tabIndex,
+    };
+  })()`);
+  const tabbedRoutes = [];
+  for (let step = 0; step < 3; step += 1) {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    await sleep(150);
+    const route = await evaluate(
+      `(() => { const el = document.activeElement; return el ? el.getAttribute("data-widget-route") : null; })()`,
+    );
+    tabbedRoutes.push(route);
+  }
+  check(
+    "the-orbital-ring-is-keyboard-complete",
+    focusFirstAction?.same === true &&
+      tabbedRoutes.join(",") === "goals,projects,notes",
+    JSON.stringify({ focusFirstAction, tabbedRoutes }),
+  );
+
+  // Reduced motion: the ring has no animation to stop, and the app honours the
+  // preference the moment the OS/frame says it is on.
+  let reducedAttached = false;
+  try {
+    win.webContents.debugger.attach("1.3");
+    reducedAttached = true;
+    await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+  } catch (error) {
+    console.error(`reduced-motion emulation failed: ${error.message}`);
+  }
+  const reducedSample = await waitFor((s) => s.reducedMotion === true, 8_000);
+  const stillAnimations = reducedSample?.compositionAnimations ?? null;
+  if (reducedAttached) {
+    try {
+      await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+        features: [],
+      });
+      win.webContents.debugger.detach();
+    } catch (error) {
+      console.error(`reduced-motion detach failed: ${error.message}`);
+    }
+  }
+  check(
+    "the-ring-is-still-under-reduced-motion",
+    reducedSample?.reducedMotion === true &&
+      stillAnimations?.animationName === "none" &&
+      stillAnimations?.animationDuration === "0s",
+    JSON.stringify({ reducedMotion: reducedSample?.reducedMotion, stillAnimations }),
+  );
+
+  await evaluate(
+    `(() => { if (document.activeElement) document.activeElement.blur(); location.hash = "#/home"; return true; })()`,
+  );
+  await waitFor(
+    (s) => s.compositionOrbit?.links?.length === 4 && s.preview === true,
+    10_000,
+  );
+  await sleep(250);
+  const orbitShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_ORBIT_PNG, orbitShot.toPNG());
+
+  // Grid: the theme names the column count; the shell draws a real grid.
+  const GRID_THEME = {
+    name: "composition-grid",
+    label: "Composition Grid",
+    composition: {
+      layout: "grid",
+      columns: 2,
+      widgets: [
+        { type: "badge", region: "page.masthead", data: "goals.count", label: "Goals", tone: "accent" },
+        { type: "badge", region: "page.masthead", data: "decisions.count", label: "Decisions", tone: "muted" },
+        { type: "badge", region: "page.masthead", data: "weekly.files", label: "Weekly", tone: "success" },
+        { type: "badge", region: "page.masthead", data: "agents.count", label: "Agents", tone: "warning" },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-grid.json"),
+    `${JSON.stringify(GRID_THEME, null, 2)}\n`,
+  );
+  const gridWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-grid.json") &&
+      s.compositionGrid?.boxes?.length === 4,
+    20_000,
+  );
+  const gridBoxes = gridWorn?.compositionGrid?.boxes ?? [];
+  check(
+    "a-grid-composition-draws-the-columns-the-theme-names",
+    gridWorn?.compositionGrid?.layout === "grid" &&
+      gridWorn?.compositionGrid?.columns === 2 &&
+      gridBoxes.length === 4 &&
+      new Set(gridBoxes.map((b) => b.x)).size === 2 &&
+      new Set(gridBoxes.map((b) => b.y)).size === 2,
+    JSON.stringify(gridWorn?.compositionGrid ?? null),
+  );
+  const gridShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_GRID_PNG, gridShot.toPNG());
+
+  // Revert hands the kept composition back — the layouts add no new state.
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const layoutsReverted = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionOrbit === null,
+    15_000,
+  );
+  check(
+    "grid-and-polar-revert-to-the-kept-composition",
+    layoutsReverted?.kept === "composition-lab.json" &&
+      layoutsReverted.compositionMasthead?.widgets === 2 &&
+      layoutsReverted.compositionOrbit === null,
+    JSON.stringify({
+      kept: layoutsReverted?.kept,
+      masthead: layoutsReverted?.compositionMasthead,
+      orbit: layoutsReverted?.compositionOrbit,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -2991,6 +3388,8 @@ async function main() {
         desktopRoot,
         COMPOSITION_SETTINGS_PNG,
       ),
+      compositionOrbit: path.relative(desktopRoot, COMPOSITION_ORBIT_PNG),
+      compositionGrid: path.relative(desktopRoot, COMPOSITION_GRID_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
