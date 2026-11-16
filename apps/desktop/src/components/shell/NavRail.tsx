@@ -12,6 +12,7 @@ import { useWing } from "./WingProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { CompositionSlot } from "@/components/composition/CompositionSlot";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -153,6 +154,9 @@ export function NavRail() {
       <div className="nav-rail__header">
         <NavCollapseButton />
       </div>
+      {/* The theme's composition widgets for the rail: a count under the
+          header, and the foot's own band. Rail furniture, not commands. */}
+      <CompositionSlot region="rail.top" />
       {/*
         The sidebar's own band: the five wings, and under them the active wing's
         pages. The rail is the first level of navigation, so the switcher belongs
@@ -238,6 +242,7 @@ export function NavRail() {
           </>
         ) : null}
       </div>
+      <CompositionSlot region="rail.footer" />
     </nav>
   );
 }

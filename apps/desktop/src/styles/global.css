@@ -13924,3 +13924,135 @@ button.chat-panel__activity-line:hover {
   grid-column: 1;
   width: 100%;
 }
+
+/* —— Composition ————————————————————————————————————————————————————————
+   R4's widgets: a theme places a count or a bar on a named region, and the
+   shell draws it from tokens. No theme pixels here — the widget's whole input
+   is a label, a number, a denominator and a tone family, so the stylesheet is
+   the one place the look lives and a skin or material change repaints it for
+   free. The masthead/foot bands sit inside the page's own padding ladder so a
+   density change moves them with everything else; the rail bands follow the
+   rail's gap. */
+.composition-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.composition-slot--page-masthead {
+  padding: var(--density-pad-page-y) var(--density-pad-page-x) 0;
+}
+
+.composition-slot--page-footer {
+  padding: 0 var(--density-pad-page-x) var(--density-pad-page-bottom);
+}
+
+.composition-slot--rail-top {
+  padding-top: 0.15rem;
+}
+
+.composition-slot--rail-footer {
+  margin-top: auto;
+  padding-top: 0.15rem;
+}
+
+.composition-widget {
+  /* The tone is one custom property; every part of the widget reads it, so a
+     new tone is one line and never a second colour decision. */
+  --composition-tone: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: var(--foreground);
+}
+
+.composition-widget--accent {
+  --composition-tone: var(--accent);
+}
+
+.composition-widget--muted {
+  --composition-tone: var(--muted-foreground);
+}
+
+.composition-widget--success {
+  --composition-tone: var(--success);
+}
+
+.composition-widget--warning {
+  --composition-tone: var(--amber);
+}
+
+.composition-widget__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.composition-widget__value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.composition-widget__denominator {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.composition-widget--badge {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--composition-tone);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--meter {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 0.15rem 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.composition-widget--meter .composition-widget__value {
+  justify-self: end;
+}
+
+.composition-widget__track {
+  grid-column: 1 / -1;
+  height: 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.composition-widget__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--composition-tone);
+}
+
+/* The thin rail is an icon column: a widget keeps its number, drops its word,
+   so a long label can never decide the rail's width. */
+.shell--nav-collapsed .composition-slot--rail-top .composition-widget__label,
+.shell--nav-collapsed .composition-slot--rail-footer .composition-widget__label {
+  display: none;
+}

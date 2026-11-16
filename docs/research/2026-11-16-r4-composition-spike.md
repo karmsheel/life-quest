@@ -80,3 +80,14 @@ Every failure names the field: `composition.widgets[1].region must be one of pag
 3. Does the operator's one-axis override (wear/hide + Reset) survive preview/keep/revert without new state? (It does if composition rides the theme file, as scene does.)
 
 **Estimate for the rest:** R4.2 ~2–3 weeks, R4.3 ~3–4 weeks, showcase + gate ~1 week — matching the analysis' 8–12+ weeks; the spike is the part that tells us whether that budget buys a framework or a dead end.
+
+## R4.1 result (2026-11-16)
+
+The walking skeleton is worn, measured and taken back by the same rig:
+
+- A companion-authored `composition-lab` theme (two widgets in the page masthead, one on the rail's foot) enters the normal preview gate; the masthead badge reads the seeded `weekly.files` count as `2`, the meter renders `2/5` with `aria-valuenow=2` / `aria-valuemax=5`, and the rail foot wears its own badge.
+- The operator's one axis works from Settings › Appearance › Composition: **Hide widgets** removes every slot and marks the pick *yours*; **Reset to theme** puts them back; the Settings entry, preview bar and window strip stay painted throughout.
+- Keep makes the composition durable; a newer composition file replaces it as a preview; Revert hands the kept widgets back — the composition rides the theme file's preview/keep/revert gate with no new state, as the spike predicted.
+- Rig: **81 checks, 0 failures**; artifacts `themes-v2-composition.png` and `themes-v2-composition-settings.png` (1280x800, captured from the real window).
+
+**Preliminary Go/No-Go:** the closed vocabulary, closed data bindings and one-axis operator override are sufficient for a walking skeleton and do not need a fetch channel, a DSL compiler or a new persistence store. The remaining rungs' risk is in R4.2's layout/a11y (grid, polar/orbital navigation), not in the data model — the spike answers its three questions: composition reads as the operator's interface, the bindings suffice for a HUD-like band, and the override survives the theme gate unchanged. The renderer currently draws all four regions; the rig exercises the two the ladder needs first (page masthead, rail foot).

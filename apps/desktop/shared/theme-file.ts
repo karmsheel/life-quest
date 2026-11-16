@@ -27,6 +27,8 @@ import {
   type ThemeComposition,
 } from "./composition.ts";
 
+export * from "./composition.ts";
+
 export type WingSwitcherPlace =
   | "rail-top"
   | "titlebar-left"

@@ -50,6 +50,7 @@ import {
   DOMAIN_PLACES,
   DOMAIN_VARIANTS,
   layerChrome,
+  layerComposition,
   layerScene,
   MOTIONS,
   parseThemeFile,
@@ -68,8 +69,10 @@ import {
   TYPE_SCALES,
   WING_PLACES,
   WING_VARIANTS,
+  type CompositionOverride,
   type ThemeChrome,
   type ThemeChromeOverride,
+  type ThemeComposition,
   type ThemeFile,
   type ThemeMaterial,
   type ThemeScene,
@@ -110,6 +113,13 @@ const CHROME_OVERRIDE_STORAGE_KEY = "lifequest-chrome-override";
  * sky, but Settings can quiet it without editing the file. Never a theme file.
  */
 const SCENE_OVERRIDE_STORAGE_KEY = "lifequest-scene-override";
+
+/**
+ * The operator's own composition pick, per window: wear the theme's widgets, or
+ * hide them. One axis on purpose — a composition is opt-out, never a drag-and-
+ * drop editor — and Reset hands it back to the theme like the other layers.
+ */
+const COMPOSITION_OVERRIDE_STORAGE_KEY = "lifequest-composition-override";
 
 const MATERIAL_ENUMS = {
   radius: RADII,
@@ -268,6 +278,32 @@ function readStoredSceneOverride(): ThemeSceneOverride {
   }
 }
 
+function readStoredCompositionOverride(): CompositionOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(COMPOSITION_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    return raw.enabled === false ? { enabled: false } : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCompositionOverride(override: CompositionOverride): void {
+  try {
+    if (override.enabled === false) {
+      localStorage.setItem(
+        COMPOSITION_OVERRIDE_STORAGE_KEY,
+        JSON.stringify({ enabled: false }),
+      );
+    } else {
+      localStorage.removeItem(COMPOSITION_OVERRIDE_STORAGE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function persistSceneOverride(override: ThemeSceneOverride): void {
   try {
     if (Object.keys(override).length === 0) {
@@ -331,6 +367,14 @@ interface ThemeContextValue {
   setSceneOverride: (patch: ThemeSceneOverride) => void;
   /** Drop the operator's scene pick and hand the backdrop back to the theme. */
   resetSceneOverride: () => void;
+  /** The composition the window is wearing (theme + operator pick); null = none. */
+  composition: ThemeComposition | null;
+  /** The operator's own composition pick: wear the theme's widgets, or hide them. */
+  compositionOverride: CompositionOverride;
+  /** Wear the theme's widgets or hide them — the one composition axis. */
+  setCompositionOverride: (override: CompositionOverride) => void;
+  /** Drop the operator's pick and hand composition back to the theme. */
+  resetCompositionOverride: () => void;
   /** A file the companion just wrote: worn, but not yet kept. */
   themePreview: { file: string; label: string } | null;
   /** Why the newest theme file was refused, if it was. */
@@ -457,6 +501,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readStoredSceneOverride,
   );
   const sceneOverrideRef = useRef<ThemeSceneOverride>(sceneOverride);
+  const [composition, setComposition] = useState<ThemeComposition | null>(null);
+  const [compositionOverride, setCompositionOverrideState] =
+    useState<CompositionOverride>(readStoredCompositionOverride);
+  const compositionOverrideRef = useRef<CompositionOverride>(compositionOverride);
   const [themePreview, setThemePreview] = useState<{
     file: string;
     label: string;
@@ -510,6 +558,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const nextScene = layerScene(next?.scene, sceneOverrideRef.current);
       setScene(nextScene);
       applyScene(nextScene, document.documentElement);
+      // Composition rides the theme file exactly as scene does: previews wear
+      // it, Keep keeps it, Revert returns the kept theme's widgets, and the
+      // operator's one axis can hide it without touching the file.
+      setComposition(
+        layerComposition(next?.composition, compositionOverrideRef.current),
+      );
       if (next?.colors) {
         const base = resolveSkin(skinName);
         applySkin(
@@ -594,6 +648,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     sceneOverrideRef.current = {};
     setSceneOverrideState({});
     persistSceneOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * The operator's one composition axis: wear the theme's widgets, or hide
+   * them. Layered for every paint (previews included) and persisted per window,
+   * so trying a theme never silently keeps or drops the operator's pick.
+   */
+  const setCompositionOverride = useCallback(
+    (override: CompositionOverride) => {
+      const next: CompositionOverride =
+        override.enabled === false ? { enabled: false } : {};
+      compositionOverrideRef.current = next;
+      setCompositionOverrideState(next);
+      persistCompositionOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetCompositionOverride = useCallback(() => {
+    compositionOverrideRef.current = {};
+    setCompositionOverrideState({});
+    persistCompositionOverride({});
     paintTheme(paintedTheme.current);
   }, [paintTheme]);
 
@@ -869,6 +947,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       material,
       scene,
       sceneOverride,
+      ...(worn?.composition ? { composition: worn.composition } : {}),
+      compositionOverride,
     };
     const answer = await window.lifequest?.themeExport?.(exported);
     if (!answer) return null;
@@ -877,7 +957,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return null;
     }
     return answer.value;
-  }, [chrome, material, scene, sceneOverride, skinName, themeFile]);
+  }, [
+    chrome,
+    compositionOverride,
+    material,
+    scene,
+    sceneOverride,
+    skinName,
+    themeFile,
+  ]);
 
   useEffect(() => {
     void loadThemeFiles({ preview: false });
@@ -1054,6 +1142,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       sceneOverride,
       setSceneOverride,
       resetSceneOverride,
+      composition,
+      compositionOverride,
+      setCompositionOverride,
+      resetCompositionOverride,
       themePreview,
       themeError,
       keepThemePreview,
@@ -1088,10 +1180,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       preference,
       resetMaterialOverride,
       resetSceneOverride,
+      resetCompositionOverride,
       setMaterialOverride,
       setSceneOverride,
+      setCompositionOverride,
       scene,
       sceneOverride,
+      composition,
+      compositionOverride,
       refreshThemeFiles,
       removeThemeFile,
       themeFiles,

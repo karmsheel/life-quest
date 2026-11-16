@@ -43,7 +43,12 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
-import { createVault } from "@lifequest/vault-core";
+import {
+  countWeeklyVaultFiles,
+  createDomain,
+  createVault,
+  vaultPaths,
+} from "@lifequest/vault-core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.join(here, "..");
@@ -72,6 +77,11 @@ const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
 const R3_GATE_PNG = path.join(artifactsDir, "themes-v2-r3-gate.png");
 const FOCUS_FLOATING_PNG = path.join(artifactsDir, "themes-v2-focus-floating.png");
 const R4_VALIDATION_JSON = path.join(artifactsDir, "themes-v2-r4-validation.json");
+const COMPOSITION_PNG = path.join(artifactsDir, "themes-v2-composition.png");
+const COMPOSITION_SETTINGS_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-settings.png",
+);
 
 const failures = [];
 const checks = [];
@@ -276,6 +286,30 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).position : null;
     })(),
     stripPainted: Boolean(document.querySelector(".window-titlebar")),
+    compositionMasthead: (() => {
+      const slot = document.querySelector('[data-composition-region="page.masthead"]');
+      if (!slot) return null;
+      return {
+        widgets: slot.querySelectorAll('[data-testid="composition-widget"]').length,
+        labels: [...slot.querySelectorAll(".composition-widget__label")].map((el) => (el.textContent ?? "").trim()),
+        values: [...slot.querySelectorAll(".composition-widget__value")].map((el) => (el.textContent ?? "").trim()),
+      };
+    })(),
+    compositionRailFooter: (() => {
+      const slot = document.querySelector('[data-composition-region="rail.footer"]');
+      if (!slot) return null;
+      return slot.querySelectorAll('[data-testid="composition-widget"]').length;
+    })(),
+    compositionMeterNow: (() => {
+      const meter = document.querySelector('[data-widget-type="meter"]');
+      return meter ? meter.getAttribute("aria-valuenow") : null;
+    })(),
+    compositionMeterMax: (() => {
+      const meter = document.querySelector('[data-widget-type="meter"]');
+      return meter ? meter.getAttribute("aria-valuemax") : null;
+    })(),
+    compositionSettings: Boolean(document.querySelector('[data-testid="theme-composition"]')),
+    compositionYours: Boolean(document.querySelector('[data-testid="composition-yours"]')),
     chatFocus: Boolean(document.querySelector(".shell--chat-focus")),
     pageVisible: (() => {
       const page = document.querySelector(".shell__content");
@@ -447,6 +481,25 @@ async function main() {
     const created = await createVault(vaultDir, "Theme Chrome");
     if (!created.ok) throw new Error(`createVault: ${created.error}`);
     vaultId = created.value.lifequest.id;
+    // R4.1 reads two closed count bindings from the snapshot; seed them with
+    // numbers a badge can be wrong about (two domains, two weekly files), so
+    // the gate is not satisfied by an accidental zero.
+    for (const name of ["Home", "Work"]) {
+      const domain = await createDomain(vaultDir, { name });
+      if (!domain.ok) throw new Error(`createDomain: ${domain.error}`);
+    }
+    const weeklyDir = vaultPaths(vaultDir).reviewsCadenceDir("weekly");
+    fs.mkdirSync(weeklyDir, { recursive: true });
+    for (const week of ["2026-W44", "2026-W45"]) {
+      fs.writeFileSync(
+        path.join(weeklyDir, `${week}.md`),
+        `# Weekly review ${week}\n`,
+      );
+    }
+    const seededWeekly = await countWeeklyVaultFiles(vaultDir);
+    if (seededWeekly !== 2) {
+      throw new Error(`weekly seed: expected 2 files, got ${seededWeekly}`);
+    }
   }
 
   fs.writeFileSync(
@@ -2684,6 +2737,231 @@ async function main() {
   const outsideShot = await win.webContents.capturePage();
   fs.writeFileSync(OUTSIDE_PNG, outsideShot.toPNG());
 
+  // ── 12c: R4.1 — the walking skeleton, worn and taken back ───────────────
+  // R4.0 proved the validator; this slice proves the drawing. A composition
+  // rides the theme file, so it enters the same ten-second preview as any other
+  // theme: the page masthead and the rail foot wear the widgets, the operator
+  // hides and restores them from Settings, Keep makes them durable, a newer
+  // preview replaces them and Revert hands them back.
+  const COMPOSITION_THEME = {
+    name: "composition-lab",
+    label: "Composition Lab",
+    description:
+      "R4.1 walking skeleton — a badge and a meter in the page masthead, a count on the rail's foot.",
+    composition: {
+      layout: "stack",
+      widgets: [
+        {
+          type: "badge",
+          region: "page.masthead",
+          data: "weekly.files",
+          label: "Weekly",
+          tone: "accent",
+        },
+        {
+          type: "meter",
+          region: "page.masthead",
+          data: "weekly.files",
+          label: "This week",
+          max: 5,
+          tone: "success",
+        },
+        {
+          type: "badge",
+          region: "rail.footer",
+          data: "decisions.count",
+          label: "Decisions",
+          tone: "muted",
+        },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-lab.json"),
+    `${JSON.stringify(COMPOSITION_THEME, null, 2)}\n`,
+  );
+  const compositionWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-lab.json") &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1 &&
+      s.settingsEntry &&
+      s.stripPainted,
+    25_000,
+  );
+  check(
+    "a-theme-composition-paints-its-widgets",
+    compositionWorn?.preview === true &&
+      (compositionWorn.previewText ?? "").includes("composition-lab.json") &&
+      compositionWorn.compositionMasthead?.widgets === 2 &&
+      compositionWorn.compositionMasthead.labels[0] === "Weekly" &&
+      compositionWorn.compositionMasthead.labels[1] === "This week" &&
+      compositionWorn.compositionMasthead.values[0] === "2" &&
+      compositionWorn.compositionMasthead.values[1] === "2/5" &&
+      compositionWorn.compositionMeterNow === "2" &&
+      compositionWorn.compositionMeterMax === "5" &&
+      compositionWorn.compositionRailFooter === 1 &&
+      compositionWorn.settingsEntry === true &&
+      compositionWorn.stripPainted === true,
+    JSON.stringify({
+      preview: compositionWorn?.preview,
+      previewText: (compositionWorn?.previewText ?? "").slice(0, 120),
+      masthead: compositionWorn?.compositionMasthead,
+      rail: compositionWorn?.compositionRailFooter,
+      meter: [compositionWorn?.compositionMeterNow, compositionWorn?.compositionMeterMax],
+      settings: compositionWorn?.settingsEntry,
+      strip: compositionWorn?.stripPainted,
+    }),
+  );
+
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionMasthead?.widgets === 2, 15_000);
+  await sleep(300);
+  const compositionShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_PNG, compositionShot.toPNG());
+
+  // Keep makes the widgets durable before the longer operator walk below, so
+  // the ten-second countdown cannot decide the rest of the section.
+    const keptComposition = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const compositionKept = await waitFor(
+    (s) =>
+      keptComposition === true &&
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2,
+    15_000,
+  );
+
+  // The operator's one axis: hide the widgets, then hand them back with Reset.
+  const openedCompositionSettings = await evaluate(`(() => {
+    const trigger = document.querySelector(".settings-menu__trigger");
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  let compositionPanel = null;
+  for (let i = 0; i < 100; i += 1) {
+    compositionPanel = await evaluate(`(() => {
+      const panel = document.querySelector('[data-testid="theme-composition"]');
+      if (!panel) return null;
+      return { text: panel.textContent.slice(0, 220) };
+    })()`);
+    if (compositionPanel) break;
+    await evaluate(`(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`);
+    await sleep(150);
+  }
+  const compositionSettingsShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_SETTINGS_PNG, compositionSettingsShot.toPNG());
+
+  const hidComposition = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const compositionHidden = await waitFor(
+    (s) =>
+      hidComposition === true &&
+      s.compositionMasthead === null &&
+      s.compositionRailFooter === null &&
+      s.compositionYours === true,
+    15_000,
+  );
+  const resetComposition = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-reset"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const compositionRestored = await waitFor(
+    (s) =>
+      resetComposition === true &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1 &&
+      s.compositionYours === false,
+    15_000,
+  );
+  check(
+    "operator-hides-and-resets-a-theme-composition",
+    openedCompositionSettings === true &&
+      compositionPanel !== null &&
+      compositionHidden?.compositionMasthead === null &&
+      compositionHidden.compositionYours === true &&
+      compositionRestored?.compositionMasthead?.widgets === 2 &&
+      compositionRestored.compositionYours === false,
+    JSON.stringify({
+      panel: compositionPanel !== null,
+      hidden: compositionHidden?.compositionMasthead,
+      yours: compositionHidden?.compositionYours,
+      restored: compositionRestored?.compositionMasthead,
+    }),
+  );
+  // Leave Settings the same way the operator does.
+  await evaluate(`(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`);
+  await sleep(200);
+
+  fs.writeFileSync(
+    path.join(themesDir, "composition-quiet.json"),
+    `${JSON.stringify(
+      {
+        name: "composition-quiet",
+        label: "Composition Quiet",
+        composition: {
+          layout: "stack",
+          widgets: [
+            {
+              type: "badge",
+              region: "rail.footer",
+              data: "agents.count",
+              label: "Agents",
+              tone: "muted",
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const quietPreview = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("composition-quiet.json") &&
+      s.compositionMasthead === null &&
+      s.compositionRailFooter === 1,
+    20_000,
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const compositionBack = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      s.compositionRailFooter === 1,
+    15_000,
+  );
+  check(
+    "a-kept-composition-survives-preview-and-revert",
+    compositionKept?.kept === "composition-lab.json" &&
+      compositionKept.compositionMasthead?.widgets === 2 &&
+      quietPreview?.compositionMasthead === null &&
+      quietPreview.compositionRailFooter === 1 &&
+      compositionBack?.kept === "composition-lab.json" &&
+      compositionBack.compositionMasthead?.widgets === 2,
+    JSON.stringify({
+      kept: compositionKept?.kept,
+      quiet: quietPreview?.compositionMasthead,
+      back: compositionBack?.compositionMasthead,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -2708,6 +2986,11 @@ async function main() {
       r3Gate: path.relative(desktopRoot, R3_GATE_PNG),
       focusFloating: path.relative(desktopRoot, FOCUS_FLOATING_PNG),
       r4Validation: path.relative(desktopRoot, R4_VALIDATION_JSON),
+      composition: path.relative(desktopRoot, COMPOSITION_PNG),
+      compositionSettings: path.relative(
+        desktopRoot,
+        COMPOSITION_SETTINGS_PNG,
+      ),
     },
     theme: THEME,
     refused: BAD_THEME,
