@@ -9,7 +9,9 @@ import { NavCollapseButton } from "./NavCollapseButton";
 import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
+import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
+import { useTheme } from "@/components/theme/ThemeProvider";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -30,6 +32,7 @@ function countPending(decisions: readonly DecisionRecord[]): number {
 
 export function NavRail() {
   const { active } = useWing();
+  const { chrome } = useTheme();
   const { snapshot } = useVault();
   /**
    * The vault's own change signal, which is how a Decision filed by the agent
@@ -160,9 +163,26 @@ export function NavRail() {
         keeps all five wings reachable in the icon column — the rail cannot swap
         wings out of the operator's reach just because it narrowed.
       */}
-      <div className="nav-rail__wings-band" data-nav-group="wings">
-        <WingTabs />
-      </div>
+      {chrome.wingSwitcher.place === "rail-top" ? (
+        <div className="nav-rail__wings-band" data-nav-group="wings">
+          <WingTabs variant={chrome.wingSwitcher.variant} />
+        </div>
+      ) : null}
+      {/*
+        The area lens can live in the rail's own column: under the wings, above
+        the pages. It is the rail's second level of navigation when the operator
+        (or a theme) asks for it, and it keeps the same radio group and arrow
+        keys it has in the strip — only the frame changes.
+      */}
+      {chrome.domainSwitcher.place === "left-rail" ? (
+        <div
+          className="nav-rail__lens"
+          data-chrome-slot="domain"
+          data-chrome-place="left-rail"
+        >
+          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
+        </div>
+      ) : null}
       {topPinned.length > 0 ? (
         <>
           <div className="nav-rail__section">{topPinned.map(renderItem)}</div>

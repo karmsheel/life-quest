@@ -440,7 +440,11 @@ a {
     minmax(0, auto)
     minmax(max-content, 1fr);
   align-items: center;
-  height: env(titlebar-area-height, var(--window-titlebar-height));
+  /* The strip is as tall as the theme asks, but never shorter than the caption
+     area the platform draws: Windows and Linux hand the overlay a fixed height,
+     and painting the strip under it would hide the theme's own controls. On
+     macOS, where there is no overlay, the theme's height is the whole answer. */
+  height: max(env(titlebar-area-height, 0px), var(--window-titlebar-height));
   background: var(--titlebar-bg);
   color: var(--fg);
   -webkit-app-region: drag;
@@ -859,7 +863,8 @@ a {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1.25rem 1.5rem 1.5rem;
+  padding: var(--density-pad-page-y) var(--density-pad-page-x)
+    var(--density-pad-page-bottom);
 }
 
 .shell__content--bleed {
@@ -974,8 +979,8 @@ a {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 0 0.35rem 0.5rem;
-  gap: 0.2rem;
+  padding: 0 var(--density-pad-rail-x) 0.5rem;
+  gap: var(--density-gap-rail);
   overflow: hidden;
   margin-top: calc(-1 * var(--window-titlebar-height));
   margin-right: 0;
@@ -1168,7 +1173,7 @@ a {
   align-items: center;
   justify-content: flex-start;
   gap: 0.55rem;
-  padding: 0.42rem 0.55rem;
+  padding: var(--density-pad-row-y) var(--density-pad-row-x);
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.78rem;
@@ -7342,7 +7347,7 @@ a.home-mini-list__link:hover {
   justify-content: space-between;
   gap: 0.5rem;
   min-height: var(--shell-topbar-height);
-  padding: 0 0.75rem;
+  padding: 0 var(--density-pad-dock-x);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -7546,10 +7551,10 @@ a.home-mini-list__link:hover {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.875rem;
+  padding: var(--density-pad-chat);
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--density-gap-chat);
 }
 
 /* The text keeps the composer's margins, so a wide dock is one column: the
@@ -12629,6 +12634,1170 @@ button.chat-panel__activity-line:hover {
   cursor: default;
 }
 
+/* ——— theme chrome, v2 ——————————————————————————————————————————————————————
+   Where the shell's own components go when a theme file says something other
+   than the two default homes (the rail's top band and the lens in the strip).
+   Every host paints over the shell instead of taking part in its grid: moving a
+   switcher must not re-solve the page's columns, which is exactly what a
+   `display: contents`-style host would do. */
+
+.chrome-floating--wing {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 5.5rem;
+  z-index: 40;
+  max-width: min(22rem, 80vw);
+  padding: 0.25rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-bar--titlebar-left {
+  position: fixed;
+  top: 0.3rem;
+  left: calc(var(--shell-nav-width, 11rem) + 0.6rem);
+  z-index: 41;
+  max-width: min(24rem, 40vw);
+  padding: 0.1rem 0.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.chrome-bar--below-titlebar {
+  position: fixed;
+  top: var(--window-titlebar-height, 2rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: min(40rem, 90vw);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-dock--bottom {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.chrome-dock--floating {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.window-titlebar__leading--wings {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.domain-switcher--pill .domain-switcher__tabs {
+  border-radius: 999px;
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+}
+
+.domain-switcher--pill .ui-segmented__option {
+  border-radius: 999px;
+}
+
+/* The wing control's checked item. The ui-sdk segmented control exposes its
+   state as ARIA (a radio group); the app's own palette lives in the class. */
+.ui-segmented__option[aria-checked="true"] {
+  color: var(--text-strong);
+  background: var(--bg-elevated);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-xs);
+}
+
+.ui-segmented__option[aria-checked="true"]:hover {
+  background: var(--bg-elevated);
+}
+
+.nav-rail__wing-initial {
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+/* ——— theme preview bar —————————————————————————————————————————————————————
+   The consent gate: a theme the companion just wrote is worn for ten seconds
+   unless the operator keeps it. Bottom-centre, above the dock's own bottom
+   band, and never part of the page's layout. */
+
+.theme-preview-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(46rem, 92vw);
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.theme-preview-bar--error {
+  border-color: var(--danger, #8b3b3b);
+}
+
+.theme-preview-bar__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-preview-bar__text code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7em;
+}
+
+.theme-preview-bar__button {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--bg-muted);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.theme-preview-bar__button--keep {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+}
+
+/* ——— material layer ———————————————————————————————————————————————————————
+   Density and motion are theme state, not free CSS: a theme picks one of three
+   named steps and the stylesheet owns what each means. A theme therefore cannot
+   ship a transition or a gap of its own choosing. */
+
+[data-material-motion="none"] *,
+[data-material-motion="none"] *::before,
+[data-material-motion="none"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Lively keeps the same motions and changes their tempo: shorter durations and
+   a springier exit curve. It cannot invent a movement the app does not have. */
+[data-material-motion="lively"] {
+  --dur-quick: 90ms;
+  --dur-enter: 160ms;
+  --dur-exit: 110ms;
+  --ease-out: cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+/* Elevation. The sheet's own shadow plus the two surfaces that stand off it
+   (the Decisions card, the Nous mat). The colours are mixed from the palette's
+   ink, not baked black, so a dark skin's shadow is its own. */
+[data-material-shadow="flat"] {
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-card: 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+  --shadow-nous: none;
+}
+
+[data-material-shadow="deep"] {
+  --shadow-xs: 0 1px 1px color-mix(in srgb, var(--foreground) 9%, transparent);
+  --shadow-sm:
+    0 2px 4px color-mix(in srgb, var(--foreground) 9%, transparent),
+    0 6px 18px -8px color-mix(in srgb, var(--foreground) 14%, transparent);
+  --shadow-md:
+    0 12px 40px color-mix(in srgb, var(--foreground) 16%, transparent),
+    0 4px 10px color-mix(in srgb, var(--foreground) 8%, transparent);
+  --shadow-card:
+    0 2px 4px color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 18px 40px -16px color-mix(in srgb, var(--foreground) 32%, transparent);
+  --shadow-nous:
+    0 0.25rem 0.5rem -0.25rem color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 0.75rem 1.25rem -0.5rem color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 1.75rem 2.5rem -1rem color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* Procedural canvas. Two bundled gradients and one hairline grid — no imagery,
+   no remote URL, no per-theme CSS. They paint the page's own surface so a card
+   still sits on top of it rather than being tinted with it. */
+[data-material-backdrop="wash"] .shell__main {
+  background-image:
+    radial-gradient(
+      70rem 30rem at 8% -12%,
+      color-mix(in srgb, var(--primary) 13%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      52rem 26rem at 108% 4%,
+      color-mix(in srgb, var(--primary) 9%, transparent),
+      transparent 58%
+    );
+  background-repeat: no-repeat;
+}
+
+[data-material-backdrop="grid"] .shell__main {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 2rem 2rem;
+}
+
+/* Density is the spacing ladder itself: compact and airy restate the tokens the
+   shell's surfaces are built from, so the rail, the page's margins and the
+   dock's transcript all breathe together. Nothing sets a page's padding of its
+   own any more — a singleton would be a place a theme's step could not reach. */
+[data-material-density="compact"] {
+  --density-pad-page-x: 1.1rem;
+  --density-pad-page-y: 0.9rem;
+  --density-pad-page-bottom: 1.1rem;
+  --density-pad-rail-x: 0.2rem;
+  --density-gap-rail: 0.1rem;
+  --density-pad-row-x: 0.4rem;
+  --density-pad-row-y: 0.28rem;
+  --density-pad-dock-x: 0.5rem;
+  --density-pad-chat: 0.6rem;
+  --density-gap-chat: 0.6rem;
+  --shell-topbar-height: 2.5rem;
+}
+
+[data-material-density="airy"] {
+  --density-pad-page-x: 1.9rem;
+  --density-pad-page-y: 1.6rem;
+  --density-pad-page-bottom: 1.9rem;
+  --density-pad-rail-x: 0.6rem;
+  --density-gap-rail: 0.35rem;
+  --density-pad-row-x: 0.7rem;
+  --density-pad-row-y: 0.55rem;
+  --density-pad-dock-x: 1rem;
+  --density-pad-chat: 1.1rem;
+  --density-gap-chat: 1.1rem;
+  --shell-topbar-height: 3rem;
+}
+
+/* ——— theme files (Settings → Appearance) ———————————————————————————————————————
+   The v2 theme file's Settings surface: where files from the profile's themes/
+   folder are tried, kept and removed. It sits below the skin grid and is ruled
+   off from it like the install section, because it is a second kind of theme —
+   files from disk rather than themes the app ships. */
+
+.theme-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-files__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-files__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-files__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-files__intro,
+.theme-files__empty {
+  margin: 0.3rem 0 0;
+  max-width: 40rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-files__intro code,
+.theme-files__empty code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.theme-files__actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.theme-files__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-files__message {
+  margin: 0;
+}
+
+.theme-files__empty {
+  margin-top: 0.15rem;
+}
+
+.theme-files__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-files__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.theme-files__copy {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-files__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+}
+
+.theme-files__label {
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.theme-files__file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-files__desc {
+  max-width: 36rem;
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+/* Where the theme puts the two switchers, in the theme file's own vocabulary —
+   the same words the companion reads, so the two can talk about one file. */
+.theme-files__chrome {
+  margin: 0.25rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+}
+
+.theme-files__chrome code {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.theme-files__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* The row's controls are compact: Try, Keep and Remove share one line beside the
+   file's own copy, so they take a smaller step than a page's control. */
+.theme-files__row-actions .btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.theme-files__kept {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.72rem;
+}
+
+/* ——— material (Settings → Appearance) ————————————————————————————————————————
+   The operator's side of the material layer: six named-step controls, each one
+   a pick above the theme's. Ruled off from the skin grid above and the theme
+   files below, the same way those two sections separate themselves. */
+
+.theme-material {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-material__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-material__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-material__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-material__intro {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-material__intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.theme-material__reset {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-material__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Six compact rows in one block: the settings hairline stays between them, but
+   the spacing is a step tighter than the page's one-row-per-setting measure. */
+.theme-material__rows .theme-material__row + .theme-material__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+.theme-material__row {
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+}
+
+.theme-material__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+}
+
+/* The operator's marker: a dot and the word, kept small so it annotates the
+   axis name rather than competing with it. Shown only for a picked axis, so an
+   untouched control reads as the theme's own. */
+.theme-material__yours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.theme-material__yours-dot {
+  flex: 0 0 auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.theme-material__control {
+  flex: 0 0 auto;
+}
+
+/* ——— layout (Settings → Appearance) ——————————————————————————————————————————
+   The operator's side of the chrome layout: where the wing switcher, the area
+   lens and the sidebar sit, each one a pick above the theme's. Ruled off from
+   the material section above and the theme files below, the same way those two
+   separate themselves, and structured like Material so the two read as
+   siblings. */
+
+.theme-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.theme-layout__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+}
+
+.theme-layout__heading {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.theme-layout__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.theme-layout__intro {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.theme-layout__intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.theme-layout__reset {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-layout__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Five compact rows in one block: the settings hairline stays between them, but
+   the spacing is a step tighter than the page's one-row-per-setting measure. */
+.theme-layout__rows .theme-layout__row + .theme-layout__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+.theme-layout__row {
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+}
+
+.theme-layout__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+}
+
+/* The operator's marker: a dot and the word, kept small so it annotates the
+   component rather than competing with it. Shown only for a picked component,
+   so an untouched control reads as the theme's own. */
+.theme-layout__yours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--text-strong);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.theme-layout__yours-dot {
+  flex: 0 0 auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.theme-layout__control {
+  flex: 0 0 auto;
+}
+
+/* Hidden is a legitimate pick, not a trap: say where the way out is. */
+.theme-layout__note {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+/* ——— variant matrix: compact wings, the rail's lens, icons and lists ————————
+   The theme file's third rung: the same controls, wearing their declared
+   variants. Every rule here is a variant of an existing control — none of them
+   invents a new component, and none of them can be reached by a theme file
+   except through the closed enums in the shared theme model. */
+
+/* The compact wing switcher: the fewest letters that still name each wing, at
+   the rail's tight padding. The full word stays in the option's aria-label. */
+.nav-rail__wings--compact .ui-segmented__option {
+  padding: 0.45rem 0.15rem;
+  font-size: 0.5625rem;
+}
+
+/* The area lens in the rail's column: under the wings, above the pages, full
+   width — the rail's second level of navigation. */
+.nav-rail__lens {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0.15rem 0 0.3rem;
+  min-width: 0;
+}
+
+.nav-rail__lens .domain-switcher {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.nav-rail__lens .domain-switcher__tabs {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The icon lens: one initial per area, the name kept for the screen reader. */
+.domain-switcher--icons .domain-switcher__initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+/* The list lens: the same radio group stacked in a column, for the rail's
+   column or a bottom dock that wants rows rather than a strip. */
+.domain-switcher--list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 0.15rem;
+}
+
+.domain-switcher--list .domain-switcher__tabs {
+  flex-direction: column;
+  width: 100%;
+  gap: 0.15rem;
+}
+
+.domain-switcher--list .ui-segmented__option {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.domain-switcher--list .domain-switcher__name {
+  max-width: 100%;
+}
+
+/* ——— the sidebar on the right ————————————————————————————————————————————
+   A theme can put the navigation on the window's trailing edge. The panes keep
+   their DOM order and the tray re-places them by track; the rail trades its
+   trailing hairline for a leading one and carries the frame's slack out to the
+   window's edge, which the dock does when it is the last column.
+
+   The rail also stops overlapping the window strip here: the strip's own
+   trailing controls (the caption buttons on Windows and Linux) live in that
+   corner, and the sidebar must never paint over them. */
+:root[data-chrome-nav-place="right"] .shell {
+  grid-template-columns: 1fr var(--chat-column) var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell > .nav-rail {
+  grid-column: 3;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+  width: calc(var(--nav-column) + var(--shell-frame));
+  height: calc(100% + var(--shell-frame));
+  margin-top: 0;
+  margin-right: calc(-1 * var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="right"] .shell > .nav-rail .nav-rail__header {
+  justify-content: flex-start;
+  margin: 0 0 0.1rem -0.35rem;
+}
+
+:root[data-chrome-nav-place="right"] .shell > .shell__main {
+  grid-column: 1;
+}
+
+:root[data-chrome-nav-place="right"] .shell > .chat-panel {
+  grid-column: 2;
+  width: var(--chat-column);
+}
+
+/* The dock beside the rail, when the rail is on the right: the dock takes the
+   window's leading column, the sheet the middle, the rail the trailing one. */
+:root[data-chrome-nav-place="right"] .shell--chat-left {
+  grid-template-columns: var(--chat-column) 1fr var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .shell__main {
+  grid-column: 2;
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .chat-panel {
+  grid-column: 1;
+  width: calc(var(--chat-column) + var(--shell-frame));
+}
+
+/* Collapsed dock: the sheet already gives up its frame to the window edge in
+   the trailing arrangement, but the rail is the trailing pane now, so the sheet
+   keeps its own box and the rail carries the slack. */
+:root[data-chrome-nav-place="right"] .shell--chat-collapsed.shell--chat-right > .shell__main {
+  width: 100%;
+}
+
+/* The seam's handle follows the dock: its leading edge in the trailing
+   arrangement, its trailing edge in the leading one. */
+:root[data-chrome-nav-place="right"] .shell--chat-right > .chat-divider {
+  left: calc(100% - var(--chat-column) - var(--nav-column));
+}
+
+:root[data-chrome-nav-place="right"] .shell--chat-left > .chat-divider {
+  left: var(--chat-column);
+}
+
+/* The strip mirrors with the rail: the lens centres between the window's
+   leading edge and the rail's leading edge, and the trailing track reserves the
+   sidebar's column so the window controls never crowd the tab. */
+.window-titlebar[data-nav-place="right"] {
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(0, auto)
+    minmax(var(--shell-nav-width), 1fr);
+}
+
+.window-titlebar[data-nav-place="right"][data-nav-collapsed] {
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(0, auto)
+    minmax(var(--shell-nav-width-collapsed), 1fr);
+}
+
+/* The moved wing switcher anchors to the page's leading edge when the rail no
+   longer owns it. */
+:root[data-chrome-nav-place="right"] .chrome-bar--titlebar-left {
+  left: 0.6rem;
+}
+
+/* ——— the sidebar afloat —————————————————————————————————————————————————
+   Floating chrome: the rail leaves the tray's first track entirely and rides
+   over the page as its own card, the way a floating dock does. The page keeps
+   the window's full width underneath — the operator chooses the overlay, and
+   the collapsed column still works as a thin launcher. */
+:root[data-chrome-nav-place="floating"] .shell {
+  --nav-column: 0px;
+  grid-template-columns: 0 1fr var(--chat-column);
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left {
+  grid-template-columns: 0 var(--chat-column) 1fr;
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .shell__main {
+  grid-column: 2;
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .chat-panel {
+  grid-column: 3;
+  width: calc(var(--chat-column) + var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left > .chat-panel {
+  grid-column: 2;
+  width: var(--chat-column);
+}
+
+:root[data-chrome-nav-place="floating"] .shell--chat-left > .shell__main {
+  grid-column: 3;
+  width: calc(100% + var(--shell-frame));
+}
+
+/* The rail itself: out of the grid, a rounded card below the strip, holding
+   the same column layout inside. Its own width is the token the theme picked;
+   collapsed, it narrows to the icon column like the docked rail. */
+:root[data-chrome-nav-place="floating"] .shell > .nav-rail {
+  grid-column: 1;
+  position: absolute;
+  z-index: 25;
+  top: calc(var(--window-titlebar-height) + 0.75rem);
+  left: 0.75rem;
+  bottom: 0.75rem;
+  width: var(--shell-sidebar-width);
+  height: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-chrome-nav-place="floating"] .shell.shell--nav-collapsed > .nav-rail {
+  width: var(--shell-nav-width-collapsed);
+}
+
+:root[data-chrome-nav-place="floating"] .shell > .nav-rail .nav-rail__header {
+  height: auto;
+  padding: 0.35rem 0 0;
+  margin: 0;
+}
+
+/* The strip, when the rail is not in it: the lens centres across the window
+   and the moved wing switcher anchors to the page's leading edge. */
+.window-titlebar[data-nav-place="floating"] {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, auto)
+    minmax(0, 1fr);
+}
+
+:root[data-chrome-nav-place="floating"] .chrome-bar--titlebar-left {
+  left: 0.6rem;
+}
+
+/* ——— the scene behind the page ————————————————————————————————————————————
+   A theme may name a sky. The vocabulary is the app's: presets, not pixels.
+   The layer sits inside the page canvas, under the page's content, and behind
+   a palette scrim — decoration must never cost the text its contrast. An
+   arguing theme cannot: a scene is only ever a preset and an intensity.
+
+   The layer is positioned only while a scene is on, so the default shell keeps
+   the layout it had; a plain scene leaves no positioning context behind. */
+:root:not([data-scene-backdrop="plain"]) .shell__main {
+  position: relative;
+}
+
+:root:not([data-scene-backdrop="plain"]) .shell__content {
+  position: relative;
+  z-index: 1;
+}
+
+.scene-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* How lively the scene runs, and how loud it may paint. The intensity is the
+     theme's word; these two are what the renderer reads. */
+  --scene-speed: 1;
+  --scene-opacity: 0.5;
+}
+
+/* The scrim: the page's own ink, most of the way opaque, so a starfield is
+   something the welcome page is sitting on rather than something it fights. */
+.scene-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--background) 74%, transparent);
+}
+
+:root[data-scene-intensity="calm"] .scene-backdrop {
+  --scene-speed: 1.7;
+  --scene-opacity: 0.36;
+}
+
+:root[data-scene-intensity="default"] .scene-backdrop {
+  --scene-speed: 1;
+  --scene-opacity: 0.5;
+}
+
+:root[data-scene-intensity="lively"] .scene-backdrop {
+  --scene-speed: 0.55;
+  --scene-opacity: 0.66;
+}
+
+/* — starfield — */
+.scene-backdrop__star {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: var(--scene-opacity);
+  animation: scene-twinkle calc(var(--duration) * var(--scene-speed))
+    ease-in-out var(--delay) infinite;
+  will-change: opacity;
+}
+
+@keyframes scene-twinkle {
+  0%,
+  100% {
+    opacity: calc(var(--scene-opacity) * 0.35);
+  }
+  50% {
+    opacity: var(--scene-opacity);
+  }
+}
+
+/* — orbit — */
+.scene-backdrop__system {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.scene-backdrop__ring,
+.scene-backdrop__planet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--rx) * 2);
+  height: calc(var(--ry) * 2);
+  margin-left: calc(var(--rx) * -1);
+  margin-top: calc(var(--ry) * -1);
+  border-radius: 50%;
+}
+
+.scene-backdrop__ring {
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  transform: rotate(var(--rotate));
+  animation: scene-spin calc(120s * var(--scene-speed)) linear
+    calc(var(--delay) * -1s) infinite;
+  will-change: transform;
+}
+
+.scene-backdrop__planet {
+  animation: scene-spin calc(74s * var(--scene-speed)) linear
+    calc(var(--delay) * -1s) infinite;
+  will-change: transform;
+}
+
+.scene-backdrop__planet::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+@keyframes scene-spin {
+  to {
+    transform: rotate(calc(var(--rotate) + 360deg));
+  }
+}
+
+/* — aurora — */
+.scene-backdrop__aurora {
+  position: absolute;
+  inset: 0;
+}
+
+.scene-backdrop__band {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: var(--top);
+  height: var(--height);
+  background: linear-gradient(
+    100deg,
+    transparent,
+    hsl(var(--hue) 85% 62% / 0.3),
+    transparent
+  );
+  filter: blur(26px);
+  animation: scene-aurora calc(23s * var(--scene-speed)) ease-in-out
+    var(--delay) infinite alternate;
+  will-change: transform;
+}
+
+@keyframes scene-aurora {
+  from {
+    transform: translate3d(-3%, 0, 0) scaleY(1);
+  }
+  to {
+    transform: translate3d(3%, 0, 0) scaleY(1.18);
+  }
+}
+
+/* Decoration is never worth a vestibular cost or a frame the operator feels
+   while typing: reduced motion holds the whole scene dead still. */
+@media (prefers-reduced-motion: reduce) {
+  .scene-backdrop,
+  .scene-backdrop * {
+    animation: none !important;
+  }
+}
+
+/* ——— the frame layer ————————————————————————————————————————————————————
+   Scene's second vocabulary: a decorative edge drawn inside the page canvas,
+   and a named treatment for the page's cards. Both are the app's pixels — the
+   theme picks a word, the stylesheet owns the drawing — so a frame can never
+   become an arbitrary outline, and the operator's Reset takes it away.
+
+   The edge is `pointer-events: none` and floats over scrolled content rather
+   than shrinking the page: a frame must not cost a control its target. */
+:root:not([data-scene-canvas-frame="none"]) .shell__main {
+  position: relative;
+}
+
+:root:not([data-scene-canvas-frame="none"]) .shell__main::after {
+  content: "";
+  position: absolute;
+  inset: 0.55rem;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: calc(var(--radius-md) - 2px);
+}
+
+:root[data-scene-canvas-frame="hairline"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+:root[data-scene-canvas-frame="double"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: inset 0 0 0 3px
+    color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+:root[data-scene-canvas-frame="halo"] .shell__main::after {
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow:
+    inset 0 0 30px color-mix(in srgb, var(--accent) 16%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* One card family per surface already exists in the stylesheet; the frame
+   variant restates only the three properties that make a card a card — fill,
+   edge and lift — so a card that owns a special shape keeps it. */
+:root[data-scene-card-frame="outline"]
+  :is(
+    .home-card,
+    .view-card,
+    .domain-card,
+    .personnel-card,
+    .doc-card,
+    .welcome-card,
+    .settings-card
+  ) {
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  box-shadow: none;
+}
+
+:root[data-scene-card-frame="raised"]
+  :is(
+    .home-card,
+    .view-card,
+    .domain-card,
+    .personnel-card,
+    .doc-card,
+    .welcome-card,
+    .settings-card
+  ) {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  box-shadow:
+    0 14px 30px -20px color-mix(in srgb, var(--fg) 42%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
 /* —— Review windows (Settings › Review) ——
    Five rows, one per cadence: the control is a pair — how many days before the
    period ends, and the wall-clock time it opens — with the rule those two make
@@ -12705,3 +13874,4 @@ button.chat-panel__activity-line:hover {
   padding-top: 1.25rem;
   border-top: 1px solid var(--border-soft);
 }
+

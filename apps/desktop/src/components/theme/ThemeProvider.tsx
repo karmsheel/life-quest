@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -36,6 +37,248 @@ import {
   type InstallResult,
 } from "@/lib/themes/user-themes";
 import type { ForgeSkin } from "@/lib/themes/types";
+import {
+  applyChrome,
+  applyMaterial,
+  applyScene,
+  BACKDROPS,
+  CHAT_DOCK_SIDES,
+  DEFAULT_THEME_CHROME,
+  DEFAULT_THEME_MATERIAL,
+  DEFAULT_THEME_SCENE,
+  DENSITIES,
+  DOMAIN_PLACES,
+  DOMAIN_VARIANTS,
+  layerChrome,
+  layerScene,
+  MOTIONS,
+  parseThemeFile,
+  RADII,
+  NAV_RAIL_PLACES,
+  NAV_RAIL_WIDTHS,
+  resolveChrome,
+  resolveMaterial,
+  resolveScene,
+  SCENE_BACKDROPS,
+  SCENE_CANVAS_FRAMES,
+  SCENE_CARD_FRAMES,
+  SCENE_INTENSITIES,
+  SHADOWS,
+  TITLEBAR_SIZES,
+  TYPE_SCALES,
+  WING_PLACES,
+  WING_VARIANTS,
+  type ThemeChrome,
+  type ThemeChromeOverride,
+  type ThemeFile,
+  type ThemeMaterial,
+  type ThemeScene,
+  type ThemeSceneOverride,
+} from "@/lib/themes/theme-file";
+
+/**
+ * The v1 spike kept the worn theme's name in localStorage. Main now owns that
+ * answer (`theme-state.json`) so the companion's `get_theme` can read it; this
+ * key is read once at startup and migrated.
+ */
+const LEGACY_THEME_FILE_STORAGE_KEY = "lifequest-theme-file";
+/**
+ * How long a theme the companion just wrote is shown before it hands the window
+ * back. Ten seconds is long enough to look at, short enough that a bad write
+ * cannot strand the operator in a shell they cannot navigate.
+ */
+const THEME_PREVIEW_MS = 10_000;
+
+/**
+ * The operator's own material overrides, kept per window like the skin.
+ *
+ * A theme (or the companion that wrote it) chooses the material, but the
+ * operator is the one looking at it: Settings → Appearance can tune any of the
+ * six axes and the choice is layered over whatever theme is worn. It is not a
+ * theme file and never enters the vault; `Reset` returns to the theme's own
+ * material.
+ */
+const MATERIAL_OVERRIDE_STORAGE_KEY = "lifequest-material-override";
+
+/** The operator's own chrome picks, per window, layered over the theme's. */
+const CHROME_OVERRIDE_STORAGE_KEY = "lifequest-chrome-override";
+
+/**
+ * The operator's own scene pick, per window, layered over the theme's.
+ *
+ * A scene is decoration the operator is the one looking at; a theme may name a
+ * sky, but Settings can quiet it without editing the file. Never a theme file.
+ */
+const SCENE_OVERRIDE_STORAGE_KEY = "lifequest-scene-override";
+
+const MATERIAL_ENUMS = {
+  radius: RADII,
+  density: DENSITIES,
+  motion: MOTIONS,
+  shadow: SHADOWS,
+  typeScale: TYPE_SCALES,
+  backdrop: BACKDROPS,
+} as const;
+
+function readStoredMaterialOverride(): Partial<ThemeMaterial> {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(MATERIAL_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: Partial<ThemeMaterial> = {};
+    for (const [key, allowed] of Object.entries(MATERIAL_ENUMS)) {
+      const value = raw[key];
+      if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {
+        (override as Record<string, string>)[key] = value;
+      }
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function readStoredChromeOverride(): ThemeChromeOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(CHROME_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: ThemeChromeOverride = {};
+    const pick = <T extends string>(
+      value: unknown,
+      allowed: readonly T[],
+    ): T | undefined =>
+      typeof value === "string" && (allowed as readonly string[]).includes(value)
+        ? (value as T)
+        : undefined;
+    if (isRecord(raw.wingSwitcher)) {
+      const wing = {
+        ...(pick(raw.wingSwitcher.place, WING_PLACES)
+          ? { place: pick(raw.wingSwitcher.place, WING_PLACES)! }
+          : {}),
+        ...(pick(raw.wingSwitcher.variant, WING_VARIANTS)
+          ? { variant: pick(raw.wingSwitcher.variant, WING_VARIANTS)! }
+          : {}),
+      };
+      if (Object.keys(wing).length > 0) override.wingSwitcher = wing;
+    }
+    if (isRecord(raw.domainSwitcher)) {
+      const domain = {
+        ...(pick(raw.domainSwitcher.place, DOMAIN_PLACES)
+          ? { place: pick(raw.domainSwitcher.place, DOMAIN_PLACES)! }
+          : {}),
+        ...(pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)
+          ? { variant: pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)! }
+          : {}),
+      };
+      if (Object.keys(domain).length > 0) override.domainSwitcher = domain;
+    }
+    if (isRecord(raw.chatDock)) {
+      const side = pick(raw.chatDock.side, CHAT_DOCK_SIDES);
+      if (side) override.chatDock = { side };
+    }
+    if (isRecord(raw.titlebar)) {
+      const size = pick(raw.titlebar.size, TITLEBAR_SIZES);
+      if (size) override.titlebar = { size };
+    }
+    if (isRecord(raw.navRail)) {
+      const place = pick(raw.navRail.place, NAV_RAIL_PLACES);
+      const width = pick(raw.navRail.width, NAV_RAIL_WIDTHS);
+      if (place || width) {
+        override.navRail = {
+          ...(place ? { place } : {}),
+          ...(width ? { width } : {}),
+        };
+      }
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function persistChromeOverride(override: ThemeChromeOverride): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(CHROME_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(CHROME_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistMaterialOverride(override: Partial<ThemeMaterial>): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(MATERIAL_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(MATERIAL_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+
+function readStoredSceneOverride(): ThemeSceneOverride {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(SCENE_OVERRIDE_STORAGE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const override: ThemeSceneOverride = {};
+    if (isRecord(raw.frames)) {
+      const canvas = raw.frames.canvas;
+      const cards = raw.frames.cards;
+      override.frames = {
+        ...(typeof canvas === "string" &&
+        (SCENE_CANVAS_FRAMES as readonly string[]).includes(canvas)
+          ? { canvas: canvas as ThemeScene["frames"]["canvas"] }
+          : {}),
+        ...(typeof cards === "string" &&
+        (SCENE_CARD_FRAMES as readonly string[]).includes(cards)
+          ? { cards: cards as ThemeScene["frames"]["cards"] }
+          : {}),
+      };
+      if (Object.keys(override.frames).length === 0) delete override.frames;
+    }
+    if (isRecord(raw.background)) {
+      const preset = raw.background.preset;
+      const intensity = raw.background.intensity;
+      override.background = {
+        ...(typeof preset === "string" &&
+        (SCENE_BACKDROPS as readonly string[]).includes(preset)
+          ? { preset: preset as ThemeScene["background"]["preset"] }
+          : {}),
+        ...(typeof intensity === "string" &&
+        (SCENE_INTENSITIES as readonly string[]).includes(intensity)
+          ? { intensity: intensity as ThemeScene["background"]["intensity"] }
+          : {}),
+      };
+      if (Object.keys(override.background).length === 0) delete override.background;
+    }
+    return override;
+  } catch {
+    return {};
+  }
+}
+
+function persistSceneOverride(override: ThemeSceneOverride): void {
+  try {
+    if (Object.keys(override).length === 0) {
+      localStorage.removeItem(SCENE_OVERRIDE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(SCENE_OVERRIDE_STORAGE_KEY, JSON.stringify(override));
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -59,6 +302,60 @@ interface ThemeContextValue {
   installSkin: (raw: unknown) => InstallResult;
   /** Take an installed theme back out, unstarring it and leaving it if it is worn. */
   uninstallSkin: (skinName: string) => void;
+  /**
+   * The v2 theme file this window is wearing. `null` means the shell's default
+   * chrome — a window that has never been given a theme file.
+   */
+  themeFile: ThemeFile | null;
+  /** Where the shell's own components live, resolved from `themeFile` + overrides. */
+  chrome: ThemeChrome;
+  /** The operator's own chrome picks, layered over the theme's. */
+  chromeOverride: ThemeChromeOverride;
+  /** Change one or more chrome fields and wear the result at once. */
+  setChromeOverride: (patch: ThemeChromeOverride) => void;
+  /** Drop every operator chrome override and hand layout back to the theme. */
+  resetChromeOverride: () => void;
+  /** The material layer the window is actually wearing (theme + overrides). */
+  material: ThemeMaterial;
+  /** The operator's own material picks, layered over the theme's. */
+  materialOverride: Partial<ThemeMaterial>;
+  /** Set one or more material axes and wear the result at once. */
+  setMaterialOverride: (patch: Partial<ThemeMaterial>) => void;
+  /** Drop every operator override and hand the axes back to the theme. */
+  resetMaterialOverride: () => void;
+  /** The scene layer the window is actually wearing (theme + operator pick). */
+  scene: ThemeScene;
+  /** The operator's own scene pick, layered over the theme's. */
+  sceneOverride: ThemeSceneOverride;
+  /** Set the background preset or intensity and wear the result at once. */
+  setSceneOverride: (patch: ThemeSceneOverride) => void;
+  /** Drop the operator's scene pick and hand the backdrop back to the theme. */
+  resetSceneOverride: () => void;
+  /** A file the companion just wrote: worn, but not yet kept. */
+  themePreview: { file: string; label: string } | null;
+  /** Why the newest theme file was refused, if it was. */
+  themeError: string | null;
+  keepThemePreview: () => void;
+  revertThemePreview: () => void;
+  /** Every valid theme file in the profile, in name order — the Settings list. */
+  themeFiles: { file: string; theme: ThemeFile }[];
+  /** The file the operator kept, as stored in main so the tools can read it. */
+  keptFile: string | null;
+  /** Wear one file as a preview (ten-second countdown). */
+  applyThemeFile: (file: string) => void;
+  /** Wear one file and keep it at once — the Settings "Keep" action. */
+  keepThemeFile: (file: string) => void;
+  /** Remove a theme file from the profile, clearing the kept name if it was it. */
+  removeThemeFile: (file: string) => Promise<void>;
+  /** Read the profile's themes/ directory again. */
+  refreshThemeFiles: () => Promise<void>;
+  /** Open the profile's themes/ directory in the OS file manager. */
+  openThemesFolder: () => Promise<void>;
+  /**
+   * Write the theme this window is wearing as one JSON file: palette, material
+   * and chrome. Returns the saved path, null when the operator cancelled.
+   */
+  exportCurrentTheme: () => Promise<{ path: string } | null>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -137,6 +434,464 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const skin = resolveSkin(name);
     return skinSupportsMode(skin, mode) ? skin.name : FALLBACK_SKIN_NAME;
   }, []);
+
+  /*
+   * The v2 theme file: chrome placement and material, loaded from the app
+   * profile's `themes/` directory. The palette stays the skin's, so a theme file
+   * may add colour on top but never has to own the whole look.
+   */
+  const [themeFile, setThemeFile] = useState<ThemeFile | null>(null);
+  const [chrome, setChrome] = useState<ThemeChrome>(DEFAULT_THEME_CHROME);
+  const [chromeOverride, setChromeOverrideState] = useState<ThemeChromeOverride>(
+    readStoredChromeOverride,
+  );
+  const chromeOverrideRef = useRef<ThemeChromeOverride>(chromeOverride);
+  const [material, setMaterial] = useState<ThemeMaterial>(DEFAULT_THEME_MATERIAL);
+  const [materialOverride, setMaterialOverrideState] = useState<
+    Partial<ThemeMaterial>
+  >(readStoredMaterialOverride);
+  /** Read from paintTheme without making it depend on override changes. */
+  const materialOverrideRef = useRef<Partial<ThemeMaterial>>(materialOverride);
+  const [scene, setScene] = useState<ThemeScene>(DEFAULT_THEME_SCENE);
+  const [sceneOverride, setSceneOverrideState] = useState<ThemeSceneOverride>(
+    readStoredSceneOverride,
+  );
+  const sceneOverrideRef = useRef<ThemeSceneOverride>(sceneOverride);
+  const [themePreview, setThemePreview] = useState<{
+    file: string;
+    label: string;
+  } | null>(null);
+  const [themeError, setThemeError] = useState<string | null>(null);
+  const [themeFiles, setThemeFiles] = useState<
+    { file: string; theme: ThemeFile }[]
+  >([]);
+  const [keptFile, setKeptFile] = useState<string | null>(null);
+  const themePreviewTimer = useRef<number | null>(null);
+  /** Last mtime seen per file, so a hot reload can name what actually changed. */
+  const themeMtimes = useRef<Map<string, number>>(new Map());
+  /** The theme this window reverts to; the rendered `themeFile` moves on preview. */
+  const keptTheme = useRef<ThemeFile | null>(null);
+  /** The kept file name, readable from callbacks that must not go stale. */
+  const keptFileRef = useRef<string | null>(null);
+  /** The theme currently painted, read from callbacks that must not go stale. */
+  const paintedTheme = useRef<ThemeFile | null>(null);
+  const previewRef = useRef<{ file: string; label: string } | null>(null);
+
+  /**
+   * Paint one theme: resolve its defaults, write the material layer, and (when
+   * it carries colours) layer its palette over the skin it sits on.
+   *
+   * The palette is layered rather than replaced: a theme file is allowed to name
+   * three colours and inherit the rest, which is what makes a small theme file
+   * possible at all.
+   */
+  const paintTheme = useCallback(
+    (next: ThemeFile | null) => {
+      paintedTheme.current = next;
+      // Theme first, operator second: Settings' own picks always win, which is
+      // what makes "a theme can never take the window away" true for material
+      // too — a loud theme can be calmed without editing its file.
+      const nextMaterial = resolveMaterial({
+        ...next?.material,
+        ...materialOverrideRef.current,
+      });
+      // Theme first, operator second — the same rule as material: a theme
+      // proposes a layout, the operator's own Settings picks always win.
+      const nextChrome = layerChrome(
+        next?.chrome,
+        chromeOverrideRef.current,
+      );
+      setChrome(nextChrome);
+      applyChrome(nextChrome, document.documentElement);
+      setMaterial(nextMaterial);
+      applyMaterial(nextMaterial, document.documentElement);
+      // Theme first, operator second — the scene is decoration the operator is
+      // the one looking at, so their pick outranks the theme's like the rest.
+      const nextScene = layerScene(next?.scene, sceneOverrideRef.current);
+      setScene(nextScene);
+      applyScene(nextScene, document.documentElement);
+      if (next?.colors) {
+        const base = resolveSkin(skinName);
+        applySkin(
+          {
+            ...base,
+            colors: { ...base.colors, ...next.colors },
+            ...(next.darkColors && base.darkColors
+              ? { darkColors: { ...base.darkColors, ...next.darkColors } }
+              : {}),
+          } as ForgeSkin,
+          resolved,
+        );
+      }
+    },
+    [resolved, skinName],
+  );
+
+  /** Stop the countdown and give the window back the theme it had kept. */
+  const revertThemePreview = useCallback(() => {
+    if (themePreviewTimer.current !== null) {
+      window.clearTimeout(themePreviewTimer.current);
+      themePreviewTimer.current = null;
+    }
+    previewRef.current = null;
+    setThemePreview(null);
+    setThemeError(null);
+    setThemeFile(keptTheme.current);
+    paintTheme(keptTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change one or more material axes. This is an operator preference, not a
+   * theme write: it is layered over every theme (including previews) and
+   * persisted per window, so trying a theme does not silently drop the
+   * operator's own picks.
+   */
+  const setMaterialOverride = useCallback(
+    (patch: Partial<ThemeMaterial>) => {
+      const next = { ...materialOverrideRef.current, ...patch };
+      materialOverrideRef.current = next;
+      setMaterialOverrideState(next);
+      persistMaterialOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetMaterialOverride = useCallback(() => {
+    materialOverrideRef.current = {};
+    setMaterialOverrideState({});
+    persistMaterialOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change the scene layer. Layered over the theme for every paint (including
+   * previews) and persisted per window, exactly as material and chrome are.
+   */
+  const setSceneOverride = useCallback(
+    (patch: ThemeSceneOverride) => {
+      const next: ThemeSceneOverride = {
+        background: {
+          ...sceneOverrideRef.current.background,
+          ...patch.background,
+        },
+        frames: {
+          ...sceneOverrideRef.current.frames,
+          ...patch.frames,
+        },
+      };
+      if (Object.keys(next.background ?? {}).length === 0) delete next.background;
+      if (Object.keys(next.frames ?? {}).length === 0) delete next.frames;
+      sceneOverrideRef.current = next;
+      setSceneOverrideState(next);
+      persistSceneOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetSceneOverride = useCallback(() => {
+    sceneOverrideRef.current = {};
+    setSceneOverrideState({});
+    persistSceneOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Change the wing/domain placement, variant or rail width. Layered over the
+   * theme for every paint (including previews) and persisted per window.
+   */
+  const setChromeOverride = useCallback(
+    (patch: ThemeChromeOverride) => {
+      const next: ThemeChromeOverride = {
+        wingSwitcher: {
+          ...chromeOverrideRef.current.wingSwitcher,
+          ...patch.wingSwitcher,
+        },
+        domainSwitcher: {
+          ...chromeOverrideRef.current.domainSwitcher,
+          ...patch.domainSwitcher,
+        },
+        navRail: { ...chromeOverrideRef.current.navRail, ...patch.navRail },
+        chatDock: { ...chromeOverrideRef.current.chatDock, ...patch.chatDock },
+        titlebar: { ...chromeOverrideRef.current.titlebar, ...patch.titlebar },
+      };
+      // Drop empty branches so "no overrides" stays a clean empty object.
+      for (const key of Object.keys(next) as (keyof ThemeChromeOverride)[]) {
+        if (Object.keys(next[key] ?? {}).length === 0) delete next[key];
+      }
+      chromeOverrideRef.current = next;
+      setChromeOverrideState(next);
+      persistChromeOverride(next);
+      paintTheme(paintedTheme.current);
+    },
+    [paintTheme],
+  );
+
+  const resetChromeOverride = useCallback(() => {
+    chromeOverrideRef.current = {};
+    setChromeOverrideState({});
+    persistChromeOverride({});
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /** Wear one file as a preview; after ten seconds it reverts by itself. */
+  const showPreview = useCallback(
+    (next: { file: string; theme: ThemeFile }) => {
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+      }
+      const preview = { file: next.file, label: next.theme.label };
+      previewRef.current = preview;
+      setThemePreview(preview);
+      setThemeError(null);
+      setThemeFile(next.theme);
+      paintTheme(next.theme);
+      themePreviewTimer.current = window.setTimeout(() => {
+        themePreviewTimer.current = null;
+        revertThemePreview();
+      }, THEME_PREVIEW_MS);
+    },
+    [paintTheme, revertThemePreview],
+  );
+
+  /**
+   * Keep the previewed theme: persisted by file name in main (so the companion's
+   * `get_theme` sees the same answer), worn from now on.
+   */
+  const keepThemePreview = useCallback(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    if (themePreviewTimer.current !== null) {
+      window.clearTimeout(themePreviewTimer.current);
+      themePreviewTimer.current = null;
+    }
+    keptTheme.current = paintedTheme.current;
+    keptFileRef.current = preview.file;
+    setKeptFile(preview.file);
+    void window.lifequest?.themeSetKept?.(preview.file);
+    previewRef.current = null;
+    setThemePreview(null);
+    setThemeError(null);
+  }, []);
+
+  /**
+   * Read the directory, paint what the operator kept, and preview anything the
+   * companion just wrote. `preview: false` is the first read of the session: a
+   * kept theme is worn without the ten-second countdown.
+   *
+   * What is kept lives in main (`theme-state.json`), not in this window: the
+   * companion's `get_theme` runs in main and must see the same answer the
+   * operator does. The v1 spike's localStorage key is read once and migrated.
+   */
+  const loadThemeFiles = useCallback(
+    async (options?: { preview?: boolean }) => {
+      const bridge = window.lifequest;
+      if (!bridge?.themesList) return;
+      let answer: Awaited<ReturnType<typeof bridge.themesList>>;
+      try {
+        answer = await bridge.themesList();
+      } catch {
+        return;
+      }
+      if (!answer.ok) {
+        setThemeError(answer.error);
+        return;
+      }
+
+      let keptName: string | null = null;
+      try {
+        const state = await bridge.themeGetState?.();
+        if (state?.ok) keptName = state.value.keptFile;
+      } catch {
+        /* main state unreadable: fall through to the legacy key */
+      }
+      if (!keptName) {
+        try {
+          const legacy = localStorage.getItem(LEGACY_THEME_FILE_STORAGE_KEY);
+          if (legacy) {
+            keptName = legacy;
+            void bridge.themeSetKept?.(legacy);
+            localStorage.removeItem(LEGACY_THEME_FILE_STORAGE_KEY);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      keptFileRef.current = keptName;
+      setKeptFile(keptName);
+
+      const known = themeMtimes.current;
+      let changed: { file: string; theme: ThemeFile } | null = null;
+      let keptChanged = false;
+      let kept: { file: string; theme: ThemeFile } | null = null;
+      let failure: string | null = null;
+      const seen = new Set<string>();
+      const valid: { file: string; theme: ThemeFile }[] = [];
+
+      for (const entry of answer.value) {
+        seen.add(entry.file);
+        const previous = known.get(entry.file);
+        if ("error" in entry) {
+          if (previous !== undefined || entry.file === keptName) {
+            failure = `${entry.file}: ${entry.error}`;
+          }
+          continue;
+        }
+        const isNewOrChanged = previous === undefined || previous !== entry.mtime;
+        const invalid = (detail: string) => {
+          if (isNewOrChanged || entry.file === keptName) {
+            failure = `${entry.file}: ${detail}`;
+          }
+        };
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(entry.raw);
+        } catch {
+          invalid("not valid JSON");
+          continue;
+        }
+        known.set(entry.file, entry.mtime);
+        const parsed = parseThemeFile(parsedJson);
+        if (!parsed.ok) {
+          invalid(parsed.error);
+          continue;
+        }
+        valid.push({ file: entry.file, theme: parsed.theme });
+        if (entry.file === keptName) {
+          kept = { file: entry.file, theme: parsed.theme };
+          if (previous !== undefined && previous !== entry.mtime) {
+            keptChanged = true;
+          }
+        } else if (isNewOrChanged) {
+          changed = { file: entry.file, theme: parsed.theme };
+        }
+      }
+      for (const file of [...known.keys()]) {
+        if (!seen.has(file)) known.delete(file);
+      }
+      setThemeFiles(valid.sort((a, b) => a.file.localeCompare(b.file)));
+
+      if (kept) keptTheme.current = kept.theme;
+      if (options?.preview === false) {
+        // A live preview owns the window: Settings opening (or any other
+        // preview-disabled read) must not repaint the kept theme under it while
+        // the preview bar is still counting down.
+        if (previewRef.current) return;
+        setThemeFile(kept?.theme ?? null);
+        paintTheme(kept?.theme ?? null);
+        return;
+      }
+      if (keptChanged) {
+        revertThemePreview();
+        return;
+      }
+      if (changed) showPreview(changed);
+      if (failure) setThemeError(failure);
+    },
+    [paintTheme, revertThemePreview, showPreview],
+  );
+
+  /** Wear one file at once (Settings "Try" and the notification its own path). */
+  const applyThemeFile = useCallback(
+    (file: string) => {
+      const entry = themeFiles.find((candidate) => candidate.file === file);
+      if (entry) showPreview({ file: entry.file, theme: entry.theme });
+    },
+    [showPreview, themeFiles],
+  );
+
+  /** Wear one file and persist it without waiting out the preview. */
+  const keepThemeFile = useCallback(
+    (file: string) => {
+      const entry = themeFiles.find((candidate) => candidate.file === file);
+      if (!entry) return;
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+        themePreviewTimer.current = null;
+      }
+      keptTheme.current = entry.theme;
+      keptFileRef.current = file;
+      setKeptFile(file);
+      void window.lifequest?.themeSetKept?.(file);
+      previewRef.current = null;
+      setThemePreview(null);
+      setThemeError(null);
+      setThemeFile(entry.theme);
+      paintTheme(entry.theme);
+    },
+    [paintTheme, themeFiles],
+  );
+
+  /** Delete one file from the profile; a kept name that pointed at it is cleared. */
+  const removeThemeFile = useCallback(
+    async (file: string) => {
+      const bridge = window.lifequest;
+      const answer = await bridge?.themeDelete?.(file);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not remove the theme");
+        return;
+      }
+      if (keptFileRef.current === file) {
+        keptFileRef.current = null;
+        setKeptFile(null);
+        keptTheme.current = null;
+        setThemeFile(null);
+        paintTheme(null);
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles({ preview: false });
+    },
+    [loadThemeFiles, paintTheme],
+  );
+
+  const refreshThemeFiles = useCallback(
+    () => loadThemeFiles({ preview: false }),
+    [loadThemeFiles],
+  );
+
+  const openThemesFolder = useCallback(async () => {
+    const answer = await window.lifequest?.themeOpenFolder?.();
+    if (answer && !answer.ok) setThemeError(answer.error);
+  }, []);
+
+  const exportCurrentTheme = useCallback(async () => {
+    const worn = paintedTheme.current ?? themeFile;
+    const base = resolveSkin(skinName);
+    const exported = {
+      name: worn?.name ?? "current",
+      label: worn?.label ?? "Current theme",
+      ...(worn?.description ? { description: worn.description } : {}),
+      colors: base.colors,
+      ...(base.darkColors ? { darkColors: base.darkColors } : {}),
+      chrome,
+      chromeOverride,
+      material,
+      scene,
+      sceneOverride,
+    };
+    const answer = await window.lifequest?.themeExport?.(exported);
+    if (!answer) return null;
+    if (!answer.ok) {
+      setThemeError(answer.error);
+      return null;
+    }
+    return answer.value;
+  }, [chrome, material, scene, sceneOverride, skinName, themeFile]);
+
+  useEffect(() => {
+    void loadThemeFiles({ preview: false });
+    const unsubscribe = window.lifequest?.onThemesChanged?.(() => {
+      void loadThemeFiles();
+    });
+    return () => {
+      unsubscribe?.();
+      if (themePreviewTimer.current !== null) {
+        window.clearTimeout(themePreviewTimer.current);
+        themePreviewTimer.current = null;
+      }
+    };
+  }, [loadThemeFiles]);
 
   useLayoutEffect(() => {
     applyThemePreference(preference);
@@ -286,19 +1041,69 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       toggleSkinFavorite: toggleFavoriteSkin,
       installSkin,
       uninstallSkin,
+      themeFile,
+      chrome,
+      chromeOverride,
+      material,
+      materialOverride,
+      resetChromeOverride,
+      setChromeOverride,
+      setMaterialOverride,
+      resetMaterialOverride,
+      scene,
+      sceneOverride,
+      setSceneOverride,
+      resetSceneOverride,
+      themePreview,
+      themeError,
+      keepThemePreview,
+      revertThemePreview,
+      themeFiles,
+      keptFile,
+      applyThemeFile,
+      keepThemeFile,
+      removeThemeFile,
+      refreshThemeFiles,
+      openThemesFolder,
+      exportCurrentTheme,
     }),
     [
       availableSkins,
+      chrome,
+      chromeOverride,
       favoriteSkins,
       installSkin,
       installedSkins,
       isSkinFavorite,
+      applyThemeFile,
+      resetChromeOverride,
+      setChromeOverride,
+      exportCurrentTheme,
+      keepThemeFile,
+      keepThemePreview,
+      keptFile,
+      material,
+      materialOverride,
+      openThemesFolder,
       preference,
+      resetMaterialOverride,
+      resetSceneOverride,
+      setMaterialOverride,
+      setSceneOverride,
+      scene,
+      sceneOverride,
+      refreshThemeFiles,
+      removeThemeFile,
+      themeFiles,
       resolved,
+      revertThemePreview,
       setPreference,
       setSkin,
       skin,
       skinName,
+      themeError,
+      themeFile,
+      themePreview,
       toggleFavoriteSkin,
       uninstallSkin,
     ],

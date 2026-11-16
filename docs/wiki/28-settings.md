@@ -92,9 +92,36 @@ starred, so it is in the quick menu immediately; installed themes are listed und
 **Installed** with **Remove**. A file that is not JSON, or not a valid theme, is
 refused with the reason naming the field that failed.
 
+**Scene** sits between Material and Layout: the decoration behind the page. A theme picks one of the bundled procedural skies — `Plain`, `Starfield`, `Orbit`, `Aurora` — and how lively it runs (`Calm` / `Default` / `Lively`); your pick here outranks it, is marked as yours, and **Reset to theme** hands it back. The scene is drawn by the app (no images, no stylesheets): it sits behind a palette scrim so text keeps its contrast, and `prefers-reduced-motion` stops it dead. The same section names the page's decorative edge (`None` / `Hairline` / `Double` / `Halo`) and how the page's cards are drawn (`Theme` / `Outline` / `Raised`).
+
+**Layout** sits under the skin grid: where the wing switcher (`Rail top`, `Titlebar left`, `Floating left`, `Hidden`) and the area lens (`Titlebar centre`, `Sidebar rail`, `Below titlebar`, `Bottom centre`, `Floating bottom right`, `Hidden`) live, what they look like (`Labels` / `Icons` / `Compact`; `Segmented` / `Pill` / `Icons` / `List`) how wide the sidebar is (`Narrow` / `Default` / `Wide`), which edge it holds (`Left` / `Right` / `Floating` — a rounded card riding above the page, with the page keeping the window's full width underneath), where the chat dock sits (`Left` / `Right`) and how tall the window strip is (`Compact` / `Default` / `Tall`; on Windows and Linux `Compact` cannot go below the caption strip the system draws). A theme file proposes all of it; your pick here wins, is marked as yours, and **Reset to theme** hands it back. `Hidden` is real — the preview bar, the Settings entry and the window controls are never hidden by a theme, so there is always a way out.
+
+**Material** sits directly under the theme grid: six segmented controls — Radius, Elevation, Type scale, Density, Motion and Backdrop — that pick the named steps the shell was built against. Density is a real spacing ladder: page margins, the rail's rows and the dock's transcript all move with it, because the shell reads one set of spacing tokens and no panel sets its own padding. A theme file proposes its own steps, but your pick here always wins, is marked as yours, and survives swapping, keeping or removing the theme. **Reset to theme** hands the axes back to whatever theme is worn.
+
+**Theme files** are a narrower, more structural thing than a skin. A theme file
+lives in the app profile's `themes/` folder — never in the vault — and can move
+the wing switcher and the area lens between placements, and set the radius
+family, density and motion. The companion can write one for you, or you can drop
+a `.json` in that folder. A new or changed file is worn for ten seconds as a
+**preview** with **Keep** and **Revert**; if you do nothing it hands the window
+back by itself. A fresh profile also starts with one **showcase** theme — *Solar
+System*, a dark-orbit sky with a haloed page and raised cards — copied into the
+folder on first run so you can see the whole ladder without asking an agent for
+anything; it is a normal file from then on, and if you Remove it, it stays
+removed. The **Theme files** list on this page shows every file the app
+could read, with **Try** (enter the preview again), **Keep** (wear it from now
+on), **Kept** on the file you kept, and **Remove** (two presses: Remove →
+Remove?). **Open folder** opens the profile's `themes/` folder and **Export
+current theme** saves the palette, material and chrome you are wearing as one
+JSON file you can share. A file whose placement is not one of the declared
+values, or whose palette fails WCAG AA contrast, is refused with the field — or
+the failing colour pair — named.
+
 Theme, skin, starred list and installed themes are stored in the window's local
 storage, not in the vault: they are this installation's look, and they do not
-travel with the folder.
+travel with the folder. The name of the kept theme file is stored in the app
+profile instead (`theme-state.json`), because the companion's theme tools run
+outside the window and must see the same answer.
 
 ## Keyboard
 

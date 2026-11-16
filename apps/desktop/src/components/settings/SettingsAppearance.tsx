@@ -4,7 +4,11 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import type { ThemePreference } from "@/lib/theme";
+import { MaterialControls } from "./MaterialControls";
+import { SceneControls } from "./SceneControls";
+import { LayoutControls } from "./LayoutControls";
 import { SkinPicker } from "./SkinPicker";
+import { ThemeFiles } from "./ThemeFiles";
 
 const THEME_OPTIONS = [
   {
@@ -47,6 +51,10 @@ export function SettingsAppearance() {
         }
       />
       <SkinPicker />
+      <MaterialControls />
+      <SceneControls />
+      <LayoutControls />
+      <ThemeFiles />
     </SettingsSection>
   );
 }

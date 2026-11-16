@@ -13,5 +13,5 @@
     "isolatedModules": true,
     "resolveJsonModule": true
   },
-  "include": ["electron/**/*"]
+  "include": ["electron/**/*", "shared/**/*"]
 }

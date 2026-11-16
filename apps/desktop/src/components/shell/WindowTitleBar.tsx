@@ -4,6 +4,7 @@ import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { ChatFocusToggle } from "./ChatFocusToggle";
 import { ThemeQuickMenu } from "./ThemeQuickMenu";
@@ -13,6 +14,7 @@ export function WindowTitleBar() {
   const { snapshot } = useVault();
   const { collapsed: navCollapsed } = useNavDock();
   const { present: chatPresent } = useChatDock();
+  const { chrome: themeChrome } = useTheme();
   const label = windowTitleLabel(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
   const [maximized, setMaximized] = useState(false);
@@ -49,6 +51,7 @@ export function WindowTitleBar() {
     <header
       className="window-titlebar"
       data-nav-collapsed={navCollapsed ? "true" : undefined}
+      data-nav-place={themeChrome.navRail.place}
     >
       {/*
         The domain lens, raised into the window's strip. It is not a control
@@ -58,9 +61,13 @@ export function WindowTitleBar() {
         band above it. Only a mounted shell has a workspace to lens — the welcome
         and companion screens get the empty strip.
       */}
-      {chatPresent ? (
-        <div className="window-titlebar__lens">
-          <DomainSwitcher />
+      {chatPresent && themeChrome.domainSwitcher.place === "titlebar-center" ? (
+        <div
+          className="window-titlebar__lens"
+          data-chrome-slot="domain"
+          data-chrome-place="titlebar-center"
+        >
+          <DomainSwitcher variant={themeChrome.domainSwitcher.variant} />
         </div>
       ) : null}
       {/*

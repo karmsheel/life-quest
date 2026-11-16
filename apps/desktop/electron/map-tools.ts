@@ -70,6 +70,7 @@ import {
 } from "@lifequest/vault-core";
 import { noteDataChanged, toolMayChangeData } from "./data-revision.ts";
 import { hermesChatWithTools } from "./hermes-proxy.ts";
+import { THEME_TOOL_DEFS, executeThemeTool } from "./theme-tools.ts";
 
 const AGENT_ACTOR = { type: "agent", id: "companion", name: "Hermes" } as const;
 
@@ -88,7 +89,7 @@ export async function runPlannerLoop(opts: {
   const actor = opts.actor ?? AGENT_ACTOR;
   // The same composed constant the MCP server registers, so the planner's tool
   // list can never disagree with the server about what exists.
-  const openaiTools = ALL_TOOL_DEFS.map((t) => ({
+  const openaiTools = [...ALL_TOOL_DEFS, ...THEME_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -202,6 +203,12 @@ async function executeToolInner(
       actor: { type: "agent", id: grant.agentId, name: grant.name },
     });
   }
+  // Theme tools are app-profile state, not vault state, so they dispatch before
+  // the vault is opened: a theme may be inspected even when no vault is.
+  if (THEME_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeThemeTool(name, rec);
+  }
+
   const snap = await openVault(root);
   if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
 

@@ -56,6 +56,11 @@ type CompanionHarnessChanged = {
   vaultId: string | null;
 };
 
+/** One file in the app profile's `themes/` directory, as main reads it. */
+type ThemeFileEntry =
+  | { file: string; raw: string; mtime: number }
+  | { file: string; error: string };
+
 const lifequest = {
   vaultCreate: (path: string, name?: string) =>
     ipcRenderer.invoke("vault:create", path, name) as Promise<Result<unknown>>,
@@ -762,6 +767,40 @@ const lifequest = {
     ipcRenderer.on("vault:dataChanged", listener);
     return () => {
       ipcRenderer.removeListener("vault:dataChanged", listener);
+    };
+  },
+
+  /**
+   * Theme files, v2. The directory is the app profile's, never the vault's; the
+   * window reads it on mount and again whenever main says it moved.
+   */
+  themesList: () =>
+    ipcRenderer.invoke("theme:list") as Promise<Result<ThemeFileEntry[]>>,
+  themeGetState: () =>
+    ipcRenderer.invoke("theme:getState") as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeSetKept: (file: string | null) =>
+    ipcRenderer.invoke("theme:setKept", file) as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeDelete: (file: string) =>
+    ipcRenderer.invoke("theme:delete", file) as Promise<
+      Result<{ deleted: boolean }>
+    >,
+  themeOpenFolder: () =>
+    ipcRenderer.invoke("theme:openFolder") as Promise<Result<boolean>>,
+  themeExport: (theme: unknown) =>
+    ipcRenderer.invoke("theme:export", theme) as Promise<
+      Result<{ path: string } | null>
+    >,
+  onThemesChanged: (cb: () => void) => {
+    const listener = () => {
+      cb();
+    };
+    ipcRenderer.on("theme:changed", listener);
+    return () => {
+      ipcRenderer.removeListener("theme:changed", listener);
     };
   },
 

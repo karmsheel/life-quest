@@ -3,9 +3,13 @@ import { Outlet, useLocation } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { ChatDivider } from "./ChatDivider";
+import { ChromeHosts } from "./ChromeHosts";
+import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
+import { SceneBackdrop } from "./SceneBackdrop";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -17,8 +21,10 @@ export function AppShell() {
     setOpen: setChatOpen,
     setPresent: setChatPresent,
     side: chatSide,
+    setThemeSide,
     focus: chatFocus,
   } = useChatDock();
+  const { chrome } = useTheme();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
   const { pathname } = useLocation();
   const chartBleed = pathname === "/chart";
@@ -26,6 +32,12 @@ export function AppShell() {
   // dragged width is written to.
   const shellRef = useRef<HTMLDivElement | null>(null);
   const chatColumn = useChatColumn(shellRef);
+
+  // The worn theme proposes which side the dock lives on. The dock's own swap
+  // control still wins for the session once the operator touches it.
+  useEffect(() => {
+    setThemeSide(chrome.chatDock.side);
+  }, [chrome.chatDock.side, setThemeSide]);
 
   useEffect(() => {
     setChatPresent(true);
@@ -82,6 +94,9 @@ export function AppShell() {
           >
             <NavRail />
             <div className="shell__main">
+              {/* The theme's decoration layer, behind the page and under the
+                  content; it is not part of the page's structure. */}
+              <SceneBackdrop />
               <div
                 className={[
                   "shell__content",
@@ -118,6 +133,12 @@ export function AppShell() {
             >
               {chatColumn.announce}
             </p>
+            {/* The chrome the worn theme moved here, and the bar that asks
+                before a previewed theme stays. Both paint over the shell, not
+                in its grid: a theme may move a control without relaying out the
+                page underneath it. */}
+            <ChromeHosts />
+            <ThemePreviewBar />
           </div>
         </ChatSessionsProvider>
       </WingProvider>

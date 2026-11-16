@@ -1,3 +1,5 @@
+import { THEME_VOCABULARY } from "../shared/theme-file.ts";
+
 export type CompanionInstructionsInput = {
   domainName: string | null;
   domainSlug: string | null;
@@ -1214,6 +1216,7 @@ export function buildInstructions(
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     ...toolTransport,
+    THEME_VOCABULARY,
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,

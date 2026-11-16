@@ -98,6 +98,11 @@ type RecentVaultEntry = {
 
 type HarnessId = "hermes" | "pi";
 
+/** One file in the app profile's `themes/` directory, as main read it. */
+type ThemeFileEntry =
+  | { file: string; raw: string; mtime: number }
+  | { file: string; error: string };
+
 /**
  * One companion's status, whichever companion answered.
  *
@@ -1029,6 +1034,18 @@ type LifequestApi = {
   ingestAccept: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   ingestReject: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
+  /** The app profile's `themes/` directory, as main last read it. */
+  themesList: () => Promise<Result<ThemeFileEntry[]>>;
+  /** The kept theme's file name, stored in main so the companion tools agree. */
+  themeGetState: () => Promise<Result<{ keptFile: string | null }>>;
+  themeSetKept: (
+    file: string | null,
+  ) => Promise<Result<{ keptFile: string | null }>>;
+  themeDelete: (file: string) => Promise<Result<{ deleted: boolean }>>;
+  themeOpenFolder: () => Promise<Result<boolean>>;
+  themeExport: (theme: unknown) => Promise<Result<{ path: string } | null>>;
+  /** Main saw the directory move; the renderer reads it again. */
+  onThemesChanged: (cb: () => void) => () => void;
   /**
    * The vault changed: re-read whatever the page draws. `revision` only ever
    * moves forward, so a listener can ignore a value it has already seen.
