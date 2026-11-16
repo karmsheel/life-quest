@@ -1356,18 +1356,28 @@ a {
 
    It wears the state ink for the same reason the pill does: this is not
    decoration, it is "there is something for you to do". Nothing is tabbable
-   here; the pill beside it is the control, and the words are its reason. */
+   here; the pill beside it is the control, and the words are its reason.
+
+   The caption sits *on* the pill's shoulder rather than a gap away from it: the
+   row already carries five action controls and the build number, and the words
+   are the one thing in it that may retreat (the container query below hides them
+   when the bar cannot hold them at full width). The shrink is a last resort under
+   a wider font, so the caption can never push the pill out of the bar's padding —
+   the pill is the control and the halo needs that room. */
 .update-badge__label {
-  margin: 0 0 0 0.4rem;
+  margin: 0 0 0 0.15rem;
   padding: 0;
   color: var(--accent);
   font-size: 0.55rem;
   font-weight: 600;
   line-height: 1.15;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The build number at the trailing end of the dock's action bar, to the right of
@@ -1384,8 +1394,11 @@ a {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin: 0 0.1rem 0 0.35rem;
-  padding: 0.2rem 0.45rem;
+  /* The trailing 0.1rem is the halo's room at the bar's edge; the leading 0.2rem
+     puts the pill on the caption's shoulder. Neither may be eaten by a flex
+     deficit — the caption gives way first, and the pill and its halo stay put. */
+  margin: 0 0.1rem 0 0.2rem;
+  padding: 0.2rem 0.35rem;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
@@ -1395,7 +1408,7 @@ a {
   line-height: 1.1;
   text-align: center;
   cursor: pointer;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .update-badge:hover {
@@ -1448,6 +1461,19 @@ a {
 
 .update-badge--available:hover {
   background: var(--accent-soft);
+}
+
+/* The bar is a container so the caption can be measured against the row it has
+   to fit in. Below this width the five action controls and the build number
+   already fill the row; the glow alone is the signal, and the words retreat
+   rather than squeezing the pill out of the bar's padding. The threshold is the
+   width at which the full caption fits with its spacing (the row's content box,
+   not the window): a dock at its shipped 22.5rem keeps the words, a dock dragged
+   down to its floor keeps the glow. */
+@container dock-actions (max-width: 21.75rem) {
+  .update-badge__label {
+    display: none;
+  }
 }
 
 /* A slow, shallow breath: enough that the eye finds it in the bar, never enough to
@@ -2842,126 +2868,6 @@ a {
 }
 
 /* —— Update notice —— */
-/* The watch's own words, for an operator who is already inside the studio.
-   Main reads the feed on a clock; this is the piece that says so out loud, so a
-   release published while they were working no longer waits for a click on the
-   build number in the dock's bottom bar.
-
-   A floating card at the foot of the content column: above the page it
-   interrupts, below every dialog (the update popup is 70, the sheet 90), and
-   through a portal on `body`, so no shell grid or scroll box can clip it. It is
-   news, not a decision — no focus is taken and nothing is blocked. */
-.update-notice {
-  position: fixed;
-  z-index: 65;
-  left: 50%;
-  bottom: 1.25rem;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: min(34rem, calc(100vw - 2rem));
-  padding: 0.8rem 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-  border-radius: var(--radius-sm);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  animation: update-notice-in var(--dur-enter) var(--ease-out);
-}
-
-/* The same accent the rail's glow wears: this card and that build number are
-   one fact told in two places. */
-.update-notice__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: var(--radius-pill);
-  background: var(--accent-fill);
-  color: var(--accent);
-}
-
-.update-notice__text {
-  min-width: 0;
-  flex: 1;
-}
-
-.update-notice__title {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: 0.85rem;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.update-notice__body {
-  margin: 0.15rem 0 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.update-notice__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
-.update-notice__dismiss {
-  appearance: none;
-  border: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.update-notice__dismiss:hover {
-  background: var(--selected-soft);
-  color: var(--fg);
-}
-
-.update-notice__dismiss:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-}
-
-@keyframes update-notice-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 0.5rem);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .update-notice {
-    animation: none;
-  }
-}
-
-/* A narrow window has no room for three columns in a row; the actions wrap
-   under the words rather than squeezing the release's name to an ellipsis. */
-@media (max-width: 40rem) {
-  .update-notice {
-    flex-wrap: wrap;
-  }
-  .update-notice__actions {
-    margin-left: auto;
-  }
-}
-
 /* —— Documents page cards —— */
 .documents-page {
   max-width: 48rem;
@@ -8686,13 +8592,20 @@ button.chat-panel__activity-line:hover {
 .chat-panel__actions {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  /* One step tighter than the dock's other gaps on purpose: the bar is the one
+     row that has to hold five navigation controls, the update caption and the
+     build number inside the dock's narrowest practical width. */
+  gap: 0.2rem;
   flex-shrink: 0;
   padding: 0.35rem 0.5rem;
   border-top: 1px solid var(--border);
   /* Deliberately NOT the composer's accent. The composer's accent is its own
      field's border, two elements up; this is neutral chrome below it. */
   background: var(--titlebar-bg);
+  /* The update caption measures itself against this row (see the container query
+     beside `.update-badge--available`). */
+  container-type: inline-size;
+  container-name: dock-actions;
 }
 
 /* Larger than the thread header's utilities (1.75rem/16px): the bar is primary

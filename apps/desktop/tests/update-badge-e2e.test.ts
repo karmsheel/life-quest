@@ -62,6 +62,8 @@ type Box = {
 };
 
 type State = {
+  /** How many `.update-badge__label` captions the bar holds. */
+  captionCount: number;
   viewport: { width: number; height: number };
   reducedMotion: boolean;
   calls: {
@@ -112,6 +114,9 @@ type State = {
   bar: {
     box: Box;
     padding: { top: number; right: number; bottom: number; left: number };
+    /** The action bar's container identity: the caption's narrow rule is a query on it. */
+    containerType: string;
+    containerName: string;
     background: string;
     display: string;
     alignItems: string;
@@ -139,6 +144,9 @@ type State = {
     dataLabel: string | null;
     inBar: boolean;
     nextToChip: boolean;
+    /** `none` in a narrow bar: the caption leaves the layout, it does not shrink. */
+    display: string;
+    visibility: string;
     focusables: number;
     box: { left: number; right: number; top: number; bottom: number } | null;
     color: string;
@@ -208,6 +216,13 @@ type Report = {
     animation: string | null;
   };
   screenshots: string[];
+  /** The narrow-dock probe: the halo's reach against the room the narrow bar gives it. */
+  narrowGlow: {
+    reach: number;
+    room: number;
+    captionDisplay: string | null;
+    bar: Box | null;
+  };
 };
 
 /** The `rgb(...)` inside an `rgb()`/`rgba()` colour, or a `color(srgb …)` one. */
@@ -647,6 +662,96 @@ describe("auto-update badge", () => {
     assert.ok(
       report.glow.reach <= report.glow.room,
       `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the action bar gives it — it would be clipped`,
+    );
+
+    // ── the narrow dock: the caption retreats, the chip stays whole ─────────
+    // The fix's container query, measured: driving the dock's column down must
+    // take the caption out of the row (`display: none`) rather than squeeze the
+    // build number out of the bar's padding, and the halo must keep its room.
+    const narrow = report.states.narrow;
+    assert.ok(narrow, "the rig never parked the dock narrow");
+    assert.ok(narrow.bar?.box, "the narrow dock drew no action bar");
+    assert.ok(
+      narrow.bar!.box.width < (available.bar?.box.width ?? Number.POSITIVE_INFINITY),
+      `the dock did not actually narrow: bar ${narrow.bar!.box.width}px vs wide ${available.bar?.box.width}px`,
+    );
+    // The caption retires because the bar is the query's container — not because
+    // some width coincidentally collapsed it.
+    assert.equal(
+      narrow.bar?.containerName,
+      "dock-actions",
+      `the action bar's container name is ${JSON.stringify(narrow.bar?.containerName)}`,
+    );
+    assert.ok(
+      (narrow.bar?.containerType ?? "").includes("inline-size"),
+      `the action bar's container-type is ${JSON.stringify(narrow.bar?.containerType)}`,
+    );
+    assert.equal(
+      narrow.captionCount,
+      1,
+      `the narrow bar holds ${narrow.captionCount} captions, expected the one it retires`,
+    );
+    assert.equal(
+      narrow.label?.display,
+      "none",
+      `a narrow bar left the caption in the layout (display: ${JSON.stringify(narrow.label?.display)}); it must retire, not shrink`,
+    );
+    assert.equal(
+      narrow.label?.inBar,
+      true,
+      "the retired caption is not the action bar's own element",
+    );
+    // The chip stays the trailing control and stays inside the bar's padding.
+    assert.equal(
+      narrow.bar?.lastControlIsChip,
+      true,
+      `the chip is not the narrow bar's trailing control: ${JSON.stringify(narrow.bar?.controls.map((control) => control.ariaLabel))}`,
+    );
+    assert.equal(narrow.bar?.lastChildIsChip, true, "the chip is not the narrow bar's last child");
+    assert.ok(
+      narrow.bar?.box &&
+        narrow.bar.padding &&
+        narrow.chip?.box &&
+        narrow.chip.box.right <= narrow.bar.box.right - narrow.bar.padding.right + 0.5 &&
+        narrow.chip.box.left >= narrow.bar.box.left + narrow.bar.padding.left - 0.5,
+      `the chip left the narrow bar's padding: chip ${JSON.stringify(narrow.chip?.box)}, bar ${JSON.stringify(narrow.bar?.box)}, padding ${JSON.stringify(narrow.bar?.padding)}`,
+    );
+    assert.ok(
+      narrow.collapse?.box &&
+        narrow.chip?.box &&
+        narrow.chip.box.left >= narrow.collapse.box.right - 0.5,
+      `the chip collides with the collapse control: chip ${JSON.stringify(narrow.chip?.box)}, collapse ${JSON.stringify(narrow.collapse?.box)}`,
+    );
+    // The halo's room survives the retraction — the whole point of moving the
+    // caption instead of letting it squeeze the chip.
+    assert.ok(
+      report.narrowGlow.reach > 0 &&
+        report.narrowGlow.reach <= report.narrowGlow.room,
+      `in the narrow bar the halo reaches ${report.narrowGlow.reach}px into ${report.narrowGlow.room}px of room`,
+    );
+    assert.equal(
+      report.narrowGlow.captionDisplay,
+      "none",
+      `the narrow caption's display is ${JSON.stringify(report.narrowGlow.captionDisplay)}`,
+    );
+    // ...and the restore leaves the shipped window's states untouched.
+    const narrowRestored = report.states.narrowRestored;
+    assert.ok(narrowRestored, "the rig never restored the dock's width");
+    assert.notEqual(
+      narrowRestored.label?.display,
+      "none",
+      "the caption stayed retired after the dock came back wide",
+    );
+    assert.equal(
+      narrowRestored.label?.text,
+      "Update available",
+      "the restored caption does not read 'Update available'",
+    );
+    assert.ok(
+      narrowRestored.bar?.box &&
+        available.bar?.box &&
+        Math.abs(narrowRestored.bar.box.width - available.bar.box.width) <= 1,
+      `the restored bar is ${narrowRestored.bar?.box.width}px wide, not the shipped ${available.bar?.box.width}px`,
     );
 
     // The chip wears the palette's own inks, not new ones.
