@@ -51,13 +51,14 @@ const DEFAULTS: Record<string, string> = {
   "history.forward": "Alt+ArrowRight",
   "panel.sidebar.toggle": "Ctrl+B",
   "panel.chat.toggle": "Ctrl+J",
+  "panel.chat.focus": "Ctrl+Shift+F",
   "surface.settings.open": "Ctrl+Comma",
 };
 
 const GROUPS = [
   { id: "wings", rows: 7 },
   { id: "pages", rows: 4 },
-  { id: "panels", rows: 2 },
+  { id: "panels", rows: 3 },
   { id: "surfaces", rows: 1 },
 ];
 
@@ -357,7 +358,11 @@ describe("keyboard shortcuts settings and runner", () => {
       "the bar's shortcuts action reports pressed on a thread",
     );
     const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
-    const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
+    const expectedTrailing = [
+      "chat-focus-toggle",
+      "theme-mode-toggle",
+      "settings-menu",
+    ];
     expectedTrailing.forEach((needle, index) => {
       assert.ok(
         String(trailingClasses[index] ?? "").includes(needle),
@@ -404,7 +409,7 @@ describe("keyboard shortcuts settings and runner", () => {
       `pencil href ${dock.pencil.href}`,
     );
     assert.equal(dock.shortcutsRoot, true, "the dock body has no [data-chat-shortcuts]");
-    assert.equal(dock.rows.length, 14, `the dock lists ${dock.rows.length} rows, not 14`);
+    assert.equal(dock.rows.length, 15, `the dock lists ${dock.rows.length} rows, not 15`);
     assert.deepEqual(
       dock.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
       GROUPS,
@@ -447,7 +452,7 @@ describe("keyboard shortcuts settings and runner", () => {
       "the dock-bar shortcuts control stayed pressed after Back",
     );
 
-    // —— 1. Settings nav shows "Keyboard"; the page has all 14 rows in four
+    // —— 1. Settings nav shows "Keyboard"; the page has all 15 rows in four
     //       groups, on their defaults, with nothing stored.
     const defaults = state(report, "defaults");
     assert.equal(
@@ -458,7 +463,7 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(defaults.viewedTab, "shortcuts", "the Keyboard page is not the open panel");
     assert.equal(defaults.pageTitle, "Keyboard shortcuts", `page title ${defaults.pageTitle}`);
     assert.equal(defaults.shortcutsRoot, true, "the shortcuts card root is missing");
-    assert.equal(defaults.rows.length, 14, `the page lists ${defaults.rows.length} rows, not 14`);
+    assert.equal(defaults.rows.length, 15, `the page lists ${defaults.rows.length} rows, not 15`);
     assert.deepEqual(
       defaults.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
       GROUPS,
@@ -685,7 +690,7 @@ describe("keyboard shortcuts settings and runner", () => {
     );
     assert.equal(dockReopened.dock?.footerHidden, true, "the reopened reference kept its footer");
     assert.equal(dockReopened.dock?.composerVisible, false, "the reopened reference kept a composer");
-    assert.equal(dockReopened.dock?.rows.length, 14, "the reopened reference lost rows");
+    assert.equal(dockReopened.dock?.rows.length, 15, "the reopened reference lost rows");
 
     const dockReopenedSettled = state(report, "dockReopenedSettled");
     assert.equal(
@@ -829,8 +834,8 @@ describe("keyboard shortcuts settings and runner", () => {
     const editDock = dockEditReady.dock;
     assert.ok(editDock, "the dock is not open on its shortcuts page");
     assert.equal(editDock.surface, "shortcuts", "the dock is not on the shortcuts surface");
-    assert.equal(editDock.editCount, 14, `the dock page has ${editDock.editCount} edit pencils, not 14`);
-    assert.equal(editDock.rows.length, 14, `the dock page lists ${editDock.rows.length} rows, not 14`);
+    assert.equal(editDock.editCount, 15, `the dock page has ${editDock.editCount} edit pencils, not 15`);
+    assert.equal(editDock.rows.length, 15, `the dock page lists ${editDock.rows.length} rows, not 15`);
     for (const item of editDock.rows) {
       assert.equal(item.edit.present, true, `the ${item.id} row has no edit pencil`);
       assert.equal(

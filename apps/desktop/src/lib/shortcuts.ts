@@ -45,6 +45,7 @@ export type ShortcutActionId =
   | "history.forward"
   | "panel.sidebar.toggle"
   | "panel.chat.toggle"
+  | "panel.chat.focus"
   | "surface.settings.open";
 
 export type ShortcutAction = {
@@ -171,6 +172,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     label: "Toggle chat",
     description: "Open or close the chat dock beside the page.",
     defaultBinding: "Mod+J",
+  },
+  {
+    id: "panel.chat.focus",
+    group: "panels",
+    label: "Toggle full-screen chat",
+    description:
+      "Collapse the main page and give the chat dock the whole workspace beside the rail, or bring the page back.",
+    defaultBinding: "Mod+Shift+F",
   },
   {
     id: "surface.settings.open",

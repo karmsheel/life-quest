@@ -156,6 +156,10 @@ Full detail: [Quick Notes](./15-quick-notes.md).
 4. Press the day's act inside the sheet — **Analyze note** — to hand that chat to
    the dock when the sheet closes, or close the sheet with its cross, the scrim
    or Escape to come back to the page where you left it.
+5. To read the answer with the page out of the way, choose **Full screen chat**
+   at the trailing end of the dock's top row (or press **Mod+Shift+F**): the main
+   page collapses and the chat takes the workspace right of the rail.
+   **Exit full screen chat** brings the split back.
 
 Full detail: [Daily Journal](./16-daily-journal.md),
 [Automations](./17-automations.md).
