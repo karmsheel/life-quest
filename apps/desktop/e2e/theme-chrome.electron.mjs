@@ -90,6 +90,10 @@ const COMPOSITION_GRID_PNG = path.join(
   artifactsDir,
   "themes-v2-composition-grid.png",
 );
+const COMPOSITION_VOCABULARY_PNG = path.join(
+  artifactsDir,
+  "themes-v2-composition-vocabulary.png",
+);
 
 const failures = [];
 const checks = [];
@@ -371,6 +375,77 @@ const SAMPLE = `(async () => {
         animationName: style.animationName,
         animationDuration: style.animationDuration,
         transitionDuration: style.transitionDuration,
+      };
+    })(),
+    compositionVocabulary: (() => {
+      const slots = [...document.querySelectorAll("[data-composition-region]")];
+      if (slots.length === 0) return null;
+      const widgets = slots.flatMap((slot) => [
+        ...slot.querySelectorAll(
+          '[data-testid="composition-widget"], [data-testid="composition-quick-action"]',
+        ),
+      ]);
+      if (widgets.length === 0) return null;
+      const forbiddenTags = ["img", "iframe", "script", "video", "object", "embed", "button", "form", "input"];
+      const forbidden = Object.fromEntries(
+        forbiddenTags.map((tag) => [
+          tag,
+          document.querySelectorAll("[data-composition-region] " + tag).length,
+        ]),
+      );
+      const anchors = [...document.querySelectorAll("[data-composition-region] a")].map(
+        (anchor) => anchor.getAttribute("href"),
+      );
+      const avatar = document.querySelector('[data-widget-type="avatar"]');
+      const list = document.querySelector('[data-widget-type="list"]');
+      const clock = document.querySelector('[data-widget-type="clock"]');
+      const calendar = document.querySelector('[data-widget-type="calendar"]');
+      const brief = document.querySelector('[data-widget-type="brief"]');
+      return {
+        types: [...new Set(widgets.map((widget) => widget.getAttribute("data-widget-type")))].sort(),
+        nodes: slots.reduce((total, slot) => total + slot.querySelectorAll("*").length, 0),
+        forbidden,
+        anchors,
+        externalAnchors: anchors.filter((href) => !href || !href.startsWith("#/")),
+        urlBackedWidgets: widgets.filter((widget) =>
+          getComputedStyle(widget).backgroundImage.includes("url("),
+        ).length,
+        avatar: avatar
+          ? {
+              initials: (avatar.querySelector(".composition-avatar__disc")?.textContent ?? "").trim(),
+              aria: avatar.getAttribute("aria-label"),
+            }
+          : null,
+        list: list
+          ? {
+              items: [...list.querySelectorAll("li")].map((li) => (li.textContent ?? "").trim()),
+              aria: list.querySelector("ul")?.getAttribute("aria-label") ?? null,
+            }
+          : null,
+        clock: clock
+          ? {
+              text: (clock.textContent ?? "").trim(),
+              aria: clock.getAttribute("aria-label"),
+              dateTime: clock.getAttribute("dateTime"),
+              formatted: (clock.querySelector(".composition-widget__value")?.textContent ?? "").trim(),
+            }
+          : null,
+        calendar: calendar
+          ? {
+              days: [...calendar.querySelectorAll(".composition-calendar__day")].map((day) =>
+                (day.textContent ?? "").trim(),
+              ),
+              today: calendar.querySelectorAll('[aria-current="date"]').length,
+              aria: calendar.getAttribute("aria-label"),
+            }
+          : null,
+        brief: brief
+          ? {
+              value: (brief.querySelector(".composition-widget__value")?.textContent ?? "").trim(),
+              caption:
+                (brief.querySelector(".composition-brief__caption")?.textContent ?? "").trim(),
+            }
+          : null,
       };
     })(),
     reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -2668,6 +2743,54 @@ async function main() {
       },
     },
   });
+  const R4_VOCABULARY = [
+    { type: "avatar", region: "page.masthead", data: "vault.name", label: "Operator" },
+    { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 3 },
+    { type: "clock", region: "page.masthead", label: "Clock", format: "24h" },
+    { type: "calendar", region: "page.footer", label: "Week" },
+    { type: "brief", region: "page.footer", data: "weekly.files", label: "Reviews", caption: "Files in the vault" },
+    { type: "badge", region: "page.footer", data: "goals.count", label: "Goals" },
+  ];
+  const r4VocabularyValid = await gateCall("validate_theme", {
+    theme: {
+      ...R4_THEME,
+      composition: { layout: "stack", widgets: R4_VOCABULARY },
+    },
+  });
+  const r4AvatarBadData = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "avatar", region: "page.masthead", data: "goals.count", label: "Me" },
+    ],
+  });
+  const r4ListBadData = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "list", region: "page.masthead", data: "vault.name", label: "Areas" },
+    ],
+  });
+  const r4ListLimit = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 9 },
+    ],
+  });
+  const r4ClockFormat = await r4Invalid({
+    layout: "stack",
+    widgets: [{ type: "clock", region: "page.masthead", label: "Clock", format: "moon" }],
+  });
+  const r4BriefCaption = await r4Invalid({
+    layout: "stack",
+    widgets: [
+      {
+        type: "brief",
+        region: "page.masthead",
+        data: "goals.count",
+        label: "Goals",
+        caption: "x".repeat(49),
+      },
+    ],
+  });
   const r4Error = (result) =>
     String(result.json?.error?.message ?? result.json?.error ?? "");
 
@@ -2760,6 +2883,55 @@ async function main() {
       "composition.widgets[0].region page.orbit requires the polar layout",
     ),
     r4Error(r4OrbitWithoutPolar),
+  );
+  check(
+    "r4-the-bound-widget-vocabulary-parses-field-for-field",
+    r4VocabularyValid.json?.ok === true &&
+      r4VocabularyValid.json.theme.composition.widgets.length ===
+        R4_VOCABULARY.length &&
+      r4VocabularyValid.json.theme.composition.widgets.every(
+        (widget, index) => widget.type === R4_VOCABULARY[index].type,
+      ) &&
+      r4VocabularyValid.json.theme.composition.widgets[1].limit === 3 &&
+      r4VocabularyValid.json.theme.composition.widgets[2].format === "24h" &&
+      r4VocabularyValid.json.theme.composition.widgets[4].caption ===
+        "Files in the vault",
+    JSON.stringify(r4VocabularyValid.json),
+  );
+  check(
+    "r4-avatar-binds-only-the-vault-name",
+    r4Error(r4AvatarBadData).includes(
+      "composition.widgets[0].data must be one of vault.name",
+    ),
+    r4Error(r4AvatarBadData),
+  );
+  check(
+    "r4-list-binds-only-names",
+    r4Error(r4ListBadData).includes(
+      "composition.widgets[0].data must be one of domains.names, goals.titles",
+    ),
+    r4Error(r4ListBadData),
+  );
+  check(
+    "r4-list-limit-is-bounded",
+    r4Error(r4ListLimit).includes(
+      "composition.widgets[0].limit must be an integer from 1 to 5",
+    ),
+    r4Error(r4ListLimit),
+  );
+  check(
+    "r4-clock-format-is-closed",
+    r4Error(r4ClockFormat).includes(
+      "composition.widgets[0].format must be one of 24h, 12h",
+    ),
+    r4Error(r4ClockFormat),
+  );
+  check(
+    "r4-brief-caption-is-bounded",
+    r4Error(r4BriefCaption).includes(
+      "composition.widgets[0].caption must be a string of at most 48 chars",
+    ),
+    r4Error(r4BriefCaption),
   );
   fs.writeFileSync(
     R4_VALIDATION_JSON,
@@ -3359,6 +3531,109 @@ async function main() {
     }),
   );
 
+  // ── 12e: R4.3 — the rest of the vocabulary, all of it bound and bounded ──
+  // Five more widgets join badge/meter/quickAction. Each reads a closed source
+  // the shell already holds; none can be an image, a URL, a form control or a
+  // script, and the whole eight-widget surface has a node budget so a theme
+  // cannot turn the page into a painting.
+  const VOCABULARY_THEME = {
+    name: "composition-vocabulary",
+    label: "Composition Vocabulary",
+    composition: {
+      layout: "stack",
+      widgets: [
+        { type: "avatar", region: "page.masthead", data: "vault.name", label: "Operator", tone: "accent" },
+        { type: "list", region: "page.masthead", data: "domains.names", label: "Areas", limit: 3, tone: "muted" },
+        { type: "clock", region: "page.masthead", label: "Clock", format: "24h", tone: "muted" },
+        { type: "calendar", region: "page.footer", label: "Week", tone: "accent" },
+        { type: "brief", region: "page.footer", data: "weekly.files", label: "Reviews", caption: "Files in the vault", tone: "success" },
+        { type: "meter", region: "page.footer", data: "weekly.files", label: "This week", max: 5, tone: "success" },
+        { type: "badge", region: "page.footer", data: "goals.count", label: "Goals", tone: "warning" },
+        { type: "quickAction", region: "page.masthead", route: "home", label: "Home", tone: "accent" },
+      ],
+    },
+  };
+  fs.writeFileSync(
+    path.join(themesDir, "composition-vocabulary.json"),
+    `${JSON.stringify(VOCABULARY_THEME, null, 2)}\n`,
+  );
+  const vocabularyWorn = await waitFor(
+    (s) =>
+      (s.previewText ?? "").includes("composition-vocabulary.json") &&
+      s.compositionVocabulary?.types?.length === 8,
+    20_000,
+  );
+  const vocabulary = vocabularyWorn?.compositionVocabulary ?? null;
+  check(
+    "the-bound-vocabulary-draws-all-eight-widgets",
+    vocabulary !== null &&
+      vocabulary.types.join(",") ===
+        "avatar,badge,brief,calendar,clock,list,meter,quickAction" &&
+      vocabulary.avatar?.initials === "TC" &&
+      (vocabulary.avatar?.aria ?? "").includes("Theme Chrome") &&
+      vocabulary.list?.items.length === 3 &&
+      vocabulary.list.items.includes("Life") &&
+      vocabulary.list.aria === "Areas" &&
+      /^\d{1,2}:\d{2}$/.test(vocabulary.clock?.formatted ?? "") &&
+      (vocabulary.clock?.aria ?? "").startsWith("Clock: ") &&
+      Boolean(vocabulary.clock?.dateTime) &&
+      vocabulary.calendar?.days.length === 7 &&
+      vocabulary.calendar.today === 1 &&
+      (vocabulary.calendar.aria ?? "").startsWith("Week,") &&
+      vocabulary.brief?.value === "2" &&
+      vocabulary.brief.caption === "Files in the vault",
+    JSON.stringify(vocabulary),
+  );
+  check(
+    "the-vocabulary-is-a-spoof-proof-surface-with-a-node-budget",
+    vocabulary !== null &&
+      Object.values(vocabulary.forbidden).every((count) => count === 0) &&
+      vocabulary.anchors.length === 1 &&
+      vocabulary.anchors[0] === "#/home" &&
+      vocabulary.externalAnchors.length === 0 &&
+      vocabulary.urlBackedWidgets === 0 &&
+      vocabulary.nodes > 0 &&
+      vocabulary.nodes <= 120,
+    JSON.stringify({
+      forbidden: vocabulary?.forbidden,
+      anchors: vocabulary?.anchors,
+      external: vocabulary?.externalAnchors,
+      urlBacked: vocabulary?.urlBackedWidgets,
+      nodes: vocabulary?.nodes,
+      budget: 120,
+    }),
+  );
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionVocabulary?.types?.length === 8, 10_000);
+  await sleep(300);
+  const vocabularyShot = await win.webContents.capturePage();
+  fs.writeFileSync(COMPOSITION_VOCABULARY_PNG, vocabularyShot.toPNG());
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const vocabularyReverted = await waitFor(
+    (s) =>
+      !s.preview &&
+      s.kept === "composition-lab.json" &&
+      s.compositionMasthead?.widgets === 2 &&
+      !(s.compositionVocabulary?.types ?? []).includes("avatar"),
+    15_000,
+  );
+  check(
+    "the-vocabulary-reverts-to-the-kept-composition",
+    vocabularyReverted?.kept === "composition-lab.json" &&
+      vocabularyReverted.compositionMasthead?.widgets === 2 &&
+      !(vocabularyReverted.compositionVocabulary?.types ?? []).includes("avatar"),
+    JSON.stringify({
+      kept: vocabularyReverted?.kept,
+      masthead: vocabularyReverted?.compositionMasthead,
+      vocabulary: vocabularyReverted?.compositionVocabulary?.types,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -3390,6 +3665,10 @@ async function main() {
       ),
       compositionOrbit: path.relative(desktopRoot, COMPOSITION_ORBIT_PNG),
       compositionGrid: path.relative(desktopRoot, COMPOSITION_GRID_PNG),
+      compositionVocabulary: path.relative(
+        desktopRoot,
+        COMPOSITION_VOCABULARY_PNG,
+      ),
     },
     theme: THEME,
     refused: BAD_THEME,

@@ -57,12 +57,25 @@ export const COMPOSITION_LAYOUTS: readonly CompositionLayout[] = [
 ];
 
 /** The widget vocabulary. Closed: a theme cannot add to it. */
-export type CompositionWidgetType = "badge" | "meter" | "quickAction";
+export type CompositionWidgetType =
+  | "badge"
+  | "meter"
+  | "quickAction"
+  | "avatar"
+  | "list"
+  | "clock"
+  | "calendar"
+  | "brief";
 
 export const COMPOSITION_WIDGET_TYPES: readonly CompositionWidgetType[] = [
   "badge",
   "meter",
   "quickAction",
+  "avatar",
+  "list",
+  "clock",
+  "calendar",
+  "brief",
 ];
 
 /**
@@ -85,6 +98,27 @@ export const COMPOSITION_DATA_SOURCES: readonly CompositionDataSource[] = [
   "goals.count",
   "reviews.count",
   "weekly.files",
+];
+
+/**
+ * The text a widget may read. Closed and equally narrow: names the shell already
+ * holds, never a file, a path or a query. A text source is one shape, so the
+ * renderer knows whether a source is a number or a list before it draws.
+ */
+export type CompositionTextSource = "vault.name" | "domains.names" | "goals.titles";
+
+export const COMPOSITION_TEXT_SOURCES: readonly CompositionTextSource[] = [
+  "vault.name",
+  "domains.names",
+  "goals.titles",
+];
+
+/** Clock faces are named, not formatted by the author. */
+export type CompositionClockFormat = "24h" | "12h";
+
+export const COMPOSITION_CLOCK_FORMATS: readonly CompositionClockFormat[] = [
+  "24h",
+  "12h",
 ];
 
 /**
@@ -169,10 +203,63 @@ export type CompositionQuickAction = {
   tone?: CompositionTone;
 };
 
+/** Identity: initials from the vault's own name. Never an image, never a URL. */
+export type CompositionAvatar = {
+  type: "avatar";
+  region: CompositionRegion;
+  data: "vault.name";
+  label: string;
+  tone?: CompositionTone;
+};
+
+/** A short list of names the vault already holds; plain text, never markup. */
+export type CompositionList = {
+  type: "list";
+  region: CompositionRegion;
+  data: "domains.names" | "goals.titles";
+  label: string;
+  /** How many rows to draw, 1–5 (default 3). */
+  limit?: number;
+  tone?: CompositionTone;
+};
+
+/** The operator's clock, drawn from the system the app already runs on. */
+export type CompositionClock = {
+  type: "clock";
+  region: CompositionRegion;
+  label: string;
+  format?: CompositionClockFormat;
+  tone?: CompositionTone;
+};
+
+/** This week as a seven-day strip; a calendar with no events to invent. */
+export type CompositionCalendar = {
+  type: "calendar";
+  region: CompositionRegion;
+  label: string;
+  tone?: CompositionTone;
+};
+
+/** A number the theme already knows, with one authored line of context. */
+export type CompositionBrief = {
+  type: "brief";
+  region: CompositionRegion;
+  data: CompositionDataSource;
+  label: string;
+  /** At most 48 plain-text characters; no markup, no links. */
+  caption?: string;
+  tone?: CompositionTone;
+};
+
 export type CompositionWidget =
   | CompositionBadge
   | CompositionMeter
-  | CompositionQuickAction;
+  | CompositionQuickAction
+  | CompositionAvatar
+  | CompositionList
+  | CompositionClock
+  | CompositionCalendar
+  | CompositionBrief;
 
 /** A composition as it arrives from a theme file, before defaults fill the gaps. */
 export type ThemeCompositionFile = {
@@ -202,6 +289,12 @@ export const MAX_COMPOSITION_WIDGETS = 8;
 
 /** Labels are the one place an author writes words; keep them a widget, not a page. */
 export const MAX_COMPOSITION_LABEL = 32;
+
+/** A brief's caption is one line of context, not a paragraph. */
+export const MAX_COMPOSITION_CAPTION = 48;
+
+/** A list widget draws at most this many rows; more is a page, not a widget. */
+export const MAX_COMPOSITION_LIST_ITEMS = 5;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -353,9 +446,124 @@ export function parseComposition(
       continue;
     }
 
+    if (type === "calendar") {
+      widgets.push({
+        type: "calendar",
+        region: region as CompositionRegion,
+        label: widget.label,
+        ...(tone ? { tone } : {}),
+      });
+      continue;
+    }
+
+    if (type === "clock") {
+      let format: CompositionClockFormat = "24h";
+      if (widget.format !== undefined) {
+        const parsed = oneOf(
+          widget.format,
+          COMPOSITION_CLOCK_FORMATS,
+          `${field}.format`,
+        );
+        if (!COMPOSITION_CLOCK_FORMATS.includes(parsed as CompositionClockFormat)) {
+          return { ok: false, error: parsed };
+        }
+        format = parsed as CompositionClockFormat;
+      }
+      widgets.push({
+        type: "clock",
+        region: region as CompositionRegion,
+        label: widget.label,
+        format,
+        ...(tone ? { tone } : {}),
+      });
+      continue;
+    }
+
+    if (type === "avatar" || type === "list") {
+      const textData = oneOf(
+        widget.data,
+        COMPOSITION_TEXT_SOURCES,
+        `${field}.data`,
+      );
+      if (!COMPOSITION_TEXT_SOURCES.includes(textData as CompositionTextSource)) {
+        return { ok: false, error: textData };
+      }
+      if (type === "avatar") {
+        if (textData !== "vault.name") {
+          return {
+            ok: false,
+            error: `${field}.data must be one of vault.name`,
+          };
+        }
+        widgets.push({
+          type: "avatar",
+          region: region as CompositionRegion,
+          data: "vault.name",
+          label: widget.label,
+          ...(tone ? { tone } : {}),
+        });
+        continue;
+      }
+      if (textData === "vault.name") {
+        return {
+          ok: false,
+          error: `${field}.data must be one of domains.names, goals.titles`,
+        };
+      }
+      let limit = 3;
+      if (widget.limit !== undefined) {
+        if (
+          typeof widget.limit !== "number" ||
+          !Number.isInteger(widget.limit) ||
+          widget.limit < 1 ||
+          widget.limit > MAX_COMPOSITION_LIST_ITEMS
+        ) {
+          return {
+            ok: false,
+            error: `${field}.limit must be an integer from 1 to ${MAX_COMPOSITION_LIST_ITEMS}`,
+          };
+        }
+        limit = widget.limit;
+      }
+      widgets.push({
+        type: "list",
+        region: region as CompositionRegion,
+        data: textData as "domains.names" | "goals.titles",
+        label: widget.label,
+        limit,
+        ...(tone ? { tone } : {}),
+      });
+      continue;
+    }
+
     const data = oneOf(widget.data, COMPOSITION_DATA_SOURCES, `${field}.data`);
     if (!COMPOSITION_DATA_SOURCES.includes(data as CompositionDataSource)) {
       return { ok: false, error: data };
+    }
+
+    if (type === "brief") {
+      let caption: string | undefined;
+      if (widget.caption !== undefined) {
+        if (
+          typeof widget.caption !== "string" ||
+          widget.caption.length > MAX_COMPOSITION_CAPTION
+        ) {
+          return {
+            ok: false,
+            error: `${field}.caption must be a string of at most ${MAX_COMPOSITION_CAPTION} chars`,
+          };
+        }
+        caption = widget.caption;
+      }
+      widgets.push({
+        type: "brief",
+        region: region as CompositionRegion,
+        data: data as CompositionDataSource,
+        label: widget.label,
+        ...(caption !== undefined ? { caption } : {}),
+        ...(tone ? { tone } : {}),
+      });
+      continue;
     }
 
     if (type === "meter") {
@@ -436,8 +644,8 @@ export function layerComposition(
  */
 export const COMPOSITION_VOCABULARY = [
   "composition (optional): { layout: stack | grid | polar, columns?: 2|3 (grid), radius?: tight|default|wide (polar), widgets: [ …1–8 ] } places small widgets on named regions. No code, no CSS, no images, no arbitrary text beyond a 32-char label.",
-  "composition.widgets[].type: badge | meter | quickAction; region: page.masthead | page.footer | page.orbit | rail.top | rail.footer (page.orbit only with the polar layout).",
-  "badge/meter read one of: domains.count | agents.count | decisions.count | goals.count | reviews.count | weekly.files. meter also needs max: an integer 1–1000. quickAction is a link to one of the app's own routes: home | goals | projects | data | notes | automations.",
+  "composition.widgets[].type: badge | meter | quickAction | avatar | list | clock | calendar | brief; region: page.masthead | page.footer | page.orbit | rail.top | rail.footer (page.orbit only with the polar layout).",
+  "badge/meter/brief read one of: domains.count | agents.count | decisions.count | goals.count | reviews.count | weekly.files (meter also needs max: an integer 1–1000; brief may carry caption: ≤48 plain-text chars). quickAction is a link to one of the app's own routes: home | goals | projects | data | notes | automations. avatar reads only vault.name; list reads domains.names | goals.titles with limit 1–5; clock has format 24h | 12h; calendar takes no data — it draws this week.",
   "composition.widgets[].label: ≤32 chars; tone: accent | muted | success | warning (optional). Polar places widgets on a ring, top first and clockwise, each a plain tabbable link — never a drag, never a keyboard trap.",
   "The operator can hide the composition in Settings › Appearance › Composition, and Reset hands it back to the theme; a composition never draws chrome, a Decision, or a control that can remove the way out.",
 ].join("\n");

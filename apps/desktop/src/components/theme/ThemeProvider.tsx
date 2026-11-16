@@ -856,6 +856,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // preview-disabled read) must not repaint the kept theme under it while
         // the preview bar is still counting down.
         if (previewRef.current) return;
+        // A preview-disabled read still parses every file. Never swallow the
+        // refusal it found: the file it just learned the mtime of will not look
+        // "changed" on the next watcher tick, so this is the only chance to say
+        // why a theme the operator wrote was not worn.
+        if (failure) setThemeError(failure);
         setThemeFile(kept?.theme ?? null);
         paintTheme(kept?.theme ?? null);
         return;
@@ -967,10 +972,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     themeFile,
   ]);
 
+  // Hold the latest reader in a ref and subscribe once. `loadThemeFiles`
+  // changes identity whenever theme state changes; depending on it re-ran this
+  // effect, and each re-run did a *preview-disabled* read — which records file
+  // mtimes, so a write that landed between a state change and that read was
+  // silently consumed instead of previewed. The watcher must be a stable
+  // channel: writing a theme is the authoring loop's only input.
+  const loadThemeFilesRef = useRef(loadThemeFiles);
   useEffect(() => {
-    void loadThemeFiles({ preview: false });
+    loadThemeFilesRef.current = loadThemeFiles;
+  }, [loadThemeFiles]);
+
+  useEffect(() => {
+    void loadThemeFilesRef.current({ preview: false });
     const unsubscribe = window.lifequest?.onThemesChanged?.(() => {
-      void loadThemeFiles();
+      void loadThemeFilesRef.current();
     });
     return () => {
       unsubscribe?.();
@@ -979,7 +995,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         themePreviewTimer.current = null;
       }
     };
-  }, [loadThemeFiles]);
+  }, []);
 
   useLayoutEffect(() => {
     applyThemePreference(preference);
