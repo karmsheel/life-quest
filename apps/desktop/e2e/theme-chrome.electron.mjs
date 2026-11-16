@@ -70,6 +70,7 @@ const SCENE_PNG = path.join(artifactsDir, "themes-v2-scene.png");
 const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
 const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
 const R3_GATE_PNG = path.join(artifactsDir, "themes-v2-r3-gate.png");
+const FOCUS_FLOATING_PNG = path.join(artifactsDir, "themes-v2-focus-floating.png");
 
 const failures = [];
 const checks = [];
@@ -274,6 +275,26 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).position : null;
     })(),
     stripPainted: Boolean(document.querySelector(".window-titlebar")),
+    chatFocus: Boolean(document.querySelector(".shell--chat-focus")),
+    pageVisible: (() => {
+      const page = document.querySelector(".shell__content");
+      if (!page) return null;
+      const s = getComputedStyle(page);
+      return s.display !== "none" && s.visibility !== "hidden" && page.getBoundingClientRect().width > 1;
+    })(),
+    railBox: (() => {
+      const rail = document.querySelector(".nav-rail");
+      if (!rail) return null;
+      const r = rail.getBoundingClientRect();
+      return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width) };
+    })(),
+    dockBox: (() => {
+      const dock = document.querySelector(".chat-panel");
+      if (!dock) return null;
+      const r = dock.getBoundingClientRect();
+      return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width) };
+    })(),
+    dividerPainted: Boolean(document.querySelector(".chat-divider")),
     scenePointerEvents: (() => {
       const layer = document.querySelector(".scene-backdrop");
       return layer ? getComputedStyle(layer).pointerEvents : null;
@@ -1094,6 +1115,160 @@ async function main() {
       height: backFromFloat?.titlebarHeight,
     }),
   );
+
+  // ── 6e2: full-screen chat while the rail floats ─────────────────────────
+  // The two features arrived from different branches: the floating rail lays
+  // the shell out as `0 1fr dock`, while full-screen chat expects the rail's
+  // column to lead the dock. This section is the seam between them: the mode
+  // must still take the workspace, leave the floating rail painted as the
+  // window's card, hide the page, drop the divider, and come back exactly.
+  writeThemeFile("float-focus.json", {
+    name: "float-focus",
+    label: "Float Focus",
+    chrome: {
+      navRail: { place: "floating", width: "wide" },
+      chatDock: { side: "right" },
+    },
+  });
+  const floatFocusPreview = await waitFor(
+    (s) => s.preview && s.navPlaceAttr === "floating" && s.navWidthAttr === "wide",
+    20_000,
+  );
+  const floatBaseline = await waitFor(
+    (s) => floatFocusPreview !== null && s.railBox !== null && s.dockBox !== null && !s.chatFocus,
+    20_000,
+  );
+  const enteredFocus = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const floatFocused = await waitFor(
+    (s) =>
+      s.chatFocus &&
+      s.pageVisible === false &&
+      s.railBox !== null &&
+      s.dockBox !== null,
+    20_000,
+  );
+  check(
+    "full-screen-chat-takes-the-workspace-with-a-floating-rail",
+    enteredFocus === true &&
+      floatFocused?.chatFocus === true &&
+      floatFocused.pageVisible === false &&
+      floatFocused.dividerPainted === false &&
+      floatFocused.settingsEntry === true &&
+      floatFocused.stripPainted === true &&
+      // The dock reaches the window's trailing edge and bottom, and starts at
+      // the floating card's trailing edge — not back in its 23rem column.
+      floatFocused.dockBox.right >= 1280 - 4 &&
+      floatFocused.dockBox.bottom >= 800 - 12 &&
+      floatFocused.dockBox.left >= floatFocused.railBox.right + 6 &&
+      floatFocused.dockBox.width >= 700 &&
+      // The floating rail is still the window's card on the leading edge.
+      floatFocused.railBox.left <= 24 &&
+      floatFocused.railBox.width >= 240,
+    JSON.stringify({
+      entered: enteredFocus,
+      focus: floatFocused?.chatFocus,
+      page: floatFocused?.pageVisible,
+      divider: floatFocused?.dividerPainted,
+      dock: floatFocused?.dockBox,
+      rail: floatFocused?.railBox,
+      settings: floatFocused?.settingsEntry,
+    }),
+  );
+
+  const focusFloatingShot = await win.webContents.capturePage();
+  fs.writeFileSync(FOCUS_FLOATING_PNG, focusFloatingShot.toPNG());
+
+  const leftFocus = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const floatRestored = await waitFor(
+    (s) =>
+      leftFocus === true &&
+      !s.chatFocus &&
+      s.pageVisible === true &&
+      s.railBox !== null &&
+      s.dockBox !== null &&
+      Math.abs(s.railBox.left - floatBaseline.railBox.left) <= 2 &&
+      Math.abs(s.railBox.width - floatBaseline.railBox.width) <= 2 &&
+      Math.abs(s.dockBox.left - floatBaseline.dockBox.left) <= 2 &&
+      Math.abs(s.dockBox.width - floatBaseline.dockBox.width) <= 2,
+    20_000,
+  );
+  check(
+    "leaving-full-screen-chat-puts-the-floating-rail-back",
+    leftFocus === true &&
+      floatRestored?.chatFocus === false &&
+      floatRestored.pageVisible === true &&
+      Math.abs(floatRestored.railBox.left - floatBaseline.railBox.left) <= 2 &&
+      Math.abs(floatRestored.railBox.width - floatBaseline.railBox.width) <= 2 &&
+      Math.abs(floatRestored.dockBox.left - floatBaseline.dockBox.left) <= 2,
+    JSON.stringify({
+      focus: floatRestored?.chatFocus,
+      rail: floatRestored?.railBox,
+      baselineRail: floatBaseline?.railBox,
+      dock: floatRestored?.dockBox,
+      baselineDock: floatBaseline?.dockBox,
+    }),
+  );
+
+  // The same seam with the rail on the trailing edge: a docked column, not a
+  // card, so the dock takes the leading track and meets the rail's edge.
+  writeThemeFile("right-focus.json", {
+    name: "right-focus",
+    label: "Right Focus",
+    chrome: { navRail: { place: "right", width: "default" } },
+  });
+  const rightFocusPreview = await waitFor(
+    (s) => s.preview && s.navPlaceAttr === "right" && s.railBox !== null,
+    20_000,
+  );
+  const enteredRightFocus = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const rightFocused = await waitFor(
+    (s) =>
+      s.chatFocus &&
+      s.pageVisible === false &&
+      s.railBox !== null &&
+      s.dockBox !== null &&
+      rightFocusPreview !== null,
+    20_000,
+  );
+  check(
+    "full-screen-chat-takes-the-workspace-with-a-right-rail",
+    enteredRightFocus === true &&
+      rightFocused?.chatFocus === true &&
+      rightFocused.pageVisible === false &&
+      rightFocused.dividerPainted === false &&
+      rightFocused.settingsEntry === true &&
+      // The rail keeps the window's trailing edge.
+      rightFocused.railBox.right >= 1280 - 12 &&
+      rightFocused.railBox.width >= 240 &&
+      // The dock takes the leading track and meets the rail.
+      rightFocused.dockBox.left <= 4 &&
+      rightFocused.dockBox.right <= rightFocused.railBox.left + 8 &&
+      rightFocused.dockBox.width >= 700 &&
+      rightFocused.dockBox.bottom >= 800 - 12,
+    JSON.stringify({
+      entered: enteredRightFocus,
+      focus: rightFocused?.chatFocus,
+      page: rightFocused?.pageVisible,
+      dock: rightFocused?.dockBox,
+      rail: rightFocused?.railBox,
+      divider: rightFocused?.dividerPainted,
+    }),
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  await waitFor((s) => !s.chatFocus && s.pageVisible === true);
+
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  await waitFor((s) => !s.preview && s.kept === "solar-system.json");
 
   // ── 6f: the scene behind the page ───────────────────────────────────────
   writeThemeFile("scene-lab.json", {
@@ -2405,6 +2580,7 @@ async function main() {
       frames: path.relative(desktopRoot, FRAMES_PNG),
       showcase: path.relative(desktopRoot, SHOWCASE_PNG),
       r3Gate: path.relative(desktopRoot, R3_GATE_PNG),
+      focusFloating: path.relative(desktopRoot, FOCUS_FLOATING_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
