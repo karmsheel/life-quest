@@ -110,3 +110,24 @@ The rest of the vocabulary is bound, bounded and audited:
 - Spoof audit is measured, not promised: the rig asserts zero `img` / `iframe` / `script` / `video` / `object` / `embed` / `button` / `form` / `input` nodes inside every composition region, every anchor is an in-app `#/` route (one, `/home`), and no widget paints a `url(...)` background. The eight-widget surface is **39 DOM nodes** against a 120-node budget, so a theme cannot turn the page into a painting.
 - Gate refusals added for the new fields: avatar bound to anything but `vault.name`, list bound to non-name sources, a limit outside 1–5, a clock format outside 24h/12h, and a caption over 48 chars. Rig: **101 checks, 0 failures**; artifact `themes-v2-composition-vocabulary.png`.
 - **Defect found and fixed while gating this slice:** the theme watcher could silently swallow a companion write. `ThemeProvider`'s subscription effect depended on `loadThemeFiles`, whose identity changes with theme state; every re-run did a *preview-disabled* read, and such a read records file mtimes without previewing. A write landing between a state change (e.g. a Revert) and that read was consumed — no preview, no error. The subscription is now stable (`loadThemeFilesRef`, mounted once) and a preview-disabled read surfaces the refusal it found instead of returning before `setThemeError`. Both fixes are in this slice because the gate itself smoked the bug: a vocabulary preview raced a Revert and silently vanished.
+
+## R4.4 result (2026-11-16) — the gate
+
+Helios lands as the showcase and as the gate. The bundled themes now include `showcase-helios`: a warm solar palette, the `orbit` backdrop, a haloed page, raised cards, and a six-widget `polar` composition — four quick actions, a Decisions badge and a week meter standing on the page in a deterministic ring. It seeds alongside Solar System into a fresh profile and is never worn implicitly. That is the "space-age solar-system-styled interface" the request named, expressed as one data file.
+
+The gate itself is a companion story, not a rig-only story:
+
+1. `write_theme` through the MCP door writes `helios-authored.json`; the real window previews it, and the probe finds the ring: `layout polar`, four links to `#/home`, `#/goals`, `#/projects`, `#/notes`, `aria-label "Quick actions"`.
+2. The operator hides the ring from Settings → Appearance (one axis), the widgets disappear while the rest of the theme stays worn, and **Reset** brings the four actions back.
+3. **Keep** persists the file name in main; a full `webContents.reload()` comes back with `kept: helios-authored.json` and the ring drawn again — a reload cannot lose it.
+4. A spoofed Helios (`type: "image"`, `data: "vault.secrets"`) is refused at the door with `composition.widgets[0].type must be one of badge, meter, quickAction, avatar, list, clock, calendar, brief`, and no file appears on disk.
+
+Rig: **106 checks, 0 failures**; artifact `themes-v2-helios.png` captured after the restart, showing the kept Helios composition. The same run keeps R4.0–R4.3's assertions green, so the ladder's top rung is verified by one continuous piece of evidence.
+
+### Final Go / No-Go
+
+**Go for the composition rung, with the scope boundaries already drawn (and still true):** 1–8 widgets, closed regions, closed data and text sources, three layouts, polar reserved for `page.orbit` actions, one badge/metric per ring widget, no drag/authoring canvas, no orbit control beyond Show/Hide/Reset. The vocabulary now covers the visible surfaces the product analysis asked for (counts, name/list, clock, week calendar, quick actions, avatar) while every value remains a number or a name the shell already holds. The audit is machine-checked: zero `img`/`iframe`/`script`/`video`/`object`/`embed`/`button`/`form`/`input` nodes in composition regions, anchors only in-app `#/` routes, no `url()` backgrounds, and the eight-widget surface at 39 DOM nodes against a 120-node budget (the same bounded-node discipline as the scene layer). Grid and polar ship with a keyboard-complete ring (Tab visits the actions in drawn order) and hold dead still under `prefers-reduced-motion`.
+
+What still is **not** in R4, and would be the next decision rather than a defect: authoring by direct manipulation (drag on a canvas, orbit editor), free-form animation, sub-page composition, and code-bearing packs — the last is R5 and was never planned; it needs a sandbox, signing identity, publisher identity and a review flow before it can even be scoped.
+
+The estimate held in shape: R4.0/R4.1 in days, R4.2 and R4.3 in weeks, R4.4 a day's gate once the vocabulary existed; the whole ladder remains inside the 8–12+ week product-analysis envelope for a personal, data-only theming studio.

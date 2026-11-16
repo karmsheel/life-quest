@@ -94,6 +94,7 @@ const COMPOSITION_VOCABULARY_PNG = path.join(
   artifactsDir,
   "themes-v2-composition-vocabulary.png",
 );
+const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
 
 const failures = [];
 const checks = [];
@@ -3634,6 +3635,203 @@ async function main() {
     }),
   );
 
+  // ── 12f: R4.4 — Helios: the showcase, the authored file and the gate ─────
+  // The bundled showcase now includes Helios: a warm solar-orbit HUD whose
+  // composition is a polar ring of quick actions. The gate then authors its own
+  // Helios through the companion door, wears it, hides and restores the ring
+  // from Settings, keeps it, restarts the window and finds it still worn — and
+  // proves an undrawable widget is refused at the door, not drawn then blocked.
+  let bundledHelios = null;
+  try {
+    const raw = fs.readFileSync(
+      path.join(themesDir, "showcase-helios.json"),
+      "utf8",
+    );
+    const theme = JSON.parse(raw);
+    bundledHelios = {
+      label: theme.label,
+      layout: theme.composition?.layout ?? null,
+      widgets: theme.composition?.widgets?.length ?? 0,
+      preset: theme.scene?.background?.preset ?? null,
+      canvas: theme.scene?.frames?.canvas ?? null,
+    };
+  } catch (error) {
+    bundledHelios = { error: String(error) };
+  }
+  check(
+    "the-helios-showcase-ships-in-a-fresh-profile",
+    bundledHelios?.label === "Helios" &&
+      bundledHelios.layout === "polar" &&
+      bundledHelios.widgets === 6 &&
+      bundledHelios.preset === "orbit" &&
+      bundledHelios.canvas === "halo",
+    JSON.stringify(bundledHelios),
+  );
+
+  const heliosSource = JSON.parse(
+    fs.readFileSync(path.join(themesDir, "showcase-helios.json"), "utf8"),
+  );
+  const HELIOS_AUTHORED = {
+    ...heliosSource,
+    name: "helios-authored",
+    label: "Helios Authored",
+    description:
+      "Written through the companion door: the solar HUD, ring and all, without a line of code.",
+  };
+  const heliosWritten = await gateCall("write_theme", {
+    theme: HELIOS_AUTHORED,
+  });
+  const heliosWorn = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("helios-authored.json") &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionOrbit.layout === "polar",
+    25_000,
+  );
+  check(
+    "a-companion-authored-helios-wears-its-ring",
+    heliosWritten.json?.written === "helios-authored.json" &&
+      heliosWorn?.previewText?.includes("helios-authored.json") === true &&
+      heliosWorn.compositionOrbit.links.map((link) => link.route).join(",") ===
+        "home,goals,projects,notes" &&
+      heliosWorn.compositionOrbit.ariaLabel === "Quick actions",
+    JSON.stringify({
+      written: heliosWritten.json?.written,
+      isError: heliosWritten.isError,
+      orbit: heliosWorn?.compositionOrbit,
+    }),
+  );
+
+  // The operator's escape hatch works on Helios exactly as on any composition:
+  // one axis, hide then Reset, and the ring comes back.
+  await evaluate(
+    `(() => { const t = document.querySelector(".settings-menu__trigger"); if (t) t.click(); return true; })()`,
+  );
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const panel = await evaluate(
+      `(() => Boolean(document.querySelector('[data-testid="theme-composition"]')))()`,
+    );
+    if (panel) break;
+    await evaluate(
+      `(() => { const b = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance")); if (b) b.click(); return true; })()`,
+    );
+    await sleep(150);
+  }
+  const heliosHiddenByClick = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const heliosHidden = await waitFor(
+    (s) =>
+      heliosHiddenByClick === true &&
+      s.compositionOrbit === null &&
+      s.compositionYours === true,
+    15_000,
+  );
+  const heliosResetByClick = await evaluate(`(() => {
+    const b = document.querySelector('[data-testid="composition-reset"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const heliosRestored = await waitFor(
+    (s) =>
+      heliosResetByClick === true &&
+      s.compositionOrbit?.links?.length === 4 &&
+      s.compositionYours === false,
+    15_000,
+  );
+  check(
+    "the-operator-can-hide-and-restore-helios",
+    heliosHidden?.compositionOrbit === null &&
+      heliosHidden.compositionYours === true &&
+      heliosRestored?.compositionOrbit?.links?.length === 4,
+    JSON.stringify({
+      hidden: heliosHidden?.compositionOrbit,
+      restored: heliosRestored?.compositionOrbit?.links?.length,
+    }),
+  );
+  await evaluate(
+    `(() => { location.hash = "#/home"; return location.hash; })()`,
+  );
+  await waitFor((s) => s.compositionOrbit?.links?.length === 4, 10_000);
+
+  // Keep it, restart the window, and the ring is still there: the kept name
+  // lives in main, so a reload cannot lose it.
+  const heliosKeptByClick = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  const heliosKept = await waitFor(
+    (s) =>
+      heliosKeptByClick === true &&
+      !s.preview &&
+      s.kept === "helios-authored.json" &&
+      s.compositionOrbit?.links?.length === 4,
+    15_000,
+  );
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const heliosAfterReload = await waitFor(
+    (s) =>
+      s.shell === true &&
+      s.kept === "helios-authored.json" &&
+      s.compositionOrbit?.links?.length === 4,
+    25_000,
+  );
+  check(
+    "a-kept-helios-survives-a-window-restart",
+    heliosKept?.kept === "helios-authored.json" &&
+      heliosKept.compositionOrbit?.links?.length === 4 &&
+      heliosAfterReload?.kept === "helios-authored.json" &&
+      heliosAfterReload.compositionOrbit?.links?.length === 4,
+    JSON.stringify({
+      kept: heliosKept?.kept,
+      beforeReload: heliosKept?.compositionOrbit?.links?.length,
+      afterReload: heliosAfterReload?.compositionOrbit?.links?.length,
+    }),
+  );
+  await sleep(400);
+  const heliosShot = await win.webContents.capturePage();
+  fs.writeFileSync(HELIOS_PNG, heliosShot.toPNG());
+
+  // The door refuses what it cannot draw. A spoofed Helios is not drawn and
+  // then blocked; it never becomes a theme at all.
+  const heliosSpoof = await gateCall("write_theme", {
+    theme: {
+      ...heliosSource,
+      name: "helios-spoof",
+      label: "Helios Spoof",
+      composition: {
+        layout: "grid",
+        widgets: [
+          {
+            type: "image",
+            region: "page.masthead",
+            data: "vault.secrets",
+            label: "Pwn",
+          },
+        ],
+      },
+    },
+  });
+  const heliosSpoofError = String(
+    heliosSpoof.json?.error?.message ??
+      heliosSpoof.json?.error ??
+      "no error returned",
+  );
+  // The tool answers refusals as a structured error object (not an MCP
+  // isError), so the contract under test is: it names the field, and no file
+  // appeared on disk.
+  check(
+    "helios-refuses-an-undrawable-widget-at-the-door",
+    heliosSpoofError.includes("composition.widgets[0].type must be one of") &&
+      !fs.existsSync(path.join(themesDir, "helios-spoof.json")),
+    JSON.stringify({ isError: heliosSpoof.isError, error: heliosSpoofError }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -3669,6 +3867,7 @@ async function main() {
         desktopRoot,
         COMPOSITION_VOCABULARY_PNG,
       ),
+      helios: path.relative(desktopRoot, HELIOS_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
