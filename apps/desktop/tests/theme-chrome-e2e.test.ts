@@ -40,6 +40,7 @@ type Report = {
     scene: string;
     frames: string;
     showcase: string;
+    r3Gate: string;
   };
   theme: unknown;
   refused: unknown;
@@ -139,6 +140,7 @@ describe("theme files v2", () => {
         report.artifacts.scene,
         report.artifacts.frames,
         report.artifacts.showcase,
+        report.artifacts.r3Gate,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

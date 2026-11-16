@@ -69,6 +69,7 @@ const OUTSIDE_PNG = path.join(artifactsDir, "themes-v2-outside-theme.png");
 const SCENE_PNG = path.join(artifactsDir, "themes-v2-scene.png");
 const FRAMES_PNG = path.join(artifactsDir, "themes-v2-frames.png");
 const SHOWCASE_PNG = path.join(artifactsDir, "themes-v2-showcase.png");
+const R3_GATE_PNG = path.join(artifactsDir, "themes-v2-r3-gate.png");
 
 const failures = [];
 const checks = [];
@@ -273,6 +274,14 @@ const SAMPLE = `(async () => {
       return main ? getComputedStyle(main).position : null;
     })(),
     stripPainted: Boolean(document.querySelector(".window-titlebar")),
+    scenePointerEvents: (() => {
+      const layer = document.querySelector(".scene-backdrop");
+      return layer ? getComputedStyle(layer).pointerEvents : null;
+    })(),
+    sceneAriaHidden: (() => {
+      const layer = document.querySelector(".scene-backdrop");
+      return layer ? layer.getAttribute("aria-hidden") : null;
+    })(),
     titlebarVar: document.documentElement.style.getPropertyValue("--window-titlebar-height") ?? null,
     mainRect: (() => {
       const el = document.querySelector(".shell__main");
@@ -1958,6 +1967,267 @@ async function main() {
     }),
   );
 
+  // ── 11c: the R3 gate — a companion-authored scene, quieted by the operator
+  // A fresh door client (the companion's real shape is a call, not a session):
+  // it writes a theme whose whole scene vocabulary is non-default — aurora at
+  // lively, a hairline page edge, raised cards — and the window must wear it
+  // with its way out still painted. Then the operator quietens it from
+  // Settings, Reset hands the theme's sky back, and Keep + reload prove it is
+  // still the theme's.
+  const sceneGateDoor = await e2eCompanionDoor();
+  const { Client: SceneGateClient } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport: SceneGateTransport } = await import(
+    "@modelcontextprotocol/sdk/client/streamableHttp.js"
+  );
+  const sceneGateClient = new SceneGateClient({
+    name: "theme-rig-r3-gate",
+    version: "0.1.0",
+  });
+  await sceneGateClient.connect(
+    new SceneGateTransport(new URL(sceneGateDoor.url), {
+      requestInit: { headers: { Authorization: `Bearer ${sceneGateDoor.token}` } },
+    }),
+  );
+  const sceneGateCall = async (name, args) => {
+    const result = await sceneGateClient.callTool({ name, arguments: args });
+    const text = result.content?.find((part) => part.type === "text")?.text ?? "{}";
+    try {
+      return { json: JSON.parse(text), isError: result.isError === true };
+    } catch {
+      return { json: null, isError: true };
+    }
+  };
+  // The showcase is bundled data; authorship is the companion's job. Have the
+  // door write that same object itself under its own file name: the app must
+  // accept it and wear it, proving the shipped content is companion-authorable
+  // data rather than a file only the app's installer could produce.
+  const authoredShowcase = await sceneGateCall("write_theme", {
+    theme: showcaseOnDisk,
+    file: "showcase-authored.json",
+  });
+  const authoredPreview = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("showcase-authored.json") &&
+      s.scenePresetAttr === "orbit" &&
+      s.sceneCanvasFrameAttr === "halo",
+    25_000,
+  );
+  check(
+    "the-companion-can-author-the-bundled-showcase",
+    authoredShowcase.json?.written === "showcase-authored.json" &&
+      authoredPreview?.scenePresetAttr === "orbit" &&
+      authoredPreview.sceneCanvasFrameAttr === "halo" &&
+      authoredPreview.sceneCardFrameAttr === "raised",
+    JSON.stringify({
+      written: authoredShowcase.json?.written,
+      preset: authoredPreview?.scenePresetAttr,
+      canvas: authoredPreview?.sceneCanvasFrameAttr,
+      cards: authoredPreview?.sceneCardFrameAttr,
+    }),
+  );
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-revert"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  await waitFor((s) => !s.preview && s.kept === "showcase-solar-system.json");
+
+  const SCENE_GATE_THEME = {
+    name: "r3-gate",
+    label: "R3 Gate",
+    description: "Aurora at lively, a hairline page edge, raised cards.",
+    chrome: { wingSwitcher: { place: "titlebar-left", variant: "labels" } },
+    material: { radius: "round" },
+    scene: {
+      background: { preset: "aurora", intensity: "lively" },
+      frames: { canvas: "hairline", cards: "raised" },
+    },
+  };
+  const sceneGateWritten = await sceneGateCall("write_theme", {
+    theme: SCENE_GATE_THEME,
+  });
+  const sceneGate = await waitFor(
+    (s) =>
+      s.preview &&
+      (s.previewText ?? "").includes("r3-gate.json") &&
+      s.scenePresetAttr === "aurora" &&
+      s.sceneIntensityAttr === "lively" &&
+      s.sceneCanvasFrameAttr === "hairline" &&
+      s.sceneCardFrameAttr === "raised" &&
+      s.sceneLayer &&
+      s.sceneNodes >= 3 &&
+      typeof s.sceneDuration === "number" &&
+      s.sceneDuration > 8 &&
+      s.scenePointerEvents === "none" &&
+      s.sceneAriaHidden === "true",
+    25_000,
+  );
+  check(
+    "a-scene-authored-outside-can-be-worn",
+    sceneGateWritten.json?.written === "r3-gate.json" &&
+      sceneGate?.scenePresetAttr === "aurora" &&
+      sceneGate.sceneIntensityAttr === "lively" &&
+      sceneGate.sceneCanvasFrameAttr === "hairline" &&
+      sceneGate.sceneCardFrameAttr === "raised" &&
+      sceneGate.sceneLayer === true &&
+      sceneGate.sceneNodes >= 3 &&
+      sceneGate.sceneDuration > 8 &&
+      sceneGate.scenePointerEvents === "none" &&
+      sceneGate.sceneAriaHidden === "true",
+    JSON.stringify({
+      written: sceneGateWritten.json?.written,
+      preset: sceneGate?.scenePresetAttr,
+      intensity: sceneGate?.sceneIntensityAttr,
+      canvas: sceneGate?.sceneCanvasFrameAttr,
+      cards: sceneGate?.sceneCardFrameAttr,
+      nodes: sceneGate?.sceneNodes,
+      duration: sceneGate?.sceneDuration,
+      pointer: sceneGate?.scenePointerEvents,
+      aria: sceneGate?.sceneAriaHidden,
+    }),
+  );
+
+  // R3's escape-hatch contract: decoration never removes or covers the way out.
+  check(
+    "a-scene-theme-keeps-the-way-out-painted",
+    sceneGate?.preview === true &&
+      sceneGate.stripPainted === true &&
+      sceneGate.settingsEntry === true &&
+      sceneGate.scenePointerEvents === "none",
+    JSON.stringify({
+      preview: sceneGate?.preview,
+      strip: sceneGate?.stripPainted,
+      settings: sceneGate?.settingsEntry,
+      pointer: sceneGate?.scenePointerEvents,
+    }),
+  );
+  const r3GateShot = await win.webContents.capturePage();
+  fs.writeFileSync(R3_GATE_PNG, r3GateShot.toPNG());
+
+  const keptSceneGate = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="theme-keep"]'); if (!b) return false; b.click(); return true; })()`,
+  );
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  const sceneGateReload = await waitFor(
+    (s) =>
+      s.shell &&
+      keptSceneGate === true &&
+      s.kept === "r3-gate.json" &&
+      s.scenePresetAttr === "aurora" &&
+      s.sceneCanvasFrameAttr === "hairline" &&
+      s.settingsEntry &&
+      s.stripPainted,
+    25_000,
+  );
+  check(
+    "a-scene-theme-keeps-across-a-reload",
+    keptSceneGate === true &&
+      sceneGateReload?.kept === "r3-gate.json" &&
+      sceneGateReload.scenePresetAttr === "aurora" &&
+      sceneGateReload.sceneCanvasFrameAttr === "hairline" &&
+      sceneGateReload.settingsEntry === true &&
+      sceneGateReload.stripPainted === true,
+    JSON.stringify({
+      kept: sceneGateReload?.kept,
+      preset: sceneGateReload?.scenePresetAttr,
+      canvas: sceneGateReload?.sceneCanvasFrameAttr,
+    }),
+  );
+
+  // The operator's own pick, above the companion's theme.
+  await evaluate(`(() => {
+    const trigger = document.querySelector(".settings-menu__trigger");
+    if (trigger) trigger.click();
+    return true;
+  })()`);
+  for (let i = 0; i < 60; i += 1) {
+    const onAppearance = await evaluate(`(() => {
+      if (document.querySelector('[data-testid="theme-scene"]')) return true;
+      const item = [...document.querySelectorAll(".settings-nav-item")].find((el) => el.textContent.includes("Appearance"));
+      if (item) item.click();
+      return false;
+    })()`);
+    if (onAppearance) break;
+    await sleep(150);
+  }
+  const pressedGateStarfield = await click("scene-option-preset-starfield");
+  const pressedGateCalm = await click("scene-option-intensity-calm");
+  const pressedGateDouble = await click("scene-option-canvas-double");
+  const quietedScene = await waitFor(
+    (s) =>
+      s.scenePresetAttr === "starfield" &&
+      s.sceneIntensityAttr === "calm" &&
+      s.sceneCanvasFrameAttr === "double" &&
+      s.sceneCardFrameAttr === "raised" &&
+      s.sceneNodes >= 60 &&
+      s.kept === "r3-gate.json",
+  );
+  check(
+    "the-operator-can-quieten-a-companion-scene",
+    pressedGateStarfield === true &&
+      pressedGateCalm === true &&
+      pressedGateDouble === true &&
+      quietedScene?.scenePresetAttr === "starfield" &&
+      quietedScene.sceneIntensityAttr === "calm" &&
+      quietedScene.sceneCanvasFrameAttr === "double" &&
+      quietedScene.sceneCardFrameAttr === "raised" &&
+      quietedScene.sceneNodes >= 60,
+    JSON.stringify({
+      pressed:
+        pressedGateStarfield && pressedGateCalm && pressedGateDouble,
+      preset: quietedScene?.scenePresetAttr,
+      intensity: quietedScene?.sceneIntensityAttr,
+      canvas: quietedScene?.sceneCanvasFrameAttr,
+      cards: quietedScene?.sceneCardFrameAttr,
+      nodes: quietedScene?.sceneNodes,
+    }),
+  );
+
+  // Reset hands the whole scene back to the theme, not to the default.
+  const pressedGateReset = await click("scene-reset");
+  const sceneGateReset = await waitFor(
+    (s) =>
+      s.scenePresetAttr === "aurora" &&
+      s.sceneIntensityAttr === "lively" &&
+      s.sceneCanvasFrameAttr === "hairline" &&
+      s.sceneCardFrameAttr === "raised" &&
+      s.kept === "r3-gate.json",
+  );
+  check(
+    "reset-hands-the-companion-scene-back",
+    pressedGateReset === true &&
+      sceneGateReset?.scenePresetAttr === "aurora" &&
+      sceneGateReset.sceneIntensityAttr === "lively" &&
+      sceneGateReset.sceneCanvasFrameAttr === "hairline" &&
+      sceneGateReset.sceneCardFrameAttr === "raised",
+    JSON.stringify({
+      pressed: pressedGateReset,
+      preset: sceneGateReset?.scenePresetAttr,
+      intensity: sceneGateReset?.sceneIntensityAttr,
+      canvas: sceneGateReset?.sceneCanvasFrameAttr,
+      cards: sceneGateReset?.sceneCardFrameAttr,
+    }),
+  );
+
+  // And a scene the app cannot draw is refused by name, not painted half-way.
+  const badGateScene = await sceneGateCall("validate_theme", {
+    theme: {
+      name: "bad-gate",
+      label: "Bad Gate",
+      scene: {
+        background: { preset: "comet" },
+        frames: { cards: "glass" },
+      },
+    },
+  });
+  check(
+    "a-scene-the-app-cannot-draw-is-refused-by-name",
+    badGateScene.json?.error?.message?.includes(
+      "scene.background.preset must be one of",
+    ) === true,
+    String(badGateScene.json?.error?.message ?? badGateScene.json).slice(0, 220),
+  );
+
   // ── 12: the Phase 1 gate — a whole theme from outside, worn and kept ────
   // The first door client closed with its own section; the gate opens a fresh
   // one, which is also the companion's real shape: a call, not a session.
@@ -2134,6 +2404,7 @@ async function main() {
       scene: path.relative(desktopRoot, SCENE_PNG),
       frames: path.relative(desktopRoot, FRAMES_PNG),
       showcase: path.relative(desktopRoot, SHOWCASE_PNG),
+      r3Gate: path.relative(desktopRoot, R3_GATE_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
