@@ -998,22 +998,44 @@ a {
   z-index: 20;
 }
 
-/* The band the sidebar shares with the titlebar: one control at its trailing
-   edge while the rail is wide, and the rest of the strip stays a window drag
-   handle. A wide column puts a centred chevron in the middle of nowhere; at the
-   edge it points at the seam it moves. Collapsed, the band's own rule centres the
-   same control in the thin column (see "The thin rail"). It paints the rail's own
-   mat, so the sidebar runs to the window's top and the titlebar's fill begins
-   only at the sheet's leading edge. */
+/* The band the sidebar shares with the titlebar: the product's wordmark at the
+   leading edge and the collapse toggle at the trailing one, with the rest of the
+   strip a window drag handle. A wide column puts a centred chevron in the middle
+   of nowhere; at the edge it points at the seam it moves. Collapsed, the band's
+   own rule centres that one control in the thin column and the wordmark leaves
+   (see "The thin rail"). It paints the rail's own mat, so the sidebar runs to the
+   window's top and the titlebar's fill begins only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex: 0 0 auto;
   height: var(--window-titlebar-height);
   margin: 0 -0.35rem 0.1rem;
   padding-right: 0.45rem;
   -webkit-app-region: drag;
+}
+
+/* The official wordmark (src/assets/brand/lifequest-wordmark.svg), painted as a
+   mask so it wears the rail's ink instead of a baked-in colour: night skins light
+   it, day skins ink it, and no second asset is needed. The band's negative inline
+   margin (above) is cancelled on this side so the mark starts on the rail's own
+   content edge, level with the wing switcher and the page rows beneath it.
+
+   Its width is a reading of the 16rem column: 7.25rem leaves the toggle its end
+   of the 32px strip and keeps the word clear of it. `aspect-ratio` is the
+   artwork's own 872.25:162.45 ink box, so `contain` never letterboxes the word;
+   the alpha is the silhouette, so the mask needs no second copy at any width. */
+.nav-rail__brand {
+  flex: 0 0 auto;
+  width: 7.25rem;
+  aspect-ratio: 872.25 / 162.45;
+  margin-left: 0.35rem;
+  background-color: currentColor;
+  -webkit-mask: url("../assets/brand/lifequest-wordmark.svg") left center / contain
+    no-repeat;
+  mask: url("../assets/brand/lifequest-wordmark.svg") left center / contain
+    no-repeat;
 }
 
 .nav-rail__section {
@@ -1271,6 +1293,12 @@ a {
      a wide rail puts the toggle, and at this width it would read as an accident. */
   justify-content: center;
   padding-right: 0;
+}
+
+/* 56px cannot hold a word, and a second mark would compete with the icon column's
+   own rows: the wordmark leaves with the labels, the toggle keeps the band. */
+.shell--nav-collapsed .nav-rail__brand {
+  display: none;
 }
 
 .shell--nav-collapsed .chats-rail,

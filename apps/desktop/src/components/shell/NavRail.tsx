@@ -152,6 +152,20 @@ export function NavRail() {
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       <div className="nav-rail__header">
+        {/*
+          The product's own name at the window's top-left: the official wordmark
+          painted from the brand SVG's alpha and inked with the rail's current
+          text colour, so a day skin inverts it and a night skin lights it from
+          the same file. The thin rail leaves it out — 56px cannot hold a word —
+          and its toggle takes the whole band (see "The thin rail"). It is not a
+          control: the band is the window's drag handle, and this is its mark.
+        */}
+        <div
+          className="nav-rail__brand"
+          role="img"
+          aria-label="LifeQuest"
+          data-brand="wordmark"
+        />
         <NavCollapseButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the

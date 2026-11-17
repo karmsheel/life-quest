@@ -135,6 +135,11 @@ The window title bar:
 
 The rail:
 
+- The **LifeQuest wordmark** at the top-left, in the strip beside the collapse
+  toggle: the official text logo, inked with the rail's own text colour so it
+  reads on every theme. It is a mark, not a control — the strip around it is the
+  window's drag handle. Collapsed, the 56px column has no room for a word, so the
+  wordmark leaves and the toggle keeps the band.
 - A collapse toggle at the top (**Collapse sidebar** / **Expand sidebar**), with
   `aria-expanded` and `aria-controls="nav-rail"`.
 - The five-wing band, a square block directly under the title bar. Its frame is

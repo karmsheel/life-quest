@@ -277,6 +277,13 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. Both are real bridge calls the app ships; without a stub
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the whole harness.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
