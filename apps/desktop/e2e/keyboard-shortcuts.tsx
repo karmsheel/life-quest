@@ -103,6 +103,15 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback below is wrong
+  // for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page, leaving the driver waiting
+  // on a ready flag that never comes.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
@@ -125,6 +134,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,

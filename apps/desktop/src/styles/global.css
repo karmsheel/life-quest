@@ -675,8 +675,7 @@ a {
 }
 
 .window-titlebar__trailing .theme-mode-toggle svg,
-.window-titlebar__trailing .settings-menu__trigger svg,
-.window-titlebar__trailing .chat-focus-toggle svg {
+.window-titlebar__trailing .settings-menu__trigger svg {
   width: 14px;
   height: 14px;
 }

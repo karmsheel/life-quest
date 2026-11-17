@@ -18,9 +18,9 @@ vault, the tools that read and write it, the locks, and the
   collapses to a launcher mark, and its width is dragged with the divider between
   it and the page. **Full screen chat** at the trailing end of its top row
   collapses the main page and gives the dock the workspace right of the rail —
-  the rail and its **Chats** list stay — and the title bar's **Collapse main
-  page** / **Restore main page** is the same mode, with **Mod+Shift+F** as the
-  shortcut.
+  the rail and its **Chats** list stay — and **Mod+Shift+F** does the same from
+  anywhere. The title bar carries no full-screen control; the dock's top row is
+  the door.
 - A vertical **agent switcher** strip stands in the composer's trailing margin: in
   the empty gutter beside the composer when the dock is wide, and just above the
   composer box when the dock is too narrow to hold it. One block per agent this
@@ -155,10 +155,9 @@ vault's own binding.
    end of the dock's top row — the tab strip when a tab is drawn, the header row
    when it is not. The main page collapses, the chat takes the workspace right of
    the rail, and the rail with its chats list stays; the control now reads **Exit
-   full screen chat**. The title bar's **Collapse main page** / **Restore main
-   page** is the second door and **Mod+Shift+F** the shortcut. The mode is
-   session-only — it resets on relaunch, and collapsing the dock leaves it and
-   brings the page back.
+   full screen chat**. **Mod+Shift+F** is the shortcut from anywhere; the title
+   bar carries no second door. The mode is session-only — it resets on relaunch,
+   and collapsing the dock leaves it and brings the page back.
 
 ### Search and the archive
 

@@ -163,7 +163,15 @@ const SAMPLE = `(() => {
             typeof el.className === "string" ? el.className : ""
           ),
           shortcutsInStrip: Boolean(document.querySelector(".window-titlebar__shortcuts")),
-          themeInTrailing: Boolean(trailing.querySelector(".theme-mode-toggle"))
+          themeInTrailing: Boolean(trailing.querySelector(".theme-mode-toggle")),
+          // The strip is the day/night control and the gear, nothing else. The
+          // full-screen door rides the dock's own top row now, so a
+          // chat-focus-toggle in this band — or the old main-page toggle
+          // anywhere in the strip — is a regression, not an arrangement.
+          fullScreenInTrailing: Boolean(trailing.querySelector(".chat-focus-toggle")),
+          mainPageToggleInStrip: Boolean(
+            document.querySelector('[data-testid="titlebar-main-page"]')
+          )
         }
       : null,
     /*
@@ -474,11 +482,16 @@ async function main() {
       `theme ${JSON.stringify(landing.theme)}, menu ${JSON.stringify(landing.menu)}`,
     );
     check(
-      "the titlebar's trailing cluster is the full-screen door, theme and settings",
-      landing.titlebar.classes.length === 3 &&
-        landing.titlebar.classes[0].includes("chat-focus-toggle") &&
-        landing.titlebar.classes[1].includes("theme-mode-toggle") &&
-        landing.titlebar.classes[2].includes("settings-menu"),
+      "the titlebar's trailing cluster is the theme control and the settings menu",
+      landing.titlebar.classes.length === 2 &&
+        landing.titlebar.classes[0].includes("theme-mode-toggle") &&
+        landing.titlebar.classes[1].includes("settings-menu"),
+      `trailing ${JSON.stringify(landing.titlebar)}`,
+    );
+    check(
+      "no full-screen chat door or main-page toggle rides the titlebar",
+      landing.titlebar.fullScreenInTrailing === false &&
+        landing.titlebar.mainPageToggleInStrip === false,
       `trailing ${JSON.stringify(landing.titlebar)}`,
     );
     check(

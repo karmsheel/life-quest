@@ -127,10 +127,19 @@ const SAMPLE = `(() => {
   // The shortcuts reference moved into this same bar, beside the switch: the
   // titlebar carries it no more, so both facts are sampled.
   const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
+  // The titlebar carries no chat control at all now: the side switch and the
+  // collapse left for the dock's bottom bar, and the full-screen door it once
+  // kept as its one exception is the dock's own top-row control. The SAMPLE
+  // keeps every one of those facts so the assertions can say "here" and "not
+  // there" rather than only one.
   const staleTitlebar = {
     side: Boolean(document.querySelector(".window-titlebar__side-switch")),
     collapse: Boolean(document.querySelector(".window-titlebar__chat-toggle")),
     shortcuts: Boolean(document.querySelector(".window-titlebar__shortcuts")),
+    fullScreen: Boolean(
+      document.querySelector(".window-titlebar__trailing .chat-focus-toggle"),
+    ),
+    mainPage: Boolean(document.querySelector('[data-testid="titlebar-main-page"]')),
   };
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
@@ -527,12 +536,12 @@ function checkArrangement(label, state, side) {
 }
 
 /**
- * Where the controls live. The titlebar's trailing cluster ends at the settings
- * menu — no chat side switch or collapse rides the drag band any more, and the
- * one chat control that does ride it is the full-screen door, which is a window
- * arrangement rather than a dock control — and the dock's bottom action bar
- * carries the side switch immediately before the collapse it belongs with, in
- * the order the bar ships.
+ * Where the controls live. The titlebar's trailing cluster is the day/night
+ * control and the settings menu, and nothing else: no chat side switch,
+ * collapse or full-screen door rides the drag band any more — the door is the
+ * dock's own top-row control now — and the dock's bottom action bar carries the
+ * side switch immediately before the collapse it belongs with, in the order the
+ * bar ships.
  */
 function checkControls(label, state, side) {
   const controls = state.trailing?.controls ?? [];
@@ -542,23 +551,33 @@ function checkControls(label, state, side) {
       ? "Move chat to the right of the page"
       : "Move chat to the left of the page";
 
-  // The titlebar's trailing cluster is the full-screen door, the theme control
-  // and the settings menu. The keyboard-shortcuts control, like the two chat
-  // controls that left before it, now lives in the dock's own bar; a stale copy
-  // anywhere in the strip is the regression this guards, because a "contained"
-  // control is not a correctly placed one.
+  // The titlebar's trailing cluster is the day/night control and the settings
+  // menu. The keyboard-shortcuts control, like the chat controls that left
+  // before it — the side switch, the collapse and the full-screen door — now
+  // lives in the dock's own bar or top row; a stale copy anywhere in the strip
+  // is the regression this guards, because a "contained" control is not a
+  // correctly placed one.
   const expectedTrailing = [
-    "chat-focus-toggle",
     "theme-mode-toggle",
     "settings-menu",
   ];
   check(
-    `${label}: the titlebar's trailing cluster is full screen, theme, settings`,
+    `${label}: the titlebar's trailing cluster is theme and settings`,
     controls.length === expectedTrailing.length &&
       expectedTrailing.every((needle, index) =>
         String(classes[index] ?? "").includes(needle),
       ),
     `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: the titlebar carries no full-screen chat door`,
+    state.staleTitlebar?.fullScreen === false,
+    "a .window-titlebar__trailing .chat-focus-toggle is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no main-page toggle`,
+    state.staleTitlebar?.mainPage === false,
+    "a [data-testid=titlebar-main-page] is still in the strip",
   );
   check(
     `${label}: the titlebar carries no chat side switch`,

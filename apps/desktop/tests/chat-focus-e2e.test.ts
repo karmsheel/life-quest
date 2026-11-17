@@ -44,9 +44,21 @@ type ControlState = {
   box?: Box;
   display?: string;
   visibility?: string;
-  /** The titlebar door's relation to the theme control beside it. */
-  gapToTheme?: number | null;
-  beforeTheme?: boolean;
+};
+
+/** The window strip: the shipped pair, and the duplicate that must not return. */
+type StripState = {
+  present: boolean;
+  box: Box | null;
+  childCount: number;
+  classes: string[];
+  testids: (string | null)[];
+  /** Any `.chat-focus-toggle` inside `.window-titlebar__trailing`. */
+  holdsChatFocus: boolean;
+  /** `[data-testid="titlebar-main-page"]` anywhere in the document. */
+  hasMainPageControl: boolean;
+  /** Any aria-label/title still saying "…main page". */
+  staleMainPageLabels: string[];
 };
 
 type MeasureState = {
@@ -93,7 +105,7 @@ type FocusState = {
   launcher: { box: Box; position: string } | null;
   divider: { present: boolean; box: Box | null };
   dockControl: ControlState;
-  titlebarControl: ControlState;
+  strip: StripState;
   topRow: {
     className: string;
     isTabs: boolean;
@@ -113,7 +125,6 @@ type FocusState = {
     label: string | null;
     icon: string | null;
     box: Box;
-    holdsTitleControl: boolean;
   }[];
   content: {
     tabs: Rect | null;
@@ -144,8 +155,6 @@ type Report = {
   initial: FocusState;
   focusedViaDock: FocusState;
   restoredAfterDock: FocusState;
-  focusedViaTitlebar: FocusState;
-  restoredAfterTitlebar: FocusState;
   shortcutFocused: FocusState;
   shortcutRestored: FocusState;
   collapsedFromFocus: FocusState;
@@ -209,10 +218,70 @@ function shellBox(state: FocusState): Box | undefined {
   return state.shell?.box;
 }
 
-/** Both doors: label, pressed state, icon, and where each one lives. */
+/** The window strip's pair, and the duplicate that must not return. */
+function assertStrip(label: string, state: FocusState) {
+  const strip = state.strip;
+  assert.ok(strip, `${label}: the window strip was not sampled`);
+  assert.equal(
+    strip.present,
+    true,
+    `${label}: the window strip draws no trailing cluster`,
+  );
+  const classes = strip.classes ?? [];
+  assert.equal(
+    strip.childCount,
+    2,
+    `${label}: the strip's trailing cluster is not the shipped pair (${JSON.stringify(classes)})`,
+  );
+  assert.equal(
+    classes.length,
+    2,
+    `${label}: the strip's trailing cluster is not the shipped pair (${JSON.stringify(classes)})`,
+  );
+  assert.match(
+    String(classes[0] ?? ""),
+    /theme-mode-toggle/,
+    `${label}: the day/night control does not lead the strip's cluster (${classes[0]})`,
+  );
+  assert.match(
+    String(classes[1] ?? ""),
+    /settings-menu/,
+    `${label}: the settings menu does not trail the strip's cluster (${classes[1]})`,
+  );
+  assert.equal(
+    strip.holdsChatFocus,
+    false,
+    `${label}: the strip carries a full-screen control again (${JSON.stringify(strip.testids)})`,
+  );
+  assert.equal(
+    strip.hasMainPageControl,
+    false,
+    `${label}: [data-testid="titlebar-main-page"] is back in the strip`,
+  );
+  assert.deepEqual(
+    strip.staleMainPageLabels,
+    [],
+    `${label}: a Collapse/Restore main page label survives (${JSON.stringify(strip.staleMainPageLabels)})`,
+  );
+  const boxes = state.cluster ?? [];
+  const first = boxes[0];
+  const second = boxes[1];
+  assert.ok(
+    first && second,
+    `${label}: the strip's pair was not measured (${JSON.stringify(boxes)})`,
+  );
+  assert.ok(
+    first.box.right <= second.box.left,
+    `${label}: the day/night control does not sit before the gear (${first.box.right} vs ${second.box.left})`,
+  );
+}
+
+/**
+ * The mode's one door: the dock's top-row control. The strip is checked for the
+ * duplicate that used to sit there.
+ */
 function assertDoors(label: string, state: FocusState, focused: boolean) {
-  const expectedDockLabel = focused ? "Exit full screen chat" : "Full screen chat";
-  const expectedTitleLabel = focused ? "Restore main page" : "Collapse main page";
+  const expectedLabel = focused ? "Exit full screen chat" : "Full screen chat";
   const expectedIcon = focused ? "lucide-minimize-2" : "lucide-maximize-2";
   const expectedPressed = focused ? "true" : "false";
 
@@ -225,12 +294,12 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
   );
   assert.equal(
     dock.label,
-    expectedDockLabel,
+    expectedLabel,
     `${label}: the dock control names the wrong move (${dock.label})`,
   );
   assert.equal(
     dock.title,
-    expectedDockLabel,
+    expectedLabel,
     `${label}: the dock control's title names the wrong move (${dock.title})`,
   );
   assert.equal(
@@ -244,8 +313,8 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     `${label}: the dock control wears the wrong icon (${dock.icon})`,
   );
 
-  // The strip is drawn (the harness seeds a pinned chat), and the control is its
-  // trailing item after the new-chat plus.
+  // The top row is the tab strip here (the harness seeds a pinned chat), and the
+  // control is its trailing item after the new-chat plus.
   const topRow = state.topRow;
   assert.ok(topRow, `${label}: the dock has no top row`);
   assert.equal(
@@ -268,61 +337,7 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     `${label}: the dock control is not immediately after the plus (${topRow.afterPlusGap}px)`,
   );
 
-  const title = state.titlebarControl;
-  assert.equal(title.found, true, `${label}: the titlebar carries no main-page control`);
-  assert.match(
-    String(title.classes ?? ""),
-    /chat-focus-toggle/,
-    `${label}: the titlebar control is not marked chat-focus-toggle (${title.classes})`,
-  );
-  assert.match(
-    String(title.classes ?? ""),
-    /window-titlebar__btn/,
-    `${label}: the titlebar control is not a window-titlebar__btn (${title.classes})`,
-  );
-  assert.equal(
-    title.label,
-    expectedTitleLabel,
-    `${label}: the titlebar control names the wrong move (${title.label})`,
-  );
-  assert.equal(
-    title.pressed,
-    expectedPressed,
-    `${label}: the titlebar control's aria-pressed does not follow the mode (${title.pressed})`,
-  );
-  assert.match(
-    String(title.icon ?? ""),
-    new RegExp(expectedIcon),
-    `${label}: the titlebar control wears the wrong icon (${title.icon})`,
-  );
-
-  const cluster = state.cluster;
-  assert.equal(
-    cluster.length,
-    3,
-    `${label}: the titlebar's trailing cluster is not the shipped three controls (${JSON.stringify(cluster.map((entry) => entry.classes))})`,
-  );
-  assert.equal(
-    cluster[0]?.holdsTitleControl,
-    true,
-    `${label}: the main-page control does not lead the trailing cluster (${JSON.stringify(cluster.map((entry) => entry.classes))})`,
-  );
-  assert.match(
-    String(cluster[1]?.classes ?? ""),
-    /theme-mode-toggle/,
-    `${label}: the theme control does not follow the main-page control (${cluster[1]?.classes})`,
-  );
-  assert.match(
-    String(cluster[2]?.classes ?? ""),
-    /settings-menu/,
-    `${label}: the settings menu does not trail the cluster (${cluster[2]?.classes})`,
-  );
-  assert.ok(
-    title.beforeTheme === true &&
-      (title.gapToTheme ?? -1) >= 0 &&
-      (title.gapToTheme ?? 99) <= 8,
-    `${label}: the main-page control does not sit immediately before the theme control (gap ${title.gapToTheme})`,
-  );
+  assertStrip(label, state);
 }
 
 /** The mode's layout, restated against the contract. */
@@ -508,14 +523,19 @@ function assertRestored(label: string, before: FocusState, after: FocusState) {
     `${label}: the dock control's pressed state did not clear`,
   );
   assert.equal(
-    after.titlebarControl.label,
-    before.titlebarControl.label,
-    `${label}: the titlebar control did not turn around`,
+    after.strip?.holdsChatFocus,
+    false,
+    `${label}: the strip carries a second full-screen door after the round trip`,
   );
   assert.equal(
-    after.titlebarControl.pressed,
-    before.titlebarControl.pressed,
-    `${label}: the titlebar control's pressed state did not clear`,
+    after.strip?.hasMainPageControl,
+    false,
+    `${label}: [data-testid="titlebar-main-page"] returned after the round trip`,
+  );
+  assert.deepEqual(
+    after.strip?.classes,
+    before.strip?.classes,
+    `${label}: the strip's trailing cluster changed in the round trip`,
   );
   assert.equal(after.route, before.route, `${label}: the route changed`);
 }
@@ -547,16 +567,9 @@ function assertCollapsedExit(label: string, state: FocusState) {
     false,
     `${label}: the dock's control is still reachable with the dock collapsed`,
   );
-  assert.equal(
-    state.titlebarControl.label,
-    "Collapse main page",
-    `${label}: the titlebar control does not name the shipped move again (${state.titlebarControl.label})`,
-  );
-  assert.equal(
-    state.titlebarControl.pressed,
-    "false",
-    `${label}: the titlebar control stayed pressed (${state.titlebarControl.pressed})`,
-  );
+  // The strip is still the shipped pair while the dock is collapsed: the mode's
+  // one door left with the dock, but no second door replaces it up there.
+  assertStrip(label, state);
   assert.equal(state.divider.present, false, `${label}: the divider is drawn with no dock`);
 }
 
@@ -605,7 +618,7 @@ function assertPng(file: string, label: string, minBytes = 512) {
 }
 
 describe("full-screen chat", () => {
-  it("takes the workspace from both doors and restores the exact layout", async (t) => {
+  it("takes the workspace from its one door and its shortcut and restores the exact layout", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -685,9 +698,8 @@ describe("full-screen chat", () => {
     );
     assertDoors("shipped layout", report.initial, false);
 
-    // —— The mode, through every door and arrangement. ——
+    // —— The mode, through its one door, its shortcut and every arrangement. ——
     assertFocused("dock door", report.focusedViaDock, report.initial);
-    assertFocused("titlebar door", report.focusedViaTitlebar, report.initial);
     assertFocused("shortcut", report.shortcutFocused, report.initial);
     assertFocused("from collapsed dock", report.focusFromCollapsed, report.initial);
     assertFocused(
@@ -725,7 +737,8 @@ describe("full-screen chat", () => {
       "the dock-left mode does not reach the window's trailing edge",
     );
 
-    // —— Entering from a collapsed dock reopens it. ——
+    // —— Entering the mode from a collapsed dock reopens it: the shortcut is
+    // the only door left when the dock's control is not on screen. ——
     assert.ok(
       report.focusFromCollapsed.chat,
       "entering the mode from a collapsed dock left the dock collapsed",
@@ -743,11 +756,6 @@ describe("full-screen chat", () => {
 
     // —— Every exit restores the exact pre-focus geometry. ——
     assertRestored("dock door exit", report.initial, report.restoredAfterDock);
-    assertRestored(
-      "titlebar door exit",
-      report.initial,
-      report.restoredAfterTitlebar,
-    );
     assertRestored("shortcut exit", report.initial, report.shortcutRestored);
     assertRestored(
       "from collapsed exit",
@@ -771,9 +779,15 @@ describe("full-screen chat", () => {
     // —— Collapsing the dock while in the mode clears it. ——
     assertCollapsedExit("collapse while focused", report.collapsedFromFocus);
 
-    // —— The shortcut is a real trusted keydown, twice. ——
+    // —— The shortcut is a real trusted keydown at every press, four times. ——
     assertShortcutKeys("shortcut on", report.shortcutFocused.keys, 1);
     assertShortcutKeys("shortcut off", report.shortcutRestored.keys, 2);
+    assertShortcutKeys("from collapsed on", report.focusFromCollapsed.keys, 3);
+    assertShortcutKeys(
+      "from collapsed off",
+      report.restoredFromCollapsed.keys,
+      4,
+    );
 
     // —— The artifact: a picture of the shipped full-screen UI. ——
     const focusShots = report.screenshots.filter((file) =>

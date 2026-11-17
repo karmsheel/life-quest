@@ -56,6 +56,10 @@ type Sample = {
     classes: string[];
     shortcutsInStrip: boolean;
     themeInTrailing: boolean;
+    /** No full-screen chat door may ride the strip: the dock's top row owns it. */
+    fullScreenInTrailing: boolean;
+    /** The retired strip door to the main page, sampled by its old test id. */
+    mainPageToggleInStrip: boolean;
   } | null;
   menu: {
     box: Box;
@@ -168,20 +172,28 @@ describe("titlebar theme quick menu", () => {
     assert.equal(landing.theme.attr, "dark", "the shipped palette is not night");
     assert.equal(landing.menu, null, "the menu is open before the pointer arrives");
     assert.equal(landing.titlebar?.shortcutsInStrip, false, "a shortcuts control is still in the strip");
-    // The strip's trailing cluster: the full-screen door leads it, then the
-    // day/night control and the gear it belongs with.
+    // The strip's trailing cluster is the day/night control and the gear it
+    // belongs with: full-screen chat has one door, in the dock's own top row.
     assert.deepEqual(
       landing.titlebar?.classes.map((className) =>
-        className.includes("chat-focus-toggle")
-          ? "full-screen"
-          : className.includes("theme-mode-toggle")
-            ? "theme"
-            : className.includes("settings-menu")
-              ? "settings"
-              : className,
+        className.includes("theme-mode-toggle")
+          ? "theme"
+          : className.includes("settings-menu")
+            ? "settings"
+            : className,
       ),
-      ["full-screen", "theme", "settings"],
-      "the titlebar's trailing cluster is not full screen + theme + settings",
+      ["theme", "settings"],
+      "the titlebar's trailing cluster is not theme + settings",
+    );
+    assert.equal(
+      landing.titlebar?.fullScreenInTrailing,
+      false,
+      "a full-screen chat door is riding the titlebar's trailing cluster",
+    );
+    assert.equal(
+      landing.titlebar?.mainPageToggleInStrip,
+      false,
+      "a [data-testid=titlebar-main-page] toggle is back in the strip",
     );
 
     // —— 2. Hover opens the menu: the mode switcher leads, the starred themes
