@@ -1536,6 +1536,11 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       transcript: string[];
     };
     queued: { armed?: boolean; rows: string[]; draft: string };
+    enterMode?: {
+      plain: { stored: string | null; sends: number; calls: { input: string }[]; draft: string };
+      shift: { value: string; lines: number; sends: number };
+      ctrl: { sends: number; last: { input?: string } | undefined; draft: string };
+    };
     screenshots: string[];
   };
 
@@ -1664,6 +1669,55 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         `the queued message was not shown: ${JSON.stringify(report.queued.rows)}`,
       );
       assert.equal(report.queued.draft, "", "queueing left the draft behind");
+
+      // The other keyboard, from Settings → Composer: with "enter" stored and
+      // the page reloaded, a plain Enter sends once and clears the draft,
+      // Shift+Enter is the line break, and Ctrl+Enter still sends exactly once.
+      assert.ok(report.enterMode, "the rig ran no enter-mode leg");
+      assert.equal(
+        report.enterMode.plain.stored,
+        "enter",
+        `the enter-mode leg did not start on the chosen keyboard: ${report.enterMode.plain.stored}`,
+      );
+      assert.equal(
+        report.enterMode.plain.sends,
+        1,
+        `plain Enter sent ${report.enterMode.plain.sends} message(s) in enter mode`,
+      );
+      assert.equal(
+        report.enterMode.plain.calls[0]?.input,
+        "enter mode prompt",
+        `plain Enter lost the draft: ${JSON.stringify(report.enterMode.plain.calls[0]?.input)}`,
+      );
+      assert.equal(
+        report.enterMode.plain.draft,
+        "",
+        `plain Enter left the draft behind: ${JSON.stringify(report.enterMode.plain.draft)}`,
+      );
+      assert.ok(
+        report.enterMode.shift.lines >= 2,
+        `Shift+Enter did not break the line: ${JSON.stringify(report.enterMode.shift.value)}`,
+      );
+      assert.equal(
+        report.enterMode.shift.sends,
+        1,
+        `Shift+Enter sent a message: ${report.enterMode.shift.sends} send(s)`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.sends,
+        2,
+        `Ctrl+Enter did not send exactly once in enter mode: ${report.enterMode.ctrl.sends} send(s)`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.last?.input,
+        "ctrl prompt",
+        `Ctrl+Enter lost the draft: ${JSON.stringify(report.enterMode.ctrl.last?.input)}`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.draft,
+        "",
+        `Ctrl+Enter left the draft behind: ${JSON.stringify(report.enterMode.ctrl.draft)}`,
+      );
     });
   });
 

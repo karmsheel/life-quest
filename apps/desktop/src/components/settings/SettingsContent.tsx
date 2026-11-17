@@ -9,6 +9,7 @@ import { normalizeSettingsQuery, searchSettingsSections } from "@/lib/settings-s
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsAppearance } from "./SettingsAppearance";
 import { SettingsShortcuts } from "./SettingsShortcuts";
+import { SettingsComposer } from "./SettingsComposer";
 import { SettingsCompanionPrompts } from "./SettingsCompanionPrompts";
 import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
@@ -57,6 +58,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsAppearance />;
     case "shortcuts":
       return <SettingsShortcuts />;
+    case "composer":
+      return <SettingsComposer />;
     case "domains":
       return <SettingsDomains />;
     case "vault":

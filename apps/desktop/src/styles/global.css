@@ -5988,6 +5988,45 @@ a.home-mini-list__link:hover {
   color: var(--amber);
 }
 
+/* —— Composer page ——
+   One row, and the row pair is `SettingsRow`'s own layout: the copy on the
+   leading edge, the send-key control on the trailing edge. The page keeps only
+   its own measures — the description wants a column, and the segmented control
+   sits at the top of the row rather than floating in its middle. */
+.settings-composer {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-composer .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-composer .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-composer .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.12rem;
+}
+
+/* The row's own report: which key the message box answers to now, and what the
+   other key does. */
+.settings-composer__state {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.settings-composer__state strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
 /* —— Decisions page ——
    The same list shape as Developer, because it is the same kind of page: two
    switches, each one row. `SettingsRow` now owns the row pair and the hairline
