@@ -12193,12 +12193,11 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's trailing corner, as one sticky group: the plus that opens a new
- * chat, then the full-screen door. It sticks to the band's trailing edge, so a
- * strip with more tabs than the dock is wide still ends with both controls; the
- * dock's canvas behind it keeps a tab sliding under it from showing through.
- * One sticky box rather than two sticky children, or the two marks would paint
- * over each other at the same `right: 0`.
+ * The strip's trailing corner: the full-screen door, and nothing else. It sticks
+ * to the band's trailing edge, so a strip with more tabs than the dock is wide
+ * still ends with the way to the whole workspace; the dock's canvas behind it
+ * keeps a tab sliding under it from showing through. The plus is not in here: it
+ * travels with the tabs, directly after the last one.
  */
 .chat-panel__tabs-trailing {
   position: sticky;
@@ -12206,7 +12205,6 @@ button.chat-panel__activity-line:hover {
   align-self: stretch;
   display: flex;
   align-items: center;
-  gap: 0.15rem;
   flex: 0 0 auto;
   margin-left: auto;
   padding-left: 0.3rem;
@@ -12214,9 +12212,10 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's own door to a new chat: the browser's plus, set after the last tab
- * and a share of the band rather than a tab itself — it opens a conversation, it
- * does not represent one.
+ * The strip's own door to a new chat: the browser's plus, set directly after the
+ * last tab in the strip's flow — where the next tab will appear — rather than on
+ * the band's trailing edge. It opens a conversation, it does not represent one,
+ * so it never grows: the tabs share the band, and the slack falls after it.
  */
 .chat-panel__tab-new {
   display: inline-flex;
@@ -12226,7 +12225,6 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
   width: 1.6rem;
   height: 1.6rem;
-  margin-left: 0.15rem;
   padding: 0;
   border: 0;
   border-radius: 0.35rem;
@@ -12242,7 +12240,7 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The strip's full-screen door, sized to the band rather than to the header's
-   utility row: the plus beside it is 1.6rem, and the two controls are one group. */
+   utility row: 1.6rem, the same mark as the plus beside the tabs. */
 .chat-panel__tab-focus {
   width: 1.6rem;
   height: 1.6rem;

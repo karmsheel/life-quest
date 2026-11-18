@@ -128,6 +128,16 @@ const SAMPLE = `(() => {
     ? Array.from(topRow.children).find((el) => el.contains(dockCtl))
     : null;
   const lastTop = topRow ? topRow.children[topRow.children.length - 1] : null;
+  // The plus is a sibling of the tabs in the strip's flow, directly after the
+  // last tab; the full-screen door keeps the band's trailing corner. Both facts
+  // are measured here, because "next to the last tab" and "at the end of the
+  // strip" are different arrangements that both look like a plus on screen.
+  const tabEls = topRow
+    ? Array.from(topRow.children).filter((el) =>
+        el.classList.contains("chat-panel__tab")
+      )
+    : [];
+  const lastTab = tabEls.length > 0 ? tabEls[tabEls.length - 1] : null;
   const topRowInfo = topRow
     ? {
         className: String(topRow.className || ""),
@@ -136,11 +146,18 @@ const SAMPLE = `(() => {
         box: box(topRow),
         controlIsTrailing: Boolean(topLevel && lastTop && topLevel === lastTop),
         trailingGap: dockCtl ? box(topRow).right - box(dockCtl).right : null,
+        lastTabBox: lastTab ? box(lastTab) : null,
         plusBox: plus ? box(plus) : null,
+        plusInTrailingGroup: Boolean(
+          plus && plus.closest(".chat-panel__tabs-trailing")
+        ),
+        plusAfterLastTab: Boolean(
+          plus && lastTab && box(plus).left >= box(lastTab).right
+        ),
+        plusGap: plus && lastTab ? box(plus).left - box(lastTab).right : null,
         afterPlus: Boolean(
           plus && dockCtl && box(dockCtl).left >= box(plus).right
         ),
-        afterPlusGap: plus && dockCtl ? box(dockCtl).left - box(plus).right : null,
         children: Array.from(topRow.children).map((el) => ({
           classes: String(el.className || ""),
           box: box(el),
@@ -491,8 +508,9 @@ function checkDoors(label, state, focused) {
     `dock control ${JSON.stringify(dock)}`,
   );
 
-  // The top row is the tab strip here (the harness seeds a pinned chat), and the
-  // control is its trailing item, after the new-chat plus.
+  // The top row is the tab strip here (the harness seeds a pinned chat): the
+  // plus follows the last tab in the strip's flow, and the full-screen control
+  // holds the band's trailing corner after it.
   const topRow = state.topRow;
   check(
     `${label}: the dock's top row is the pinned chat's tab strip`,
@@ -505,11 +523,24 @@ function checkDoors(label, state, focused) {
     `control is trailing: ${topRow?.controlIsTrailing}, children ${JSON.stringify(topRow?.children)}`,
   );
   check(
-    `${label}: the dock control follows the new-chat plus`,
-    topRow?.afterPlus === true &&
-      near(topRow?.afterPlusGap, 0, 12) &&
-      (topRow?.afterPlusGap ?? -1) >= 0,
-    `plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}, gap ${topRow?.afterPlusGap}`,
+    `${label}: the new-chat plus sits directly after the last tab`,
+    Boolean(topRow?.lastTabBox && topRow?.plusBox) &&
+      topRow.plusAfterLastTab === true &&
+      (topRow.plusGap ?? -1) >= 0 &&
+      topRow.plusGap <= 12,
+    `last tab ${JSON.stringify(topRow?.lastTabBox)}, plus ${JSON.stringify(topRow?.plusBox)}, gap ${topRow?.plusGap}`,
+  );
+  check(
+    `${label}: the new-chat plus rides the tab flow, not the trailing corner`,
+    topRow?.plusInTrailingGroup === false &&
+      Boolean(topRow?.plusBox && dock?.box) &&
+      dock.box.left >= topRow.plusBox.right,
+    `plus in trailing group ${topRow?.plusInTrailingGroup}, plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
+  );
+  check(
+    `${label}: the dock control stands after the plus, in the row's trailing corner`,
+    topRow?.afterPlus === true,
+    `plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
   );
   check(
     `${label}: the dock control sits inside the top row's trailing edge`,

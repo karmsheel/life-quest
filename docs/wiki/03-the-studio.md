@@ -173,8 +173,9 @@ The chat dock:
   ring; an agent scoped away from the current area is absent rather than greyed.
 - The **chat tabs**, drawn whenever the thread has a tab. Open chats sit in the
   strip above the chat's name, the name in front hangs under them in a small chip
-  with a **Rename chat** pencil at its end, and a **+** at the strip's trailing
-  edge is **New chat tab**. A middle click closes a tab and **Ctrl/Cmd+W** closes
+  with a **Rename chat** pencil at its end, and a **+** immediately after the last
+  tab is **New chat tab** — the plus sits where the next tab will appear, not on
+  the strip's trailing edge. A middle click closes a tab and **Ctrl/Cmd+W** closes
   the tab in front. Right-clicking a tab opens **Pin**, **Rename**, **Archive**
   and **Delete**.
 - **Pinned chats** lead the strip as squares: the label's first letter and a

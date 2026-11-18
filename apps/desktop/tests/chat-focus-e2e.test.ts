@@ -113,9 +113,12 @@ type FocusState = {
     box: Box;
     controlIsTrailing: boolean;
     trailingGap: number | null;
+    lastTabBox: Box | null;
     plusBox: Box | null;
+    plusInTrailingGroup: boolean;
+    plusAfterLastTab: boolean;
+    plusGap: number | null;
     afterPlus: boolean;
-    afterPlusGap: number | null;
     children: { classes: string; box: Box; holdsControl: boolean }[];
   } | null;
   cluster: {
@@ -313,8 +316,9 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     `${label}: the dock control wears the wrong icon (${dock.icon})`,
   );
 
-  // The top row is the tab strip here (the harness seeds a pinned chat), and the
-  // control is its trailing item after the new-chat plus.
+  // The top row is the tab strip here (the harness seeds a pinned chat): the plus
+  // follows the last tab in the strip's flow, and the full-screen control holds
+  // the band's trailing corner after it.
   const topRow = state.topRow;
   assert.ok(topRow, `${label}: the dock has no top row`);
   assert.equal(
@@ -327,14 +331,28 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     true,
     `${label}: the dock control is not the trailing item of the top row (${JSON.stringify(topRow.children)})`,
   );
+  assert.ok(
+    topRow.lastTabBox !== null && topRow.plusBox !== null,
+    `${label}: the strip did not report a last tab and the plus (${JSON.stringify({ lastTab: topRow.lastTabBox, plus: topRow.plusBox })})`,
+  );
+  assert.equal(
+    topRow.plusAfterLastTab,
+    true,
+    `${label}: the new-chat plus is not after the last tab (${JSON.stringify({ lastTab: topRow.lastTabBox, plus: topRow.plusBox })})`,
+  );
+  assert.ok(
+    topRow.plusGap !== null && topRow.plusGap >= 0 && topRow.plusGap <= 12,
+    `${label}: the new-chat plus is not immediately after the last tab (${topRow.plusGap}px)`,
+  );
+  assert.equal(
+    topRow.plusInTrailingGroup,
+    false,
+    `${label}: the new-chat plus is parked in the strip's trailing corner again`,
+  );
   assert.equal(
     topRow.afterPlus,
     true,
-    `${label}: the dock control does not follow the new-chat plus (gap ${topRow.afterPlusGap})`,
-  );
-  assert.ok(
-    topRow.afterPlusGap !== null && topRow.afterPlusGap <= 12,
-    `${label}: the dock control is not immediately after the plus (${topRow.afterPlusGap}px)`,
+    `${label}: the dock control does not stand after the new-chat plus (${JSON.stringify({ plus: topRow.plusBox, control: state.dockControl.box })})`,
   );
 
   assertStrip(label, state);
