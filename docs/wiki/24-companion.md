@@ -178,13 +178,16 @@ vault's own binding.
 
 1. Type in the field placeholdered **Message Pi…** or **Message Hermes…**.
    **Enter** starts a new line; **Ctrl+Enter** (**Cmd+Enter** on macOS) sends.
+   Settings → **Composer** can make plain Enter send instead; Ctrl/Cmd+Enter
+   keeps sending in either mode.
 2. While a turn runs the send control becomes **Stop this run** and the transcript
    shows a live status line such as **Working… 6s · reading the note**. The field's
    placeholder becomes **Steer the turn that is running…**.
 3. To add to a live turn, type and choose **Steer** — the words go into the run that
    is already working. To line a message up behind it, choose **Queue**; queued
    rows appear under the composer labelled **Queued**, each with **Remove queued
-   message**. Ctrl/Cmd+Enter steers while a turn is running.
+   message**. Ctrl/Cmd+Enter steers while a turn is running (plain Enter does too
+   once Settings → **Composer** makes it the send key).
 4. Read the turn as a work log. Your message sits on the right as a bubble in the
    accent tint, labelled **You**. The companion's answer is not a bubble: it rests
    on the panel as plain prose, left aligned and full width, labelled **Pi** or
@@ -250,7 +253,7 @@ vault's own binding.
 
 | Control | What it does |
 |---|---|
-| Field | **Message Pi…** / **Message Hermes…**. Enter is a newline; Ctrl/Cmd+Enter sends (or steers a live turn). Grows with the text up to a cap. |
+| Field | **Message Pi…** / **Message Hermes…**. Enter is a newline; Ctrl/Cmd+Enter sends (or steers a live turn). Settings → **Composer** can make plain Enter send instead. Grows with the text up to a cap. |
 | Send / **Stop this run** | Sends the turn, or stops the live run cooperatively. |
 | **Steer** / **Queue** | Appear while a turn is running and the field has text: put the words into the live turn, or line them up to run next. |
 | **Attach a file** | The plus at the bottom left. Attaches any media or file as a general attachment, several per pick; chips wait above the field, each removable with **Remove "<name>"**. |

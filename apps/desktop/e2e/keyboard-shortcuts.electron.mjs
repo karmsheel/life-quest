@@ -150,11 +150,19 @@ const SAMPLE = `(() => {
     storage = "unavailable";
   }
 
+  // The wings control is the shared SDK segmented control (a radio group), not
+  // the old hand-rolled tab strip: its items wear role="radio"/aria-checked.
+  // Read either shape — a theme may render the strip differently — but the
+  // shipped DOM is the radio group.
   const wingTabs = Array.from(
-    document.querySelectorAll(".nav-rail__wings [role='tab']"),
+    document.querySelectorAll(
+      ".nav-rail__wings [role='radio'], .nav-rail__wings [role='tab']",
+    ),
   ).map((tab) => ({
     label: text(tab),
-    selected: tab.getAttribute("aria-selected") === "true",
+    selected:
+      tab.getAttribute("aria-checked") === "true" ||
+      tab.getAttribute("aria-selected") === "true",
   }));
 
   /** On screen now — not merely in the DOM: the dock keeps every surface mounted
@@ -1011,11 +1019,11 @@ async function main() {
     await clickSelector(".settings-overlay__search-clear");
     const searchCleared = await record(
       "searchCleared",
-      'document.querySelectorAll(".settings-nav-item").length === 12',
+      'document.querySelectorAll(".settings-nav-item").length === 13',
     );
     check(
       "clearing the search restores the whole section list",
-      searchCleared.nav.length === 12 && searchCleared.searchValue === "",
+      searchCleared.nav.length === 13 && searchCleared.searchValue === "",
       `${searchCleared.nav.length} rows, search ${JSON.stringify(searchCleared.searchValue)}`,
     );
     check(

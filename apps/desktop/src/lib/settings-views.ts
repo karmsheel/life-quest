@@ -7,6 +7,7 @@ import {
   Keyboard,
   Layers,
   MessageCircleQuestion,
+  MessageSquareText,
   Palette,
   RefreshCw,
   ScrollText,
@@ -17,6 +18,7 @@ import {
 export type SettingsViewId =
   | "appearance"
   | "shortcuts"
+  | "composer"
   | "domains"
   | "vault"
   | "hermes"
@@ -80,6 +82,32 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "navigation",
       "toggle",
       "panel",
+    ],
+  },
+  {
+    id: "composer",
+    label: "Composer",
+    icon: MessageSquareText,
+    keywords: [
+      "composer",
+      "message",
+      "messages",
+      "chat",
+      "box",
+      "send",
+      "sends",
+      "enter",
+      "return",
+      "ctrl",
+      "control",
+      "cmd",
+      "command",
+      "modifier",
+      "newline",
+      "line break",
+      "keyboard",
+      "key",
+      "keys",
     ],
   },
   {

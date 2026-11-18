@@ -44,6 +44,7 @@ import {
   type SignalRecord,
 } from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
+import { useComposerSendKey } from "@/lib/composer-send";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
@@ -194,6 +195,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setSurface: setView,
   } = useChatDock();
   const chat = useChatSessions();
+  // Which key sends: the operator's choice on Settings → Composer, read here so
+  // the field's own key handler answers to the same preference the page shows.
+  const { sendKey } = useComposerSendKey();
   // What this dock calls the agent that answers. The setup screen and Settings
   // choose it; here it is only a name.
   const companionContext = useOptionalCompanion();
@@ -1223,20 +1227,29 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * The keyboard: Enter is a newline, Ctrl/Cmd+Enter sends.
+   * The keyboard: the send key is the operator's choice, and the other key writes.
    *
-   * A prompt is a paragraph, not a telegram, so the key the operator reaches for
-   * while writing has to break the line rather than throw the thought away
-   * half-written. Sending moved to the modified key for the same reason: the
-   * send is now a decision, taken on purpose, and the plain key stays the
-   * writing key it has always been in every other editor.
+   * The default is Enter as a newline and Ctrl/Cmd+Enter as the send: a prompt is
+   * a paragraph, not a telegram, so the key the operator reaches for while writing
+   * breaks the line rather than throwing the thought away half-written. Settings →
+   * Composer can put the send back on plain Enter for a keyboard used to that;
+   * Ctrl/Cmd+Enter sends in both modes, because the modified key is unambiguous.
    *
-   * While a turn is running, the same modified key steers: the words go into
-   * the live turn instead of starting a second one, which is the answer to
-   * "the user is unable to steer the prompt once it's already sent".
+   * While a turn is running, the send key steers: the words go into the live turn
+   * instead of starting a second one, which is the answer to "the user is unable
+   * to steer the prompt once it's already sent".
+   *
+   * Two presses are not sends at all. A held Enter repeats, and a repeated send
+   * would fire a turn per repeat; and Enter during IME composition belongs to the
+   * candidate list, not to the message box — committing a candidate deselects the
+   * text and leaves the keydown on the field, so the press must be left alone.
    */
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key !== "Enter" || e.shiftKey || !(e.ctrlKey || e.metaKey)) return;
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if (e.repeat) return;
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    const modified = e.ctrlKey || e.metaKey;
+    if (!modified && sendKey !== "enter") return;
     e.preventDefault();
     if (sending) {
       void steerMessage(draft.trim());
