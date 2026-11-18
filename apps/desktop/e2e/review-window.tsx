@@ -283,6 +283,14 @@ const bridge: Record<string, unknown> = {
   // The shell's pending-decisions badge reads the inbox on mount.
   decisionList: () => ok([]),
   onCompanionStream: () => () => {},
+  // The theme store reads the profile's themes directory on mount and watches
+  // it. This rig is not about themes, so the list is empty and the watcher is a
+  // no-op — but both must be modelled: the proxy's catch-all answers with a
+  // Promise, and ThemeProvider throws on an `unsubscribe` that is not a
+  // function, leaving the harness never ready.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
