@@ -1,10 +1,10 @@
 # Settings
 
-Settings is one sheet over the app, not a page in the rail. It holds thirteen tabs
-in a fixed order: from the theme you wear, the keys you move with and the chat's
-own text size, through the areas and the vault, to the companion, the prompt the
-agent is given, the review windows, the Decisions inbox, updates, your own context,
-and the Developer bench.
+Settings is one sheet over the app, not a page in the rail. It holds fourteen tabs
+in a fixed order: from the theme you wear, the keys you move with, the chat's own
+text size and the way the chat message box sends, through the areas and the vault,
+to the companion, the prompt the agent is given, the review windows, the Decisions
+inbox, updates, your own context, and the Developer bench.
 A search field above the tab list narrows the list in place, so a setting you can
 name is two keystrokes away. [The wiki home](./index.md) has the page index.
 
@@ -53,7 +53,7 @@ panel. Its only floating chrome is the search pill (*Search settings*), a short
 field sitting on the panel's top border, half in and half out, with the section
 column starting at the panel's top edge and no title band above it; the close
 cross (**Close settings**) floats over the panel's top-right padding. The left
-column carries the kicker **App** and the title **Settings**, then the thirteen
+column carries the kicker **App** and the title **Settings**, then the fourteen
 tabs with their icons, and the panel shows the selected tab, titled by its own
 heading and subtitle, in a card of rows: name and description on the leading
 edge, control on the trailing edge, a hairline ruling one row off the next.
@@ -185,6 +185,27 @@ preview moves with the keys. The combinations are reserved in the keyboard table
 so no movement can be bound over them. The dock's bottom bar carries a **Chat
 display settings** button (the Type mark) that opens this tab directly. See
 [Companion](./24-companion.md) for the dock's own controls.
+
+## Composer
+
+**Composer** — *How the message box sends*. One row, **Send with**, holds a
+segmented control with two choices:
+
+- **Ctrl/Cmd+Enter** — the default. Enter breaks the line; Ctrl/Cmd+Enter sends
+  the message.
+- **Enter** — Enter sends the message and Shift+Enter breaks the line.
+  Ctrl/Cmd+Enter still sends, so the older habit keeps working.
+
+A choice takes effect at once; there is no Save button. While a turn is already
+running, the same send key steers that turn instead of starting a second one. The
+setting is window storage — `localStorage` under `lifequest-composer-send-key` —
+so it survives a restart on this machine and does not travel with the vault
+folder.
+
+The choice reaches the chat message box only. Quick Notes and the signal/chain
+capture keep logging with plain Enter and breaking the line with Shift+Enter
+whatever is chosen here; see [Quick Notes](./15-quick-notes.md) and
+[Companion](./24-companion.md).
 
 ## Areas
 
@@ -386,10 +407,10 @@ feed, and a real release outranks the preview.
 
 ## Rules and behaviour
 
-- The tab order is fixed (13): **Appearance**, **Keyboard**, **Chat display**,
-  **Areas**, **Vault**, **Hermes**, **Agent**, **Review**, **Questions**,
-  **Decisions**, **Updates**, **About me**, **Developer**. An unknown or missing
-  `tab` value falls back to Appearance.
+- The tab order is fixed (14): **Appearance**, **Keyboard**, **Chat display**,
+  **Composer**, **Areas**, **Vault**, **Hermes**, **Agent**, **Review**,
+  **Questions**, **Decisions**, **Updates**, **About me**, **Developer**. An
+  unknown or missing `tab` value falls back to Appearance.
 - The tab lives in the URL, so a tab is linkable. A tab change rewrites the query
   string in place (`replace`) rather than adding history, so the back button
   leaves the sheet instead of walking back through tabs. The sheet is not a page:
@@ -402,8 +423,8 @@ feed, and a real release outranks the preview.
 - Settings that belong to the vault are written to `.lifequest/settings.json`
   (`weekStartDay`, `chatQuestions`, `decisionInbox`, `agentScopes`,
   `reviewAvailability`). **About me** is `.lifequest/about.md`. Theme, starred
-  list, keyboard bindings and the chat display (under `lifequest-chat-display`)
-  are window storage.
+  list, keyboard bindings, the chat display (under `lifequest-chat-display`) and
+  the composer send key (`lifequest-composer-send-key`) are window storage.
 - The agent each vault uses is app user data: `vaultAgents` in
   `%APPDATA%\LifeQuest\recent.json` records the vault's Pi/Hermes choice and, for
   Hermes, the profile bound to it. Pi's endpoint, sealed key and transcripts are

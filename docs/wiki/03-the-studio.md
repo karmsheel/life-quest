@@ -18,9 +18,9 @@ routes:
 - The **window title bar** spans the top of the whole window, including the
   welcome and companion screens. Inside the shell it carries the **area lens tab**
   centred on the strip, between the rail's column and the trailing controls; on
-  the welcome and companion screens the tab is absent. The trailing cluster
-  leads with **Collapse main page** / **Restore main page**, the title bar's door
-  to full-screen chat.
+  the welcome and companion screens the tab is absent. The trailing cluster is
+  the day/night control and the **Settings** gear; full-screen chat's door is
+  the dock's own top row, not the strip.
 - The **rail** is the leading column of the shell grid. Its wing band and the
   active wing's pages sit under the title bar, and its foot holds the **Log** and
   the **vault chip**.
@@ -93,9 +93,8 @@ settings sheet instead of a smaller menu.
    end of the dock's top row — the tab strip when one is drawn, the header row
    otherwise. The main page collapses, the chat takes the workspace right of the
    rail, and the rail with its **Chats** list stays; the control now reads **Exit
-   full screen chat**. The title bar's **Collapse main page** is the second door
-   to the same mode and turns into **Restore main page**, and **Mod+Shift+F**
-   toggles it from anywhere. The mode is session state, not a preference:
+   full screen chat**. **Mod+Shift+F** toggles the same mode from anywhere. The
+   mode is session state, not a preference:
    relaunching brings the split back, and collapsing the dock leaves the mode and
    returns the page and launcher.
 9. **Open a sheet and leave it.** Press the gear in the title bar (a link to
@@ -121,14 +120,13 @@ The window title bar:
   screens there is none. There the strip is the window's drag area, with its
   window controls when the overlay is unavailable, and with no vault the window
   title is `LifeQuest`.
-- The trailing controls, for a vault window: the **Collapse main page** /
-  **Restore main page** control, which collapses the main pane and gives the
-  chat the workspace right of the rail (the same mode as the dock's **Full screen
-  chat**); then the day/night control (*Switch to day mode* / *Switch to night
-  mode*), which switches the palette on a click and opens the starred-theme quick
-  menu on hover or keyboard focus; and the **Settings** gear, which is a plain
-  link to the settings sheet. The gear has no popover and no expanded state — one
-  press opens the whole sheet over the page you were on.
+- The trailing controls, for a vault window: the day/night control (*Switch to
+  day mode* / *Switch to night mode*), which switches the palette on a click and
+  opens the starred-theme quick menu on hover or keyboard focus; then the
+  **Settings** gear, which is a plain link to the settings sheet. The gear has no
+  popover and no expanded state — one press opens the whole sheet over the page
+  you were on. There is no full-screen chat control in the strip: that door is
+  the dock's own top row, with **Mod+Shift+F** as the shortcut.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -178,9 +176,10 @@ The chat dock:
   neutral-gray text with no box and no pencil, and the whole name is the **Rename
   chat** target — a click opens the rename field in place, a click anywhere
   outside it or **Enter** saves, and **Escape** cancels and keeps the old name. A
-  **+** at the strip's trailing edge is **New chat tab**. A middle click closes a
-  tab and **Ctrl/Cmd+W** closes the tab in front. Right-clicking a tab opens
-  **Pin**, **Rename**, **Archive** and **Delete**.
+  **+** immediately after the last tab is **New chat tab** — the plus sits where
+  the next tab will appear, not on the strip's trailing edge. A middle click
+  closes a tab and **Ctrl/Cmd+W** closes the tab in front. Right-clicking a tab
+  opens **Pin**, **Rename**, **Archive** and **Delete**.
 - **Pinned chats** lead the strip as squares: the label's first letter and a
   small pin, no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
@@ -193,8 +192,8 @@ The chat dock:
 - The dock's **top row** — the tab strip when one is drawn, the header row
   otherwise — ends in **Full screen chat** / **Exit full screen chat**. Choosing
   it collapses the main page and gives the dock the workspace right of the rail;
-  the title bar's **Collapse main page** / **Restore main page** is the same
-  mode. Both controls are drawn pressed while it is on.
+  **Mod+Shift+F** does the same from anywhere. It is the window's only
+  full-screen control, and it is drawn pressed while the mode is on.
 - The thread, a **Quick Notes** view, and the **Keyboard shortcuts** reference.
   The history is not a dock surface: the whole chat list lives in the rail's
   **Chats** section.
@@ -202,7 +201,8 @@ The chat dock:
   (*Message Pi…* or *Message Hermes…*, depending on which companion answers) and
   a control row inside its edges — attachments and the page pill at the leading
   end, model and thinking pills and send/stop at the trailing end. Enter breaks
-  the line; **Ctrl/Cmd+Enter** sends. The box keeps a margin on each side of the
+  the line; **Ctrl/Cmd+Enter** sends, and Settings → **Composer** can hand the
+  send to plain Enter instead. The box keeps a margin on each side of the
   dock, and that margin grows as the dock is dragged wider — at the dock's
   narrowest the composer fills it edge to edge, and on a wide dock each side is
   about an eighth of the width — so the composer never stretches the whole bar.

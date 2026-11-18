@@ -150,13 +150,19 @@ const SAMPLE = `(() => {
     storage = "unavailable";
   }
 
-  // The wing switcher is the SDK segmented control: its options are radios
-  // (role="radio" / aria-checked), not the app-local tabs it replaced.
+  // The wings control is the shared SDK segmented control (a radio group), not
+  // the old hand-rolled tab strip: its items wear role="radio"/aria-checked.
+  // Read either shape — a theme may render the strip differently — but the
+  // shipped DOM is the radio group.
   const wingTabs = Array.from(
-    document.querySelectorAll(".nav-rail__wings [role='radio']"),
+    document.querySelectorAll(
+      ".nav-rail__wings [role='radio'], .nav-rail__wings [role='tab']",
+    ),
   ).map((tab) => ({
     label: text(tab),
-    selected: tab.getAttribute("aria-checked") === "true",
+    selected:
+      tab.getAttribute("aria-checked") === "true" ||
+      tab.getAttribute("aria-selected") === "true",
   }));
 
   /** On screen now — not merely in the DOM: the dock keeps every surface mounted
@@ -338,6 +344,16 @@ const SAMPLE = `(() => {
         },
     titlebar: {
       trailing: trailingChildren,
+      // The strip's trailing cluster is the day/night control and the gear. The
+      // full-screen door rides the dock's own top row now, so a
+      // chat-focus-toggle in this band — or the retired main-page toggle
+      // anywhere in the strip — is a regression, not an arrangement.
+      fullScreenInTrailing: Boolean(
+        document.querySelector(".window-titlebar__trailing .chat-focus-toggle"),
+      ),
+      mainPageToggleInStrip: Boolean(
+        document.querySelector('[data-testid="titlebar-main-page"]'),
+      ),
     },
     wingTabs,
     selectedWing: (() => {
@@ -765,9 +781,9 @@ async function main() {
       `bar ${JSON.stringify(dockThread.dock && dockThread.dock.bar)}`,
     );
     check(
-      "the titlebar's trailing cluster is the full-screen door, theme and settings",
-      trailingClasses.length === 3 &&
-        ["chat-focus-toggle", "theme-mode-toggle", "settings-menu"].every(
+      "the titlebar's trailing cluster is the theme control and the settings menu",
+      trailingClasses.length === 2 &&
+        ["theme-mode-toggle", "settings-menu"].every(
           (needle, index) =>
             String(trailingClasses[index] ?? "").includes(needle),
         ),
@@ -775,13 +791,15 @@ async function main() {
     );
     check(
       "the titlebar no longer carries the shortcuts or chat controls",
-      !trailingClasses.some(
-        (name) =>
-          name.includes("window-titlebar__shortcuts") ||
-          name.includes("window-titlebar__side-switch") ||
-          name.includes("window-titlebar__chat-toggle"),
-      ),
-      `trailing cluster ${JSON.stringify(trailingClasses)}`,
+      dockThread.titlebar.fullScreenInTrailing === false &&
+        dockThread.titlebar.mainPageToggleInStrip === false &&
+        !trailingClasses.some(
+          (name) =>
+            name.includes("window-titlebar__shortcuts") ||
+            name.includes("window-titlebar__side-switch") ||
+            name.includes("window-titlebar__chat-toggle"),
+        ),
+      `trailing cluster ${JSON.stringify(trailingClasses)}, titlebar ${JSON.stringify(dockThread.titlebar)}`,
     );
 
     at("the dock renders the shortcuts reference");
@@ -1014,11 +1032,11 @@ async function main() {
     await clickSelector(".settings-overlay__search-clear");
     const searchCleared = await record(
       "searchCleared",
-      'document.querySelectorAll(".settings-nav-item").length === 13',
+      'document.querySelectorAll(".settings-nav-item").length === 14',
     );
     check(
       "clearing the search restores the whole section list",
-      searchCleared.nav.length === 13 && searchCleared.searchValue === "",
+      searchCleared.nav.length === 14 && searchCleared.searchValue === "",
       `${searchCleared.nav.length} rows, search ${JSON.stringify(searchCleared.searchValue)}`,
     );
     check(

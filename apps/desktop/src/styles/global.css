@@ -675,8 +675,7 @@ a {
 }
 
 .window-titlebar__trailing .theme-mode-toggle svg,
-.window-titlebar__trailing .settings-menu__trigger svg,
-.window-titlebar__trailing .chat-focus-toggle svg {
+.window-titlebar__trailing .settings-menu__trigger svg {
   width: 14px;
   height: 14px;
 }
@@ -1068,8 +1067,12 @@ a {
    of its own: at this tight padding the shared active border sat three pixels
    inside the frame's line and read as a second, nested outline around the wing.
    The transparent border keeps the box the same size, so switching wings moves
-   nothing. */
-.nav-rail__wings .ui-segmented__option.is-active {
+   nothing. Both markers are matched: the SDK segmented control marks its checked
+   item with `aria-checked`, while the app-local class was `.is-active` — the
+   aria rule came after this one and brought the nested outline back when the
+   wings moved to the shared control. */
+.nav-rail__wings .ui-segmented__option.is-active,
+.nav-rail__wings .ui-segmented__option[aria-checked="true"] {
   border-color: transparent;
 }
 
@@ -6123,6 +6126,45 @@ a.home-mini-list__link:hover {
 .settings-developer__state[data-developer-state="previewing"],
 .settings-developer__state[data-developer-state="shadowed"] {
   color: var(--amber);
+}
+
+/* —— Composer page ——
+   One row, and the row pair is `SettingsRow`'s own layout: the copy on the
+   leading edge, the send-key control on the trailing edge. The page keeps only
+   its own measures — the description wants a column, and the segmented control
+   sits at the top of the row rather than floating in its middle. */
+.settings-composer {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-composer .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-composer .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-composer .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.12rem;
+}
+
+/* The row's own report: which key the message box answers to now, and what the
+   other key does. */
+.settings-composer__state {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.settings-composer__state strong {
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* —— Decisions page ——
@@ -12313,12 +12355,11 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's trailing corner, as one sticky group: the plus that opens a new
- * chat, then the full-screen door. It sticks to the band's trailing edge, so a
- * strip with more tabs than the dock is wide still ends with both controls; the
- * dock's canvas behind it keeps a tab sliding under it from showing through.
- * One sticky box rather than two sticky children, or the two marks would paint
- * over each other at the same `right: 0`.
+ * The strip's trailing corner: the full-screen door, and nothing else. It sticks
+ * to the band's trailing edge, so a strip with more tabs than the dock is wide
+ * still ends with the way to the whole workspace; the dock's canvas behind it
+ * keeps a tab sliding under it from showing through. The plus is not in here: it
+ * travels with the tabs, directly after the last one.
  */
 .chat-panel__tabs-trailing {
   position: sticky;
@@ -12326,7 +12367,6 @@ button.chat-panel__activity-line:hover {
   align-self: stretch;
   display: flex;
   align-items: center;
-  gap: 0.15rem;
   flex: 0 0 auto;
   margin-left: auto;
   padding-left: 0.3rem;
@@ -12334,9 +12374,10 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's own door to a new chat: the browser's plus, set after the last tab
- * and a share of the band rather than a tab itself — it opens a conversation, it
- * does not represent one.
+ * The strip's own door to a new chat: the browser's plus, set directly after the
+ * last tab in the strip's flow — where the next tab will appear — rather than on
+ * the band's trailing edge. It opens a conversation, it does not represent one,
+ * so it never grows: the tabs share the band, and the slack falls after it.
  */
 .chat-panel__tab-new {
   display: inline-flex;
@@ -12346,7 +12387,6 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
   width: 1.6rem;
   height: 1.6rem;
-  margin-left: 0.15rem;
   padding: 0;
   border: 0;
   border-radius: 0.35rem;
@@ -12362,7 +12402,7 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The strip's full-screen door, sized to the band rather than to the header's
-   utility row: the plus beside it is 1.6rem, and the two controls are one group. */
+   utility row: 1.6rem, the same mark as the plus beside the tabs. */
 .chat-panel__tab-focus {
   width: 1.6rem;
   height: 1.6rem;

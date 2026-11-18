@@ -72,19 +72,18 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
-  companionEnsure: () => ok({ kind: "disconnected" }),
-  companionProfilesList: () => ok({ profiles: [], active: null }),
   /*
-   * The theme-files watcher. `ThemeProvider` reads the profile's theme directory
-   * on mount and keeps the `themes:changed` subscription's unsubscribe for its
-   * effect cleanup. The stub has to answer both with their real shapes: an empty
-   * list (this window has no profile) and a function to call on unmount. The
-   * Proxy's default answers are Promises, and calling one as the unsubscribe
-   * takes the whole tree down on StrictMode's first remount — which blanked this
-   * harness the moment the watcher shipped.
+   * ThemeProvider reads the profile's theme files at mount and subscribes for
+   * writes from the companion. The generic `ok(null)` fallback below is wrong
+   * for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+   * unsubscribe the effect calls on cleanup — a Promise there throws, and React
+   * unmounts the sheet, leaving the driver a blank window.
    */
   themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   onThemesChanged: () => () => {},
+  companionEnsure: () => ok({ kind: "disconnected" }),
+  companionProfilesList: () => ok({ profiles: [], active: null }),
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -100,6 +99,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,

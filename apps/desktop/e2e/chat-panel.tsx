@@ -11,7 +11,9 @@
  *    listed there.
  *  - `composer-model-pills.electron.mjs` — the model and thinking pills.
  *  - `composer-keys-attachments.electron.mjs` — the composer's keys, the
- *    attachment chips and the steer/queue gestures.
+ *    attachment chips and the steer/queue gestures. It ends by storing Settings
+ *    → Composer's "enter" keyboard and reloading this page — its final leg, so
+ *    it is the last thing measured and no later leg sees the other keyboard.
  *  - `chat-bubble-meta.electron.mjs` and `companion-paused.electron.mjs` — the
  *    message presentation and the paused-companion surface (their own files).
  *  - `receipt-attach.electron.mjs` — the receipt the composer attaches, and the

@@ -160,14 +160,16 @@ shell. It stands down in four cases:
 - the event is already spoken for (`defaultPrevented`, key repeat, IME
   composition).
 
-The dock owns its own tab keys. These are not movement rows and cannot be
-rebound:
+The dock owns its own tab keys. These are not movement rows and are not rebound
+in **Keyboard**:
 
 - **Ctrl/Cmd+W** closes the chat tab in front, but only while the strip the
   operator can see is drawn: the dock open on the thread surface, at least one tab
   (a pinned band counts), a chat in front, and that chat not pinned. With nothing
   to close the key is left to the platform.
-- **Ctrl/Cmd+Enter** is the composer's send key (Enter breaks the line).
+- **Ctrl/Cmd+Enter** is the composer's send key by default (Enter breaks the
+  line). It is a preference rather than a movement: Settings → **Composer** can
+  hand sending to plain Enter, and Ctrl/Cmd+Enter keeps sending in either mode.
 - **Middle click** closes the tab under the pointer. A pinned square swallows the
   press and closes nothing; **Unpin** is a pinned tab's way out.
 

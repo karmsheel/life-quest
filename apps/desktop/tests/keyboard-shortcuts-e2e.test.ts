@@ -118,6 +118,10 @@ type TitlebarChild = {
 
 type TitlebarState = {
   trailing: TitlebarChild[];
+  /** A full-screen chat door in the strip is the regression: the dock owns it. */
+  fullScreenInTrailing: boolean;
+  /** The retired main-page strip toggle, sampled by its old test id. */
+  mainPageToggleInStrip: boolean;
 };
 
 /** The dock bar's keyboard-shortcuts control, and where it is anchored. */
@@ -359,11 +363,9 @@ describe("keyboard shortcuts settings and runner", () => {
       "the bar's shortcuts action reports pressed on a thread",
     );
     const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
-    const expectedTrailing = [
-      "chat-focus-toggle",
-      "theme-mode-toggle",
-      "settings-menu",
-    ];
+    // The strip's trailing cluster is the day/night control and the gear; the
+    // full-screen door rides the dock's own top row, not this band.
+    const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
     expectedTrailing.forEach((needle, index) => {
       assert.ok(
         String(trailingClasses[index] ?? "").includes(needle),
@@ -374,6 +376,16 @@ describe("keyboard shortcuts settings and runner", () => {
       trailingClasses.length,
       expectedTrailing.length,
       `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(trailingClasses)}`,
+    );
+    assert.equal(
+      dockThread.titlebar.fullScreenInTrailing,
+      false,
+      "a full-screen chat door is riding the titlebar's trailing cluster",
+    );
+    assert.equal(
+      dockThread.titlebar.mainPageToggleInStrip,
+      false,
+      "a [data-testid=titlebar-main-page] toggle is back in the strip",
     );
     for (const stale of [
       "window-titlebar__shortcuts",

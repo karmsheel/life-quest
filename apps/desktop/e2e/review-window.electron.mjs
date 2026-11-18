@@ -523,9 +523,9 @@ async function main() {
   if (!settingsSheet.backgroundReview) {
     failure("settingsDefaults: the sheet does not sit over the Review page it was opened from");
   }
-  if (settingsSheet.navLabels.length !== 13) {
+  if (settingsSheet.navLabels.length !== 14) {
     failure(
-      `settingsDefaults: the section column holds ${settingsSheet.navLabels.length} sections, expected 13`,
+      `settingsDefaults: the section column holds ${settingsSheet.navLabels.length} sections, expected 14`,
     );
   }
   if (!settingsSheet.navLabels.includes("Review")) {
