@@ -18,6 +18,8 @@
  *   review-chat-sidebar.png  the moment the Finance interview starts: the new
  *                         chat is already a row in **Chats**, marked as the open
  *                         chat and as a live turn, while the agent is working
+ *   review-calendar.png   the period's calendar open on the month before: the
+ *                         grid the operator chooses another week from
  *   review-life-ready.png after the last area was completed: every row Done, the
  *                         Life review unlocked, the "ready" hint showing
  *   review-daily.png      the daily review: one general review, no checklist
@@ -72,6 +74,11 @@
  *     be there if the dock adopted the row main handed back with the id. The
  *     turn is held open for the check — a chat that appears only once the run
  *     ends is the reported bug, not a pass.
+ * 13. The header is the Daily Journal's shape, not a second title: the cadence is
+ *     the eyebrow, the period is the page's one heading CENTRED over the prose
+ *     with the calendar key beside it, and the two steps are wordless arrows with
+ *     no frame, on the column's edges. The calendar walks to another week and the
+ *     arrows walk back to the open week, where Next is the wall.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -186,7 +193,53 @@ const SAMPLE = `(() => {
       : [],
     headings: box ? box.querySelectorAll("h1, h2, h3, h4, h5, h6").length : 0,
     title: text(document.querySelector(".review-page__title")),
-    period: text(document.querySelector(".review-page__period")),
+    period: text(document.querySelector('[data-testid="review-period"]')),
+    eyebrow: text(document.querySelector('[data-testid="wing-eyebrow"]')),
+    // The period the page is on, as the page itself records it: the driver can
+    // compare it to a computed week start without parsing a display label.
+    periodData: (() => {
+      const el = document.querySelector('[data-testid="review-period"]');
+      return el ? el.dataset.period ?? null : null;
+    })(),
+    calendar: Boolean(document.querySelector('[data-testid="review-calendar"]')),
+    nextDisabled: (() => {
+      const el = document.querySelector('[data-testid="review-next"]');
+      return el ? el.disabled === true : null;
+    })(),
+    // The header's shape: the two step keys' own boxes and computed chrome, the
+    // period block they flank, and the page column all three ride. The steps are
+    // keys — no label, no frame — and the steps sit on the column's edges while
+    // the period block (headline + calendar) is centred on it.
+    headerParts: (() => {
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          width: Math.round(r.width),
+        };
+      };
+      const shape = (el) => {
+        if (!el) return null;
+        const style = getComputedStyle(el);
+        return {
+          text: (el.textContent || "").trim(),
+          borderTop: style.borderTopWidth,
+          borderStyle: style.borderTopStyle,
+          background: style.backgroundColor,
+          width: Math.round(el.getBoundingClientRect().width),
+        };
+      };
+      return {
+        page: box(document.querySelector(".review-page")),
+        prev: box(document.querySelector('[data-testid="review-prev"]')),
+        next: box(document.querySelector('[data-testid="review-next"]')),
+        block: box(document.querySelector(".review-page__period-block")),
+        prevShape: shape(document.querySelector('[data-testid="review-prev"]')),
+        nextShape: shape(document.querySelector('[data-testid="review-next"]')),
+      };
+    })(),
     notice: text(document.querySelector(".review-page__notice")),
     error: text(document.querySelector(".form-error")),
     status: text(document.querySelector(".review-page__status")),
@@ -390,6 +443,21 @@ function chatSidebar(win) {
       })),
     };
   })()`);
+}
+
+/** The period the page records on its headline (`data-period`), e.g. 2026-11-09. */
+function pagePeriod(win) {
+  return win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="review-period"]')?.dataset.period ?? null`,
+  );
+}
+
+/** The Monday-first week start of an ISO day, the way the page computes it. */
+function weekStartOnOrBefore(iso) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  const dayOfWeek = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  return date.toISOString().slice(0, 10);
 }
 
 /** Open a paragraph the way a person does — a click on the prose. */
@@ -821,13 +889,61 @@ async function main() {
   checks.opened = opened;
   checks.openedRail = railState(opened);
   assertDocument(opened, "on arrival", { blocks: 35 });
-  if (opened.title !== "Weekly review") {
-    failure(`the review's title read ${JSON.stringify(opened.title)}`);
+  // The header is the Daily Journal's shape: the cadence is the page's eyebrow
+  // (the name is not repeated as the title), the period is the page's one
+  // heading over the prose with a calendar key beside it, and the two step keys
+  // sit on the column's own edges as arrows with no label and no frame.
+  if (opened.eyebrow !== "Weekly") {
+    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Weekly"`);
   }
-  // The page opens on the CURRENT week, which is whatever week the suite runs
-  // in: the claim is the shape of its own label, not a pinned date.
-  if (!/^Weekly review · Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.period))) {
-    failure(`the review page does not label its period: ${JSON.stringify(opened.period)}`);
+  if (!/^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.title))) {
+    failure(`the page's heading is not its period: ${JSON.stringify(opened.title)}`);
+  }
+  if (opened.title !== opened.period) {
+    failure(
+      `the heading and the period read differently: ${JSON.stringify(opened.title)} / ${JSON.stringify(opened.period)}`,
+    );
+  }
+  if (!opened.calendar) {
+    failure("the review header has no calendar key beside the period");
+  }
+  const headerParts = opened.headerParts;
+  for (const [name, shape] of [
+    ["previous", headerParts.prevShape],
+    ["next", headerParts.nextShape],
+  ]) {
+    if (!shape) {
+      failure(`the ${name} step is not on the page`);
+      continue;
+    }
+    if (shape.text !== "") {
+      failure(`the ${name} step carries text ${JSON.stringify(shape.text)}; it must be an arrow only`);
+    }
+    if (shape.borderStyle !== "none" || shape.borderTop !== "0px") {
+      failure(`the ${name} step wears a frame (${shape.borderStyle} ${shape.borderTop})`);
+    }
+    if (shape.background !== "rgba(0, 0, 0, 0)" && shape.background !== "transparent") {
+      failure(`the ${name} step wears a fill (${shape.background})`);
+    }
+  }
+  if (!headerParts.page || !headerParts.block) {
+    failure("the header's column or period block could not be measured");
+  } else {
+    const pageCentre = (headerParts.page.left + headerParts.page.right) / 2;
+    const blockCentre = (headerParts.block.left + headerParts.block.right) / 2;
+    if (Math.abs(blockCentre - pageCentre) > 2) {
+      failure(`the period block is not centred over the column: ${blockCentre} vs ${pageCentre}`);
+    }
+    if (headerParts.prev && Math.abs(headerParts.prev.left - headerParts.page.left) > 2) {
+      failure(
+        `the previous step is not on the column's leading edge: ${headerParts.prev.left} vs ${headerParts.page.left}`,
+      );
+    }
+    if (headerParts.next && Math.abs(headerParts.next.right - headerParts.page.right) > 2) {
+      failure(
+        `the next step is not on the column's trailing edge: ${headerParts.next.right} vs ${headerParts.page.right}`,
+      );
+    }
   }
   assertRail(opened, "on arrival", {
     statuses: {
@@ -1167,6 +1283,112 @@ async function main() {
   await setHarness(win, "window.reviewRigHoldTurns = false");
   await setHarness(win, "window.reviewRigReleaseTurns()");
 
+  // ── 7c. the calendar beside the period walks to another week ────────────
+  // The period is the page's one heading, and the calendar key beside it opens
+  // the app's day picker; choosing a day takes the page to that day's week. The
+  // arrows then walk back to the open week, where Next is the wall.
+  const baseWeek = opened.periodData;
+  // Starting the Finance interview scrolled the reading column to Finance's
+  // section; bring the header back into view so the calendar's popover is
+  // anchored under a visible key (and the picture shows what the operator does).
+  await win.webContents.executeJavaScript(`(() => {
+    document.querySelector(".shell__content")?.scrollTo({ top: 0 });
+    window.scrollTo(0, 0);
+    return true;
+  })()`);
+  await frames(win);
+  await click(win, '[data-testid="review-calendar"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="day-picker"]'))`,
+    "the period calendar to open",
+  );
+  const pickerMonth = await setHarness(
+    win,
+    `document.querySelector('[data-testid="day-picker-month"]').textContent.trim()`,
+  );
+  await click(win, '[data-testid="day-picker-prev-month"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="day-picker-month"]').textContent.trim() !== ${JSON.stringify(pickerMonth)}`,
+    "the calendar's previous month",
+  );
+  await shot(win, "review-calendar.png");
+  const chosenDay = await win.webContents.executeJavaScript(`(() => {
+    const day = Array.from(document.querySelectorAll('[data-testid^="day-picker-day-"]')).find(
+      (el) => !el.disabled,
+    );
+    if (!day) return null;
+    const iso = day.dataset.date;
+    day.click();
+    return iso;
+  })()`);
+  checks.picker = { baseWeek, pickerMonth, chosenDay };
+  if (!chosenDay) {
+    failure("the calendar drew no selectable day");
+  } else {
+    const expectedWeek = weekStartOnOrBefore(chosenDay);
+    checks.picker.expectedWeek = expectedWeek;
+    await waitFor(
+      win,
+      `(document.querySelector('[data-testid="review-period"]')?.dataset.period ?? "") === ${JSON.stringify(expectedWeek)}`,
+      "the page to move to the chosen day's week",
+    );
+    await frames(win);
+    const moved = await sample(win);
+    checks.picker.moved = {
+      period: moved.periodData,
+      title: moved.title,
+      nextDisabled: moved.nextDisabled,
+    };
+    if (moved.periodData !== expectedWeek) {
+      failure(
+        `the calendar opened week ${JSON.stringify(moved.periodData)}, expected ${JSON.stringify(expectedWeek)}`,
+      );
+    }
+    if (!/^Week of /.test(String(moved.title))) {
+      failure(`the moved page's heading is not a week: ${JSON.stringify(moved.title)}`);
+    }
+    if (moved.nextDisabled !== false) {
+      failure("Next is disabled on an older week, where the open week is still ahead");
+    }
+    await waitFor(
+      win,
+      `!document.querySelector('[data-testid="day-picker"]')`,
+      "the calendar to close after choosing",
+    );
+    // Walk back with the arrow steps; the open week is the wall.
+    let steps = 0;
+    while ((await pagePeriod(win)) !== baseWeek && steps < 12) {
+      const before = await pagePeriod(win);
+      const stepped = await click(win, '[data-testid="review-next"]');
+      if (!stepped) {
+        failure("the Next step disappeared while walking back to the open week");
+        break;
+      }
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="review-period"]')?.dataset.period ?? "") !== ${JSON.stringify(before)}`,
+        "the Next step to move the page",
+      );
+      steps += 1;
+    }
+    const back = await sample(win);
+    checks.picker.back = {
+      period: back.periodData,
+      nextDisabled: back.nextDisabled,
+      steps,
+    };
+    if (back.periodData !== baseWeek) {
+      failure(
+        `the steps did not walk back to the open week: ended on ${JSON.stringify(back.periodData)}, expected ${JSON.stringify(baseWeek)}`,
+      );
+    }
+    if (back.nextDisabled !== true) {
+      failure("Next is not disabled on the open week");
+    }
+  }
+
   if (!started.notice || !/snapshot/i.test(started.notice)) {
     failure(`the page did not say what it filled: ${JSON.stringify(started.notice)}`);
   }
@@ -1294,8 +1516,8 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-      const title = document.querySelector(".review-page__title");
-      return Boolean(title) && title.textContent.trim() === "Daily review";
+      const eyebrow = document.querySelector('[data-testid="wing-eyebrow"]');
+      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Daily";
     })()`,
     "the daily review page",
   );

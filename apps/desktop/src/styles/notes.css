@@ -1301,23 +1301,118 @@
   gap: 0.6rem;
 }
 
-.review-page__title {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.review-page__pager {
+/* The title row: the page's name as the shell's one grey eyebrow, and the page's
+   one badge on the trailing edge. The name is not the heading — the period is —
+   so it steps down to a label exactly as the Daily Journal's does. */
+.review-page__title-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.review-page__header-actions {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.review-page__period {
-  font-size: 0.95rem;
-  font-weight: 500;
+/* The period row is the Daily Journal's day row, at a period's scale: the step
+   back, the period with its calendar, and the step forward. The outer tracks are
+   equal, so the period stays on the column's centre; they are declared rather
+   than filled, so a row without its forward step keeps the same shape. */
+.review-page__pager {
+  display: grid;
+  grid-template-areas: "prev period next";
+  /* The outer tracks are the keys' own widths, so an arrow stays on the column's
+     edge and the period takes whatever is left between them. Equal-width `fr`
+     tracks would do the same while there is room, but a reading column squeezed
+     by the checklist and the dock would give the period more than its share and
+     let it run under the arrows; with the keys fixed the period wraps instead. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+/* The steps are keys, not buttons: no frame, no fill, the arrow alone, sitting on
+   the column's own edges so they read as the page's margins rather than as more
+   chrome. The primitive's padding is what gives them a target; the height matches
+   the heading they flank. */
+.review-page .review-page__pager-prev,
+.review-page .review-page__pager-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.review-page .review-page__pager-prev:hover:not(:disabled),
+.review-page .review-page__pager-next:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.review-page__pager-prev {
+  grid-area: prev;
+  justify-self: start;
+}
+
+.review-page__pager-next {
+  grid-area: next;
+  justify-self: end;
+}
+
+/* The period and its calendar are one block: the heading is the page's one
+   heading and the calendar key is its one control, so they centre together over
+   the prose instead of the key pulling the heading off the middle of the box. */
+.review-page__period-block {
+  grid-area: period;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* The period is the page's heading, wearing the same treatment the Daily
+   Journal's date gives its day: the studio's title weight and tracking, one step
+   smaller than a page banner — a line of chrome above the prose, not over it. */
+.review-page__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--fg);
+}
+
+/* The calendar key beside the period: the same wordless key as the steps on
+   either side — no frame, the icon alone — because it belongs to the period
+   rather than to the page's acts, and it hands back to the period when it
+   closes. */
+.review-page__calendar-slot {
+  display: inline-flex;
+}
+
+.review-page .review-page__calendar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.review-page .review-page__calendar:hover:not(:disabled),
+.review-page .review-page__calendar[aria-expanded="true"] {
+  background: var(--selected-soft);
   color: var(--fg);
 }
 

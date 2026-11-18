@@ -7,7 +7,9 @@ import {
   nextPeriod,
   openReviewPeriod,
   previousPeriod,
+  periodLabel,
   periodTitle,
+  periodTodayLocalIso,
   reviewOpensAt,
   type ReviewCadence,
   type ReviewPrepopulateResult,
@@ -20,11 +22,13 @@ import { asHeld, sameNote } from "@/lib/note-body";
 import { useVault } from "@/state/VaultProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { MarkdownView } from "@/components/documents/MarkdownView";
 import { AreaReviewsPanel } from "@/components/reviews/AreaReviewsPanel";
 import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
+import { ReviewPeriodPicker } from "@/components/reviews/ReviewPeriodPicker";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import type { EyebrowPage } from "@/components/shell/wing-eyebrow";
 
@@ -707,9 +711,26 @@ export default function ReviewPage() {
     void goToPeriod(next.value);
   }, [basePeriod, cadence, goToPeriod, period, weekStartDay]);
 
+  /** The calendar beside the period chose a period: move there, as a step does. */
+  const onPickPeriod = useCallback(
+    (next: string) => {
+      if (next !== period) void goToPeriod(next);
+    },
+    [goToPeriod, period],
+  );
+
   const isOnBasePeriod = period === basePeriod;
   const title = useMemo(
     () => periodTitle(cadence, period, weekStartDay),
+    [cadence, period, weekStartDay],
+  );
+  /**
+   * The page's heading: the period alone. The cadence is the page's eyebrow, so
+   * repeating it in a title would say the same thing twice — the daily journal
+   * heads its page with the day, not with the words "Daily Note".
+   */
+  const headline = useMemo(
+    () => periodLabel(cadence, period, weekStartDay),
     [cadence, period, weekStartDay],
   );
 
@@ -790,28 +811,62 @@ export default function ReviewPage() {
     >
       <div className="review-page">
         <header className="review-page__header">
-          <WingEyebrow page={cadenceLabel as EyebrowPage} />
-          <h1 className="review-page__title">
-            {cadence.charAt(0).toUpperCase() + cadence.slice(1)} review
-          </h1>
+          {/* The page's name is the eyebrow, as on the Daily Journal: the period
+              below is the page's one heading, so the cadence is not repeated as a
+              second title. The lock, while it is on, is the page's one badge and
+              rides the title row's trailing edge. */}
+          <div className="review-page__title-row">
+            <WingEyebrow page={cadenceLabel as EyebrowPage} />
+            {locked ? (
+              <div className="review-page__header-actions">
+                <span className="review-page__lock-badge">Locked</span>
+              </div>
+            ) : null}
+          </div>
+          {/* The period row: the journal's day row, at a period's scale. The two
+              step keys sit on the column's edges — wordless arrows, no frame, so
+              they read as the page's margins rather than as chrome — while the
+              period and its calendar are one block centred between them. Next
+              stops at the open period: a later one has no window to write. */}
           <div className="review-page__pager">
-            <Button variant="outline" data-testid="review-prev" onClick={onPrev}>
-              ‹ Prev
-            </Button>
-            <span className="review-page__period" data-testid="review-period">
-              {title}
-            </span>
             <Button
-              variant="outline"
+              variant="ghost"
+              className="review-page__pager-prev"
+              data-testid="review-prev"
+              aria-label={`Previous ${cadence}`}
+              title={`Previous ${cadence}`}
+              onClick={onPrev}
+            >
+              <ChevronLeft size={20} aria-hidden />
+            </Button>
+            <div className="review-page__period-block">
+              <h1
+                className="review-page__title"
+                data-testid="review-period"
+                data-period={period}
+              >
+                {headline}
+              </h1>
+              <ReviewPeriodPicker
+                cadence={cadence}
+                period={period}
+                weekStartDay={weekStartDay}
+                latestPeriod={basePeriod}
+                today={periodTodayLocalIso()}
+                onSelect={onPickPeriod}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              className="review-page__pager-next"
               data-testid="review-next"
+              aria-label={`Next ${cadence}`}
+              title={`Next ${cadence}`}
               onClick={onNext}
               disabled={isOnBasePeriod}
             >
-              Next ›
+              <ChevronRight size={20} aria-hidden />
             </Button>
-            {locked ? (
-              <span className="review-page__lock-badge">Locked</span>
-            ) : null}
           </div>
         </header>
 
@@ -932,7 +987,7 @@ export default function ReviewPage() {
                   value={draft}
                   onChange={onDraftChange}
                   slug={`review-${cadence}-${period}`}
-                  ariaLabel={`${title} review`}
+                  ariaLabel={title}
                   placeholder="Write this review."
                   readOnly={locked}
                 />

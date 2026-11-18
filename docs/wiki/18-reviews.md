@@ -32,9 +32,13 @@ rail has five rows, each a page at its own route:
 | **Yearly** | `/review/yearly` | A calendar year |
 
 Each opens in the centre pane as a page, not a sheet. Any other cadence segment
-under `/review/` redirects to `/review/weekly`. The page opens with the grey
-cadence eyebrow — **Daily**, **Weekly**, **Monthly**, **Quarterly** or
-**Yearly** — above its `<Cadence> review` title.
+under `/review/` redirects to `/review/weekly`. The header is the Daily
+Journal's, at a period's scale: the grey cadence eyebrow — **Daily**,
+**Weekly**, **Monthly**, **Quarterly** or **Yearly** — names the page, and the
+period itself is the page's one heading, centred over the prose. A calendar key
+beside the heading jumps to another period, and wordless arrow keys on the
+column's edges step one period at a time. The cadence is never repeated as a
+second title.
 
 **Daily is one general review of the day.** It has no checklist and no area
 sections, and the area lens does not narrow it: a day is reviewed as a day,
@@ -83,7 +87,7 @@ local time of day. A weekly review with 0 days and 08:00 opens on the last day a
 8 a.m.; a monthly review with 1 day and 00:00 opens on the second-last day at
 midnight. A pager note says when the calendar-current period opens, for example
 *The daily review for the current period opens 15 Nov 2026 at 18:00.* Until then,
-**Next ›** stops at the open period, because the newer review does not exist to
+**Next** stops at the open period, because the newer review does not exist to
 page to. The vault engine enforces the same rule, so a companion or connected
 agent that asks to create the unopened period's review is refused with the
 opening time, not silently allowed.
@@ -112,10 +116,12 @@ cannot be quietly rewritten.
    rail. The page opens on the latest period whose review window is open — often
    the previous period, because the new one opens part-way through
    ([When a review opens](#when-a-review-opens)).
-2. Move the period with **‹ Prev** and **Next ›**. The centre of the header shows
-   the period title, for example `Weekly review · Week of 21 Sep 2026`.
-   **Next ›** is disabled on the open period: reviews are past and present only,
-   and a review that has not opened yet cannot be paged to.
+2. Move the period with the two arrow keys on either side of the header, or
+   jump with the **calendar** key beside the centred period. The heading reads
+   the period, for example `Week of 21 Sep 2026`. **Next** is disabled on the
+   open period: reviews are past and present only, and a review that has not
+   opened yet cannot be paged to. The calendar offers only periods whose window
+   has opened, and choosing any day inside a week takes you to that week.
 3. On **Daily**, a period with no file says **No review for this period yet.**
    and offers **Start the interview** (create the file, fill the figures the
    cadence's rules ask for, open the companion chat) or **Write it myself**
@@ -164,7 +170,7 @@ notes in this period.** and offers **Write today's note**.
 
 | Part | What it does |
 |---|---|
-| Cadence eyebrow + title and pager | The grey cadence eyebrow, `<Cadence> review`, then **‹ Prev**, the period title, **Next ›**, and a **Locked** badge when locked. |
+| Cadence eyebrow, period heading and pager | The grey cadence eyebrow; the period as the page's one heading (for example `Week of 21 Sep 2026`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
 | **Review checklist** | Weekly and longer only; the column right of the reading column. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
 | Scope line | **Reviewing Health** (or **Reviewing Life**) above the body, with **Whole-life review** to move the lens back to Life without starting a session. |
 | **Document** / **Preview** | Two modes over the same file; **Document** edits and autosaves, **Preview** renders the whole body. |

@@ -41,6 +41,9 @@
  *     defaults does not put the five rows back.
  *  7. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
+ *  8. The header says the cadence twice: the eyebrow is the cadence and the
+ *     period is the page's one heading, with the calendar key beside it and the
+ *     two wordless arrow steps — on every cadence, not just weekly.
  *
  * The driver waits on `window.reviewWindowRigReady`, set after the shell and the
  * requested surface (review page or settings sheet) have committed, so it never
