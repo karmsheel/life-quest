@@ -136,9 +136,10 @@ page's alert banner, and the row stays open so you can press another combination
 without walking back to the button:
 
 - Reserved by the app or the OS. Escape, Tab, Enter, F5, F11, F12, Alt+F4,
-  and the Ctrl/Cmd combinations for close, quit, reload, print, devtools and
-  browser zoom are not bindable. The message reads **That combination is reserved
-  by the app or the operating system. Pick another one.**
+  and the Ctrl/Cmd combinations for close, quit, reload, print, devtools and the
+  dock's chat text zoom (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are not bindable. The
+  message reads **That combination is reserved by the app or the operating
+  system. Pick another one.**
 - Already used by another movement. The refusal names it: **Already used by
   “Next wing”. Pick another combination.**
 - Not a key the app can bind. A modifier pressed alone, a dead key or an
@@ -169,6 +170,26 @@ rebound:
 - **Ctrl/Cmd+Enter** is the composer's send key (Enter breaks the line).
 - **Middle click** closes the tab under the pointer. A pinned square swallows the
   press and closes nothing; **Unpin** is a pinned tab's way out.
+
+### Chat text zoom
+
+The chat's reading size is the dock's other gesture. Like its tab keys it is not a
+movement and cannot be rebound:
+
+| Keys | Action |
+|---|---|
+| **Ctrl/Cmd** and the mouse wheel over the dock | Step the chat text one 10-percent notch up or down |
+| **Ctrl+=** (**Cmd+=** on macOS) | Step the chat text up one notch |
+| **Ctrl+-** (**Cmd+-** on macOS) | Step the chat text down one notch |
+| **Ctrl+0** (**Cmd+0** on macOS) | Back to the shipped reading: 100% text size and 1.5 line spacing |
+
+The keys work anywhere in the app, including while the Settings sheet is open, so
+the **Chat display** preview moves with them; the wheel only acts over the dock.
+The size runs from 80% to 200% in 10-percent steps and keeps whatever line spacing
+**Settings → Chat display** holds, the page that reports both values. They are
+window storage, under `lifequest-chat-display`, not vault storage, so the reading
+size follows the screen rather than the folder. The dock's bottom bar also carries
+a **Chat display settings** button (the Type mark) that opens that page.
 
 **Storage.** Overrides live in `localStorage` under
 `lifequest-keyboard-shortcuts`, as

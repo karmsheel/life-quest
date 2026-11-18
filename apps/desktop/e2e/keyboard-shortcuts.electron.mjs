@@ -150,11 +150,13 @@ const SAMPLE = `(() => {
     storage = "unavailable";
   }
 
+  // The wing switcher is the SDK segmented control: its options are radios
+  // (role="radio" / aria-checked), not the app-local tabs it replaced.
   const wingTabs = Array.from(
-    document.querySelectorAll(".nav-rail__wings [role='tab']"),
+    document.querySelectorAll(".nav-rail__wings [role='radio']"),
   ).map((tab) => ({
     label: text(tab),
-    selected: tab.getAttribute("aria-selected") === "true",
+    selected: tab.getAttribute("aria-checked") === "true",
   }));
 
   /** On screen now — not merely in the DOM: the dock keeps every surface mounted
@@ -755,6 +757,7 @@ async function main() {
           "New chat",
           "Quick Notes",
           "Keyboard shortcuts",
+          "Chat display settings",
           "Move chat to the left of the page",
           "Collapse chat",
         ],
@@ -1011,11 +1014,11 @@ async function main() {
     await clickSelector(".settings-overlay__search-clear");
     const searchCleared = await record(
       "searchCleared",
-      'document.querySelectorAll(".settings-nav-item").length === 12',
+      'document.querySelectorAll(".settings-nav-item").length === 13',
     );
     check(
       "clearing the search restores the whole section list",
-      searchCleared.nav.length === 12 && searchCleared.searchValue === "",
+      searchCleared.nav.length === 13 && searchCleared.searchValue === "",
       `${searchCleared.nav.length} rows, search ${JSON.stringify(searchCleared.searchValue)}`,
     );
     check(

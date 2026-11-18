@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -16,7 +17,6 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowUp,
-  Check,
   Eye,
   EyeOff,
   ImagePlus,
@@ -34,6 +34,7 @@ import {
   Plus,
   Radio,
   SquarePen,
+  Type,
   X,
 } from "lucide-react";
 import {
@@ -65,6 +66,7 @@ import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { AgentSwitcher } from "@/components/hermes/AgentSwitcher";
 import {
@@ -74,6 +76,7 @@ import {
   type ChatReceipt,
 } from "@/state/ChatSessionsProvider";
 import { normalizeCapabilities } from "@/lib/turn-timeline";
+import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
 import type {
@@ -436,6 +439,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const pendingRenameRef = useRef<string | null>(null);
   /**
+   * A rename thrown away rather than saved. The field saves on blur — clicking
+   * anywhere outside it is the save gesture — so Escape has to tell the blur
+   * that follows it that this one was a cancel.
+   */
+  const renameCancelledRef = useRef(false);
+  /**
    * The tab strip's context menu: the tab it was opened on, whether that tab is
    * pinned, and the pointer point it anchors to. The strip scrolls sideways, so
    * the menu is drawn fixed at the cursor rather than inside the strip — a menu
@@ -531,6 +540,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
+  const reading = useOptionalChatDisplay();
 
   /**
    * The chain, lensed the way the Life-Chain page lenses it: everything in
@@ -1283,22 +1293,34 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   function startRename() {
     if (!activeSession) return;
+    renameCancelledRef.current = false;
     setRenameDraft(sessionLabel(activeSession));
     setRenaming(true);
   }
 
   function cancelRename() {
+    renameCancelledRef.current = true;
     setRenaming(false);
     setRenameDraft("");
   }
 
-  async function commitRename(e: FormEvent) {
-    e.preventDefault();
+  /**
+   * Save the name the field holds. Clicking anywhere outside the field is the
+   * save — there is no Save button to press — and Enter blurs the field so it
+   * takes the same path. A blur that follows Escape is the cancel, not a save;
+   * an unchanged or empty name writes nothing.
+   */
+  async function commitRename() {
+    if (renameCancelledRef.current) {
+      renameCancelledRef.current = false;
+      return;
+    }
     const id = sessionId;
     if (!id) return;
     const title = renameDraft.trim();
     setRenaming(false);
     setRenameDraft("");
+    if (!title || title === activeLabel) return;
     await patchSession(id, { title });
   }
 
@@ -1763,6 +1785,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /*
+    The reading settings the transcript wears: the size and line spacing the
+    operator picked in Settings → Chat display or with the dock's zoom keys.
+    Published as the two custom properties the stylesheet multiplies the
+    transcript's type by, so every prose surface moves together.
+  */
+  const readingVariables = {
+    "--chat-reading-scale": String(
+      (reading?.zoom ?? DEFAULT_CHAT_DISPLAY_SETTINGS.zoom) / 100,
+    ),
+    "--chat-reading-line": String(
+      reading?.lineSpacing ?? DEFAULT_CHAT_DISPLAY_SETTINGS.lineSpacing,
+    ),
+  } as CSSProperties;
+
+  /*
     The dock's own full-screen door. It is drawn at the trailing end of the top
     row — the tab strip when the thread has one, the header row on the chain and
     shortcuts surfaces and on a thread with no tab yet — so the control is always
@@ -1785,6 +1822,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       role="complementary"
       aria-label={`${companionName} chat`}
       data-chat-surface={view}
+      style={readingVariables}
     >
         <div className="chat-panel__open">
           {/*
@@ -1979,66 +2017,60 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               {renaming ? (
                 <form
                   className="chat-panel__rename"
-                  onSubmit={(e) => void commitRename(e)}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void commitRename();
+                  }}
                 >
                   <input
                     className="chat-panel__rename-input"
+                    data-testid="chat-name-input"
                     value={renameDraft}
                     onChange={(e) => setRenameDraft(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onBlur={() => void commitRename()}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === "Escape") {
                         e.preventDefault();
                         cancelRename();
+                        return;
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.currentTarget.blur();
                       }
                     }}
                     aria-label="Chat name"
                     autoFocus
                   />
-                  <button
-                    type="submit"
-                    className="chat-panel__icon-btn"
-                    aria-label="Save name"
-                    title="Save name"
-                  >
-                    <Check size={13} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-panel__icon-btn"
-                    aria-label="Cancel rename"
-                    title="Cancel rename"
-                    onClick={cancelRename}
-                  >
-                    <X size={13} aria-hidden />
-                  </button>
                 </form>
               ) : (
                 /*
-                  The name row is the name's own chip, not a band: the tab above
-                  already names the chat, so the row only has to offer the one
-                  verb the name needs — rename — without spending a full band of
-                  chrome on it. The box hangs flush off the strip's bottom edge
-                  and is centred on the dock; the pencil at its trailing end
-                  opens the same field the tab menu's Rename does.
+                  The name row is the name itself, not a band and not a box: the
+                  tab above already names the chat, so this row is the caption
+                  hung flush off the strip's bottom edge. Resting state is plain
+                  neutral-gray text with no outline and no pencil — the whole
+                  name is the control. Clicking it opens the field in place; the
+                  field's blur (clicking anywhere else) is the save, and Escape
+                  is the cancel. The tab's right-click Rename opens the same
+                  field.
                 */
-                <div className="chat-panel__name" data-testid="chat-name-chip">
+                <button
+                  type="button"
+                  className="chat-panel__name"
+                  data-testid="chat-name-chip"
+                  aria-label={`Rename ${activeLabel}`}
+                  title="Rename chat"
+                  onClick={startRename}
+                >
                   <span
                     className="chat-panel__heading chat-panel__heading--thread"
                     title={activeLabel}
                   >
                     {activeLabel}
                   </span>
-                  <button
-                    type="button"
-                    className="chat-panel__name-edit"
-                    data-testid="chat-name-edit"
-                    aria-label={`Rename ${activeLabel}`}
-                    title="Rename chat"
-                    onClick={startRename}
-                  >
-                    <Pencil size={11} aria-hidden />
-                  </button>
-                </div>
+                </button>
               )}
               {/*
                 A thread with no tab draws no strip, so the full-screen door
@@ -2862,6 +2894,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             >
               <Keyboard size={20} aria-hidden />
             </button>
+            {/*
+              The reading settings, beside the key reference they share a
+              subject with: the dock's text size and line spacing have their own
+              page, and the operator's hand is already in this bar when the
+              transcript's type is what they want to change.
+            */}
+            <Link
+              to="/settings?tab=reading"
+              className="chat-panel__icon-btn chat-panel__action"
+              data-testid="chat-display-settings"
+              aria-label="Chat display settings"
+              title="Chat display settings"
+            >
+              <Type size={20} aria-hidden />
+            </Link>
             {/*
               The switch-position control, beside the collapse it belongs with:
               one click trades the dock's column for the sheet's, so the chat

@@ -347,6 +347,7 @@ describe("keyboard shortcuts settings and runner", () => {
         "New chat",
         "Quick Notes",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ],

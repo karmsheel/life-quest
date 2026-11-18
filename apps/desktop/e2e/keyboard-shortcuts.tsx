@@ -108,6 +108,10 @@ const bridge: Record<string, unknown> = {
   companionSessionMessages: () =>
     ok([{ role: "assistant" as const, content: "Keyboard shortcuts harness turn" }]),
   onCompanionStream: () => () => {},
+  // ThemeProvider watches the profile's theme folder on mount; the harness has
+  // no profile, so answer the read and the subscription with their real shapes.
+  themesList: () => ok([]),
+  onThemesChanged: () => () => {},
   // The shipped window: overlay caption buttons, so the titlebar shows its
   // trailing cluster and not the fallback window controls.
   windowChrome: {

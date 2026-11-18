@@ -105,13 +105,22 @@ const SAMPLE = `(() => {
   const dockActions = document.querySelector(".chat-panel__actions");
   const chatHeader = document.querySelector(".chat-panel__header");
   const chatStrip = document.querySelector(".chat-panel__tabs");
-  // The thread's name row is a chip now, not a band: the box around the title,
-  // hung flush off the tab strip, with the pencil at its end. Measured beside the
-  // row so "chip, not band" can be read off two boxes instead of one.
+  // The thread's name row is the name itself now, not a band and not a box: plain
+  // neutral-gray text hung flush off the tab strip, with no outline and no
+  // pencil. Measured beside the row so "name, not band" can be read off two boxes
+  // instead of one, and its ink is compared with the dock's muted token — the
+  // quiet ink a role label wears — so a regression back to bright --fg is caught.
   const chatChip = document.querySelector('[data-testid="chat-name-chip"]');
   const chatHeaderLabel = document.querySelector(
     ".chat-panel__header--thread .chat-panel__heading--thread",
   );
+  // Resolve the dock's quiet ink through a probe: the name must wear --muted,
+  // not the transcript's --fg, and the theme may spell either as a nested var.
+  const mutedProbe = document.createElement("span");
+  mutedProbe.style.color = "var(--muted)";
+  document.body.appendChild(mutedProbe);
+  const mutedColor = getComputedStyle(mutedProbe).color;
+  mutedProbe.remove();
   const shell = document.querySelector(".shell");
   const wings = document.querySelector(".nav-rail__wings");
   const wingsBand = document.querySelector(".nav-rail__wings-band");
@@ -543,8 +552,10 @@ const SAMPLE = `(() => {
           ).map((el) => (el.textContent || "").trim()),
           active:
             (
-              wings.querySelector(".ui-segmented__option.is-active")
-                ?.textContent || ""
+              (
+                wings.querySelector('.ui-segmented__option[aria-checked="true"]') ??
+                wings.querySelector(".ui-segmented__option.is-active")
+              )?.textContent || ""
             ).trim() || null,
           optionCount: wings.querySelectorAll(".ui-segmented__option").length,
           // The collapsed band turns the segmented control vertical; the option
@@ -576,7 +587,9 @@ const SAMPLE = `(() => {
             const style = getComputedStyle(el);
             return {
               label: (el.textContent || "").trim(),
-              active: el.classList.contains("is-active"),
+              active:
+                el.getAttribute("aria-checked") === "true" ||
+                el.classList.contains("is-active"),
               box: box(el),
               borderRadius: style.borderRadius,
               borderTopWidth: style.borderTopWidth,
@@ -611,15 +624,24 @@ const SAMPLE = `(() => {
           background: getComputedStyle(chatHeader).backgroundColor
         }
       : null,
-    // The name the row carries: a compact bordered box sized to its text. The
-    // label's own font size is recorded because the chip's type is one step down
-    // from the old band's; the row is the chip's parent and still starts at the
-    // strip's bottom edge.
+    // The name the row carries: the name's own text, as a button, with no box
+    // around it. The label's own font size is recorded because the name's type is
+    // one step down from the old band's; the row is the name's parent and still
+    // starts at the strip's bottom edge. Its ink and outline are recorded so the
+    // "quiet gray, no outline" contract is read back from the engine, not the CSS.
     chatChip: chatChip
       ? {
           box: box(chatChip),
           display: getComputedStyle(chatChip).display,
           borderTopWidth: getComputedStyle(chatChip).borderTopWidth,
+          borderRightWidth: getComputedStyle(chatChip).borderRightWidth,
+          borderBottomWidth: getComputedStyle(chatChip).borderBottomWidth,
+          borderLeftWidth: getComputedStyle(chatChip).borderLeftWidth,
+          backgroundColor: getComputedStyle(chatChip).backgroundColor,
+          color: getComputedStyle(chatChip).color,
+          mutedColor,
+          tagName: chatChip.tagName.toLowerCase(),
+          role: chatChip.getAttribute("role"),
           label: chatHeaderLabel
             ? {
                 text: (chatHeaderLabel.textContent || "").trim(),
@@ -1241,7 +1263,7 @@ async function main() {
     check(
       "the wing switcher is the five wings, in order",
       Boolean(switcher) &&
-        switcher.role === "tablist" &&
+        switcher.role === "radiogroup" &&
         switcher.optionCount === 5 &&
         JSON.stringify(switcher.labels) ===
           JSON.stringify(["Home", "Define", "Plan", "Act", "Review"]) &&

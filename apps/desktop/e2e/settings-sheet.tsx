@@ -53,6 +53,7 @@ import { ThemeQuickMenu } from "@/components/shell/ThemeQuickMenu";
 import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import SettingsPage from "@/pages/SettingsPage";
@@ -73,6 +74,17 @@ const bridge: Record<string, unknown> = {
   onVaultFileChanged: () => () => {},
   companionEnsure: () => ok({ kind: "disconnected" }),
   companionProfilesList: () => ok({ profiles: [], active: null }),
+  /*
+   * The theme-files watcher. `ThemeProvider` reads the profile's theme directory
+   * on mount and keeps the `themes:changed` subscription's unsubscribe for its
+   * effect cleanup. The stub has to answer both with their real shapes: an empty
+   * list (this window has no profile) and a function to call on unmount. The
+   * Proxy's default answers are Promises, and calling one as the unsubscribe
+   * takes the whole tree down on StrictMode's first remount — which blanked this
+   * harness the moment the watcher shipped.
+   */
+  themesList: () => ok([]),
+  onThemesChanged: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -190,7 +202,14 @@ createRoot(root).render(
       <ThemeProvider>
         <UpdateProvider>
           <VaultProvider>
-            <Harness />
+            {/* Settings → Chat display is one of the sheet's pages, and the page
+                reads the window's reading settings from this provider. Mounting
+                it here puts the harness's sheet in the same relation the app
+                has: one provider above every route, so a line spacing picked in
+                the sheet is the one the dock behind it wears. */}
+            <ChatDisplayProvider>
+              <Harness />
+            </ChatDisplayProvider>
           </VaultProvider>
         </UpdateProvider>
       </ThemeProvider>
