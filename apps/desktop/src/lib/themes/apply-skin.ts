@@ -219,7 +219,7 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
     // the theme" half of the contract; the overrides are the variables themselves.
     "--life-color": pickHex(c.logoLife, c.foreground),
     "--icon-color": pickHex(c.logoIcon, c.primary),
-    "--uest-color": pickHex(c.logoUest, c.foreground),
+    "--uest-color": pickHex(c.logoUest, c.logoLife, c.foreground),
     "--red-bg": mix(destructive, bg, dark ? 0.82 : 0.9),
     "--red-border": mix(destructive, bg, dark ? 0.65 : 0.75),
     ...composerVars(c, border),

@@ -54,7 +54,7 @@ const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
 /** The supplied Modern lockup's own canvas: the default, and the first check. */
-const MODERN_VIEWBOX = "215 40 553 160";
+const MODERN_VIEWBOX = "32.33 34 962.38 171.77";
 
 const failures = [];
 let step = "boot";
@@ -488,7 +488,7 @@ async function main() {
     check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - 553 / 160) < 0.15,
+        Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
       `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
@@ -500,10 +500,10 @@ async function main() {
       `fills ${JSON.stringify(brand?.fills)} tokens ${JSON.stringify(expanded.tokens)}`,
     );
     check(
-      "the forge night palette draws the supplied brand trio",
+      "the forge night palette draws both words cream and the emblem ember",
       expanded.tokens.life.toLowerCase() === "#f8e5c8" &&
         expanded.tokens.icon.toLowerCase() === "#c66a3d" &&
-        expanded.tokens.uest.toLowerCase() === "#ffffff",
+        expanded.tokens.uest.toLowerCase() === "#f8e5c8",
       `tokens ${JSON.stringify(expanded.tokens)}`,
     );
     check(
@@ -586,7 +586,7 @@ async function main() {
         splashDefault.label === "LifeQuest" &&
         splashDefault.fills.life === "rgb(248, 229, 200)" &&
         splashDefault.fills.icon === "rgb(198, 106, 61)" &&
-        splashDefault.fills.uest === "rgb(255, 255, 255)" &&
+        splashDefault.fills.uest === "rgb(248, 229, 200)" &&
         splashDefault.tokens.life.toLowerCase() === "#f8e5c8",
       `splash fills ${JSON.stringify(splashDefault.fills)} tokens ${JSON.stringify(splashDefault.tokens)}`,
     );
@@ -651,7 +651,7 @@ async function main() {
       "the rail behind the sheet repaints to Classic on the press",
       Boolean(afterPick.brand) &&
         afterPick.brand.variant === "classic" &&
-        afterPick.brand.viewBox === "226 44 580 162",
+        afterPick.brand.viewBox === "69.41 38 906.85 173.77",
       `rail brand ${JSON.stringify(afterPick.brand)}`,
     );
 

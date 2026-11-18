@@ -28,14 +28,17 @@ same classes — `life-text` (the LIFE word), `quest-icon` (the Q emblem) and
 | --- | --- | --- |
 | `--life-color` | the LIFE word | `#F8E5C8` cream |
 | `--icon-color` | the Q emblem | `#C66A3D` ember |
-| `--uest-color` | the UEST word | `#FFFFFF` white |
+| `--uest-color` | the UEST word | `#F8E5C8` cream — the same ink as LIFE |
 
 The supplied files carried their own `:root` defaults and class fills. Those
 were removed when the art was brought in (`logo/` files have no `<style>` and no
 `fill` attributes) because the theme owns the inks now: Forge's night palette
-declares the supplied trio, every other palette derives foreground / primary /
-foreground, and a theme file may override any of the three with
-`colors.logoLife` / `logoIcon` / `logoUest`. The rail (`LifeQuestLogo`) and the
+declares both words cream and the emblem ember, every other palette derives
+foreground / primary / foreground, and a theme file may override any of the
+three with `colors.logoLife` / `logoIcon` / `logoUest`. The words are drawn at
+about three-fifths of the emblem's height (the supplied files had them at about a
+quarter), and their `textLength` is pinned so a platform font cannot re-flow the
+lockup. The rail (`LifeQuestLogo`) and the
 splash (injected by `vite.config.ts` from these same files) draw from the tokens
 only, so the mark follows the active theme and cannot go invisible on a day
 skin. The picker (Settings → Developer) stores the variant in localStorage under

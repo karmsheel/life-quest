@@ -306,14 +306,15 @@ export const forgeSkin: ForgeSkin = {
     info: "#6B8FA8",
     /**
      * The brand's own lockup inks, and the one palette that overrides the
-     * derived trio: LIFE cream, the Q emblem in ember, UEST white. They are the
-     * colours the operator supplied the mark with, and they are what the night
-     * studio draws; the day palette derives (dark ink, brand primary) so it never
-     * paints cream on paper. Every other skin derives from its own palette.
+     * derived trio: both words in the same light cream, the Q emblem in ember.
+     * They are the colours the operator settled the mark on, and they are what
+     * the night studio draws; the day palette derives (dark ink for both words,
+     * brand primary for the emblem) so it never paints cream on paper. Every
+     * other skin derives from its own palette.
      */
     logoLife: "#F8E5C8",
     logoIcon: "#C66A3D",
-    logoUest: "#FFFFFF",
+    logoUest: "#F8E5C8",
   },
 };
 

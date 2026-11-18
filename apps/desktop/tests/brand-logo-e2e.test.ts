@@ -179,13 +179,13 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(brand.inBand, true, "the lockup is not in the rail's brand band");
     assert.equal(brand.role, "img", "the lockup is not exposed as an image");
     assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
-    assert.equal(brand.viewBox, "215 40 553 160", "the lockup is not the supplied Modern art");
+    assert.equal(brand.viewBox, "32.33 34 962.38 171.77", "the lockup is not the supplied Modern art");
     assert.ok(
       brand.box.height >= 20 && brand.box.width > brand.box.height,
       `the lockup is ${brand.box.width}x${brand.box.height}px, outside the band's shape`,
     );
     assert.ok(
-      Math.abs(brand.box.width / brand.box.height - 553 / 160) < 0.15,
+      Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
       `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's 553:160 ratio`,
     );
     assert.ok(expanded?.band && expanded?.header && expanded?.firstLink, "the rail has no band to measure");
@@ -209,8 +209,8 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
         icon: expanded.tokens.icon.toLowerCase(),
         uest: expanded.tokens.uest.toLowerCase(),
       },
-      { life: "#f8e5c8", icon: "#c66a3d", uest: "#ffffff" },
-      "the forge night palette does not draw the supplied brand trio",
+      { life: "#f8e5c8", icon: "#c66a3d", uest: "#f8e5c8" },
+      "the forge night palette does not draw both words cream and the emblem ember",
     );
 
     // Day: derived inks, and the fills follow them.
@@ -267,7 +267,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     );
     assert.equal(
       afterPick?.brand?.viewBox,
-      "226 44 580 162",
+      "69.41 38 906.85 173.77",
       "the rail behind the sheet is not the supplied Classic art",
     );
     const reloaded = report.reloaded;
@@ -291,7 +291,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(splashDefault?.label, "LifeQuest", "the splash's lockup is not named LifeQuest");
     assert.deepEqual(
       splashDefault?.fills,
-      { life: "rgb(248, 229, 200)", icon: "rgb(198, 106, 61)", uest: "rgb(255, 255, 255)" },
+      { life: "rgb(248, 229, 200)", icon: "rgb(198, 106, 61)", uest: "rgb(248, 229, 200)" },
       "the splash's lockup is not the brand trio on the dark boot",
     );
     const splashSelected = report.splashSelected;

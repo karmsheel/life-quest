@@ -51,7 +51,9 @@
 [data-theme="dark"] .splash__logo {
   --life-color: #f8e5c8;
   --icon-color: #c66a3d;
-  --uest-color: #ffffff;
+  /* The two words share the cream; UEST keeps its own token for themes that
+     want the words to diverge. */
+  --uest-color: #f8e5c8;
 }
 
 .splash__logo-variant {
