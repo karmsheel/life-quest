@@ -20,10 +20,10 @@
     var known = ["modern", "athletic", "classic", "minimal"];
     document.documentElement.setAttribute(
       "data-logo",
-      known.indexOf(logo) >= 0 ? logo : "modern",
+      known.indexOf(logo) >= 0 ? logo : "minimal",
     );
   } catch (e) {
-    document.documentElement.setAttribute("data-logo", "modern");
+    document.documentElement.setAttribute("data-logo", "minimal");
   }
   window.__LQ_SPLASH_T0 = performance.now();
 })();

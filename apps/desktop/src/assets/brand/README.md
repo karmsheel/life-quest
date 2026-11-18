@@ -9,10 +9,10 @@ copy.
 | `lifequest-emblem.svg` | The emblem alone, the mountain-inside-a-Q mark. Official icon. | The app icon's master art (`apps/desktop/build/icon.png` and `icon.ico` are rendered from it). |
 | `lifequest-wordmark.svg` | The "LifeQuest" wordmark alone, letterforms only, no mark. | Media and docs that need the text alone; the app chrome draws the supplied lockups below. |
 | `lifequest-lockup.svg` | The full lockup: emblem over wordmark, at the source image's own spacing. | Media, docs and anything outside the app chrome that needs the whole logo. |
-| `logo/01-modern.svg` | Supplied lockup: LIFE · emblem · UEST, neutral sans. **The shipped default.** | The rail's top band and the splash screen (`LogoVariant` `modern`). |
+| `logo/01-modern.svg` | Supplied lockup: LIFE · emblem · UEST, neutral sans. | The rail's top band and the splash screen (`LogoVariant` `modern`). |
 | `logo/02-athletic.svg` | Supplied lockup, heavy slanted sans, words leaning apart. | Settings → Developer → Logo (`athletic`). |
 | `logo/03-classic.svg` | Supplied lockup, serif. | Settings → Developer → Logo (`classic`). |
-| `logo/04-minimal.svg` | Supplied lockup, light wide-tracked sans. | Settings → Developer → Logo (`minimal`). |
+| `logo/04-minimal.svg` | Supplied lockup, light wide-tracked sans. **The shipped default.** | Settings → Developer → Logo (`minimal`). |
 
 `build/icon.png` (1024px, rounded black tile) and `build/icon.ico` (16–256px)
 live outside `src/` because electron-builder requires the app icon there; they
@@ -36,9 +36,8 @@ were removed when the art was brought in (`logo/` files have no `<style>` and no
 declares both words cream and the emblem ember, every other palette derives
 foreground / primary / foreground, and a theme file may override any of the
 three with `colors.logoLife` / `logoIcon` / `logoUest`. The words are drawn at
-about three-fifths of the emblem's height (the supplied files had them at about a
-quarter), and their `textLength` is pinned so a platform font cannot re-flow the
-lockup. The rail (`LifeQuestLogo`) and the
+about half the emblem's height (the words were later reduced another 20%, with the emblem unchanged), and their
+`textLength` is pinned so a platform font cannot re-flow the lockup. The rail (`LifeQuestLogo`) and the
 splash (injected by `vite.config.ts` from these same files) draw from the tokens
 only, so the mark follows the active theme and cannot go invisible on a day
 skin. The picker (Settings → Developer) stores the variant in localStorage under

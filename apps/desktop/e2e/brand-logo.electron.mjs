@@ -54,7 +54,7 @@ const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
 /** The supplied Modern lockup's own canvas: the default, and the first check. */
-const MODERN_VIEWBOX = "32.33 34 962.38 171.77";
+const DEFAULT_VIEWBOX = "47.19 39 1059.6 161.78";
 
 const failures = [];
 let step = "boot";
@@ -461,9 +461,9 @@ async function main() {
     const brand = expanded.brand;
     check("the rail exists", Boolean(expanded.rail), "no .nav-rail in the shell");
     check(
-      "the lockup is the shipped default (Modern) before any pick",
+      "the lockup is the shipped default (Minimal) before any pick",
       Boolean(brand) &&
-        brand.variant === "modern" &&
+        brand.variant === "minimal" &&
         expanded.storedLogo === null,
       `variant ${JSON.stringify(brand?.variant)} stored ${JSON.stringify(expanded.storedLogo)}`,
     );
@@ -473,7 +473,7 @@ async function main() {
         brand.inBand === true &&
         brand.role === "img" &&
         brand.label === "LifeQuest" &&
-        brand.viewBox === MODERN_VIEWBOX,
+        brand.viewBox === DEFAULT_VIEWBOX,
       `brand ${JSON.stringify(brand)} band ${JSON.stringify(expanded.band)}`,
     );
     check(
@@ -503,7 +503,7 @@ async function main() {
     check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
+        Math.abs(brand.box.width / brand.box.height - 1059.6 / 161.78) < 0.15,
       `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
@@ -590,8 +590,8 @@ async function main() {
     check(
       "the splash wears the shipped default before any pick",
       splashDefault.hasSplash === true &&
-        splashDefault.dataLogo === "modern" &&
-        splashDefault.visibleVariant === "modern" &&
+        splashDefault.dataLogo === "minimal" &&
+        splashDefault.visibleVariant === "minimal" &&
         splashDefault.variantCount === 4,
       `splash ${JSON.stringify(splashDefault)}`,
     );
@@ -639,12 +639,12 @@ async function main() {
     await sleep(250);
     const developerOpen = await sample(win);
     check(
-      "the bench offers the four shipped lockups, Modern active",
+      "the bench offers the four shipped lockups, Minimal active",
       Boolean(developerOpen.developer) &&
         developerOpen.developer.optionCount === 4 &&
         JSON.stringify(developerOpen.developer.ids) ===
           JSON.stringify(["modern", "athletic", "classic", "minimal"]) &&
-        developerOpen.developer.active === "modern" &&
+        developerOpen.developer.active === "minimal" &&
         JSON.stringify(developerOpen.developer.labels) ===
           JSON.stringify(["Modern", "Athletic", "Classic", "Minimal"]),
       `picker ${JSON.stringify(developerOpen.developer)}`,

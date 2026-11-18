@@ -136,7 +136,7 @@ The window title bar:
 The rail:
 
 - The **LifeQuest lockup** at the top-left, on its own band under the window
-  strip: the active logo — **Modern** by default, and any of **Modern**,
+  strip: the active logo — **Minimal** by default, and any of **Modern**,
   **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
   is drawn from the shipped art, and its three inks (LIFE, the Q emblem, UEST)
   are theme colours, so the lockup follows the active theme and the day/night

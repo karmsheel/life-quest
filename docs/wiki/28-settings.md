@@ -358,7 +358,7 @@ feed is offering, or the feed's own answer. **Updates** always reports the real
 feed, and a real release outranks the preview.
 
 Below the switch, the page holds the **Logo** bench: the four LifeQuest lockups —
-**Modern** (the shipped default), **Athletic**, **Classic** and **Minimal** — as a
+**Modern**, **Athletic**, **Classic** and **Minimal** (the shipped default) — as a
 radio group of live previews. A press changes the mark the rail and the splash
 screen wear immediately, and the pick is stored locally so it survives a restart
 and is known to the splash before React loads. The three inks of the lockup (the

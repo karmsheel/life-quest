@@ -175,11 +175,11 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.ok(expanded, "the rig wrote no wide sample");
     assert.ok(brand, "the rail carries no .lifequest-logo");
     assert.equal(expanded?.storedLogo, null, "a logo pick was stored before any press");
-    assert.equal(brand.variant, "modern", "the rail is not wearing the default Modern lockup");
+    assert.equal(brand.variant, "minimal", "the rail is not wearing the default Minimal lockup");
     assert.equal(brand.inBand, true, "the lockup is not in the rail's brand band");
     assert.equal(brand.role, "img", "the lockup is not exposed as an image");
     assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
-    assert.equal(brand.viewBox, "32.33 34 962.38 171.77", "the lockup is not the supplied Modern art");
+    assert.equal(brand.viewBox, "47.19 39 1059.6 161.78", "the lockup is not the supplied Minimal art");
     assert.ok(
       brand.box.height >= 20 && brand.box.width > brand.box.height,
       `the lockup is ${brand.box.width}x${brand.box.height}px, outside the band's shape`,
@@ -200,7 +200,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       `the lockup's top/bottom inset is ${(insetY * 100).toFixed(1)}% of its height, not 10%`,
     );
     assert.ok(
-      Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
+      Math.abs(brand.box.width / brand.box.height - 1059.6 / 161.78) < 0.15,
       `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's 553:160 ratio`,
     );
     assert.ok(expanded?.band && expanded?.header && expanded?.firstLink, "the rail has no band to measure");
@@ -300,8 +300,8 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       ["modern", "athletic", "classic", "minimal"],
       "the splash's lockups are not the shipped four",
     );
-    assert.equal(splashDefault?.dataLogo, "modern", "the default splash is not Modern");
-    assert.equal(splashDefault?.visibleVariant, "modern", "the default splash shows another lockup");
+    assert.equal(splashDefault?.dataLogo, "minimal", "the default splash is not Minimal");
+    assert.equal(splashDefault?.visibleVariant, "minimal", "the default splash shows another lockup");
     assert.equal(splashDefault?.role, "img", "the splash's lockup is not exposed as an image");
     assert.equal(splashDefault?.label, "LifeQuest", "the splash's lockup is not named LifeQuest");
     assert.deepEqual(

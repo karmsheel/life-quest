@@ -23,7 +23,9 @@ export interface LogoVariantInfo {
 }
 
 /**
- * In the order the operator met them, the first being the shipped default.
+ * In the order the operator met them. The shipped default is the 4th lockup
+ * (Minimal); the order stays the supplied one so the picker reads as the
+ * operator's own set.
  *
  * The descriptions are the supplied art's own distinctions (the source SVGs
  * title them "Modern", "Athletic — opposing slants", "Classic" and "Minimal"),
@@ -34,7 +36,7 @@ export const LOGO_VARIANTS: readonly LogoVariantInfo[] = [
   {
     id: "modern",
     label: "Modern",
-    description: "Neutral sans lockup: the shipped default.",
+    description: "Neutral sans lockup.",
   },
   {
     id: "athletic",
@@ -49,11 +51,11 @@ export const LOGO_VARIANTS: readonly LogoVariantInfo[] = [
   {
     id: "minimal",
     label: "Minimal",
-    description: "Light, wide-tracked sans — quiet and airy.",
+    description: "Light, wide-tracked sans — the shipped default.",
   },
 ];
 
-export const DEFAULT_LOGO_VARIANT: LogoVariant = "modern";
+export const DEFAULT_LOGO_VARIANT: LogoVariant = "minimal";
 
 /** The localStorage key, shared with `public/theme-boot.js` (the splash read). */
 export const LOGO_STORAGE_KEY = "lifequest-logo";
