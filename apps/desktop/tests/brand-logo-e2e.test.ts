@@ -184,6 +184,21 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       brand.box.height >= 20 && brand.box.width > brand.box.height,
       `the lockup is ${brand.box.width}x${brand.box.height}px, outside the band's shape`,
     );
+    // A 10% inset on every side: the band is the rail's content width and its
+    // padding is the gap around the lockup.
+    assert.ok(expanded?.band, "the rail has no brand band to measure");
+    const insetX =
+      (expanded.band.width - brand.box.width) / 2 / expanded.band.width;
+    const insetY =
+      (expanded.band.height - brand.box.height) / 2 / brand.box.height;
+    assert.ok(
+      Math.abs(insetX - 0.1) <= 0.01,
+      `the lockup's side inset is ${(insetX * 100).toFixed(1)}%, not 10%`,
+    );
+    assert.ok(
+      Math.abs(insetY - 0.1) <= 0.03,
+      `the lockup's top/bottom inset is ${(insetY * 100).toFixed(1)}% of its height, not 10%`,
+    );
     assert.ok(
       Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
       `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's 553:160 ratio`,

@@ -1026,14 +1026,17 @@ a {
    pixels.
 
    The band is a mark, not a control: it leaves no drag carve-out, and the strip
-   above it stays the window's handle. `max-width` keeps the four variants on one
-   visual size — their cropped aspects are close, not identical — so switching
-   logos does not change the band's height by more than a couple of pixels. */
+   above it stays the window's handle. It carries a 10% inset on every side —
+   10% of the rail's content width left and right, and 10% of the lockup's own
+   height above and below — so the mark is scaled down and breathes instead of
+   running edge to edge. The horizontal inset is a real percentage (the band's
+   padding resolves against the rail column); the vertical one is a fixed
+   0.22rem, which is 10% of the 29–36px lockup at every variant's aspect. */
 .nav-rail__brand {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  padding: 0.1rem 0 0.25rem;
+  padding: 0.22rem 10%;
 }
 
 /* One lockup, one ink model. The three groups are the supplied art's own classes:

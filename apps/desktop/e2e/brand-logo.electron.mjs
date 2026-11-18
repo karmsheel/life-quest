@@ -486,6 +486,21 @@ async function main() {
       `band ${JSON.stringify(expanded.band)} header ${JSON.stringify(expanded.header)} rail ${JSON.stringify(expanded.rail)}`,
     );
     check(
+      "the lockup is inset by 10% on every side",
+      Boolean(brand && expanded.band) &&
+        expanded.band.width > 0 &&
+        Math.abs(
+          (expanded.band.width - brand.box.width) /
+            2 /
+            expanded.band.width -
+            0.1,
+        ) <= 0.01 &&
+        Math.abs(
+          (expanded.band.height - brand.box.height) / 2 / brand.box.height - 0.1,
+        ) <= 0.03,
+      `band ${JSON.stringify(expanded.band)} brand ${JSON.stringify(brand?.box)}`,
+    );
+    check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
         Math.abs(brand.box.width / brand.box.height - 962.38 / 171.77) < 0.15,
