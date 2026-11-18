@@ -15,6 +15,9 @@
  *                         statuses, the gate on the Life review, the progress
  *   review-started.png    after the Finance row ran the snapshot pass: the
  *                         figures are in the file and the document is still open
+ *   review-chat-sidebar.png  the moment the Finance interview starts: the new
+ *                         chat is already a row in **Chats**, marked as the open
+ *                         chat and as a live turn, while the agent is working
  *   review-life-ready.png after the last area was completed: every row Done, the
  *                         Life review unlocked, the "ready" hint showing
  *   review-daily.png      the daily review: one general review, no checklist
@@ -63,6 +66,12 @@
  *     Preview rendering the whole file (and no longer a domains list), and the
  *     cadence's rules read and written from the page.
  * 11. No bridge call this rig does not model, and no console error.
+ * 12. A started review's chat is in the LEFT SIDEBAR from its first paint, while
+ *     the agent is still working. The chat list was read before that session
+ *     existed and is not read again until the turn settles, so the row can only
+ *     be there if the dock adopted the row main handed back with the id. The
+ *     turn is held open for the check — a chat that appears only once the run
+ *     ends is the reported bug, not a pass.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -363,6 +372,24 @@ function waitForDockKickoffs(win, expected, timeoutMs = 8_000) {
     `the dock to receive ${expected} kickoff turn(s)`,
     timeoutMs,
   );
+}
+
+/**
+ * The rail's Chats list as the operator sees it: one row per chat, the label it
+ * wears, and whether the row is the open chat and has a live turn.
+ */
+function chatSidebar(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const rows = Array.from(document.querySelectorAll(".chats-rail__row"));
+    return {
+      present: Boolean(document.querySelector(".chats-rail")),
+      rows: rows.map((row) => ({
+        label: (row.querySelector(".chats-rail__label")?.textContent || "").trim(),
+        active: row.hasAttribute("data-active"),
+        live: row.hasAttribute("data-live"),
+      })),
+    };
+  })()`);
 }
 
 /** Open a paragraph the way a person does — a click on the prose. */
@@ -1063,6 +1090,10 @@ async function main() {
   // ── 7. the Finance row opens the Finance interview, and finishing it flips
   //       the row ────────────────────────────────────────────────────────────
   await setHarness(win, "window.reviewRigAgentDown = false");
+  // Hold the start's turn open until the sidebar has been sampled: the reported
+  // bug was that the chat was missing from Chats FOR THE WHOLE RUN, so the check
+  // is only meaningful while the turn is still going.
+  await setHarness(win, "window.reviewRigHoldTurns = true");
   await click(win, '[data-testid="review-area-financial"]');
   await waitFor(
     win,
@@ -1095,6 +1126,47 @@ async function main() {
   if (kickoffs.length !== 1 || !kickoffs[0].includes("## Finance")) {
     failure(`the dock was sent ${kickoffs.length} kickoff(s), not the Finance one`);
   }
+
+  // ── 7b. the started interview is in Chats WHILE the agent is working ─────
+  // The renderer read the chat list before this session existed, and it will
+  // not read it again until the turn settles. So this row can only be there if
+  // the dock adopted the row the page was handed; waiting for the next list
+  // read is exactly the bug — the chat missing from Chats for the whole run.
+  await frames(win);
+  const createdChats = await setHarness(win, "window.reviewRigSessions()");
+  const startedChat =
+    createdChats.find((row) => row.id === starts[0]?.sessionId) ?? null;
+  const sidebar = await chatSidebar(win);
+  checks.startedSidebar = sidebar;
+  checks.startedChat = startedChat;
+  if (!sidebar.present) {
+    failure("the shell has no Chats list to check the started interview against");
+  }
+  if (!startedChat) {
+    failure(
+      `the gateway has no chat for the Finance start ${JSON.stringify(starts[0]?.sessionId)}`,
+    );
+  }
+  const listedChat = sidebar.rows.find((row) => row.label === startedChat?.title) ?? null;
+  if (!listedChat) {
+    failure(
+      `the started review chat is not listed in Chats while it runs: ${JSON.stringify(
+        sidebar.rows.map((row) => row.label),
+      )}`,
+    );
+  } else {
+    if (!listedChat.active) {
+      failure("the started review chat's Chats row is not the open chat");
+    }
+    if (!listedChat.live) {
+      failure("the started review chat's Chats row does not show its turn running");
+    }
+  }
+  await shot(win, "review-chat-sidebar.png");
+  // Release the held turn: the rest of the run is not about a live turn.
+  await setHarness(win, "window.reviewRigHoldTurns = false");
+  await setHarness(win, "window.reviewRigReleaseTurns()");
+
   if (!started.notice || !/snapshot/i.test(started.notice)) {
     failure(`the page did not say what it filled: ${JSON.stringify(started.notice)}`);
   }

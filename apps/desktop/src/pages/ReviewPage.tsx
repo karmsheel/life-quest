@@ -497,7 +497,16 @@ export default function ReviewPage() {
           return;
         }
         const kickoff = start.value.created ? start.value.kickoff : undefined;
-        chatDock.requestSession({ id: start.value.sessionId, kickoff });
+        chatDock.requestSession({
+          id: start.value.sessionId,
+          kickoff,
+          // The row the gateway just made (or the resumed one): the dock lists
+          // this review's chat in Chats under its name from the first paint,
+          // rather than waiting for the next session-list read — which does not
+          // happen until the interview's turn settles, so the chat was missing
+          // from the sidebar for the whole run.
+          session: start.value.session,
+        });
         setNotice(
           [
             filledLine,
@@ -657,7 +666,13 @@ export default function ReviewPage() {
         return;
       }
       const kickoff = plan.value.created ? plan.value.kickoff : undefined;
-      chatDock.requestSession({ id: plan.value.sessionId, kickoff });
+      chatDock.requestSession({
+        id: plan.value.sessionId,
+        kickoff,
+        // The plan chat's own row, so the dock lists it in Chats from the first
+        // paint instead of waiting for the next session-list read.
+        session: plan.value.session,
+      });
       navigate("/goals");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

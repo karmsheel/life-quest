@@ -126,7 +126,8 @@ cannot be quietly rewritten.
      skeleton and the `## Health` section;
    - the figures this cadence's rules ask for are filled by the app;
    - the Health interview opens in the chat pane, bound to this period's Health
-     scope;
+     scope — in a tab of its own, and listed in **Chats** under its name from
+     its first paint, even while the agent is still writing;
    - the scope line above the body reads **Reviewing Health**.
 5. Write in **Document** mode. The editor takes the whole file, renders markdown
 

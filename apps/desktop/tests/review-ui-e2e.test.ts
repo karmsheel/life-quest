@@ -21,7 +21,7 @@ import { describe, it } from "node:test";
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the seven `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the eight `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -37,6 +37,7 @@ const REPORT = path.join(desktopRoot, "e2e/artifacts/review.json");
 const SHOTS = [
   "review-document.png",
   "review-started.png",
+  "review-chat-sidebar.png",
   "review-rules.png",
   "review-wide.png",
   "review-checklist.png",
@@ -246,6 +247,13 @@ type Report = {
     started: Page;
     starts: StartCall[];
     financeKickoffs: string[];
+    /** The rail's Chats list at the moment the Finance interview is running. */
+    startedSidebar: {
+      present: boolean;
+      rows: { label: string; active: boolean; live: boolean }[];
+    };
+    /** The chat row the gateway made for that start. */
+    startedChat: { id: string; title: string } | null;
     startedTwiceBody: string;
     financeDone: Page;
     financeDoneRail: RailState;
@@ -628,6 +636,38 @@ describe("review ui e2e", () => {
     assert.match(financeStart.kickoff, /only/, "the Finance kickoff does not scope the companion to one section");
     assert.equal(report.checks.financeKickoffs.length, 1, "the dock was not sent exactly the Finance kickoff");
     assert.match(String(report.checks.financeKickoffs[0]), /## Finance/, "the dock was sent another kickoff");
+
+    // ── the started interview is in Chats while the agent is still working ──
+    // The chat list was read before this session existed and is not read again
+    // until the turn settles: the row is there only because the dock adopted the
+    // row main handed back with the session id. A chat that shows up only after
+    // the run is the reported bug.
+    assert.equal(
+      report.checks.startedSidebar.present,
+      true,
+      "the shell has no Chats list to list the started interview in",
+    );
+    const startedChat = report.checks.startedChat;
+    assert.ok(startedChat, "the gateway has no chat row for the Finance start");
+    const listedChat = report.checks.startedSidebar.rows.find(
+      (row) => row.label === startedChat.title,
+    );
+    assert.ok(
+      listedChat,
+      `the started review chat is missing from Chats while its turn runs (listed: ${JSON.stringify(
+        report.checks.startedSidebar.rows.map((row) => row.label),
+      )})`,
+    );
+    assert.equal(
+      listedChat.active,
+      true,
+      "the started review chat is not the open chat in Chats",
+    );
+    assert.equal(
+      listedChat.live,
+      true,
+      "the started review chat's row does not show its turn running",
+    );
     assert.match(String(started.notice), /snapshot/i, "the page did not say what it filled");
     assert.match(String(started.notice), /chat/i, "the page did not say the interview opened");
     assert.equal(
