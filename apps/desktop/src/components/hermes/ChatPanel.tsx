@@ -1922,27 +1922,27 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 The strip's own door: a new blank conversation in a tab of its
                 own, beside the chat in front. It is the sidebar's New chat slot
                 in miniature — the same store action, the same one-blank-at-a-
-                time rule — set after the last tab the way a browser sets its
-                plus. It sticks to the band's trailing edge while the strip
-                scrolls, so a full strip never hides the way to a new one.
+                time rule — and it sits in the tab flow directly after the last
+                tab, where the next tab will appear, rather than parked on the
+                band's trailing edge. The strip's slack falls after the plus;
+                the full-screen door keeps the corner.
               */}
+              <button
+                type="button"
+                className="chat-panel__tab-new"
+                aria-label="New chat tab"
+                title="New chat tab"
+                onClick={() => void newSession()}
+              >
+                <Plus size={13} aria-hidden />
+              </button>
               {/*
-                The strip's trailing corner: the way to a new tab, then the way
-                to the whole workspace. Both stick to the band's trailing edge
-                while the strip scrolls — a full strip must not hide either door
-                — so they travel in one sticky group rather than as two marks
-                that could paint over each other.
+                The strip's trailing corner: the way to the whole workspace. It
+                sticks to the band's trailing edge while the strip scrolls — a
+                full strip must not hide that door — and it is the only mark in
+                the strip that does so now that the plus travels with the tabs.
               */}
               <div className="chat-panel__tabs-trailing">
-                <button
-                  type="button"
-                  className="chat-panel__tab-new"
-                  aria-label="New chat tab"
-                  title="New chat tab"
-                  onClick={() => void newSession()}
-                >
-                  <Plus size={13} aria-hidden />
-                </button>
                 {focusToggle("chat-panel__icon-btn chat-panel__tab-focus")}
               </div>
             </div>

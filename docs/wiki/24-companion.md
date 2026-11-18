@@ -18,9 +18,9 @@ vault, the tools that read and write it, the locks, and the
   collapses to a launcher mark, and its width is dragged with the divider between
   it and the page. **Full screen chat** at the trailing end of its top row
   collapses the main page and gives the dock the workspace right of the rail —
-  the rail and its **Chats** list stay — and the title bar's **Collapse main
-  page** / **Restore main page** is the same mode, with **Mod+Shift+F** as the
-  shortcut.
+  the rail and its **Chats** list stay — and **Mod+Shift+F** does the same from
+  anywhere. The title bar carries no full-screen control; the dock's top row is
+  the door.
 - A vertical **agent switcher** strip stands in the composer's trailing margin: in
   the empty gutter beside the composer when the dock is wide, and just above the
   composer box when the dock is too narrow to hold it. One block per agent this
@@ -134,11 +134,11 @@ vault's own binding.
    drawn whenever the thread has a tab, even a single one. The chat's name sits
    under the strip in a small chip hung off its bottom edge, with a pencil
    (**Rename chat**) at the chip's end — the quick way into the same rename field
-   the tab menu opens. The **+** at the strip's trailing edge (**New chat tab**)
-   opens a fresh chat in a tab of its own. Tabs are remembered per vault and
-   agent: quit and reopen and every tab returns in the same order, with the chat
-   that was in front still in front. A remembered chat that was archived or
-   deleted in the meantime loses its tab.
+   the tab menu opens. The **+** right after the last tab (**New chat tab**) opens
+   a fresh chat in a tab of its own. Tabs are remembered per vault and agent: quit
+   and reopen and every tab returns in the same order, with the chat that was in
+   front still in front. A remembered chat that was archived or deleted in the
+   meantime loses its tab.
 5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
@@ -155,10 +155,9 @@ vault's own binding.
    end of the dock's top row — the tab strip when a tab is drawn, the header row
    when it is not. The main page collapses, the chat takes the workspace right of
    the rail, and the rail with its chats list stays; the control now reads **Exit
-   full screen chat**. The title bar's **Collapse main page** / **Restore main
-   page** is the second door and **Mod+Shift+F** the shortcut. The mode is
-   session-only — it resets on relaunch, and collapsing the dock leaves it and
-   brings the page back.
+   full screen chat**. **Mod+Shift+F** is the shortcut from anywhere; the title
+   bar carries no second door. The mode is session-only — it resets on relaunch,
+   and collapsing the dock leaves it and brings the page back.
 
 ### Search and the archive
 
@@ -305,7 +304,7 @@ the arrangement you left; leaving full-screen chat gives back the split.
 |---|---|
 | Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
-| Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** at the trailing edge. |
+| Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** immediately after the last tab. |
 | Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name chip | The active chat's name in a small box hung off the strip's bottom edge, centred on the dock, with a pencil (**Rename chat**) at its end. Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |

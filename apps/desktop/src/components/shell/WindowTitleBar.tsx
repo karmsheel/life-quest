@@ -6,7 +6,6 @@ import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
-import { ChatFocusToggle } from "./ChatFocusToggle";
 import { ThemeQuickMenu } from "./ThemeQuickMenu";
 import { windowTitleLabel } from "./window-title";
 
@@ -83,25 +82,16 @@ export function WindowTitleBar() {
           {chatPresent ? (
             <>
               {/*
-                The window's half of full-screen chat. The dock's own top row
-                carries the door from inside the conversation; this one is the
-                door the operator finds while reading a page, where the thing it
-                takes away is the page itself. It sits immediately before the
-                day/night control so the strip's old pair stays together and the
-                new control joins the cluster's leading end rather than pushing
-                the gear off the window's corner.
-              */}
-              <ChatFocusToggle
-                className="window-titlebar__btn"
-                testId="titlebar-main-page"
-                offLabel="Collapse main page"
-                onLabel="Restore main page"
-              />
-              {/*
                 The day/night control, and the settings it belongs with. The
                 keyboard-shortcuts reference moved into the dock's own bottom
                 bar, where the surfaces it switches between live: the strip no
                 longer carries a second way to change what the dock shows.
+
+                Full-screen chat has one door, not two: the dock's own top row
+                (Full screen chat -> Exit full screen chat), with Mod+Shift+F as
+                its shortcut. The strip's cluster is the day/night control and
+                the gear, so the pair sits on the window's corner and nothing
+                pushes the gear off it.
 
                 The gear is a plain link to the settings sheet now: the palette
                 and theme quick menu that once opened under it hangs off the
