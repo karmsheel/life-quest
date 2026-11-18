@@ -51,6 +51,7 @@ const ENTER_LABEL = "Enter";
 const NAV_ORDER = [
   "Appearance",
   "Keyboard",
+  "Chat display",
   "Composer",
   "Areas",
   "Vault",
@@ -331,9 +332,9 @@ async function main() {
     const opened = await settle();
     report.states.opened = opened;
 
-    // ── 1. the tab: the sheet's own nav, with Composer after Keyboard ──────
+    // ── 1. the tab: the sheet's own nav, with Composer after Chat display ──
     check(
-      "the section column lists the thirteen tabs",
+      "the section column lists the fourteen tabs",
       opened.nav.length === NAV_ORDER.length,
       `nav ${JSON.stringify(opened.nav.map((row) => row.label))}`,
     );
@@ -343,13 +344,15 @@ async function main() {
       `nav ${JSON.stringify(opened.nav.map((row) => row.label))}`,
     );
     check(
-      "Composer follows Keyboard",
-      opened.nav[1]?.label === "Keyboard" && opened.nav[2]?.label === "Composer",
-      `nav ${JSON.stringify(opened.nav.slice(1, 3).map((row) => row.label))}`,
+      "Composer follows Chat display, after Keyboard",
+      opened.nav[1]?.label === "Keyboard" &&
+        opened.nav[2]?.label === "Chat display" &&
+        opened.nav[3]?.label === "Composer",
+      `nav ${JSON.stringify(opened.nav.slice(1, 4).map((row) => row.label))}`,
     );
     check(
       "the Composer tab is the open one",
-      opened.nav[2]?.active === true && opened.panelView === "composer",
+      opened.nav[3]?.active === true && opened.panelView === "composer",
       `active ${JSON.stringify(opened.nav.filter((row) => row.active).map((row) => row.label))}, ` +
         `panel ${JSON.stringify(opened.panelView)}`,
     );

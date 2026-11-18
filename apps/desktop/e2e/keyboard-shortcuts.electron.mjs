@@ -773,6 +773,7 @@ async function main() {
           "New chat",
           "Quick Notes",
           "Keyboard shortcuts",
+          "Chat display settings",
           "Move chat to the left of the page",
           "Collapse chat",
         ],
@@ -1031,11 +1032,11 @@ async function main() {
     await clickSelector(".settings-overlay__search-clear");
     const searchCleared = await record(
       "searchCleared",
-      'document.querySelectorAll(".settings-nav-item").length === 13',
+      'document.querySelectorAll(".settings-nav-item").length === 14',
     );
     check(
       "clearing the search restores the whole section list",
-      searchCleared.nav.length === 13 && searchCleared.searchValue === "",
+      searchCleared.nav.length === 14 && searchCleared.searchValue === "",
       `${searchCleared.nav.length} rows, search ${JSON.stringify(searchCleared.searchValue)}`,
     );
     check(

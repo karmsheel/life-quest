@@ -32,6 +32,12 @@
  *    `AgentsProvider` (`?agents=1`) so the real switcher draws in the footer;
  *    absent by default so every other rig's page is unchanged. Failure modes
  *    listed there.
+ *  - `chat-display.electron.mjs` — the reading settings the transcript wears:
+ *    the shipped 1.5 line spacing, the Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0
+ *    zoom, and the localStorage pair shared with Settings → Chat display. It is
+ *    the only rig that mounts `ChatDisplayProvider` (`?reading=1`); absent by
+ *    default so every other rig's page is unchanged. Failure modes listed
+ *    there.
  *
  * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
  * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
@@ -73,6 +79,7 @@ import {
   useOptionalCompanion,
 } from "@/state/CompanionProvider";
 import { AgentsProvider } from "@/state/AgentsProvider";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import type {
   ChatStreamEvent,
@@ -259,6 +266,20 @@ const capabilities = CAPABILITIES[CAPS_MODE ?? "full"] ?? CAPABILITIES.full!;
  * measure. The dock-chrome rig is the only one that asks.
  */
 const AGENTS_MODE = new URLSearchParams(window.location.search).has("agents");
+
+/**
+ * `?reading=1` mounts the reading-settings provider, so the transcript wears the
+ * size and line spacing Settings → Chat display holds, and `Ctrl`/`Cmd` + wheel
+ * and `Ctrl` `+`/`-`/`0` step it.
+ *
+ * The dock reads `useOptionalChatDisplay`, so without this provider it draws the
+ * shipped defaults and answers no zoom gesture — which is the page every other
+ * rig was written against and must keep. Opt-in for the same reason `?caps=` and
+ * `?agents=` are: this page is shared, and a provider that moved the transcript's
+ * type would change what the other rigs measure. The chat-display rig is the
+ * only one that asks.
+ */
+const READING_MODE = new URLSearchParams(window.location.search).has("reading");
 
 /**
  * The two companions main's registry publishes, with this page's descriptor on
@@ -698,6 +719,18 @@ const shell = (
   </MemoryRouter>
 );
 
+/**
+ * The same tree with the reading settings on top, when a rig asked for them.
+ * The provider publishes the two custom properties the transcript multiplies its
+ * type by and adds no markup of its own, so the page below the flag is the tree
+ * every other rig measures.
+ */
+const readingShell = READING_MODE ? (
+  <ChatDisplayProvider>{shell}</ChatDisplayProvider>
+) : (
+  shell
+);
+
 createRoot(root).render(
   <StrictMode>
     {WITH_CAPABILITIES || AGENTS_MODE ? (
@@ -709,10 +742,10 @@ createRoot(root).render(
             landing the dock just resumed. The gate is a property of the
             companion provider being above the dock, so it wraps the agents
             provider too. */}
-        <WhenHarnessesAreKnown>{shell}</WhenHarnessesAreKnown>
+        <WhenHarnessesAreKnown>{readingShell}</WhenHarnessesAreKnown>
       </CompanionProvider>
     ) : (
-      shell
+      readingShell
     )}
   </StrictMode>,
 );

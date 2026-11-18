@@ -14,12 +14,16 @@
  *
  * ── the three surfaces this rig exists to measure ────────────────────────────
  *
- *  1. The thread's NAME ROW is a compact chip, not a band: a bordered box sized
- *     to the chat's title, horizontally centred, hanging flush under the tab
- *     strip, with the rename pencil at its trailing end. The label keeps the
- *     heading classes and carries the title and nothing else; its type is one
- *     step down (about 0.7rem). Clicking the pencil opens the existing rename
- *     field — Enter commits through the bridge, Escape cancels.
+ *  1. The thread's NAME ROW is the name itself, not a band: a single quiet
+ *     button — the whole name is the target — sized to the chat's title,
+ *     horizontally centred, hanging flush under the tab strip. It has no
+ *     border, no fill and no pencil; its ink is the neutral `--muted` token,
+ *     quieter than the transcript's `--fg` prose. The label keeps the heading
+ *     classes and carries the title and nothing else, one type step down (about
+ *     0.7rem). Clicking the name opens the rename field in its own place — a
+ *     bare input with no Save/Cancel keys: blur (clicking away) saves, Enter
+ *     blurs into that same save, and Escape cancels without writing anything.
+ *     The tab menu's Rename opens that same field.
  *
  *  2. The COMPOSER'S SIDE GUTTERS grow with the dock. `--composer-gutter` is
  *     defined on `.chat-panel__footer` and spent as the composer form's
@@ -72,17 +76,22 @@
  *       squeezed under 9px by the chip's layout.
  *   C7. The label lost `.chat-panel__heading`/`--thread`, or carries icon text
  *       (a pencil SVG's accessible name leaking into `textContent`).
- *   C8. The pencil is not at the label's trailing end: rendered before the text,
- *       outside the chip, or as a bare glyph rather than a button with an SVG.
- *   C9. Clicking the pencil does not open the rename field, or the field is not
- *       prefilled with the current title.
- *  C10. Escape does not cancel: the field stays open, or a title is committed
+ *   C8. The name is not the control: not a button, or the chip still carries a
+ *       pencil/SVG (the retired rename control regressed back in).
+ *   C9. The chip still paints chrome: a border, a card fill, or bright ink —
+ *       the row is meant to be neutral gray text, quieter than the transcript's
+ *       own prose.
+ *  C10. Clicking the name does not open the rename field, the field is not
+ *       prefilled, or it opens somewhere other than the name's own row (or
+ *       brings back Save/Cancel keys the contract removed).
+ *  C11. Escape does not cancel: the field stays open, or a title is committed
  *       anyway (a write with no operator behind it).
- *  C11. Enter does not commit: no bridge patch, the field stays open, or the
- *       label keeps the old name.
- *  C12. The chip does not grow with the title — a hard width.
- *  C13. The old `.chat-panel__header--thread` wrapper was removed, or it no
- *       longer starts at the strip's bottom edge (the chip is right but the
+ *  C12. Blur does not save: clicking away leaves the field open or writes no
+ *       title patch. Enter fails to commit through that same save path.
+ *  C13. The tab menu's Rename no longer opens the same field, or a longer saved
+ *       name no longer grows the chip.
+ *  C14. The old `.chat-panel__header--thread` wrapper was removed, or it no
+ *       longer starts at the strip's bottom edge (the name is right but the
  *       header regressed).
  *
  *  Gutters
@@ -220,9 +229,25 @@ const GUTTER_SYMMETRY_PX = 1;
 const COMPOSER_NARROW_RATIO_MIN = 0.84;
 const COMPOSER_WIDE_RATIO_MAX = 0.8;
 const CHIP_TOP_PX = 1;
-const CHIP_CENTRE_PX = 2;
+/**
+ * The row's trailing actions slot may be empty — the full-screen door only moves
+ * down into it for a tabless thread — yet the row's 0.35rem gap still sits
+ * between the name and that empty slot, so the name's centre lands half a gap
+ * (2.8px) left of the dock's centre line. 4px accepts the slot's own gap while
+ * still catching the regression this check exists for: a row left on
+ * `justify-content: flex-start` puts the name tens (or hundreds) of pixels out.
+ */
+const CHIP_CENTRE_PX = 4;
 const CHIP_FONT_MIN_PX = 9;
 const CHIP_FONT_MAX_PX = 12.5;
+/**
+ * How much quieter than the transcript's ink the name's ink has to be, as a
+ * contrast-ratio margin against the dock's own canvas: the name must draw at
+ * least this much less contrast than the `--fg` prose. `--muted` clears it by a
+ * wide margin; a regression back to `--fg` (the old chip's colour) scores the
+ * same contrast as the transcript and fails.
+ */
+const CHIP_CONTRAST_MARGIN = 1;
 const SWITCHER_CENTRE_PX = 3;
 const SWITCHER_BOTTOM_PX = 2;
 const SWITCHER_RIGHT_PX = 3;
@@ -237,6 +262,13 @@ const LONG_TITLE = "A deliberately longer conversation title for the dock chip";
 
 /** A title typed and then cancelled: it must never reach the bridge or the chip. */
 const CANCELLED_TITLE = "A name Escape must throw away";
+
+/**
+ * The title the blur leg saves. The field has no Save key at all — clicking
+ * anywhere else is the save — so this is the name that must reach the bridge
+ * patch and the chip after the field loses focus.
+ */
+const BLUR_TITLE = "A name saved by clicking away";
 
 /**
  * The expected gutter, straight from the contract, in px:
@@ -293,6 +325,9 @@ const SAMPLE = `(() => {
   const chipEl = document.querySelector('[data-testid="chat-name-chip"]');
   const labelEl = document.querySelector(".chat-panel__heading.chat-panel__heading--thread");
   const editEl = document.querySelector('[data-testid="chat-name-edit"]');
+  // The retired pencil's class, kept as its own witness: a regression that
+  // brought the control back would otherwise hide behind a missing test id.
+  const nameEditClassCount = document.querySelectorAll(".chat-panel__name-edit").length;
   const footerEl = document.querySelector(".chat-panel__footer");
   const composerFormEl = document.querySelector("form.chat-panel__composer");
   const composerBoxEl = document.querySelector(".chat-panel__composer-box");
@@ -333,6 +368,61 @@ const SAMPLE = `(() => {
   const transcriptStyle = transcriptBodyEl ? getComputedStyle(transcriptBodyEl) : null;
   const switcherStyle = switcherEl ? getComputedStyle(switcherEl) : null;
   const shellStyle = getComputedStyle(shellEl);
+
+  // ── the name's resting ink, as colours rather than tokens ─────────────────
+  // The contract is a colour claim, so the tokens are resolved into computed
+  // colours and compared numerically: the name wears var(--muted), and it has
+  // to read quieter than the transcript's var(--fg) prose. "Quieter" is
+  // measured as a lower contrast ratio against the dock's own canvas, which
+  // holds in either theme (gray on dark and gray on light are both nearer the
+  // canvas than full ink).
+  const parseRgb = (css) => {
+    if (!css) return null;
+    const numbers = css
+      .replace(/[^0-9.,]/g, " ")
+      .split(/[ ,]+/)
+      .filter(Boolean)
+      .map(Number);
+    const rgb = numbers.slice(0, 3);
+    return rgb.length === 3 && rgb.every((n) => Number.isFinite(n)) ? rgb : null;
+  };
+  const linear = (channel) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const luminance = (css) => {
+    const rgb = parseRgb(css);
+    return rgb === null
+      ? null
+      : Math.round(
+          (0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])) * 1000,
+        ) / 1000;
+  };
+  const contrast = (a, b) => {
+    const la = luminance(a);
+    const lb = luminance(b);
+    if (la === null || lb === null) return null;
+    const light = Math.max(la, lb);
+    const dark = Math.min(la, lb);
+    return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
+  };
+  // A custom property is text, not a colour, until something wears it: a probe
+  // resolves var(--muted) through the same cascade the chip's color takes.
+  const tokenColor = (name) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(" + name + ")";
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  };
+  const inkEl = document.querySelector(".chat-panel__message-content");
+  const roleLabelEl = document.querySelector(".chat-panel__message-role");
+  const mutedToken = chipEl ? tokenColor("--muted") : null;
+  const chipColor = chipStyle ? chipStyle.color : null;
+  const inkColor = inkEl ? getComputedStyle(inkEl).color : null;
+  const roleLabelColor = roleLabelEl ? getComputedStyle(roleLabelEl).color : null;
+  const panelBackground = getComputedStyle(panelEl).backgroundColor;
 
   // The --chat-column custom property's computed value is the literal token
   // text, so it is read back through the panel's own box: the dock is the column
@@ -491,6 +581,24 @@ const SAMPLE = `(() => {
             : null
         }
       : null,
+    // The name's ink beside the two things it is compared with: the token it
+    // must wear, the transcript's ink it must stay quieter than, and the role
+    // label that also wears the token.
+    theme: {
+      chipColor,
+      chipLuminance: luminance(chipColor),
+      mutedToken,
+      mutedLuminance: luminance(mutedToken),
+      inkColor,
+      inkLuminance: luminance(inkColor),
+      roleLabelColor,
+      roleLabelLuminance: luminance(roleLabelColor),
+      panelBackground,
+      panelLuminance: luminance(panelBackground),
+      chipContrast: contrast(chipColor, panelBackground),
+      inkContrast: contrast(inkColor, panelBackground)
+    },
+    nameEditClassCount,
     hasStrip: Boolean(stripEl),
     hasHeader: Boolean(headerEl),
     headerTopVsStripBottomPx: headerTopVsStripBottom,
@@ -501,11 +609,39 @@ const SAMPLE = `(() => {
       ? {
           rect: chip,
           display: chipStyle.display,
-          borderTopWidthPx: px(chipStyle.borderTopWidth),
-          borderTopStyle: chipStyle.borderTopStyle,
-          borderRadius: chipStyle.borderRadius,
+          // The whole name is the control: a real button, no icon, a box that
+          // stays inside the row holding it.
+          tag: chipEl.tagName,
+          role: chipEl.getAttribute("role"),
+          ariaLabel: chipEl.getAttribute("aria-label"),
+          text: chipEl.textContent,
+          hasSvg: Boolean(chipEl.querySelector("svg")),
+          cursor: chipStyle.cursor,
+          color: chipStyle.color,
           background: chipStyle.backgroundColor,
-          fontSizePx: px(chipStyle.fontSize)
+          // No border at rest: every side is measured, not just the top.
+          borderWidthsPx: {
+            top: px(chipStyle.borderTopWidth),
+            right: px(chipStyle.borderRightWidth),
+            bottom: px(chipStyle.borderBottomWidth),
+            left: px(chipStyle.borderLeftWidth)
+          },
+          borderStyles: {
+            top: chipStyle.borderTopStyle,
+            right: chipStyle.borderRightStyle,
+            bottom: chipStyle.borderBottomStyle,
+            left: chipStyle.borderLeftStyle
+          },
+          borderRadius: chipStyle.borderRadius,
+          outlineWidthPx: px(chipStyle.outlineWidth),
+          fontSizePx: px(chipStyle.fontSize),
+          insideRow:
+            header !== null &&
+            chip.left >= header.left - 0.5 &&
+            chip.right <= header.right + 0.5 &&
+            chip.top >= header.top - 0.5 &&
+            chip.bottom <= header.bottom + 0.5,
+          containsLabel: labelEl !== null && chipEl.contains(labelEl)
         }
       : null,
     label: labelEl
@@ -515,6 +651,7 @@ const SAMPLE = `(() => {
           classes: labelEl.className,
           fontSizePx: px(labelStyle.fontSize),
           fontWeight: labelStyle.fontWeight,
+          color: labelStyle.color,
           hasSvg: Boolean(labelEl.querySelector("svg")),
           tag: labelEl.tagName
         }
@@ -652,17 +789,23 @@ async function main() {
     return { width, ...sample };
   };
 
-  /** The page's own read of just the chip, for the rename leg. */
+  /** The page's own read of the name and its rename field, for the rename legs. */
   const readName = () =>
     run(`(() => {
       const field = document.querySelector(".chat-panel__rename-input");
       const chip = document.querySelector('[data-testid="chat-name-chip"]');
       const label = document.querySelector(".chat-panel__heading.chat-panel__heading--thread");
       const edit = document.querySelector('[data-testid="chat-name-edit"]');
+      const row = document.querySelector(".chat-panel__header--thread");
+      const form = field ? field.closest("form") : null;
       const tab = document.querySelector(".chat-panel__tab--active .chat-panel__tab-label");
       return {
         fieldPresent: Boolean(field),
+        fieldTag: field ? field.tagName : null,
         fieldValue: field ? field.value : null,
+        inForm: Boolean(form && form.classList.contains("chat-panel__rename")),
+        formInRow: Boolean(form && row && row.contains(form)),
+        formButtonCount: form ? form.querySelectorAll("button").length : 0,
         chipPresent: Boolean(chip),
         editPresent: Boolean(edit),
         labelText: label ? label.textContent : null,
@@ -671,13 +814,13 @@ async function main() {
       };
     })()`);
 
-  /** Click the chip's pencil, the way the operator opens the rename field. */
-  const clickEdit = () => {
-    mark("click-edit");
+  /** Click the name itself, the way the operator opens the rename field. */
+  const clickName = () => {
+    mark("click-name");
     return run(`(async () => {
-      const edit = document.querySelector('[data-testid="chat-name-edit"]');
-      if (!edit) return false;
-      edit.click();
+      const chip = document.querySelector('[data-testid="chat-name-chip"]');
+      if (!chip) return false;
+      chip.click();
       await new Promise((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       );
@@ -703,10 +846,69 @@ async function main() {
   };
 
   /**
-   * A real keystroke through Chromium's own input path. The rename field is
-   * inside a form, so Enter is the browser's implicit submission — a synthetic
-   * `KeyboardEvent` would not run the form's own submit and would prove nothing
-   * about the key the operator presses. Escape is React's own handler.
+   * Blur the field: the contract's save gesture. There is no Save button, so
+   * clicking anywhere else is what an operator does — and blur is the event that
+   * click would fire on the field.
+   */
+  const blurRename = () => {
+    mark("blur-rename");
+    return run(`(async () => {
+      const field = document.querySelector(".chat-panel__rename-input");
+      if (!field) return false;
+      field.blur();
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      );
+      return true;
+    })()`);
+  };
+
+  /**
+   * The tab strip's other door: right-click the active tab and press its Rename
+   * item. The menu is portalled to the document, so it is found outside the
+   * dock's own subtree; the fields it opens are read from the page, not here.
+   */
+  const openTabRename = () => {
+    mark("open-tab-rename");
+    return run(`(async () => {
+      const frame = () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        );
+      const tab = document.querySelector(".chat-panel__tab--active");
+      if (!tab) return { tabFound: false, menuOpened: false, itemClicked: false };
+      const rect = tab.getBoundingClientRect();
+      tab.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          button: 2,
+          buttons: 2,
+          clientX: Math.round(rect.left + rect.width / 2),
+          clientY: Math.round(rect.top + rect.height / 2)
+        })
+      );
+      await frame();
+      const menu = document.querySelector(".chat-panel__tab-menu");
+      const item = menu
+        ? Array.from(menu.querySelectorAll('[role="menuitem"]')).find(
+            (el) => el.getAttribute("aria-label") === "Rename chat"
+          )
+        : null;
+      if (!item) {
+        return { tabFound: true, menuOpened: Boolean(menu), itemClicked: false };
+      }
+      item.click();
+      await frame();
+      return { tabFound: true, menuOpened: true, itemClicked: true };
+    })()`);
+  };
+
+  /**
+   * A real keystroke through Chromium's own input path. Enter is the operator's
+   * save key: the field's own handler blurs it, so the save takes the same path
+   * a click elsewhere does. Escape is the field's own cancel. A synthetic
+   * KeyboardEvent would prove nothing about a key delivered to a focused field.
    */
   const pressKey = async (keyCode) => {
     mark(`press-${keyCode}`);
@@ -720,19 +922,15 @@ async function main() {
       requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))))()`);
   };
 
-  /** Submit the rename form the way its check button does, for diagnosis only. */
-  const submitRenameForm = () => {
-    mark("submit-rename-form");
-    return run(`(async () => {
-      const form = document.querySelector(".chat-panel__rename");
-      if (!form) return false;
-      if (typeof form.requestSubmit === "function") form.requestSubmit();
-      else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-      );
-      return true;
-    })()`);
+  /**
+   * Park Chromium's pointer in the window's top-left corner, off every box this
+   * rig measures. The name's resting colour is a hover-free claim, and a real
+   * pointer left over the chip (the bench is watched over VNC) would paint the
+   * hover wash and turn the measured colour into the hover one.
+   */
+  const clearHover = async () => {
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 1, y: 1 });
+    await sleep(60);
   };
 
   let report;
@@ -801,6 +999,11 @@ async function main() {
         "switcher-present: the agent switcher never drew two pills on the ?agents=1 page",
       );
     }
+
+    // The name's resting ink is a hover-free claim: park the pointer before the
+    // ladder reads it, so a real cursor left over the chip cannot turn the
+    // measured colour into the hover wash.
+    await clearHover();
 
     // ── the gutter ladder, and the chip at every width ──────────────────────
     const samples = [];
@@ -1056,44 +1259,105 @@ async function main() {
       );
     }
 
-    // ── C1–C9, C13: the chip's own chrome, measured once at 900px ───────────
+    // ── C1–C9, C14: the chip's own chrome, measured once at 900px ────────────
     const wide = at900;
     const chip = wide.chip;
     const label = wide.label;
     const edit = wide.edit;
+    const colors = wide.theme;
 
     check("chip-present", chip !== null, "the thread name chip did not render");
     if (chip) {
+      // C8 — the name itself is the control: a real button carrying the row's
+      // one accessible name, not a static box beside a pencil.
+      check(
+        "chip-control",
+        chip.tag === "BUTTON" &&
+          typeof chip.ariaLabel === "string" &&
+          chip.ariaLabel.length > 0,
+        `the name is a ${chip.tag} with aria-label ${JSON.stringify(chip.ariaLabel)}`,
+      );
       check(
         "chip-box",
         chip.display === "inline-flex" || chip.display === "flex",
         `chip display is ${chip.display}, not an inline/flex box`,
       );
+      // C9 — no chrome at rest: no border on any side, no fill.
+      const borderWidths = Object.values(chip.borderWidthsPx ?? {});
+      const borderStyles = Object.values(chip.borderStyles ?? {});
       check(
-        "chip-border",
-        chip.borderTopWidthPx !== null &&
-          chip.borderTopWidthPx > 0 &&
-          chip.borderTopStyle !== "none",
-        `chip border is ${chip.borderTopWidthPx}px ${chip.borderTopStyle}`,
+        "chip-no-border",
+        borderWidths.length === 4 &&
+          borderWidths.every((value) => value === 0) &&
+          borderStyles.length === 4 &&
+          borderStyles.every((style) => style === "none"),
+        `chip borders are ${JSON.stringify(chip.borderWidthsPx)} ` +
+          `${JSON.stringify(chip.borderStyles)}`,
       );
-      // C2, C12 — the box is sized to its content, not the row: the room over
-      // the label plus the pencil is the chip's own padding, gap and border.
-      const contentSlackPx =
-        label && edit
-          ? Math.round(
-              (chip.rect.width - label.rect.width - edit.rect.width) * 100,
-            ) / 100
-          : null;
+      check(
+        "chip-no-fill",
+        typeof chip.background === "string" &&
+          /rgba\(0, 0, 0, 0\)|transparent/.test(chip.background),
+        `chip background is ${chip.background}`,
+      );
+      // C9 — the resting ink is the neutral `--muted` token, and it reads
+      // quieter than the transcript's `--fg` prose. Both are recorded, so a
+      // failure names the colours rather than saying "wrong colour".
+      check(
+        "chip-color-muted",
+        colors.chipColor !== null && colors.chipColor === colors.mutedToken,
+        `chip colour ${colors.chipColor} vs the --muted token ${colors.mutedToken}`,
+      );
+      check(
+        "chip-color-quieter-than-ink",
+        colors.chipContrast !== null &&
+          colors.inkContrast !== null &&
+          colors.chipContrast < colors.inkContrast - CHIP_CONTRAST_MARGIN,
+        `chip contrast ${colors.chipContrast} vs the transcript's ink ${colors.inkContrast} ` +
+          `(must be at least ${CHIP_CONTRAST_MARGIN} lower)`,
+      );
+      // C2 — the box is sized to its content, not the row: the room over the
+      // label is the chip's own padding and nothing more.
+      const contentSlackPx = label
+        ? Math.round((chip.rect.width - label.rect.width) * 100) / 100
+        : null;
       check(
         "chip-sized-to-text",
         contentSlackPx !== null && contentSlackPx >= 0 && contentSlackPx <= 40,
         `chip is ${chip.rect.width}px for a ${label ? label.rect.width : "?"}px label ` +
-          `and ${edit ? edit.rect.width : "?"}px pencil (${contentSlackPx}px of chrome)`,
+          `(${contentSlackPx}px of chrome)`,
       );
       check(
         "chip-not-a-band",
         chip.rect.width < wide.panel.width - 40,
         `chip is ${chip.rect.width}px wide in a ${wide.panel.width}px panel — a band, not a box`,
+      );
+      // The name is a child of the thread's row and stays inside its box.
+      check(
+        "chip-inside-row",
+        chip.insideRow === true,
+        `chip ${JSON.stringify(chip.rect)} against the row ${JSON.stringify(wide.header)}`,
+      );
+      check(
+        "chip-contains-label",
+        chip.containsLabel === true,
+        "the chip's label is not inside the chip's own box",
+      );
+      // C8 — the retired pencil is gone, and nothing grew back in its place.
+      check(
+        "chip-no-pencil",
+        edit === null,
+        `a [data-testid="chat-name-edit"] control still rendered: ${JSON.stringify(edit)}`,
+      );
+      check(
+        "chip-no-pencil-class",
+        wide.nameEditClassCount === 0,
+        `${wide.nameEditClassCount} .chat-panel__name-edit control(s) still rendered`,
+      );
+      check(
+        "chip-no-icon",
+        chip.hasSvg === false && label !== null && label.hasSvg === false,
+        `the chip carries an SVG icon (chip ${chip.hasSvg}, label ${label ? label.hasSvg : "?"})`,
       );
     }
     check("chip-strip", wide.hasStrip, "the tab strip was not drawn under the chip");
@@ -1137,33 +1401,6 @@ async function main() {
       check("chip-label-classes", false, "the chip's label did not render");
       check("chip-label-text", false, "the chip's label did not render");
       check("chip-label-font", false, "the chip's label did not render");
-    }
-
-    // C8 — the pencil is a button with an SVG at the label's trailing end,
-    // inside the chip's own box.
-    check("chip-edit-present", edit !== null, "the chip's rename pencil did not render");
-    if (edit) {
-      check(
-        "chip-edit-button",
-        edit.tag === "BUTTON",
-        `the pencil is a ${edit.tag}, not a button`,
-      );
-      check("chip-edit-svg", edit.hasSvg, "the rename control carries no SVG pencil");
-      check(
-        "chip-edit-after-label",
-        edit.afterLabel === true,
-        "the pencil is not at the label's trailing end",
-      );
-      check(
-        "chip-edit-inside-chip",
-        edit.insideChip === true,
-        "the pencil sits outside the chip's box",
-      );
-    } else {
-      check("chip-edit-button", false, "the chip's rename pencil did not render");
-      check("chip-edit-svg", false, "the chip's rename pencil did not render");
-      check("chip-edit-after-label", false, "the chip's rename pencil did not render");
-      check("chip-edit-inside-chip", false, "the chip's rename pencil did not render");
     }
 
     // S8 — the footer is the container the narrow/wide switch is written on.
@@ -1366,10 +1603,11 @@ async function main() {
       `dock-chrome-narrow.png missing or empty (${narrowShot.bytes} bytes)`,
     );
 
-    // ── C9–C12: the pencil → rename → commit path ───────────────────────────
+    // ── C10–C13: the name's rename path, through the bridge ─────────────────
     const beforeRename = await readName();
     const renameBaselinePatches = beforeRename.patches.length;
     const renameBaseTitle = beforeRename.labelText;
+    const chipWidthBeforePx = wide.chip ? wide.chip.rect.width : null;
 
     // The window must have real focus for a real keystroke to be delivered to
     // the focused field: `showInactive()` alone leaves document.hasFocus() false.
@@ -1378,41 +1616,57 @@ async function main() {
     win.webContents.focus();
     await sleep(250);
 
-    // C9 — clicking the pencil opens the existing field, prefilled.
-    const editClicked = await clickEdit();
+    // C10 — clicking the name opens the rename field in its own place, prefilled
+    // with the title it is renaming.
+    const nameClicked = await clickName();
     const opened = await readName();
-    check("rename-opens", editClicked === true, "clicking the pencil did nothing");
+    check("rename-opens", nameClicked === true, "clicking the name did nothing");
     check(
       "rename-prefilled",
       opened.fieldPresent === true && opened.fieldValue === renameBaseTitle,
       `field ${JSON.stringify(opened.fieldValue)} vs title ${JSON.stringify(renameBaseTitle)}`,
     );
+    check(
+      "rename-field-is-input",
+      opened.fieldTag === "INPUT" && opened.inForm === true,
+      `the rename field is a ${opened.fieldTag} in .chat-panel__rename: ${opened.inForm}`,
+    );
+    check(
+      "rename-field-in-place",
+      opened.formInRow === true && opened.chipPresent === false,
+      "the rename field did not replace the name in the name's own row",
+    );
+    // The contract removed the Save/Cancel keys: blur saves, Escape cancels.
+    check(
+      "rename-no-buttons",
+      opened.formButtonCount === 0,
+      `the rename field drew ${opened.formButtonCount} button(s)`,
+    );
 
-    // C10 — Escape cancels: nothing written, field closed, name unchanged.
+    // C11 — Escape cancels: nothing written, field closed, name unchanged.
     if (opened.fieldPresent) {
       await typeRename(CANCELLED_TITLE);
       await pressKey("Escape");
       await sleep(150);
     }
     const escaped = await readName();
+    const escapeClosedField = escaped.fieldPresent === false;
     const escapePatchDelta = escaped.patches.length - renameBaselinePatches;
-    let escapeUsedButton = false;
+    let escapeRecovered = null;
     if (escaped.fieldPresent) {
-      // Recover for the next leg, and say so: the Enter leg must still be
-      // measured even when the Escape key did not reach the field.
-      await run(`(() => {
-        const cancel = document.querySelector('[aria-label="Cancel rename"]');
-        if (cancel) cancel.click();
-        return true;
-      })()`);
-      escapeUsedButton = true;
+      // Recover for the next legs and say so: put the field back to the title it
+      // opened with (which writes nothing) and blur it. The check below still
+      // reports the field as it stood before this recovery.
+      await typeRename(renameBaseTitle);
+      await blurRename();
       await sleep(150);
+      escapeRecovered = "reverted-and-blurred";
     }
-    const afterEscapeCancel = await readName();
+    const afterEscape = await readName();
     check(
       "rename-escape-closes",
-      opened.fieldPresent === true && afterEscapeCancel.fieldPresent === false,
-      `the rename field ${afterEscapeCancel.fieldPresent ? "stayed open" : "closed"} after Escape`,
+      opened.fieldPresent === true && escapeClosedField,
+      "the rename field stayed open after Escape",
     );
     check(
       "rename-escape-writes-nothing",
@@ -1421,51 +1675,103 @@ async function main() {
     );
     check(
       "rename-escape-keeps-title",
-      afterEscapeCancel.labelText === renameBaseTitle,
-      `title became ${JSON.stringify(afterEscapeCancel.labelText)} after Escape ` +
+      afterEscape.labelText === renameBaseTitle,
+      `title became ${JSON.stringify(afterEscape.labelText)} after Escape ` +
         `(was ${JSON.stringify(renameBaseTitle)})`,
     );
 
-    // C11, C12 — Enter commits through the bridge, and the chip grows with the
-    // longer name it committed.
-    const chipWidthBeforePx = wide.chip ? wide.chip.rect.width : null;
-    const editClickedAgain = await clickEdit();
+    // C12 — blur saves: there is no Save key, so clicking away must commit the
+    // typed title through the bridge patch and close the field.
+    const blurBaselinePatches = afterEscape.patches.length;
+    const nameClickedForBlur = await clickName();
+    const blurOpened = await readName();
+    check(
+      "rename-blur-reopens",
+      nameClickedForBlur === true && blurOpened.fieldPresent === true,
+      "the name could not reopen the rename field for the blur leg",
+    );
+    let blurCommitted = false;
+    if (blurOpened.fieldPresent) {
+      await typeRename(BLUR_TITLE);
+      await blurRename();
+      const deadline = Date.now() + 3_000;
+      for (;;) {
+        const state = await readName();
+        if (!state.fieldPresent && state.patches.length > blurBaselinePatches) {
+          blurCommitted = true;
+          break;
+        }
+        if (Date.now() >= deadline) break;
+        await sleep(100);
+      }
+    }
+    const blurred = await readName();
+    const blurPatch = blurred.patches[blurBaselinePatches] ?? null;
+    check(
+      "rename-blur-commits",
+      blurCommitted === true,
+      "blurring the rename field did not save the title",
+    );
+    check(
+      "rename-blur-patch-title",
+      Boolean(blurPatch) &&
+        blurPatch.patch &&
+        blurPatch.patch.title === BLUR_TITLE &&
+        typeof blurPatch.id === "string" &&
+        blurPatch.id.length > 0,
+      `session patch was ${JSON.stringify(blurPatch)}, expected the title ` +
+        `${JSON.stringify(BLUR_TITLE)}`,
+    );
+    check(
+      "rename-blur-field-closes",
+      blurred.fieldPresent === false,
+      "the rename field stayed open after blurring it",
+    );
+    check(
+      "rename-blur-label-takes-title",
+      blurred.labelText === BLUR_TITLE,
+      `label text is ${JSON.stringify(blurred.labelText)}, expected ${JSON.stringify(BLUR_TITLE)}`,
+    );
+
+    // C12 — Enter takes the same save path and commits the longer title, which
+    // the chip has to grow with.
+    const enterBaselinePatches = blurred.patches.length;
+    const nameClickedForEnter = await clickName();
     const reopen = await readName();
     check(
       "rename-reopens",
-      editClickedAgain === true && reopen.fieldPresent === true,
-      "the pencil could not reopen the rename field",
+      nameClickedForEnter === true && reopen.fieldPresent === true,
+      "the name could not reopen the rename field for the Enter leg",
     );
     let enterCommitted = false;
-    let commitUsedFormFallback = false;
+    let enterUsedBlurFallback = false;
     if (reopen.fieldPresent) {
       await typeRename(LONG_TITLE);
-      // The key the operator presses: Enter runs the form's implicit submission,
-      // through Chromium's own input path rather than a synthetic KeyboardEvent
-      // (which would never run the form's submit).
+      // The key the operator presses, delivered through Chromium's own input
+      // path: Enter blurs the field, which runs the same save a click away does.
       await pressKey("Enter");
       // Poll for the write: the commit is a bridge call, so the label and the
       // field settle a frame or two after the key.
       const deadline = Date.now() + 3_000;
       for (;;) {
         const state = await readName();
-        if (!state.fieldPresent && state.patches.length > renameBaselinePatches) {
+        if (!state.fieldPresent && state.patches.length > enterBaselinePatches) {
           enterCommitted = true;
           break;
         }
         if (Date.now() >= deadline) break;
         await sleep(100);
       }
-      if (!enterCommitted) {
-        // Diagnose rather than mask: the report records whether the form's own
-        // submit path commits, so the Lead can tell "the key never reached the
-        // field" from "the commit is broken".
-        await submitRenameForm();
+      if (enterCommitted === false) {
+        // Diagnose rather than mask: the field's own blur is the save path, so
+        // if calling it directly commits, the commit works and the key never
+        // reached (or never blurred) the field.
+        await blurRename();
         const deadline2 = Date.now() + 2_000;
         for (;;) {
           const state = await readName();
-          if (!state.fieldPresent && state.patches.length > renameBaselinePatches) {
-            commitUsedFormFallback = true;
+          if (!state.fieldPresent && state.patches.length > enterBaselinePatches) {
+            enterUsedBlurFallback = true;
             break;
           }
           if (Date.now() >= deadline2) break;
@@ -1477,27 +1783,27 @@ async function main() {
     const committed = await readName();
     const renameSample = await readAt(900);
     const chipWidthAfterPx = renameSample.chip ? renameSample.chip.rect.width : null;
-    const commitPatch = committed.patches[renameBaselinePatches] ?? null;
+    const enterPatch = committed.patches[enterBaselinePatches] ?? null;
     check(
       "rename-enter-commits",
       enterCommitted === true,
-      commitUsedFormFallback
-        ? "Enter did not run the form submit (the field was still open; the form's own " +
-          "submit did commit, so the commit path works and the key did not reach it)"
+      enterUsedBlurFallback
+        ? "Enter did not blur the field (the blur itself committed, so the save path " +
+          "works and the key never reached it)"
         : "Enter left the rename field open and sent no session patch",
     );
     check(
-      "rename-patch-title",
-      Boolean(commitPatch) &&
-        commitPatch.patch &&
-        commitPatch.patch.title === LONG_TITLE &&
-        typeof commitPatch.id === "string" &&
-        commitPatch.id.length > 0,
-      `session patch was ${JSON.stringify(commitPatch)}`,
+      "rename-enter-patch-title",
+      Boolean(enterPatch) &&
+        enterPatch.patch &&
+        enterPatch.patch.title === LONG_TITLE &&
+        typeof enterPatch.id === "string" &&
+        enterPatch.id.length > 0,
+      `session patch was ${JSON.stringify(enterPatch)}`,
     );
     check(
       "rename-field-closes",
-      commitUsedFormFallback === true || committed.fieldPresent === false,
+      committed.fieldPresent === false,
       "the rename field stayed open after the commit",
     );
     check(
@@ -1544,6 +1850,46 @@ async function main() {
         `(${JSON.stringify(narrowAfterRename.chip ? narrowAfterRename.chip.rect : null)})`,
     );
 
+    // C13 — the tab menu's Rename is the same field: right-click the tab in
+    // front, press Rename, and the name's own field opens prefilled. Escape it
+    // away again without a write — the menu's door must not save by itself.
+    const tabMenuBaselinePatches = committed.patches.length;
+    const tabRename = await openTabRename();
+    const tabMenuFlow = await readName();
+    check(
+      "rename-tab-menu-opens",
+      tabRename.tabFound === true &&
+        tabRename.itemClicked === true &&
+        tabMenuFlow.fieldPresent === true,
+      `right-click Rename: ${JSON.stringify(tabRename)}, field present ` +
+        `${tabMenuFlow.fieldPresent}`,
+    );
+    check(
+      "rename-tab-menu-prefilled",
+      tabMenuFlow.fieldPresent === true && tabMenuFlow.fieldValue === LONG_TITLE,
+      `field ${JSON.stringify(tabMenuFlow.fieldValue)} vs title ${JSON.stringify(LONG_TITLE)}`,
+    );
+    check(
+      "rename-tab-menu-same-field",
+      tabMenuFlow.fieldTag === "INPUT" &&
+        tabMenuFlow.inForm === true &&
+        tabMenuFlow.formInRow === true,
+      `the menu's Rename opened a ${tabMenuFlow.fieldTag} in the name's row: ` +
+        `${tabMenuFlow.formInRow}`,
+    );
+    if (tabMenuFlow.fieldPresent) {
+      await pressKey("Escape");
+      await sleep(150);
+    }
+    const tabMenuCancelled = await readName();
+    check(
+      "rename-tab-menu-cancels",
+      tabMenuCancelled.fieldPresent === false &&
+        tabMenuCancelled.patches.length === tabMenuBaselinePatches,
+      `after Escape: field ${tabMenuCancelled.fieldPresent ? "open" : "closed"}, ` +
+        `${tabMenuCancelled.patches.length - tabMenuBaselinePatches} patch(es) written`,
+    );
+
     // ── the artifact ────────────────────────────────────────────────────────
     report = {
       url,
@@ -1556,6 +1902,7 @@ async function main() {
         chipCentrePx: CHIP_CENTRE_PX,
         chipFontMinPx: CHIP_FONT_MIN_PX,
         chipFontMaxPx: CHIP_FONT_MAX_PX,
+        chipContrastMargin: CHIP_CONTRAST_MARGIN,
         switcherCentrePx: SWITCHER_CENTRE_PX,
         switcherBottomPx: SWITCHER_BOTTOM_PX,
         switcherRightPx: SWITCHER_RIGHT_PX,
@@ -1596,6 +1943,7 @@ async function main() {
         chip: sample.chip,
         label: sample.label,
         edit: sample.edit,
+        nameEditClassCount: sample.nameEditClassCount,
         footer: sample.footer,
         switcher: sample.switcher,
       })),
@@ -1641,10 +1989,21 @@ async function main() {
         headerPresent: wide.hasHeader,
         rect: chip ? chip.rect : null,
         display: chip ? chip.display : null,
-        borderTopWidthPx: chip ? chip.borderTopWidthPx : null,
-        borderTopStyle: chip ? chip.borderTopStyle : null,
+        tag: chip ? chip.tag : null,
+        role: chip ? chip.role : null,
+        ariaLabel: chip ? chip.ariaLabel : null,
+        text: chip ? chip.text : null,
+        hasSvg: chip ? chip.hasSvg : null,
+        cursor: chip ? chip.cursor : null,
+        color: chip ? chip.color : null,
+        background: chip ? chip.background : null,
+        borderWidthsPx: chip ? chip.borderWidthsPx : null,
+        borderStyles: chip ? chip.borderStyles : null,
+        borderRadius: chip ? chip.borderRadius : null,
+        outlineWidthPx: chip ? chip.outlineWidthPx : null,
         fontSizePx: chip ? chip.fontSizePx : null,
         labelText: label ? label.text : null,
+        labelColor: label ? label.color : null,
         tabTitle: wide.tabTitle,
         labelClasses: label ? label.classes : null,
         labelFontSizePx: label ? label.fontSizePx : null,
@@ -1655,38 +2014,73 @@ async function main() {
           chip !== null &&
           chip.rect.left >= wide.panel.left - 0.5 &&
           chip.rect.right <= wide.panel.right + 0.5,
+        insideRow: chip ? chip.insideRow : false,
+        containsLabel: chip ? chip.containsLabel : false,
+        // The retired pencil: present/absent is itself evidence.
         editPresent: edit !== null,
         editTag: edit ? edit.tag : null,
         editHasSvg: edit ? edit.hasSvg : null,
-        editAfterLabel: edit ? edit.afterLabel : null,
-        editInsideChip: edit ? edit.insideChip : null,
+        nameEditClassCount: wide.nameEditClassCount,
         widthPx: chip ? chip.rect.width : null,
         heightPx: chip ? chip.rect.height : null,
+        // The colour claim, recorded as computed colours and their contrast
+        // against the dock's canvas rather than as text.
+        colors: {
+          chip: colors.chipColor,
+          chipLuminance: colors.chipLuminance,
+          chipContrast: colors.chipContrast,
+          mutedToken: colors.mutedToken,
+          mutedLuminance: colors.mutedLuminance,
+          ink: colors.inkColor,
+          inkLuminance: colors.inkLuminance,
+          inkContrast: colors.inkContrast,
+          roleLabel: colors.roleLabelColor,
+          roleLabelLuminance: colors.roleLabelLuminance,
+          panelBackground: colors.panelBackground,
+          panelLuminance: colors.panelLuminance,
+        },
       },
       rename: {
         opened: {
           fieldPresent: opened.fieldPresent,
           value: opened.fieldValue,
           title: renameBaseTitle,
+          fieldTag: opened.fieldTag,
+          inForm: opened.inForm,
+          formInRow: opened.formInRow,
+          formButtonCount: opened.formButtonCount,
+          chipHidden: opened.chipPresent === false,
         },
         escape: {
-          fieldClosed: opened.fieldPresent === true && afterEscapeCancel.fieldPresent === false,
-          chipBack: afterEscapeCancel.chipPresent,
-          labelText: afterEscapeCancel.labelText,
+          fieldClosed: opened.fieldPresent === true && escapeClosedField,
+          chipBack: afterEscape.chipPresent,
+          labelText: afterEscape.labelText,
           patchesBefore: renameBaselinePatches,
           patchesAfter: escaped.patches.length,
           patchDelta: escapePatchDelta,
-          usedButtonFallback: escapeUsedButton,
+          usedRecovery: escapeRecovered,
         },
-        commit: {
+        blur: {
+          typedTitle: BLUR_TITLE,
+          committed: blurCommitted,
+          patchLanded: Boolean(blurPatch),
+          patch: blurPatch,
+          fieldClosed: blurred.fieldPresent === false,
+          labelText: blurred.labelText,
+          patchesBefore: blurBaselinePatches,
+          patchDelta: blurred.patches.length - blurBaselinePatches,
+        },
+        enter: {
           typedTitle: LONG_TITLE,
           enterCommitted,
-          usedFormFallback: commitUsedFormFallback,
-          patchLanded: Boolean(commitPatch),
-          patch: commitPatch,
-          fieldClosed: commitUsedFormFallback === true || committed.fieldPresent === false,
+          usedBlurFallback: enterUsedBlurFallback,
+          patchLanded: Boolean(enterPatch),
+          patch: enterPatch,
+          fieldClosed: committed.fieldPresent === false,
           labelText: committed.labelText,
           tabTitle: committed.tabTitle,
+          patchesBefore: enterBaselinePatches,
+          patchDelta: committed.patches.length - enterBaselinePatches,
           chipWidthBeforePx,
           chipWidthAfterPx,
           chipGrew:
@@ -1704,6 +2098,21 @@ async function main() {
             narrowAfterRename.chip.rect.left >= narrowAfterRename.panel.left - 0.5 &&
             narrowAfterRename.chip.rect.right <= narrowAfterRename.panel.right + 0.5,
           chipWidthAt360Px: narrowAfterRename.chip ? narrowAfterRename.chip.rect.width : null,
+        },
+        tabMenu: {
+          tabFound: tabRename.tabFound,
+          menuOpened: tabRename.menuOpened,
+          itemClicked: tabRename.itemClicked,
+          fieldPresent: tabMenuFlow.fieldPresent,
+          value: tabMenuFlow.fieldValue,
+          expectedTitle: LONG_TITLE,
+          fieldTag: tabMenuFlow.fieldTag,
+          inForm: tabMenuFlow.inForm,
+          formInRow: tabMenuFlow.formInRow,
+          fieldClosed: tabMenuCancelled.fieldPresent === false,
+          patchesBefore: tabMenuBaselinePatches,
+          patchDelta: tabMenuCancelled.patches.length - tabMenuBaselinePatches,
+          labelText: tabMenuCancelled.labelText,
         },
       },
       footer: wide.footer
@@ -1809,16 +2218,21 @@ async function main() {
   if (report.chip) {
     console.log(
       `chip: ${JSON.stringify(report.chip.labelText)} — ` +
-        `${report.chip.widthPx}px box, ${report.chip.labelFontSizePx}px name, ` +
+        `${report.chip.tag} ${report.chip.widthPx}px box, ${report.chip.labelFontSizePx}px name, ` +
         `top ${report.chip.topVsStripBottomPx}px off the strip, ` +
         `centre ${report.chip.centreVsPanelCentrePx}px off the panel; ` +
-        `pencil svg ${report.chip.editHasSvg}, after label ${report.chip.editAfterLabel}`,
+        `ink ${report.chip.colors?.chip} (contrast ${report.chip.colors?.chipContrast} vs the ` +
+        `muted token ${report.chip.colors?.mutedToken}, prose ${report.chip.colors?.inkContrast}); ` +
+        `pencil present ${report.chip.editPresent}`,
     );
     console.log(
       `rename: escape closed ${report.rename.escape.fieldClosed} / patches ` +
-        `${report.rename.escape.patchDelta}; enter committed ${report.rename.commit.enterCommitted} / ` +
-        `patch ${JSON.stringify(report.rename.commit.patch)}; chip ` +
-        `${report.rename.commit.chipWidthBeforePx}px → ${report.rename.commit.chipWidthAfterPx}px`,
+        `${report.rename.escape.patchDelta}; blur committed ${report.rename.blur.committed} / ` +
+        `patch ${JSON.stringify(report.rename.blur.patch)}; enter committed ` +
+        `${report.rename.enter.enterCommitted} / patch ${JSON.stringify(report.rename.enter.patch)}; ` +
+        `tab menu opened ${report.rename.tabMenu.itemClicked} / patches ` +
+        `${report.rename.tabMenu.patchDelta}; chip ${report.rename.enter.chipWidthBeforePx}px → ` +
+        `${report.rename.enter.chipWidthAfterPx}px`,
     );
     console.log("");
   }

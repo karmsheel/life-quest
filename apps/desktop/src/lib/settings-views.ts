@@ -12,12 +12,14 @@ import {
   RefreshCw,
   ScrollText,
   Sparkles,
+  Type,
   User,
 } from "lucide-react";
 
 export type SettingsViewId =
   | "appearance"
   | "shortcuts"
+  | "reading"
   | "composer"
   | "domains"
   | "vault"
@@ -82,6 +84,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "navigation",
       "toggle",
       "panel",
+    ],
+  },
+  {
+    id: "reading",
+    label: "Chat display",
+    icon: Type,
+    keywords: [
+      "chat",
+      "display",
+      "text",
+      "font",
+      "type",
+      "typography",
+      "size",
+      "zoom",
+      "line",
+      "spacing",
+      "line spacing",
+      "reading",
+      "prose",
+      "dock",
+      "transcript",
     ],
   },
   {

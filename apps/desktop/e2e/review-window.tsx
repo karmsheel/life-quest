@@ -371,6 +371,13 @@ const bridge: Record<string, unknown> = {
   reviewPeriodPack: () => Promise.resolve(fail("not modelled here")),
   dailyNoteWindow: () => Promise.resolve(ok([])),
   dailyNoteList: () => Promise.resolve(ok([])),
+  // ThemeProvider watches the profile's theme folder on mount; the harness has
+  // no profile, so answer the read and the subscription with their real shapes.
+  // Without these the Proxy's `fail(...)` answers are called as the unsubscribe
+  // and StrictMode's first cleanup takes the tree down.
+  themesList: () => Promise.resolve(ok([])),
+  themeGetState: () => Promise.resolve(ok({ keptFile: null })),
+  onThemesChanged: () => () => {},
 };
 
 const stubbed = new Proxy(bridge, {

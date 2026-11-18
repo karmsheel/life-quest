@@ -132,13 +132,14 @@ vault's own binding.
    current one.
 4. The **tab strip** leads the dock, above the name of the chat in front, and is
    drawn whenever the thread has a tab, even a single one. The chat's name sits
-   under the strip in a small chip hung off its bottom edge, with a pencil
-   (**Rename chat**) at the chip's end — the quick way into the same rename field
-   the tab menu opens. The **+** right after the last tab (**New chat tab**) opens
-   a fresh chat in a tab of its own. Tabs are remembered per vault and agent: quit
-   and reopen and every tab returns in the same order, with the chat that was in
-   front still in front. A remembered chat that was archived or deleted in the
-   meantime loses its tab.
+   under the strip as plain neutral-gray text — no box and no pencil — and the
+   whole name is the **Rename chat** target: a click opens the rename field in
+   place, a click anywhere outside it or **Enter** saves, and **Escape** cancels
+   and keeps the old name. The tab menu's **Rename** opens the same field. The
+   **+** right after the last tab (**New chat tab**) opens a fresh chat in a tab
+   of its own. Tabs are remembered per vault and agent: quit and reopen and every
+   tab returns in the same order, with the chat that was in front still in front.
+   A remembered chat that was archived or deleted in the meantime loses its tab.
 5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
@@ -306,10 +307,10 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
 | Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** immediately after the last tab. |
 | Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
-| Chat name chip | The active chat's name in a small box hung off the strip's bottom edge, centred on the dock, with a pencil (**Rename chat**) at its end. Pin and archive live in the tab's right-click menu. |
+| Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
-| Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
+| Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour
 

@@ -172,12 +172,14 @@ The chat dock:
   gutter. Pi and Hermes each wear their own mark; the active one wears the accent
   ring; an agent scoped away from the current area is absent rather than greyed.
 - The **chat tabs**, drawn whenever the thread has a tab. Open chats sit in the
-  strip above the chat's name, the name in front hangs under them in a small chip
-  with a **Rename chat** pencil at its end, and a **+** immediately after the last
-  tab is **New chat tab** — the plus sits where the next tab will appear, not on
-  the strip's trailing edge. A middle click closes a tab and **Ctrl/Cmd+W** closes
-  the tab in front. Right-clicking a tab opens **Pin**, **Rename**, **Archive**
-  and **Delete**.
+  strip above the chat's name; the name in front hangs under them as plain
+  neutral-gray text with no box and no pencil, and the whole name is the **Rename
+  chat** target — a click opens the rename field in place, a click anywhere
+  outside it or **Enter** saves, and **Escape** cancels and keeps the old name. A
+  **+** immediately after the last tab is **New chat tab** — the plus sits where
+  the next tab will appear, not on the strip's trailing edge. A middle click
+  closes a tab and **Ctrl/Cmd+W** closes the tab in front. Right-clicking a tab
+  opens **Pin**, **Rename**, **Archive** and **Delete**.
 - **Pinned chats** lead the strip as squares: the label's first letter and a
   small pin, no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
@@ -209,9 +211,10 @@ The chat dock:
   dock the conversation and the field read as one column.
 - The dock's bottom action bar under the composer, in order: **New chat**,
   **Quick Notes**, **Keyboard shortcuts** (opens the reference as a dock
-  surface), the two-panes side switch, **Collapse chat**, and the version badge
-  (**Check for updates**), which glows and gains **Update available** when a
-  release is offered.
+  surface), **Chat display settings** (opens Settings → **Chat display**), the
+  two-panes side switch, **Collapse chat**, and the version badge (**Check for
+  updates**), which glows and gains **Update available** when a release is
+  offered.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 
