@@ -1,7 +1,6 @@
 /**
- * Drives the real shell in a real Electron window and checks the brand's two
- * shipping surfaces, then turns the measurements into
- * `e2e/artifacts/brand-logo.{json,png}`.
+ * Drives the real shell and the real splash in real Electron windows and turns
+ * the brand's shipping surfaces into `e2e/artifacts/brand-logo.{json,png}`.
  *
  * Run with the dev server up (`npm run dev`):
  *
@@ -9,29 +8,37 @@
  *
  * What is measured, and why these surfaces:
  *
- *  1. The wordmark in the rail's header. It is the official
- *     `src/assets/brand/lifequest-wordmark.svg`, painted as a CSS mask so the
- *     rail's own ink carries it. The rig reads the computed mask URL (the asset,
- *     not a baked data URL), the ink pair (`background === --fg`), the box ratio
- *     against the artwork's own 872.25:162.45, and the inset against the rail's
- *     first navigation row — the word sits on the rail's content edge, not
- *     floating in the strip.
- *  2. The thin rail. 56px cannot hold a word: the wordmark leaves the band, the
- *     toggle keeps it, and the rail stays the icon column.
- *  3. The app icon. The emblem-only 1024px master and the multi-size ICO are
+ *  1. The rail's lockup. It is the operator's pick of four supplied SVGs
+ *     (`src/assets/brand/logo/`), drawn inline so its three groups — LIFE, the
+ *     Q emblem, UEST — are painted from the theme tokens `--life-color`,
+ *     `--icon-color` and `--uest-color`. The rig reads the computed fills, the
+ *     tokens they came from, the artwork's own viewBox/aspect, the band's
+ *     placement under the window strip, and the default: Modern, no preference
+ *     stored.
+ *  2. The theme follows. Day, night and a second skin are measured: the fills
+ *     always equal the tokens, the forge night palette draws the supplied brand
+ *     trio, a day palette derives dark inks, and another skin moves the inks
+ *     again. A theme that stops writing these tokens fails here.
+ *  3. The Developer pick. The real settings sheet is opened from the titlebar's
+ *     gear, the Developer page's logo radio group is clicked through, and the
+ *     rail behind the sheet is read: it changes to Classic on the press, the
+ *     pick is stored, it survives a reload, and Classic is the variant the next
+ *     splash shows.
+ *  4. The splash. The boot page is loaded in its own window with the stored
+ *     pick; the four variants are in the document, exactly one is visible, and
+ *     its three fills are the brand trio on the dark boot.
+ *  5. The app icon. The emblem-only 1024px master and the multi-size ICO are
  *     decoded/read here, by the engine that will ship them, and the packaging
  *     config that names both is read as shipped.
  *
- * The harness page is the shell sidebar's own (`e2e/shell-sidebar.html`): it
- * mounts the REAL AppShell with the real providers, so this rig measures the
- * shipping rail rather than a mock of it. The screenshots are the shipped
- * header at 1:1 — the wide strip with the wordmark and toggle, and the thin
- * column that has left the word out.
+ * The shell harness is the sidebar's own (`e2e/shell-sidebar.html`): the REAL
+ * AppShell, providers, titlebar and settings page, so this rig measures the
+ * shipping rail and the shipping Developer bench rather than mocks of them.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, nativeImage } from "electron";
+import { app, BrowserWindow, nativeImage, session } from "electron";
 
 // A hidden window still paints; an occluded one stops painting and stops firing
 // requestAnimationFrame, which would leave the harness's own settle unreliable.
@@ -42,11 +49,12 @@ const desktopRoot = path.join(here, "..");
 const artifactsDir = path.join(here, "artifacts");
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/shell-sidebar.html";
+const indexUrl = new URL("/", url).toString();
 const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
-/** The wordmark artwork's own ink box, in its SVG's units. */
-const WORDMARK_RATIO = 872.25 / 162.45;
+/** The supplied Modern lockup's own canvas: the default, and the first check. */
+const MODERN_VIEWBOX = "215 40 553 160";
 
 const failures = [];
 let step = "boot";
@@ -61,10 +69,9 @@ const check = (label, condition, detail) => {
 };
 
 /**
- * One `getBoundingClientRect` + computed-style read of the rail's header, its
- * wordmark, and the rail's first navigation row (the content edge the wordmark
- * must share). A rule is checked against the numbers here, never inferred from
- * the markup.
+ * Box and computed-style read of the rail's brand band, its lockup, the theme
+ * tokens the lockup is painted from, and the shop floor the pick happens on.
+ * A rule is checked against these numbers, never inferred from the markup.
  */
 const SAMPLE = `(() => {
   const box = (el) => {
@@ -81,36 +88,105 @@ const SAMPLE = `(() => {
   };
   const rail = document.querySelector(".nav-rail");
   const header = document.querySelector(".nav-rail__header");
-  const toggle = header ? header.querySelector(".nav-toggle") : null;
-  const brand = document.querySelector(".nav-rail__brand");
+  const band = document.querySelector(".nav-rail__brand");
+  const logo = band ? band.querySelector(".lifequest-logo") : null;
+  const svg = logo ? logo.querySelector("svg") : null;
+  const toggle = document.querySelector(".nav-rail .nav-toggle");
   const firstLink = document.querySelector(".nav-rail__link");
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:absolute;left:-9999px;top:0;height:0;width:0;color:var(--fg)";
-  document.body.appendChild(probe);
-  const ink = getComputedStyle(probe).color;
-  probe.remove();
-  const style = brand ? getComputedStyle(brand) : null;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const token = (name) => rootStyle.getPropertyValue(name).trim();
+  const fillOf = (el) => (el ? getComputedStyle(el).fill : null);
+  const picker = document.querySelector(".logo-picker");
+  const options = picker
+    ? Array.from(picker.querySelectorAll("[data-logo-option]"))
+    : [];
+  const checkedOption = options.find(
+    (option) => option.getAttribute("aria-checked") === "true"
+  );
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     rail: box(rail),
     header: box(header),
     toggle: box(toggle),
     firstLink: box(firstLink),
-    brand: brand
+    band: box(band),
+    bandDisplay: band ? getComputedStyle(band).display : null,
+    brand: logo
       ? {
-          box: box(brand),
-          role: brand.getAttribute("role"),
-          label: brand.getAttribute("aria-label"),
-          inHeader: Boolean(header && header.contains(brand)),
-          display: style.display,
-          background: style.backgroundColor,
-          ink,
-          maskImage: style.maskImage || style.webkitMaskImage,
-          maskRepeat: style.maskRepeat,
-          maskPosition: style.maskPosition,
-          maskSize: style.maskSize
+          box: box(logo),
+          variant: logo.getAttribute("data-logo-variant"),
+          role: logo.getAttribute("role"),
+          label: logo.getAttribute("aria-label"),
+          viewBox: svg ? svg.getAttribute("viewBox") : null,
+          inBand: Boolean(band && band.contains(logo)),
+          fills: {
+            life: fillOf(logo.querySelector(".life-text")),
+            icon: fillOf(logo.querySelector(".quest-icon")),
+            uest: fillOf(logo.querySelector(".uest-text"))
+          }
+        }
+      : null,
+    tokens: {
+      life: token("--life-color"),
+      icon: token("--icon-color"),
+      uest: token("--uest-color")
+    },
+    storedLogo: (() => {
+      try {
+        return localStorage.getItem("lifequest-logo");
+      } catch (error) {
+        return null;
+      }
+    })(),
+    overlay: Boolean(document.querySelector(".settings-overlay")),
+    developer: picker
+      ? {
+          optionCount: options.length,
+          labels: options.map((option) => option.getAttribute("aria-label")),
+          ids: options.map((option) => option.getAttribute("data-logo-option")),
+          active: checkedOption
+            ? checkedOption.getAttribute("data-logo-option")
+            : null
         }
       : null
+  };
+})()`;
+
+/** The boot page: the four injected lockups, and the one on stage. */
+const SPLASH_SAMPLE = `(() => {
+  const splash = document.getElementById("splash");
+  const wrap = splash ? splash.querySelector(".splash__logo") : null;
+  const variants = wrap
+    ? Array.from(wrap.querySelectorAll("[data-splash-logo]"))
+    : [];
+  const visible = variants.find(
+    (variant) => getComputedStyle(variant).display !== "none"
+  );
+  const style = wrap ? getComputedStyle(wrap) : null;
+  const fillOf = (selector) => {
+    const el = visible ? visible.querySelector(selector) : null;
+    return el ? getComputedStyle(el).fill : null;
+  };
+  const token = (name) => (style ? style.getPropertyValue(name).trim() : null);
+  return {
+    hasSplash: Boolean(splash),
+    dataLogo: document.documentElement.getAttribute("data-logo"),
+    variantCount: variants.length,
+    variants: variants.map((variant) => variant.getAttribute("data-splash-logo")),
+    visibleVariant: visible ? visible.getAttribute("data-splash-logo") : null,
+    role: wrap ? wrap.getAttribute("role") : null,
+    label: wrap ? wrap.getAttribute("aria-label") : null,
+    fills: {
+      life: fillOf(".life-text"),
+      icon: fillOf(".quest-icon"),
+      uest: fillOf(".uest-text")
+    },
+    tokens: {
+      life: token("--life-color"),
+      icon: token("--icon-color"),
+      uest: token("--uest-color")
+    },
+    hidden: Boolean(splash && splash.hasAttribute("hidden"))
   };
 })()`;
 
@@ -136,12 +212,32 @@ const runWithTimeout = (win, expression, timeoutMs = 15_000) =>
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * A computed token as the `rgb()` string a computed `fill` reports, so the pair
+ * ("the fill equals the token") is a string comparison and not a colour guess.
+ * A token that is already an rgb()/color() string passes through.
+ */
+function cssColor(value) {
+  if (typeof value !== "string") return null;
+  const valueTrimmed = value.trim();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(valueTrimmed);
+  if (!hex) return valueTrimmed;
+  const full =
+    hex[1].length === 3
+      ? hex[1]
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
  * The harness's own readiness promise, polled. Vite may re-optimise its
  * dependencies and reload the page mid-wait, clearing the globals the harness
  * sets, so a single read is not enough. The 90s ceiling is generous because the
  * first load of the shell on a cold dev server can spend a while optimising the
- * app's dependency graph; it still keeps a crashed harness a failure instead of
- * a hang, and stays inside the driver's own 150s watchdog.
+ * app's dependency graph; it keeps a crashed harness a failure, not a hang.
  */
 async function waitForHarness(win, timeoutMs = 90_000) {
   const deadline = Date.now() + timeoutMs;
@@ -179,19 +275,123 @@ const sample = async (win) => {
   return state;
 };
 
-/** Click the rail's own collapse toggle, through React's handler, then settle. */
-const clickToggle = (win) =>
+/** Poll a selector until it exists (or the deadline passes). */
+async function waitForSelector(win, selector, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const found = await runWithTimeout(
+        win,
+        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        5000,
+      );
+      if (found) return true;
+    } catch {
+      /* The page may be navigating; try again. */
+    }
+    await sleep(100);
+  }
+  return false;
+}
+
+/** Click one element through its own handler; true when it was found. */
+const clickSelector = (win, selector) =>
   runWithTimeout(
     win,
-    `(async () => {
-      const el = document.querySelector(".nav-rail .nav-toggle");
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return false;
       el.click();
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       return true;
     })()`,
   );
+
+/** Click the first element of `selector` whose trimmed text equals `text`. */
+const clickByText = (win, selector, text) =>
+  runWithTimeout(
+    win,
+    `(() => {
+      const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
+      const el = els.find((node) => (node.textContent || "").trim() === ${JSON.stringify(text)});
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`,
+  );
+
+/** The harness's own palette switch: the same two calls the provider makes. */
+async function applyTheme(win, skin, mode) {
+  const applied = await runWithTimeout(
+    win,
+    `window.shellHarnessApplyTheme?.(${JSON.stringify(skin)}, ${JSON.stringify(mode)}) ?? null`,
+  );
+  check(
+    `the harness switched to ${skin} ${mode}`,
+    applied === skin,
+    `harness resolved ${JSON.stringify(applied)}`,
+  );
+  await sleep(300);
+}
+
+/** The picture of the shipped rail header in the current state. */
+async function captureHeader(win, state, name) {
+  const file = path.join(artifactsDir, name);
+  const shot = await win.webContents.capturePage({
+    x: 0,
+    y: 0,
+    width: Math.max(1, state.rail?.width ?? WINDOW.width),
+    height: Math.min(state.viewport.height, 110),
+  });
+  fs.writeFileSync(file, shot.toPNG());
+  return file;
+}
+
+/**
+ * Open the boot page in its own window and read the splash's lockup.
+ *
+ * The root page is loaded without the app's bridge (a rig window has no
+ * preload), so the app's own mount may fail — the splash is static markup and
+ * is exactly what is being read. `theme-boot.js` has already set `data-logo`
+ * from localStorage, which is the wiring under test.
+ */
+async function readSplash(picture) {
+  const win = new BrowserWindow({
+    width: WINDOW.width,
+    height: WINDOW.height,
+    show: false,
+    backgroundColor: "#111214",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+  try {
+    await win.loadURL(indexUrl);
+    await sleep(600);
+    const state = await runWithTimeout(win, SPLASH_SAMPLE, 10_000);
+    // The app may have started and dismissed the splash behind a failed mount;
+    // for the artifact, put the static overlay back (the real app's own boot is
+    // the startup rig's claim, not this one's).
+    if (picture) {
+      await runWithTimeout(
+        win,
+        `(() => {
+          const splash = document.getElementById("splash");
+          if (!splash) return false;
+          splash.removeAttribute("hidden");
+          splash.classList.remove("splash--done", "splash--out");
+          return true;
+        })()`,
+      );
+      await sleep(500);
+      fs.writeFileSync(picture, (await win.webContents.capturePage()).toPNG());
+    }
+    return state;
+  } finally {
+    win.destroy();
+  }
+}
 
 /** Reads the committed app icon and the packaging config, in the shipping engine. */
 function iconFacts() {
@@ -218,6 +418,14 @@ function iconFacts() {
 
 async function main() {
   await app.whenReady();
+
+  // The dev-server origin keeps its storage between rigs and runs. Start from a
+  // known shop floor: no logo pick, and the dark boot the splash defaults to.
+  await session.defaultSession.clearStorageData({
+    origin: new URL(url).origin,
+    storages: ["localstorage"],
+  });
+
   const win = new BrowserWindow({
     ...WINDOW,
     show: false,
@@ -225,20 +433,17 @@ async function main() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      // A hidden window would otherwise let Chromium throttle its timers, and
-      // the measured settle after the toggle click would become a coin toss.
       backgroundThrottling: false,
     },
   });
-  // Keep the window alive after the report: the harness owns the page, and a
-  // closed window would end the run before the summary prints.
   win.on("closed", () => {});
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   let report;
   const watchdog = setTimeout(() => {
-    console.error("brand-logo: timed out after 150s");
+    console.error("brand-logo: timed out after 180s");
     app.exit(1);
-  }, 150_000);
+  }, 180_000);
 
   try {
     step = "load the shell harness";
@@ -248,144 +453,266 @@ async function main() {
     await sleep(300);
     win.showInactive();
 
-    // Pin the palette: the wordmark must be read in a known ink, not in whatever
-    // skin this shared profile last wore.
     step = "pin the forge night palette";
-    const applied = await runWithTimeout(
-      win,
-      `window.shellHarnessApplyTheme?.("forge", "dark") ?? null`,
-    );
-    check(
-      "the harness switched to forge dark",
-      applied === "forge",
-      `harness resolved ${JSON.stringify(applied)}`,
-    );
-    await sleep(300);
+    await applyTheme(win, "forge", "dark");
 
-    step = "measure the wide rail";
+    step = "measure the rail's lockup";
     const expanded = await sample(win);
     const brand = expanded.brand;
     check("the rail exists", Boolean(expanded.rail), "no .nav-rail in the shell");
     check(
-      "the wordmark is the official wordmark file, in the rail's header",
+      "the lockup is the shipped default (Modern) before any pick",
       Boolean(brand) &&
-        brand.inHeader === true &&
+        brand.variant === "modern" &&
+        expanded.storedLogo === null,
+      `variant ${JSON.stringify(brand?.variant)} stored ${JSON.stringify(expanded.storedLogo)}`,
+    );
+    check(
+      "the lockup is the official artwork, in the rail's brand band",
+      Boolean(brand && expanded.band) &&
+        brand.inBand === true &&
         brand.role === "img" &&
-        brand.label === "LifeQuest",
-      `brand ${JSON.stringify(brand)}`,
+        brand.label === "LifeQuest" &&
+        brand.viewBox === MODERN_VIEWBOX,
+      `brand ${JSON.stringify(brand)} band ${JSON.stringify(expanded.band)}`,
     );
     check(
-      "the wordmark is painted as a mask of the wordmark SVG",
+      "the lockup sits under the window strip, inside the rail",
+      Boolean(brand && expanded.band && expanded.header && expanded.rail) &&
+        expanded.band.top >= expanded.header.bottom - 1 &&
+        expanded.band.bottom <= (expanded.firstLink?.top ?? Infinity) &&
+        expanded.band.left >= expanded.rail.left &&
+        expanded.band.right <= expanded.rail.right,
+      `band ${JSON.stringify(expanded.band)} header ${JSON.stringify(expanded.header)} rail ${JSON.stringify(expanded.rail)}`,
+    );
+    check(
+      "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        typeof brand.maskImage === "string" &&
-        brand.maskImage.includes("lifequest-wordmark") &&
-        !brand.maskImage.includes("data:") &&
-        brand.maskRepeat === "no-repeat" &&
-        brand.maskSize === "contain",
-      `mask ${JSON.stringify(brand?.maskImage)} repeat ${JSON.stringify(brand?.maskRepeat)} size ${JSON.stringify(brand?.maskSize)}`,
+        Math.abs(brand.box.width / brand.box.height - 553 / 160) < 0.15,
+      `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
-      "the wordmark wears the rail's ink, not a baked-in colour",
-      Boolean(brand) && brand.background === brand.ink,
-      `background ${JSON.stringify(brand?.background)} vs --fg ${JSON.stringify(brand?.ink)}`,
-    );
-    check(
-      "the wordmark keeps the artwork's aspect ratio",
+      "the lockup's three groups are painted from the theme tokens",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - WORDMARK_RATIO) < 0.15,
-      `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"} vs ${WORDMARK_RATIO.toFixed(3)}`,
+        brand.fills.life === cssColor(expanded.tokens.life) &&
+        brand.fills.icon === cssColor(expanded.tokens.icon) &&
+        brand.fills.uest === cssColor(expanded.tokens.uest),
+      `fills ${JSON.stringify(brand?.fills)} tokens ${JSON.stringify(expanded.tokens)}`,
     );
     check(
-      "the wordmark sits on the rail's content edge, before the toggle",
-      Boolean(brand && expanded.firstLink && expanded.toggle) &&
-        Math.abs(brand.box.left - expanded.firstLink.left) <= 1 &&
-        brand.box.right < expanded.toggle.left,
-      `brand ${JSON.stringify(brand?.box)} first row ${JSON.stringify(expanded.firstLink)} toggle ${JSON.stringify(expanded.toggle)}`,
+      "the forge night palette draws the supplied brand trio",
+      expanded.tokens.life.toLowerCase() === "#f8e5c8" &&
+        expanded.tokens.icon.toLowerCase() === "#c66a3d" &&
+        expanded.tokens.uest.toLowerCase() === "#ffffff",
+      `tokens ${JSON.stringify(expanded.tokens)}`,
     );
     check(
-      "the wordmark sits inside the window strip",
-      Boolean(brand && expanded.header) &&
-        brand.box.top >= expanded.header.top &&
-        brand.box.bottom <= expanded.header.bottom &&
-        brand.box.height >= 18 &&
-        brand.box.height <= 24,
-      `brand ${JSON.stringify(brand?.box)} header ${JSON.stringify(expanded.header)}`,
+      "the collapse toggle keeps the strip above the lockup",
+      Boolean(expanded.header && expanded.toggle) &&
+        expanded.toggle.top >= expanded.header.top - 1 &&
+        expanded.toggle.bottom <= expanded.header.bottom + 1,
+      `toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
     );
 
-    const wideShot = await win.webContents.capturePage({
-      x: 0,
-      y: 0,
-      width: Math.max(1, expanded.rail?.width ?? WINDOW.width),
-      height: Math.min(expanded.viewport.height, 50),
-    });
-    const wideFile = path.join(artifactsDir, "brand-logo-wide.png");
-    fs.writeFileSync(wideFile, wideShot.toPNG());
+    const wideFile = await captureHeader(win, expanded, "brand-logo-wide.png");
     const shellFile = path.join(artifactsDir, "brand-logo-shell.png");
     fs.writeFileSync(shellFile, (await win.webContents.capturePage()).toPNG());
 
-    // The ink is the rail's, not the artwork's: the same mask must be dark on a
-    // day palette and light on a night one, or the wordmark would be a baked
-    // cream that vanishes from the day skin. Measured on the same element, so
-    // "theme-adaptive" is a pair of colours in the report rather than a claim.
-    step = "read the wordmark in the day palette";
-    await runWithTimeout(
-      win,
-      `window.shellHarnessApplyTheme?.("forge", "light") ?? null`,
-    );
-    await sleep(350);
+    // The lockup follows the day palette: derived from the palette (ink for the
+    // words, the brand primary for the emblem), and the fills follow the tokens.
+    step = "read the lockup in the day palette";
+    await applyTheme(win, "forge", "light");
     const day = await sample(win);
     check(
-      "the wordmark takes the day palette's ink too",
-      Boolean(day.brand && brand) &&
-        day.brand.display !== "none" &&
-        day.brand.background === day.brand.ink &&
-        day.brand.background !== brand.ink,
-      `day background ${JSON.stringify(day.brand?.background)} day --fg ${JSON.stringify(day.brand?.ink)} night --fg ${JSON.stringify(brand?.ink)}`,
+      "the day palette re-inks the lockup from its own tokens",
+      Boolean(day.brand) &&
+        day.brand.fills.life === cssColor(day.tokens.life) &&
+        day.brand.fills.icon === cssColor(day.tokens.icon) &&
+        day.brand.fills.uest === cssColor(day.tokens.uest) &&
+        day.tokens.life.toLowerCase() === "#1e1e22" &&
+        day.tokens.icon.toLowerCase() === "#b4532a" &&
+        day.tokens.uest.toLowerCase() === "#1e1e22",
+      `day tokens ${JSON.stringify(day.tokens)} fills ${JSON.stringify(day.brand?.fills)}`,
     );
-    // Back to the night palette so the thin artifact wears the same look as the
-    // wide one.
+    check(
+      "day and night draw different inks",
+      Boolean(day.brand && brand) &&
+        day.brand.fills.life !== brand.fills.life &&
+        day.brand.fills.uest !== brand.fills.uest,
+      `day ${JSON.stringify(day.brand?.fills)} night ${JSON.stringify(brand?.fills)}`,
+    );
+
+    // A second palette moves the inks again — the logo follows the active skin,
+    // not a fixed brand trio baked into the component.
+    step = "read the lockup in another skin";
+    await applyTheme(win, "nous", "dark");
+    const nous = await sample(win);
+    check(
+      "another skin's palette moves the lockup's inks",
+      Boolean(nous.brand) &&
+        nous.brand.fills.life === cssColor(nous.tokens.life) &&
+        nous.brand.fills.icon === cssColor(nous.tokens.icon) &&
+        nous.brand.fills.uest === cssColor(nous.tokens.uest) &&
+        nous.tokens.life !== expanded.tokens.life &&
+        nous.tokens.icon !== expanded.tokens.icon,
+      `nous tokens ${JSON.stringify(nous.tokens)} fills ${JSON.stringify(nous.brand?.fills)}`,
+    );
+    await applyTheme(win, "forge", "dark");
+
+    // The splash, before any pick: the default lockup, brand trio on the dark
+    // boot. Storage is written from the shell window so the boot is deterministic.
+    step = "read the default splash";
     await runWithTimeout(
       win,
-      `window.shellHarnessApplyTheme?.("forge", "dark") ?? null`,
+      `(() => {
+        localStorage.setItem("lifequest-theme", "dark");
+        localStorage.removeItem("lifequest-logo");
+        return true;
+      })()`,
     );
-    await sleep(350);
+    const splashDefaultFile = path.join(artifactsDir, "brand-logo-splash-default.png");
+    const splashDefault = await readSplash(splashDefaultFile);
+    check(
+      "the splash wears the shipped default before any pick",
+      splashDefault.hasSplash === true &&
+        splashDefault.dataLogo === "modern" &&
+        splashDefault.visibleVariant === "modern" &&
+        splashDefault.variantCount === 4,
+      `splash ${JSON.stringify(splashDefault)}`,
+    );
+    check(
+      "the splash's lockup is the brand trio on the dark boot",
+      splashDefault.role === "img" &&
+        splashDefault.label === "LifeQuest" &&
+        splashDefault.fills.life === "rgb(248, 229, 200)" &&
+        splashDefault.fills.icon === "rgb(198, 106, 61)" &&
+        splashDefault.fills.uest === "rgb(255, 255, 255)" &&
+        splashDefault.tokens.life.toLowerCase() === "#f8e5c8",
+      `splash fills ${JSON.stringify(splashDefault.fills)} tokens ${JSON.stringify(splashDefault.tokens)}`,
+    );
 
-    // The thin rail: the word cannot fit in 56px, so it leaves and the toggle
-    // keeps the whole band. The rail itself must stay the icon column.
+    // The thin rail leaves the lockup out and keeps the toggle.
     step = "collapse the rail";
-    const clicked = await clickToggle(win);
+    const clicked = await clickSelector(win, ".nav-rail .nav-toggle");
     check("the rail's collapse toggle clicked", clicked === true, "no toggle to click");
     await sleep(400);
-    step = "measure the thin rail";
     const collapsed = await sample(win);
     check(
-      "the thin rail is the icon column",
-      Boolean(collapsed.rail) && collapsed.rail.width === 56,
-      `rail ${JSON.stringify(collapsed.rail)}`,
+      "the thin rail is the icon column and hides the lockup's band",
+      Boolean(collapsed.rail) &&
+        collapsed.rail.width === 56 &&
+        collapsed.bandDisplay === "none",
+      `rail ${JSON.stringify(collapsed.rail)} band display ${JSON.stringify(collapsed.bandDisplay)}`,
+    );
+    const thinFile = await captureHeader(win, collapsed, "brand-logo-collapsed.png");
+    // Expand again for the Developer flow.
+    await clickSelector(win, ".nav-rail .nav-toggle");
+    await sleep(400);
+
+    // The Developer bench: open the shipping settings sheet from the titlebar's
+    // gear, reach the shipping Developer page, pick Classic, and read the rail
+    // behind the sheet.
+    step = "open Settings → Developer";
+    const opened = await clickSelector(win, 'a[aria-label="Open settings"]');
+    check("the titlebar's settings control clicked", opened === true, "no settings link");
+    const overlayUp = await waitForSelector(win, ".settings-overlay");
+    check("the settings sheet opened over the shell", overlayUp, "no .settings-overlay in the tree");
+    const developerClicked = await clickByText(win, ".settings-nav-item", "Developer");
+    check("the Developer page clicked", developerClicked === true, "no Developer nav item");
+    const pickerUp = await waitForSelector(win, "[data-developer-logo]");
+    check("the Developer page holds the logo bench", pickerUp, "no [data-developer-logo]");
+    await sleep(250);
+    const developerOpen = await sample(win);
+    check(
+      "the bench offers the four shipped lockups, Modern active",
+      Boolean(developerOpen.developer) &&
+        developerOpen.developer.optionCount === 4 &&
+        JSON.stringify(developerOpen.developer.ids) ===
+          JSON.stringify(["modern", "athletic", "classic", "minimal"]) &&
+        developerOpen.developer.active === "modern" &&
+        JSON.stringify(developerOpen.developer.labels) ===
+          JSON.stringify(["Modern", "Athletic", "Classic", "Minimal"]),
+      `picker ${JSON.stringify(developerOpen.developer)}`,
+    );
+    const developerFile = path.join(artifactsDir, "brand-logo-developer.png");
+    fs.writeFileSync(developerFile, (await win.webContents.capturePage()).toPNG());
+
+    step = "pick Classic in the Developer bench";
+    const picked = await clickSelector(win, '[data-logo-option="classic"]');
+    check("the Classic option clicked", picked === true, "no Classic option");
+    await sleep(350);
+    const afterPick = await sample(win);
+    check(
+      "the pick is stored and the picker marks it",
+      afterPick.storedLogo === "classic" && afterPick.developer?.active === "classic",
+      `stored ${JSON.stringify(afterPick.storedLogo)} picker ${JSON.stringify(afterPick.developer)}`,
     );
     check(
-      "the thin rail leaves the wordmark out",
-      Boolean(collapsed.brand) && collapsed.brand.display === "none",
-      `wordmark display ${JSON.stringify(collapsed.brand?.display)}`,
-    );
-    check(
-      "the toggle keeps the thin band, centred",
-      Boolean(collapsed.header && collapsed.toggle) &&
-        Math.abs(
-          (collapsed.toggle.left + collapsed.toggle.right) / 2 -
-            (collapsed.header.left + collapsed.header.right) / 2,
-        ) <= 1,
-      `toggle ${JSON.stringify(collapsed.toggle)} header ${JSON.stringify(collapsed.header)}`,
+      "the rail behind the sheet repaints to Classic on the press",
+      Boolean(afterPick.brand) &&
+        afterPick.brand.variant === "classic" &&
+        afterPick.brand.viewBox === "226 44 580 162",
+      `rail brand ${JSON.stringify(afterPick.brand)}`,
     );
 
-    const thinShot = await win.webContents.capturePage({
-      x: 0,
-      y: 0,
-      width: Math.max(1, expanded.rail?.width ?? WINDOW.width),
-      height: Math.min(collapsed.viewport.height, 50),
-    });
-    const thinFile = path.join(artifactsDir, "brand-logo-collapsed.png");
-    fs.writeFileSync(thinFile, thinShot.toPNG());
+    step = "close the settings sheet";
+    const closed = await clickSelector(win, '[aria-label="Close settings"]');
+    check("the sheet's close control clicked", closed === true, "no close control");
+    const overlayGone = async () => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const stillUp = await runWithTimeout(
+          win,
+          `Boolean(document.querySelector(".settings-overlay"))`,
+        );
+        if (!stillUp) return true;
+        await sleep(100);
+      }
+      return false;
+    };
+    check("the sheet closed and left the rail", await overlayGone(), "the overlay stayed up");
+    const afterClose = await sample(win);
+    check(
+      "the rail keeps Classic after the sheet closes",
+      Boolean(afterClose.brand) && afterClose.brand.variant === "classic",
+      `rail brand ${JSON.stringify(afterClose.brand)}`,
+    );
+
+    // The pick survives a reload: the rail reads the stored value on mount.
+    step = "reload the shell";
+    await win.reload();
+    await waitForHarness(win);
+    await sleep(400);
+    const reloaded = await sample(win);
+    check(
+      "the pick survives a reload",
+      Boolean(reloaded.brand) &&
+        reloaded.brand.variant === "classic" &&
+        reloaded.storedLogo === "classic",
+      `rail brand ${JSON.stringify(reloaded.brand)} stored ${JSON.stringify(reloaded.storedLogo)}`,
+    );
+
+    // The next launch's splash wears the picked lockup.
+    step = "read the picked splash";
+    await runWithTimeout(
+      win,
+      `(() => { localStorage.setItem("lifequest-theme", "dark"); return true; })()`,
+    );
+    const splashFile = path.join(artifactsDir, "brand-logo-splash.png");
+    const splashSelected = await readSplash(splashFile);
+    check(
+      "the splash wears the picked lockup",
+      splashSelected.dataLogo === "classic" &&
+        splashSelected.visibleVariant === "classic" &&
+        splashSelected.variantCount === 4,
+      `splash ${JSON.stringify(splashSelected)}`,
+    );
+
+    // Put Modern back so the rig's own profile is not left on a pick nobody made.
+    await runWithTimeout(
+      win,
+      `(() => { localStorage.removeItem("lifequest-logo"); return true; })()`,
+    );
 
     // The app icon: the emblem-only master and the multi-size ICO, decoded/read
     // in the engine that ships them, plus the config that names both.
@@ -414,14 +741,27 @@ async function main() {
 
     report = {
       url,
+      indexUrl,
       ranAt: new Date().toISOString(),
       vaultName,
       window: { ...WINDOW },
       expanded,
       day,
+      nous,
       collapsed,
+      afterPick,
+      reloaded,
+      splashDefault,
+      splashSelected,
       icon,
-      screenshots: [wideFile, shellFile, thinFile],
+      screenshots: [
+        wideFile,
+        shellFile,
+        thinFile,
+        developerFile,
+        splashDefaultFile,
+        splashFile,
+      ],
       failures,
       pass: failures.length === 0,
     };
@@ -437,16 +777,20 @@ async function main() {
     };
   } finally {
     clearTimeout(watchdog);
+    win.destroy();
   }
 
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(REPORT, `${JSON.stringify(report, null, 2)}\n`);
   console.log(
-    `\nwordmark ${report.expanded?.brand?.box?.width ?? "—"}x${report.expanded?.brand?.box?.height ?? "—"}px, ` +
-      `ink ${report.expanded?.brand?.background ?? "—"}, ` +
-      `left ${report.expanded?.brand?.box?.left ?? "—"}px vs first row ${report.expanded?.firstLink?.left ?? "—"}px`,
+    `\nlockup ${report.expanded?.brand?.box?.width ?? "—"}x${report.expanded?.brand?.box?.height ?? "—"}px, ` +
+      `variant ${report.expanded?.brand?.variant ?? "—"}, ` +
+      `night inks ${JSON.stringify(report.expanded?.tokens ?? null)}`,
   );
-  console.log(`app icon ${JSON.stringify(report.icon?.png ?? null)}, ico ${JSON.stringify(report.icon?.ico?.sizes ?? null)}`);
+  console.log(
+    `splash ${report.splashDefault?.visibleVariant ?? "—"} → ${report.splashSelected?.visibleVariant ?? "—"}, ` +
+      `app icon ${JSON.stringify(report.icon?.png ?? null)}`,
+  );
   console.log(`\nreport: ${REPORT}`);
   for (const failure of report.failures ?? []) console.log(`FAIL ${failure}`);
   console.log(report.pass ? "brand logo: PASS" : "brand logo: FAIL");

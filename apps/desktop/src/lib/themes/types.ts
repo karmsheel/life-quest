@@ -38,6 +38,19 @@ export interface SkinColors {
   success?: string;
   /** Semantic info (maps to --blue tokens when set). */
   info?: string;
+  /**
+   * The logo's three inks — the LIFE word, the Q emblem and the UEST word.
+   *
+   * A palette may declare them (Forge's night declares the brand trio); when it
+   * does not, `forgeVarsFromColors` derives them from the palette — foreground
+   * for LIFE and UEST, primary for the emblem — so a theme that predates the
+   * lockup still draws a readable mark. Optional for exactly that reason: a
+   * Hermes theme file, or one of our own older presets, cannot be refused for
+   * not knowing about a logo.
+   */
+  logoLife?: string;
+  logoIcon?: string;
+  logoUest?: string;
 }
 
 export interface SkinTypography {

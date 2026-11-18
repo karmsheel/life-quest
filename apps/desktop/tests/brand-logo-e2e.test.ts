@@ -16,8 +16,6 @@ const electron = require("electron") as string;
 
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/brand-logo.json");
-/** The wordmark artwork's own ink box, repeated so the claim is readable here. */
-const WORDMARK_RATIO = 872.25 / 162.45;
 
 type Box = {
   left: number;
@@ -30,17 +28,15 @@ type Box = {
 
 type BrandSample = {
   box: Box;
+  variant: string;
   role: string | null;
   label: string | null;
-  inHeader: boolean;
-  display: string;
-  background: string;
-  ink: string;
-  maskImage: string | null;
-  maskRepeat: string | null;
-  maskPosition: string | null;
-  maskSize: string | null;
+  viewBox: string | null;
+  inBand: boolean;
+  fills: { life: string | null; icon: string | null; uest: string | null };
 };
+
+type Tokens = { life: string; icon: string; uest: string };
 
 type State = {
   viewport: { width: number; height: number };
@@ -48,7 +44,31 @@ type State = {
   header: Box | null;
   toggle: Box | null;
   firstLink: Box | null;
+  band: Box | null;
+  bandDisplay: string | null;
   brand: BrandSample | null;
+  tokens: Tokens;
+  storedLogo: string | null;
+  overlay: boolean;
+  developer: {
+    optionCount: number;
+    labels: string[];
+    ids: string[];
+    active: string | null;
+  } | null;
+};
+
+type SplashState = {
+  hasSplash: boolean;
+  dataLogo: string | null;
+  variantCount: number;
+  variants: string[];
+  visibleVariant: string | null;
+  role: string | null;
+  label: string | null;
+  fills: { life: string | null; icon: string | null; uest: string | null };
+  tokens: Tokens;
+  hidden: boolean;
 };
 
 type Report = {
@@ -57,7 +77,12 @@ type Report = {
   vaultName?: string;
   expanded?: State;
   day?: State;
+  nous?: State;
   collapsed?: State;
+  afterPick?: State;
+  reloaded?: State;
+  splashDefault?: SplashState;
+  splashSelected?: SplashState;
   icon?: {
     png: { width: number; height: number } | null;
     ico: { signature: number; type: number; count: number; sizes: number[] };
@@ -65,6 +90,21 @@ type Report = {
   };
   screenshots: string[];
 };
+
+/** A token as the `rgb()` string a computed fill reports. */
+function cssColor(value: string): string {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
+  if (!hex) return value.trim();
+  const full =
+    hex[1].length === 3
+      ? hex[1]
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 /**
  * The rig measures the real shell in a real Electron window, so it needs the
@@ -88,7 +128,7 @@ function runDriver(): Promise<number> {
     execFile(
       electron,
       [path.join(desktopRoot, "e2e/brand-logo.electron.mjs")],
-      { cwd: desktopRoot, timeout: 180_000 },
+      { cwd: desktopRoot, timeout: 240_000 },
       (error) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -107,8 +147,8 @@ function pngSize(file: string): { width: number; height: number } {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
-describe("brand logo (shell header and app icon)", () => {
-  it("paints the official wordmark at the top of the rail and ships the emblem-only app icon", async (t) => {
+describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
+  it("draws the picked lockup from the theme's three inks in the rail and on the splash", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -128,92 +168,135 @@ describe("brand logo (shell header and app icon)", () => {
     assert.equal(report.pass, true, "the brand rig did not pass");
     assert.equal(exitCode, 0, "the brand rig exited non-zero");
 
+    // The default: the supplied Modern lockup, no stored pick, in the rail band
+    // under the window strip, painted from the theme tokens.
     const expanded = report.expanded;
     const brand = expanded?.brand;
     assert.ok(expanded, "the rig wrote no wide sample");
-    assert.ok(brand, "the rail's header carries no .nav-rail__brand");
+    assert.ok(brand, "the rail carries no .lifequest-logo");
+    assert.equal(expanded?.storedLogo, null, "a logo pick was stored before any press");
+    assert.equal(brand.variant, "modern", "the rail is not wearing the default Modern lockup");
+    assert.equal(brand.inBand, true, "the lockup is not in the rail's brand band");
+    assert.equal(brand.role, "img", "the lockup is not exposed as an image");
+    assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
+    assert.equal(brand.viewBox, "215 40 553 160", "the lockup is not the supplied Modern art");
+    assert.ok(
+      brand.box.height >= 20 && brand.box.width > brand.box.height,
+      `the lockup is ${brand.box.width}x${brand.box.height}px, outside the band's shape`,
+    );
+    assert.ok(
+      Math.abs(brand.box.width / brand.box.height - 553 / 160) < 0.15,
+      `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's 553:160 ratio`,
+    );
+    assert.ok(expanded?.band && expanded?.header && expanded?.firstLink, "the rail has no band to measure");
+    assert.ok(
+      expanded.band.top >= expanded.header.bottom - 1 &&
+        expanded.band.bottom <= expanded.firstLink.top,
+      `the band ${JSON.stringify(expanded.band)} is not between the strip ${JSON.stringify(expanded.header)} and the first row ${JSON.stringify(expanded.firstLink)}`,
+    );
+    assert.deepEqual(
+      brand.fills,
+      {
+        life: cssColor(expanded.tokens.life),
+        icon: cssColor(expanded.tokens.icon),
+        uest: cssColor(expanded.tokens.uest),
+      },
+      "the lockup's three groups are not painted from --life-color/--icon-color/--uest-color",
+    );
+    assert.deepEqual(
+      {
+        life: expanded.tokens.life.toLowerCase(),
+        icon: expanded.tokens.icon.toLowerCase(),
+        uest: expanded.tokens.uest.toLowerCase(),
+      },
+      { life: "#f8e5c8", icon: "#c66a3d", uest: "#ffffff" },
+      "the forge night palette does not draw the supplied brand trio",
+    );
 
-    // The official file, painted as a mask so the rail's ink carries it.
-    assert.equal(brand.role, "img", "the wordmark is not exposed as an image");
-    assert.equal(brand.label, "LifeQuest", "the wordmark is not named LifeQuest");
-    assert.equal(brand.inHeader, true, "the wordmark is outside the rail's header");
-    assert.match(
-      brand.maskImage ?? "",
-      /lifequest-wordmark/,
-      "the header mark is not painted from the official wordmark SVG",
-    );
-    assert.doesNotMatch(
-      brand.maskImage ?? "",
-      /data:/,
-      "the wordmark is a baked data URL, not the shipped asset",
-    );
-    assert.equal(brand.maskRepeat, "no-repeat", "the wordmark tile is not contained");
-    assert.equal(brand.maskSize, "contain", "the wordmark is not contained in its box");
-    assert.equal(
-      brand.background,
-      brand.ink,
-      `the wordmark's ink ${brand.background} is not the rail's --fg ${brand.ink}`,
-    );
-
-    // The same element, re-inked by the day palette: the mask takes the rail's
-    // ink in both modes, and the two inks really differ.
+    // Day: derived inks, and the fills follow them.
     const day = report.day;
     assert.ok(day?.brand, "the rig wrote no day-palette sample");
-    assert.notEqual(day?.brand?.display, "none", "the day rail dropped the wordmark");
+    assert.deepEqual(
+      {
+        life: day?.tokens.life.toLowerCase(),
+        icon: day?.tokens.icon.toLowerCase(),
+        uest: day?.tokens.uest.toLowerCase(),
+      },
+      { life: "#1e1e22", icon: "#b4532a", uest: "#1e1e22" },
+      "the day palette did not derive dark logo inks",
+    );
+    assert.deepEqual(
+      day?.brand?.fills,
+      {
+        life: cssColor(day?.tokens.life ?? ""),
+        icon: cssColor(day?.tokens.icon ?? ""),
+        uest: cssColor(day?.tokens.uest ?? ""),
+      },
+      "the day lockup's fills do not follow the day tokens",
+    );
+    assert.notEqual(day?.brand?.fills.life, brand.fills.life, "day and night draw the same LIFE ink");
+    assert.notEqual(day?.brand?.fills.uest, brand.fills.uest, "day and night draw the same UEST ink");
+
+    // A second skin re-inks the mark too.
+    const nous = report.nous;
+    assert.ok(nous?.brand, "the rig wrote no second-skin sample");
     assert.equal(
-      day?.brand?.background,
-      day?.brand?.ink,
-      `the day wordmark's fill ${day?.brand?.background} is not the day --fg ${day?.brand?.ink}`,
+      nous?.brand?.fills.life,
+      cssColor(nous?.tokens.life ?? ""),
+      "the second skin's LIFE fill is not its token",
     );
-    assert.notEqual(
-      day?.brand?.background,
-      brand.background,
-      `the wordmark is the same colour in day and night (${brand.background})`,
-    );
+    assert.notEqual(nous?.tokens.life, expanded?.tokens.life, "the second skin did not move the LIFE ink");
+    assert.notEqual(nous?.tokens.icon, expanded?.tokens.icon, "the second skin did not move the emblem ink");
 
-    // The artwork's own proportions, and the rail's content edge.
-    assert.ok(
-      brand.box.height >= 18 && brand.box.height <= 24,
-      `the wordmark is ${brand.box.height}px tall, outside the strip's 18–24px band`,
-    );
-    assert.ok(
-      Math.abs(brand.box.width / brand.box.height - WORDMARK_RATIO) < 0.15,
-      `the wordmark's box ${brand.box.width}x${brand.box.height} does not keep the artwork's ${WORDMARK_RATIO.toFixed(2)} ratio`,
-    );
-    assert.ok(expanded?.firstLink, "the rail has no navigation rows to align against");
-    assert.ok(
-      Math.abs(brand.box.left - (expanded?.firstLink?.left ?? -1)) <= 1,
-      `the wordmark starts at ${brand.box.left}px, the rail's first row at ${expanded?.firstLink?.left}px`,
-    );
-    assert.ok(
-      expanded?.toggle && brand.box.right < expanded.toggle.left,
-      "the wordmark runs into the collapse toggle",
-    );
-    assert.ok(
-      expanded?.header &&
-        brand.box.top >= expanded.header.top &&
-        brand.box.bottom <= expanded.header.bottom,
-      "the wordmark is not inside the window strip",
-    );
-
-    // The thin rail leaves the word out; the toggle keeps the band, centred.
+    // Collapsed: the rail is the icon column and the lockup's band is gone.
     const collapsed = report.collapsed;
     assert.ok(collapsed, "the rig wrote no collapsed sample");
     assert.equal(collapsed?.rail?.width, 56, "the collapsed rail is not the 56px icon column");
+    assert.equal(collapsed?.bandDisplay, "none", "the thin rail still draws the lockup's band");
+
+    // Developer: four options, Modern active; a press changes the rail behind the
+    // sheet, stores the pick, and the next mount keeps it.
+    const afterPick = report.afterPick;
+    assert.ok(afterPick, "the rig wrote no sample after the pick");
+    assert.equal(afterPick?.storedLogo, "classic", "the Classic pick was not stored");
+    assert.equal(afterPick?.developer?.active, "classic", "the picker does not mark Classic");
     assert.equal(
-      collapsed?.brand?.display,
-      "none",
-      "the thin rail still draws the wordmark",
+      afterPick?.brand?.variant,
+      "classic",
+      "the rail behind the sheet did not repaint to Classic",
     );
-    assert.ok(collapsed?.header && collapsed?.toggle, "the thin rail lost its band");
-    const toggleCentre =
-      ((collapsed?.toggle?.left ?? 0) + (collapsed?.toggle?.right ?? 0)) / 2;
-    const headerCentre =
-      ((collapsed?.header?.left ?? 0) + (collapsed?.header?.right ?? 0)) / 2;
-    assert.ok(
-      Math.abs(toggleCentre - headerCentre) <= 1,
-      `the thin band's toggle is at ${toggleCentre}px, the band's centre at ${headerCentre}px`,
+    assert.equal(
+      afterPick?.brand?.viewBox,
+      "226 44 580 162",
+      "the rail behind the sheet is not the supplied Classic art",
     );
+    const reloaded = report.reloaded;
+    assert.equal(reloaded?.brand?.variant, "classic", "the pick did not survive a reload");
+    assert.equal(reloaded?.storedLogo, "classic", "the stored pick did not survive a reload");
+
+    // The splash: all four lockups are in the boot page, exactly one is shown,
+    // the default before a pick and the picked one after it.
+    const splashDefault = report.splashDefault;
+    assert.ok(splashDefault, "the rig wrote no default splash sample");
+    assert.equal(splashDefault?.hasSplash, true, "the boot page has no splash");
+    assert.equal(splashDefault?.variantCount, 4, "the splash does not carry all four lockups");
+    assert.deepEqual(
+      splashDefault?.variants,
+      ["modern", "athletic", "classic", "minimal"],
+      "the splash's lockups are not the shipped four",
+    );
+    assert.equal(splashDefault?.dataLogo, "modern", "the default splash is not Modern");
+    assert.equal(splashDefault?.visibleVariant, "modern", "the default splash shows another lockup");
+    assert.equal(splashDefault?.role, "img", "the splash's lockup is not exposed as an image");
+    assert.equal(splashDefault?.label, "LifeQuest", "the splash's lockup is not named LifeQuest");
+    assert.deepEqual(
+      splashDefault?.fills,
+      { life: "rgb(248, 229, 200)", icon: "rgb(198, 106, 61)", uest: "rgb(255, 255, 255)" },
+      "the splash's lockup is not the brand trio on the dark boot",
+    );
+    const splashSelected = report.splashSelected;
+    assert.equal(splashSelected?.dataLogo, "classic", "the picked splash is not Classic");
+    assert.equal(splashSelected?.visibleVariant, "classic", "the picked splash shows another lockup");
 
     // The app icon: emblem-only master 1024px, multi-size ICO, wired in config.
     const icon = report.icon;
@@ -232,34 +315,33 @@ describe("brand logo (shell header and app icon)", () => {
         icon?.ico.sizes.includes(32),
       `the Windows icon's entries are ${JSON.stringify(icon?.ico.sizes)}`,
     );
-    assert.equal(
-      icon?.builder.masterNamed,
-      true,
-      "electron-builder.yml does not name build/icon.png",
-    );
-    assert.equal(
-      icon?.builder.windowsNamed,
-      true,
-      "electron-builder.yml does not name build/icon.ico",
-    );
+    assert.equal(icon?.builder.masterNamed, true, "electron-builder.yml does not name build/icon.png");
+    assert.equal(icon?.builder.windowsNamed, true, "electron-builder.yml does not name build/icon.ico");
 
-    // The screenshots: the shipped header at 1:1 in both rails, and the shell it
-    // sits in. The wide crop must be the rail's own width, not a hand-made tile.
-    const [wide, shell, thin] = report.screenshots;
+    // The screenshots: the shipped rail header in both rails, the Developer bench,
+    // and both splash states. The crops are the rail's own width, not hand-made tiles.
+    const [wide, shell, thin, developer, splashDefaultShot, splashSelectedShot] =
+      report.screenshots;
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `${file} is missing`);
-      // A flat, mostly dark band compresses to well under a kilobyte, so
-      // "artefact exists" is a decoded PNG with real pixels, not a byte count.
       const size = pngSize(file);
       assert.ok(size.width > 0 && size.height > 0, `${file} has no pixels`);
     }
-    const wideSize = pngSize(wide);
     assert.equal(
-      wideSize.width,
+      pngSize(wide).width,
       expanded?.rail?.width,
-      "the wide wordmark artifact is not the rail's width",
+      "the wide lockup artifact is not the rail's width",
     );
-    assert.equal(pngSize(thin).width, expanded?.rail?.width, "the thin artifact is not the rail's width");
+    assert.equal(
+      pngSize(thin).width,
+      collapsed?.rail?.width,
+      "the thin lockup artifact is not the collapsed rail's width",
+    );
     assert.ok(pngSize(shell).width >= 1200, "the shell artifact is not the full window");
+    assert.ok(pngSize(developer).width >= 1200, "the Developer artifact is not the full window");
+    assert.ok(
+      pngSize(splashDefaultShot).width >= 1200 && pngSize(splashSelectedShot).width >= 1200,
+      "a splash artifact is not the full window",
+    );
   });
 });

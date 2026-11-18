@@ -135,11 +135,14 @@ The window title bar:
 
 The rail:
 
-- The **LifeQuest wordmark** at the top-left, in the strip beside the collapse
-  toggle: the official text logo, inked with the rail's own text colour so it
-  reads on every theme. It is a mark, not a control — the strip around it is the
-  window's drag handle. Collapsed, the 56px column has no room for a word, so the
-  wordmark leaves and the toggle keeps the band.
+- The **LifeQuest lockup** at the top-left, on its own band under the window
+  strip: the active logo — **Modern** by default, and any of **Modern**,
+  **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
+  is drawn from the shipped art, and its three inks (LIFE, the Q emblem, UEST)
+  are theme colours, so the lockup follows the active theme and the day/night
+  palette instead of carrying one fixed picture. It is a mark, not a control:
+  the strip above it is the window's drag handle. Collapsed, the 56px column has
+  no room for a word, so the lockup leaves and the toggle keeps the strip.
 - A collapse toggle at the top (**Collapse sidebar** / **Expand sidebar**), with
   `aria-expanded` and `aria-controls="nav-rail"`.
 - The five-wing band, a square block directly under the title bar. Its frame is
@@ -271,6 +274,7 @@ The chat dock:
 - A sheet's **Escape** unwinds one step: it clears a settings search before it
   closes the sheet.
 - The splash is markup painted before React and is dismissed by the shell: it
+  draws the active LifeQuest lockup (the same pick the rail wears) over its bar,
   holds for a floor of 1.5 seconds and until the first vault read finishes, then
   fades for 200ms. It does not wait for the companion.
 

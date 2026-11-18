@@ -54,6 +54,16 @@
   --input: #c9d0da;
   --ring: #2563eb;
 
+  /* The logo's three inks: the LIFE word, the Q emblem and the UEST word. They
+     are theme tokens, not a baked picture: a skin writes them from its palette
+     (`forgeVarsFromColors`), a theme file may override them
+     (`colors.logoLife` / `logoIcon` / `logoUest`), and the splash reads the same
+     names. These are the shipped day fallbacks — night is the brand trio in
+     `[data-theme="dark"]` below. */
+  --life-color: #1e1e22;
+  --icon-color: #b4532a;
+  --uest-color: #1e1e22;
+
   --bg-panel: #fdfcfa;
   --bg-subtle: #f4f5f7;
   --bg-fill-tertiary: rgba(0, 0, 0, 0.03);
@@ -219,6 +229,14 @@
   --border: #333128;
   --input: #46433c;
   --ring: #2563eb;
+
+  /* The brand trio, and the night defaults for the logo's three inks. Forge's
+     dark palette declares these same three (see `presets.ts`); this is the
+     no-skin stand-in, so a boot that has not painted a palette yet never draws
+     the day inks on the night mat. */
+  --life-color: #f8e5c8;
+  --icon-color: #c66a3d;
+  --uest-color: #ffffff;
 
   --bg-panel: #222120;
   --bg-subtle: #1c1b1a;

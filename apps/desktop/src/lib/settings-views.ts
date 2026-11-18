@@ -207,7 +207,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "developer",
     label: "Developer",
     icon: FlaskConical,
-    keywords: ["developer", "flag", "flags", "bench", "experimental", "debug", "preview"],
+    keywords: [
+      "developer",
+      "flag",
+      "flags",
+      "bench",
+      "experimental",
+      "debug",
+      "preview",
+      "logo",
+      "brand",
+      "wordmark",
+      "lockup",
+    ],
   },
 ];
 

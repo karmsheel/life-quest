@@ -13,6 +13,8 @@ import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { CompositionSlot } from "@/components/composition/CompositionSlot";
+import { LifeQuestLogo } from "@/components/brand/LifeQuestLogo";
+import { useLogoVariant } from "@/components/brand/useLogoVariant";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -33,6 +35,7 @@ function countPending(decisions: readonly DecisionRecord[]): number {
 
 export function NavRail() {
   const { active } = useWing();
+  const logoVariant = useLogoVariant();
   const { chrome } = useTheme();
   const { snapshot } = useVault();
   /**
@@ -152,21 +155,21 @@ export function NavRail() {
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       <div className="nav-rail__header">
-        {/*
-          The product's own name at the window's top-left: the official wordmark
-          painted from the brand SVG's alpha and inked with the rail's current
-          text colour, so a day skin inverts it and a night skin lights it from
-          the same file. The thin rail leaves it out — 56px cannot hold a word —
-          and its toggle takes the whole band (see "The thin rail"). It is not a
-          control: the band is the window's drag handle, and this is its mark.
-        */}
-        <div
-          className="nav-rail__brand"
-          role="img"
-          aria-label="LifeQuest"
-          data-brand="wordmark"
-        />
         <NavCollapseButton />
+      </div>
+      {/*
+        The studio's own lockup at the top of the rail, directly under the window
+        strip: the operator's pick of the four shipped logos (Settings → Developer,
+        default Modern), drawn inline so the theme's three inks — LIFE, the Q
+        emblem, UEST — reach it. It is a mark, not a control; the strip above it
+        stays the window's drag handle. The thin rail leaves it out — 56px cannot
+        hold a word — and the toggle keeps the strip (see "The thin rail").
+      */}
+      <div className="nav-rail__brand">
+        <LifeQuestLogo
+          variant={logoVariant}
+          className="nav-rail__brand-logo"
+        />
       </div>
       {/* The theme's composition widgets for the rail: a count under the
           header, and the foot's own band. Rail furniture, not commands. */}

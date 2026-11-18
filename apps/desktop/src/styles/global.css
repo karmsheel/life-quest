@@ -998,17 +998,17 @@ a {
   z-index: 20;
 }
 
-/* The band the sidebar shares with the titlebar: the product's wordmark at the
-   leading edge and the collapse toggle at the trailing one, with the rest of the
-   strip a window drag handle. A wide column puts a centred chevron in the middle
-   of nowhere; at the edge it points at the seam it moves. Collapsed, the band's
-   own rule centres that one control in the thin column and the wordmark leaves
-   (see "The thin rail"). It paints the rail's own mat, so the sidebar runs to the
-   window's top and the titlebar's fill begins only at the sheet's leading edge. */
+/* The band the sidebar shares with the titlebar: the collapse toggle at its
+   trailing edge, and the rest of the strip a window drag handle. A wide column
+   puts a centred chevron in the middle of nowhere; at the edge it points at the
+   seam it moves. Collapsed, the band's own rule centres the same control in the
+   thin column (see "The thin rail"). It paints the rail's own mat, so the
+   sidebar runs to the window's top and the titlebar's fill begins only at the
+   sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex: 0 0 auto;
   height: var(--window-titlebar-height);
   margin: 0 -0.35rem 0.1rem;
@@ -1016,26 +1016,57 @@ a {
   -webkit-app-region: drag;
 }
 
-/* The official wordmark (src/assets/brand/lifequest-wordmark.svg), painted as a
-   mask so it wears the rail's ink instead of a baked-in colour: night skins light
-   it, day skins ink it, and no second asset is needed. The band's negative inline
-   margin (above) is cancelled on this side so the mark starts on the rail's own
-   content edge, level with the wing switcher and the page rows beneath it.
+/* The studio's lockup, on its own band under the window strip. It is drawn from
+   the shipped SVG the operator picked (Settings → Developer), so the three inks
+   are theme colours: `.lifequest-logo .life-text` and the two sibling groups are
+   filled from `--life-color`, `--icon-color` and `--uest-color` below. The art
+   itself is cropped to its ink (`viewBox`), which is what makes the wordmark
+   legible at this size: uncropped, the supplied canvas spends a quarter of its
+   width on empty margins and a 32px strip could only draw the letters at six
+   pixels.
 
-   Its width is a reading of the 16rem column: 7.25rem leaves the toggle its end
-   of the 32px strip and keeps the word clear of it. `aspect-ratio` is the
-   artwork's own 872.25:162.45 ink box, so `contain` never letterboxes the word;
-   the alpha is the silhouette, so the mask needs no second copy at any width. */
+   The band is a mark, not a control: it leaves no drag carve-out, and the strip
+   above it stays the window's handle. `max-width` keeps the four variants on one
+   visual size — their cropped aspects are close, not identical — so switching
+   logos does not change the band's height by more than a couple of pixels. */
 .nav-rail__brand {
+  display: flex;
+  align-items: center;
   flex: 0 0 auto;
-  width: 7.25rem;
-  aspect-ratio: 872.25 / 162.45;
-  margin-left: 0.35rem;
-  background-color: currentColor;
-  -webkit-mask: url("../assets/brand/lifequest-wordmark.svg") left center / contain
-    no-repeat;
-  mask: url("../assets/brand/lifequest-wordmark.svg") left center / contain
-    no-repeat;
+  padding: 0.1rem 0 0.25rem;
+}
+
+/* One lockup, one ink model. The three groups are the supplied art's own classes:
+   `life-text` is the LIFE word, `quest-icon` the Q emblem, `uest-text` the UEST
+   word. A theme, the splash and any override write the variables, never the
+   fills. */
+.lifequest-logo {
+  display: block;
+  width: 100%;
+  color: inherit;
+}
+
+.lifequest-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lifequest-logo .life-text {
+  fill: var(--life-color);
+}
+
+.lifequest-logo .quest-icon {
+  fill: var(--icon-color);
+}
+
+.lifequest-logo .uest-text {
+  fill: var(--uest-color);
+}
+
+.nav-rail__brand-logo {
+  width: 100%;
+  max-width: 13rem;
 }
 
 .nav-rail__section {
@@ -1296,7 +1327,7 @@ a {
 }
 
 /* 56px cannot hold a word, and a second mark would compete with the icon column's
-   own rows: the wordmark leaves with the labels, the toggle keeps the band. */
+   own rows: the lockup leaves with the labels, the toggle keeps the strip. */
 .shell--nav-collapsed .nav-rail__brand {
   display: none;
 }
@@ -6014,6 +6045,82 @@ a.home-mini-list__link:hover {
 .settings-developer__state[data-developer-state="previewing"],
 .settings-developer__state[data-developer-state="shadowed"] {
   color: var(--amber);
+}
+
+/* —— The logo bench ——
+   Four lockups under the Developer rows. The block takes the card's full width
+   because a preview has to show the mark at a readable size: the art's letters
+   are a quarter of its canvas, so a narrow trailing control would draw the word
+   at a few pixels. A hairline separates it from the switch above, the same rule
+   the rows use between themselves. */
+.settings-developer__logo {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-developer__logo .settings-card__desc {
+  margin: 0.25rem 0 0;
+}
+
+/* Two columns of real previews. Each option is a radio: the preview on the
+   rail's own mat (so the three inks are read where they will be worn), the
+   label and the one-line distinction beneath it, and the ring the theme's
+   selected state uses, never a second border inside the frame. */
+.logo-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.logo-picker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.logo-picker__option:hover {
+  background: var(--bg-subtle);
+}
+
+.logo-picker__option.is-active {
+  border-color: var(--ring);
+  background: var(--accent-fill);
+}
+
+.logo-picker__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--canvas-base);
+}
+
+.logo-picker__preview .lifequest-logo {
+  max-width: 15rem;
+  margin: 0 auto;
+}
+
+.logo-picker__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.logo-picker__desc {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 /* —— Decisions page ——
