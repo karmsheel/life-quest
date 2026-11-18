@@ -96,6 +96,14 @@ const COMPOSITION_VOCABULARY_PNG = path.join(
 );
 const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
 const EXTENSIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
+const EXTENSIONS_ON_PNG = path.join(
+  artifactsDir,
+  "themes-v2-extensions-on.png",
+);
+const EXTENSIONS_OFF_PNG = path.join(
+  artifactsDir,
+  "themes-v2-extensions-off.png",
+);
 
 const failures = [];
 const checks = [];
@@ -4014,6 +4022,79 @@ async function main() {
     20_000,
   );
 
+  // ── 12h: switching an extension off hands the palette back ───────────────
+  // The switch is over *the window's look*, and the look includes the colours:
+  // an extension may carry a complete palette (the seeded Solar System does),
+  // and the document's colour tokens must land back on the default look the
+  // moment it goes off — not stay on the departing theme's colours until the
+  // operator picks another skin in the titlebar. Read the tokens on the default
+  // look (the state the switch above just produced), wear Solar System, and
+  // read them again after switching it off.
+  const readPalette = `(() => {
+    const root = document.documentElement;
+    const read = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+    return {
+      background: read("--background"),
+      canvasBase: read("--canvas-base"),
+      card: read("--card"),
+      accent: read("--accent"),
+      foreground: read("--foreground"),
+    };
+  })()`;
+  const paletteOff = await evaluate(readPalette);
+  const solarToggle = `(() => {
+    const b = document.querySelector('[data-testid="extension-showcase-solar-system"] [data-testid="extension-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`;
+  await evaluate(solarToggle);
+  const solarWorn = await waitFor(
+    (s) =>
+      s.kept === "showcase-solar-system.json" &&
+      s.extensionsActive === true &&
+      ["#0a0e1f", "#070b17"].includes((s.bgVar ?? "").toLowerCase()),
+    20_000,
+  );
+  await sleep(600);
+  const solarShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_ON_PNG, solarShot.toPNG());
+  await evaluate(solarToggle);
+  const solarOff = await waitFor(
+    (s) =>
+      s.kept === null &&
+      s.extensionsActive === false &&
+      (s.bgVar ?? "").toLowerCase() === (paletteOff?.background ?? "").toLowerCase(),
+    20_000,
+  );
+  await sleep(600);
+  const paletteBack = await evaluate(readPalette);
+  const extensionsOffShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_OFF_PNG, extensionsOffShot.toPNG());
+  const samePalette =
+    paletteOff !== null &&
+    paletteBack !== null &&
+    paletteOff.background === paletteBack.background &&
+    paletteOff.canvasBase === paletteBack.canvasBase &&
+    paletteOff.card === paletteBack.card &&
+    paletteOff.accent === paletteBack.accent &&
+    paletteOff.foreground === paletteBack.foreground;
+  check(
+    "switching-an-extension-off-hands-the-palette-back",
+    solarWorn?.kept === "showcase-solar-system.json" &&
+      solarWorn?.bgVar?.toLowerCase() !== paletteOff?.background?.toLowerCase() &&
+      solarOff?.kept === null &&
+      solarOff.extensionsActive === false &&
+      samePalette,
+    JSON.stringify({
+      offBefore: paletteOff,
+      worn: { bg: solarWorn?.bgVar, kept: solarWorn?.kept },
+      offAfter: paletteBack,
+      solarOff: solarOff?.kept,
+      samePalette,
+    }),
+  );
+
   // Remove: two presses, and the file leaves the profile.
   await evaluate(
     `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
@@ -4081,6 +4162,8 @@ async function main() {
       ),
       helios: path.relative(desktopRoot, HELIOS_PNG),
       extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
+      extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
+      extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

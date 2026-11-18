@@ -50,6 +50,8 @@ type Report = {
     compositionVocabulary: string;
     helios: string;
     extensions: string;
+    extensionsOn: string;
+    extensionsOff: string;
   };
   theme: unknown;
   refused: unknown;
@@ -159,6 +161,8 @@ describe("theme files v2", () => {
         report.artifacts.compositionVocabulary,
         report.artifacts.helios,
         report.artifacts.extensions,
+        report.artifacts.extensionsOn,
+        report.artifacts.extensionsOff,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

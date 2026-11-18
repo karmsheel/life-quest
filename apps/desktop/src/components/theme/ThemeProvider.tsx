@@ -536,12 +536,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const previewRef = useRef<{ file: string; label: string } | null>(null);
 
   /**
-   * Paint one theme: resolve its defaults, write the material layer, and (when
-   * it carries colours) layer its palette over the skin it sits on.
+   * Paint one theme: resolve its defaults, write the material layer, and layer
+   * its palette over the skin it sits on.
    *
    * The palette is layered rather than replaced: a theme file is allowed to name
    * three colours and inherit the rest, which is what makes a small theme file
-   * possible at all.
+   * possible at all. It is also repainted when the theme names *no* colours —
+   * including when the window wears no theme at all, which is where the
+   * Extensions "Active" switch-off lands. Without that paint the last theme's
+   * palette stayed on the document until the operator picked another skin, so
+   * switching an extension off looked like nothing had happened.
    */
   const paintTheme = useCallback(
     (next: ThemeFile | null) => {
@@ -574,8 +578,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setComposition(
         layerComposition(next?.composition, compositionOverrideRef.current),
       );
+      // The palette the window is wearing: the resolved skin, with the theme
+      // file's colours layered over it. Paint it on every theme change — a file
+      // that names no colours inherits the whole skin, and a window with no file
+      // at all must be handed the skin back, not left wearing the palette of the
+      // theme that just left.
+      const base = resolveSkin(skinName);
       if (next?.colors) {
-        const base = resolveSkin(skinName);
         applySkin(
           {
             ...base,
@@ -586,7 +595,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           } as ForgeSkin,
           resolved,
         );
+      } else {
+        applySkin(base, resolved);
       }
+      // The native caption strip wears the titlebar's fill, so it repaints with
+      // the palette — otherwise it keeps the colours of the theme that left.
+      syncTitleBarOverlay();
     },
     [resolved, skinName],
   );
