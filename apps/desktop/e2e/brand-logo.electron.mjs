@@ -88,9 +88,8 @@ const SAMPLE = `(() => {
   };
   const rail = document.querySelector(".nav-rail");
   const header = document.querySelector(".nav-rail__header");
-  const band = document.querySelector(".nav-rail__brand");
-  const logo = band ? band.querySelector(".lifequest-logo") : null;
-  const svg = logo ? logo.querySelector("svg") : null;
+  const brand = document.querySelector(".nav-rail__brand");
+  const svg = brand ? brand.querySelector("svg") : null;
   const toggle = document.querySelector(".nav-rail .nav-toggle");
   const firstLink = document.querySelector(".nav-rail__link");
   const rootStyle = getComputedStyle(document.documentElement);
@@ -109,23 +108,24 @@ const SAMPLE = `(() => {
     header: box(header),
     toggle: box(toggle),
     firstLink: box(firstLink),
-    band: box(band),
-    bandDisplay: band ? getComputedStyle(band).display : null,
-    brand: logo
+    brand: brand
       ? {
-          box: box(logo),
-          variant: logo.getAttribute("data-logo-variant"),
-          role: logo.getAttribute("role"),
-          label: logo.getAttribute("aria-label"),
+          box: box(brand),
+          variant: brand.getAttribute("data-logo-variant"),
+          role: brand.getAttribute("role"),
+          label: brand.getAttribute("aria-label"),
           viewBox: svg ? svg.getAttribute("viewBox") : null,
-          inBand: Boolean(band && band.contains(logo)),
+          inHeader: Boolean(header && header.contains(brand)),
+          display: getComputedStyle(brand).display,
           fills: {
-            life: fillOf(logo.querySelector(".life-text")),
-            icon: fillOf(logo.querySelector(".quest-icon")),
-            uest: fillOf(logo.querySelector(".uest-text"))
+            life: fillOf(brand.querySelector(".life-text")),
+            icon: fillOf(brand.querySelector(".quest-icon")),
+            uest: fillOf(brand.querySelector(".uest-text"))
           }
         }
       : null,
+    toggleMode: toggle ? toggle.getAttribute("data-nav-toggle") : null,
+    toggleEmblem: Boolean(toggle && toggle.querySelector(".lifequest-emblem")),
     tokens: {
       life: token("--life-color"),
       icon: token("--icon-color"),
@@ -468,37 +468,31 @@ async function main() {
       `variant ${JSON.stringify(brand?.variant)} stored ${JSON.stringify(expanded.storedLogo)}`,
     );
     check(
-      "the lockup is the official artwork, in the rail's brand band",
-      Boolean(brand && expanded.band) &&
-        brand.inBand === true &&
+      "the lockup is the official artwork, in the rail's header",
+      Boolean(brand) &&
+        brand.inHeader === true &&
         brand.role === "img" &&
         brand.label === "LifeQuest" &&
         brand.viewBox === DEFAULT_VIEWBOX,
-      `brand ${JSON.stringify(brand)} band ${JSON.stringify(expanded.band)}`,
+      `brand ${JSON.stringify(brand)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup sits under the window strip, inside the rail",
-      Boolean(brand && expanded.band && expanded.header && expanded.rail) &&
-        expanded.band.top >= expanded.header.bottom - 1 &&
-        expanded.band.bottom <= (expanded.firstLink?.top ?? Infinity) &&
-        expanded.band.left >= expanded.rail.left &&
-        expanded.band.right <= expanded.rail.right,
-      `band ${JSON.stringify(expanded.band)} header ${JSON.stringify(expanded.header)} rail ${JSON.stringify(expanded.rail)}`,
+      "the lockup sits on the strip's line, before the collapse toggle",
+      Boolean(brand && expanded.header && expanded.toggle && expanded.rail) &&
+        brand.box.top >= expanded.header.top - 1 &&
+        brand.box.bottom <= expanded.header.bottom + 1 &&
+        brand.box.left >= expanded.rail.left &&
+        brand.box.right <= expanded.toggle.left &&
+        expanded.toggle.top >= expanded.header.top - 1 &&
+        expanded.toggle.bottom <= expanded.header.bottom + 1 &&
+        brand.box.height >= 24 &&
+        brand.box.height <= 31,
+      `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup is inset by 10% on every side",
-      Boolean(brand && expanded.band) &&
-        expanded.band.width > 0 &&
-        Math.abs(
-          (expanded.band.width - brand.box.width) /
-            2 /
-            expanded.band.width -
-            0.1,
-        ) <= 0.01 &&
-        Math.abs(
-          (expanded.band.height - brand.box.height) / 2 / brand.box.height - 0.1,
-        ) <= 0.03,
-      `band ${JSON.stringify(expanded.band)} brand ${JSON.stringify(brand?.box)}`,
+      "the header keeps the collapse chevron beside the lockup",
+      expanded.toggleMode === "chevron",
+      `toggle mode ${JSON.stringify(expanded.toggleMode)}`,
     );
     check(
       "the lockup keeps the artwork's aspect ratio",
@@ -613,11 +607,17 @@ async function main() {
     await sleep(400);
     const collapsed = await sample(win);
     check(
-      "the thin rail is the icon column and hides the lockup's band",
+      "the thin rail is the icon column and hides the lockup",
       Boolean(collapsed.rail) &&
         collapsed.rail.width === 56 &&
-        collapsed.bandDisplay === "none",
-      `rail ${JSON.stringify(collapsed.rail)} band display ${JSON.stringify(collapsed.bandDisplay)}`,
+        Boolean(collapsed.brand) &&
+        collapsed.brand.display === "none",
+      `rail ${JSON.stringify(collapsed.rail)} brand display ${JSON.stringify(collapsed.brand?.display)}`,
+    );
+    check(
+      "the thin rail's expand control is the pure emblem",
+      collapsed.toggleMode === "brand" && collapsed.toggleEmblem === true,
+      `toggle mode ${JSON.stringify(collapsed.toggleMode)} emblem ${collapsed.toggleEmblem}`,
     );
     const thinFile = await captureHeader(win, collapsed, "brand-logo-collapsed.png");
     // Expand again for the Developer flow.

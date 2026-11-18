@@ -32,7 +32,8 @@ type BrandSample = {
   role: string | null;
   label: string | null;
   viewBox: string | null;
-  inBand: boolean;
+  inHeader: boolean;
+  display: string;
   fills: { life: string | null; icon: string | null; uest: string | null };
 };
 
@@ -44,9 +45,9 @@ type State = {
   header: Box | null;
   toggle: Box | null;
   firstLink: Box | null;
-  band: Box | null;
-  bandDisplay: string | null;
   brand: BrandSample | null;
+  toggleMode: string | null;
+  toggleEmblem: boolean;
   tokens: Tokens;
   storedLogo: string | null;
   overlay: boolean;
@@ -168,46 +169,44 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(report.pass, true, "the brand rig did not pass");
     assert.equal(exitCode, 0, "the brand rig exited non-zero");
 
-    // The default: the supplied Modern lockup, no stored pick, in the rail band
-    // under the window strip, painted from the theme tokens.
+    // The default: the supplied Minimal lockup, no stored pick, in the rail's
+    // header on the strip's line, painted from the theme tokens.
     const expanded = report.expanded;
     const brand = expanded?.brand;
     assert.ok(expanded, "the rig wrote no wide sample");
     assert.ok(brand, "the rail carries no .lifequest-logo");
     assert.equal(expanded?.storedLogo, null, "a logo pick was stored before any press");
     assert.equal(brand.variant, "minimal", "the rail is not wearing the default Minimal lockup");
-    assert.equal(brand.inBand, true, "the lockup is not in the rail's brand band");
+    assert.equal(brand.inHeader, true, "the lockup is not in the rail's header");
     assert.equal(brand.role, "img", "the lockup is not exposed as an image");
     assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
     assert.equal(brand.viewBox, "47.19 39 1059.6 161.78", "the lockup is not the supplied Minimal art");
     assert.ok(
-      brand.box.height >= 20 && brand.box.width > brand.box.height,
-      `the lockup is ${brand.box.width}x${brand.box.height}px, outside the band's shape`,
+      brand.box.height >= 24 && brand.box.height <= 31,
+      `the lockup is ${brand.box.width}x${brand.box.height}px, not sized to the window strip`,
     );
-    // A 10% inset on every side: the band is the rail's content width and its
-    // padding is the gap around the lockup.
-    assert.ok(expanded?.band, "the rail has no brand band to measure");
-    const insetX =
-      (expanded.band.width - brand.box.width) / 2 / expanded.band.width;
-    const insetY =
-      (expanded.band.height - brand.box.height) / 2 / brand.box.height;
+    // The header row: the lockup and the collapse chevron share the strip's line.
+    assert.ok(expanded?.header && expanded?.toggle && expanded?.rail, "the rail has no header to measure");
     assert.ok(
-      Math.abs(insetX - 0.1) <= 0.01,
-      `the lockup's side inset is ${(insetX * 100).toFixed(1)}%, not 10%`,
+      brand.box.top >= expanded.header.top - 1 &&
+        brand.box.bottom <= expanded.header.bottom + 1 &&
+        brand.box.left >= expanded.rail.left &&
+        brand.box.right <= expanded.toggle.left,
+      `the lockup ${JSON.stringify(brand.box)} is not on the strip's line before the toggle ${JSON.stringify(expanded.toggle)}`,
     );
     assert.ok(
-      Math.abs(insetY - 0.1) <= 0.03,
-      `the lockup's top/bottom inset is ${(insetY * 100).toFixed(1)}% of its height, not 10%`,
+      expanded.toggle.top >= expanded.header.top - 1 &&
+        expanded.toggle.bottom <= expanded.header.bottom + 1,
+      `the toggle ${JSON.stringify(expanded.toggle)} is not in the header`,
+    );
+    assert.equal(
+      expanded?.toggleMode,
+      "chevron",
+      "the wide rail's control is not the collapse chevron",
     );
     assert.ok(
       Math.abs(brand.box.width / brand.box.height - 1059.6 / 161.78) < 0.15,
-      `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's 553:160 ratio`,
-    );
-    assert.ok(expanded?.band && expanded?.header && expanded?.firstLink, "the rail has no band to measure");
-    assert.ok(
-      expanded.band.top >= expanded.header.bottom - 1 &&
-        expanded.band.bottom <= expanded.firstLink.top,
-      `the band ${JSON.stringify(expanded.band)} is not between the strip ${JSON.stringify(expanded.header)} and the first row ${JSON.stringify(expanded.firstLink)}`,
+      `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's aspect`,
     );
     assert.deepEqual(
       brand.fills,
@@ -263,11 +262,22 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.notEqual(nous?.tokens.life, expanded?.tokens.life, "the second skin did not move the LIFE ink");
     assert.notEqual(nous?.tokens.icon, expanded?.tokens.icon, "the second skin did not move the emblem ink");
 
-    // Collapsed: the rail is the icon column and the lockup's band is gone.
+    // Collapsed: the rail is the icon column, the lockup leaves, and the expand
+    // control wears the pure emblem rather than a chevron.
     const collapsed = report.collapsed;
     assert.ok(collapsed, "the rig wrote no collapsed sample");
     assert.equal(collapsed?.rail?.width, 56, "the collapsed rail is not the 56px icon column");
-    assert.equal(collapsed?.bandDisplay, "none", "the thin rail still draws the lockup's band");
+    assert.equal(collapsed?.brand?.display, "none", "the thin rail still draws the lockup");
+    assert.equal(
+      collapsed?.toggleMode,
+      "brand",
+      "the thin rail's control is not the emblem button",
+    );
+    assert.equal(
+      collapsed?.toggleEmblem,
+      true,
+      "the thin rail's control does not wear the pure emblem",
+    );
 
     // Developer: four options, Modern active; a press changes the rail behind the
     // sheet, stores the pick, and the next mount keeps it.

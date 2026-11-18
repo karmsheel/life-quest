@@ -135,16 +135,17 @@ The window title bar:
 
 The rail:
 
-- The **LifeQuest lockup** at the top-left, on its own band under the window
-  strip: the active logo — **Minimal** by default, and any of **Modern**,
+- The **LifeQuest lockup** on the header line, in line with the collapse
+  toggle: the active logo — **Minimal** by default, and any of **Modern**,
   **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
   is drawn from the shipped art, and its three inks (LIFE, the Q emblem, UEST)
   are theme colours, so the lockup follows the active theme and the day/night
   palette instead of carrying one fixed picture. It is a mark, not a control:
-  the strip above it is the window's drag handle. Collapsed, the 56px column has
-  no room for a word, so the lockup leaves and the toggle keeps the strip.
+  the strip is the window's drag handle.
 - A collapse toggle at the top (**Collapse sidebar** / **Expand sidebar**), with
-  `aria-expanded` and `aria-controls="nav-rail"`.
+  `aria-expanded` and `aria-controls="nav-rail"`. Collapsed, the 56px column has
+  no room for a word: the lockup leaves and the control becomes the pure Q
+  emblem (**Expand sidebar**), which reopens the rail on a press.
 - The five-wing band, a square block directly under the title bar. Its frame is
   the block's one outline: the selected wing is marked by its raised fill, not by
   a second line inside the frame. Collapsed, the band turns vertical and all five

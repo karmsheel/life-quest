@@ -154,22 +154,19 @@ export function NavRail() {
 
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
-      <div className="nav-rail__header">
-        <NavCollapseButton />
-      </div>
       {/*
-        The studio's own lockup at the top of the rail, directly under the window
-        strip: the operator's pick of the four shipped logos (Settings → Developer,
-        default Modern), drawn inline so the theme's three inks — LIFE, the Q
-        emblem, UEST — reach it. It is a mark, not a control; the strip above it
-        stays the window's drag handle. The thin rail leaves it out — 56px cannot
-        hold a word — and the toggle keeps the strip (see "The thin rail").
+        The top line of the rail, in the window strip: the studio's lockup at the
+        leading edge and the collapse toggle at the trailing one, the way DSH's
+        sidebar header is arranged. The lockup is the operator's pick of the four
+        shipped logos (Settings → Developer, default Minimal), drawn inline so the
+        theme's three inks — LIFE, the Q emblem, UEST — reach it. It is a mark, not
+        a control; the strip stays the window's drag handle. The thin rail cannot
+        hold a word: the lockup leaves and the toggle becomes the pure emblem,
+        which reopens the rail on a press (see "The thin rail").
       */}
-      <div className="nav-rail__brand">
-        <LifeQuestLogo
-          variant={logoVariant}
-          className="nav-rail__brand-logo"
-        />
+      <div className="nav-rail__header">
+        <LifeQuestLogo variant={logoVariant} className="nav-rail__brand" />
+        <NavCollapseButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the
           header, and the foot's own band. Rail furniture, not commands. */}

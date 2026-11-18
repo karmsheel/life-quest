@@ -998,45 +998,24 @@ a {
   z-index: 20;
 }
 
-/* The band the sidebar shares with the titlebar: the collapse toggle at its
-   trailing edge, and the rest of the strip a window drag handle. A wide column
-   puts a centred chevron in the middle of nowhere; at the edge it points at the
-   seam it moves. Collapsed, the band's own rule centres the same control in the
-   thin column (see "The thin rail"). It paints the rail's own mat, so the
-   sidebar runs to the window's top and the titlebar's fill begins only at the
-   sheet's leading edge. */
+/* The top line of the rail, in the window strip: the lockup at the leading edge
+   and the collapse toggle at the trailing one, both centred on the strip's line.
+   That is the DSH arrangement, and it is why the mark sits here rather than on a
+   band of its own: the toggle and the logo share one row. The rest of the strip
+   stays a window drag handle. Collapsed, the band's own rule centres the one
+   control the thin column keeps (see "The thin rail"). It paints the rail's own
+   mat, so the sidebar runs to the window's top and the titlebar's fill begins
+   only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   height: var(--window-titlebar-height);
   margin: 0 -0.35rem 0.1rem;
   padding-right: 0.45rem;
   -webkit-app-region: drag;
-}
-
-/* The studio's lockup, on its own band under the window strip. It is drawn from
-   the shipped SVG the operator picked (Settings → Developer), so the three inks
-   are theme colours: `.lifequest-logo .life-text` and the two sibling groups are
-   filled from `--life-color`, `--icon-color` and `--uest-color` below. The art
-   itself is cropped to its ink (`viewBox`), which is what makes the wordmark
-   legible at this size: uncropped, the supplied canvas spends a quarter of its
-   width on empty margins and a 32px strip could only draw the letters at six
-   pixels.
-
-   The band is a mark, not a control: it leaves no drag carve-out, and the strip
-   above it stays the window's handle. It carries a 10% inset on every side —
-   10% of the rail's content width left and right, and 10% of the lockup's own
-   height above and below — so the mark is scaled down and breathes instead of
-   running edge to edge. The horizontal inset is a real percentage (the band's
-   padding resolves against the rail column); the vertical one is a fixed
-   0.22rem, which is 10% of the 29–36px lockup at every variant's aspect. */
-.nav-rail__brand {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  padding: 0.22rem 10%;
 }
 
 /* One lockup, one ink model. The three groups are the supplied art's own classes:
@@ -1067,8 +1046,47 @@ a {
   fill: var(--uest-color);
 }
 
-.nav-rail__brand-logo {
+/* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
+   32px row), width taken from the artwork's own aspect, on the rail's content
+   edge. The art's three groups are painted from the theme tokens below; the
+   component never carries a fill of its own. It yields to the toggle rather than
+   pushing it off the row on a narrow theme. */
+.nav-rail__brand {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 1.7rem;
+  margin-left: 0.35rem;
+}
+
+.nav-rail__brand svg {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+}
+
+/* The lockups' Q emblem alone: the pure mark the thin rail's expand control
+   wears. One ink, `--icon-color`, exactly as the emblem group inside a lockup. */
+.lifequest-emblem {
+  display: block;
+}
+
+.lifequest-emblem svg {
+  display: block;
   width: 100%;
+  height: 100%;
+}
+
+.lifequest-emblem path {
+  fill: var(--icon-color);
+}
+
+.nav-toggle__brand {
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .nav-rail__section {
