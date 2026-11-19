@@ -133,22 +133,27 @@ The window title bar:
 
 The rail:
 
-- The **LifeQuest lockup** on the header line, in line with the collapse
-  toggle: the active logo — **Minimal** by default, and any of **Modern**,
+- The **LifeQuest lockup** in the rail's header row, level with the collapse
+  toggle and held one rail-content inset below the window's top edge — the same
+  air it has beside it, and the same measure again between it and the wing
+  band below. The active logo is **Minimal** by default, and any of **Modern**,
   **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
   carries short rules on either side of the words, like the supplied lockup, and
   is drawn from the shipped art; its three inks (LIFE, the Q emblem, UEST)
   are theme colours, so the lockup follows the active theme and the day/night
   palette instead of carrying one fixed picture. It is a mark, not a control:
-  the strip is the window's drag handle.
-- A collapse toggle at the top (**Collapse sidebar** / **Expand sidebar**), with
-  `aria-expanded` and `aria-controls="nav-rail"`. Collapsed, the 56px column has
-  no room for a word: the lockup leaves and the control becomes the pure Q
-  emblem (**Expand sidebar**), which reopens the rail on a press.
-- The five-wing band, a square block directly under the title bar. Its frame is
-  the block's one outline: the selected wing is marked by its raised fill, not by
-  a second line inside the frame. Collapsed, the band turns vertical and all five
-  wings stay reachable.
+  the header row (and the rest of the strip beside it) is the window's drag
+  handle.
+- A collapse toggle in that header row (**Collapse sidebar** / **Expand
+  sidebar**), with `aria-expanded` and `aria-controls="nav-rail"`. It drops with
+  the lockup. Collapsed, the 56px column has no room for a word: the lockup
+  leaves and the control becomes the pure Q emblem (**Expand sidebar**), which
+  reopens the rail on a press.
+- The five-wing band, a square block under the header row. It keeps its 44px but
+  follows the lockup's inset down the rail, so it is no longer level with the
+  title bar; its frame is the block's one outline, and the selected wing is
+  marked by its raised fill, not by a second line inside the frame. Collapsed,
+  the band turns vertical and all five wings stay reachable.
 - The active wing's pages, each with an icon and its label.
 - A divider, then the **Chats** section. Its header carries the title **Chats**
   plus a search icon (**Search chats**) and a view-options icon
