@@ -395,7 +395,7 @@ written to `.lifequest/about.md` and reaches the companion as context only.
 
 ## Developer
 
-**Developer** — *Switches that show what the app normally waits for*. It holds one
+**Developer** — *The bench: switches and the studio's own identity*. It holds one
 switch, **Preview the update badge**: *Makes the build number in the chat dock's
 bottom bar glow, and opens the upgrade popup from it, as if a newer LifeQuest had
 been published. Nothing is downloaded: the preview carries no installer, so the
@@ -404,6 +404,16 @@ and is off to begin with. The note under it says which state you are seeing: the
 preview alone (a non-existent **v9.9.9**), a preview shadowed by a real release the
 feed is offering, or the feed's own answer. **Updates** always reports the real
 feed, and a real release outranks the preview.
+
+Below the switch, the page holds the **Logo** bench: the four LifeQuest lockups —
+**Modern**, **Athletic**, **Classic** and **Minimal** (the shipped default) — as a
+radio group of live previews. A press changes the mark the rail and the splash
+screen wear immediately, and the pick is stored locally so it survives a restart
+and is known to the splash before React loads. The three inks of the lockup (the
+LIFE word, the Q emblem, the UEST word) are theme colours (`--life-color`,
+`--icon-color`, `--uest-color`): they follow the active theme and the day/night
+palette, and a theme file may override them (`colors.logoLife`, `colors.logoIcon`,
+`colors.logoUest`).
 
 ## Rules and behaviour
 

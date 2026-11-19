@@ -262,12 +262,14 @@ const SAMPLE = `(() => {
           // its own state pair is measured rather than a titlebar stand-in's.
           ariaExpanded: railToggle.getAttribute("aria-expanded"),
           ariaControls: railToggle.getAttribute("aria-controls"),
-          // Lucide names the icon in the svg's class list, so the expand/collapse
-          // pair is read off the shipping icon and not inferred from the label.
+          // Lucide names the icon in the svg's class list; the thin rail's
+          // control is the studio's pure Q emblem instead, so that is reported
+          // beside it rather than inferred from the label.
           icon: (() => {
             const svg = railToggle.querySelector("svg");
             return svg ? svg.getAttribute("class") || "" : null;
           })(),
+          hasEmblem: Boolean(railToggle.querySelector(".lifequest-emblem")),
           appRegion: getComputedStyle(railToggle).getPropertyValue("-webkit-app-region")
         }
       : null,
@@ -2052,12 +2054,13 @@ async function main() {
       `controls ${JSON.stringify(collapsed.header?.controls)}, band ${JSON.stringify(collapsed.header?.box)}`,
     );
     check(
-      "that control is the expand toggle in the rail",
+      "that control is the studio's pure emblem, and it expands the rail",
       collapsed.railToggle?.label === "Expand sidebar" &&
         collapsed.railToggle?.ariaExpanded === "false" &&
         collapsed.railToggle?.ariaControls === "nav-rail" &&
-        (collapsed.railToggle?.icon ?? "").includes("lucide-panel-left-open"),
-      `label ${JSON.stringify(collapsed.railToggle?.label)}, aria-expanded ${JSON.stringify(collapsed.railToggle?.ariaExpanded)}, controls ${JSON.stringify(collapsed.railToggle?.ariaControls)}, icon ${JSON.stringify(collapsed.railToggle?.icon)}`,
+        (collapsed.railToggle?.icon ?? "") === "" &&
+        collapsed.railToggle?.hasEmblem === true,
+      `label ${JSON.stringify(collapsed.railToggle?.label)}, aria-expanded ${JSON.stringify(collapsed.railToggle?.ariaExpanded)}, controls ${JSON.stringify(collapsed.railToggle?.ariaControls)}, icon ${JSON.stringify(collapsed.railToggle?.icon)}, emblem ${JSON.stringify(collapsed.railToggle?.hasEmblem)}`,
     );
     check(
       "the rail toggle centres in the icon column",

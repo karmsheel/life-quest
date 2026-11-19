@@ -112,7 +112,7 @@ authenticated, the app stays silent rather than warning wrongly.
 
 ## Stuck at the splash
 
-The splash is the lettered **LIFE QUEST** overlay declared in `index.html` and
+The splash is the **LifeQuest lockup** overlay declared in `index.html` and
 removed by `SplashGate`. It covers the app's **own** boot — the renderer bundle and
 the first vault read — with a floor of `SPLASH_FLOOR_MS = 1500`. It deliberately
 does **not** wait on the companion: a slow or missing companion is reported on the

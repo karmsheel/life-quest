@@ -93,6 +93,8 @@ type State = {
     ariaControls: string | null;
     /** The lucide icon class currently drawn in the toggle. */
     icon: string | null;
+    /** True when the control wears the studio's pure Q emblem (the thin rail). */
+    hasEmblem: boolean;
     appRegion: string;
   } | null;
   titlebarToggle: { label: string | null; box: Box } | null;
@@ -1492,7 +1494,8 @@ describe("shell sidebar (docked rail)", () => {
       `the thin rail's borders t/r/b/l are ${collapsed.rail!.borderTopWidth}/${collapsed.rail!.borderRightWidth}/${collapsed.rail!.borderBottomWidth}/${collapsed.rail!.borderLeftWidth}`,
     );
     // The toggle stays in the rail's header at both widths; collapsed it is the
-    // expand icon, centred in the icon column.
+    // studio's pure Q emblem — the studio's mark where the toggle was — centred
+    // in the icon column, and a press reopens the rail.
     assert.equal(
       collapsed.header?.controls.length,
       1,
@@ -1513,10 +1516,15 @@ describe("shell sidebar (docked rail)", () => {
       "nav-rail",
       "the thin rail's toggle does not name the rail it controls",
     );
-    assert.match(
+    assert.equal(
       collapsed.railToggle?.icon ?? "",
-      /lucide-panel-left-open/,
-      `the thin rail's toggle is not the expand icon (${JSON.stringify(collapsed.railToggle?.icon)})`,
+      "",
+      `the thin rail's toggle still draws a Lucide glyph (${JSON.stringify(collapsed.railToggle?.icon)})`,
+    );
+    assert.equal(
+      collapsed.railToggle?.hasEmblem,
+      true,
+      "the thin rail's toggle does not wear the studio's pure emblem",
     );
     assert.ok(
       Math.abs(

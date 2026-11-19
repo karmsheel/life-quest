@@ -1863,11 +1863,29 @@ export async function bootForE2e(): Promise<BrowserWindow> {
   return windowReady;
 }
 
+/**
+ * The window icon for the runs that read it off the window instead of off a
+ * packaged executable: development, and Linux in general.
+ *
+ * A packaged Windows build is the exception twice over — the taskbar, the
+ * shortcuts and the installer take the icon electron-builder stamped into the
+ * executable from `build/icon.ico`, and `build/` is not inside app.asar. So this
+ * resolves the committed master PNG from the source tree and only while the app
+ * is unpackaged; a packaged window does not ask for it.
+ */
+function unpackagedWindowIcon(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const icon = path.join(__dirname, "..", "build", "icon.png");
+  return fs.existsSync(icon) ? icon : undefined;
+}
+
 async function createWindow() {
   const overlay = usesTitleBarOverlay();
+  const windowIcon = unpackagedWindowIcon();
   const win = new BrowserWindow({    width: 1280,
     height: 800,
     titleBarStyle: "hidden",
+    ...(windowIcon ? { icon: windowIcon } : {}),
     ...(overlay
       ? {
           titleBarOverlay: {

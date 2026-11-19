@@ -100,6 +100,14 @@ const bridge: Record<string, unknown> = {
   },
   updateInstall: () => Promise.resolve({ ok: true as const, launched: true as const, installer: "", bytes: 0 }),
   onUpdateProgress: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. They are real bridge calls the shell makes; without stubs
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the harness before any
+  // view can be asserted.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   // ThemeProvider reaches for this on every mount, and the proxy's generic answer
   // is a *function* — so `windowChrome.setTitleBarOverlay` would be undefined and
   // the whole tree would come down before anything could be asserted.

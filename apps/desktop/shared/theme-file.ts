@@ -404,6 +404,18 @@ function parseColors(
       };
     }
   }
+  // The logo inks are optional (a palette that predates the lockup derives
+  // them), but a palette that does name one is painting the mark: a non-hex
+  // string there would reach CSS as an invalid fill and drop the group.
+  for (const key of ["logoLife", "logoIcon", "logoUest"] as const) {
+    const value = raw[key];
+    if (value !== undefined && (typeof value !== "string" || !HEX.test(value.trim()))) {
+      return {
+        ok: false,
+        error: `${field}.${key} must be a hex colour (#rgb, #rgba, #rrggbb or #rrggbbaa)`,
+      };
+    }
+  }
   const colors = {} as SkinColors;
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === "string") {

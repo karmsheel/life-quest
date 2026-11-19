@@ -169,7 +169,9 @@ import { BUILTIN_SKINS, DEFAULT_SKIN_NAME } from "@/lib/themes/presets";
 import { applyThemePreference } from "@/lib/theme";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
+import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider } from "@/state/VaultProvider";
+import SettingsPage from "@/pages/SettingsPage";
 import "@/styles/global.css";
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
@@ -277,6 +279,13 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. Both are real bridge calls the app ships; without a stub
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the whole harness.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
@@ -291,10 +300,6 @@ const bridge: Record<string, unknown> = {
       })),
     ),
   onCompanionStream: () => () => {},
-  // ThemeProvider watches the profile's theme folder on mount; the harness has
-  // no profile, so answer the read and the subscription with their real shapes.
-  themesList: () => ok([]),
-  onThemesChanged: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
   // its trailing cluster (theme, settings, chat) and not the fallback controls.
   // The overlay calls are kept: the native strip the OS paints beside the web
@@ -343,67 +348,77 @@ createRoot(root).render(
     <MemoryRouter initialEntries={["/home"]}>
       <ThemeProvider>
         <VaultProvider>
-          <ChatDockProvider>
-            <NavDockProvider>
-              <div className="app-root">
-                <WindowTitleBar />
-                <div className="app-root__body">
-                  <Routes>
-                    <Route element={<AppShell />}>
-                      {/*
-                        One route for every path. The rail's wing switcher really
-                        navigates (that is part of what this rig measures), and a
-                        pathless layout route with no matching child would unmount
-                        the shell instead of leaving it on screen — the wing rows
-                        would then be missing on the way back, which would read as
-                        a switcher that does not work.
-                      */}
-                      <Route
-                        path="*"
-                        element={
-                          <div className="stub-page">
-                            {/*
-                              Card probes. The ladder is measured on the shipping
-                              card rules — these two classes are what the dashboard
-                              paints — so a change to them shows up here instead of
-                              passing on a fill no page in the app renders.
-                            */}
-                            <div className="home-dashboard">
-                              <div className="home-card" data-probe="home-card" />
-                              <div className="view-card" data-probe="view-card" />
+          <UpdateProvider>
+            <ChatDockProvider>
+              <NavDockProvider>
+                <div className="app-root">
+                  <WindowTitleBar />
+                  <div className="app-root__body">
+                    <Routes>
+                      <Route element={<AppShell />}>
+                        {/*
+                          The settings sheet, mounted as its own child route so a
+                          rig can open the shipping Developer page from the
+                          titlebar's gear and measure the rail behind it. The
+                          overlay portals to the body, so the shell stays where the
+                          real app keeps it (the sheet is a surface, not a page).
+                        */}
+                        <Route path="/settings" element={<SettingsPage />} />
+                        {/*
+                          One route for every path. The rail's wing switcher really
+                          navigates (that is part of what this rig measures), and a
+                          pathless layout route with no matching child would unmount
+                          the shell instead of leaving it on screen — the wing rows
+                          would then be missing on the way back, which would read as
+                          a switcher that does not work.
+                        */}
+                        <Route
+                          path="*"
+                          element={
+                            <div className="stub-page">
+                              {/*
+                                Card probes. The ladder is measured on the shipping
+                                card rules — these two classes are what the dashboard
+                                paints — so a change to them shows up here instead of
+                                passing on a fill no page in the app renders.
+                              */}
+                              <div className="home-dashboard">
+                                <div className="home-card" data-probe="home-card" />
+                                <div className="view-card" data-probe="view-card" />
+                              </div>
+                              {/*
+                                The marker a built-in dashboard card wears beside
+                                its heading. The rail's Dashboard row must wear the
+                                same glyph, so the driver compares the two classes
+                                rather than trusting a hard-coded icon name that
+                                could drift from the badge it is supposed to match.
+                              */}
+                              <span data-probe="builtin-badge">
+                                <BuiltInBadge />
+                              </span>
+                              {/*
+                                The sheet's scroller has to really overflow, for the
+                                same reason the transcript does: a scrollbar claim
+                                measured on a region with nothing to scroll is a claim
+                                about an empty box. Drawn AFTER the two probes, and
+                                carrying no app class, so the ladder probes keep the
+                                geometry and the ink they were measured with.
+                              */}
+                              {Array.from({ length: 60 }, (_, i) => (
+                                <p key={i} className="muted" data-probe="sheet-filler">
+                                  Sheet filler line {i + 1}
+                                </p>
+                              ))}
                             </div>
-                            {/*
-                              The marker a built-in dashboard card wears beside
-                              its heading. The rail's Dashboard row must wear the
-                              same glyph, so the driver compares the two classes
-                              rather than trusting a hard-coded icon name that
-                              could drift from the badge it is supposed to match.
-                            */}
-                            <span data-probe="builtin-badge">
-                              <BuiltInBadge />
-                            </span>
-                            {/*
-                              The sheet's scroller has to really overflow, for the
-                              same reason the transcript does: a scrollbar claim
-                              measured on a region with nothing to scroll is a claim
-                              about an empty box. Drawn AFTER the two probes, and
-                              carrying no app class, so the ladder probes keep the
-                              geometry and the ink they were measured with.
-                            */}
-                            {Array.from({ length: 60 }, (_, i) => (
-                              <p key={i} className="muted" data-probe="sheet-filler">
-                                Sheet filler line {i + 1}
-                              </p>
-                            ))}
-                          </div>
-                        }
-                      />
-                    </Route>
-                  </Routes>
+                          }
+                        />
+                      </Route>
+                    </Routes>
+                  </div>
                 </div>
-              </div>
-            </NavDockProvider>
-          </ChatDockProvider>
+              </NavDockProvider>
+            </ChatDockProvider>
+          </UpdateProvider>
         </VaultProvider>
       </ThemeProvider>
     </MemoryRouter>

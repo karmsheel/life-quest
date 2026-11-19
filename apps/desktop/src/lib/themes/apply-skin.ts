@@ -212,6 +212,14 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
     "--primary-hover-foreground": readableOn(accentHover),
     "--accent-soft": accentSoft,
     "--accent-tint": accentTint,
+    // The logo's three inks, written on every palette: a theme that names them
+    // (Forge night is the brand trio) keeps its own, and one that does not gets
+    // a derived trio that can never disappear into its surface — the word in the
+    // palette's ink, the emblem in its brand accent. This is the "logo follows
+    // the theme" half of the contract; the overrides are the variables themselves.
+    "--life-color": pickHex(c.logoLife, c.foreground),
+    "--icon-color": pickHex(c.logoIcon, c.primary),
+    "--uest-color": pickHex(c.logoUest, c.logoLife, c.foreground),
     "--red-bg": mix(destructive, bg, dark ? 0.82 : 0.9),
     "--red-border": mix(destructive, bg, dark ? 0.65 : 0.75),
     ...composerVars(c, border),
@@ -323,6 +331,9 @@ export function clearSkinVars(el: HTMLElement = document.documentElement): void 
     "--primary-hover-foreground",
     "--accent-soft",
     "--accent-tint",
+    "--life-color",
+    "--icon-color",
+    "--uest-color",
     "--red-bg",
     "--red-border",
     "--green",

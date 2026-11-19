@@ -13,6 +13,8 @@ import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { CompositionSlot } from "@/components/composition/CompositionSlot";
+import { LifeQuestLogo } from "@/components/brand/LifeQuestLogo";
+import { useLogoVariant } from "@/components/brand/useLogoVariant";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -33,6 +35,7 @@ function countPending(decisions: readonly DecisionRecord[]): number {
 
 export function NavRail() {
   const { active } = useWing();
+  const logoVariant = useLogoVariant();
   const { chrome } = useTheme();
   const { snapshot } = useVault();
   /**
@@ -151,7 +154,22 @@ export function NavRail() {
 
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
+      {/*
+        The top line of the rail, in the window strip: the studio's lockup at the
+        leading edge and the collapse toggle at the trailing one, the way DSH's
+        sidebar header is arranged. The lockup is the operator's pick of the four
+        shipped logos (Settings → Developer, default Minimal), drawn inline so the
+        theme's three inks — LIFE, the Q emblem, UEST — reach it. It is a mark, not
+        a control; the strip stays the window's drag handle. The thin rail cannot
+        hold a word: the lockup leaves and the toggle becomes the pure emblem,
+        which reopens the rail on a press (see "The thin rail").
+      */}
       <div className="nav-rail__header">
+        <LifeQuestLogo
+          variant={logoVariant}
+          className="nav-rail__brand"
+          crop
+        />
         <NavCollapseButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the

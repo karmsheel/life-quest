@@ -100,7 +100,7 @@ folder is yours.
 
 ## First launch
 
-1. A splash screen draws the LifeQuest wordmark over a brief loading bar. It
+1. A splash screen draws the active LifeQuest lockup over a brief loading bar. It
    covers the app's own boot — the renderer bundle and the first vault read —
    with a floor of 1.5 seconds. It deliberately does not wait for the companion.
 2. If no companion can start, the **LifeQuest companion** screen appears (below).

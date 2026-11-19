@@ -182,6 +182,13 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. They are real bridge calls this shell makes; without stubs
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the harness.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   // The dock is part of the real shell this harness mounts, so the channels its
   // own mount reaches for are answered here. The rest fall through to the proxy
   // below; a channel that returns `ok(null)` where a list was expected takes the
