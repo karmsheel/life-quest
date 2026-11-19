@@ -457,15 +457,40 @@ The four slices, against spec §17, with the evidence this document records:
 - [x] **S3 studio: the look** — chrome, material, scene and palette visually, contrast refusal
   exact; artifact `themes-v2-studio-look.png`; **122 checks**.
 - [x] **S4 gallery** — five gallery themes seeded versionally, removal final; artifact
-  `themes-v2-gallery.png`; check total in the epic's final run (the Lead's number).
+  `themes-v2-gallery.png`; **125 checks** in the epic's final run.
 - [x] Every slice's run was one full rig run with the existing checks green (`pass: true`), and
   its artifact exists at the path above.
 - [x] The wiki, DESIGN.md and this document record each slice in the same branch;
   `npm run docs:check` was green at every slice (38 pages).
 - [x] Data-only held throughout: no schema field, no new route/tab/rail row, no executable
   content, no vault writes; every theme write went through the one main-side store.
-- [ ] The final full-rig total, `npm run typecheck` on the final commit, the READY handover,
-  and the merge/push are the Lead's steps — the branch is not merged, pushed, or on the bench.
+- [x] The final full-rig total (**125 checks, 30 artifacts**), `npm run typecheck` and
+  `npm run docs:check` on the final commit, and the READY handover are recorded below.
+
+### Final verification (the Lead's gate)
+
+- **Rig:** one full run of
+  `/root/.local/bin/lifequest-e2e <worktree> tests/theme-chrome-e2e.test.ts` on the final
+  tree — `report.pass: true`, **125/125 checks**, `failures: []`, TAP pass 1/fail 0/skipped 0;
+  all **30** `report.artifacts` keys resolve to files on disk.
+- **Artifacts inspected:** `themes-v2-trust.png` (History rows after a restore, preview bar
+  naming the file), `themes-v2-studio.png` (Fields + JSON tabs, five-region schematic, live
+  summary, painted draft), `themes-v2-studio-look.png` (palette studio with the failing-pair
+  verdict in red), `themes-v2-gallery.png` (the five bundled cards with Gallery chips and the
+  "remove it and it stays gone" line).
+- **Typecheck / docs:** `npm run typecheck` (renderer + node configs) and `npm run docs:check`
+  green on the final commit.
+- **Shipped bundle:** `npm run build` (`__LIFEQUEST_E2E_SEAM__ = false`) succeeds; the built
+  `dist-electron/main.js` contains **no** `LIFEQUEST_E2E` env parse and no
+  `__LIFEQUEST_E2E_SEAM__`, so no profile/feed/import seam is reachable in production by
+  environment. One residual dead reference survives minification — the handler's
+  `if (E2E_ACTIVE && E2E.themeImportSources?.length)` with `E2E_ACTIVE` compiled to `false`.
+  It is unreachable, reads a property that is never populated, and hands no renderer-controlled
+  path anywhere; the gate expression itself stayed in one place rather than duplicated for the
+  sake of a two-line dead branch.
+- **Hygiene:** one commit per slice on `feat/extensions-finish` (`6650a16`, `876354c`,
+  `3a2b06a`, `5406e97`) on top of the spec commit `b4ae18a`; worktree clean; the bench is back
+  on the primary checkout at `master`; nothing merged or pushed.
 
 The R4 record stays in `docs/research/2026-11-16-r4-composition-spike.md` and is not edited;
 this document is the S1–S4 record for the epic.
