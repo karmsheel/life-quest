@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Blocks, FolderOpen, Pencil, Plus, X } from "lucide-react";
+import { Blocks, FolderOpen, Pencil, Plus, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { useTheme } from "@/components/theme/ThemeProvider";
+import {
+  useTheme,
+  type ThemeHistoryVersion,
+} from "@/components/theme/ThemeProvider";
 import {
   parseThemeFile,
   resolveChrome,
@@ -73,6 +76,30 @@ function validate(raw: string): Validation {
   };
 }
 
+/**
+ * A saved version is named by how long ago the snapshot was taken: "just now"
+ * is the save the operator is looking at, and anything older than a week is a
+ * date. The rows have no other chronology on screen, so this is the ordering
+ * cue as well as the timestamp.
+ */
+function relativeTime(savedAt: string): string {
+  const then = Date.parse(savedAt);
+  if (Number.isNaN(then)) return "unknown time";
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} d ago`;
+  return new Date(then).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 type Editing = { file: string; raw: string; saving: boolean };
 
 export default function ExtensionsPage() {
@@ -89,6 +116,9 @@ export default function ExtensionsPage() {
     openThemesFolder,
     readThemeFile,
     writeThemeFile,
+    readThemeHistory,
+    restoreThemeVersion,
+    importTheme,
   } = useTheme();
 
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -96,9 +126,14 @@ export default function ExtensionsPage() {
   const [draftLabel, setDraftLabel] = useState("");
   const [draftSource, setDraftSource] = useState<"blank" | "current">("blank");
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmFile, setConfirmFile] = useState<string | null>(null);
+  /** `null` while the history read is in flight; `[]` is a readable empty list. */
+  const [history, setHistory] = useState<ThemeHistoryVersion[] | null>(null);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const refreshedOnMount = useRef(false);
 
   useEffect(() => {
@@ -114,6 +149,38 @@ export default function ExtensionsPage() {
       setConfirmFile(null);
     }
   }, [confirmFile, themeFiles]);
+
+  const editingFile = editing?.file ?? null;
+
+  /*
+   * Read the open file's saved versions. Keyed on the file name, not the editing
+   * object: every keystroke rebuilds that object, and re-reading history on each
+   * one would be a round-trip per character. A restore re-reads explicitly.
+   */
+  useEffect(() => {
+    if (editingFile === null) {
+      setHistory(null);
+      setHistoryFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setHistory(null);
+    setHistoryFailed(false);
+    void readThemeHistory(editingFile).then((versions) => {
+      if (cancelled) return;
+      if (versions === null) {
+        // The provider already put main's refusal in the error banner; the
+        // section only has to stop claiming it is still loading.
+        setHistory([]);
+        setHistoryFailed(true);
+        return;
+      }
+      setHistory(versions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editingFile, readThemeHistory]);
 
   const validation = editing === null ? null : validate(editing.raw);
 
@@ -200,6 +267,53 @@ export default function ExtensionsPage() {
     setEditing(null);
   }
 
+  async function onImport() {
+    setError(null);
+    setStatus(null);
+    setImporting(true);
+    const imported = await importTheme();
+    setImporting(false);
+    // A cancelled dialog is not a status: the operator closed it on purpose.
+    if (!imported) return;
+    setStatus(`Imported ${imported.file}.`);
+  }
+
+  /**
+   * Put one saved version back. The restore writes from main, so the open
+   * editor has to be re-read too — showing history change under a textarea that
+   * still holds the replaced bytes would invite saving the wrong thing. The
+   * write previews through the provider like any other.
+   */
+  async function onRestore(id: string) {
+    if (!editing) return;
+    setError(null);
+    setStatus(null);
+    setRestoringId(id);
+    const restored = await restoreThemeVersion(editing.file, id);
+    if (!restored) {
+      setRestoringId(null);
+      return;
+    }
+    const raw = await readThemeFile(editing.file);
+    if (raw !== null) {
+      setEditing((current) =>
+        current && current.file === editing.file ? { ...current, raw } : current,
+      );
+    }
+    const versions = await readThemeHistory(editing.file);
+    if (versions === null) {
+      setHistory([]);
+      setHistoryFailed(true);
+    } else {
+      setHistory(versions);
+      setHistoryFailed(false);
+    }
+    setStatus(
+      `Restored ${editing.file}. It previews for 10 seconds — keep it to make it yours.`,
+    );
+    setRestoringId(null);
+  }
+
   async function onRemove(file: string) {
     if (confirmFile !== file) {
       setConfirmFile(file);
@@ -226,6 +340,15 @@ export default function ExtensionsPage() {
           </p>
         </div>
         <div className="extensions-page__header-actions">
+          <Button
+            variant="outline"
+            data-testid="extensions-import"
+            disabled={importing}
+            onClick={() => void onImport()}
+          >
+            <Upload size={13} aria-hidden />
+            {importing ? "Importing…" : "Import from file"}
+          </Button>
           <Button
             variant="outline"
             data-testid="extensions-open-folder"
@@ -407,6 +530,63 @@ export default function ExtensionsPage() {
               {editing.saving ? "Saving…" : "Save"}
             </Button>
           </div>
+          <section
+            className="extensions-page__history"
+            aria-label={`History of ${editing.file}`}
+            data-testid="extension-history"
+          >
+            <h3 className="extensions-page__history-title">History</h3>
+            <p className="extensions-page__history-note muted">
+              Every save keeps the bytes it replaces, outside the theme list. A
+              restore writes the snapshot back through the same gate, so it
+              previews and is itself undoable.
+            </p>
+            {history === null ? (
+              <p className="extensions-page__history-empty">Loading…</p>
+            ) : historyFailed ? (
+              <p className="extensions-page__history-empty">
+                History could not be read — the error is above.
+              </p>
+            ) : history.length === 0 ? (
+              <p
+                className="extensions-page__history-empty"
+                data-testid="extension-history-empty"
+              >
+                No saved versions yet — the first save starts history.
+              </p>
+            ) : (
+              <ul className="extensions-page__history-list">
+                {history.map((version) => (
+                  <li
+                    key={version.id}
+                    className="extensions-page__history-row"
+                    data-testid="extension-history-row"
+                    data-version-id={version.id}
+                    data-label={version.label}
+                  >
+                    <span className="extensions-page__history-time">
+                      {relativeTime(version.savedAt)}
+                    </span>
+                    <span className="extensions-page__history-label">
+                      {version.label}
+                    </span>
+                    <span className="extensions-page__history-bytes">
+                      {version.bytes} B
+                    </span>
+                    <Button
+                      variant="ghost"
+                      data-testid="extension-history-restore"
+                      aria-label={`Restore version ${version.label}, saved ${relativeTime(version.savedAt)}`}
+                      disabled={restoringId !== null}
+                      onClick={() => void onRestore(version.id)}
+                    >
+                      {restoringId === version.id ? "Restoring…" : "Restore"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </section>
       ) : null}
 

@@ -30,6 +30,14 @@ import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import { parseThemeFile } from "../shared/theme-file.ts";
 import { SHOWCASE_THEMES } from "../shared/showcase-themes.ts";
+import {
+  importThemeFile,
+  isThemeVersionId,
+  listThemeHistory,
+  readThemeSnapshot,
+  restoreThemeVersion,
+  saveThemeFile,
+} from "./theme-store.js";
 import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
@@ -121,6 +129,13 @@ const E2E: {
    * policy at GitHub over https.
    */
   updateTrust?: { hosts: string[]; allowHttp?: boolean; strictAssetPath?: boolean };
+  /**
+   * Where `theme:import` takes its next file from, for the import rig. The
+   * product opens a dialog, which a rig cannot drive; a queued absolute path is
+   * consumed instead, one per call. Present only inside the seam gate below, so
+   * the shipped bundle has neither the branch nor the string.
+   */
+  themeImportSources?: string[];
 } = { showWindow: true };
 /**
  * Whether the rig seam is live in this process.
@@ -157,6 +172,7 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
           allowHttp?: unknown;
           strictAssetPath?: unknown;
         };
+        themeImportSources?: unknown;
       };
       if (typeof parsed.userData === "string" && parsed.userData.trim()) {
         // Realpath, not the string: `userData` must be absolute and existing
@@ -221,6 +237,17 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
           allowHttp: parsed.updateTrust?.allowHttp === true,
           strictAssetPath: parsed.updateTrust?.strictAssetPath === true,
         };
+      }
+      // The import rig's queue. Absolute paths only: the handler reads whatever
+      // it is given, and a relative one would resolve against the process's
+      // working directory rather than the fixture the rig wrote.
+      const importSources = parsed.themeImportSources;
+      if (Array.isArray(importSources)) {
+        const absolute = importSources.filter(
+          (source): source is string =>
+            typeof source === "string" && path.isAbsolute(source),
+        );
+        if (absolute.length > 0) E2E.themeImportSources = absolute;
       }
     } catch (err) {
       console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
@@ -1591,15 +1618,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   });
 
   /*
-   * Read/write one theme file on the operator's behalf — the two calls the
-   * Extensions page needs to edit and create without leaving the app.
+   * Read one theme file on the operator's behalf — the Extensions editor's load.
    *
-   * Writing is the companion's own door in main, re-used: the raw text is
-   * parsed with the same shared rules (`parseThemeFile`), a refusal names the
-   * field, and only a valid file is written (atomically, so a half-written
-   * file can never be watched). The renderer is told immediately; the fs
-   * watcher is for files that appear from outside, not for this window's own
-   * budgeted writes.
+   * The write side lives below and in `theme-store.ts`: the parser, the atomic
+   * write and the history snapshot are one path now, shared with the
+   * companion's `write_theme`, restore and import.
    */
   ipcMain.handle("theme:read", async (_event, file: unknown) => {
     const safe = safeThemeFile(file);
@@ -1620,6 +1643,17 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     }
   });
 
+  /**
+   * Write one theme file, and answer for the versions around it.
+   *
+   * The write itself now lives in `theme-store.ts`, the one module every writer
+   * goes through: it validates, keeps the bytes it replaces as history, and
+   * renames atomically. This handler keeps only what belongs to IPC — the
+   * argument types, the window's immediate notice, and the same `Result`
+   * envelope the renderer already handles. The notice matters because the
+   * watcher is for files that appear from outside, not for this window's own
+   * writes: waiting for the fs event would make Save feel one beat slow.
+   */
   ipcMain.handle("theme:write", async (event, file: unknown, raw: unknown) => {
     const safe = safeThemeFile(file);
     if (!safe) {
@@ -1628,31 +1662,107 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     if (typeof raw !== "string") {
       return { ok: false as const, error: "theme source must be a JSON string" };
     }
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch (error) {
-      return {
-        ok: false as const,
-        error: error instanceof Error ? error.message : "theme source is not JSON",
-      };
+    const written = await saveThemeFile(safe, raw);
+    if (!written.ok) return written;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: { file: written.file } };
+  });
+
+  /**
+   * The saved versions behind one file's Save button.
+   *
+   * Empty is a valid answer, not an error: a theme that has never been replaced
+   * has no history, and the editor says so in its own empty state.
+   */
+  ipcMain.handle("theme:history", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
     }
-    const parsed = parseThemeFile(json);
-    if (!parsed.ok) return { ok: false as const, error: parsed.error };
     try {
-      const dir = path.join(app.getPath("userData"), "themes");
-      await fs.promises.mkdir(dir, { recursive: true });
-      const target = path.join(dir, safe);
-      await fs.promises.writeFile(`${target}.tmp`, `${raw.trim()}\n`);
-      await fs.promises.rename(`${target}.tmp`, target);
-      BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
-      return { ok: true as const, value: { file: safe } };
+      return {
+        ok: true as const,
+        value: { file: safe, versions: await listThemeHistory(safe) },
+      };
     } catch (error) {
       return {
         ok: false as const,
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  });
+
+  /**
+   * Put a saved version back.
+   *
+   * The id is allow-listed before it reaches the store, because it names a path
+   * segment. Restoring is a write, so the window hears `theme:changed` and the
+   * bytes it replaced become the next version; `label` is read back from the
+   * snapshot so the caller can say what was restored without re-parsing it.
+   */
+  ipcMain.handle("theme:restore", async (event, file: unknown, id: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    if (!isThemeVersionId(id)) {
+      return { ok: false as const, error: "theme version id is not valid" };
+    }
+    // Read the label before the restore, not after: the restore itself adds a
+    // version and prunes the oldest, so the snapshot being restored can be the
+    // one the retention window drops. The bytes are read once here for the
+    // caller's sentence; the store reads them again to validate and write.
+    let label = safe.replace(/\.json$/, "");
+    try {
+      const raw = await readThemeSnapshot(safe, id);
+      if (raw !== null) {
+        const json = JSON.parse(raw) as { label?: unknown };
+        if (typeof json.label === "string" && json.label.trim()) label = json.label;
+      }
+    } catch {
+      // The restore below will refuse the id if its bytes are not readable.
+    }
+    const restored = await restoreThemeVersion(safe, id);
+    if (!restored.ok) return restored;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: { file: restored.file, label } };
+  });
+
+  /**
+   * Copy a theme file from somewhere on disk into the profile.
+   *
+   * In the product the path comes from the operator's own dialog, so the
+   * renderer never supplies one — a renderer that could name the path could
+   * read any file the app can. The rig cannot drive a native dialog and gets
+   * the queued fixture instead, taken only when the whole seam is live. A
+   * cancelled dialog is `{ ok: true, value: null }`: backing out is not a
+   * failure. The copy is not kept automatically — the watcher previews it like
+   * any other write, and the operator's Keep is still the consent.
+   */
+  ipcMain.handle("theme:import", async (event) => {
+    let sourcePath: string | null = null;
+    if (E2E_ACTIVE && E2E.themeImportSources?.length) {
+      sourcePath = E2E.themeImportSources.shift() ?? null;
+    } else {
+      const win = windowFromEvent(event);
+      const options: Electron.OpenDialogOptions = {
+        title: "Import theme",
+        filters: [{ name: "LifeQuest theme", extensions: ["json"] }],
+        properties: ["openFile"],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: true as const, value: null };
+      }
+      sourcePath = result.filePaths[0] ?? null;
+    }
+    if (!sourcePath) return { ok: true as const, value: null };
+    const imported = await importThemeFile(sourcePath);
+    if (!imported.ok) return imported;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: imported.value };
   });
 
   ipcMain.handle("theme:openFolder", async () => {

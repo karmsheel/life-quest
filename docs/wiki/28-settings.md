@@ -122,7 +122,11 @@ Remove?). **Open folder** opens the profile's `themes/` folder and **Export
 current theme** saves the palette, material and chrome you are wearing as one
 JSON file you can share. A file whose placement is not one of the declared
 values, or whose palette fails WCAG AA contrast, is refused with the field — or
-the failing colour pair — named.
+the failing colour pair — named. Every save made from the **Extensions** page can
+be stepped back through that file's **History** there, and a file can be brought
+in from disk with **Import from file**; both are workshop gestures on
+`/extensions`, while this tab stays the place where your own Appearance picks
+outrank the file.
 
 Theme, skin, starred list and installed themes are stored in the window's local
 storage, not in the vault: they are this installation's look, and they do not

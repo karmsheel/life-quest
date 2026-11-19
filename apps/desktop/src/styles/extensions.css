@@ -165,6 +165,74 @@
   color: var(--muted-foreground);
 }
 
+/* History — the undo the editor grew: one row per saved version, held outside
+   the theme list. A row is a small table: when, what the look was called, how
+   big the snapshot is, and the one verb. */
+.extensions-page__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.extensions-page__history-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.extensions-page__history-note {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.extensions-page__history-empty {
+  margin: 0;
+  padding: 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.extensions-page__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.extensions-page__history-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  font-size: 0.78rem;
+}
+
+.extensions-page__history-time {
+  color: var(--muted-foreground);
+}
+
+.extensions-page__history-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.extensions-page__history-bytes {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Cards */
 .extensions-page__list {
   list-style: none;

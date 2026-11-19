@@ -104,6 +104,7 @@ const EXTENSIONS_OFF_PNG = path.join(
   artifactsDir,
   "themes-v2-extensions-off.png",
 );
+const TRUST_PNG = path.join(artifactsDir, "themes-v2-trust.png");
 
 const failures = [];
 const checks = [];
@@ -530,6 +531,28 @@ const SAMPLE = `(async () => {
     extensionsCountText:
       document.querySelector('[data-testid="extensions-count"]')?.textContent?.trim() ?? null,
     extensionsActive: Boolean(document.querySelector('[data-testid="extension-active"]')),
+    // S1 Trust: the editor's version history and the page's import line.
+    historyRows: (() => {
+      const section = document.querySelector('[data-testid="extension-history"]');
+      if (!section) return null;
+      return [...section.querySelectorAll('[data-testid="extension-history-row"]')].map((row) => ({
+        id: row.getAttribute("data-version-id"),
+        label: row.getAttribute("data-label"),
+        text: (row.textContent || "").replace(/\\s+/g, " ").trim(),
+        restore: Boolean(row.querySelector('[data-testid="extension-history-restore"]')),
+      }));
+    })(),
+    historyEmpty: (() => {
+      const section = document.querySelector('[data-testid="extension-history"]');
+      if (!section) return false;
+      const rows = section.querySelectorAll('[data-testid="extension-history-row"]');
+      return rows.length === 0 && (section.textContent || "").includes("No saved versions yet");
+    })(),
+    editorTabs: ["extension-editor-tab-fields", "extension-editor-tab-json"].filter((id) =>
+      Boolean(document.querySelector('[data-testid="' + id + '"]')),
+    ),
+    importStatus:
+      document.querySelector('[data-testid="extensions-status"]')?.textContent?.trim() ?? null,
   };
 })()`;
 
@@ -702,10 +725,25 @@ async function main() {
   process.env.HERMES_HOME = hermesHome;
   process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
   process.env.VITE_DEV_SERVER_URL = DEV_URL;
+  // S1 import seam: the product main process reads LIFEQUEST_E2E at import
+  // time, so the queued fixture paths for the three imports below are set
+  // before `bootForE2e` is imported. `theme:import` shifts one per call while
+  // the seam is active; the fixtures themselves are committed beside this rig.
+  const importFixtures = [
+    path.join(here, "fixtures", "theme-import-valid.json"),
+    path.join(here, "fixtures", "theme-import-invalid.json"),
+    path.join(here, "fixtures", "theme-import-collision.json"),
+  ];
+  for (const fixture of importFixtures) {
+    if (!fs.existsSync(fixture)) {
+      throw new Error(`missing import fixture: ${fixture}`);
+    }
+  }
   process.env.LIFEQUEST_E2E = JSON.stringify({
     userData: profileDir,
     showWindow: true,
     mcpPorts: { local: mcpLocal, invite: mcpInvite },
+    themeImportSources: importFixtures,
   });
   delete process.env.ELECTRON_RUN_AS_NODE;
 
@@ -4147,6 +4185,468 @@ async function main() {
     }),
   );
 
+  // ── 12i: Trust — history kept/restored/capped; import validated and copied ─
+  // A save now snapshots the bytes it replaces, outside `themes/`, and any save
+  // can be put back; a file can also arrive through the import door, validated
+  // and copied under its own slug, never overwriting and never auto-kept. The
+  // import fixtures are queued into the E2E seam before boot (see
+  // `themeImportSources` in the world setup); the saves go through the shipped
+  // editor, so the page's own seam is what is judged, not a second harness.
+  const trustFile = "rig-trust.json";
+  const trustPath = path.join(themesDir, trustFile);
+  const trustTheme = (label) => ({
+    name: "rig-trust",
+    label,
+    description:
+      "History probe: the editor saves this file with distinct labels and restores a version.",
+    chrome: { wingSwitcher: { place: "titlebar-left", variant: "labels" } },
+  });
+  const readLabel = (full) => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(full, "utf8"));
+      return typeof parsed.label === "string" ? parsed.label : null;
+    } catch {
+      return null;
+    }
+  };
+  const untilLabel = async (full, label, timeout = 10_000) => {
+    const until = Date.now() + timeout;
+    while (Date.now() < until) {
+      if (readLabel(full) === label) return true;
+      await sleep(100);
+    }
+    return readLabel(full) === label;
+  };
+  const openTrustEditor = async () => {
+    const clicked = await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-rig-trust"] [data-testid="extension-edit"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      10_000,
+    );
+  };
+  const setTrustRaw = async (text) =>
+    evaluate(`(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(area, ${JSON.stringify(text)});
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+  const saveTrustEditor = async (label) => {
+    const ready = await untilTrue(
+      `(() => {
+        const status = document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "";
+        const save = document.querySelector('[data-testid="extension-editor-save"]');
+        return status.includes(${JSON.stringify(label)}) && Boolean(save && !save.disabled);
+      })()`,
+      10_000,
+    );
+    if (!ready) return false;
+    await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-editor-save"]');
+      if (!b || b.disabled) return false;
+      b.click();
+      return true;
+    })()`);
+    return untilTrue(
+      `!document.querySelector('[data-testid="extension-editor"]')`,
+      10_000,
+    );
+  };
+
+  fs.writeFileSync(
+    trustPath,
+    `${JSON.stringify(trustTheme("Trust Zero"), null, 2)}\n`,
+  );
+  const trustRow = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-rig-trust"]'))`,
+    15_000,
+  );
+  const openedFirst = await openTrustEditor();
+  const firstEmpty = openedFirst
+    ? await waitFor((s) => s.historyEmpty === true, 10_000)
+    : null;
+  let savesOk = openedFirst;
+  for (const label of ["Trust One", "Trust Two", "Trust Three"]) {
+    if (!savesOk) break;
+    await setTrustRaw(`${JSON.stringify(trustTheme(label), null, 2)}\n`);
+    if (!(await saveTrustEditor(label))) {
+      savesOk = false;
+      break;
+    }
+    // Every save closes the editor; the next pass reopens it, and the third
+    // save stays closed so the final open is the one that reads history.
+    if (label !== "Trust Three" && !(await openTrustEditor())) {
+      savesOk = false;
+      break;
+    }
+  }
+  const reopenedForHistory = savesOk ? await openTrustEditor() : false;
+  const diskAfterThree = await untilLabel(trustPath, "Trust Three");
+  const historyBefore = reopenedForHistory
+    ? await waitFor(
+        (s) => Array.isArray(s.historyRows) && s.historyRows.length >= 3,
+        15_000,
+      )
+    : null;
+  const rowsBefore = historyBefore?.historyRows ?? [];
+  const rowText = (row) => row?.text ?? "";
+  const historyLabelsMatch =
+    rowsBefore.length === 3 &&
+    rowsBefore[0].label === "Trust Two" &&
+    rowsBefore[1].label === "Trust One" &&
+    rowsBefore[2].label === "Trust Zero" &&
+    rowText(rowsBefore[0]).includes("Trust Two") &&
+    rowText(rowsBefore[1]).includes("Trust One") &&
+    rowText(rowsBefore[2]).includes("Trust Zero");
+  const historyRowShape =
+    rowsBefore.length === 3 &&
+    rowsBefore.every(
+      (row) =>
+        typeof row.id === "string" &&
+        row.id.length > 0 &&
+        row.restore === true &&
+        /\d+\s*B/.test(rowText(row)) &&
+        /(just now|ago|\d{4})/.test(rowText(row)),
+    );
+
+  // Put the OLDEST version back. It becomes the previewed look, so the bar has
+  // to name this file, and the bytes it replaced become a new version.
+  const restoreClicked = reopenedForHistory
+    ? await evaluate(`(() => {
+        const rows = [...document.querySelectorAll('[data-testid="extension-history-row"]')];
+        if (rows.length === 0) return false;
+        const last = rows[rows.length - 1];
+        const b = last.querySelector('[data-testid="extension-history-restore"]');
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`)
+    : false;
+  const diskAfterRestore = restoreClicked
+    ? await untilLabel(trustPath, "Trust Zero")
+    : false;
+  const restoredUi = restoreClicked
+    ? await waitFor(
+        (s) =>
+          (s.previewText ?? "").includes(trustFile) &&
+          Array.isArray(s.historyRows) &&
+          s.historyRows.length >= 4,
+        15_000,
+      )
+    : null;
+  const restoredRows = restoredUi?.historyRows ?? [];
+  const rawAfterRestore = restoreClicked
+    ? await untilTrue(
+        `(document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? "").includes("Trust Zero")`,
+        10_000,
+      )
+    : false;
+  const themeList = await evaluate("window.lifequest.themesList()");
+  const listedNames = themeList?.ok
+    ? themeList.value.map((entry) => entry.file)
+    : [];
+  // The artifact claims "the editor with the History list open after a
+  // restore", so put that section in the middle of the 1280x800 frame.
+  await evaluate(`(() => {
+    const section = document.querySelector('[data-testid="extension-history"]');
+    if (section) section.scrollIntoView({ block: "center" });
+    return true;
+  })()`);
+  await sleep(500);
+  const trustShot = await win.webContents.capturePage();
+  fs.writeFileSync(TRUST_PNG, trustShot.toPNG());
+  check(
+    "history-is-kept-and-a-version-can-be-restored",
+    trustRow === true &&
+      firstEmpty?.historyEmpty === true &&
+      savesOk === true &&
+      diskAfterThree === true &&
+      historyLabelsMatch &&
+      historyRowShape &&
+      restoreClicked === true &&
+      diskAfterRestore === true &&
+      restoredUi !== null &&
+      (restoredUi?.previewText ?? "").includes(trustFile) &&
+      restoredRows.length >= 4 &&
+      rowText(restoredRows[0]).includes("Trust Three") &&
+      rawAfterRestore === true &&
+      listedNames.length > 0 &&
+      listedNames.every((name) => name.endsWith(".json")),
+    JSON.stringify({
+      row: trustRow,
+      emptyFirst: firstEmpty?.historyEmpty,
+      savesOk,
+      disk: { afterThree: diskAfterThree, afterRestore: diskAfterRestore },
+      rowsBefore: rowsBefore.map(rowText),
+      restoreClicked,
+      preview: (restoredUi?.previewText ?? "").slice(0, 80),
+      rowsAfter: restoredRows.map(rowText),
+      rawAfterRestore,
+    }),
+  );
+
+  // ── 12i.2: eleven more writes prune to the newest ten ────────────────────
+  // The cap is a main-side fact, so it is judged through the IPC the page uses;
+  // the editor is closed first so a re-render cannot race the answer.
+  await click("extension-editor-cancel");
+  await untilTrue(
+    `!document.querySelector('[data-testid="extension-editor"]')`,
+    8_000,
+  );
+  const retentionWrites = [];
+  for (let i = 0; i < 11; i += 1) {
+    const raw = `${JSON.stringify(trustTheme(`Retention ${i}`), null, 2)}\n`;
+    retentionWrites.push(
+      await evaluate(
+        `window.lifequest.themeWrite(${JSON.stringify(trustFile)}, ${JSON.stringify(raw)})`,
+      ),
+    );
+    await sleep(5);
+  }
+  const cappedAnswer = await evaluate(
+    `window.lifequest.themeHistory(${JSON.stringify(trustFile)})`,
+  );
+  const cappedVersions = cappedAnswer?.ok ? cappedAnswer.value.versions : null;
+  const cappedShape =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.every(
+      (version) =>
+        version &&
+        typeof version.id === "string" &&
+        typeof version.savedAt === "string" &&
+        typeof version.label === "string" &&
+        typeof version.bytes === "number",
+    );
+  const cappedTimes =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.every(
+      (version, index) =>
+        index === 0 ||
+        new Date(cappedVersions[index - 1].savedAt).getTime() >=
+          new Date(version.savedAt).getTime(),
+    );
+  const cappedLabels =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.filter((version) => /^Retention \d+$/.test(version.label))
+      .length >= 8;
+  check(
+    "history-retention-caps-at-ten",
+    retentionWrites.every((result) => result?.ok === true) &&
+      Array.isArray(cappedVersions) &&
+      cappedVersions.length === 10 &&
+      cappedShape &&
+      cappedTimes &&
+      cappedLabels,
+    JSON.stringify({
+      writes: retentionWrites.length,
+      writesOk: retentionWrites.filter((result) => result?.ok).length,
+      versions: cappedVersions?.length,
+      labels: (cappedVersions ?? []).map((version) => version.label),
+    }),
+  );
+
+  // ── 12i.3: three imports through the seam queue ──────────────────────────
+  // The queue was filled before boot: valid, invalid, colliding. The first and
+  // the invalid one go through the shipped button (so the page's status and
+  // refusal are judged too); the colliding copy is asked over the bridge so the
+  // destination name it answers with is checked exactly.
+  const keptBeforeAnswer = await evaluate("window.lifequest.themeGetState()");
+  const keptBefore = keptBeforeAnswer?.ok
+    ? keptBeforeAnswer.value.keptFile
+    : null;
+  const showcaseNames = ["showcase-solar-system.json", "showcase-helios.json"];
+  const showcaseBefore = new Map();
+  for (const name of showcaseNames) {
+    const full = path.join(themesDir, name);
+    if (fs.existsSync(full)) showcaseBefore.set(name, fs.readFileSync(full));
+  }
+  const listBefore = await evaluate("window.lifequest.themesList()");
+  const namesBefore = listBefore?.ok
+    ? listBefore.value.map((entry) => entry.file)
+    : [];
+  const importClicked = await click("extensions-import");
+  const importOne = importClicked
+    ? await waitFor(
+        (s) =>
+          (s.importStatus ?? "").includes("import-probe.json") &&
+          (s.previewText ?? "").includes("import-probe.json"),
+        20_000,
+      )
+    : null;
+  const validImportedPath = path.join(themesDir, "import-probe.json");
+  let validImported = null;
+  try {
+    validImported = JSON.parse(fs.readFileSync(validImportedPath, "utf8"));
+  } catch {
+    validImported = null;
+  }
+  const listAfterOne = await evaluate("window.lifequest.themesList()");
+  const namesAfterOne = listAfterOne?.ok
+    ? listAfterOne.value.map((entry) => entry.file)
+    : [];
+  const invalidClicked = await click("extensions-import");
+  let invalidUi = "";
+  if (invalidClicked) {
+    const invalidDeadline = Date.now() + 15_000;
+    while (Date.now() < invalidDeadline) {
+      invalidUi = await evaluate(`(() => {
+        const themeError = document.querySelector('[data-testid="theme-error"]')?.textContent ?? "";
+        const pageError = document.querySelector('[data-testid="extensions-error"]')?.textContent ?? "";
+        return themeError + " " + pageError;
+      })()`);
+      if (invalidUi.includes("chrome.wingSwitcher.place")) break;
+      await sleep(120);
+    }
+  }
+  const listAfterTwo = await evaluate("window.lifequest.themesList()");
+  const namesAfterTwo = listAfterTwo?.ok
+    ? listAfterTwo.value.map((entry) => entry.file)
+    : [];
+  const noBadFileAdded =
+    !fs.existsSync(path.join(themesDir, "import-probe-bad.json")) &&
+    !fs.existsSync(path.join(themesDir, "import-probe-imported.json"));
+  const collisionAnswer = await evaluate("window.lifequest.themeImport()");
+  const collisionPath = path.join(themesDir, "import-probe-imported.json");
+  let collisionImported = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      collisionImported = JSON.parse(fs.readFileSync(collisionPath, "utf8"));
+    } catch {
+      collisionImported = null;
+    }
+    if (collisionImported?.label === "Import Probe Again") break;
+    await sleep(100);
+  }
+  const collisionPreview = await waitFor(
+    (s) => (s.previewText ?? "").includes("import-probe-imported.json"),
+    15_000,
+  );
+  const listAfterThree = await evaluate("window.lifequest.themesList()");
+  const namesAfterThree = listAfterThree?.ok
+    ? listAfterThree.value.map((entry) => entry.file)
+    : [];
+  const keptAfterAnswer = await evaluate("window.lifequest.themeGetState()");
+  const keptAfter = keptAfterAnswer?.ok
+    ? keptAfterAnswer.value.keptFile
+    : "unreadable";
+  const importedHistory = await evaluate(
+    'window.lifequest.themeHistory("import-probe.json")',
+  );
+  const showcaseUntouched =
+    showcaseBefore.size === showcaseNames.length &&
+    showcaseNames.every((name) => {
+      const before = showcaseBefore.get(name);
+      const full = path.join(themesDir, name);
+      return Boolean(
+        before && fs.existsSync(full) && fs.readFileSync(full).equals(before),
+      );
+    });
+  check(
+    "an-imported-theme-is-validated-and-copied",
+    trustRow === true &&
+      importClicked === true &&
+      (importOne?.importStatus ?? "").includes("import-probe.json") &&
+      validImported?.name === "import-probe" &&
+      validImported?.label === "Import Probe" &&
+      namesAfterOne.includes("import-probe.json") &&
+      invalidClicked === true &&
+      invalidUi.includes("chrome.wingSwitcher.place") &&
+      namesAfterTwo.length === namesAfterOne.length &&
+      namesAfterTwo.every((name) => namesAfterOne.includes(name)) &&
+      noBadFileAdded &&
+      collisionAnswer?.ok === true &&
+      collisionAnswer.value?.file === "import-probe-imported.json" &&
+      collisionAnswer.value?.label === "Import Probe Again" &&
+      collisionImported?.label === "Import Probe Again" &&
+      (collisionPreview?.previewText ?? "").includes(
+        "import-probe-imported.json",
+      ) &&
+      namesAfterThree.includes("import-probe-imported.json") &&
+      showcaseUntouched &&
+      keptAfter === keptBefore &&
+      importedHistory?.ok === true &&
+      importedHistory.value?.versions?.length === 0,
+    JSON.stringify({
+      importClicked,
+      status: importOne?.importStatus,
+      valid: { name: validImported?.name, label: validImported?.label },
+      invalidClicked,
+      invalidUi: invalidUi.slice(0, 160),
+      namesBefore: namesBefore.length,
+      namesAfterOne: namesAfterOne.length,
+      namesAfterTwo: namesAfterTwo.length,
+      addedNothing: namesAfterTwo.length === namesAfterOne.length,
+      noBadFileAdded,
+      collision: collisionAnswer?.ok
+        ? collisionAnswer.value
+        : collisionAnswer?.error,
+      collisionLabel: collisionImported?.label,
+      collisionPreviewed: (collisionPreview?.previewText ?? "").slice(0, 80),
+      showcaseUntouched,
+      keptBefore,
+      keptAfter,
+      importedHistory: importedHistory?.ok
+        ? importedHistory.value.versions.length
+        : importedHistory?.error,
+    }),
+  );
+
+  // ── 12i.4: history never pollutes the theme list ─────────────────────────
+  // History lives outside `themes/`; the list, the watcher and the folder hold
+  // only theme files, and the retention cap is visible on disk as ten snapshots.
+  const finalListAnswer = await evaluate("window.lifequest.themesList()");
+  const finalNames = finalListAnswer?.ok
+    ? finalListAnswer.value.map((entry) => entry.file)
+    : [];
+  const themesEntries = fs.readdirSync(themesDir, { withFileTypes: true });
+  const themeFileCount = themesEntries.filter((entry) => entry.isFile()).length;
+  const nestedEntries = themesEntries
+    .filter((entry) => !entry.isFile())
+    .map((entry) => entry.name);
+  const historyRoot = path.join(profileDir, "theme-history");
+  const historyForTrust = path.join(historyRoot, "rig-trust");
+  const historySnapshots = fs.existsSync(historyForTrust)
+    ? fs.readdirSync(historyForTrust).filter((name) => name.endsWith(".json"))
+    : [];
+  const historyOutsideThemes =
+    fs.existsSync(historyRoot) &&
+    path.resolve(historyRoot) !== path.resolve(themesDir) &&
+    !path.resolve(historyRoot).startsWith(`${path.resolve(themesDir)}${path.sep}`);
+  check(
+    "history-never-appears-in-the-theme-list",
+    finalNames.length > 0 &&
+      finalNames.every(
+        (name) =>
+          name.endsWith(".json") &&
+          !name.includes("theme-history") &&
+          !name.includes("/") &&
+          !name.includes("\\") &&
+          !name.includes("--"),
+      ) &&
+      finalNames.length === themeFileCount &&
+      nestedEntries.length === 0 &&
+      historyOutsideThemes &&
+      historySnapshots.length === 10,
+    JSON.stringify({
+      listed: finalNames.length,
+      themeFileCount,
+      nestedEntries,
+      historyOutsideThemes,
+      snapshots: historySnapshots.length,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -4186,6 +4686,7 @@ async function main() {
       extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
       extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
       extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
+      trust: path.relative(desktopRoot, TRUST_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

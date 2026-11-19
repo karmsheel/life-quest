@@ -104,6 +104,18 @@ type ThemeFileEntry =
   | { file: string; error: string };
 
 /**
+ * One saved version of one theme file, as main keeps it under
+ * `theme-history/`. `savedAt` is the real ISO timestamp; `id` is the name the
+ * restore call takes.
+ */
+type ThemeVersion = {
+  id: string;
+  savedAt: string;
+  label: string;
+  bytes: number;
+};
+
+/**
  * One companion's status, whichever companion answered.
  *
  * `harness` and `detail` are the harness-neutral part: the renderer shows the
@@ -1054,6 +1066,23 @@ type LifequestApi = {
   ) => Promise<Result<{ file: string }>>;
   themeOpenFolder: () => Promise<Result<boolean>>;
   themeExport: (theme: unknown) => Promise<Result<{ path: string } | null>>;
+  /**
+   * The saved versions behind one theme file, newest first. Main keeps them
+   * outside `themes/`, so they never appear in the theme list.
+   */
+  themeHistory: (
+    file: string,
+  ) => Promise<Result<{ file: string; versions: ThemeVersion[] }>>;
+  /** Put one saved version back; main versions the bytes it replaces. */
+  themeRestore: (
+    file: string,
+    id: string,
+  ) => Promise<Result<{ file: string; label: string }>>;
+  /**
+   * Copy a theme file from disk through main's dialog and validation. `null`
+   * is the operator cancelling; the copy previews like any write, never kept.
+   */
+  themeImport: () => Promise<Result<{ file: string; label: string } | null>>;
   /** Main saw the directory move; the renderer reads it again. */
   onThemesChanged: (cb: () => void) => () => void;
   /**

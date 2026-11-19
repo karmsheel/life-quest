@@ -316,6 +316,25 @@ function persistSceneOverride(override: ThemeSceneOverride): void {
   }
 }
 
+/**
+ * One saved version of a theme file, as main lists it.
+ *
+ * This is the undo history the preview gate never had: before a write replaces
+ * a file, main snapshots the bytes it is about to replace. The snapshots live
+ * under `userData/theme-history/`, not in `themes/`, so neither the list nor the
+ * watcher can mistake a saved version for a theme.
+ */
+export interface ThemeHistoryVersion {
+  /** Opaque main-side id — the restore call's argument, never a path. */
+  id: string;
+  /** ISO timestamp of the snapshot; the row shows it as relative time. */
+  savedAt: string;
+  /** The snapshot's own theme label, so a row says which look it was. */
+  label: string;
+  /** Size of the snapshot, so a row hints at what came back. */
+  bytes: number;
+}
+
 interface ThemeContextValue {
   preference: ThemePreference;
   resolved: "light" | "dark";
@@ -408,6 +427,23 @@ interface ThemeContextValue {
    * previews through the same gate as a companion write.
    */
   writeThemeFile: (file: string, raw: string) => Promise<boolean>;
+  /**
+   * The saved versions of one theme file, newest first; `null` when main could
+   * not read them (the refusal is in `themeError`).
+   */
+  readThemeHistory: (file: string) => Promise<ThemeHistoryVersion[] | null>;
+  /**
+   * Put one saved version back through main. Main re-validates the snapshot and
+   * writes it through the same store, so a restore is itself undoable; the write
+   * then previews through the watcher like any other change.
+   */
+  restoreThemeVersion: (file: string, id: string) => Promise<boolean>;
+  /**
+   * Bring a theme JSON in from disk. Main owns the file dialog and the parse
+   * gate; the copy is an ordinary write, so it previews and never auto-keeps.
+   * Returns the copied file and its label, or `null` when cancelled or refused.
+   */
+  importTheme: () => Promise<{ file: string; label: string } | null>;
   /** Stop wearing the kept file: the window returns to the shell's default look. */
   clearKeptTheme: () => Promise<void>;
 }
@@ -1025,6 +1061,57 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [loadThemeFiles],
   );
 
+  /** List one file's saved versions — the editor's History section. */
+  const readThemeHistory = useCallback(async (file: string) => {
+    const answer = await window.lifequest?.themeHistory?.(file);
+    if (!answer || !answer.ok) {
+      setThemeError(answer?.error ?? "could not read the theme history");
+      return null;
+    }
+    return answer.value.versions;
+  }, []);
+
+  /**
+   * Restore one saved version. The write lands on disk in main, so this window
+   * has not "seen" it yet: drop the remembered mtime and read the directory
+   * again, which is exactly the path a companion write takes — the restored
+   * bytes preview for ten seconds and can be kept like any other write.
+   */
+  const restoreThemeVersion = useCallback(
+    async (file: string, id: string) => {
+      const answer = await window.lifequest?.themeRestore?.(file, id);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not restore the theme version");
+        return false;
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles();
+      return true;
+    },
+    [loadThemeFiles],
+  );
+
+  /**
+   * Import a theme file. The dialog, the parse gate and the copy all live in
+   * main; this window only asks. A successful copy is a new file, so the same
+   * directory read that follows a write finds it and previews it — import must
+   * never auto-keep a look the operator has not seen yet.
+   */
+  const importTheme = useCallback(async () => {
+    const answer = await window.lifequest?.themeImport?.();
+    if (!answer) return null;
+    if (!answer.ok) {
+      setThemeError(answer.error);
+      return null;
+    }
+    const imported = answer.value;
+    // `null` value is the operator cancelling the file dialog, not a failure.
+    if (!imported) return null;
+    themeMtimes.current.delete(imported.file);
+    await loadThemeFiles();
+    return imported;
+  }, [loadThemeFiles]);
+
   /** Hand the window back its default look — the Extensions page's off switch. */
   const clearKeptTheme = useCallback(async () => {
     await window.lifequest?.themeSetKept?.(null);
@@ -1240,6 +1327,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportCurrentTheme,
       readThemeFile,
       writeThemeFile,
+      readThemeHistory,
+      restoreThemeVersion,
+      importTheme,
       clearKeptTheme,
     }),
     [
@@ -1256,6 +1346,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportCurrentTheme,
       readThemeFile,
       writeThemeFile,
+      readThemeHistory,
+      restoreThemeVersion,
+      importTheme,
       clearKeptTheme,
       keepThemeFile,
       keepThemePreview,
