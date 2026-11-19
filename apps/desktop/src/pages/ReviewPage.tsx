@@ -198,6 +198,20 @@ export default function ReviewPage() {
 
   // A load for a period the operator has already left must not land in the editor.
   const loadToken = useRef(0);
+  // The same, for the background read below: it is a second door onto the file,
+  // so it gets its own token rather than disturbing the page's own load.
+  const refreshToken = useRef(0);
+  // The period currently on screen, for a read that resolves after a move.
+  const periodRef = useRef(period);
+  useEffect(() => {
+    periodRef.current = period;
+  }, [period]);
+  // The record as last rendered, so a background read can tell the empty state
+  // (no file, no editor, nothing to lose) from a page that holds a review.
+  const recordRef = useRef<ReviewRecord | null>(null);
+  useEffect(() => {
+    recordRef.current = record;
+  }, [record]);
   // Writes go through here one at a time, in the order the page asked for them, so
   // a period is never read before the write that belongs to it has landed.
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -247,6 +261,73 @@ export default function ReviewPage() {
     unsaved.current = null;
     void loadRecord(period);
   }, [loadRecord, period]);
+
+  /**
+   * Re-read the review this page is on, for a change it did not make itself.
+   *
+   * The reported case is the companion finishing an interview: it marks an area
+   * — or the life review — done with its own tool call in the main process, so
+   * this page made no IPC call the answer could re-render it from. The vault's
+   * change signal is the only announcement that reaches the renderer, and this
+   * background read is what turns it into "Done" on the checklist while the
+   * page is already open. Before this, the row only flipped after the operator
+   * navigated away and back.
+   *
+   * It is deliberately NOT `loadRecord`. This is a background read: it never
+   * shows a spinner, never puts an error banner over a page that is still
+   * readable, and never touches the box — the operator's draft is theirs until
+   * they save it, and a refresh that ate a sentence would be worse than the
+   * stale checklist it fixes. The one thing it does adopt whole is a file that
+   * appeared where the period had none: there is no editor and no draft in that
+   * empty state, so the page can simply show the review the agent created.
+   */
+  const refreshRecord = useCallback(
+    async (targetPeriod: string) => {
+      // The write the operator's own autosave queued has to land first, or the
+      // read answers with the file as it stood before their last keystroke.
+      await queue.current;
+      const token = ++refreshToken.current;
+      try {
+        const result = await api().reviewGet(cadence, targetPeriod);
+        if (token !== refreshToken.current) return;
+        // A read for a period the operator has already left must not land.
+        if (periodRef.current !== targetPeriod) return;
+        if (!result.ok) return;
+        const next = result.value;
+        const wasEmpty = recordRef.current === null;
+        recordRef.current = next;
+        setRecord(next);
+        if (wasEmpty) {
+          const body = asHeld(next.bodyMarkdown);
+          setDraft(body);
+          setSavedBody(body);
+          setLoadedPeriod(targetPeriod);
+        }
+      } catch {
+        // A background read that fails changes nothing: the page keeps the
+        // record it is showing, and the next change tries again.
+      }
+    },
+    [cadence],
+  );
+
+  // The vault's change signal is the only way this page hears about a write it
+  // did not make: a companion or paired agent marking a scope done is a tool
+  // call in the main process, never an IPC call from this renderer. Subscribing
+  // is what makes the checklist live.
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    try {
+      stop = api().onVaultDataChanged(() => {
+        void refreshRecord(periodRef.current);
+      });
+    } catch {
+      // No bridge (a harness page, or a window opened before preload): the
+      // checklist still updates on the next period change or page load.
+      stop = undefined;
+    }
+    return () => stop?.();
+  }, [refreshRecord]);
 
   /**
    * Write one review. Answers `saved` when the vault holds the body, `refused`

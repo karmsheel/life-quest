@@ -265,6 +265,10 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   vaultOpen: () => ok(snapshot()),
   onVaultFileChanged: () => () => {},
+  // The Review page is this rig's subject and subscribes to the vault's change
+  // signal. This rig is about WHEN a review may be written, not about live
+  // updates (that is `e2e/review.tsx`), so the channel is a quiet watcher here.
+  onVaultDataChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   dialogOpenDirectory: () => Promise.resolve(null),
