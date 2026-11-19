@@ -1073,6 +1073,10 @@ a {
   min-width: 0;
   width: auto;
   height: 1.7rem;
+  /* Never wider than the row leaves between the rail's content edge and the
+     toggle; on a narrow rail the mark scales down inside that box instead of
+     running under the control. */
+  max-width: calc(100% - 1.75rem - 0.5rem);
   /* 0.35rem cancels the header's negative inline margin (content edge); the row
      inset then moves the mark in to the line the page rows' icons sit on, and
      the final 1.5px is optical: the icons' strokes start about that far inside

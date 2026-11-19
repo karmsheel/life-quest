@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2.7 34 1029 171.77">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30.7 34 1085 171.77">
 <g class="life-text" font-family="Arial, Helvetica, sans-serif" font-size="99.22" font-weight="600" letter-spacing="8.55">
   <text x="112.85" y="154.39" textLength="249.13" lengthAdjust="spacingAndGlyphs">LIFE</text>
 </g>
@@ -8,9 +8,11 @@
 <g class="uest-text" font-family="Arial, Helvetica, sans-serif" font-size="99.22" font-weight="600" letter-spacing="8.55">
   <text x="615.39" y="154.39" textLength="298.79" lengthAdjust="spacingAndGlyphs">UEST</text>
 </g>
-<rect class="life-rule" x="9.3" y="117" width="80" height="6"/>
-<rect class="uest-rule" x="934.3" y="117" width="80" height="6"/>
+<rect class="life-rule" x="-18.7" y="117" width="80" height="6"/>
+<rect class="uest-rule" x="962.3" y="117" width="80" height="6"/>
 </svg>
+
+
 
 
 

@@ -54,7 +54,7 @@ const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
 /** The supplied Modern lockup's own canvas: the default, and the first check. */
-const DEFAULT_VIEWBOX = "42.2 39 1051 161.78";
+const DEFAULT_VIEWBOX = "-3.8 39 1143 161.78";
 
 const failures = [];
 let step = "boot";
@@ -537,7 +537,7 @@ async function main() {
     check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - 1051 / 161.78) < 0.15,
+        Math.abs(brand.box.width / brand.box.height - 1143 / 161.78) < 0.15,
       `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
@@ -706,7 +706,7 @@ async function main() {
       "the rail behind the sheet repaints to Classic on the press",
       Boolean(afterPick.brand) &&
         afterPick.brand.variant === "classic" &&
-        afterPick.brand.viewBox === "34.4 38 977 173.77",
+        afterPick.brand.viewBox === "14.4 38 1017 173.77",
       `rail brand ${JSON.stringify(afterPick.brand)}`,
     );
 
