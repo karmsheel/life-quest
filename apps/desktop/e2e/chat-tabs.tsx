@@ -55,26 +55,61 @@
  *     front, it closes a tab while the strip is not drawn (one chat, no pinned
  *     band), or it swallows the key where there is no tab to close. The key is
  *     the platform's when the dock has nothing to offer it.
+ * 19. A tab squeezed past its floor — at the dock's narrowest a non-pinned tab
+ *     shrinks below the room three of its own label's characters need in the
+ *     label's computed font, plus the ellipsis glyph that truncation puts after
+ *     them: the ellipsis costs about a character's width, so a floor sized for
+ *     three characters alone renders two and "…". The tab keeps a floor (still
+ *     beside its leading mark and its close control), and the label's measured
+ *     room is what proves it — three characters + "…" of its own text must fit.
+ * 20. A strip that overflows but will not scroll — with more chats than the dock
+ *     can hold at the floor, the band either keeps squeezing the tabs under the
+ *     floor or clips the last ones, and a vertical wheel over it scrolls the
+ *     page behind it instead of walking the band sideways. Past the floor the
+ *     strip must overflow (scrollWidth > clientWidth), and a wheel over it must
+ *     move scrollLeft and be default-prevented. Four unpinned chats beside the
+ *     fixture's pinned square, at the dock's floor, is what makes the band
+ *     actually overflow rather than merely fit.
+ * 21. A tab that opens out of sight — a chat appended at the band's far end is
+ *     in front but its tab is past the visible edge (or under the sticky
+ *     full-screen corner), so the operator has a conversation on screen and no
+ *     tab to find it by. The strip has to scroll the tab in front into its
+ *     visible band, ending before the sticky trailing control, and not further.
+ * 22. A kickoff mark missing, unpainted or lying — a chat the app started as a
+ *     task, a review, a plan or an automation draws the plain status dot instead
+ *     of its icon (or no leading slot at all); the mark is not written to the
+ *     profile's remembered map, so a restart loses it; it takes over the tab's
+ *     accessible name or close label; or its slot steals the label's room and
+ *     drops the tab under the three-characters-plus-ellipsis floor. A chat the
+ *     operator opened from the list must stay plain: no icon, no `data-icon`.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
  * ChatSessionsProvider, the real ShortcutRunner, the real CSS and layout engine
  * — is shipping code.
  *
+ * The profile's remembered kickoff marks are seeded here too: the fixture's
+ * automation chat is marked before mount, exactly as a previous run's write
+ * would have left it, and the page exposes `window.__lqRequestSession` from
+ * inside `ChatDockProvider` so the driver can hand the dock a task chat through
+ * the shipping request door, the way a page does.
+ *
  * The restore rig (`chat-tabs-restore.electron.mjs`) drives this same page: it
  * boots it twice as two Electron processes over one profile with `?keep=1` (do
- * not clear the remembered tab strip) and reads the landing each time.
+ * not clear the remembered tab strip or its kickoff marks) and reads the landing
+ * each time.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { ChatDockProvider, useChatDock } from "@/state/ChatDockProvider";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
-import type { CompanionStreamFrame } from "@/vite-env";
+import type { SessionIcon } from "@/state/session-icons";
+import type { CompanionStreamFrame, HermesSession } from "@/vite-env";
 import {
   createdSessionFromPayload,
   sessionFromPayload,
@@ -103,6 +138,13 @@ type HarnessWindow = {
   __lqSeedChats?: (count: number) => number;
   /** The live store, so the driver can re-read the list after seeding it. */
   __lqChat?: { loadSessions: () => Promise<unknown> };
+  /**
+   * The dock's own request door, reached from inside `ChatDockProvider`: the
+   * driver creates a chat through the stub bridge and asks the dock to show it
+   * as the task that started it, exactly as the Act board does with
+   * `chatDock.requestSession({ id, session, icon })`.
+   */
+  __lqRequestSession?: (session: HermesSession, icon?: SessionIcon) => void;
   chatTabsHarnessReady?: Promise<void>;
 };
 
@@ -453,13 +495,33 @@ const stubbed = new Proxy(bridge, {
 
 // A previous run's last chat would decide the landing view, and a remembered
 // tab strip would decide the strip before the rig has clicked anything; clear
-// both so the harness always starts from the same place. The restore rig keeps
-// them on purpose.
+// both so the harness always starts from the same place, and with the strip's
+// remembered kickoff marks too — a stale icon would dress a tab before the rig
+// has asked for one. The restore rig keeps them all on purpose.
 if (!keepChatMemory) {
   window.localStorage.removeItem("lifequest.companion.lastSessionId");
   window.localStorage.removeItem("lifequest.companion.runtimePins");
   window.localStorage.removeItem("lifequest.companion.pinnedOrder");
   window.localStorage.removeItem("lifequest.companion.openTabs");
+  window.localStorage.removeItem("lifequest.companion.sessionIcons");
+}
+
+/**
+ * Seed the mark the fixture's automation chat would have been given by the
+ * scheduler before this boot: the legacy per-profile slot, which is exactly what
+ * the shipping store reads on a harness page (no vault, no agent). It has to be
+ * in place before the providers mount — the store hydrates it during the landing
+ * — and it merges rather than replaces, so a restore boot keeps the marks the
+ * previous boot wrote.
+ */
+try {
+  const ICONS_KEY = "lifequest.companion.sessionIcons";
+  const raw = window.localStorage.getItem(ICONS_KEY);
+  const icons = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  icons["chat-delta"] = "automation";
+  window.localStorage.setItem(ICONS_KEY, JSON.stringify(icons));
+} catch {
+  // A storage refusal costs the fixture its mark, not the page.
 }
 
 const root = document.getElementById("root");
@@ -479,6 +541,26 @@ function HarnessChatHandle() {
   return null;
 }
 
+/**
+ * Hands the driver the dock's own request door. A page that starts a chat asks
+ * the dock to show it with `requestSession({ id, session, icon })`, and the
+ * panel consumes it: the chat gets a tab of its own, named from the row the page
+ * passed, wearing the kickoff mark of the work that started it. The harness has
+ * no page that can call it, so the driver reaches the same function here.
+ */
+function HarnessChatDockHandle() {
+  const dock = useChatDock();
+  useEffect(() => {
+    harness.__lqRequestSession = (session, icon) => {
+      dock.requestSession({ id: session.id, session, icon });
+    };
+    return () => {
+      delete harness.__lqRequestSession;
+    };
+  }, [dock]);
+  return null;
+}
+
 createRoot(root).render(
   <StrictMode>
     <MemoryRouter initialEntries={["/home"]}>
@@ -487,6 +569,8 @@ createRoot(root).render(
       <ThemeProvider>
         <VaultProvider>
         <ChatDockProvider>
+          {/* The dock's own door, inside the provider that owns it. */}
+          <HarnessChatDockHandle />
           <NavDockProvider>
             {/* The real shell, sidebar and dock: the chats section is a part of
                 the sidebar now, so a rig that mounted it as its own column

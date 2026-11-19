@@ -24,6 +24,7 @@ import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { companionStatusSummary } from "@/lib/companion-status-copy";
+import { SESSION_ICON } from "@/lib/session-icon";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { Link } from "react-router-dom";
 import {
@@ -389,6 +390,11 @@ export function ChatsSidebar() {
     const archived = s.archived === true;
     const menuOpen = menuId === s.id;
     const renaming = renamingId === s.id;
+    // The same origin mark the dock's tab wears: a chat the app started as a
+    // task, a review, a plan or an automation run leads its name with that
+    // feature's icon; a chat the operator opened keeps the quiet status dot.
+    const iconKind = chat.sessionIcons[s.id] ?? null;
+    const OriginIcon = iconKind ? SESSION_ICON[iconKind] : null;
     return (
       <li
         key={s.id}
@@ -399,6 +405,7 @@ export function ChatsSidebar() {
         data-menu-open={menuOpen || undefined}
         data-live={run.sending || undefined}
         data-approval={run.approval !== null || undefined}
+        data-icon={iconKind ?? undefined}
       >
         {renaming ? (
           <form
@@ -457,7 +464,19 @@ export function ChatsSidebar() {
                 if (e.button === 1) e.preventDefault();
               }}
             >
-              <span className="chats-rail__dot" aria-hidden />
+              {/*
+                The row's leading slot, the same one the dock's tab keeps: the
+                quiet status dot for a chat the operator opened, or the origin
+                icon of the work that started it. The live pulse and the
+                approval ring paint this slot either way.
+              */}
+              <span className="chats-rail__mark" aria-hidden>
+                {OriginIcon ? (
+                  <OriginIcon className="chats-rail__mark-icon" size={11} />
+                ) : (
+                  <span className="chats-rail__dot" />
+                )}
+              </span>
               <span className="chats-rail__label">{label}</span>
               {archived ? (
                 <span className="chats-rail__archived-tag">Archived</span>

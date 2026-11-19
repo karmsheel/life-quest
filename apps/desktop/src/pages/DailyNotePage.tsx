@@ -478,6 +478,7 @@ export default function DailyNotePage() {
           // lists it in Chats from its first paint, rather than waiting for the
           // next session-list read and showing "Chat" until then.
           session: created.value,
+          icon: "automation",
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

@@ -238,6 +238,8 @@ function ActContent() {
             sendToAgentContext(snapshot.map, task, snapshot.goals, projects),
           ),
           session: created.value,
+          // The tab wears the Act board's mark: this chat is a task's work.
+          icon: "task",
         });
         return { ok: true };
       } catch (err) {

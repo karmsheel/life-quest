@@ -65,6 +65,13 @@ const SAMPLE = `(() => {
   // then the archived band when the view asks for it. A row's pin mark is a
   // resting decoration and its pin/archive buttons live in a hover-only span, so
   // both are reported by computed display rather than by presence in the DOM.
+  //
+  // The row's leading slot is the same kickoff mark the tab strip draws: a chat
+  // the app started as a task/review/plan/automation carries data-icon and an
+  // svg in the row's chats-rail__mark slot; a chat the operator opened plainly
+  // keeps the transparent status dot in that slot. Status still paints the slot —
+  // a live row pulses it, an approval ring sits on it — so the mark's own
+  // animation, colour and ring are read alongside the dot's.
   const rows = [];
   let group = "";
   for (const li of Array.from(document.querySelectorAll(".chats-rail__rows > li"))) {
@@ -80,10 +87,18 @@ const SAMPLE = `(() => {
     const pin = li.querySelector(".chats-rail__pin-btn");
     const archive = li.querySelector(".chats-rail__archive-btn");
     const rowMain = li.querySelector(".chats-rail__row-main");
+    const labelEl = li.querySelector(".chats-rail__label");
+    const markEl = li.querySelector(".chats-rail__mark");
+    const markSvg = markEl ? markEl.querySelector("svg") : null;
+    const dotEl = li.querySelector(".chats-rail__dot");
+    // The glyph the slot actually holds: the kickoff icon, else the status dot.
+    const glyphEl = markSvg ?? dotEl ?? markEl;
+    const markStyle = markEl ? window.getComputedStyle(markEl) : null;
+    const glyphStyle = glyphEl ? window.getComputedStyle(glyphEl) : null;
     const svg = pin ? pin.querySelector("svg") : null;
     rows.push({
       group,
-      label: text(li.querySelector(".chats-rail__label")),
+      label: text(labelEl),
       when: text(when),
       whenVisible: shown(when),
       active: li.hasAttribute("data-active"),
@@ -93,6 +108,33 @@ const SAMPLE = `(() => {
       live: li.hasAttribute("data-live"),
       approval: li.hasAttribute("data-approval"),
       menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
+      /** The kickoff mark's kind (the row's data-icon), or null on a plain chat. */
+      icon: li.getAttribute("data-icon"),
+      /** The row's one leading slot: the kickoff icon's svg, or the status dot. */
+      mark: {
+        exists: Boolean(markEl),
+        svg: Boolean(markSvg),
+        visible: shown(markEl),
+        box: box(markEl),
+        /** Animation on the slot itself (a live row pulses it). */
+        animation: markStyle ? markStyle.animationName : null,
+        /** Animation on the glyph inside it, whichever the slot holds. */
+        glyphAnimation: glyphStyle ? glyphStyle.animationName : null,
+        glyphColor: glyphStyle ? glyphStyle.color : null,
+        /** An approval ring, if the state paints one, on slot or glyph. */
+        ring: markStyle ? markStyle.boxShadow : null,
+        glyphRing: glyphStyle ? glyphStyle.boxShadow : null
+      },
+      /** The plain chat's status dot, still drawn in the same slot. */
+      dot: {
+        exists: Boolean(dotEl),
+        visible: shown(dotEl),
+        box: box(dotEl),
+        animation: dotEl ? window.getComputedStyle(dotEl).animationName : null
+      },
+      /** The label's box, and the button's: the mark must sit between them. */
+      labelBox: box(labelEl),
+      mainBox: box(rowMain),
       pinned: li.getAttribute("data-pinned") === "true",
       pinState: shown(pinState),
       actionsVisible: shown(actions),
@@ -122,23 +164,70 @@ const SAMPLE = `(() => {
   // A pinned chat draws as a square: a letter and a small pin, no label and no
   // close. Those are reported separately so a square is read as a square rather
   // than as a normal tab that lost its label.
+  //
+  // A normal tab's leading slot is one mark — the status dot, or the kickoff
+  // icon of the work that started the chat — so the label only ever has what is
+  // left after that slot and the close control. The floor claim is measured on
+  // the label itself: its clientWidth against the canvas width, in the label's
+  // own font, of the label's first three characters PLUS the ellipsis glyph.
+  // The ellipsis costs about a character's width, so a tab wide enough for three
+  // characters alone still renders two and "…" — the floor has to budget for
+  // both. A tab squeezed to one glyph fails it.
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
     const main = tab.matches("[role=tab]") ? tab : tab.querySelector("[role=tab]");
     const labelEl = tab.querySelector(".chat-panel__tab-label");
     const letterEl = tab.querySelector(".chat-panel__tab-letter");
     const pinEl = tab.querySelector(".chat-panel__tab-pin");
     const closeEl = tab.querySelector(".chat-panel__tab-close");
+    const markEl = tab.querySelector(".chat-panel__tab-mark");
+    const markSvg = markEl ? markEl.querySelector("svg") : null;
+    const labelStyle = labelEl ? window.getComputedStyle(labelEl) : null;
+    const threeChars = labelEl ? Array.from(text(labelEl)).slice(0, 3).join("") : "";
+    let threeCharWidth = null;
+    let floorWidth = null;
+    if (labelStyle && threeChars) {
+      const canvas = document.createElement("canvas");
+      const measure = canvas.getContext("2d");
+      if (measure) {
+        measure.font =
+          labelStyle.fontStyle +
+          " " +
+          labelStyle.fontWeight +
+          " " +
+          labelStyle.fontSize +
+          " " +
+          labelStyle.fontFamily;
+        threeCharWidth = Math.round(measure.measureText(threeChars).width * 100) / 100;
+        floorWidth = Math.round(measure.measureText(threeChars + "…").width * 100) / 100;
+      }
+    }
     return {
       label: text(labelEl),
       letter: letterEl ? text(letterEl) : null,
       name: main
         ? (main.getAttribute("aria-label") ?? main.getAttribute("title") ?? "").trim()
         : "",
+      /** The kickoff mark's kind (the tab's data-icon), or null on a plain tab. */
+      icon: tab.getAttribute("data-icon"),
+      /** The one leading slot: the status dot, or the kickoff icon's svg. */
+      mark: {
+        exists: Boolean(markEl),
+        svg: Boolean(markSvg),
+        visible: shown(markEl),
+        box: box(markEl)
+      },
+      /** The label's own room, which is what the label floor is measured in. */
+      labelWidth: labelEl ? labelEl.clientWidth : null,
+      /** Canvas width of the label's first three characters in its own font. */
+      threeCharWidth,
+      /** Canvas width of those three characters plus the ellipsis glyph: the floor. */
+      floorWidth,
       pinned: tab.getAttribute("data-pinned") === "true",
       pin: Boolean(pinEl),
       pinVisible: shown(pinEl),
       close: closeEl ? (closeEl.getAttribute("aria-label") ?? "") : null,
       hasClose: Boolean(closeEl),
+      closeVisible: shownBox(closeEl),
       active: main ? main.getAttribute("aria-selected") === "true" : null,
       live: tab.hasAttribute("data-live"),
       approval: tab.hasAttribute("data-approval"),
@@ -148,7 +237,12 @@ const SAMPLE = `(() => {
 
   // The strip's own box, and the tab context menu when one is open: the menu is
   // a fixed popover (not a strip child), so its on-screen box is read here
-  // instead of assumed.
+  // instead of assumed. The strip's scroll geometry is reported with it: a
+  // browser-like band keeps a tab floor and overflows sideways, so whether the
+  // tabs fit, how far the band travels and where it is currently scrolled are
+  // the facts the claims are about. The sticky trailing corner (the full-screen
+  // door) covers the band's trailing edge, so it is measured too: a tab "in
+  // view" ends before it.
   const tabStrip = document.querySelector(".chat-panel__tabs");
   const tabNew = document.querySelector(".chat-panel__tab-new");
   const tabMenu = document.querySelector(".chat-panel__tab-menu");
@@ -271,7 +365,25 @@ const SAMPLE = `(() => {
     rowCount: rows.length,
     tabs,
     tabCount: tabs.length,
-    strip: tabStrip ? { box: box(tabStrip) } : null,
+    strip: tabStrip
+      ? {
+          box: box(tabStrip),
+          scrollLeft: Math.round(tabStrip.scrollLeft),
+          scrollWidth: Math.round(tabStrip.scrollWidth),
+          clientWidth: Math.round(tabStrip.clientWidth),
+          overflow: tabStrip.scrollWidth > tabStrip.clientWidth + 1,
+          // The sticky trailing corner: the visible band ends where it begins,
+          // so "in view" is a box that ends before this control's width.
+          trailing: (() => {
+            const el = tabStrip.querySelector(".chat-panel__tabs-trailing");
+            if (!el) return null;
+            return {
+              box: box(el),
+              width: Math.round(el.getBoundingClientRect().width * 10) / 10
+            };
+          })()
+        }
+      : null,
     // The thread's name row: the strip leads the dock, so its bottom edge is
     // where this row begins. Reported as a box so "tabs above the name" is a
     // measured claim rather than a reading of the JSX order.
@@ -356,7 +468,19 @@ const SAMPLE = `(() => {
     deleteCalls: window.__lqDeleteCalls ?? [],
     messageCalls: window.__lqMessageCalls ?? [],
     createCalls: window.__lqCreateCalls ?? [],
-    stopCalls: window.__lqStopCalls ?? []
+    stopCalls: window.__lqStopCalls ?? [],
+    // The profile's remembered kickoff marks, read from the legacy slot the
+    // harness page uses (no vault, no agent): session id -> icon kind. This is
+    // both the fixture's seeded mark and the store's write-through, so a claim
+    // about an icon surviving a restart is a claim about this map.
+    sessionIcons: (() => {
+      try {
+        const raw = window.localStorage.getItem("lifequest.companion.sessionIcons");
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return "unparsable";
+      }
+    })()
   };
 })()`;
 
@@ -550,6 +674,75 @@ async function main() {
     `Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).find(
       (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
     )`;
+
+  /**
+   * Put the tab strip back at its leading edge and answer where it landed. The
+   * wheel and reveal claims are about a gesture's own movement, so the band is
+   * parked before each one rather than measured from wherever the tab in front
+   * happened to leave it.
+   */
+  const scrollStripTo = (left) =>
+    run(`(async () => {
+      const strip = document.querySelector(".chat-panel__tabs");
+      if (!strip) return null;
+      strip.scrollLeft = ${left};
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return Math.round(strip.scrollLeft);
+    })()`);
+
+  /**
+   * A vertical wheel over the tab strip, dispatched the way a real wheel lands on
+   * it: cancelable and bubbling, with only a deltaY. The answer carries the facts
+   * the browser habit turns on — how far the band travels at all, where it was,
+   * where the gesture left it, and whether the event was swallowed so the page
+   * behind the strip did not scroll instead.
+   */
+  const wheelStrip = (deltaY) =>
+    run(`(async () => {
+      const strip = document.querySelector(".chat-panel__tabs");
+      if (!strip) return { ok: false, reason: "no strip" };
+      const maxScroll = strip.scrollWidth - strip.clientWidth;
+      if (maxScroll <= 0) {
+        return { ok: false, reason: "the strip does not overflow", maxScroll: 0 };
+      }
+      const before = strip.scrollLeft;
+      const event = new WheelEvent("wheel", {
+        deltaY: ${deltaY},
+        bubbles: true,
+        cancelable: true
+      });
+      const dispatched = strip.dispatchEvent(event);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        ok: true,
+        before: Math.round(before),
+        after: Math.round(strip.scrollLeft),
+        prevented: event.defaultPrevented,
+        dispatched,
+        maxScroll: Math.round(maxScroll)
+      };
+    })()`);
+
+  /**
+   * Create a chat through the shipping bridge stub, the way a page does before it
+   * asks the dock to show the chat. Answers with the row the stub minted, which
+   * is the row the request carries so the tab is named from its first paint.
+   */
+  const createChat = (title) =>
+    run(`window.lifequest.companionSessionCreate(${JSON.stringify(title)})`);
+
+  /**
+   * Hand the dock a chat through its own request door — the fixture exposes it
+   * from inside `ChatDockProvider` — with the kickoff mark of the work that
+   * started it, exactly as the Act board asks for a task chat.
+   */
+  const requestSession = (session, icon) =>
+    run(`(async () => {
+      if (typeof window.__lqRequestSession !== "function") return false;
+      window.__lqRequestSession(${JSON.stringify(session)}, ${JSON.stringify(icon)});
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      return true;
+    })()`);
 
   /**
    * Open the menu of the row at `index` in the rendered list, in document order.
@@ -937,6 +1130,14 @@ async function main() {
 
   let report;
   const screenshots = [];
+  /**
+   * Gesture readings that are not a full sample of the page: the wheel's own
+   * before/after/prevented facts, and the id of the chat the write-path probe
+   * created. The wrapper asserts them beside the states, so a silent wheel or a
+   * request that never reached the dock cannot pass on a plausible-looking
+   * page sample alone.
+   */
+  const probes = { wheel: null, task: null };
   /**
    * Where the run had got to, in order, for the report a watchdog has to write
    * when it kills a driver that never reaches the end: a timeout with no artifact
@@ -2118,8 +2319,11 @@ async function main() {
     );
 
     // Hit the divider's ArrowRight until the dock is at its floor, then read the
-    // same three tabs again: they must all have shrunk together, and they must
-    // still be the same width as each other.
+    // same three tabs again: while there is still room they stay equal shares of
+    // the band, and they shrink with it — but never below the tab floor (three
+    // characters of the label beside its mark and close control). A strip that
+    // keeps squeezing the labels past that floor, or that clips the tabs instead
+    // of scrolling them, is what step 19b and step 26 are for.
     const narrowed = await narrowDockToFloor();
     const narrowTabs = await settle(360);
     check(
@@ -2161,6 +2365,73 @@ async function main() {
       "the strip kept all three chats while the dock narrowed",
       narrowTabs.tabs.map((tab) => tab.label).join("/") === equalLabels.join("/"),
       JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
+    );
+    // 19b — the same three tabs at the dock's narrowest are the browser's tab
+    // floor, not a squeeze to one glyph: every tab's label still has room for
+    // three of its own characters plus the ellipsis glyph in the label's own font,
+    // and still carries its leading mark and close control. The strip overflows
+    // and scrolls from here
+    // (step 26 puts enough tabs on it to make that the only way to fit), so a
+    // strip that shrinks the tabs instead of travelling is what fails. The
+    // fixture's automation chat is the mark case: its tab wears the kickoff icon
+    // in the slot a plain tab spends on the status dot, without losing any of the
+    // floor or the tab's own name.
+    const narrowFloorTabs = narrowTabs.tabs.filter((tab) => !tab.pinned);
+    check(
+      "every tab keeps three characters plus the ellipsis at the dock's narrowest",
+      narrowFloorTabs.length === 3 &&
+        narrowFloorTabs.every(
+          (tab) =>
+            typeof tab.labelWidth === "number" &&
+            typeof tab.floorWidth === "number" &&
+            tab.labelWidth + 1 >= tab.floorWidth,
+        ),
+      JSON.stringify(
+        narrowFloorTabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]),
+      ),
+    );
+    check(
+      "the floor's labels still carry their chats' names",
+      narrowFloorTabs.length === 3 &&
+        narrowFloorTabs.every(
+          (tab) => tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        ),
+      JSON.stringify(narrowFloorTabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "the floor keeps every tab's leading mark and close control",
+      narrowFloorTabs.every(
+        (tab) =>
+          tab.mark.exists === true &&
+          tab.mark.visible === true &&
+          tab.hasClose === true &&
+          tab.closeVisible === true,
+      ),
+      JSON.stringify(
+        narrowFloorTabs.map((tab) => [tab.label, tab.mark, tab.closeVisible]),
+      ),
+    );
+    const narrowDelta = narrowTabs.tabs.find((tab) => tab.label === "Delta automation");
+    check(
+      "the fixture's automation chat wears its kickoff mark on its tab",
+      narrowDelta?.icon === "automation" &&
+        narrowDelta.mark.exists === true &&
+        narrowDelta.mark.svg === true &&
+        narrowDelta.mark.visible === true,
+      JSON.stringify(narrowDelta),
+    );
+    check(
+      "the kickoff mark leaves the tab's name and close label alone",
+      (narrowDelta?.name ?? "").startsWith("Delta automation") &&
+        narrowDelta?.close === "Close Delta automation",
+      JSON.stringify({ name: narrowDelta?.name, close: narrowDelta?.close }),
+    );
+    check(
+      "a plain chat's tab carries no kickoff mark",
+      narrowTabs.tabs
+        .filter((tab) => tab.label === "Bravo budget" || tab.label === "New chat")
+        .every((tab) => tab.icon === null && tab.mark.exists === true && tab.mark.svg === false),
+      JSON.stringify(narrowTabs.tabs.map((tab) => [tab.label, tab.icon, tab.mark.svg])),
     );
     screenshots.push(await shot("narrow-tabs"));
     mark("narrow-tabs");
@@ -2571,6 +2842,386 @@ async function main() {
       }),
     );
 
+    // 26 — the strip is a browser's tab band at the dock's narrowest: a tab has
+    // a floor (three characters of its label plus the ellipsis, beside its mark
+    // and close control), and past that the band overflows and scrolls sideways
+    // instead of squeezing every chat to a glyph. Four unpinned chats beside a pinned square is what
+    // makes the floor reachable: at 300px the tabs cannot all fit above it.
+    const floorDivider = plusAgain.chatDivider;
+    check(
+      "pinned a chat to put a square back in the strip",
+      await clickRowControl("Seed chat 11", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    await settle(320);
+    check(
+      "middle-clicked two more chats beside the open pair",
+      (await middleClickSidebarRow("Seed chat 12")) &&
+        (await middleClickSidebarRow("Seed chat 13")),
+      "no row button",
+    );
+    const floorStrip = await settle(420);
+    const floorTabCounts = {
+      all: floorStrip.tabCount,
+      pinned: floorStrip.tabs.filter((tab) => tab.pinned).length,
+      unpinned: floorStrip.tabs.filter((tab) => !tab.pinned).length,
+    };
+    check(
+      "four unpinned chats and the pinned square are open at the dock's floor",
+      floorTabCounts.all === 5 &&
+        floorTabCounts.pinned === 1 &&
+        floorTabCounts.unpinned === 4,
+      JSON.stringify({
+        tabs: floorStrip.tabs.map((tab) => [tab.label, tab.pinned]),
+        counts: floorTabCounts,
+      }),
+    );
+    check(
+      "the dock is still at its floor for the strip claim",
+      typeof floorStrip.chatDivider?.now === "number" &&
+        floorStrip.chatDivider.now === floorStrip.chatDivider.min &&
+        floorStrip.chatDivider.now === floorDivider?.now,
+      JSON.stringify({ divider: floorStrip.chatDivider, before: floorDivider }),
+    );
+    check(
+      "the strip overflows sideways instead of squeezing past the tab floor",
+      Boolean(floorStrip.strip) &&
+        floorStrip.strip.scrollWidth > floorStrip.strip.clientWidth + 1,
+      JSON.stringify({ strip: floorStrip.strip }),
+    );
+    const floorFloorTabs = floorStrip.tabs.filter((tab) => !tab.pinned);
+    check(
+      "every crowded tab keeps three characters plus the ellipsis at the floor",
+      floorFloorTabs.length === 4 &&
+        floorFloorTabs.every(
+          (tab) =>
+            typeof tab.labelWidth === "number" &&
+            typeof tab.floorWidth === "number" &&
+            tab.labelWidth + 1 >= tab.floorWidth,
+        ),
+      JSON.stringify(
+        floorFloorTabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]),
+      ),
+    );
+    check(
+      "the crowded floor's labels still carry their chats' names",
+      floorFloorTabs.length === 4 &&
+        floorFloorTabs.every(
+          (tab) => tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        ),
+      JSON.stringify(floorFloorTabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "the crowded floor keeps every tab's mark and close control",
+      floorFloorTabs.every(
+        (tab) =>
+          tab.mark.exists === true &&
+          tab.mark.visible === true &&
+          tab.hasClose === true &&
+          tab.closeVisible === true,
+      ),
+      JSON.stringify(floorFloorTabs.map((tab) => [tab.label, tab.mark, tab.closeVisible])),
+    );
+    screenshots.push(await shot("tab-strip-floor"));
+    mark("tab-strip-floor");
+
+    // 27 — a vertical wheel over the band walks it sideways, the browser habit
+    // the floor buys. The gesture must move the strip's own scrollLeft (clamped to
+    // its travel) and must be swallowed, or the page behind the strip scrolls
+    // instead of the tabs.
+    const stripAtZero = await scrollStripTo(0);
+    const wheel = await wheelStrip(120);
+    probes.wheel = wheel;
+    const wheelExpectation = wheel.ok ? Math.min(120, wheel.maxScroll) : 0;
+    check(
+      "the strip is parked at its leading edge before the wheel",
+      stripAtZero === 0,
+      JSON.stringify({ stripAtZero }),
+    );
+    check(
+      "a vertical wheel over the strip moves it sideways and is swallowed",
+      wheel.ok === true &&
+        wheel.before === 0 &&
+        wheel.prevented === true &&
+        wheel.dispatched === false &&
+        Math.abs(wheel.after - wheelExpectation) <= 1,
+      JSON.stringify({ ...wheel, expected: wheelExpectation }),
+    );
+    const wheeled = await settle(240);
+    check(
+      "the strip stays where the wheel left it",
+      wheel.ok === true && wheeled.strip?.scrollLeft === wheel.after,
+      JSON.stringify({
+        strip: { scrollLeft: wheeled.strip?.scrollLeft },
+        wheel: { after: wheel.after },
+      }),
+    );
+    screenshots.push(await shot("tab-strip-wheel"));
+    mark("tab-strip-wheel");
+
+    // 28 — the tab in front is always in the band: a chat appended at the far end
+    // is scrolled into view, ending before the sticky full-screen corner. Without
+    // the scroll, the operator has a conversation on screen and no tab to find it
+    // by.
+    const resetStrip = await scrollStripTo(0);
+    check(
+      "the strip is parked at its leading edge before the append",
+      resetStrip === 0,
+      JSON.stringify({ resetStrip }),
+    );
+    check(
+      "middle-clicked a chat that appends past the band's edge",
+      await middleClickSidebarRow("Seed chat 14"),
+      "no row button",
+    );
+    const revealed = await settle(420);
+    const revealedFront = revealed.tabs.find((tab) => tab.active) ?? null;
+    check(
+      "the appended tab is the one in front",
+      revealedFront !== null &&
+        revealedFront.label === "Seed chat 14" &&
+        revealed.tabCount === floorTabCounts.all + 1,
+      JSON.stringify({
+        front: revealedFront?.label,
+        tabs: revealed.tabs.map((tab) => [tab.label, tab.active]),
+      }),
+    );
+    const revealInset = revealed.strip?.trailing?.width ?? 0;
+    check(
+      "the tab in front is scrolled into the strip's visible band",
+      Boolean(revealed.strip && revealedFront?.box) &&
+        revealInset > 0 &&
+        revealed.strip.scrollLeft > 0 &&
+        revealedFront.box.left >= revealed.strip.box.left - 1 &&
+        revealedFront.box.right <= revealed.strip.box.right - revealInset + 1,
+      JSON.stringify({
+        front: revealedFront?.box,
+        strip: revealed.strip?.box,
+        scrollLeft: revealed.strip?.scrollLeft,
+        trailing: revealed.strip?.trailing,
+      }),
+    );
+    screenshots.push(await shot("tab-scrolled-into-view"));
+    mark("tab-scrolled-into-view");
+
+    // 29 — the write path a page uses to start a task chat: the chat is created
+    // through the shipping bridge, then handed to the dock with the kickoff mark
+    // of the work that started it. The tab wears that mark in the slot a plain
+    // tab spends on the status dot, keeps its own name and close label, keeps the
+    // three-characters-plus-ellipsis floor, and the mark is written to the profile's remembered
+    // map so a restart can dress the tab the same way. A chat the operator opened
+    // stays plain.
+    const created = await createChat("Task · Wire the strip");
+    const createdSession = created && created.ok ? created.value : null;
+    probes.task = createdSession ? { id: createdSession.id } : null;
+    check(
+      "the stub bridge created a task chat",
+      Boolean(createdSession && createdSession.id),
+      JSON.stringify(created),
+    );
+    check(
+      "handed the created chat to the dock as a task kickoff",
+      Boolean(createdSession) && (await requestSession(createdSession, "task")),
+      "the fixture exposes no request door",
+    );
+    const taskIcon = await settle(560);
+    const taskTab = taskIcon.tabs.find((tab) => tab.label === "Task · Wire the strip") ?? null;
+    check(
+      "the task chat's tab wears its kickoff mark",
+      taskTab !== null &&
+        taskTab.icon === "task" &&
+        taskTab.mark.exists === true &&
+        taskTab.mark.svg === true &&
+        taskTab.mark.visible === true,
+      JSON.stringify(taskTab),
+    );
+    check(
+      "the kickoff mark leaves the tab's name and close label alone",
+      (taskTab?.name ?? "").startsWith("Task · Wire the strip") &&
+        taskTab?.close === "Close Task · Wire the strip",
+      JSON.stringify({ name: taskTab?.name, close: taskTab?.close }),
+    );
+    check(
+      "the kickoff mark does not take the tab below the three-characters-plus-ellipsis floor",
+      Boolean(taskTab) &&
+        typeof taskTab.labelWidth === "number" &&
+        typeof taskTab.floorWidth === "number" &&
+        taskTab.labelWidth + 1 >= taskTab.floorWidth,
+      JSON.stringify({ labelWidth: taskTab?.labelWidth, floor: taskTab?.floorWidth }),
+    );
+    check(
+      "the kickoff mark is remembered in the legacy icon slot",
+      Boolean(createdSession) &&
+        taskIcon.sessionIcons !== null &&
+        typeof taskIcon.sessionIcons === "object" &&
+        taskIcon.sessionIcons[createdSession.id] === "task" &&
+        taskIcon.sessionIcons["chat-delta"] === "automation",
+      JSON.stringify({ stored: taskIcon.sessionIcons, id: createdSession?.id }),
+    );
+    check(
+      "a chat the operator opened keeps a plain tab with no kickoff mark",
+      taskIcon.tabs
+        .filter((tab) => tab.icon === null && !tab.pinned)
+        .every((tab) => tab.mark.exists === true && tab.mark.svg === false) &&
+        taskIcon.tabs.filter((tab) => tab.icon !== null).length === 1,
+      JSON.stringify(taskIcon.tabs.map((tab) => [tab.label, tab.icon, tab.mark.svg])),
+    );
+    screenshots.push(await shot("tab-session-icon-task"));
+    mark("tab-session-icon-task");
+
+    // 30 — the same kickoff mark now leads the chat's name in the Chats sidebar,
+    // not only its tab. The store's remembered map is the one source for both
+    // surfaces: the fixture's seeded automation mark dresses the Delta row, a
+    // chat opened plainly keeps the transparent status dot in the same one-slot
+    // leading column, and the task chat the write-path probe created — which the
+    // store adopts into the list — wears its task mark on its row too.
+    const landingDelta = landing.rows.find((row) => row.label === "Delta automation") ?? null;
+    const landingBravo = landing.rows.find((row) => row.label === "Bravo budget") ?? null;
+    check(
+      "the automation chat's sidebar row wears its kickoff mark",
+      landingDelta !== null &&
+        landingDelta.icon === "automation" &&
+        landingDelta.mark.exists === true &&
+        landingDelta.mark.svg === true &&
+        landingDelta.mark.visible === true,
+      JSON.stringify(landingDelta),
+    );
+    check(
+      "the sidebar mark leaves the row's label and its verbs alone",
+      landingDelta?.label === "Delta automation" &&
+        landingDelta?.pin.exists === true &&
+        landingDelta?.archive.exists === true,
+      JSON.stringify({
+        label: landingDelta?.label,
+        pin: landingDelta?.pin,
+        archive: landingDelta?.archive,
+      }),
+    );
+    check(
+      "a chat opened plainly keeps the status dot in the sidebar's leading slot",
+      landingBravo !== null &&
+        landingBravo.icon === null &&
+        landingBravo.mark.exists === true &&
+        landingBravo.mark.visible === true &&
+        landingBravo.mark.svg === false &&
+        landingBravo.dot.exists === true &&
+        landingBravo.dot.visible === true,
+      JSON.stringify(landingBravo),
+    );
+    check(
+      "the sidebar mark changes neither the row's height nor its leading edge",
+      Boolean(landingDelta?.box && landingBravo?.box) &&
+        Math.abs(landingDelta.box.height - landingBravo.box.height) <= 1 &&
+        Boolean(
+          landingDelta?.mark.box && landingDelta.mainBox && landingDelta.labelBox,
+        ) &&
+        landingDelta.mark.box.left >= landingDelta.mainBox.left - 1 &&
+        landingDelta.mark.box.right <= landingDelta.labelBox.left + 1,
+      JSON.stringify({
+        heights: [landingDelta?.box?.height, landingBravo?.box?.height],
+        mark: landingDelta?.mark?.box,
+        main: landingDelta?.mainBox,
+        label: landingDelta?.labelBox,
+      }),
+    );
+    const backgroundDelta =
+      background.rows.find((row) => row.label === "Delta automation") ?? null;
+    check(
+      "the live sidebar row paints its kickoff mark, and a live dot still pulses",
+      backgroundDelta?.live === true &&
+        backgroundDelta.icon === "automation" &&
+        backgroundDelta.mark.exists === true &&
+        backgroundDelta.mark.svg === true &&
+        [backgroundDelta.mark.animation, backgroundDelta.mark.glyphAnimation].some(
+          (name) => name && name !== "none",
+        ) &&
+        bothLive.rows
+          .filter((row) => row.live)
+          .every(
+            (row) =>
+              row.mark.exists === true &&
+              row.mark.svg === false &&
+              row.dot.exists === true &&
+              row.dot.visible === true &&
+              [row.mark.animation, row.dot.animation].some(
+                (name) => name && name !== "none",
+              ),
+          ),
+      JSON.stringify({
+        liveDelta: {
+          live: backgroundDelta?.live,
+          mark: backgroundDelta?.mark,
+        },
+        livePlainRows: bothLive.rows
+          .filter((row) => row.live)
+          .map((row) => ({ label: row.label, mark: row.mark, dot: row.dot })),
+      }),
+    );
+    const taskRow =
+      taskIcon.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    const taskPlainRow =
+      taskIcon.rows.find((row) => row.icon === null && row.label === "New chat") ??
+      taskIcon.rows.find((row) => row.icon === null) ??
+      null;
+    check(
+      "the created task chat is listed in the sidebar wearing its kickoff mark",
+      taskRow !== null &&
+        taskRow.icon === "task" &&
+        taskRow.mark.exists === true &&
+        taskRow.mark.svg === true &&
+        taskRow.mark.visible === true,
+      JSON.stringify(taskRow),
+    );
+    check(
+      "the task row keeps a plain row's height and puts its mark before the label",
+      Boolean(taskRow?.box && taskPlainRow?.box) &&
+        Math.abs(taskRow.box.height - taskPlainRow.box.height) <= 1 &&
+        Boolean(taskRow?.mark.box && taskRow.mainBox && taskRow.labelBox) &&
+        taskRow.mark.box.left >= taskRow.mainBox.left - 1 &&
+        taskRow.mark.box.right <= taskRow.labelBox.left + 1,
+      JSON.stringify({
+        heights: [taskRow?.box?.height, taskPlainRow?.box?.height],
+        mark: taskRow?.mark?.box,
+        main: taskRow?.mainBox,
+        label: taskRow?.labelBox,
+      }),
+    );
+
+    // 31 — the mark is the chat's, not one render's: a plain list re-read (the
+    // store's own loadSessions, what any background refresh runs) must leave the
+    // remembered kickoff maps alone, so the rows keep their marks instead of
+    // falling back to the plain dot.
+    check(
+      "the store re-read the chat list",
+      await run(`(async () => {
+        if (!window.__lqChat) return false;
+        await window.__lqChat.loadSessions();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        return true;
+      })()`),
+      "no list handle on the page",
+    );
+    const rowsReread = await settle(420);
+    const rereadDelta =
+      rowsReread.rows.find((row) => row.label === "Delta automation") ?? null;
+    const rereadTask =
+      rowsReread.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    check(
+      "a plain list re-read keeps the kicked-off chats' sidebar marks",
+      rereadDelta?.icon === "automation" &&
+        rereadDelta.mark.svg === true &&
+        rereadTask?.icon === "task" &&
+        rereadTask.mark.svg === true &&
+        rowsReread.sessionIcons?.["chat-delta"] === "automation",
+      JSON.stringify({
+        delta: [rereadDelta?.icon, rereadDelta?.mark],
+        task: [rereadTask?.icon, rereadTask?.mark],
+        stored: rowsReread.sessionIcons,
+      }),
+    );
+    screenshots.push(await shot("sidebar-kickoff-marks"));
+    mark("sidebar-kickoff-marks");
+
     mark("done");
     report = {
       url,
@@ -2647,7 +3298,16 @@ async function main() {
         renameCancelled,
         plusOpened,
         plusAgain,
+        floorStrip,
+        wheel: wheeled,
+        revealed,
+        taskIcon,
+        rowsReread,
       },
+      // The gesture readings the states cannot carry: the wheel's own
+      // before/after/prevented numbers and the id of the chat the write-path
+      // probe created (the wrapper checks the remembered icon map against it).
+      probes,
       failures,
       pass: failures.length === 0,
     };
@@ -2810,6 +3470,51 @@ async function main() {
         state.plusAgain.heading,
         "",
         `tabs ${JSON.stringify(state.plusAgain.tabs.map((tab) => tab.label))}, creates ${state.plusAgain.createCalls.length}`,
+      ],
+      [
+        "strip at the floor",
+        state.floorStrip.rowCount,
+        state.floorStrip.tabCount,
+        "",
+        state.floorStrip.heading,
+        "",
+        `strip ${JSON.stringify(state.floorStrip.strip)}, labels ${JSON.stringify(state.floorStrip.tabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]))}`,
+      ],
+      [
+        "wheel over the strip",
+        state.wheel.rowCount,
+        state.wheel.tabCount,
+        "",
+        state.wheel.heading,
+        "",
+        `wheel ${JSON.stringify(report.probes?.wheel)}, scrollLeft ${state.wheel.strip?.scrollLeft}`,
+      ],
+      [
+        "tab in front revealed",
+        state.revealed.rowCount,
+        state.revealed.tabCount,
+        "",
+        state.revealed.heading,
+        "",
+        `front ${JSON.stringify(state.revealed.tabs.find((tab) => tab.active)?.box)}, strip ${JSON.stringify(state.revealed.strip)}`,
+      ],
+      [
+        "task kickoff mark",
+        state.taskIcon.rowCount,
+        state.taskIcon.tabCount,
+        "",
+        state.taskIcon.heading,
+        "",
+        `icons ${JSON.stringify(state.taskIcon.tabs.map((tab) => [tab.label, tab.icon]))}, stored ${JSON.stringify(state.taskIcon.sessionIcons)}`,
+      ],
+      [
+        "sidebar marks after a re-read",
+        state.rowsReread.rowCount,
+        state.rowsReread.tabCount,
+        "",
+        state.rowsReread.heading,
+        "",
+        `rows ${JSON.stringify(state.rowsReread.rows.filter((row) => row.icon).map((row) => [row.label, row.icon, row.mark.svg]))}, stored ${JSON.stringify(state.rowsReread.sessionIcons)}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

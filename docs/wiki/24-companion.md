@@ -140,19 +140,36 @@ vault's own binding.
    of its own. Tabs are remembered per vault and agent: quit and reopen and every
    tab returns in the same order, with the chat that was in front still in front.
    A remembered chat that was archived or deleted in the meantime loses its tab.
-5. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
+5. **The strip shrinks tabs like a browser's, then scrolls.** Tabs share the
+   strip between them and shrink as the dock narrows, but each one keeps a floor
+   of about three characters of its chat's name — with an ellipsis when the name
+   is longer — beside its leading mark and its close **×**. At that floor the
+   strip stops squeezing the tabs and scrolls sideways instead: the wheel scrolls
+   it sideways, its own thin scrollbar drags it, and opening or switching to a
+   chat scrolls that tab into view. Pinned chats keep their fixed squares and lead
+   the strip.
+6. **A chat's leading mark says where it came from.** The same mark leads the
+   chat's name in its tab and in its row in the **Chats** list. An ordinary
+   chat's mark is invisible at rest; it becomes a pulsing dot while the chat
+   works and an accent ring while the chat waits on your approval. A chat the app
+   started instead wears a small icon for what started it at the start of its
+   name: a task handed over with **Send to agent**, a review interview, a
+   planning session, or an automation run. The icon takes the same pulse and
+   ring, and it is remembered with the chat — per vault and agent, like the tabs
+   themselves — so it survives a restart and a rename.
+7. **Pinned chats are permanent tabs.** A pinned chat is drawn as a small square
    with the label's first letter and a pin, at the head of the strip, with no close
    control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
    **Delete**; a pinned tab's **Tab actions** menu offers **Unpin** alone. Close
    an ordinary tab with its **×**, a middle click, or **Ctrl+W** (**Cmd+W** on
    macOS).
-6. Archiving the chat in front closes its tab and brings its neighbour forward. If
+8. Archiving the chat in front closes its tab and brings its neighbour forward. If
    it was the last open chat, the dock stays on the thread and opens a blank
    **New chat**, so an archive never throws you out of the dock.
-7. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
+9. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable flags on
    that companion, so its other surfaces see them too.
-8. **Give the chat the workspace.** Choose **Full screen chat** at the trailing
+10. **Give the chat the workspace.** Choose **Full screen chat** at the trailing
    end of the dock's top row — the tab strip when a tab is drawn, the header row
    when it is not. The main page collapses, the chat takes the workspace right of
    the rail, and the rail with its chats list stays; the control now reads **Exit
@@ -328,8 +345,8 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Part | What it does |
 |---|---|
 | Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
-| Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; hover archive and pin; **Chat actions** menu; a running dot. |
-| Tab strip | One tab per open chat, pinned chats as squares at the head, a live dot while streaming, an approval ring while waiting, and **+** immediately after the last tab. |
+| Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; each row leads with its chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon, then the chat's name and time; hover archive and pin; **Chat actions** menu. |
+| Tab strip | One tab per open chat, pinned chats as fixed squares at the head (no close control on a square), each chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon at the start of its name, and a close **×**. The tabs shrink to about three characters of the name and then an ellipsis, after which the strip scrolls sideways (the wheel or its thin scrollbar), with **+** immediately after the last tab and **Full screen chat** at its trailing end. |
 | Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
@@ -395,7 +412,8 @@ the arrangement you left; leaving full-screen chat gives back the split.
   companion pane is the boot surface, not an error. **Recheck** is always safe.
 - **Switching agents is not a reconnection.** The studio stays up, the target
   boots behind it, and the chat list changes because it belongs to the other
-  agent. The dock's tab strip is remembered per vault and agent.
+  agent. The dock's tab strip and the chats' kickoff marks are remembered per
+  vault and agent.
 - **Switching vaults is a profile change, not a relaunch.** The vault's own chats,
   tabs and agent come back and the other vault's do not. A vault that has no
   Hermes agent shows only the Pi pill.
@@ -411,6 +429,15 @@ the arrangement you left; leaving full-screen chat gives back the split.
   Quick Notes page, with its own composer; see [Quick Notes](./15-quick-notes.md).
 - **A pinned chat leaves the strip only through Unpin.** The square has no close
   control and the row hides archive and delete while pinned.
+- **A strip with more tabs than room scrolls; it never squeezes them into
+  slivers.** Every tab keeps about three characters of its chat's name and an
+  ellipsis beside its mark and **×**, and the tab you open or switch to is
+  scrolled into view. Scroll the strip with the wheel or its thin scrollbar.
+- **The mark at the start of a chat's name is its origin, not its title.** A chat
+  started by a task handover, a review interview, a planning session or an
+  automation run keeps its icon in its tab and its **Chats** row after a restart
+  and a rename; any other chat keeps the plain status mark instead. A pinned
+  chat's tab stays the square with its letter and pin.
 - **A chat you open in Hermes Desktop is the same chat, when Hermes is the
   companion.** Renames, pins and archives are Hermes-side; do not expect a
   LifeQuest-only copy. Pi's chats exist only in this app's session store.
