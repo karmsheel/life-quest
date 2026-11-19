@@ -7,16 +7,20 @@ import {
   Keyboard,
   Layers,
   MessageCircleQuestion,
+  MessageSquareText,
   Palette,
   RefreshCw,
   ScrollText,
   Sparkles,
+  Type,
   User,
 } from "lucide-react";
 
 export type SettingsViewId =
   | "appearance"
   | "shortcuts"
+  | "reading"
+  | "composer"
   | "domains"
   | "vault"
   | "hermes"
@@ -80,6 +84,54 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "navigation",
       "toggle",
       "panel",
+    ],
+  },
+  {
+    id: "reading",
+    label: "Chat display",
+    icon: Type,
+    keywords: [
+      "chat",
+      "display",
+      "text",
+      "font",
+      "type",
+      "typography",
+      "size",
+      "zoom",
+      "line",
+      "spacing",
+      "line spacing",
+      "reading",
+      "prose",
+      "dock",
+      "transcript",
+    ],
+  },
+  {
+    id: "composer",
+    label: "Composer",
+    icon: MessageSquareText,
+    keywords: [
+      "composer",
+      "message",
+      "messages",
+      "chat",
+      "box",
+      "send",
+      "sends",
+      "enter",
+      "return",
+      "ctrl",
+      "control",
+      "cmd",
+      "command",
+      "modifier",
+      "newline",
+      "line break",
+      "keyboard",
+      "key",
+      "keys",
     ],
   },
   {

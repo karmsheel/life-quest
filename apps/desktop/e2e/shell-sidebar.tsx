@@ -291,6 +291,10 @@ const bridge: Record<string, unknown> = {
       })),
     ),
   onCompanionStream: () => () => {},
+  // ThemeProvider watches the profile's theme folder on mount; the harness has
+  // no profile, so answer the read and the subscription with their real shapes.
+  themesList: () => ok([]),
+  onThemesChanged: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
   // its trailing cluster (theme, settings, chat) and not the fallback controls.
   // The overlay calls are kept: the native strip the OS paints beside the web

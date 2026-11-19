@@ -292,6 +292,15 @@ type State = {
     box: Box;
     display: string;
     borderTopWidth: string;
+    borderRightWidth: string;
+    borderBottomWidth: string;
+    borderLeftWidth: string;
+    backgroundColor: string;
+    /** The name's computed ink, and the dock's muted token resolved beside it. */
+    color: string;
+    mutedColor: string;
+    tagName: string;
+    role: string | null;
     label: { text: string; fontSizePx: number } | null;
   } | null;
   chatStrip: {
@@ -618,8 +627,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       expanded.wingSwitcher.role,
-      "tablist",
-      `the wing switcher is not a tablist (${expanded.wingSwitcher.role})`,
+      "radiogroup",
+      `the wing switcher is not a radiogroup (${expanded.wingSwitcher.role})`,
     );
     assert.equal(
       expanded.wingSwitcher.optionCount,
@@ -1113,9 +1122,30 @@ describe("shell sidebar (docked rail)", () => {
       expanded.chatChip!.display === "inline-flex" || expanded.chatChip!.display === "flex",
       `the name chip is a ${expanded.chatChip!.display} box, not an inline/flex box sized to its text`,
     );
-    assert.ok(
-      parseFloat(expanded.chatChip!.borderTopWidth) > 0,
-      `the name chip carries no border (${expanded.chatChip!.borderTopWidth})`,
+    // The name is plain text now: no box, no outline, and the quiet ink rather
+    // than the transcript's bright foreground. The row it hangs in is the only
+    // box, and the strip's bottom rule is the only line.
+    assert.equal(
+      expanded.chatChip!.tagName,
+      "button",
+      `the name is a ${expanded.chatChip!.tagName}, not the button the whole name is`,
+    );
+    for (const [side, width] of [
+      ["top", expanded.chatChip!.borderTopWidth],
+      ["right", expanded.chatChip!.borderRightWidth],
+      ["bottom", expanded.chatChip!.borderBottomWidth],
+      ["left", expanded.chatChip!.borderLeftWidth],
+    ] as const) {
+      assert.equal(
+        parseFloat(width),
+        0,
+        `the name's ${side} border came back (${width}); the name carries no outline`,
+      );
+    }
+    assert.equal(
+      expanded.chatChip!.color,
+      expanded.chatChip!.mutedColor,
+      `the name wears ${expanded.chatChip!.color}, not the dock's neutral gray (${expanded.chatChip!.mutedColor})`,
     );
     assert.ok(
       Math.abs(expanded.chatHeader.box.width - expanded.chat.box.width) <= 1,

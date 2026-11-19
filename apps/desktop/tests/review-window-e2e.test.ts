@@ -375,8 +375,8 @@ describe("review window e2e", () => {
     );
     assert.equal(
       defaults.settings.navLabels.length,
-      12,
-      `the section column holds ${defaults.settings.navLabels.length} sections, expected 12`,
+      14,
+      `the section column holds ${defaults.settings.navLabels.length} sections, expected 14`,
     );
     assert.ok(defaults.settings.navLabels.includes("Review"), "the section column has no Review entry");
     assert.equal(defaults.settings.savePresent, true, "the review tab has no Save control");

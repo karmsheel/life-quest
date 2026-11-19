@@ -46,6 +46,7 @@ import { AgentsProvider } from "@/state/AgentsProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { ShortcutsProvider } from "@/state/ShortcutsProvider";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
@@ -191,12 +192,14 @@ export default function App() {
                 <ChatDockProvider>
                   <NavDockProvider>
                     <ShortcutsProvider>
-                      <div className="app-root">
-                        <WindowTitleBar />
-                        <div className="app-root__body">
-                          <AppRoutes />
+                      <ChatDisplayProvider>
+                        <div className="app-root">
+                          <WindowTitleBar />
+                          <div className="app-root__body">
+                            <AppRoutes />
+                          </div>
                         </div>
-                      </div>
+                      </ChatDisplayProvider>
                     </ShortcutsProvider>
                   </NavDockProvider>
                 </ChatDockProvider>

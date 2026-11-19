@@ -1,9 +1,10 @@
 # Settings
 
-Settings is one sheet over the app, not a page in the rail. It holds twelve tabs
-in a fixed order: from the theme you wear and the keys you move with, through the
-areas and the vault, to the companion, the prompt the agent is given, the review
-windows, the Decisions inbox, updates, your own context, and the Developer bench.
+Settings is one sheet over the app, not a page in the rail. It holds fourteen tabs
+in a fixed order: from the theme you wear, the keys you move with, the chat's own
+text size and the way the chat message box sends, through the areas and the vault,
+to the companion, the prompt the agent is given, the review windows, the Decisions
+inbox, updates, your own context, and the Developer bench.
 A search field above the tab list narrows the list in place, so a setting you can
 name is two keystrokes away. [The wiki home](./index.md) has the page index.
 
@@ -26,10 +27,11 @@ name is two keystrokes away. [The wiki home](./index.md) has the page index.
 
 Some settings belong to a vault (its week start, saved questions, Decisions
 inbox, agent scopes); some belong to this installation (the recent-vault list,
-the companion, the theme, the keyboard); and some are read-only views of what the
-companion is being told. The sheet keeps those scopes apart, one tab each, and
-applies every change immediately — there is no Save button for the sheet itself,
-though a tab with a draft (the Review windows) saves with its own button.
+the companion, the theme, the keyboard, the chat display); and some are read-only
+views of what the companion is being told. The sheet keeps those scopes apart,
+one tab each, and applies every change immediately — there is no Save button for
+the sheet itself, though a tab with a draft (the Review windows) saves with its
+own button.
 
 ## How to use it
 
@@ -51,7 +53,7 @@ panel. Its only floating chrome is the search pill (*Search settings*), a short
 field sitting on the panel's top border, half in and half out, with the section
 column starting at the panel's top edge and no title band above it; the close
 cross (**Close settings**) floats over the panel's top-right padding. The left
-column carries the kicker **App** and the title **Settings**, then the twelve
+column carries the kicker **App** and the title **Settings**, then the fourteen
 tabs with their icons, and the panel shows the selected tab, titled by its own
 heading and subtitle, in a card of rows: name and description on the leading
 edge, control on the trailing edge, a hairline ruling one row off the next.
@@ -158,6 +160,52 @@ from its floating mark first).
 `localStorage` under `lifequest-keyboard-shortcuts`; setting a movement back to
 its default removes its entry. The bindings are per installation, not inside the
 vault, so they do not travel with a copied vault folder.
+
+## Chat display
+
+**Chat display** — *Text size and line spacing in the chat dock*. This tab sets how
+the agent's prose is drawn in the right-hand dock. It is window storage, not vault
+storage: a big monitor and a small laptop want different reading sizes for the same
+vault.
+
+- **Text size** — **−** / value / **+** walks the dock's type between **80%** and
+  **200%** in 10-percent steps; the number in the middle is the size the dock wears
+  now. **Reset** puts the size back to **100%** and the line spacing back to 1.5.
+- **Line spacing** — **Tight** (1.3), **Normal** (1.5, the shipped default),
+  **Relaxed** (1.75) and **Double** (2.0); the active one is pressed.
+- **Zoom range** — a read-only row naming the 80%–200% range and repeating that the
+  size above is the one in use.
+- **Preview** — the dock's own reading measures, redrawn at the chosen size and
+  spacing, so the setting is judged on the text it changes rather than on a sample.
+
+The same two values are reachable from the dock itself. **Ctrl/Cmd and the mouse
+wheel** over the dock step the size, and **Ctrl+=**, **Ctrl+-** and **Ctrl+0**
+step it (or reset it) from anywhere, including while this sheet is open, so the
+preview moves with the keys. The combinations are reserved in the keyboard table,
+so no movement can be bound over them. The dock's bottom bar carries a **Chat
+display settings** button (the Type mark) that opens this tab directly. See
+[Companion](./24-companion.md) for the dock's own controls.
+
+## Composer
+
+**Composer** — *How the message box sends*. One row, **Send with**, holds a
+segmented control with two choices:
+
+- **Ctrl/Cmd+Enter** — the default. Enter breaks the line; Ctrl/Cmd+Enter sends
+  the message.
+- **Enter** — Enter sends the message and Shift+Enter breaks the line.
+  Ctrl/Cmd+Enter still sends, so the older habit keeps working.
+
+A choice takes effect at once; there is no Save button. While a turn is already
+running, the same send key steers that turn instead of starting a second one. The
+setting is window storage — `localStorage` under `lifequest-composer-send-key` —
+so it survives a restart on this machine and does not travel with the vault
+folder.
+
+The choice reaches the chat message box only. Quick Notes and the signal/chain
+capture keep logging with plain Enter and breaking the line with Shift+Enter
+whatever is chosen here; see [Quick Notes](./15-quick-notes.md) and
+[Companion](./24-companion.md).
 
 ## Areas
 
@@ -359,10 +407,10 @@ feed, and a real release outranks the preview.
 
 ## Rules and behaviour
 
-- The tab order is fixed (12): **Appearance**, **Keyboard**, **Areas**, **Vault**,
-  **Hermes**, **Agent**, **Review**, **Questions**, **Decisions**, **Updates**,
-  **About me**, **Developer**. An unknown or missing `tab` value falls back to
-  Appearance.
+- The tab order is fixed (14): **Appearance**, **Keyboard**, **Chat display**,
+  **Composer**, **Areas**, **Vault**, **Hermes**, **Agent**, **Review**,
+  **Questions**, **Decisions**, **Updates**, **About me**, **Developer**. An
+  unknown or missing `tab` value falls back to Appearance.
 - The tab lives in the URL, so a tab is linkable. A tab change rewrites the query
   string in place (`replace`) rather than adding history, so the back button
   leaves the sheet instead of walking back through tabs. The sheet is not a page:
@@ -375,7 +423,8 @@ feed, and a real release outranks the preview.
 - Settings that belong to the vault are written to `.lifequest/settings.json`
   (`weekStartDay`, `chatQuestions`, `decisionInbox`, `agentScopes`,
   `reviewAvailability`). **About me** is `.lifequest/about.md`. Theme, starred
-  list and keyboard bindings are window storage.
+  list, keyboard bindings, the chat display (under `lifequest-chat-display`) and
+  the composer send key (`lifequest-composer-send-key`) are window storage.
 - The agent each vault uses is app user data: `vaultAgents` in
   `%APPDATA%\LifeQuest\recent.json` records the vault's Pi/Hermes choice and, for
   Hermes, the profile bound to it. Pi's endpoint, sealed key and transcripts are

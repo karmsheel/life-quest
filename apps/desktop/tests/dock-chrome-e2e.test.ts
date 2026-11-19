@@ -10,11 +10,13 @@
  * the field it broke instead of only "the driver said pass: false". The rig is
  * the only one that opens the page with `?agents=1`, so the real switcher draws.
  *
- * Three concerns live here because they are one surface and one page:
+ * The concerns live here because they are one surface and one page:
  *
- *  1. the name row is a compact, centred chip hanging flush under the tab
- *     strip, with the rename pencil at its trailing end — and the pencil's
- *     rename field still commits on Enter and cancels on Escape;
+ *  1. the name row is the name itself: a borderless, fill-less, neutral-gray
+ *     button hanging flush under the tab strip and centred on the dock, with no
+ *     pencil. Clicking it opens a bare rename field in its own place — no Save or
+ *     Cancel keys — that saves on blur and on Enter, cancels on Escape without a
+ *     write, and opens from the tab menu's Rename too;
  *  2. the composer box is inset by a gutter that grows with the dock (12px
  *     floor, a linear climb, a 12.5% cap), symmetric and non-decreasing;
  *  3. the agent switcher stands in that right-hand gutter when the dock is
@@ -139,11 +141,31 @@ type Sample = {
   chip: {
     rect: Box;
     display: string;
-    borderTopWidthPx: number | null;
-    borderTopStyle: string;
-    borderRadius: string;
+    tag: string;
+    role: string | null;
+    ariaLabel: string | null;
+    text: string;
+    hasSvg: boolean;
+    cursor: string;
+    color: string;
     background: string;
+    borderWidthsPx: {
+      top: number | null;
+      right: number | null;
+      bottom: number | null;
+      left: number | null;
+    };
+    borderStyles: {
+      top: string;
+      right: string;
+      bottom: string;
+      left: string;
+    };
+    borderRadius: string;
+    outlineWidthPx: number | null;
     fontSizePx: number | null;
+    insideRow: boolean;
+    containsLabel: boolean;
   } | null;
   label: {
     rect: Box;
@@ -151,9 +173,11 @@ type Sample = {
     classes: string;
     fontSizePx: number | null;
     fontWeight: string;
+    color: string;
     hasSvg: boolean;
     tag: string;
   } | null;
+  /** The retired pencil's control, if a regression ever brings it back. */
   edit: {
     rect: Box;
     tag: string;
@@ -163,6 +187,8 @@ type Sample = {
     afterLabel: boolean;
     insidePanel: boolean;
   } | null;
+  /** How many `.chat-panel__name-edit` controls the page still carries. */
+  nameEditClassCount: number;
   footer: {
     rect: Box;
     containerType: string;
@@ -185,6 +211,7 @@ type DockChromeReport = {
     chipCentrePx: number;
     chipFontMinPx: number;
     chipFontMaxPx: number;
+    chipContrastMargin: number;
     switcherCentrePx: number;
     switcherBottomPx: number;
     switcherRightPx: number;
@@ -261,10 +288,31 @@ type DockChromeReport = {
     headerPresent: boolean;
     rect: Box | null;
     display: string | null;
-    borderTopWidthPx: number | null;
-    borderTopStyle: string | null;
+    tag: string | null;
+    role: string | null;
+    ariaLabel: string | null;
+    text: string | null;
+    hasSvg: boolean | null;
+    cursor: string | null;
+    color: string | null;
+    background: string | null;
+    borderWidthsPx: {
+      top: number | null;
+      right: number | null;
+      bottom: number | null;
+      left: number | null;
+    } | null;
+    borderStyles: {
+      top: string;
+      right: string;
+      bottom: string;
+      left: string;
+    } | null;
+    borderRadius: string | null;
+    outlineWidthPx: number | null;
     fontSizePx: number | null;
     labelText: string | null;
+    labelColor: string | null;
     tabTitle: string | null;
     labelClasses: string | null;
     labelFontSizePx: number | null;
@@ -272,16 +320,41 @@ type DockChromeReport = {
     topVsStripBottomPx: number | null;
     centreVsPanelCentrePx: number | null;
     insidePanel: boolean;
+    insideRow: boolean;
+    containsLabel: boolean;
     editPresent: boolean;
     editTag: string | null;
     editHasSvg: boolean | null;
-    editAfterLabel: boolean | null;
-    editInsideChip: boolean | null;
+    nameEditClassCount: number;
     widthPx: number | null;
     heightPx: number | null;
+    /** The colour claim: resolved colours and their contrast against the dock. */
+    colors: {
+      chip: string | null;
+      chipLuminance: number | null;
+      chipContrast: number | null;
+      mutedToken: string | null;
+      mutedLuminance: number | null;
+      ink: string | null;
+      inkLuminance: number | null;
+      inkContrast: number | null;
+      roleLabel: string | null;
+      roleLabelLuminance: number | null;
+      panelBackground: string | null;
+      panelLuminance: number | null;
+    };
   };
   rename: {
-    opened: { fieldPresent: boolean; value: string | null; title: string | null };
+    opened: {
+      fieldPresent: boolean;
+      value: string | null;
+      title: string | null;
+      fieldTag: string | null;
+      inForm: boolean;
+      formInRow: boolean;
+      formButtonCount: number;
+      chipHidden: boolean;
+    };
     escape: {
       fieldClosed: boolean;
       chipBack: boolean;
@@ -289,17 +362,29 @@ type DockChromeReport = {
       patchesBefore: number;
       patchesAfter: number;
       patchDelta: number;
-      usedButtonFallback: boolean;
+      usedRecovery: string | null;
     };
-    commit: {
+    blur: {
+      typedTitle: string;
+      committed: boolean;
+      patchLanded: boolean;
+      patch: { id: string; patch: { title?: string } } | null;
+      fieldClosed: boolean;
+      labelText: string | null;
+      patchesBefore: number;
+      patchDelta: number;
+    };
+    enter: {
       typedTitle: string;
       enterCommitted: boolean;
-      usedFormFallback: boolean;
+      usedBlurFallback: boolean;
       patchLanded: boolean;
       patch: { id: string; patch: { title?: string } } | null;
       fieldClosed: boolean;
       labelText: string | null;
       tabTitle: string | null;
+      patchesBefore: number;
+      patchDelta: number;
       chipWidthBeforePx: number | null;
       chipWidthAfterPx: number | null;
       chipGrew: boolean;
@@ -308,6 +393,21 @@ type DockChromeReport = {
       insidePanel: boolean;
       insidePanelAt360: boolean;
       chipWidthAt360Px: number | null;
+    };
+    tabMenu: {
+      tabFound: boolean;
+      menuOpened: boolean;
+      itemClicked: boolean;
+      fieldPresent: boolean;
+      value: string | null;
+      expectedTitle: string;
+      fieldTag: string | null;
+      inForm: boolean;
+      formInRow: boolean;
+      fieldClosed: boolean;
+      patchesBefore: number;
+      patchDelta: number;
+      labelText: string | null;
     };
   };
   footer: {
@@ -532,28 +632,39 @@ describe("dock chrome", () => {
     // ── 1. the name chip ────────────────────────────────────────────────────
     // C1 — it rendered at all, inside the old header wrapper.
     assert.equal(report.chip.present, true, "the thread name chip never rendered");
-    assert.equal(report.chip.stripPresent, true, "the thread drew no tab strip above the chip");
+    assert.equal(report.chip.stripPresent, true, "the thread drew no tab strip above the name");
     assert.equal(report.chip.headerPresent, true, "the .chat-panel__header--thread wrapper is gone");
     assert.ok(
       report.chip.headerTopVsStripBottomPx !== null &&
         Math.abs(report.chip.headerTopVsStripBottomPx) <= report.tolerances.chipTopPx,
       `the header wrapper starts ${report.chip.headerTopVsStripBottomPx}px from the strip's bottom`,
     );
-    // C3 — the chip hangs flush off the strip's bottom edge.
+    // C3 — the name hangs flush off the strip's bottom edge.
     assert.ok(
       report.chip.topVsStripBottomPx !== null &&
         Math.abs(report.chip.topVsStripBottomPx) <= report.tolerances.chipTopPx,
-      `the chip's top edge is ${report.chip.topVsStripBottomPx}px from the strip's bottom ` +
+      `the name's top edge is ${report.chip.topVsStripBottomPx}px from the strip's bottom ` +
         `(expected within ${report.tolerances.chipTopPx}px)`,
     );
-    // C4 — it sits on the dock's centre line.
+    // C4 — it sits on the dock's centre line. The row's trailing actions slot is
+    // empty for a tabbed thread but still contributes half the row's 0.35rem gap,
+    // which is why the tolerance is 4px.
     assert.ok(
       report.chip.centreVsPanelCentrePx !== null &&
         Math.abs(report.chip.centreVsPanelCentrePx) <= report.tolerances.chipCentrePx,
-      `the chip's centre is ${report.chip.centreVsPanelCentrePx}px off the panel's centre ` +
+      `the name's centre is ${report.chip.centreVsPanelCentrePx}px off the panel's centre ` +
         `(expected within ${report.tolerances.chipCentrePx}px)`,
     );
-    assert.equal(report.chip.insidePanel, true, "the chip escaped the dock's box");
+    assert.equal(report.chip.insidePanel, true, "the name escaped the dock's box");
+    // C8 — the whole name is the control: a real button, named for the rename,
+    // carrying the label as its only content.
+    assert.equal(report.chip.tag, "BUTTON", `the name is a ${report.chip.tag}, not a button`);
+    assert.ok(
+      typeof report.chip.ariaLabel === "string" && report.chip.ariaLabel.length > 0,
+      `the name carries no accessible name: ${JSON.stringify(report.chip.ariaLabel)}`,
+    );
+    assert.equal(report.chip.insideRow, true, "the name escaped its row's box");
+    assert.equal(report.chip.containsLabel, true, "the name's label is outside the control");
     // C7 — the label is the title, literally: the heading classes, the tab's own
     // text, and no icon's accessible name leaked into textContent.
     const chipClasses = (report.chip.labelClasses ?? "").split(/\s+/);
@@ -589,31 +700,58 @@ describe("dock chrome", () => {
       `the chip's display is ${report.chip.display}, not an inline/flex box`,
     );
     assert.ok(
-      report.chip.borderTopWidthPx !== null && report.chip.borderTopWidthPx > 0,
-      `the chip carries no border (${report.chip.borderTopWidthPx}px ${report.chip.borderTopStyle})`,
-    );
-    assert.ok(
       report.chip.widthPx !== null && report.chip.widthPx > 0 && report.chip.heightPx !== null &&
         report.chip.heightPx > 0,
       `the chip's box is ${report.chip.widthPx}×${report.chip.heightPx}px`,
     );
-    // C8 — the pencil is a button with an SVG at the label's trailing end,
-    // inside the chip.
-    assert.equal(report.chip.editPresent, true, "the chip's rename pencil never rendered");
-    assert.equal(report.chip.editTag, "BUTTON", `the pencil is a ${report.chip.editTag}, not a button`);
-    assert.equal(report.chip.editHasSvg, true, "the rename control carries no SVG pencil");
-    assert.equal(
-      report.chip.editAfterLabel,
-      true,
-      "the pencil is not at the label's trailing end",
+    // C9 — the name paints no chrome at rest: no border on any side, no fill.
+    assert.ok(
+      report.chip.borderWidthsPx !== null &&
+        Object.values(report.chip.borderWidthsPx).length === 4 &&
+        Object.values(report.chip.borderWidthsPx).every((value) => value === 0),
+      `the name still draws a border: ${JSON.stringify(report.chip.borderWidthsPx)}`,
     );
-    assert.equal(report.chip.editInsideChip, true, "the pencil sits outside the chip's box");
+    assert.ok(
+      report.chip.borderStyles !== null &&
+        Object.values(report.chip.borderStyles).every((style) => style === "none"),
+      `the name still draws a border: ${JSON.stringify(report.chip.borderStyles)}`,
+    );
+    assert.ok(
+      typeof report.chip.background === "string" &&
+        /rgba\(0, 0, 0, 0\)|transparent/.test(report.chip.background),
+      `the name still paints a fill: ${report.chip.background}`,
+    );
+    // C9 — the resting ink is the neutral `--muted` token, and it reads quieter
+    // than the transcript's `--fg` prose: a lower contrast against the dock's own
+    // canvas. A regression to the old bright ink scores the same as the
+    // transcript and fails here.
+    assert.equal(
+      report.chip.colors.chip,
+      report.chip.colors.mutedToken,
+      `the name's ink is ${report.chip.colors.chip}, not the muted token ` +
+        `${report.chip.colors.mutedToken}`,
+    );
+    assert.ok(
+      report.chip.colors.chipContrast !== null &&
+        report.chip.colors.inkContrast !== null &&
+        report.chip.colors.chipContrast <
+          report.chip.colors.inkContrast - report.tolerances.chipContrastMargin,
+      `the name's contrast against the dock is ${report.chip.colors.chipContrast}, not at least ` +
+        `${report.tolerances.chipContrastMargin} below the transcript's ` +
+        `${report.chip.colors.inkContrast}`,
+    );
+    // C8 — the retired pencil is gone: no test id, no old class, no SVG.
+    assert.equal(report.chip.editPresent, false, "the chip's rename pencil is back");
+    assert.notEqual(report.chip.editHasSvg, true, "the retired rename control carries an SVG again");
+    assert.equal(report.chip.nameEditClassCount, 0, "a .chat-panel__name-edit control is back");
+    assert.equal(report.chip.hasSvg, false, "the name's control carries an SVG icon");
 
-    // ── C9–C12: the pencil's rename path ────────────────────────────────────
+    // ── C10–C13: the name's rename path ─────────────────────────────────────
+    // C10 — clicking the name opens the field in its own row, prefilled and bare.
     assert.equal(
       report.rename.opened.fieldPresent,
       true,
-      "clicking the pencil did not open the rename field",
+      "clicking the name did not open the rename field",
     );
     assert.equal(
       report.rename.opened.value,
@@ -621,8 +759,39 @@ describe("dock chrome", () => {
       `the rename field opened with ${JSON.stringify(report.rename.opened.value)}, ` +
         `expected the current title ${JSON.stringify(report.rename.opened.title)}`,
     );
-    // C10 — Escape cancels: nothing written, field closed, name kept.
+    assert.equal(
+      report.rename.opened.fieldTag,
+      "INPUT",
+      `the rename field is a ${report.rename.opened.fieldTag}, not an input`,
+    );
+    assert.equal(
+      report.rename.opened.inForm,
+      true,
+      "the rename field is not inside .chat-panel__rename",
+    );
+    assert.equal(
+      report.rename.opened.formInRow,
+      true,
+      "the rename field did not open in the name's own row",
+    );
+    assert.equal(
+      report.rename.opened.chipHidden,
+      true,
+      "the name stayed beside the field instead of being replaced by it",
+    );
+    // The Save/Cancel keys are gone: blur saves, Escape cancels.
+    assert.equal(
+      report.rename.opened.formButtonCount,
+      0,
+      `the rename field drew ${report.rename.opened.formButtonCount} Save/Cancel button(s)`,
+    );
+    // C11 — Escape cancels: nothing written, field closed, name kept.
     assert.equal(report.rename.escape.fieldClosed, true, "Escape did not close the rename field");
+    assert.equal(
+      report.rename.escape.usedRecovery,
+      null,
+      "Escape did not close the field on its own; the rig had to recover it",
+    );
     assert.equal(
       report.rename.escape.patchDelta,
       0,
@@ -633,61 +802,132 @@ describe("dock chrome", () => {
       report.rename.opened.title,
       `the title changed to ${JSON.stringify(report.rename.escape.labelText)} after Escape`,
     );
-    // C11 — Enter commits, through the bridge and not only the panel's state.
+    // C12 — blur saves: there is no Save key, so clicking away writes the typed
+    // title through the bridge and closes the field.
     assert.equal(
-      report.rename.commit.enterCommitted,
+      report.rename.blur.committed,
       true,
-      report.rename.commit.usedFormFallback
-        ? "Enter did not run the form submit (the field stayed open; the form's own submit " +
-          "did commit, so the key never reached the field)"
+      "blurring the rename field did not save the title",
+    );
+    assert.equal(report.rename.blur.patchLanded, true, "blur never reached the bridge");
+    assert.equal(
+      report.rename.blur.patch?.patch.title,
+      report.rename.blur.typedTitle,
+      `blur asked the bridge to write ${JSON.stringify(report.rename.blur.patch?.patch.title)}, ` +
+        `expected ${JSON.stringify(report.rename.blur.typedTitle)}`,
+    );
+    assert.equal(
+      report.rename.blur.patchDelta,
+      1,
+      `blur wrote ${report.rename.blur.patchDelta} session patch(es), expected exactly one`,
+    );
+    assert.equal(report.rename.blur.fieldClosed, true, "the rename field stayed open after blur");
+    assert.equal(
+      report.rename.blur.labelText,
+      report.rename.blur.typedTitle,
+      "the chip's label did not take the title blur saved",
+    );
+    // C12 — Enter takes the same save path and commits through the bridge.
+    assert.equal(
+      report.rename.enter.enterCommitted,
+      true,
+      report.rename.enter.usedBlurFallback
+        ? "Enter did not blur the field (the blur itself committed, so the save path " +
+          "works and the key never reached it)"
         : "Enter left the rename field open and sent no session patch",
     );
     assert.equal(
-      report.rename.commit.usedFormFallback,
+      report.rename.enter.usedBlurFallback,
       false,
-      "the rig had to submit the rename form itself — Enter did not commit",
+      "the rig had to blur the field itself — Enter did not save",
     );
-    assert.equal(report.rename.commit.patchLanded, true, "the rename never reached the bridge");
+    assert.equal(report.rename.enter.patchLanded, true, "the rename never reached the bridge");
     assert.equal(
-      report.rename.commit.patch?.patch.title,
-      report.rename.commit.typedTitle,
-      `the bridge was asked to write ${JSON.stringify(report.rename.commit.patch?.patch.title)}, ` +
-        `expected ${JSON.stringify(report.rename.commit.typedTitle)}`,
+      report.rename.enter.patch?.patch.title,
+      report.rename.enter.typedTitle,
+      `the bridge was asked to write ${JSON.stringify(report.rename.enter.patch?.patch.title)}, ` +
+        `expected ${JSON.stringify(report.rename.enter.typedTitle)}`,
     );
-    assert.equal(report.rename.commit.fieldClosed, true, "the rename field stayed open after Enter");
     assert.equal(
-      report.rename.commit.labelText,
-      report.rename.commit.typedTitle,
+      report.rename.enter.patchDelta,
+      1,
+      `Enter wrote ${report.rename.enter.patchDelta} session patch(es), expected exactly one`,
+    );
+    assert.equal(report.rename.enter.fieldClosed, true, "the rename field stayed open after Enter");
+    assert.equal(
+      report.rename.enter.labelText,
+      report.rename.enter.typedTitle,
       "the chip's label did not take the committed title",
     );
-    // C12 — the chip grows with the title.
+    // C13 — the chip grows with the title.
     assert.ok(
-      report.rename.commit.chipWidthBeforePx !== null &&
-        report.rename.commit.chipWidthAfterPx !== null &&
-        report.rename.commit.chipWidthAfterPx > report.rename.commit.chipWidthBeforePx,
-      `the chip did not grow with the title: ${report.rename.commit.chipWidthBeforePx}px → ` +
-        `${report.rename.commit.chipWidthAfterPx}px`,
+      report.rename.enter.chipWidthBeforePx !== null &&
+        report.rename.enter.chipWidthAfterPx !== null &&
+        report.rename.enter.chipWidthAfterPx > report.rename.enter.chipWidthBeforePx,
+      `the chip did not grow with the title: ${report.rename.enter.chipWidthBeforePx}px → ` +
+        `${report.rename.enter.chipWidthAfterPx}px`,
     );
-    assert.equal(report.rename.commit.chipGrew, true, "the chip's width did not follow the title");
+    assert.equal(report.rename.enter.chipGrew, true, "the chip's width did not follow the title");
     // ...and it still hangs under the strip, on the centre line, inside the dock
     // — at 900 and after the dock narrows to 360.
     assert.ok(
-      report.rename.commit.topVsStripBottomPx !== null &&
-        Math.abs(report.rename.commit.topVsStripBottomPx) <= report.tolerances.chipTopPx,
-      `after the rename the chip's top is ${report.rename.commit.topVsStripBottomPx}px ` +
+      report.rename.enter.topVsStripBottomPx !== null &&
+        Math.abs(report.rename.enter.topVsStripBottomPx) <= report.tolerances.chipTopPx,
+      `after the rename the name's top is ${report.rename.enter.topVsStripBottomPx}px ` +
         `off the strip`,
     );
     assert.ok(
-      report.rename.commit.centreVsPanelCentrePx !== null &&
-        Math.abs(report.rename.commit.centreVsPanelCentrePx) <= report.tolerances.chipCentrePx,
-      `after the rename the chip's centre is ${report.rename.commit.centreVsPanelCentrePx}px ` +
+      report.rename.enter.centreVsPanelCentrePx !== null &&
+        Math.abs(report.rename.enter.centreVsPanelCentrePx) <= report.tolerances.chipCentrePx,
+      `after the rename the name's centre is ${report.rename.enter.centreVsPanelCentrePx}px ` +
         `off the panel's centre`,
     );
-    assert.equal(report.rename.commit.insidePanel, true, "the renamed chip escaped the dock");
+    assert.equal(report.rename.enter.insidePanel, true, "the renamed name escaped the dock");
     assert.equal(
-      report.rename.commit.insidePanelAt360,
+      report.rename.enter.insidePanelAt360,
       true,
-      "the renamed chip overflows the 360px dock",
+      "the renamed name overflows the 360px dock",
+    );
+    // C13 — the tab menu's Rename is the same field, and cancelling it writes
+    // nothing: the menu's door must not save on its own.
+    assert.equal(report.rename.tabMenu.tabFound, true, "the strip drew no tab in front to right-click");
+    assert.equal(report.rename.tabMenu.menuOpened, true, "right-clicking the tab opened no menu");
+    assert.equal(report.rename.tabMenu.itemClicked, true, "the tab menu drew no Rename item");
+    assert.equal(
+      report.rename.tabMenu.fieldPresent,
+      true,
+      "the tab menu's Rename did not open the name's rename field",
+    );
+    assert.equal(
+      report.rename.tabMenu.value,
+      report.rename.tabMenu.expectedTitle,
+      `the tab menu's field opened with ${JSON.stringify(report.rename.tabMenu.value)}, ` +
+        `expected the current title ${JSON.stringify(report.rename.tabMenu.expectedTitle)}`,
+    );
+    assert.equal(
+      report.rename.tabMenu.fieldTag,
+      "INPUT",
+      `the tab menu's field is a ${report.rename.tabMenu.fieldTag}, not an input`,
+    );
+    assert.equal(
+      report.rename.tabMenu.inForm,
+      true,
+      "the tab menu's rename field is not .chat-panel__rename",
+    );
+    assert.equal(
+      report.rename.tabMenu.formInRow,
+      true,
+      "the tab menu's field did not open in the name's row",
+    );
+    assert.equal(
+      report.rename.tabMenu.fieldClosed,
+      true,
+      "Escape did not close the tab-menu rename field",
+    );
+    assert.equal(
+      report.rename.tabMenu.patchDelta,
+      0,
+      `the tab menu's rename path wrote ${report.rename.tabMenu.patchDelta} patch(es) by itself`,
     );
 
     // ── 3. the agent switcher ────────────────────────────────────────────────
