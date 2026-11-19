@@ -249,6 +249,30 @@ vault's own binding.
    to recover it (an older Hermes, no CLI), the chat says it is paused and suggests
    a new chat, as before.
 
+### Pictures in the chat
+
+The thread draws pictures in both directions.
+
+- **You send one.** The plus (**Attach a file**) and the picture-plus (**Attach a
+  receipt**) both take pictures. Once the turn is sent, your bubble carries a
+  **mini thumbnail** of each picture above the words, so the thread shows what the
+  turn was about rather than only a file name. Click a thumbnail for the full
+  picture; **Esc** or a click outside it closes the view.
+- **The companion shows one.** Ask it for a diagram or a logo, or to look at a
+  picture in your vault. It saves the picture inside the vault and writes it into
+  its reply, and the thread draws it inline, no bigger than the column, with the
+  caption the companion wrote as its description. Click it for the full size.
+- **What it can draw.** A PNG, JPEG, GIF or WebP file that lives inside the
+  vault. A picture on the internet is never fetched: the studio does not load a
+  URL the agent merely linked, so the companion is told to save a generated
+  picture into the vault before showing it. When a picture cannot be read — it
+  was moved or deleted, or the companion no longer holds a copy of one you sent —
+  the row keeps the picture's name and says **That picture could not be read**
+  instead of showing a broken image.
+- A sent picture comes back when the chat is reloaded while the companion still
+  holds its copy. Hermes keeps sent pictures for a limited time and sweeps older
+  ones, after which the row shows the name alone.
+
 ### The composer's controls
 
 | Control | What it does |

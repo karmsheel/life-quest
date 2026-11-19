@@ -217,6 +217,7 @@ import {
   type SyncConflict,
 } from "@lifequest/vault-core";
 import { getFileUnsolicited } from "./companion-filing.js";
+import { readChatImage } from "./chat-image.js";
 import { prepareReceipt } from "./receipt-image.js";
 import { pendingReceipt } from "./pending-receipt.js";
 import {
@@ -1953,6 +1954,23 @@ export async function planningStartOrResume(
       companionSessionFns,
     ),
   );
+}
+
+/**
+ * One picture a chat bubble wants to draw: its bytes, and the mime to label
+ * them.
+ *
+ * The vault supplies the containment root; the active companion profile
+ * supplies the one other place a picture may legitimately live — the gateway's
+ * retained copy of something the operator sent. A closed vault answers the
+ * ordinary no-vault Result rather than throwing, so a bubble that asks before a
+ * vault is open gets its quiet missing chip and nothing else.
+ */
+export async function chatImageRead(
+  ref: string,
+  profileHome: string | null,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  return withVault((root) => readChatImage({ vaultRoot: root, profileHome, ref }));
 }
 
 /**

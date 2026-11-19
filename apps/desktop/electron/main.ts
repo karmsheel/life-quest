@@ -1231,6 +1231,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   // What the companion is told and what it has been given to read: the profile's
   // SOUL, the per-turn instructions this app builds, and the skill library.
   ipcMain.handle("companion:prompts", () => companion.companionPrompts());
+  // One picture a chat bubble wants to draw. The ref is whatever the transcript
+  // stored — a vault-relative path, or the gateway's absolute `native-inputs`
+  // hint — and the vault decides whether it may be read. The profile is named
+  // here because that retained copy lives under the ACTIVE profile, not the
+  // app's, and only the companion module can say which one is in force.
+  ipcMain.handle("chat:imageRead", async (_e, ref: string) =>
+    vault.chatImageRead(ref, await companion.activeProfileHome()),
+  );
 
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>

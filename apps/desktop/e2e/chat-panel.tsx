@@ -38,6 +38,14 @@
  *    the only rig that mounts `ChatDisplayProvider` (`?reading=1`); absent by
  *    default so every other rig's page is unchanged. Failure modes listed
  *    there.
+ *  - `chat-images.electron.mjs` — pictures in the thread: the markdown picture
+ *    an answer names, the gateway's `[Image attached at: …]` / `[screenshot]`
+ *    markers a reloaded operator row carries, the quiet missing chip, the
+ *    thumbnail overlay, a live answer's picture and the composer's sent
+ *    thumbnail. It is the only rig that opens the page with `?images=1` and the
+ *    only one that answers `chatImageRead`; both are absent by default so every
+ *    other rig's page answers exactly what it answered before. Failure modes
+ *    listed there.
  *
  * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
  * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
@@ -425,6 +433,60 @@ const LONG_CHAIN_SIGNALS = Array.from({ length: 24 }, (_, i) => {
   };
 });
 
+/**
+ * `?images=1` answers the first chat with the gateway's persisted picture shape,
+ * and serves `chatImageRead` from the page instead of from main.
+ *
+ * A reloaded Hermes row keeps the operator's picture as two markers — the
+ * absolute hint of the copy the gateway retained, then `[screenshot]` — and the
+ * agent's reply keeps a picture as markdown. The fixture is those exact shapes
+ * run through `messagesFromPayload`, the shipping parser, so a rig proves the
+ * marker pairing and the stripping rather than handing the panel rows it could
+ * not have produced itself. Opt-in for the same reason `?caps=` and `?reading=`
+ * are: this page is shared, and a thread with pictures would change what every
+ * other rig measures.
+ */
+const IMAGES_MODE = new URLSearchParams(window.location.search).has("images");
+
+/**
+ * The bytes the stubbed read door returns: a real 120×80 PNG, carried as base64
+ * because a dev-server page has no filesystem. It is big enough that the
+ * artifact's picture is a picture and not a one-pixel speck — which matters,
+ * because the run's screenshot is the artifact the operator opens — and it is
+ * a decoded real PNG, so the renderer builds a blob an `<img>` can actually
+ * paint rather than a fixture that only looks like one.
+ */
+const CHAT_IMAGE_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAYAAADSm7GJAAAA8klEQVR42u3doQ2AMBRF0S6GrGEKJkB3PDbAsQ4EhSGhCAQvR9wqTHtQvwmUsQ67civnsq2LAgMMWIAFWIAFWJ8At3mK6OkwEvfVDfz3N7kXOG1fgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwY8PWMzygFAycGGDBgwIABAwYMGDBgwIABG3QYVRpVAgYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABvwL2e9ng60KFX/gLsAALsAALsO6AldsBUAl2ewlaRXQAAAAASUVORK5CYII=";
+const CHAT_IMAGE_BYTES = Uint8Array.from(atob(CHAT_IMAGE_BASE64), (char) =>
+  char.charCodeAt(0),
+);
+
+/** The pictures fixture, in the gateway's own persisted shape (see IMAGES_MODE). */
+const IMAGES_MESSAGES = {
+  data: [
+    {
+      // A row that carried a picture: the words, a blank line, the absolute hint
+      // of the gateway's retained copy, then the marker that says "and this one
+      // was a picture". A parser that pairs them strips both lines and hands the
+      // renderer the picture; the words survive exactly.
+      role: "user",
+      content:
+        "look at this\n\n[Image attached at: /tmp/lifequest-e2e/native-inputs/present-user.png]\n[screenshot]",
+      timestamp: 1_700_002_000,
+    },
+    {
+      // An answer that names one picture the vault holds and one it does not:
+      // the first must draw, the second must be the quiet missing chip rather
+      // than the raw markdown or a broken-image glyph.
+      role: "assistant",
+      content:
+        "Here is the plan:\n\n![the floor plan](attachments/chat/present-plan.png)\n\nand a missing one ![gone](attachments/chat/missing-plan.png)",
+      timestamp: 1_700_002_004,
+    },
+  ],
+};
+
 /** The rig's handles on the stubbed main process, driven from a driver script. */
 type HarnessWindow = {
   __lqChatCalls?: ChatCall[];
@@ -448,6 +510,13 @@ type HarnessWindow = {
   __lqAttachCalls?: { mime: string; name: string; bytes: number }[];
   /** Every `attachmentAttach` the panel made, in order. */
   __lqAttachmentCalls?: { mime: string; name: string; bytes: number }[];
+  /**
+   * Every `chatImageRead` the bubbles made, in order. The door itself is main's;
+   * this page answers it from CHAT_IMAGE_BYTES, so the record is how a driver
+   * proves which refs the thread actually named — including a refused one, which
+   * must have been asked for exactly once.
+   */
+  __lqChatImageCalls?: { ref: string }[];
   /** Every `companionRunSteer` the panel made, in order. */
   __lqSteerCalls?: { runId: string; text: string }[];
   /**
@@ -476,6 +545,7 @@ harness.__lqEmitSseFor = (sessionId: string, raw: string) => {
 };
 harness.__lqAttachCalls = [];
 harness.__lqAttachmentCalls = [];
+harness.__lqChatImageCalls = [];
 harness.__lqSteerCalls = [];
 harness.__lqPatchCalls = [];
 
@@ -539,6 +609,12 @@ const bridge: Record<string, unknown> = {
   companionSessionMessages: (id: string) => {
     openSessionId = id;
     if (HISTORY_TIMELINE && id !== OTHER_SESSION.id) return ok(HISTORY_TRANSCRIPT);
+    // The pictures page answers the first chat with the marker-shaped fixture,
+    // parsed by the shipping parser: the second chat keeps its plain transcript
+    // so a driver can prove a picture-free thread draws no picture at all.
+    if (IMAGES_MODE && id !== OTHER_SESSION.id) {
+      return ok(messagesFromPayload(IMAGES_MESSAGES));
+    }
     return ok(
       messagesFromPayload({
         data:
@@ -555,6 +631,23 @@ const bridge: Record<string, unknown> = {
                 ],
         }),
       );
+  },
+  // The picture read door. Main answers a refusal with one operator sentence —
+  // the bubble's quiet missing chip — and this stub keeps that shape, deciding
+  // by the file name: a `present…` picture reads, anything else does not. The
+  // page has no vault, so the bytes are the fixture above; what a driver proves
+  // here is the control's states and the refs the thread asked for, not main's
+  // own guards (those are `chat-images.electron.mjs`'s other leg).
+  chatImageRead: async (ref: string) => {
+    const asked = String(ref ?? "");
+    harness.__lqChatImageCalls = [
+      ...(harness.__lqChatImageCalls ?? []),
+      { ref: asked },
+    ];
+    const name = asked.split(/[\\/]/).pop() ?? "";
+    return name.startsWith("present")
+      ? ok({ bytes: CHAT_IMAGE_BYTES, mime: "image/png" })
+      : { ok: false as const, error: "That picture could not be read." };
   },
   // Recorded so a rig can prove the inline control really submits, and held
   // open long enough to observe the streaming state.

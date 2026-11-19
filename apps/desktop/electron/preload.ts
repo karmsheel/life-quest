@@ -481,6 +481,14 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
     ipcRenderer.invoke("companion:sessionMessages", id),
+  // One picture a chat bubble wants to draw. The ref is what the transcript
+  // stored — a vault-relative path, or the gateway's absolute `native-inputs`
+  // hint — and main refuses anything that is not a real picture inside the
+  // vault or that copy. A refusal is the bubble's quiet missing chip.
+  chatImageRead: (ref: string) =>
+    ipcRenderer.invoke("chat:imageRead", ref) as Promise<
+      Result<{ bytes: Uint8Array; mime: string }>
+    >,
   companionSessionModelSet: (payload: { sessionId: string; model: string; provider?: string }) =>
     ipcRenderer.invoke("companion:sessionModelSet", payload),
   companionSessionPatch: (

@@ -1591,6 +1591,19 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const pick = runtimePinsRef.current[id] ?? {};
 
       const sentAt = Date.now();
+      // What the turn carried as pictures, named the way main stored them: the
+      // receipt first, then the image attachments, in the composer's order. The
+      // bubble reads those bytes back through the read door — the composer's
+      // preview URLs stay the composer's, and it keeps revoking them on its own
+      // schedule.
+      const sentImages = [
+        ...(receipt ? [{ name: receipt.name, ref: receipt.relPath }] : []),
+        ...attached.flatMap((item) =>
+          item.kind === "image" && item.relPath
+            ? [{ name: item.name, ref: item.relPath }]
+            : [],
+        ),
+      ];
       // The turn is opened here, with the operator's own words in it, so the
       // bubble is visible before the first frame lands and a chat switched away
       // from still shows what was asked. `run.started` adopts this turn and gives
@@ -1603,6 +1616,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           text: content,
           at: sentAt,
           ...(receipt ? { receipt: { name: receipt.name, size: receipt.size } } : {}),
+          ...(sentImages.length > 0 ? { images: sentImages } : {}),
         },
       });
       updateRun(id, (current) => ({
@@ -1671,6 +1685,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
             aboutMe: snapshot?.map?.aboutMe ?? "",
             locked: false,
             vaultOpen: Boolean(snapshot),
+            // The companion saves a picture into the vault before naming it in a
+            // reply, so it has to be told where the vault is on every turn.
+            ...(snapshot ? { vaultRoot: snapshot.rootPath } : {}),
           },
           runtime: pick,
           receiptRelPath: receipt?.relPath ?? null,
