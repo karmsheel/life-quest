@@ -11,6 +11,7 @@ import {
   type ThemeHistoryVersion,
 } from "@/components/theme/ThemeProvider";
 import { StudioFields } from "@/components/theme/studio/StudioFields";
+import { SHOWCASE_THEMES } from "@/lib/themes/showcase-themes";
 import {
   parseThemeFile,
   resolveChrome,
@@ -33,6 +34,17 @@ import {
  * replaces it, because a window wears exactly one theme file at a time.
  */
 const FILE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
+
+/**
+ * The bundled gallery, as file names. Main seeds `themes/<name>.json` from the
+ * same shared list, so a card is a bundled example exactly when its file name
+ * is one of these — an imported copy with a suffixed name is the operator's own
+ * and gets no chip. Derived from the shared module, never hard-coded, so the
+ * gallery can grow without the page changing.
+ */
+const GALLERY_FILES = new Set(
+  SHOWCASE_THEMES.map((theme) => `${theme.name}.json`),
+);
 
 function slugOf(label: string): string {
   return label
@@ -850,6 +862,7 @@ export default function ExtensionsPage() {
             const isActive = keptFile === file;
             const confirming = confirmFile === file;
             const previewing = themePreview?.file === file;
+            const gallery = GALLERY_FILES.has(file);
             return (
               <li
                 key={file}
@@ -882,9 +895,25 @@ export default function ExtensionsPage() {
                         Active
                       </span>
                     ) : null}
+                    {gallery ? (
+                      <span
+                        className="extension-card__pill extension-card__pill--gallery"
+                        data-testid="extension-gallery-chip"
+                      >
+                        Gallery
+                      </span>
+                    ) : null}
                   </div>
                   {theme.description ? (
                     <p className="extension-card__desc">{theme.description}</p>
+                  ) : null}
+                  {gallery ? (
+                    <p
+                      className="extension-card__gallery-note"
+                      data-testid="extension-gallery-note"
+                    >
+                      Bundled example — remove it and it stays gone.
+                    </p>
                   ) : null}
                   <p className="extension-card__chips">
                     {chipsOf(theme).map((chip) => (

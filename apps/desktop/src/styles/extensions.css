@@ -358,6 +358,22 @@
   color: var(--foreground);
 }
 
+/* A bundled example says so: the chip keeps the pill's size and takes the quiet
+   band as its surface (never `--muted`, which is a text alias), and one line
+   under the description explains that removing it is final. */
+.extension-card__pill--gallery {
+  border-color: var(--border);
+  background: var(--muted-surface);
+  color: var(--extensions-quiet-ink);
+}
+
+.extension-card__gallery-note {
+  margin: 0;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
 .extension-card__desc {
   margin: 0;
   font-size: 0.8rem;

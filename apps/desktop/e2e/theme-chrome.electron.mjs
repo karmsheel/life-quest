@@ -107,6 +107,7 @@ const EXTENSIONS_OFF_PNG = path.join(
 const TRUST_PNG = path.join(artifactsDir, "themes-v2-trust.png");
 const STUDIO_PNG = path.join(artifactsDir, "themes-v2-studio.png");
 const STUDIO_LOOK_PNG = path.join(artifactsDir, "themes-v2-studio-look.png");
+const GALLERY_PNG = path.join(artifactsDir, "themes-v2-gallery.png");
 
 const failures = [];
 const checks = [];
@@ -669,6 +670,28 @@ const SAMPLE = `(async () => {
         return tokens;
       };
       return { light: group("light"), dark: group("dark") };
+    })(),
+    // S4 Gallery: which cards wear the bundled-example chip, and its one line.
+    galleryChips: (() => {
+      const page = document.querySelector('[data-testid="extensions-page"]');
+      if (!page) return null;
+      return [...page.querySelectorAll("li[data-testid^='extension-']")].map((card) => ({
+        file: (card.getAttribute("data-testid") ?? "").replace(/^extension-/, "") + ".json",
+        chip: Boolean(card.querySelector('[data-testid="extension-gallery-chip"]')),
+        chipText:
+          (card.querySelector('[data-testid="extension-gallery-chip"]')?.textContent ?? "").trim() ||
+          null,
+        note:
+          (card.querySelector('[data-testid="extension-gallery-note"]')?.textContent ?? "").trim() ||
+          null,
+      }));
+    })(),
+    galleryNotes: (() => {
+      const page = document.querySelector('[data-testid="extensions-page"]');
+      if (!page) return null;
+      return [...page.querySelectorAll('[data-testid="extension-gallery-note"]')].map((note) =>
+        (note.textContent ?? "").trim(),
+      );
     })(),
   };
 })()`;
@@ -5856,6 +5879,236 @@ async function main() {
     }),
   );
 
+  // ── 12l: Gallery — five bundled examples, seeded once and removable ─────
+  // A fresh profile gets the whole gallery exactly once: five showcase files on
+  // disk and their names recorded in theme-state.json. Each bundled file must
+  // pass the same parser the companion's validator runs. The chip is a card
+  // affordance on the bundled five and nowhere else. Removing one is final:
+  // seeding records the name, so a renderer reload must not bring it back.
+  const expectedGalleryFiles = [
+    "showcase-control-room.json",
+    "showcase-helios.json",
+    "showcase-night-shift.json",
+    "showcase-paper-trail.json",
+    "showcase-solar-system.json",
+  ].sort();
+  const expectedGalleryNames = expectedGalleryFiles.map((file) =>
+    file.replace(/\.json$/, ""),
+  );
+  const validateShowcase = async (theme) => {
+    try {
+      return await gateCall("validate_theme", { theme });
+    } catch (error) {
+      return { json: null, isError: true, error: String(error) };
+    }
+  };
+  const galleryParse = {};
+  for (const file of expectedGalleryFiles) {
+    const full = path.join(themesDir, file);
+    let theme = null;
+    try {
+      theme = JSON.parse(fs.readFileSync(full, "utf8"));
+    } catch {
+      theme = null;
+    }
+    const answer = theme ? await validateShowcase(theme) : null;
+    galleryParse[file] = {
+      present: fs.existsSync(full),
+      parsed: answer?.json?.ok === true,
+      name: theme?.name ?? null,
+      error: answer?.json?.error?.message ?? (theme ? null : "not JSON"),
+    };
+  }
+  const galleryStatePath = path.join(profileDir, "theme-state.json");
+  const readGalleryState = () => {
+    try {
+      return JSON.parse(fs.readFileSync(galleryStatePath, "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const galleryState = readGalleryState();
+  const seededNames = Array.isArray(galleryState?.seededShowcase)
+    ? galleryState.seededShowcase
+    : null;
+  const seededNamesOk =
+    seededNames !== null &&
+    JSON.stringify([...seededNames].sort()) ===
+      JSON.stringify([...expectedGalleryNames].sort());
+  check(
+    "a-fresh-profile-seeds-the-whole-gallery",
+    expectedGalleryFiles.every(
+      (file) =>
+        galleryParse[file].present === true &&
+        galleryParse[file].parsed === true &&
+        galleryParse[file].name === file.replace(/\.json$/, ""),
+    ) &&
+      seededNamesOk === true,
+    JSON.stringify({
+      files: galleryParse,
+      seededNames,
+      stateKeys: galleryState ? Object.keys(galleryState) : null,
+    }),
+  );
+
+  // ── 12l.2: the chip marks the bundled five and nothing else ─────────────
+  // Captured before the removal below, while all five cards are still listed;
+  // it is also the gallery artifact (the list scrolled to the showcase cards).
+  const galleryReady = await waitFor(
+    (s) =>
+      s.extensionsPage === true &&
+      Array.isArray(s.galleryChips) &&
+      s.galleryChips.some(
+        (card) => card.file === "showcase-control-room.json",
+      ),
+    15_000,
+  );
+  // Let any countdown from 12k finish: the screenshot is the list, not a bar.
+  await waitFor((s) => s.preview === false, 15_000);
+  const chipCards = (galleryReady?.galleryChips ?? []).filter(
+    (card) => card.chip === true,
+  );
+  const chippedFiles = chipCards.map((card) => card.file).sort();
+  const chipSetOk =
+    JSON.stringify(chippedFiles) === JSON.stringify([...expectedGalleryFiles].sort());
+  const chipNotesOk =
+    chipCards.length === expectedGalleryFiles.length &&
+    chipCards.every((card) => (card.note ?? "").includes("Bundled example"));
+  const chipLabelsOk = chipCards.every(
+    (card) => typeof card.chipText === "string" && card.chipText.length > 0,
+  );
+  const operatorFilesClear = [
+    "rig-studio.json",
+    "helios-authored.json",
+    "solar-system.json",
+  ].every((file) => {
+    const card = (galleryReady?.galleryChips ?? []).find(
+      (entry) => entry.file === file,
+    );
+    return card === undefined || card.chip === false;
+  });
+  const galleryNotes = galleryReady?.galleryNotes ?? [];
+  await evaluate(`(() => {
+    const card = document.querySelector('[data-testid="extension-showcase-control-room"]');
+    if (!card) return false;
+    card.scrollIntoView({ block: "start" });
+    return true;
+  })()`);
+  await sleep(400);
+  const galleryShot = await win.webContents.capturePage();
+  fs.writeFileSync(GALLERY_PNG, galleryShot.toPNG());
+  check(
+    "the-gallery-chip-marks-the-bundled-examples",
+    galleryReady?.extensionsPage === true &&
+      chipSetOk === true &&
+      chipNotesOk === true &&
+      chipLabelsOk === true &&
+      operatorFilesClear === true &&
+      galleryNotes.length === expectedGalleryFiles.length,
+    JSON.stringify({
+      galleryPage: galleryReady?.extensionsPage,
+      chippedFiles,
+      chipSetOk,
+      chipNotesOk,
+      chipLabelsOk,
+      operatorFilesClear,
+      notes: galleryNotes,
+    }),
+  );
+
+  // ── 12l.3: removing a gallery theme is final ────────────────────────────
+  const controlRoomSelector = '[data-testid="extension-showcase-control-room"]';
+  const controlRoomPath = path.join(themesDir, "showcase-control-room.json");
+  const removeGalleryCard = async () =>
+    evaluate(`(() => {
+      const b = document.querySelector('${controlRoomSelector} [data-testid="extension-remove"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+  const removeFirstPressed = await removeGalleryCard();
+  await sleep(250);
+  const removeSecondPressed = await removeGalleryCard();
+  const removedFromPage =
+    removeSecondPressed &&
+    (await untilTrue(`!document.querySelector('${controlRoomSelector}')`, 15_000));
+  const goneFromDisk = !fs.existsSync(controlRoomPath);
+  const stateAfterRemoval = readGalleryState();
+  const recordedAfterRemoval =
+    Array.isArray(stateAfterRemoval?.seededShowcase) &&
+    stateAfterRemoval.seededShowcase.includes("showcase-control-room");
+  // Reload the renderer: boot-time seeding is not re-run, and the recorded name
+  // means a later boot would not re-add the file either (single-boot rig: the
+  // boot side is covered by the fresh-profile check plus review).
+  win.webContents.reload();
+  await new Promise((resolve) =>
+    win.webContents.once("did-finish-load", resolve),
+  );
+  let galleryUp = null;
+  const galleryDeadline = Date.now() + 60_000;
+  while (Date.now() < galleryDeadline) {
+    try {
+      galleryUp = await evaluate("Boolean(document.querySelector('.shell'))");
+    } catch {
+      galleryUp = null;
+    }
+    if (galleryUp) break;
+    await sleep(100);
+  }
+  await evaluate(`(() => {
+    if (location.hash !== "#/extensions") location.hash = "#/extensions";
+    return true;
+  })()`);
+  const extensionsBack = await waitFor(
+    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) > 0,
+    20_000,
+  );
+  const absentAfterReload = await evaluate(
+    `!document.querySelector('${controlRoomSelector}')`,
+  );
+  const stillGoneFromDisk = !fs.existsSync(controlRoomPath);
+  const stateAfterReload = readGalleryState();
+  const recordedAfterReload =
+    Array.isArray(stateAfterReload?.seededShowcase) &&
+    stateAfterReload.seededShowcase.includes("showcase-control-room");
+  const remainingChipFiles = (extensionsBack?.galleryChips ?? [])
+    .filter((card) => card.chip === true)
+    .map((card) => card.file)
+    .sort();
+  const expectedRemaining = expectedGalleryFiles
+    .filter((file) => file !== "showcase-control-room.json")
+    .sort();
+  const otherGalleryCardsStillChip =
+    JSON.stringify(remainingChipFiles) === JSON.stringify(expectedRemaining);
+  check(
+    "removing-a-gallery-theme-does-not-bring-it-back",
+    removeFirstPressed === true &&
+      removeSecondPressed === true &&
+      removedFromPage === true &&
+      goneFromDisk === true &&
+      recordedAfterRemoval === true &&
+      galleryUp === true &&
+      extensionsBack?.extensionsPage === true &&
+      absentAfterReload === true &&
+      stillGoneFromDisk === true &&
+      recordedAfterReload === true &&
+      otherGalleryCardsStillChip === true,
+    JSON.stringify({
+      removeFirstPressed,
+      removeSecondPressed,
+      removedFromPage,
+      goneFromDisk,
+      recordedAfterRemoval,
+      galleryUp,
+      extensionsPage: extensionsBack?.extensionsPage,
+      absentAfterReload,
+      stillGoneFromDisk,
+      recordedAfterReload,
+      remainingChipFiles,
+      otherGalleryCardsStillChip,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -5898,6 +6151,7 @@ async function main() {
       trust: path.relative(desktopRoot, TRUST_PNG),
       studio: path.relative(desktopRoot, STUDIO_PNG),
       look: path.relative(desktopRoot, STUDIO_LOOK_PNG),
+      gallery: path.relative(desktopRoot, GALLERY_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

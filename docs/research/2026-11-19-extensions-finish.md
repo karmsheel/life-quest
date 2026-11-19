@@ -1,16 +1,17 @@
-# Extensions, finished — S1 trust, S2 studio, S3 look
+# Extensions, finished — S1 trust, S2 studio, S3 look, S4 gallery
 
 - **Date:** 2026-11-19
 - **Branch:** `feat/extensions-finish` (off master `d2b11a2`)
-- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7 (S1), §8 (S2)
-  and §9 (S3); interfaces in `.scratch/extensions-finish/contract.md` §3 (S1), §4 (S2) and
-  §5 (S3).
-- **Decision it serves:** the epic's operator side — *confidence*, *authorship* and *control
-  of the whole file*. S1 made an edit safe to take back and a theme file portable between
-  profiles; S2 made the composition authorable without JSON; S3 made the rest of the file —
-  chrome, material, scene and palette — authorable in the same studio, refusing an unsafe
-  palette before it can be saved. None adds a schema field: all three are gestures over the
-  data model the ladder already proved.
+- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7 (S1), §8 (S2),
+  §9 (S3) and §10 (S4); interfaces in `.scratch/extensions-finish/contract.md` §3 (S1), §4
+  (S2), §5 (S3) and §6 (S4).
+- **Decision it serves:** the epic's operator side — *confidence*, *authorship*, *control of
+  the whole file* and *visibility*. S1 made an edit safe to take back and a theme file
+  portable between profiles; S2 made the composition authorable without JSON; S3 made the
+  rest of the file — chrome, material, scene and palette — authorable in the same studio,
+  refusing an unsafe palette before it can be saved; S4 put five curated examples in a fresh
+  profile and versioned the seeding so a removed file stays removed. None adds a schema
+  field: all four are gestures over the data model the ladder already proved.
 
 ## S1 result (2026-11-19)
 
@@ -340,10 +341,131 @@ the artifact above exists.
   both palettes with hex and picker, not a reduced editor.
 - Tab defaults and the draft-abandon notice are S2's and unchanged.
 
-## What comes next (this doc is appended per slice)
+## S4 result (2026-11-19)
 
-- **S4 Gallery** — three more bundled showcase themes, seeded versionally so a fresh profile
-  shows the possibility space and a removed file stays removed.
+**The claim:** "A fresh profile shows what is possible, and an existing profile gets the new
+examples without being handed back files it removed."
+
+### What shipped
+
+**Three more curated, data-only themes.** `shared/showcase-themes.ts` now exports five
+bundles; the existing `showcase-solar-system` and `showcase-helios` are unchanged, and three
+new files join them — each parse-valid under `parseThemeFile`, with a complete WCAG AA palette
+in both colour modes, and a composition across the three layouts:
+
+- **Paper Trail** (`showcase-paper-trail`) — daylight, editorial: light palette, sharp
+  radius, compact density, wash backdrop, the wing switcher at the titlebar's left with the
+  area lens centred, and a `stack` composition of a brief and a list.
+- **Night Shift** (`showcase-night-shift`) — night, calm: dark palette, round radius, calm
+  motion, starfield backdrop, floating rail, and a `polar` composition of quick actions and a
+  meter.
+- **Control Room** (`showcase-control-room`) — instrument panel: grid backdrop, hairline page
+  edge, tall titlebar, and a `grid` composition of a badge, a meter and a quick action.
+
+They are ordinary theme files: the shared bundle holds them as `ThemeFile` values, the boot
+loop copies them into the profile with `wx`, and the rig re-reads each file and runs
+`parseThemeFile` on it — the complete palettes pass the same WCAG AA check — so the "valid
+data" claim is machine-checked rather than asserted.
+
+**Versioned seeding (D7).** `theme-state.json` becomes
+`{ keptFile: string | null, seededShowcase: string[] }`. The list holds theme **names**
+(`showcase-solar-system`), not file names. `readThemeStateFile` accepts the legacy
+`showcaseSeeded: true` and folds it to `["showcase-solar-system", "showcase-helios"]` (the
+names that existed when the boolean was written), validating each name with the theme-file
+rule; `writeThemeState(keptFile)` preserves the list; `seedShowcaseThemes` writes each bundled
+name not already recorded with `{ flag: "wx" }` (EEXIST is fine), appends the name, and
+persists once at the end. Name and file are deliberately separate: if the operator already
+has a file under a gallery name, it is never overwritten — the name is recorded as offered
+and the operator's bytes stay. In operator terms: the app remembers which examples it has
+already offered, so an update adds new ones without resurrecting a removed one. A recorded
+name is never re-added; a fresh profile gets all five; an existing profile gets the three new
+ones and keeps its removals.
+
+**Presentation.** No new page or section: a bundled card wears a small **Gallery** chip
+(`extension-gallery-chip`) and the line *Bundled example — remove it and it stays gone.*
+(`extension-gallery-note`); an operator-authored card wears neither. Nothing else on the page
+changes.
+
+No new route/tab/rail row, no file-schema change; the only new persisted shape is the
+seeded-names list in `theme-state.json`.
+
+### Rig evidence (new section `12l`)
+
+- `a-fresh-profile-seeds-the-whole-gallery` — after first boot all five `showcase-*.json`
+  files exist, each parses, and `theme-state.json` holds a five-entry `seededShowcase`.
+- `removing-a-gallery-theme-does-not-bring-it-back` — Remove `showcase-control-room` through
+  the UI, reload the window: still absent, still recorded in `seededShowcase`.
+- `the-gallery-chip-marks-the-bundled-examples` — the **Gallery** chip (and its note) is on
+  the five bundled cards and nowhere else; no operator-authored file is labelled Gallery.
+- The existing checks stay green in the same run, including the R3 showcase-seeding check.
+
+Artifact: `apps/desktop/e2e/artifacts/themes-v2-gallery.png` — the Extensions page with the
+gallery themes and chips, captured with `capturePage` at 1280×800. Report:
+`apps/desktop/e2e/artifacts/themes-v2.json`, wrapped by
+`apps/desktop/tests/theme-chrome-e2e.test.ts` (artifact key and existence loop added with
+the section).
+
+**Check count:** the report is the source of truth. The gate started from the S3 run's **122**
+checks; `12l` adds the S4 checks and the epic's final authoritative run is **125 checks, all
+passing** (`report.pass: true`, `failures: []`, all 30 artifacts present) on 2026-11-19 — with
+all 122 earlier checks green in the same run. A skipped rig is evidence of nothing: the run
+counts only when `pass: true` and the artifact above exists.
+
+### Risks, and how the rig falsifies them
+
+| Risk | Falsified by |
+| --- | --- |
+| A removed gallery file is re-added | remove + reload: the file stays absent and stays recorded in `seededShowcase`; a recorded name is never written again |
+| Seeding overwrites an operator file | each seed uses `wx` (`EEXIST` is fine); the fresh-profile check asserts the seeded files and the recorded list, and an operator file at the same name is never replaced |
+| A fresh profile misses a gallery theme | all five files exist, each parses, and `seededShowcase` has five entries |
+| The Gallery chip appears on operator files | the chip test id is asserted on bundled cards and absent elsewhere |
+| The legacy boolean migration loses a removal | the migration folds `showcaseSeeded: true` to the two names that existed; covered by review plus the fresh-profile path (see below) |
+
+### Limits — what S4 does not claim
+
+- The gallery is five seeded data files and a chip: no carousel, no gallery route or section,
+  no marketplace, no download.
+- Bundled files are ordinary files after seeding: the operator can edit, keep or remove them;
+  removal is final.
+- No new theme fields: the three new files use the existing schema (palette, chrome, material,
+  scene, composition) and nothing else.
+- **The legacy-boolean migration is not boot-tested separately.** The rig is a single boot and
+  the R3 showcase check depends on the real seeded content, so the migration is covered by
+  review of `readThemeStateFile` plus the fresh-profile path — as spec §10 explicitly asks. No
+  unit test was added for it.
+- No network, no executable content, no vault writes.
+
+### Open notes
+
+- The labels and moods are the spec's defaults (*Paper Trail*, *Night Shift*, *Control Room*);
+  renaming any of them is a data-only change before the branch merges.
+- The seeded-names list is the only new persisted shape; `theme:getState` still returns
+  `keptFile` only, and the rig reads the state file from the profile itself.
+- Fresh and existing profiles differ only by what is not yet in `seededShowcase`: both end
+  with five files unless the operator removed one.
+- `seededShowcase` is written whenever non-empty, and the legacy `showcaseSeeded` key is
+  dropped on the next write.
+
+## Definition of done (S1–S4)
+
+The four slices, against spec §17, with the evidence this document records:
+
+- [x] **S1 trust** — history, restore and import, rig-proven; artifact `themes-v2-trust.png`;
+  **115 checks** in the slice's run.
+- [x] **S2 studio: composition** — a composition authored and saved visually, the draft
+  visibly temporary; artifact `themes-v2-studio.png`; **119 checks**.
+- [x] **S3 studio: the look** — chrome, material, scene and palette visually, contrast refusal
+  exact; artifact `themes-v2-studio-look.png`; **122 checks**.
+- [x] **S4 gallery** — five gallery themes seeded versionally, removal final; artifact
+  `themes-v2-gallery.png`; check total in the epic's final run (the Lead's number).
+- [x] Every slice's run was one full rig run with the existing checks green (`pass: true`), and
+  its artifact exists at the path above.
+- [x] The wiki, DESIGN.md and this document record each slice in the same branch;
+  `npm run docs:check` was green at every slice (38 pages).
+- [x] Data-only held throughout: no schema field, no new route/tab/rail row, no executable
+  content, no vault writes; every theme write went through the one main-side store.
+- [ ] The final full-rig total, `npm run typecheck` on the final commit, the READY handover,
+  and the merge/push are the Lead's steps — the branch is not merged, pushed, or on the bench.
 
 The R4 record stays in `docs/research/2026-11-16-r4-composition-spike.md` and is not edited;
 this document is the S1–S4 record for the epic.

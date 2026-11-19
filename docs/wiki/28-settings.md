@@ -108,12 +108,14 @@ the wing switcher and the area lens between placements, and set the radius
 family, density and motion. The companion can write one for you, or you can drop
 a `.json` in that folder. A new or changed file is worn for ten seconds as a
 **preview** with **Keep** and **Revert**; if you do nothing it hands the window
-back by itself. A fresh profile also starts with two **showcase** themes —
-*Solar System*, a dark-orbit sky with a haloed page and raised cards, and
-*Helios*, a warm solar HUD whose page stands on a golden ring of quick actions —
-copied into the folder on first run so you can see the whole ladder without
-asking an agent for anything; they are normal files from then on, and if you
-Remove one, it stays removed. The **Extensions** page (route `/extensions`) is the workshop for those same
+back by itself. A fresh profile also starts with five **showcase** themes —
+*Solar System*, a dark-orbit sky with a haloed page and raised cards; *Helios*, a
+warm solar HUD whose page stands on a golden ring of quick actions; and a gallery
+of three more: *Paper Trail* (daylight, editorial), *Night Shift* (night, calm)
+and *Control Room* (instrument panel) — copied into the folder on first run so you
+can see the whole ladder without asking an agent for anything. Each carries a
+**Gallery** chip; they are normal files from then on, and if you Remove one, it
+stays removed. The **Extensions** page (route `/extensions`) is the workshop for those same
 files — select, switch active or off, edit the JSON with live validation or build the look in
 the **Fields** studio, or create a new one. The **Theme files** list on this page shows every file the app
 could read, with **Try** (enter the preview again), **Keep** (wear it from now

@@ -33,7 +33,39 @@ installation's, not the folder's). A card names the file's **label** and **file 
 own description if it has one, and a row of chips summarising what it changes: **Palette**
 (or *Inherits palette*), `wings …` and `domains …` placements, **Material**, `sky …`, and
 `composition · N widgets`. An **Active** pill marks the one file the window is wearing; a
-**Previewing** pill marks the ten-second preview currently on screen.
+**Previewing** pill marks the ten-second preview currently on screen. A bundled example's
+card also carries a **Gallery** chip (see below).
+
+## The gallery of bundled examples
+
+A fresh profile starts with **five** example themes already in its `themes/` folder, so the
+possibility space is visible before asking an agent for anything: *Solar System* (the
+dark-orbit sky with a haloed page and raised cards), *Helios* (the warm solar HUD whose page
+stands on a golden ring of quick actions), *Paper Trail*, *Night Shift* and *Control Room*.
+
+- **What the newer three are for** — each is a complete, valid theme file that shows a
+  different corner of the contract, not a reskin of the same look:
+  - **Paper Trail** — daylight, editorial: a light palette, sharp radius, compact density, a
+    wash backdrop, the wing switcher at the titlebar's left and the area lens centred in it,
+    and a stack composition of a brief and a list.
+  - **Night Shift** — night, calm: a dark palette, round radius and calm motion, a starfield
+    backdrop, a floating rail, and a polar ring of quick actions with a meter.
+  - **Control Room** — instrument panel: a grid backdrop, a hairline edge on the page, a tall
+    titlebar, and a grid composition of a badge, a meter and a quick action.
+- **How they are marked** — every bundled card carries a small **Gallery** chip and the line
+  *Bundled example — remove it and it stays gone.* They are ordinary files in every other
+  way: try one, keep it, edit it, remove it; they count in the list like anything you wrote.
+- **How they arrive** — a fresh profile gets all five on first run. A profile that already
+  existed gets the three new ones added to the folder, without being handed back a Solar
+  System or Helios it had removed: the app records the bundled theme names it has already
+  offered in the profile's `theme-state.json` (`seededShowcase`), writes only names it has
+  not offered before, and never overwrites a file. A gallery file the operator already has
+  under one of those names is left alone (the name is recorded and the file is not touched).
+  A recorded name is never re-added, so Remove is final.
+- The older `showcaseSeeded: true` flag from previous versions is read as "these two were
+  offered", so updating does not undo a removal made under the old scheme.
+- Nothing here is code or a second page: the gallery is the normal list with five seeded data
+  files and a chip, nothing more.
 
 ## The four verbs
 

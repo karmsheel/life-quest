@@ -55,6 +55,7 @@ type Report = {
     trust: string;
     studio: string;
     look: string;
+    gallery: string;
   };
   theme: unknown;
   refused: unknown;
@@ -169,6 +170,7 @@ describe("theme files v2", () => {
         report.artifacts.trust,
         report.artifacts.studio,
         report.artifacts.look,
+        report.artifacts.gallery,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

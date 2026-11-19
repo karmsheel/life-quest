@@ -37,6 +37,7 @@ import {
   readThemeSnapshot,
   restoreThemeVersion,
   saveThemeFile,
+  THEME_FILE,
 } from "./theme-store.js";
 import type {
   CompanionInstructionsInput,
@@ -1586,8 +1587,10 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     }
   });
 
+  // The store's rule, not a second copy of it: every writer and the state reader
+  // have to agree on what a theme file name is.
   const safeThemeFile = (file: unknown): string | null =>
-    typeof file === "string" && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(file) ? file : null;
+    typeof file === "string" && THEME_FILE.test(file) ? file : null;
 
   ipcMain.handle("theme:getState", () => readThemeState().then((value) => ({ ok: true as const, value })));
 
@@ -1874,63 +1877,118 @@ let ipcRegistered = false;
 
 /** The kept theme's file name, in the app profile; the tools read it too. */
 const themeStateFile = (): string => path.join(app.getPath("userData"), "theme-state.json");
+
 /**
- * The file carries one extra, main-only fact: whether the bundled showcase
- * theme has been seeded into this profile. It is remembered rather than
- * re-checked, so an operator who deletes the showcase does not meet it again
- * on the next launch — the seed is a first-run courtesy, not an entitlement.
+ * The gallery names that existed when the legacy `showcaseSeeded` boolean was
+ * written. A profile carrying that boolean is handed exactly these names by the
+ * read below, so the migration cannot invent a names list the profile never saw.
  */
-const readThemeStateFile = async (): Promise<{
+const LEGACY_SHOWCASE_NAMES: readonly string[] = [
+  "showcase-solar-system",
+  "showcase-helios",
+];
+
+/**
+ * What the profile remembers about themes: which file is kept, and which
+ * bundled gallery names have been seeded into it.
+ *
+ * `seededShowcase` holds theme NAMES (`showcase-solar-system`), not file names:
+ * the name a removal is remembered against is the one `SHOWCASE_THEMES` carries.
+ * It replaced the old `showcaseSeeded: true` boolean, which could only remember
+ * "the first gallery happened" and so could never hand an existing profile the
+ * three newer examples without re-adding files the operator had deleted.
+ */
+type ThemeStateFile = {
   keptFile: string | null;
-  showcaseSeeded: boolean;
-}> => {
+  seededShowcase: string[];
+};
+
+/**
+ * The seeded names a state file claims, filtered to ones that could be ours.
+ *
+ * A trailing `.json` is tolerated and stripped: the stored shape is names, but
+ * a hand-edited file (or a future write) may spell one as a file name, and both
+ * spellings mean the same gallery entry. Every entry then has to pass the same
+ * theme-file rule as a real file, so a corrupt state file can never make the
+ * seeder believe it already handed over a theme that is not in the gallery.
+ */
+const seededShowcaseNames = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const names = value
+    .filter((name): name is string => typeof name === "string")
+    .map((name) => name.trim().replace(/\.json$/i, ""))
+    .filter((name) => THEME_FILE.test(`${name}.json`));
+  return [...new Set(names)];
+};
+
+const readThemeStateFile = async (): Promise<ThemeStateFile> => {
   try {
     const raw = JSON.parse(await fs.promises.readFile(themeStateFile(), "utf8"));
     const kept = raw && typeof raw.keptFile === "string" ? raw.keptFile : null;
+    // The array shape wins when it exists; only a file written before it (the
+    // legacy boolean) falls back to the two names that existed then.
+    const seededShowcase = Array.isArray(raw?.seededShowcase)
+      ? seededShowcaseNames(raw.seededShowcase)
+      : raw?.showcaseSeeded === true
+        ? [...LEGACY_SHOWCASE_NAMES]
+        : [];
     return {
-      keptFile: kept && /^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(kept) ? kept : null,
-      showcaseSeeded: raw?.showcaseSeeded === true,
+      keptFile: kept && THEME_FILE.test(kept) ? kept : null,
+      seededShowcase,
     };
   } catch {
-    return { keptFile: null, showcaseSeeded: false };
+    return { keptFile: null, seededShowcase: [] };
   }
 };
 const readThemeState = async (): Promise<{ keptFile: string | null }> => {
   const { keptFile } = await readThemeStateFile();
   return { keptFile };
 };
-const writeThemeStateFile = async (state: {
-  keptFile: string | null;
-  showcaseSeeded: boolean;
-}): Promise<void> => {
+const writeThemeStateFile = async (state: ThemeStateFile): Promise<void> => {
   const next = {
     keptFile: state.keptFile,
-    ...(state.showcaseSeeded ? { showcaseSeeded: true } : {}),
+    // An empty list means this profile has never seeded anything, which is the
+    // same fact as an absent key; omitting it keeps such a file exactly as
+    // small as the old `{ keptFile }` one.
+    ...(state.seededShowcase.length > 0
+      ? { seededShowcase: state.seededShowcase }
+      : {}),
   };
   await fs.promises.writeFile(`${themeStateFile()}.tmp`, `${JSON.stringify(next, null, 2)}\n`);
   await fs.promises.rename(`${themeStateFile()}.tmp`, themeStateFile());
 };
 const writeThemeState = async (keptFile: string | null): Promise<void> => {
   const previous = await readThemeStateFile();
-  await writeThemeStateFile({ keptFile, showcaseSeeded: previous.showcaseSeeded });
+  // Keeping a theme must not forget the gallery: the list is how a removed
+  // bundled theme stays removed across every later launch.
+  await writeThemeStateFile({ keptFile, seededShowcase: previous.seededShowcase });
 };
 
 /**
- * First run only: copy the bundled showcase theme into the profile's themes
- * directory so the operator can try R3's whole surface without an agent.
+ * Copy the bundled gallery into the profile's themes directory, one name at a
+ * time, so the operator can try the whole surface without an agent.
  *
- * `wx` means an existing file is never overwritten: if the operator has
- * already authored or edited a file of that name, it is theirs and stays.
- * A failure here is not fatal — a missing showcase costs a nice-to-have, not
- * the studio — but it is said out loud in the main log.
+ * A name is written only when the state does not record it, and `wx` means an
+ * existing file is never overwritten: if the operator has already authored or
+ * edited a file of that name, it is theirs and stays. The name is recorded even
+ * when the file already existed — the gallery copy was not handed over, and
+ * because a recorded name is NEVER re-added, a later Remove stays final.
+ *
+ * The list is persisted once, at the end: a boot that seeds three new examples
+ * costs one state write, and a failure half-way leaves the list unwritten so
+ * the next launch retries the whole batch (EEXIST is fine for the files that
+ * did land). A failure here is not fatal — a missing gallery is a lost example,
+ * not the studio — but it is said out loud in the main log.
  */
 const seedShowcaseThemes = async (): Promise<void> => {
   const dir = path.join(app.getPath("userData"), "themes");
   const state = await readThemeStateFile();
-  if (state.showcaseSeeded) return;
+  const seeded = [...state.seededShowcase];
+  const pending = SHOWCASE_THEMES.filter((theme) => !seeded.includes(theme.name));
+  if (pending.length === 0) return;
   try {
     await fs.promises.mkdir(dir, { recursive: true });
-    for (const theme of SHOWCASE_THEMES) {
+    for (const theme of pending) {
       const file = `${theme.name}.json`;
       try {
         await fs.promises.writeFile(
@@ -1941,8 +1999,9 @@ const seedShowcaseThemes = async (): Promise<void> => {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
+      seeded.push(theme.name);
     }
-    await writeThemeStateFile({ keptFile: state.keptFile, showcaseSeeded: true });
+    await writeThemeStateFile({ keptFile: state.keptFile, seededShowcase: seeded });
   } catch (error) {
     console.error("showcase seed failed:", error);
   }
