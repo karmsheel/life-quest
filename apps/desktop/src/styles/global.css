@@ -12212,6 +12212,43 @@ button.chat-panel__activity-line:hover {
   background: var(--selected-soft);
 }
 
+/* The row's one leading slot, the same shape the dock's tab keeps: the quiet
+   status dot for a chat the operator opened, or the origin icon of the work that
+   started it (a task, a review, a plan, an automation run). The slot is one box
+   either way, so a row's label starts on the same line whether or not the chat
+   has an origin, and the live pulse and approval ring paint whichever mark the
+   slot holds. */
+.chats-rail__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.chats-rail__mark-icon {
+  color: var(--muted);
+}
+
+.chats-rail__row[data-active] .chats-rail__mark-icon {
+  color: var(--fg);
+}
+
+.chats-rail__row[data-live] .chats-rail__mark-icon {
+  color: var(--accent);
+  animation: chats-rail-pulse 1.4s ease-in-out infinite;
+}
+
+.chats-rail__row[data-approval] .chats-rail__mark-icon {
+  color: var(--accent);
+}
+
+.chats-rail__row[data-icon][data-approval] .chats-rail__mark {
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
 /* The row's live state: a turn is streaming here, whether or not this chat is
    the one on screen. Idle rows keep the dot's footprint so nothing shifts when a
    turn starts. */

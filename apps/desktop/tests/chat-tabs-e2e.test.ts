@@ -48,6 +48,33 @@ type Row = {
   live: boolean;
   approval: boolean;
   menuOpen: boolean;
+  /** The kickoff mark's kind (`data-icon`), or null on a chat opened plainly. */
+  icon: string | null;
+  /** The row's one leading slot: the kickoff icon's svg, or the status dot. */
+  mark: {
+    exists: boolean;
+    svg: boolean;
+    visible: boolean;
+    box: Box | null;
+    /** Animation on the slot itself (a live row pulses whichever glyph it holds). */
+    animation: string | null;
+    /** Animation on the glyph inside the slot. */
+    glyphAnimation: string | null;
+    glyphColor: string | null;
+    /** An approval ring, if the state paints one, on slot or glyph. */
+    ring: string | null;
+    glyphRing: string | null;
+  };
+  /** The plain chat's status dot, still drawn in the same slot. */
+  dot: {
+    exists: boolean;
+    visible: boolean;
+    box: Box | null;
+    animation: string | null;
+  };
+  /** The label's box and the button's: the mark has to sit between them. */
+  labelBox: Box | null;
+  mainBox: Box | null;
   pinned: boolean;
   pinState: boolean;
   actionsVisible: boolean;
@@ -365,6 +392,7 @@ describe("chat dock tabs and sidebar chats", () => {
       wheel: wheelState,
       revealed,
       taskIcon,
+      rowsReread,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -455,6 +483,60 @@ describe("chat dock tabs and sidebar chats", () => {
       "the New chat tab control runs past the strip's trailing edge",
     );
     assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
+
+    // The same kickoff mark leads the chat's name in the Chats sidebar: the
+    // fixture's seeded automation mark dresses the Delta row from the store's own
+    // memory, while a chat the operator opened keeps the quiet status dot in the
+    // slot. The slot is one box either way, so the row's height and the label's
+    // leading edge do not move; the row's label and its pin/archive verbs stay.
+    const landingDelta = landing.rows.find((row) => row.label === "Delta automation");
+    const landingBravo = landing.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(
+      landingDelta?.icon,
+      "automation",
+      `the automation chat's sidebar row does not wear its kickoff mark (${JSON.stringify(landingDelta && [landingDelta.label, landingDelta.icon])})`,
+    );
+    assert.equal(landingDelta?.mark.exists, true, "the automation row has no leading mark slot");
+    assert.equal(
+      landingDelta?.mark.svg,
+      true,
+      "the sidebar row's kickoff mark is not drawn as an icon",
+    );
+    assert.equal(landingDelta?.mark.visible, true, "the sidebar row's kickoff mark is not visible");
+    assert.equal(
+      landingDelta?.label,
+      "Delta automation",
+      `the kickoff mark changed the row's label ("${landingDelta?.label}")`,
+    );
+    assert.equal(landingDelta?.pin.exists, true, "the marked row lost its pin control");
+    assert.equal(landingDelta?.archive.exists, true, "the marked row lost its archive control");
+    assert.equal(
+      landingBravo?.icon,
+      null,
+      "a chat opened plainly wears a kickoff mark in the sidebar",
+    );
+    assert.equal(landingBravo?.mark.exists, true, "a plain row has no leading mark slot");
+    assert.equal(
+      landingBravo?.mark.svg,
+      false,
+      "a plain row's mark slot draws an icon instead of the status dot",
+    );
+    assert.equal(landingBravo?.dot.exists, true, "a plain row lost its status dot");
+    assert.equal(landingBravo?.dot.visible, true, "a plain row's status dot is not visible");
+    assert.ok(
+      Math.abs((landingDelta?.box?.height ?? 0) - (landingBravo?.box?.height ?? 0)) <= 1,
+      `the kickoff mark changed the row's height: ${JSON.stringify({ marked: landingDelta?.box, plain: landingBravo?.box })}`,
+    );
+    assert.ok(
+      (landingDelta?.mark.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (landingDelta?.mainBox?.left ?? Number.POSITIVE_INFINITY) - 1,
+      `the mark slot is not inside the row's leading edge: mark ${JSON.stringify(landingDelta?.mark.box)}, row ${JSON.stringify(landingDelta?.mainBox)}`,
+    );
+    assert.ok(
+      (landingDelta?.mark.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (landingDelta?.labelBox?.left ?? Number.NEGATIVE_INFINITY) + 1,
+      `the mark slot runs into the row's label: mark ${JSON.stringify(landingDelta?.mark.box)}, label ${JSON.stringify(landingDelta?.labelBox)}`,
+    );
 
     // A real pointer over a row reveals its pin/archive controls and hides the
     // resting time and pin mark; moving off restores the resting row.
@@ -612,6 +694,22 @@ describe("chat dock tabs and sidebar chats", () => {
       2,
       "the sidebar does not show both turns running",
     );
+    // The live state still paints the row's leading slot, whichever glyph it
+    // holds: a plain chat keeps its dot and the dot pulses. The icon row is the
+    // background automation further down the run; here both live rows are plain.
+    for (const row of bothLive.rows.filter((candidate) => candidate.live)) {
+      assert.equal(row.icon, null, `"${row.label}"'s live row wears a kickoff mark`);
+      assert.equal(row.mark.exists, true, `"${row.label}"'s live row has no mark slot`);
+      assert.equal(row.mark.svg, false, `"${row.label}"'s live row lost its dot to an icon`);
+      assert.equal(row.dot.exists, true, `"${row.label}"'s live row lost its status dot`);
+      assert.equal(row.dot.visible, true, `"${row.label}"'s live dot is not visible`);
+      assert.ok(
+        [row.mark.animation, row.dot.animation].some(
+          (name) => name !== null && name !== "none",
+        ),
+        `"${row.label}"'s live dot is not pulsing (animations ${JSON.stringify([row.mark.animation, row.dot.animation])})`,
+      );
+    }
     assert.equal(bothLive.rail?.liveCount, "2 running");
 
     // Frames are routed by session id: a delta for the chat that is not on
@@ -803,6 +901,34 @@ describe("chat dock tabs and sidebar chats", () => {
       background.rows.find((row) => row.label === "Delta automation")?.live,
       true,
       "the background chat's row is not live",
+    );
+    // A live row whose chat was started by an automation keeps its kickoff mark
+    // and that mark carries the live state: the icon turns the accent and pulses,
+    // rather than a dot appearing beside it.
+    const liveAutomationRow = background.rows.find(
+      (row) => row.label === "Delta automation",
+    );
+    assert.equal(
+      liveAutomationRow?.icon,
+      "automation",
+      "the live automation row lost its kickoff mark",
+    );
+    assert.equal(liveAutomationRow?.mark.exists, true, "the live automation row has no mark slot");
+    assert.equal(
+      liveAutomationRow?.mark.svg,
+      true,
+      "the live automation row's mark is not the kickoff icon",
+    );
+    assert.equal(
+      liveAutomationRow?.mark.visible,
+      true,
+      "the live automation row's mark is not visible",
+    );
+    assert.ok(
+      [liveAutomationRow?.mark.animation, liveAutomationRow?.mark.glyphAnimation].some(
+        (name) => name !== null && name !== "none",
+      ),
+      `the live automation row's kickoff mark is not pulsing (animations ${JSON.stringify([liveAutomationRow?.mark.animation, liveAutomationRow?.mark.glyphAnimation])})`,
     );
 
     // Closing a live tab stops its run, and the frames already on the wire do
@@ -1810,6 +1936,94 @@ describe("chat dock tabs and sidebar chats", () => {
         plain.mark.svg,
         false,
         `"${plain.label}"'s slot draws a kickoff icon on a chat that has no mark`,
+      );
+    }
+
+    // The same mark now leads the chat's name in the Chats sidebar, so the chat
+    // the write path started is listed there with data-icon="task" and an icon in
+    // its leading slot — and the row keeps a plain row's height and puts the mark
+    // before its label rather than over it.
+    const taskRow =
+      taskIcon.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    assert.notEqual(taskRow, null, "the created task chat is not listed in the sidebar");
+    assert.equal(
+      taskRow?.icon,
+      "task",
+      `the task chat's sidebar row does not wear its kickoff mark (data-icon ${taskRow?.icon})`,
+    );
+    assert.equal(taskRow?.mark.exists, true, "the task row has no leading mark slot");
+    assert.equal(
+      taskRow?.mark.svg,
+      true,
+      "the task row's kickoff mark is not drawn as an icon",
+    );
+    assert.equal(taskRow?.mark.visible, true, "the task row's kickoff mark is not visible");
+    const taskPlainRow =
+      taskIcon.rows.find((row) => row.icon === null && row.label === "New chat") ??
+      taskIcon.rows.find((row) => row.icon === null) ??
+      null;
+    assert.ok(
+      Math.abs((taskRow?.box?.height ?? 0) - (taskPlainRow?.box?.height ?? Number.POSITIVE_INFINITY)) <= 1,
+      `the task row's mark changed the row's height: ${JSON.stringify({ marked: taskRow?.box, plain: taskPlainRow?.box })}`,
+    );
+    assert.ok(
+      (taskRow?.mark.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (taskRow?.mainBox?.left ?? Number.POSITIVE_INFINITY) - 1 &&
+        (taskRow?.mark.box?.right ?? Number.POSITIVE_INFINITY) <=
+          (taskRow?.labelBox?.left ?? Number.NEGATIVE_INFINITY) + 1,
+      `the task row's mark is not between the row's leading edge and its label: mark ${JSON.stringify(taskRow?.mark.box)}, row ${JSON.stringify(taskRow?.mainBox)}, label ${JSON.stringify(taskRow?.labelBox)}`,
+    );
+
+    // A plain list re-read — the store's own loadSessions, what a background
+    // refresh runs — keeps the remembered marks (they live in the provider's
+    // memory, not in the gateway's session rows), so both carved rows still wear
+    // their icons afterwards and the map is unchanged.
+    const rereadDelta =
+      rowsReread.rows.find((row) => row.label === "Delta automation") ?? null;
+    const rereadTask =
+      rowsReread.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    assert.equal(
+      rereadDelta?.icon,
+      "automation",
+      "a plain list re-read dropped the automation row's kickoff mark",
+    );
+    assert.equal(
+      rereadDelta?.mark.svg,
+      true,
+      "a plain list re-read dropped the automation row's icon",
+    );
+    assert.equal(
+      rereadTask?.icon,
+      "task",
+      "a plain list re-read dropped the task row's kickoff mark",
+    );
+    assert.equal(
+      rereadTask?.mark.svg,
+      true,
+      "a plain list re-read dropped the task row's icon",
+    );
+    assert.equal(
+      rowsReread.sessionIcons?.["chat-delta"],
+      "automation",
+      `the remembered map lost the seeded mark across the re-read: ${JSON.stringify(rowsReread.sessionIcons)}`,
+    );
+    assert.equal(
+      rowsReread.sessionIcons?.[taskId],
+      "task",
+      `the remembered map lost the task mark across the re-read: ${JSON.stringify(rowsReread.sessionIcons)}`,
+    );
+    for (const row of rowsReread.rows.filter((candidate) => candidate.icon === null)) {
+      const shapeIsPlain =
+        row.mark.exists === true && row.mark.svg === false;
+      assert.equal(
+        shapeIsPlain,
+        true,
+        `"${row.label}"'s row has no mark but is not drawn as a plain row`,
+      );
+      assert.equal(
+        row.dot.exists,
+        true,
+        `"${row.label}"'s plain row lost its status dot`,
       );
     }
 

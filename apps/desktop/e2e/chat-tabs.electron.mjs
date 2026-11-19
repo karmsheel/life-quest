@@ -65,6 +65,13 @@ const SAMPLE = `(() => {
   // then the archived band when the view asks for it. A row's pin mark is a
   // resting decoration and its pin/archive buttons live in a hover-only span, so
   // both are reported by computed display rather than by presence in the DOM.
+  //
+  // The row's leading slot is the same kickoff mark the tab strip draws: a chat
+  // the app started as a task/review/plan/automation carries data-icon and an
+  // svg in the row's chats-rail__mark slot; a chat the operator opened plainly
+  // keeps the transparent status dot in that slot. Status still paints the slot —
+  // a live row pulses it, an approval ring sits on it — so the mark's own
+  // animation, colour and ring are read alongside the dot's.
   const rows = [];
   let group = "";
   for (const li of Array.from(document.querySelectorAll(".chats-rail__rows > li"))) {
@@ -80,10 +87,18 @@ const SAMPLE = `(() => {
     const pin = li.querySelector(".chats-rail__pin-btn");
     const archive = li.querySelector(".chats-rail__archive-btn");
     const rowMain = li.querySelector(".chats-rail__row-main");
+    const labelEl = li.querySelector(".chats-rail__label");
+    const markEl = li.querySelector(".chats-rail__mark");
+    const markSvg = markEl ? markEl.querySelector("svg") : null;
+    const dotEl = li.querySelector(".chats-rail__dot");
+    // The glyph the slot actually holds: the kickoff icon, else the status dot.
+    const glyphEl = markSvg ?? dotEl ?? markEl;
+    const markStyle = markEl ? window.getComputedStyle(markEl) : null;
+    const glyphStyle = glyphEl ? window.getComputedStyle(glyphEl) : null;
     const svg = pin ? pin.querySelector("svg") : null;
     rows.push({
       group,
-      label: text(li.querySelector(".chats-rail__label")),
+      label: text(labelEl),
       when: text(when),
       whenVisible: shown(when),
       active: li.hasAttribute("data-active"),
@@ -93,6 +108,33 @@ const SAMPLE = `(() => {
       live: li.hasAttribute("data-live"),
       approval: li.hasAttribute("data-approval"),
       menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
+      /** The kickoff mark's kind (the row's data-icon), or null on a plain chat. */
+      icon: li.getAttribute("data-icon"),
+      /** The row's one leading slot: the kickoff icon's svg, or the status dot. */
+      mark: {
+        exists: Boolean(markEl),
+        svg: Boolean(markSvg),
+        visible: shown(markEl),
+        box: box(markEl),
+        /** Animation on the slot itself (a live row pulses it). */
+        animation: markStyle ? markStyle.animationName : null,
+        /** Animation on the glyph inside it, whichever the slot holds. */
+        glyphAnimation: glyphStyle ? glyphStyle.animationName : null,
+        glyphColor: glyphStyle ? glyphStyle.color : null,
+        /** An approval ring, if the state paints one, on slot or glyph. */
+        ring: markStyle ? markStyle.boxShadow : null,
+        glyphRing: glyphStyle ? glyphStyle.boxShadow : null
+      },
+      /** The plain chat's status dot, still drawn in the same slot. */
+      dot: {
+        exists: Boolean(dotEl),
+        visible: shown(dotEl),
+        box: box(dotEl),
+        animation: dotEl ? window.getComputedStyle(dotEl).animationName : null
+      },
+      /** The label's box, and the button's: the mark must sit between them. */
+      labelBox: box(labelEl),
+      mainBox: box(rowMain),
       pinned: li.getAttribute("data-pinned") === "true",
       pinState: shown(pinState),
       actionsVisible: shown(actions),
@@ -3027,6 +3069,159 @@ async function main() {
     screenshots.push(await shot("tab-session-icon-task"));
     mark("tab-session-icon-task");
 
+    // 30 — the same kickoff mark now leads the chat's name in the Chats sidebar,
+    // not only its tab. The store's remembered map is the one source for both
+    // surfaces: the fixture's seeded automation mark dresses the Delta row, a
+    // chat opened plainly keeps the transparent status dot in the same one-slot
+    // leading column, and the task chat the write-path probe created — which the
+    // store adopts into the list — wears its task mark on its row too.
+    const landingDelta = landing.rows.find((row) => row.label === "Delta automation") ?? null;
+    const landingBravo = landing.rows.find((row) => row.label === "Bravo budget") ?? null;
+    check(
+      "the automation chat's sidebar row wears its kickoff mark",
+      landingDelta !== null &&
+        landingDelta.icon === "automation" &&
+        landingDelta.mark.exists === true &&
+        landingDelta.mark.svg === true &&
+        landingDelta.mark.visible === true,
+      JSON.stringify(landingDelta),
+    );
+    check(
+      "the sidebar mark leaves the row's label and its verbs alone",
+      landingDelta?.label === "Delta automation" &&
+        landingDelta?.pin.exists === true &&
+        landingDelta?.archive.exists === true,
+      JSON.stringify({
+        label: landingDelta?.label,
+        pin: landingDelta?.pin,
+        archive: landingDelta?.archive,
+      }),
+    );
+    check(
+      "a chat opened plainly keeps the status dot in the sidebar's leading slot",
+      landingBravo !== null &&
+        landingBravo.icon === null &&
+        landingBravo.mark.exists === true &&
+        landingBravo.mark.visible === true &&
+        landingBravo.mark.svg === false &&
+        landingBravo.dot.exists === true &&
+        landingBravo.dot.visible === true,
+      JSON.stringify(landingBravo),
+    );
+    check(
+      "the sidebar mark changes neither the row's height nor its leading edge",
+      Boolean(landingDelta?.box && landingBravo?.box) &&
+        Math.abs(landingDelta.box.height - landingBravo.box.height) <= 1 &&
+        Boolean(
+          landingDelta?.mark.box && landingDelta.mainBox && landingDelta.labelBox,
+        ) &&
+        landingDelta.mark.box.left >= landingDelta.mainBox.left - 1 &&
+        landingDelta.mark.box.right <= landingDelta.labelBox.left + 1,
+      JSON.stringify({
+        heights: [landingDelta?.box?.height, landingBravo?.box?.height],
+        mark: landingDelta?.mark?.box,
+        main: landingDelta?.mainBox,
+        label: landingDelta?.labelBox,
+      }),
+    );
+    const backgroundDelta =
+      background.rows.find((row) => row.label === "Delta automation") ?? null;
+    check(
+      "the live sidebar row paints its kickoff mark, and a live dot still pulses",
+      backgroundDelta?.live === true &&
+        backgroundDelta.icon === "automation" &&
+        backgroundDelta.mark.exists === true &&
+        backgroundDelta.mark.svg === true &&
+        [backgroundDelta.mark.animation, backgroundDelta.mark.glyphAnimation].some(
+          (name) => name && name !== "none",
+        ) &&
+        bothLive.rows
+          .filter((row) => row.live)
+          .every(
+            (row) =>
+              row.mark.exists === true &&
+              row.mark.svg === false &&
+              row.dot.exists === true &&
+              row.dot.visible === true &&
+              [row.mark.animation, row.dot.animation].some(
+                (name) => name && name !== "none",
+              ),
+          ),
+      JSON.stringify({
+        liveDelta: {
+          live: backgroundDelta?.live,
+          mark: backgroundDelta?.mark,
+        },
+        livePlainRows: bothLive.rows
+          .filter((row) => row.live)
+          .map((row) => ({ label: row.label, mark: row.mark, dot: row.dot })),
+      }),
+    );
+    const taskRow =
+      taskIcon.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    const taskPlainRow =
+      taskIcon.rows.find((row) => row.icon === null && row.label === "New chat") ??
+      taskIcon.rows.find((row) => row.icon === null) ??
+      null;
+    check(
+      "the created task chat is listed in the sidebar wearing its kickoff mark",
+      taskRow !== null &&
+        taskRow.icon === "task" &&
+        taskRow.mark.exists === true &&
+        taskRow.mark.svg === true &&
+        taskRow.mark.visible === true,
+      JSON.stringify(taskRow),
+    );
+    check(
+      "the task row keeps a plain row's height and puts its mark before the label",
+      Boolean(taskRow?.box && taskPlainRow?.box) &&
+        Math.abs(taskRow.box.height - taskPlainRow.box.height) <= 1 &&
+        Boolean(taskRow?.mark.box && taskRow.mainBox && taskRow.labelBox) &&
+        taskRow.mark.box.left >= taskRow.mainBox.left - 1 &&
+        taskRow.mark.box.right <= taskRow.labelBox.left + 1,
+      JSON.stringify({
+        heights: [taskRow?.box?.height, taskPlainRow?.box?.height],
+        mark: taskRow?.mark?.box,
+        main: taskRow?.mainBox,
+        label: taskRow?.labelBox,
+      }),
+    );
+
+    // 31 — the mark is the chat's, not one render's: a plain list re-read (the
+    // store's own loadSessions, what any background refresh runs) must leave the
+    // remembered kickoff maps alone, so the rows keep their marks instead of
+    // falling back to the plain dot.
+    check(
+      "the store re-read the chat list",
+      await run(`(async () => {
+        if (!window.__lqChat) return false;
+        await window.__lqChat.loadSessions();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        return true;
+      })()`),
+      "no list handle on the page",
+    );
+    const rowsReread = await settle(420);
+    const rereadDelta =
+      rowsReread.rows.find((row) => row.label === "Delta automation") ?? null;
+    const rereadTask =
+      rowsReread.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    check(
+      "a plain list re-read keeps the kicked-off chats' sidebar marks",
+      rereadDelta?.icon === "automation" &&
+        rereadDelta.mark.svg === true &&
+        rereadTask?.icon === "task" &&
+        rereadTask.mark.svg === true &&
+        rowsReread.sessionIcons?.["chat-delta"] === "automation",
+      JSON.stringify({
+        delta: [rereadDelta?.icon, rereadDelta?.mark],
+        task: [rereadTask?.icon, rereadTask?.mark],
+        stored: rowsReread.sessionIcons,
+      }),
+    );
+    screenshots.push(await shot("sidebar-kickoff-marks"));
+    mark("sidebar-kickoff-marks");
+
     mark("done");
     report = {
       url,
@@ -3107,6 +3302,7 @@ async function main() {
         wheel: wheeled,
         revealed,
         taskIcon,
+        rowsReread,
       },
       // The gesture readings the states cannot carry: the wheel's own
       // before/after/prevented numbers and the id of the chat the write-path
@@ -3310,6 +3506,15 @@ async function main() {
         state.taskIcon.heading,
         "",
         `icons ${JSON.stringify(state.taskIcon.tabs.map((tab) => [tab.label, tab.icon]))}, stored ${JSON.stringify(state.taskIcon.sessionIcons)}`,
+      ],
+      [
+        "sidebar marks after a re-read",
+        state.rowsReread.rowCount,
+        state.rowsReread.tabCount,
+        "",
+        state.rowsReread.heading,
+        "",
+        `rows ${JSON.stringify(state.rowsReread.rows.filter((row) => row.icon).map((row) => [row.label, row.icon, row.mark.svg]))}, stored ${JSON.stringify(state.rowsReread.sessionIcons)}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

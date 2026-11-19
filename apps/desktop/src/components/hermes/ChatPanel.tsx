@@ -17,14 +17,11 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowUp,
-  BookOpenCheck,
   Eye,
   EyeOff,
-  Goal,
   ImagePlus,
   Keyboard,
   Link2,
-  ListTodo,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -38,10 +35,8 @@ import {
   Radio,
   SquarePen,
   Type,
-  WandSparkles,
   X,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import {
   matchingChatQuestions,
   unlockedAreas,
@@ -85,7 +80,7 @@ import { normalizeCapabilities } from "@/lib/turn-timeline";
 import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
-import type { SessionIcon } from "@/state/session-icons";
+import { SESSION_ICON } from "@/lib/session-icon";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
@@ -103,20 +98,6 @@ function formatReceiptSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-/**
- * The mark a kicked-off chat wears before its tab name, by the kind of work
- * that started it. Each icon is the one its own feature already uses in the
- * rail — a task from the Act board, a review, a plan toward a goal, an
- * automation run — so the tab says which door the chat came through without a
- * word. `aria-hidden`: the tab's accessible name is still its chat name.
- */
-const SESSION_ICON: Record<SessionIcon, LucideIcon> = {
-  task: ListTodo,
-  review: BookOpenCheck,
-  plan: Goal,
-  automation: WandSparkles,
-};
 
 /**
  * Where a saved question belongs, in the words the settings page uses for it.

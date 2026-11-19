@@ -307,9 +307,10 @@ Full detail: [Decisions](./23-decisions.md), [Companion](./24-companion.md).
    the strip scrolls sideways, with the wheel or its thin scrollbar, and the tab
    you open or switch to is scrolled into view. A chat the app started (a task
    handed over with **Send to agent**, a review interview, a planning session, an
-   automation run) wears a small icon for what started it at the start of its tab
-   name; a chat you opened keeps the plain status mark instead, which shows only
-   as a pulse while it works or a ring while it waits on an approval.
+   automation run) wears a small icon for what started it at the start of its
+   name, in its tab and in its row in **Chats**; a chat you opened keeps the plain
+   status mark instead, which shows only as a pulse while it works or a ring while
+   it waits on an approval.
 
 Full detail: [Companion](./24-companion.md).
 

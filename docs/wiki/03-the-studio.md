@@ -154,8 +154,9 @@ The rail:
   plus a search icon (**Search chats**) and a view-options icon
   (**View options** → **Hide archived**, **Show archived**, **Only archived**).
   **New chat** sits under the search header, then pinned chats lead one flat
-  list, then recent ones. Archiving and pinning are row gestures as well as menu
-  commands.
+  list, then recent ones. Each row starts with its chat's mark — the quiet status
+  mark, or the icon of what started the chat — before the name and time.
+  Archiving and pinning are row gestures as well as menu commands.
 - A divider, then the governance shelf: **Quick Notes**, **Decisions**, **Daily
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
@@ -266,9 +267,10 @@ The chat dock:
   collapsed dock reopens the dock. The dock's side does not matter: the dock is
   always immediately right of the rail, with no divider.
 - The open chat tabs are remembered per vault and agent, and reconciled against
-  the chat list on landing, so a restart brings the strip back. A tab's kickoff
-  mark is remembered with it. Archived or deleted chats lose their tabs; a
-  deliberately closed strip stays closed.
+  the chat list on landing, so a restart brings the strip back. A chat's kickoff
+  mark — the icon in its tab and its **Chats** row — is remembered with it.
+  Archived or deleted chats lose their tabs; a deliberately closed strip stays
+  closed.
 - Wings filter the rail, never a page's data
   ([LAWS/WINGS.md](../../LAWS/WINGS.md)). Each wing's memory defaults to Home
   `/home`, Define `/dream`, Plan `/goals`, Act `/daily`, Review `/review/daily`
