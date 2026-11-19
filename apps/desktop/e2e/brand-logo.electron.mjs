@@ -54,7 +54,7 @@ const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
 /** The supplied Modern lockup's own canvas: the default, and the first check. */
-const DEFAULT_VIEWBOX = "47.19 39 1059.6 161.78";
+const DEFAULT_VIEWBOX = "144.19 39 847 161.78";
 
 const failures = [];
 let step = "boot";
@@ -90,8 +90,10 @@ const SAMPLE = `(() => {
   const header = document.querySelector(".nav-rail__header");
   const brand = document.querySelector(".nav-rail__brand");
   const svg = brand ? brand.querySelector("svg") : null;
+  const lifeText = brand ? brand.querySelector(".life-text") : null;
   const toggle = document.querySelector(".nav-rail .nav-toggle");
   const firstLink = document.querySelector(".nav-rail__link");
+  const wings = document.querySelector(".nav-rail__wings");
   const rootStyle = getComputedStyle(document.documentElement);
   const token = (name) => rootStyle.getPropertyValue(name).trim();
   const fillOf = (el) => (el ? getComputedStyle(el).fill : null);
@@ -108,6 +110,10 @@ const SAMPLE = `(() => {
     header: box(header),
     toggle: box(toggle),
     firstLink: box(firstLink),
+    wings: box(wings),
+    lifeLeft: lifeText
+      ? Math.round(lifeText.getBoundingClientRect().left)
+      : null,
     brand: brand
       ? {
           box: box(brand),
@@ -490,6 +496,16 @@ async function main() {
       `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
+      "the lockup's L starts on the rail's content edge, level with the wing switcher and the page rows",
+      expanded.rail !== null &&
+        expanded.lifeLeft !== null &&
+        expanded.firstLink !== null &&
+        expanded.wings !== null &&
+        Math.abs(expanded.lifeLeft - expanded.firstLink.left) <= 1 &&
+        Math.abs(expanded.lifeLeft - expanded.wings.left) <= 1,
+      `L left ${expanded.lifeLeft}px, first row ${expanded.firstLink?.left}px, wing switcher ${expanded.wings?.left}px, rail ${expanded.rail?.left}px`,
+    );
+    check(
       "the header keeps the collapse chevron beside the lockup",
       expanded.toggleMode === "chevron",
       `toggle mode ${JSON.stringify(expanded.toggleMode)}`,
@@ -497,7 +513,7 @@ async function main() {
     check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - 1059.6 / 161.78) < 0.15,
+        Math.abs(brand.box.width / brand.box.height - 847 / 161.78) < 0.15,
       `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
@@ -666,7 +682,7 @@ async function main() {
       "the rail behind the sheet repaints to Classic on the press",
       Boolean(afterPick.brand) &&
         afterPick.brand.variant === "classic" &&
-        afterPick.brand.viewBox === "69.41 38 906.85 173.77",
+        afterPick.brand.viewBox === "144.41 38 757 173.77",
       `rail brand ${JSON.stringify(afterPick.brand)}`,
     );
 

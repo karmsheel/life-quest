@@ -45,6 +45,8 @@ type State = {
   header: Box | null;
   toggle: Box | null;
   firstLink: Box | null;
+  wings: Box | null;
+  lifeLeft: number | null;
   brand: BrandSample | null;
   toggleMode: string | null;
   toggleEmblem: boolean;
@@ -180,7 +182,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(brand.inHeader, true, "the lockup is not in the rail's header");
     assert.equal(brand.role, "img", "the lockup is not exposed as an image");
     assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
-    assert.equal(brand.viewBox, "47.19 39 1059.6 161.78", "the lockup is not the supplied Minimal art");
+    assert.equal(brand.viewBox, "144.19 39 847 161.78", "the lockup is not the supplied Minimal art, ink-tight for the header");
     assert.ok(
       brand.box.height >= 24 && brand.box.height <= 31,
       `the lockup is ${brand.box.width}x${brand.box.height}px, not sized to the window strip`,
@@ -204,8 +206,24 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       "chevron",
       "the wide rail's control is not the collapse chevron",
     );
+    // The crop's whole point: the L begins where the rail's own items begin, not
+    // ~15px into a padded box.
     assert.ok(
-      Math.abs(brand.box.width / brand.box.height - 1059.6 / 161.78) < 0.15,
+      expanded?.lifeLeft != null &&
+        expanded?.firstLink != null &&
+        expanded?.wings != null,
+      "the rig could not measure the L, the first row and the wing switcher",
+    );
+    assert.ok(
+      Math.abs(expanded.lifeLeft - expanded.firstLink.left) <= 1,
+      `the lockup's L is at ${expanded.lifeLeft}px, the page rows at ${expanded.firstLink.left}px`,
+    );
+    assert.ok(
+      Math.abs(expanded.lifeLeft - expanded.wings.left) <= 1,
+      `the lockup's L is at ${expanded.lifeLeft}px, the wing switcher at ${expanded.wings.left}px`,
+    );
+    assert.ok(
+      Math.abs(brand.box.width / brand.box.height - 847 / 161.78) < 0.15,
       `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's aspect`,
     );
     assert.deepEqual(
@@ -292,7 +310,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     );
     assert.equal(
       afterPick?.brand?.viewBox,
-      "69.41 38 906.85 173.77",
+      "144.41 38 757 173.77",
       "the rail behind the sheet is not the supplied Classic art",
     );
     const reloaded = report.reloaded;

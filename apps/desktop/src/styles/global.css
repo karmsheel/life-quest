@@ -1048,7 +1048,10 @@ a {
 
 /* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
    32px row), width taken from the artwork's own aspect, on the rail's content
-   edge. The art's three groups are painted from the theme tokens below; the
+   edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), so
+   the L begins exactly on that edge — in line with the wing switcher's frame and
+   the page rows beneath — instead of the padded box's ~15px of transparent
+   margin. The art's three groups are painted from the theme tokens below; the
    component never carries a fill of its own. It yields to the toggle rather than
    pushing it off the row on a narrow theme. */
 .nav-rail__brand {

@@ -165,7 +165,11 @@ export function NavRail() {
         which reopens the rail on a press (see "The thin rail").
       */}
       <div className="nav-rail__header">
-        <LifeQuestLogo variant={logoVariant} className="nav-rail__brand" />
+        <LifeQuestLogo
+          variant={logoVariant}
+          className="nav-rail__brand"
+          crop
+        />
         <NavCollapseButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the

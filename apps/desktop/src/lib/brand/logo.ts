@@ -20,6 +20,14 @@ export interface LogoVariantInfo {
   label: string;
   /** One line for the picker's subtitle; the art's own title says the rest. */
   description: string;
+  /**
+   * The artwork's ink-tight viewBox, in the same coordinates as the shipped
+   * file's own. The rail's header draws this box instead of the file's padded
+   * one so the lockup's leading edge (the L) begins exactly where the rail's
+   * rows and the wing switcher begin; the splash and the picker keep the padded
+   * box, which is what keeps the mark's scale there unchanged.
+   */
+  headerViewBox: string;
 }
 
 /**
@@ -37,21 +45,25 @@ export const LOGO_VARIANTS: readonly LogoVariantInfo[] = [
     id: "modern",
     label: "Modern",
     description: "Neutral sans lockup.",
+    headerViewBox: "118.33 34 787 171.77",
   },
   {
     id: "athletic",
     label: "Athletic",
     description: "Heavy slanted sans, the two words leaning apart.",
+    headerViewBox: "160.61 38 775 173.77",
   },
   {
     id: "classic",
     label: "Classic",
     description: "Serif lockup, settled and editorial.",
+    headerViewBox: "144.41 38 757 173.77",
   },
   {
     id: "minimal",
     label: "Minimal",
     description: "Light, wide-tracked sans — the shipped default.",
+    headerViewBox: "144.19 39 847 161.78",
   },
 ];
 
