@@ -974,6 +974,14 @@ a {
    the wide column or in the thin icon column: the collapse narrows this box
    instead of unmounting it. */
 .nav-rail {
+  /* The lockup's leading inset: the rail's own thin padding, the row inset the
+     page icons are held at, and the 1.5px optical nudge that lands the L on the
+     icons' strokes. The header below spends the same measure above the mark, and
+     again between it and the wing switcher, so the lockup has one inset on every
+     side it faces instead of a panel edge a couple of pixels from its top. */
+  --rail-header-inset: calc(
+    var(--density-pad-rail-x) + var(--density-pad-row-x) + 1.5px
+  );
   background: var(--canvas-base);
   border: 0;
   border-right: 1px solid var(--border);
@@ -998,23 +1006,42 @@ a {
   z-index: 20;
 }
 
-/* The top line of the rail, in the window strip: the lockup at the leading edge
-   and the collapse toggle at the trailing one, both centred on the strip's line.
-   That is the DSH arrangement, and it is why the mark sits here rather than on a
-   band of its own: the toggle and the logo share one row. The rest of the strip
-   stays a window drag handle. Collapsed, the band's own rule centres the one
-   control the thin column keeps (see "The thin rail"). It paints the rail's own
-   mat, so the sidebar runs to the window's top and the titlebar's fill begins
-   only at the sheet's leading edge. */
+/* The rail's first row: the lockup at the leading edge and the collapse toggle at
+   the trailing one. It used to be exactly the window strip's 32px, which left the
+   mark two or three pixels off the window's top while the rail's own leading
+   padding held it a full inset in — cramped above, comfortable beside. The row now
+   carries that same rail-content inset above and below the mark, so the lockup is
+   held off every edge by one measure and the toggle drops with it.
+
+   The box still starts at the window's top edge, so the strip's leading corner
+   stays a window drag handle; it is taller than the titlebar row now, which is
+   free: the strip's own fill ends at the rail's trailing edge and the dock's
+   strip keeps its own geometry on the other side of the seam. The bottom inset
+   gives up the rail's flex gap because the wing switcher's band below already
+   spends it — the pair then meet on the same measure. Collapsed, the band's own
+   rule centres the one control the thin column keeps (see "The thin rail"). It
+   paints the rail's own mat, so the sidebar runs to the window's top and the
+   titlebar's fill begins only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   flex: 0 0 auto;
-  height: var(--window-titlebar-height);
-  margin: 0 -0.35rem 0.1rem;
+  /* One lockup row plus the inset above and below. Box-sizing makes the content
+     box exactly the lockup's height, which is what pins the mark's top edge to
+     the inset rather than centring it in a leftover strip. */
+  height: calc(
+    1.7rem + var(--rail-header-inset) + var(--rail-header-inset) -
+      var(--density-gap-rail)
+  );
+  /* The row spans the rail's box and takes its inset back out of the rail's
+     padding: the inline negative margin is the padding the rail carries, so the
+     lockup's margin below lands on the rail's border edge. */
+  margin: 0 calc(-1 * var(--density-pad-rail-x)) 0;
+  padding-top: var(--rail-header-inset);
   padding-right: 0.45rem;
+  padding-bottom: calc(var(--rail-header-inset) - var(--density-gap-rail));
   -webkit-app-region: drag;
 }
 
@@ -1057,15 +1084,17 @@ a {
   fill: var(--uest-color);
 }
 
-/* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
-   32px row), width taken from the artwork's own aspect, on the rail's content
-   edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and
-   the mark is then held one row-content inset in from that edge — the same
-   `--density-pad-row-x` that inside the page rows holds the icons — so the L
-   begins on the line the page icons and the wing switcher's Home stroke share,
-   instead of the rail's box edge. The art's three groups are painted from the
-   theme tokens below; the component never carries a fill of its own. It yields
-   to the toggle rather than pushing it off the row on a narrow theme. */
+/* The lockup in the rail's header: height-sized to one header row (1.7rem), width
+   taken from the artwork's own aspect, on the rail's content edge. The header
+   draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and the mark is then
+   held one rail-content inset in from that edge — the rail's padding, the row
+   inset the page icons sit on, and the 1.5px optical nudge that lands the L on
+   the wing switcher's H stroke and the icons' strokes. The same
+   `--rail-header-inset` is the header's top padding, so the mark's leading and top
+   air are one number rather than two that drift. The art's three groups are
+   painted from the theme tokens below; the component never carries a fill of its
+   own. It yields to the toggle rather than pushing it off the row on a narrow
+   theme. */
 .nav-rail__brand {
   display: flex;
   align-items: center;
@@ -1077,12 +1106,9 @@ a {
      toggle; on a narrow rail the mark scales down inside that box instead of
      running under the control. */
   max-width: calc(100% - 1.75rem - 0.5rem);
-  /* 0.35rem cancels the header's negative inline margin (content edge); the row
-     inset then moves the mark in to the line the page rows' icons sit on, and
-     the final 1.5px is optical: the icons' strokes start about that far inside
-     their boxes, so it lands the L on the wing switcher's H stroke and the
-     icons' left edges rather than just on their boxes. */
-  margin-left: calc(0.35rem + var(--density-pad-row-x) + 1.5px);
+  /* The header spans the rail's box, so the mark's leading inset from the rail's
+     edge is this margin alone. */
+  margin-left: var(--rail-header-inset);
 }
 
 .nav-rail__brand svg {
@@ -1119,24 +1145,25 @@ a {
   gap: 0.15rem;
 }
 
-/* The sidebar's own band: the five-wing switcher sits directly under the window
-   strip, in the same `--shell-topbar-height` band the dock's header wears, so the
-   rail and the dock stay level while the sheet between them begins its page at
-   the strip's bottom edge. The band paints no line of its own — the hairline in
-   this row is the dock's own header rule, and it stops at the pane seam.
+/* The sidebar's own band: the five-wing switcher under the lockup. It used to sit
+   in the window strip's 44px band, level with the dock's tab strip across the
+   pane seam. The rail's header now holds its own breathing room, so this band
+   follows the lockup down into the rail's column instead: the dock's strip keeps
+   its 44px and its line on its own side, and nothing claims the two stay level.
 
-   The band adds no inset of its own: the rail's own padding is the thin, equal
-   margin on either side of the switcher, so the block is centred in the column
-   without a second set of numbers to keep in step with it. */
+   The band keeps its 44px as the switcher's room, but the control rides at the
+   band's top edge: the header's bottom inset plus the rail's flex gap is already
+   the measure between the lockup and the switcher, so the band's upper slack must
+   not spend itself a second time. The band paints no line of its own, and adds no
+   inset of its own — the rail's own padding is the thin, equal margin on either
+   side of the switcher, so the block is centred in the column without a second
+   set of numbers to keep in step with it. */
 .nav-rail__wings-band {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex: 0 0 auto;
   height: var(--shell-topbar-height);
-  /* No pane gap separates the sheet from the strip, so this band starts at the
-     strip's bottom edge too: the header's own bottom margin plus the rail's flex
-     gap (0.1rem + 0.2rem) are pulled back off it. */
-  margin: -0.3rem 0 0;
+  margin: 0;
   padding: 0;
 }
 
@@ -1390,12 +1417,14 @@ a {
    The rail is still the first level of navigation at its narrow width — hiding
    the wings here would take the first level away.
 
-   The block keeps the rail's own padding as its even margin, and each tab is
-   given vertical padding so its rule sits clear of the word: in 56px the words
-   are the tight dimension, so the breathing room is spent there. */
+   The block keeps the rail's own padding as its even margin, and the header's own
+   bottom inset plus the rail gap is the air between the toggle and the first tab,
+   the same measure the wide rail puts between the lockup and the switcher. Each
+   tab is given vertical padding so its rule sits clear of the word: in 56px the
+   words are the tight dimension, so the breathing room is spent there. */
 .shell--nav-collapsed .nav-rail__wings-band {
   height: auto;
-  margin: 0.1rem 0 0;
+  margin: 0;
   padding: 0;
 }
 
@@ -14010,7 +14039,7 @@ button.chat-panel__activity-line:hover {
 
 :root[data-chrome-nav-place="right"] .shell > .nav-rail .nav-rail__header {
   justify-content: flex-start;
-  margin: 0 0 0.1rem -0.35rem;
+  margin: 0 0 0 calc(-1 * var(--density-pad-rail-x));
 }
 
 :root[data-chrome-nav-place="right"] .shell > .shell__main {
@@ -14881,4 +14910,223 @@ button.chat-panel__activity-line:hover {
 .composition-brief__caption {
   font-size: 0.65rem;
   color: var(--muted-foreground);
+}
+
+/* —— Recurring tasks —— */
+/* The Dashboard card's schedule block: what comes round, under the board's two
+   horizons. It lives inside the same card and is separated by a rule, because a
+   due occurrence is a different kind of row from a task — one is finished where
+   it stands, the other moves the board. */
+.home-recurring {
+  display: flex;
+  flex-direction: column;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.home-recurring-list {
+  list-style: none;
+  margin: 0 -0.95rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A due row wears the task row's frame; the state word sits at the far edge so
+   a column of labels lines up down the card. */
+.home-recurring-row__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-recurring-row__link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 0.18em;
+}
+
+.home-recurring-row__link:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.home-recurring-row__state {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
+.home-recurring-row__state--overdue {
+  color: var(--destructive);
+}
+
+.home-recurring-row__state--today {
+  color: var(--accent);
+}
+
+/* Inside the block the manage link has no slack to push down, so it sits at the
+   foot of the list like a quiet footer rather than floating. */
+.home-recurring__manage {
+  margin-top: 0;
+}
+
+/* —— The Task Manager's recurring tasks —— */
+.recurring-section__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.recurring-section__count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.recurring-section__empty {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.recurring-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recurring-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.recurring-item[data-paused="true"] {
+  background: var(--bg-subtle);
+}
+
+.recurring-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  flex: 1;
+  min-width: 12rem;
+}
+
+.recurring-item__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.recurring-item__name {
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.recurring-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.recurring-item__notes {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.recurring-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.recurring-item__actions .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+}
+
+/* State badges: the same shape as an automation's Paused mark, so a state word
+   looks the same whichever shelf prints it. */
+.recurring-badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.recurring-badge--overdue {
+  background: color-mix(in srgb, var(--destructive) 12%, var(--bg-panel));
+  color: var(--destructive);
+}
+
+.recurring-badge--today {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* The inline editor: the same row expanded into a form, like an automation's. */
+.recurring-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.recurring-editor__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.recurring-editor__hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.recurring-editor__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.recurring-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
 }

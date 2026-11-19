@@ -6,15 +6,21 @@ points at. It is where work is chosen and moved; [Daily Schedule](./13-daily-sch
 where the day's tasks are actually put on a clock. The page was called Act before 0.2.8; its
 route and links are unchanged.
 
+Below the board sits **Recurring tasks**: the standing list of things that come round on a
+cadence — a weekly clean, a bill, a birthday. A task is board work; a recurring task is a
+schedule, and it is the schedule the Dashboard reads when it says what is due.
+
 ## Where it lives
 
 - Wing: **Act** (the wing id is still `execute`).
 - Rail: third row of the Act wing, icon **Zap**, label **Task Manager**.
 - Header: the grey **Task Manager** page eyebrow above the page title, which is the active
   area's name, or **Life** on the whole-vault view.
-- Route: `/act`. A task link from elsewhere arrives as `/act?task=<task-id>`.
-- Surface: a full page in the centre pane: the board, then **Run an agent**, then
-  **Recent activity**.
+- Route: `/act`. A task link from elsewhere arrives as `/act?task=<task-id>`, and the
+  Dashboard's **Manage recurring →** arrives as `/act?manage=recurring`, which opens the page
+  on its **Recurring tasks** section.
+- Surface: a full page in the centre pane: the board, then **Recurring tasks**, then
+  **Run an agent**, then **Recent activity**.
 
 This page is part of the [Wiki home](./index.md).
 
@@ -73,6 +79,68 @@ card to a fresh companion chat under a confirmation.
 With no tasks at all, the board still draws its six columns, each showing **No tasks**, and
 the board count reads `0`.
 
+## Recurring tasks
+
+A recurring task is a **standing record**, not a card: a title, a cadence (how it comes
+round), the next due date, and optionally the page it opens and a note. Nothing about it sits
+in the six columns, and finishing an occurrence does not create a **Done** card — the record
+itself moves on to its next date. What it carries when it falls due is a row on the
+Dashboard's **Today & this week** card; see [Dashboard](./06-dashboard.md).
+
+### Add a recurring task
+
+1. Scroll past the board to **Recurring tasks** and choose **Add recurring task**. The
+   inline form opens.
+2. Give it a **Title** and a **Repeats** cadence: **Daily**, **Weekly**, **Monthly** or
+   **Yearly**. The cadence's own field appears with it — **Weekday** (Monday to Sunday) for
+   Weekly, a **day of the month** for Monthly, a **month** and a **day** for Yearly. Daily
+   asks for no field.
+3. Check **First due**, the first occurrence's date. It is filled in from the cadence — the
+   first matching date from today — and you can set your own. When you are editing an
+   existing task the same field is labelled **Next due**.
+4. Optionally fill **Page it opens (optional)** with the route the row should open, for
+   example `/review/weekly`, and **Notes (optional)**.
+5. Choose **Save recurring task**. The new row appears in the list; **Cancel** closes the
+   form and writes nothing. A refused save prints its reason beside the form.
+
+### Pause, resume, edit and delete
+
+- **Pause** stops a recurring task falling due. It stays in the list with a **Paused** badge
+  and its next due date, and it no longer shows on the Dashboard. **Resume** puts it back on
+  its cadence at the same next due date.
+- **Edit** reopens the form on that task. Changing **Repeats** re-anchors the next due date
+  to the new rule unless you set the date yourself in the same save.
+- **Delete** asks first in the app's own confirmation — **Delete recurring task?**, naming
+  the task, with **Delete** to confirm. Only the confirmation deletes it; cancel leaves it
+  untouched.
+
+### Read the list
+
+Each row shows the title, its cadence line — **Every day**, **Every Monday**, **Every month
+on the 12th**, **Every year on 5 Nov** — **Next due <date>**, a **Paused** badge when paused
+and **Overdue** or **Due today** when it is due, **Last done <date>** once an occurrence has
+been completed, and the **Notes** when it has any. The section's count is every record in the
+list, paused or not. With none yet it says **No recurring tasks yet.**
+
+The five reviews are **not** in this list: they are built-in recurring items, and a review
+appears as a row on the Dashboard when its window opens. You do not add, pause or delete them
+here; the review's own page is where it is completed. See [Reviews](./18-reviews.md).
+
+### Finish an occurrence
+
+Ticking a row on the Dashboard's **Recurring** block completes that occurrence: the app
+records the due date and the local day you ticked it (the list then shows **Last done**), and
+advances the next due date to the next occurrence. A task that was overdue jumps to the first
+occurrence **after today**, so one tick catches you up instead of scheduling a chain of past
+dates. The row leaves the Dashboard card, and in the manager the same task carries its new
+**Next due**.
+
+The recurring laws are short and enforced by the engine: recurrence is a standing record and
+not a board card, a due row is derived, a completion records the occurrence and advances the
+date, a paused item does not surface, a review row comes from the review index and cannot be
+ticked on the card, and a page link is an internal route. They are restated in
+[`LAWS/RECURRING.md`](../../LAWS/RECURRING.md).
+
 ## The screen
 
 | Part | What it does |
@@ -85,6 +153,9 @@ the board count reads `0`.
 | Card editor | **Notes**, **Column**, **Goal**, **Project**, **Date**, **Week item** (Year / Monday / Item). |
 | Card menu | **Edit details** / **Hide details**, and **Delete**. |
 | **Send to agent** | A raised key under the card's reading content; disabled while a send is in flight. |
+| **Recurring tasks** | The standing list below the board: a count, **Add recurring task**, and one row per recurring task; **No recurring tasks yet.** when there are none. |
+| Recurring task row | Title, the cadence line (**Every day** / **Every Monday** / **Every month on the 12th** / **Every year on 5 Nov**), **Next due <date>**, a **Paused** / **Overdue** / **Due today** badge, **Last done <date>** once an occurrence is done, and **Edit** / **Pause** (**Resume**) / **Delete**. |
+| Recurring task editor | **Title**, **Repeats** (Daily / Weekly / Monthly / Yearly) with the cadence's **Weekday**, **day of the month**, or **month** and **day**, **First due** (**Next due** when editing), **Page it opens (optional)**, **Notes (optional)**, **Save recurring task** and **Cancel**. |
 | **Run an agent** | **Manage agents** link, **Agent** select, **Task (optional)** prompt, **Run** `<agent name>` / **Running…**, and a reply block per run marked done or failed. |
 | **Recent activity** | The last five life-log entries for the current lens, then **View full log →**. |
 
@@ -166,6 +237,30 @@ a Strategy (How) in Track to enable dispatch." With no active agents, the sectio
   [Projects](./12-projects.md).
 - The [Life Map](./11-life-map.md) does not draw task cards in this release. Dates on a task
   are its own `links.date`; the calendar's events are separate records.
+- The Dashboard's **Today & this week** card lists the recurring tasks that are overdue, due
+  today or due later this week, each with a tick that completes that occurrence. See
+  [Dashboard](./06-dashboard.md).
+
+### Recurring tasks are a schedule, not cards
+
+A recurring task is its own record, beside the tasks in the map store. It never enters the
+six columns as a card, it is never completed by a move, and finishing an occurrence writes
+no **Done** card — the record's next due date is what moves. A due row is computed each read
+from that date and the local day, so opening the app creates nothing and there is no file or
+card per occurrence.
+
+The list is vault-wide: like the board, the recurring list has no area field, so the lens
+names the page and filters recent activity but never narrows it.
+
+The five reviews are built-in recurring items, not records in this list: their rows are
+derived from the review index and appear on the Dashboard when a window opens. They cannot
+be added, paused or deleted here.
+
+The companion's recurring-task tools — **create_recurring_task**,
+**update_recurring_task**, **delete_recurring_task** and **complete_recurring_task** — apply
+immediately like the task tools rather than waiting in [Decisions](./23-decisions.md). They
+are the companion's only way to change a recurring task; nothing else an agent does edits
+one.
 
 ## Tips and edge cases
 
@@ -184,7 +279,22 @@ a Strategy (How) in Track to enable dispatch." With no active agents, the sectio
 - The week-item picker only offers weeks that exist in the current map years. A stored link
   whose year or week has gone is kept and shown as missing rather than silently cleared.
 - Opening `/act?task=<id>` for a task that no longer exists opens the board; there is no
-  error alert for a stale link.
+  error alert for a stale link. `/act?manage=recurring` needs no task: it simply puts the
+  **Recurring tasks** section in view.
+- A recurring task is not a task: it is never on the board, it is not counted in **Tasks**,
+  and completing an occurrence writes no **Done** card.
+- Ticking an overdue recurring row does not walk through the dates you missed: the next due
+  date becomes the first occurrence after today.
+- **Paused** still counts in the section's count and keeps its next due date; it is only kept
+  off the Dashboard's due rows.
+- Changing **Repeats** re-anchors **Next due** to the new rule unless you set the date in the
+  same save.
+- A **Page it opens** value must be an internal route starting `/`; an external address is
+  refused with the reason beside the form.
+- Deleting a recurring task removes the record and its completion history only — not the page
+  it links to, not a task, and not a review.
+- The five reviews never appear in the list. The Dashboard's row for a review is already
+  built in when its window opens, so there is nothing to add here for one.
 - **Send to agent** is disabled while any send is in flight, so two cards cannot start two
   chats from one press.
 - **Run an agent** is disabled until the current scope has a non-empty Strategy (How)
@@ -199,4 +309,6 @@ a Strategy (How) in Track to enable dispatch." With no active agents, the sectio
 - [Quick Notes](./15-quick-notes.md) — captures that become backlog tasks.
 - [Projects](./12-projects.md) — the project a task can point at.
 - [Goals](./10-goals.md) — the goal a task can point at.
+- [Dashboard](./06-dashboard.md) — where a due recurring task shows.
+- [Reviews](./18-reviews.md) — the cadences that appear as built-in recurring rows.
 - [Agents](./25-agents.md) — hiring the agents **Run an agent** dispatches.

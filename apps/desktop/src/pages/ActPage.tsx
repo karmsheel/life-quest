@@ -29,6 +29,7 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { RecurringTasksSection } from "@/components/recurring/RecurringTasksSection";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
 
 /**
@@ -75,6 +76,9 @@ function ActContent() {
   const { snapshot, reloadGeneration, refresh } = useVault();
   const [params] = useSearchParams();
   const taskParam = params.get("task");
+  // The Dashboard's manage link lands here already asking to be shown the
+  // recurring section.
+  const manageRecurring = params.get("manage") === "recurring";
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
   const chatDock = useChatDock();
@@ -269,6 +273,12 @@ function ActContent() {
         />
       ) : snapshot?.mapError ? (
         <p className="form-error" role="alert">{snapshot.mapError}</p>
+      ) : null}
+
+      {/* Directly after the board and before the agent runner: recurrence is a
+          schedule beside the board's horizons, not a seventh column on it. */}
+      {snapshot?.map ? (
+        <RecurringTasksSection scrollOnMount={manageRecurring} />
       ) : null}
 
       <section className="act-page__section">

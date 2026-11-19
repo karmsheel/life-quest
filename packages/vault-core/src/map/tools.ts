@@ -5,6 +5,7 @@ import type {
   ColorId,
   Command,
   GridBlock,
+  Recurrence,
   TaskColumn,
   TaskLinks,
   Weekday,
@@ -31,6 +32,12 @@ const WEEKDAY_ENUM = { type: "number", enum: [0, 1, 2, 3, 4, 5, 6] };
 const TASK_COLUMN_ENUM = {
   type: "string",
   enum: [...TASK_COLUMNS],
+};
+const RECURRENCE_UNIT_ENUM = {
+  type: "string",
+  enum: ["daily", "weekly", "monthly", "yearly"],
+  description:
+    "daily / weekly / monthly / yearly. weekly also needs weekday (0 = Monday … 6 = Sunday); monthly needs dayOfMonth (1-31); yearly needs month (1-12) and day.",
 };
 const PRIORITY_ENUM = {
   type: "string",
@@ -372,6 +379,67 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
     },
   },
   {
+    name: "create_recurring_task",
+    description:
+      "Create a recurring task. It is a standing record beside the task board and appears on the Dashboard's Today & this week card when it is due. cadence is daily, weekly, monthly or yearly; weekly also needs weekday (0 = Monday … 6 = Sunday), monthly needs dayOfMonth (1-31), yearly needs month (1-12) and day. dueDate (YYYY-MM-DD) defaults to the next occurrence; link is an optional in-app route such as /review/weekly.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: STRING,
+        notes: STRING,
+        cadence: RECURRENCE_UNIT_ENUM,
+        weekday: WEEKDAY_ENUM,
+        dayOfMonth: NUMBER,
+        month: NUMBER,
+        day: NUMBER,
+        dueDate: STRING,
+        link: STRING,
+      },
+      required: ["title", "cadence"],
+    },
+  },
+  {
+    name: "update_recurring_task",
+    description:
+      "Update a recurring task. Changing cadence re-anchors the due date to the next occurrence on or after today unless dueDate is given. paused stops it appearing as due.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: STRING,
+        title: STRING,
+        notes: STRING,
+        cadence: RECURRENCE_UNIT_ENUM,
+        weekday: WEEKDAY_ENUM,
+        dayOfMonth: NUMBER,
+        month: NUMBER,
+        day: NUMBER,
+        dueDate: STRING,
+        link: STRING,
+        paused: { type: "boolean" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "delete_recurring_task",
+    description: "Delete a recurring task",
+    parameters: {
+      type: "object",
+      properties: { id: STRING },
+      required: ["id"],
+    },
+  },
+  {
+    name: "complete_recurring_task",
+    description:
+      "Complete the current occurrence of a recurring task. It records the completion and advances the next due date; an overdue item moves to the next occurrence after today.",
+    parameters: {
+      type: "object",
+      properties: { id: STRING },
+      required: ["id"],
+    },
+  },
+  {
     name: "set_about_me",
     description: "Set the About me note",
     parameters: {
@@ -401,6 +469,33 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
     if (value !== undefined) out[key] = value;
   }
   return out as T;
+}
+
+/**
+ * The cadence the flat tool arguments describe.
+ *
+ * Tools speak one flat object, while a recurrence is a small tagged union, so
+ * this is where the fields are gathered. The advertised vocabulary is
+ * daily/weekly/monthly/yearly because that is what a person reads in the
+ * editor; the stored unit is the shorter day/week/month/year. The internal
+ * names are accepted too, so a caller that read them off `get_state` is not
+ * punished for it. An unknown cadence is handed to the engine as-is (not
+ * silently guessed at) so the refusal names the four units the caller may use
+ * instead of inventing a monthly task out of stray fields.
+ */
+function recurrenceFromArgs(args: Record<string, unknown>): Recurrence {
+  const cadence = args.cadence;
+  if (cadence === "daily" || cadence === "day") return { unit: "day" };
+  if (cadence === "weekly" || cadence === "week") {
+    return { unit: "week", weekday: args.weekday as Weekday };
+  }
+  if (cadence === "monthly" || cadence === "month") {
+    return { unit: "month", dayOfMonth: args.dayOfMonth as number };
+  }
+  if (cadence === "yearly" || cadence === "year") {
+    return { unit: "year", month: args.month as number, day: args.day as number };
+  }
+  return { unit: cadence } as unknown as Recurrence;
 }
 
 export function commandForTool(
@@ -577,6 +672,37 @@ export function commandForTool(
       break;
     case "delete_task":
       command = { type: "deleteTask", id: args.id as string };
+      break;
+    case "create_recurring_task":
+      command = {
+        type: "createRecurring",
+        title: args.title as string,
+        notes: args.notes as string | undefined,
+        recurrence: recurrenceFromArgs(args),
+        dueDate: args.dueDate as string | undefined,
+        link: args.link as string | undefined,
+      };
+      break;
+    case "update_recurring_task":
+      command = {
+        type: "updateRecurring",
+        id: args.id as string,
+        title: args.title as string | undefined,
+        notes: args.notes as string | undefined,
+        // No cadence means "leave the rhythm alone"; only an explicit cadence
+        // builds a new union, so a stray weekday cannot rewrite a monthly task.
+        recurrence:
+          args.cadence === undefined ? undefined : recurrenceFromArgs(args),
+        dueDate: args.dueDate as string | undefined,
+        link: args.link as string | undefined,
+        paused: args.paused as boolean | undefined,
+      };
+      break;
+    case "delete_recurring_task":
+      command = { type: "deleteRecurring", id: args.id as string };
+      break;
+    case "complete_recurring_task":
+      command = { type: "completeRecurring", id: args.id as string };
       break;
     case "set_about_me":
       command = { type: "setAboutMe", text: args.text as string };

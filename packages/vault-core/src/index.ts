@@ -70,8 +70,17 @@ export {
   resolveWeek,
   TASK_COLUMNS,
   isTaskColumn,
+  RECURRENCE_UNITS,
+  RECURRING_HISTORY_LIMIT,
+  isRecurrence,
+  nextOccurrenceAfter,
+  occurrenceOnOrAfter,
+  recurringState,
+  recurringWeekEnd,
+  isIsoDate,
 } from "./map/public.ts";
 export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
+export * from "./recurrence.ts";
 export {
   commandForGoalTool,
   commandForTool,

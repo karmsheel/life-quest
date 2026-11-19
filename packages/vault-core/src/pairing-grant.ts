@@ -122,6 +122,10 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
  * and live-week writes need Schedule and Write, and the day templates need the
  * same two switches — they shape the week rather than posting to it, so they
  * still file a Decision when the gate lets them through.
+ *
+ * Recurring tasks are here with the task tools for the same reason: a schedule
+ * is work's rhythm, not a domain's record, so a grant scoped to Schedule (with
+ * Write for the changes) is what a connected agent needs to keep one.
  */
 const CONNECTED_SCHEDULE_READ_TOOLS: ReadonlySet<string> = new Set(["get_week"]);
 
@@ -136,6 +140,10 @@ export const CONNECTED_SCHEDULE_TOOLS: ReadonlySet<string> = new Set([
   "update_task",
   "move_task",
   "delete_task",
+  "create_recurring_task",
+  "update_recurring_task",
+  "delete_recurring_task",
+  "complete_recurring_task",
 ]);
 
 export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([

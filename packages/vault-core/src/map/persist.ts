@@ -10,11 +10,12 @@ import { isLiveAreaMeta } from "../domain-lens.ts";
 import { USER_ACTOR, type Actor } from "../types.ts";
 import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
+import { isRecurrence } from "./recurring.ts";
 import { isTaskColumn } from "./tasks.ts";
 import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
 import { isIsoDate, todayLocalIso } from "./dates.ts";
-import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, TaskColumn, TaskOrigin, YearRecord } from "./types.ts";
+import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, Recurrence, RecurringCompletion, RecurringTask, StoreState, Task, TaskColumn, TaskOrigin, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
@@ -45,6 +46,7 @@ function toFile(state: StoreState): MapFile {
     defaultWeek: state.defaultWeek,
     years: state.years,
     tasks: state.tasks,
+    recurring: state.recurring ?? [],
     liveDays: state.liveDays,
   };
 }
@@ -87,6 +89,61 @@ function normalizeTaskOrigin(value: unknown): TaskOrigin {
   return value === "agent" ? "agent" : "operator";
 }
 
+/**
+ * One recurring record read from disk, or null when it cannot be drawn.
+ *
+ * This is the read migration for the feature: a map file written before
+ * recurring tasks existed has no `recurring` key and loads as an empty list,
+ * and a hand-edited record with an impossible cadence or date is dropped rather
+ * than turned into a row that cannot advance. Everything optional is coerced,
+ * because the file on disk is not the tool that wrote it.
+ */
+function normalizeRecurringItem(raw: unknown): RecurringTask | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== "string" || !r.id) return null;
+  if (typeof r.title !== "string" || !r.title.trim()) return null;
+  if (!isRecurrence(r.recurrence)) return null;
+  if (typeof r.dueDate !== "string" || !isIsoDate(r.dueDate)) return null;
+
+  const history: RecurringCompletion[] = Array.isArray(r.history)
+    ? (r.history as unknown[])
+        .filter((entry): entry is Record<string, unknown> => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+          const e = entry as Record<string, unknown>;
+          return (
+            typeof e.due === "string" &&
+            isIsoDate(e.due) &&
+            typeof e.completedOn === "string" &&
+            isIsoDate(e.completedOn)
+          );
+        })
+        .map((entry) => ({ due: entry.due as string, completedOn: entry.completedOn as string }))
+    : [];
+
+  const item: RecurringTask = {
+    id: r.id,
+    title: r.title,
+    notes: typeof r.notes === "string" ? r.notes : "",
+    recurrence: r.recurrence as Recurrence,
+    dueDate: r.dueDate,
+    paused: r.paused === true,
+    history,
+    origin: normalizeTaskOrigin(r.origin),
+  };
+  if (typeof r.link === "string" && r.link.trim().startsWith("/")) {
+    item.link = r.link.trim();
+  }
+  return item;
+}
+
+function normalizeRecurring(raw: unknown): RecurringTask[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(normalizeRecurringItem)
+    .filter((item): item is RecurringTask => item !== null);
+}
+
 function fromFile(file: MapFile, aboutMe: string): StoreState {
   return {
     dayTypes: file.dayTypes,
@@ -102,6 +159,7 @@ function fromFile(file: MapFile, aboutMe: string): StoreState {
       links: normalizeLinks(t.links as unknown as Record<string, unknown>),
       origin: normalizeTaskOrigin(t.origin),
     })),
+    recurring: normalizeRecurring((file as unknown as Record<string, unknown>).recurring),
     liveDays: normalizeLiveDays(file.liveDays),
     aboutMe,
   };
@@ -253,6 +311,7 @@ export async function ensureMapOnOpen(
         defaultWeek: loaded.file.defaultWeek,
         years: loaded.file.years,
         tasks: loaded.file.tasks,
+        recurring: loaded.file.recurring ?? [],
         liveDays: loaded.file.liveDays,
       });
     if (persistNeeded) {
