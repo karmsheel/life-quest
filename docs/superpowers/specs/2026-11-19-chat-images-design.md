@@ -193,12 +193,26 @@ Electron window, the real `ChatPanel`/`ChatImage`/CSS, and the real
   `native-inputs` absolute); every refused one is refused (`..`, outside-both,
   `https:`, `data:`, wrong extension, lying bytes, symlinked leaf, over the
   ceiling, missing, empty, NUL). Relative and absolute refs are byte-identical.
+- **instruction** — the shipping `buildInstructions` carries the picture rule on
+  every turn, names the vault root when one is open, names none when it is
+  closed, refuses remote/data URLs in words, and is identical for Pi and Hermes.
 
-Run: `/root/.local/bin/lifequest-e2e <worktree> tests/chat-images-e2e.test.ts`.
-The run on 2026-11-19 passed 59/59 checks; artifacts
-`apps/desktop/e2e/artifacts/chat-images.{json,png}`. The chat-panel, chat-bubble
-meta and chat-display rigs were re-run against the same checkout and stayed
-green (9/9).
+A second rig proves the seam the harness cannot: `chat-image-ipc.electron.mjs`
+boots the **real product** (`bootForE2e` against this checkout's built `dist/`,
+so the rebuilt main and preload are the ones under test) with a throwaway
+profile, Hermes home and MCP ports, creates and opens a throwaway vault through
+the real IPC, writes a real picture into it, and reads it back through
+`window.lifequest.chatImageRead`: the vault-relative and absolute refs return
+the bytes (a real `Uint8Array` across IPC), and `../`, `https:`, an empty ref and
+a `.txt` are refused by the live door with the operator's sentence.
+
+Run on this checkout: `/root/.local/bin/lifequest-e2e <worktree>
+tests/chat-images-e2e.test.ts tests/chat-image-ipc-e2e.test.ts` — 2/2 suites
+green; artifacts `apps/desktop/e2e/artifacts/chat-images.{json,png}` (66/66
+checks; the picture shows both directions, the missing chip and a live answer)
+and `chat-image-ipc.{json,png}` (16/16 checks; the picture is the shipped shell
+with the rig's vault open). The chat-panel, chat-bubble-meta and chat-display
+rigs were re-run against the same checkout and stayed green (9/9).
 
 One honest limit, repeated from §1: a Hermes reload can only draw a sent picture
 while the gateway still holds its copy under the profile's `native-inputs/`

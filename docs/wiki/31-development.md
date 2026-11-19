@@ -111,8 +111,8 @@ npm test               # from the repo root → apps/desktop/scripts/test.mjs
 ```
 
 That runs `node --experimental-strip-types --test "tests/**/*.test.ts"` in
-`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 123 test
-wrappers over 99 Electron rig drivers.
+`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 124 test
+wrappers over 100 Electron rig drivers.
 
 The testing discipline in this repository is E2E, and the layout enforces it:
 
@@ -139,6 +139,12 @@ Two rules matter when you run them:
   built `dist/` itself and skips unless `dist/index.html` and
   `dist-electron/main.js` exist, with the message `run \`npm run build\` to include
   this e2e`. Run `npm run build` first if you want it.
+- **A real-process rig needs the built app and the wrapper.**
+  `chat-image-ipc.electron.mjs` boots the product's own main (`bootForE2e`) against
+  this checkout's built `dist/`, so it needs `npm run build` and the
+  `lifequest-e2e` wrapper — the wrapper's dev run is what puts the e2e seam into
+  `dist-electron/main.js`, and the rig refuses a seam-less bundle rather than boot
+  against the operator's profile.
 
 To run one rig, from `apps/desktop` with the dev server up:
 
