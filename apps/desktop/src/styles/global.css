@@ -1046,6 +1046,17 @@ a {
   fill: var(--uest-color);
 }
 
+/* The lockup's flanking rules are part of the art and take the word inks: the
+   left rule the LIFE ink, the right rule the UEST ink, so a theme that splits
+   the words splits the rules with them. */
+.lifequest-logo .life-rule {
+  fill: var(--life-color);
+}
+
+.lifequest-logo .uest-rule {
+  fill: var(--uest-color);
+}
+
 /* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
    32px row), width taken from the artwork's own aspect, on the rail's content
    edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and

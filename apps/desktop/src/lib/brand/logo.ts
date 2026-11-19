@@ -45,25 +45,25 @@ export const LOGO_VARIANTS: readonly LogoVariantInfo[] = [
     id: "modern",
     label: "Modern",
     description: "Neutral sans lockup.",
-    headerViewBox: "118.33 34 787 171.77",
+    headerViewBox: "8.3 34 1007 171.77",
   },
   {
     id: "athletic",
     label: "Athletic",
     description: "Heavy slanted sans, the two words leaning apart.",
-    headerViewBox: "160.61 38 775 173.77",
+    headerViewBox: "50.6 38 995 173.77",
   },
   {
     id: "classic",
     label: "Classic",
     description: "Serif lockup, settled and editorial.",
-    headerViewBox: "144.41 38 757 173.77",
+    headerViewBox: "34.4 38 977 173.77",
   },
   {
     id: "minimal",
     label: "Minimal",
     description: "Light, wide-tracked sans — the shipped default.",
-    headerViewBox: "144.19 39 847 161.78",
+    headerViewBox: "42.2 39 1051 161.78",
   },
 ];
 

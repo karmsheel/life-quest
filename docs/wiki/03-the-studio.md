@@ -138,7 +138,8 @@ The rail:
 - The **LifeQuest lockup** on the header line, in line with the collapse
   toggle: the active logo — **Minimal** by default, and any of **Modern**,
   **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
-  is drawn from the shipped art, and its three inks (LIFE, the Q emblem, UEST)
+  carries short rules on either side of the words, like the supplied lockup, and
+  is drawn from the shipped art; its three inks (LIFE, the Q emblem, UEST)
   are theme colours, so the lockup follows the active theme and the day/night
   palette instead of carrying one fixed picture. It is a mark, not a control:
   the strip is the window's drag handle.

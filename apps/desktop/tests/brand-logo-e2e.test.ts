@@ -185,7 +185,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(brand.inHeader, true, "the lockup is not in the rail's header");
     assert.equal(brand.role, "img", "the lockup is not exposed as an image");
     assert.equal(brand.label, "LifeQuest", "the lockup is not named LifeQuest");
-    assert.equal(brand.viewBox, "144.19 39 847 161.78", "the lockup is not the supplied Minimal art, ink-tight for the header");
+    assert.equal(brand.viewBox, "42.2 39 1051 161.78", "the lockup is not the supplied Minimal art, ink-tight for the header");
     assert.ok(
       brand.box.height >= 24 && brand.box.height <= 31,
       `the lockup is ${brand.box.width}x${brand.box.height}px, not sized to the window strip`,
@@ -210,8 +210,8 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       "the wide rail's control is not the collapse chevron",
     );
     // The lockup is shifted one row-content inset in from the rail's edge (plus
-    // the optical 1.5px), so its L starts on the line the wing switcher's H and
-    // the page icons share: the logo box sits on the H's text box and just inside
+    // the optical 1.5px), so its leading rule starts on the line the wing
+    // switcher's H and the page icons share: the logo box sits on the H's text box and just inside
     // the icons' SVG boxes.
     assert.ok(
       expanded?.firstLink != null &&
@@ -239,7 +239,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       `the lockup's inset is ${expanded.brand.box.left - expanded.firstLink.left}px, not ${expanded.rowPad + 1.5}px`,
     );
     assert.ok(
-      Math.abs(brand.box.width / brand.box.height - 847 / 161.78) < 0.15,
+      Math.abs(brand.box.width / brand.box.height - 1051 / 161.78) < 0.15,
       `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's aspect`,
     );
     assert.deepEqual(
@@ -326,7 +326,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     );
     assert.equal(
       afterPick?.brand?.viewBox,
-      "144.41 38 757 173.77",
+      "34.4 38 977 173.77",
       "the rail behind the sheet is not the supplied Classic art",
     );
     const reloaded = report.reloaded;

@@ -30,6 +30,8 @@ same classes — `life-text` (the LIFE word), `quest-icon` (the Q emblem) and
 | `--icon-color` | the Q emblem | `#C66A3D` ember |
 | `--uest-color` | the UEST word | `#F8E5C8` cream — the same ink as LIFE |
 
+Each lockup also carries two short rules flanking the words at the emblem's centre line — the left one in the LIFE ink, the right one in the UEST ink — so the mark reads as `— LIFE · Q · UEST —` on every surface.
+
 The supplied files carried their own `:root` defaults and class fills. Those
 were removed when the art was brought in (`logo/` files have no `<style>` and no
 `fill` attributes) because the theme owns the inks now: Forge's night palette

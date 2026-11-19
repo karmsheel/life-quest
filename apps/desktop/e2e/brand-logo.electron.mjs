@@ -54,7 +54,7 @@ const REPORT = path.join(artifactsDir, "brand-logo.json");
 const WINDOW = { width: 1280, height: 900 };
 
 /** The supplied Modern lockup's own canvas: the default, and the first check. */
-const DEFAULT_VIEWBOX = "144.19 39 847 161.78";
+const DEFAULT_VIEWBOX = "42.2 39 1051 161.78";
 
 const failures = [];
 let step = "boot";
@@ -518,7 +518,7 @@ async function main() {
       `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup's L sits on the line the wing switcher's H and the page icons share",
+      "the lockup's leading rule sits on the line the wing switcher's H and the page icons share",
       Boolean(brand && expanded.firstLink && expanded.wings && expanded.wingText && expanded.icon) &&
         expanded.rowPad !== null &&
         Math.abs(brand.box.left - expanded.wingText.left) <= 1.5 &&
@@ -537,7 +537,7 @@ async function main() {
     check(
       "the lockup keeps the artwork's aspect ratio",
       Boolean(brand) &&
-        Math.abs(brand.box.width / brand.box.height - 847 / 161.78) < 0.15,
+        Math.abs(brand.box.width / brand.box.height - 1051 / 161.78) < 0.15,
       `box ${JSON.stringify(brand?.box)} ratio ${brand ? (brand.box.width / brand.box.height).toFixed(3) : "—"}`,
     );
     check(
@@ -706,7 +706,7 @@ async function main() {
       "the rail behind the sheet repaints to Classic on the press",
       Boolean(afterPick.brand) &&
         afterPick.brand.variant === "classic" &&
-        afterPick.brand.viewBox === "144.41 38 757 173.77",
+        afterPick.brand.viewBox === "34.4 38 977 173.77",
       `rail brand ${JSON.stringify(afterPick.brand)}`,
     );
 

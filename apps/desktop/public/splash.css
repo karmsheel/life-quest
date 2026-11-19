@@ -78,6 +78,14 @@
   fill: var(--uest-color);
 }
 
+.splash__logo .life-rule {
+  fill: var(--life-color);
+}
+
+.splash__logo .uest-rule {
+  fill: var(--uest-color);
+}
+
 [data-logo="modern"] .splash__logo-variant[data-splash-logo="modern"],
 [data-logo="athletic"] .splash__logo-variant[data-splash-logo="athletic"],
 [data-logo="classic"] .splash__logo-variant[data-splash-logo="classic"],
