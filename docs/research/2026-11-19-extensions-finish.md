@@ -1,13 +1,13 @@
-# Extensions, finished — S1 trust: history and import
+# Extensions, finished — S1 trust and S2 studio
 
 - **Date:** 2026-11-19
 - **Branch:** `feat/extensions-finish` (off master `d2b11a2`)
-- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7; interfaces in
-  `.scratch/extensions-finish/contract.md` §3.
-- **Decision it serves:** the epic's operator side — *confidence*. The look was already
-  authorable as data; what was missing is that an edit could be taken back and a theme file
-  could move between profiles without opening a folder. S1 adds the two gestures, not a
-  vocabulary.
+- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7 (S1) and §8
+  (S2); interfaces in `.scratch/extensions-finish/contract.md` §3 (S1) and §4 (S2).
+- **Decision it serves:** the epic's operator side — *confidence* and *authorship*. S1 made
+  an edit safe to take back and a theme file portable between profiles; S2 made the
+  composition authorable without JSON. Neither slice adds a schema field: both are gestures
+  over the data model the ladder already proved.
 
 ## S1 result (2026-11-19)
 
@@ -113,10 +113,125 @@ the artifact above exists.
 - `theme:list` intentionally stays history-blind: the store's history helpers are the only
   reader of `theme-history/`.
 
+## S2 result (2026-11-19)
+
+**The claim:** "An operator can build a page composition — widgets on regions, layout,
+labels — without opening JSON, see it live, and save exactly what the contract allows."
+
+### What shipped
+
+**Two editor tabs.** The existing editor gained **Fields** (`extension-editor-tab-fields`,
+the default when the raw parses) and **JSON** (`extension-editor-tab-json`, the existing
+textarea). A tab switch keeps the draft: Fields → JSON serialises the draft into the textarea
+(pretty, 2-space + newline), and JSON → Fields parses the text back only when it is valid —
+otherwise the parser's error is shown and the editor stays on JSON. A file that does not
+parse opens on JSON, because the studio has nothing valid to paint.
+
+**The Fields view** (`extension-studio`) is three parts:
+
+1. **Schematic** — the shell drawn as the five closed regions (`page.masthead`,
+   `page.footer`, `page.orbit`, `rail.top`, `rail.footer`), each with a chip per widget placed
+   there; a chip press selects that widget. It is decorative (`aria-hidden`) and not a canvas:
+   no drag, no free placement. A live `role="status"` summary reads the surface back —
+   *"3 widgets: 1 badge, 1 quick action, 1 brief."*
+2. **Widget form** — the selected widget's type (the eight closed types), region (the five),
+   label (≤ 32) and the fields that type needs: count source, text source, tone, route,
+   caption (≤ 48), list limit (1–5), clock format (24h/12h), meter maximum. Controls offer
+   legal values only, and a new widget starts with a default for its required field, so the
+   form cannot assemble a widget the parser would call incomplete. Tones are named families,
+   never colours.
+3. **Layout controls** — `stack`, `grid` (`columns` 2 or 3) or `polar` (`radius`
+   `tight`/`default`/`wide`), with the region rules said inline: `page.orbit` only draws in
+   polar, and a quick action needs a route. Hints, not silent drops.
+
+**Add / remove / reorder.** Add takes a type and a region, appends a widget with that type's
+defaults, and is disabled at `MAX_COMPOSITION_WIDGETS` (8) with its reason shown. Each widget
+can be removed, or moved up/down; array order inside a region is the order `stack` and
+`polar` draw. The studio writes the same closed vocabulary as the JSON tab — no new region,
+no new type, no new field, no free CSS.
+
+**The draft rule (D2).** The provider gained `setDraftTheme(theme | null)` and a
+`draftDiscarded` counter. Entering Fields, changing a field, or switching tabs rebuilds the
+schema-only draft and paints it: `paintTheme(draft)` with no write, no keep, no preview and
+**no preview bar**. If a preview is already on screen it is cleared without repainting the
+kept theme first. The draft is held in page state; `keptFile`, the localStorage overrides and
+the preview state are untouched. **Cancel** / closing the editor calls `setDraftTheme(null)`,
+which paints the kept theme back and writes nothing — a true undo. **Save** serialises the
+draft and calls the existing `writeThemeFile`, so the bytes go through the S1 store's parse
+gate and the write then previews through the ten-second watcher gate like any save; the
+studio clears draft mode after a successful save (the new preview is kept by the operator,
+not by the studio). If an external write lands while editing, `loadThemeFiles` abandons the
+draft first, paints the kept theme, bumps `draftDiscarded`, and the page shows the notice
+*"the file changed on disk — your draft was discarded."* The studio never fights a newer file.
+
+No backend work, no IPC channel, no persistence and no new route/tab/rail row: the studio is
+a UI over the contract the ladder already proved, and `parseThemeFile` is still the only
+referee.
+
+### Rig evidence (new section `12j`)
+
+The theme rig gains a section after `12i` that carries the slice's claims:
+
+- `the-studio-paints-a-draft-before-any-write` — open Edit on a valid file → Fields; add a
+  badge to `page.masthead`; the badge renders in the shell **while the file bytes on disk are
+  unchanged and no preview bar appears**.
+- `the-studio-saves-the-composition-it-built` — add a quick action to `page.orbit`, switch to
+  polar (or grid with 3 columns), change a label, Save; the file on disk holds exactly the
+  draft's composition, the preview bar appears, and the widgets render.
+- `cancelling-a-draft-leaves-the-file-and-shell-alone` — reopen, change a label, Cancel; the
+  disk bytes are unchanged and the shell is back on the kept look.
+- `the-composition-editor-obeys-the-contract` — Add is disabled at eight widgets, the label
+  input caps at 32, the region list is the five names, and the saved file carries no JSON
+  keys outside the schema.
+
+Artifact: `apps/desktop/e2e/artifacts/themes-v2-studio.png` — the Fields tab with the
+schematic and a visible draft, captured with `capturePage` at 1280×800. Report:
+`apps/desktop/e2e/artifacts/themes-v2.json`, wrapped by
+`apps/desktop/tests/theme-chrome-e2e.test.ts` (artifact key and existence loop added with
+the section).
+
+**Check count:** the report is the source of truth. The gate started from the S1 run's **115**
+checks; `12j` adds the S2 checks and the measured total is **119 checks, all passing**
+(`report.pass: true`, `failures: []`) in the slice's authoritative run on 2026-11-19, with the
+existing 12g/12i checks still green after the tab adaptation. A skipped rig is evidence of
+nothing: the run counts only when `pass: true` and the artifact above exists.
+
+### Risks, and how the rig falsifies them
+
+| Risk | Falsified by |
+| --- | --- |
+| The draft is accidentally persisted or kept | disk bytes unchanged while drafting; no preview bar; `keptFile` unchanged; Cancel then reopen leaves file and shell alone |
+| The draft fights an external write | the watcher abandons the draft with the notice instead of painting over the newer file; the normal preview path is unchanged |
+| The studio writes schema drift | saved-file key audit (no keys outside the schema); the draft is assembled from schema keys only; Save still runs `parseThemeFile` |
+| Caps are violated by the UI | Add disabled at 8 with the reason; label input max 32; type/region lists are the closed sets; the saved file parses |
+| Drafting disturbs Settings overrides | draft mode never touches the localStorage overrides, `keptFile` or the preview bar; existing Appearance checks stay green in the same run |
+
+### Limits — what S2 does not claim
+
+- Fields authors the **composition** only. Palette, chrome, material and scene stay in the
+  JSON tab until S3.
+- The schematic is decorative: no drag, no free positioning, no theme-defined region, no
+  custom layout. Order within a region is changed with up/down, not by dragging.
+- The draft is valid by construction (closed sets and caps), but Save is still disabled for a
+  draft that fails `parseThemeFile` — the studio does not get its own write path.
+- A composition must hold 1–8 widgets: the parser refuses an empty list, so a draft that
+  removes every widget cannot be saved from the studio (the JSON tab can remove the block).
+- No new persistence, no new schema field, no new route/tab/rail row, no unit tests — the
+  rig is the evidence.
+
+### Open notes
+
+- Default tab is Fields when the file parses, JSON otherwise (spec §14.4).
+- An external write abandons the draft rather than merging; that is deliberate — the file the
+  operator can see on disk wins over an unsaved edit.
+- The studio's canvas is a map, not a direct-manipulation surface; drag authoring remains
+  outside the epic (spec §7 non-goals).
+- No animation was added, so reduced motion has nothing to stop; every control is labelled and
+  keyboard operable, and the schematic is announced through its summary rather than as a
+  control.
+
 ## What comes next (this doc is appended per slice)
 
-- **S2 Studio: composition** — author the composition layer visually (Fields tab, live draft
-  paint, no JSON), saving the existing schema through the same preview gate.
 - **S3 Studio: the rest of the look** — chrome, material, scene and palette visually, with
   the palette verdict refusing unsafe colours before a write.
 - **S4 Gallery** — three more bundled showcase themes, seeded versionally so a fresh profile

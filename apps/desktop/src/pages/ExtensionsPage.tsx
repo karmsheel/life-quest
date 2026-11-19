@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Blocks, FolderOpen, Pencil, Plus, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   useTheme,
   type ThemeHistoryVersion,
 } from "@/components/theme/ThemeProvider";
+import { CompositionStudio } from "@/components/theme/studio/CompositionStudio";
 import {
   parseThemeFile,
   resolveChrome,
@@ -100,7 +106,33 @@ function relativeTime(savedAt: string): string {
   });
 }
 
-type Editing = { file: string; raw: string; saving: boolean };
+type Editing = {
+  file: string;
+  raw: string;
+  saving: boolean;
+  /**
+   * Which editor the file is open in. Fields is the studio (default when the
+   * file parses); JSON is the raw editor that has always been here.
+   */
+  tab: EditorTab;
+};
+
+type EditorTab = "fields" | "json";
+
+/**
+ * The parsed theme the studio can edit, or `null` when the file does not parse
+ * and only the JSON tab can open. `parseThemeFile` is the shared gate, so the
+ * draft starts as exactly what the shell would wear — and carries only the
+ * schema's own keys, never the raw file's.
+ */
+function themeOfRaw(raw: string): ThemeFile | null {
+  try {
+    const parsed = parseThemeFile(JSON.parse(raw));
+    return parsed.ok ? parsed.theme : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function ExtensionsPage() {
   const {
@@ -119,6 +151,8 @@ export default function ExtensionsPage() {
     readThemeHistory,
     restoreThemeVersion,
     importTheme,
+    setDraftTheme,
+    draftDiscarded,
   } = useTheme();
 
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -134,6 +168,16 @@ export default function ExtensionsPage() {
   const [history, setHistory] = useState<ThemeHistoryVersion[] | null>(null);
   const [historyFailed, setHistoryFailed] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  /**
+   * The studio's working theme. The page owns it and hands every change to the
+   * provider's `setDraftTheme`, which paints it without writing, keeping or
+   * previewing. `null` means the JSON tab — or a file that does not parse.
+   */
+  const [draft, setDraft] = useState<ThemeFile | null>(null);
+  /** True after an external write took the draft away; the editor says why. */
+  const [draftLost, setDraftLost] = useState(false);
+  const fieldsTabRef = useRef<HTMLButtonElement | null>(null);
+  const jsonTabRef = useRef<HTMLButtonElement | null>(null);
   const refreshedOnMount = useRef(false);
 
   useEffect(() => {
@@ -181,6 +225,37 @@ export default function ExtensionsPage() {
       cancelled = true;
     };
   }, [editingFile, readThemeHistory]);
+
+  /*
+   * An external write abandons the draft in the provider (the bytes under the
+   * editor are no longer the ones it is editing). The page cannot keep drafting
+   * over them: say what happened, drop its copy, and show the landed bytes in
+   * the JSON tab so the operator can look and re-enter Fields deliberately.
+   */
+  const discardedRef = useRef(draftDiscarded);
+  useEffect(() => {
+    if (draftDiscarded === discardedRef.current) return;
+    discardedRef.current = draftDiscarded;
+    setDraftLost(true);
+    setDraft(null);
+    setEditing((current) => (current ? { ...current, tab: "json" } : current));
+    if (editingFile === null) return;
+    let cancelled = false;
+    void readThemeFile(editingFile).then((raw) => {
+      if (cancelled || raw === null) return;
+      setEditing((current) =>
+        current && current.file === editingFile ? { ...current, raw } : current,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftDiscarded, editingFile, readThemeFile]);
+
+  // Leaving the page mid-draft must not leave the shell wearing a draft no
+  // editor owns any more. A save's own preview survives: ending draft mode
+  // never repaints over a live preview.
+  useEffect(() => () => setDraftTheme(null), [setDraftTheme]);
 
   const validation = editing === null ? null : validate(editing.raw);
 
@@ -250,10 +325,61 @@ export default function ExtensionsPage() {
   async function onEdit(file: string) {
     setError(null);
     setStatus(null);
+    setDraftLost(false);
     const raw = await readThemeFile(file);
     if (raw === null) return;
-    setEditing({ file, raw, saving: false });
+    // The parsed file is the draft's starting point. Opening the editor is the
+    // moment a preview (if one is counting down) becomes a draft instead: the
+    // provider cancels it without flashing the kept look in between.
+    const parsed = themeOfRaw(raw);
+    setEditing({ file, raw, saving: false, tab: parsed ? "fields" : "json" });
+    setDraft(parsed);
+    // `null` also ends a draft left over from a previously opened file; a file
+    // that does not parse has no fields view, so the shell goes back to kept.
+    setDraftTheme(parsed);
   }
+
+  /** Close the editor, ending any draft. Cancel is a true undo of the paint. */
+  function closeEditor() {
+    setDraftTheme(null);
+    setDraft(null);
+    setDraftLost(false);
+    setEditing(null);
+  }
+
+  /**
+   * Fields ⇄ JSON. The draft survives the switch: going to JSON serialises the
+   * draft (pretty, two spaces and a newline) so the textarea shows what the
+   * shell is wearing; coming back parses the textarea, but only when it is
+   * valid — an invalid raw stays on JSON where the status line names the field.
+   */
+  function switchTab(tab: EditorTab): boolean {
+    if (!editing || editing.tab === tab) return true;
+    if (tab === "json") {
+      setEditing({
+        ...editing,
+        tab,
+        raw: draft ? `${JSON.stringify(draft, null, 2)}\n` : editing.raw,
+      });
+      return true;
+    }
+    const parsed = themeOfRaw(editing.raw);
+    if (!parsed) return false;
+    setDraft(parsed);
+    setDraftTheme(parsed);
+    setEditing({ ...editing, tab: "fields" });
+    return true;
+  }
+
+  const focusTab = (tab: EditorTab) =>
+    (tab === "fields" ? fieldsTabRef : jsonTabRef).current?.focus();
+
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const target: EditorTab = editing?.tab === "fields" ? "json" : "fields";
+    focusTab(switchTab(target) ? target : "json");
+  };
 
   async function onSave() {
     if (!editing || validation === null || !validation.ok) return;
@@ -263,8 +389,42 @@ export default function ExtensionsPage() {
       setEditing({ ...editing, saving: false });
       return;
     }
+    // The write left its own preview running; ending draft mode must not
+    // repaint the kept theme over it (the provider knows the difference).
+    setDraftTheme(null);
+    setDraft(null);
+    setDraftLost(false);
     setStatus(`Saved ${editing.file}.`);
     setEditing(null);
+  }
+
+  /**
+   * Save what the studio built. The draft is serialised with the schema's own
+   * keys and written through the same main-side gate as the JSON editor; the
+   * write then previews through the watcher, and only Save has touched disk.
+   */
+  async function onStudioSave() {
+    if (!editing || !draft) return;
+    setEditing({ ...editing, saving: true });
+    const written = await writeThemeFile(
+      editing.file,
+      `${JSON.stringify(draft, null, 2)}\n`,
+    );
+    if (!written) {
+      setEditing({ ...editing, saving: false });
+      return;
+    }
+    setDraftTheme(null);
+    setDraft(null);
+    setDraftLost(false);
+    setStatus(`Saved ${editing.file}.`);
+    setEditing(null);
+  }
+
+  /** Paint the theme the studio just built; the provider writes nothing. */
+  function onDraftChange(next: ThemeFile) {
+    setDraft(next);
+    setDraftTheme(next);
   }
 
   async function onImport() {
@@ -485,51 +645,124 @@ export default function ExtensionsPage() {
                 Editing <code>{editing.file}</code>
               </h2>
               <p className="muted">
-                Saved files are re-validated in the main process; the refusal
-                names the field. A save previews through the same ten-second gate
-                as a companion write.
+                Fields is the visual editor; JSON is the raw file. Saved files
+                are re-validated in the main process, the refusal names the
+                field, and a save previews through the same ten-second gate as a
+                companion write.
               </p>
             </div>
             <Button
               variant="ghost"
               data-testid="extension-editor-cancel"
-              onClick={() => setEditing(null)}
+              onClick={closeEditor}
             >
               <X size={13} aria-hidden />
               Close
             </Button>
           </div>
-          <textarea
-            className="extensions-page__editor-raw"
-            spellCheck={false}
-            value={editing.raw}
-            data-testid="extension-editor-raw"
-            aria-label={`Raw JSON of ${editing.file}`}
-            onChange={(event) =>
-              setEditing({ ...editing, raw: event.target.value })
-            }
-          />
-          <p
-            className={validation?.ok ? "extensions-page__valid" : "form-error"}
-            role={validation?.ok ? "status" : "alert"}
-            data-testid="extension-editor-status"
+
+          <div
+            className="extensions-page__tabs"
+            role="tablist"
+            aria-label="Editor view"
           >
-            {validation === null
-              ? ""
-              : validation.ok
-                ? `Valid extension — ${validation.label}${validation.widgets === null ? "" : `, ${validation.widgets} widgets`}.`
-                : validation.error}
-          </p>
-          <div className="extensions-page__editor-actions">
-            <Button
-              variant="primary"
-              data-testid="extension-editor-save"
-              disabled={!validation?.ok || editing.saving}
-              onClick={() => void onSave()}
+            <button
+              ref={fieldsTabRef}
+              type="button"
+              role="tab"
+              aria-selected={editing.tab === "fields"}
+              tabIndex={editing.tab === "fields" ? 0 : -1}
+              className={`extensions-page__tab${editing.tab === "fields" ? " is-active" : ""}`}
+              data-testid="extension-editor-tab-fields"
+              onClick={() => {
+                if (!switchTab("fields")) focusTab("json");
+              }}
+              onKeyDown={onTabKeyDown}
             >
-              {editing.saving ? "Saving…" : "Save"}
-            </Button>
+              Fields
+            </button>
+            <button
+              ref={jsonTabRef}
+              type="button"
+              role="tab"
+              aria-selected={editing.tab === "json"}
+              tabIndex={editing.tab === "json" ? 0 : -1}
+              className={`extensions-page__tab${editing.tab === "json" ? " is-active" : ""}`}
+              data-testid="extension-editor-tab-json"
+              onClick={() => switchTab("json")}
+              onKeyDown={onTabKeyDown}
+            >
+              JSON
+            </button>
           </div>
+
+          {draftLost ? (
+            <p
+              className="form-error"
+              role="alert"
+              data-testid="studio-draft-discarded"
+            >
+              The file changed on disk — your draft was discarded. The landed
+              bytes are in the JSON tab; switch back to Fields to edit them.
+            </p>
+          ) : null}
+
+          {editing.tab === "fields" ? (
+            <div role="tabpanel" aria-label="Fields editor">
+              {draft ? (
+                <CompositionStudio
+                  draft={draft}
+                  onChange={onDraftChange}
+                  onSave={() => void onStudioSave()}
+                  onCancel={closeEditor}
+                  saving={editing.saving}
+                />
+              ) : (
+                <p className="extensions-page__empty">
+                  This file does not parse, so there is no fields view to draw.
+                  Fix it in the JSON tab and switch back to Fields once it is
+                  valid.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div role="tabpanel" aria-label="JSON editor">
+              <textarea
+                className="extensions-page__editor-raw"
+                spellCheck={false}
+                value={editing.raw}
+                data-testid="extension-editor-raw"
+                aria-label={`Raw JSON of ${editing.file}`}
+                onChange={(event) =>
+                  setEditing({ ...editing, raw: event.target.value })
+                }
+              />
+              <p
+                className={
+                  validation?.ok ? "extensions-page__valid" : "form-error"
+                }
+                role={validation?.ok ? "status" : "alert"}
+                data-testid="extension-editor-status"
+              >
+                {validation === null
+                  ? ""
+                  : validation.ok
+                    ? `Valid extension — ${validation.label}${validation.widgets === null ? "" : `, ${validation.widgets} widgets`}.`
+                    : validation.error}
+              </p>
+              <div className="extensions-page__editor-actions">
+                <Button
+                  variant="primary"
+                  data-testid="extension-editor-save"
+                  disabled={!validation?.ok || editing.saving}
+                  onClick={() => void onSave()}
+                >
+                  {editing.saving ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <section
             className="extensions-page__history"
             aria-label={`History of ${editing.file}`}

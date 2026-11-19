@@ -105,6 +105,7 @@ const EXTENSIONS_OFF_PNG = path.join(
   "themes-v2-extensions-off.png",
 );
 const TRUST_PNG = path.join(artifactsDir, "themes-v2-trust.png");
+const STUDIO_PNG = path.join(artifactsDir, "themes-v2-studio.png");
 
 const failures = [];
 const checks = [];
@@ -553,6 +554,62 @@ const SAMPLE = `(async () => {
     ),
     importStatus:
       document.querySelector('[data-testid="extensions-status"]')?.textContent?.trim() ?? null,
+    // S2 Studio: the tab the editor opened on, and the composition editor's own
+    // surface — chips, offers, draft paint and verdict.
+    editorTab: (() => {
+      const fields = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      const json = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      if (!fields || !json) return null;
+      if (fields.getAttribute("aria-selected") === "true") return "fields";
+      if (json.getAttribute("aria-selected") === "true") return "json";
+      return null;
+    })(),
+    studioWidgetCount: (() => {
+      const studio = document.querySelector('[data-testid="extension-studio"]');
+      if (!studio) return null;
+      return studio.querySelectorAll('[data-testid="studio-widget-chip"]').length;
+    })(),
+    studioOffers: (() => {
+      const studio = document.querySelector('[data-testid="extension-studio"]');
+      if (!studio) return null;
+      const optionValues = (testId) => {
+        const select = studio.querySelector('[data-testid="' + testId + '"]');
+        if (!select) return null;
+        return [...select.querySelectorAll("option")].map((option) => option.value);
+      };
+      const addButton = studio.querySelector('[data-testid="studio-add-widget"]');
+      const addNote = studio.querySelector('[data-testid="studio-add-note"]');
+      const labelInput = studio.querySelector('[data-testid="studio-widget-label"]');
+      return {
+        regions: optionValues("studio-add-region"),
+        types: optionValues("studio-add-type"),
+        labelMaxLength: labelInput ? labelInput.maxLength : null,
+        addDisabled: Boolean(addButton && addButton.disabled),
+        addNote: addNote ? (addNote.textContent || "").trim() : null,
+        regionIds: [...studio.querySelectorAll('[data-testid^="studio-region-"]')].map(
+          (region) => region.getAttribute("data-testid"),
+        ),
+        layouts: ["studio-layout-stack", "studio-layout-grid", "studio-layout-polar"].filter(
+          (id) => Boolean(studio.querySelector('[data-testid="' + id + '"]')),
+        ),
+        summary:
+          (studio.querySelector('[data-testid="studio-summary"]')?.textContent ?? "").trim() || null,
+        chips: [...studio.querySelectorAll('[data-testid="studio-widget-chip"]')].map((chip) => ({
+          index: Number(chip.getAttribute("data-index")),
+          selected:
+            chip.getAttribute("aria-pressed") === "true" ||
+            chip.getAttribute("data-selected") === "true",
+        })),
+      };
+    })(),
+    draftPainted: (() => {
+      const regions = [...document.querySelectorAll("[data-composition-region]")];
+      return regions.some((region) =>
+        Boolean(region.querySelector('[data-testid="composition-widget"]')),
+      );
+    })(),
+    studioStatus:
+      document.querySelector('[data-testid="studio-status"]')?.textContent?.trim() ?? null,
   };
 })()`;
 
@@ -3921,6 +3978,25 @@ async function main() {
     }
     return false;
   };
+  /**
+   * S2: a parseable file now opens the editor on the Fields tab, so the raw
+   * JSON ids (`extension-editor-raw` / `-status` / `-save`) only exist once the
+   * JSON tab is chosen. Every surviving check that drove the textarea takes
+   * this step first; the History section stays visible on both tabs.
+   */
+  const openJsonTab = async () => {
+    const clicked = await evaluate(`(() => {
+      const tab = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      if (!tab) return false;
+      tab.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor-raw"]'))`,
+      10_000,
+    );
+  };
   await evaluate(`(() => {
     const link = [...document.querySelectorAll(".nav-rail__link")].find((el) =>
       (el.textContent ?? "").includes("Extensions"),
@@ -3991,6 +4067,9 @@ async function main() {
   const editorOpen = await untilTrue(
     `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
   );
+  // S2: the editor opens on Fields when the file parses; the textarea lives on
+  // the JSON tab, so the existing text seam takes that tab first.
+  const editorJsonTab = await openJsonTab();
   const validBefore = await untilTrue(
     `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension")`,
   );
@@ -4041,6 +4120,7 @@ async function main() {
       createdOnDisk?.label === "Rig Workshop" &&
       (createdPreview?.previewText ?? "").includes("rig-workshop.json") &&
       editorOpen === true &&
+      editorJsonTab === true &&
       validBefore === true &&
       refusedInvalid === true &&
       saveDisabled === true &&
@@ -4052,6 +4132,7 @@ async function main() {
       createdLabel: createdOnDisk?.label,
       previewed: (createdPreview?.previewText ?? "").slice(0, 80),
       editorOpen,
+      editorJsonTab,
       validBefore,
       refusedInvalid,
       saveDisabled,
@@ -4225,10 +4306,14 @@ async function main() {
       return true;
     })()`);
     if (!clicked) return false;
-    return untilTrue(
+    const open = await untilTrue(
       `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
       10_000,
     );
+    if (!open) return false;
+    // S2: the editor opens on Fields; the saves below drive the raw textarea,
+    // which lives on the JSON tab. History stays visible on both tabs.
+    return openJsonTab();
   };
   const setTrustRaw = async (text) =>
     evaluate(`(() => {
@@ -4647,6 +4732,575 @@ async function main() {
     }),
   );
 
+  // ── 12j: Studio — the composition is authored visually, as a draft ───────
+  // Fields must paint a draft without writing, keeping or previewing; Save must
+  // write exactly the draft and preview it like any write; Cancel must be a true
+  // undo; and the controls may only offer the closed vocabulary, so the saved
+  // file carries no key the theme schema does not own. The target is a profile
+  // file the rig writes for this section (not the operator's, not a showcase).
+  const studioFile = "rig-studio.json";
+  const studioPath = path.join(themesDir, studioFile);
+  fs.writeFileSync(
+    studioPath,
+    `${JSON.stringify(
+      { name: "rig-studio", label: "Rig Studio", material: { radius: "soft" } },
+      null,
+      2,
+    )}\n`,
+  );
+  const studioSeededBytes = fs.readFileSync(studioPath);
+  const studioRow = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-rig-studio"]'))`,
+    15_000,
+  );
+  const openStudioEditor = async () => {
+    const clicked = await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-rig-studio"] [data-testid="extension-edit"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    const open = await untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      10_000,
+    );
+    if (!open) return false;
+    // A parseable file opens on Fields; make sure, then wait for the studio.
+    // Entering Fields also cancels the watcher's preview of the seed write.
+    await evaluate(`(() => {
+      const tab = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
+      return true;
+    })()`);
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+      10_000,
+    );
+  };
+  const setStudioSelect = async (testId, value) =>
+    evaluate(`(() => {
+      const select = document.querySelector('[data-testid="${testId}"]');
+      if (!select) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        "value",
+      ).set;
+      setter.call(select, ${JSON.stringify(value)});
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+  const setStudioValue = async (testId, value) =>
+    evaluate(`(() => {
+      const control = document.querySelector('[data-testid="${testId}"]');
+      if (!control) return false;
+      const proto =
+        control.tagName === "TEXTAREA"
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+      setter.call(control, ${JSON.stringify(value)});
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+  const addStudioWidget = async (type, region, expectedCount) => {
+    const typeSet = await setStudioSelect("studio-add-type", type);
+    const regionSet = await setStudioSelect("studio-add-region", region);
+    const added = await click("studio-add-widget");
+    if (!(typeSet === true && regionSet === true && added === true)) {
+      return false;
+    }
+    const state = await waitFor(
+      (s) => s.studioWidgetCount === expectedCount,
+      10_000,
+    );
+    return state?.studioWidgetCount === expectedCount;
+  };
+  const clickStudioChip = async (index) =>
+    evaluate(`(() => {
+      const chip = document.querySelector('[data-testid="studio-widget-chip"][data-index="${index}"]');
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`);
+  const stableKeys = (value) => {
+    if (Array.isArray(value)) return value.map(stableKeys);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, stableKeys(value[key])]),
+      );
+    }
+    return value;
+  };
+
+  // ── 12j.1: a draft paints the shell without a write ─────────────────────
+  const studioOpened = await openStudioEditor();
+  const studioTab = studioOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.preview === false,
+        15_000,
+      )
+    : null;
+  const shellWidgetsBefore = await evaluate(
+    `document.querySelectorAll('[data-testid="composition-widget"]').length`,
+  );
+  const diskBeforeDraft = fs.readFileSync(studioPath);
+  const badgeAdded = studioOpened
+    ? await addStudioWidget("badge", "page.masthead", 1)
+    : false;
+  const draftState = badgeAdded
+    ? await waitFor(
+        (s) => s.draftPainted === true && s.studioWidgetCount === 1,
+        10_000,
+      )
+    : null;
+  const draftNoPreview = await evaluate(
+    `!document.querySelector('[data-testid="theme-preview-bar"]')`,
+  );
+  const diskAfterDraft = fs.readFileSync(studioPath);
+  const draftKeptDisk =
+    studioSeededBytes.equals(diskAfterDraft) && diskBeforeDraft.equals(diskAfterDraft);
+  check(
+    "the-studio-paints-a-draft-before-any-write",
+    studioRow === true &&
+      studioOpened === true &&
+      studioTab?.editorTab === "fields" &&
+      shellWidgetsBefore === 0 &&
+      badgeAdded === true &&
+      draftState?.draftPainted === true &&
+      draftState?.studioWidgetCount === 1 &&
+      draftNoPreview === true &&
+      draftKeptDisk === true,
+    JSON.stringify({
+      studioRow,
+      studioOpened,
+      tab: studioTab?.editorTab,
+      shellWidgetsBefore,
+      badgeAdded,
+      draft: {
+        painted: draftState?.draftPainted,
+        widgets: draftState?.studioWidgetCount,
+        summary: draftState?.studioOffers?.summary,
+      },
+      noPreview: draftNoPreview,
+      diskUnchanged: draftKeptDisk,
+    }),
+  );
+
+  // The artifact: the shipped Fields editor framed from the tab strip down —
+  // Fields selected, the five schematic regions with their chips, the live
+  // summary and the layout controls — with the draft the studio has just painted
+  // in the shell. It is taken in this stack-layout draft state on purpose: the
+  // polar draft's 16rem masthead band pushes the summary and controls below a
+  // 1280x800 frame, and the claim is the editor, not the layout. Aligning the
+  // tab strip to the scroll-port top spends the frame on the claim; a centred
+  // crop showed a mid-form sliver instead.
+  await evaluate(`(() => {
+    const editor = document.querySelector('[data-testid="extension-editor"]');
+    const tabs = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+    if (!editor || !tabs) return false;
+    const scroller = editor.closest(".shell__content");
+    if (scroller) {
+      const offset =
+        tabs.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTop += offset - 12;
+    } else {
+      editor.scrollIntoView({ block: "start" });
+    }
+    return true;
+  })()`);
+  await sleep(400);
+  const studioShot = await win.webContents.capturePage();
+  fs.writeFileSync(STUDIO_PNG, studioShot.toPNG());
+
+  // ── 12j.2: build the composition, save it ───────────────────────────────
+  // A quick action in the orbit needs the polar layout; the layout switch is
+  // the control that makes the draft valid again, and the label edit is the
+  // authored word the saved file must carry.
+  const orbitAdded = studioOpened
+    ? await addStudioWidget("quickAction", "page.orbit", 2)
+    : false;
+  const polarClicked = await click("studio-layout-polar");
+  const polarReady = polarClicked
+    ? await waitFor(
+        (s) =>
+          s.compositionOrbit?.layout === "polar" && s.studioWidgetCount === 2,
+        12_000,
+      )
+    : null;
+  const saveEnabledAfterPolar = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const badgeChipClicked = await clickStudioChip(0);
+  const labelTyped = badgeChipClicked
+    ? await setStudioValue("studio-widget-label", "Rig Badge One")
+    : false;
+  const draftLabelPainted = labelTyped
+    ? await waitFor(
+        (s) => (s.compositionMasthead?.labels ?? []).includes("Rig Badge One"),
+        10_000,
+      )
+    : null;
+  // Fields→JSON serialises the draft; capture that text as the draft of record,
+  // then return to Fields and let Save write the draft through the same path.
+  await click("extension-editor-tab-json");
+  const draftRawReady = await untilTrue(
+    `(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      try {
+        const parsed = JSON.parse(area.value);
+        return Boolean(
+          parsed &&
+            parsed.composition &&
+            Array.isArray(parsed.composition.widgets) &&
+            parsed.composition.widgets.length === 2,
+        );
+      } catch {
+        return false;
+      }
+    })()`,
+    10_000,
+  );
+  const draftRaw = draftRawReady
+    ? await evaluate(
+        `document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? ""`,
+      )
+    : "";
+  let draftTheme = null;
+  try {
+    draftTheme = JSON.parse(draftRaw);
+  } catch {
+    draftTheme = null;
+  }
+  const backToFields = await click("extension-editor-tab-fields");
+  const fieldsAgain = backToFields
+    ? await untilTrue(
+        `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+        10_000,
+      )
+    : false;
+  const saveReady = fieldsAgain
+    ? await untilTrue(
+        `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+        10_000,
+      )
+    : false;
+  const saveClicked = saveReady ? await click("studio-save") : false;
+  const savedPreview = saveClicked
+    ? await waitFor(
+        (s) =>
+          !s.editorTab &&
+          (s.previewText ?? "").includes(studioFile) &&
+          s.compositionOrbit?.layout === "polar" &&
+          (s.compositionMasthead?.labels ?? []).includes("Rig Badge One"),
+        20_000,
+      )
+    : null;
+  let savedStudio = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      savedStudio = JSON.parse(fs.readFileSync(studioPath, "utf8"));
+    } catch {
+      savedStudio = null;
+    }
+    if (savedStudio?.composition?.widgets?.length === 2) break;
+    await sleep(100);
+  }
+  const draftComposition = draftTheme?.composition ?? null;
+  const savedComposition = savedStudio?.composition ?? null;
+  const compositionEqualsDraft =
+    draftComposition !== null &&
+    savedComposition !== null &&
+    JSON.stringify(stableKeys(draftComposition)) ===
+      JSON.stringify(stableKeys(savedComposition));
+  const savedWidgets = savedComposition?.widgets ?? [];
+  const savedBadge = savedWidgets.find((widget) => widget.type === "badge");
+  const savedQuickAction = savedWidgets.find(
+    (widget) => widget.type === "quickAction",
+  );
+  const savedShapeOk =
+    savedComposition?.layout === "polar" &&
+    savedWidgets.length === 2 &&
+    savedBadge?.region === "page.masthead" &&
+    savedBadge?.label === "Rig Badge One" &&
+    savedQuickAction?.region === "page.orbit";
+  check(
+    "the-studio-saves-the-composition-it-built",
+    studioOpened === true &&
+      orbitAdded === true &&
+      polarClicked === true &&
+      polarReady?.compositionOrbit?.layout === "polar" &&
+      saveEnabledAfterPolar === true &&
+      badgeChipClicked === true &&
+      labelTyped === true &&
+      draftLabelPainted !== null &&
+      (draftLabelPainted?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge One",
+      ) &&
+      draftRawReady === true &&
+      backToFields === true &&
+      fieldsAgain === true &&
+      saveReady === true &&
+      saveClicked === true &&
+      (savedPreview?.previewText ?? "").includes(studioFile) &&
+      savedPreview?.compositionOrbit?.layout === "polar" &&
+      (savedPreview?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge One",
+      ) &&
+      compositionEqualsDraft === true &&
+      savedShapeOk === true,
+    JSON.stringify({
+      orbitAdded,
+      polarClicked,
+      polarLayout: polarReady?.compositionOrbit?.layout,
+      saveEnabledAfterPolar,
+      labelTyped,
+      labelPainted: draftLabelPainted?.compositionMasthead?.labels,
+      draftRawReady,
+      backToFields,
+      fieldsAgain,
+      saveReady,
+      saveClicked,
+      previewed: (savedPreview?.previewText ?? "").slice(0, 80),
+      savedPreviewLayout: savedPreview?.compositionOrbit?.layout,
+      compositionEqualsDraft,
+      draftComposition,
+      savedComposition,
+      savedShapeOk,
+    }),
+  );
+
+  // ── 12j.3: Cancel is a true undo ────────────────────────────────────────
+  const savedBytes = fs.readFileSync(studioPath);
+  const cancelOpened = await openStudioEditor();
+  const cancelReady = cancelOpened
+    ? await waitFor(
+        (s) =>
+          s.editorTab === "fields" &&
+          s.studioWidgetCount === 2 &&
+          s.preview === false,
+        15_000,
+      )
+    : null;
+  const badgeChipAgain = await clickStudioChip(0);
+  const cancelLabelTyped = badgeChipAgain
+    ? await setStudioValue("studio-widget-label", "Rig Badge Cancel")
+    : false;
+  const cancelDraftPainted = cancelLabelTyped
+    ? await waitFor(
+        (s) =>
+          (s.compositionMasthead?.labels ?? []).includes("Rig Badge Cancel"),
+        10_000,
+      )
+    : null;
+  const cancelClicked = await click("studio-cancel");
+  const cancelClosed = cancelClicked
+    ? await untilTrue(
+        `!document.querySelector('[data-testid="extension-editor"]')`,
+        10_000,
+      )
+    : false;
+  const diskAfterCancel = fs.readFileSync(studioPath);
+  const diskUnchangedOnCancel = savedBytes.equals(diskAfterCancel);
+  const backOnKept = cancelClosed
+    ? await waitFor(
+        (s) =>
+          s.draftPainted === false &&
+          !(s.compositionMasthead?.labels ?? []).includes("Rig Badge Cancel") &&
+          s.preview === false,
+        15_000,
+      )
+    : null;
+  const cancelHistory = await evaluate(
+    `window.lifequest.themeHistory(${JSON.stringify(studioFile)})`,
+  );
+  check(
+    "cancelling-a-draft-leaves-the-file-and-shell-alone",
+    cancelOpened === true &&
+      cancelReady?.studioWidgetCount === 2 &&
+      badgeChipAgain === true &&
+      cancelLabelTyped === true &&
+      cancelDraftPainted !== null &&
+      (cancelDraftPainted?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge Cancel",
+      ) &&
+      cancelClicked === true &&
+      cancelClosed === true &&
+      diskUnchangedOnCancel === true &&
+      backOnKept?.draftPainted === false &&
+      backOnKept?.kept === null &&
+      !(backOnKept?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge Cancel",
+      ) &&
+      cancelHistory?.ok === true &&
+      cancelHistory.value?.versions?.length === 1,
+    JSON.stringify({
+      cancelOpened,
+      widgets: cancelReady?.studioWidgetCount,
+      badgeChipAgain,
+      labelTyped: cancelLabelTyped,
+      draftLabelPainted: cancelDraftPainted?.compositionMasthead?.labels,
+      cancelClicked,
+      cancelClosed,
+      diskUnchanged: diskUnchangedOnCancel,
+      afterCancel: {
+        painted: backOnKept?.draftPainted,
+        kept: backOnKept?.kept,
+        labels: backOnKept?.compositionMasthead?.labels,
+        preview: backOnKept?.preview,
+      },
+      historyVersions: cancelHistory?.ok
+        ? cancelHistory.value.versions.length
+        : cancelHistory?.error,
+    }),
+  );
+
+  // ── 12j.4: the editor only offers the contract's closed vocabulary ──────
+  const contractOpened = await openStudioEditor();
+  const contractReady = contractOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.studioWidgetCount === 2,
+        15_000,
+      )
+    : null;
+  const fillerTypes = ["meter", "list", "avatar", "calendar", "clock", "brief"];
+  let fillerAdded = contractReady?.studioWidgetCount === 2;
+  for (let i = 0; i < fillerTypes.length && fillerAdded; i += 1) {
+    fillerAdded = await addStudioWidget(fillerTypes[i], "page.footer", 3 + i);
+  }
+  const offersAtEight = fillerAdded
+    ? await waitFor(
+        (s) =>
+          s.studioWidgetCount === 8 &&
+          s.studioOffers !== null &&
+          s.studioOffers.addDisabled === true,
+        15_000,
+      )
+    : null;
+  const regionNames = [
+    "page.masthead",
+    "page.footer",
+    "page.orbit",
+    "rail.top",
+    "rail.footer",
+  ];
+  const regionSetOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.regions ?? [])].sort()) ===
+    JSON.stringify([...regionNames].sort());
+  const regionIdsOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.regionIds ?? [])].sort()) ===
+    JSON.stringify(
+      regionNames.map((region) => `studio-region-${region}`).sort(),
+    );
+  const widgetTypes = [
+    "badge",
+    "meter",
+    "quickAction",
+    "avatar",
+    "list",
+    "clock",
+    "calendar",
+    "brief",
+  ];
+  const typeSetOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.types ?? [])].sort()) ===
+    JSON.stringify([...widgetTypes].sort());
+  const layoutsOk = ["stack", "grid", "polar"].every((layout) =>
+    (offersAtEight?.studioOffers?.layouts ?? []).includes(`studio-layout-${layout}`),
+  );
+  // No schema drift: the saved file may only carry keys the ThemeFile /
+  // ThemeComposition / CompositionWidget types own.
+  const themeSchemaKeys = [
+    "name",
+    "label",
+    "description",
+    "chrome",
+    "material",
+    "scene",
+    "composition",
+    "colors",
+    "darkColors",
+  ];
+  const compositionSchemaKeys = ["layout", "columns", "radius", "widgets"];
+  const widgetSchemaKeys = [
+    "type",
+    "region",
+    "label",
+    "tone",
+    "data",
+    "route",
+    "format",
+    "max",
+    "limit",
+    "caption",
+  ];
+  const badThemeKeys = Object.keys(savedStudio ?? {}).filter(
+    (key) => !themeSchemaKeys.includes(key),
+  );
+  const badCompositionKeys = Object.keys(savedStudio?.composition ?? {}).filter(
+    (key) => !compositionSchemaKeys.includes(key),
+  );
+  const badWidgetKeys = (savedStudio?.composition?.widgets ?? []).flatMap(
+    (widget) => Object.keys(widget).filter((key) => !widgetSchemaKeys.includes(key)),
+  );
+  const noSchemaDrift =
+    badThemeKeys.length === 0 &&
+    badCompositionKeys.length === 0 &&
+    badWidgetKeys.length === 0;
+  const contractCancel = await click("studio-cancel");
+  const contractClosed = contractCancel
+    ? await untilTrue(
+        `!document.querySelector('[data-testid="extension-editor"]')`,
+        10_000,
+      )
+    : false;
+  const diskAfterContract = fs.readFileSync(studioPath);
+  const contractDiskUnchanged = savedBytes.equals(diskAfterContract);
+  check(
+    "the-composition-editor-obeys-the-contract",
+    contractOpened === true &&
+      contractReady?.studioWidgetCount === 2 &&
+      fillerAdded === true &&
+      offersAtEight?.studioWidgetCount === 8 &&
+      offersAtEight?.studioOffers?.addDisabled === true &&
+      (offersAtEight?.studioOffers?.addNote ?? "").toLowerCase().includes("cap") &&
+      offersAtEight?.studioOffers?.labelMaxLength === 32 &&
+      regionSetOk === true &&
+      regionIdsOk === true &&
+      typeSetOk === true &&
+      layoutsOk === true &&
+      (offersAtEight?.studioOffers?.summary ?? "").includes("8 widgets") &&
+      noSchemaDrift === true &&
+      contractClosed === true &&
+      contractDiskUnchanged === true,
+    JSON.stringify({
+      contractOpened,
+      widgets: contractReady?.studioWidgetCount,
+      fillerAdded,
+      atEight: offersAtEight?.studioWidgetCount,
+      addDisabled: offersAtEight?.studioOffers?.addDisabled,
+      addNote: offersAtEight?.studioOffers?.addNote,
+      labelMaxLength: offersAtEight?.studioOffers?.labelMaxLength,
+      regions: offersAtEight?.studioOffers?.regions,
+      regionIds: offersAtEight?.studioOffers?.regionIds,
+      types: offersAtEight?.studioOffers?.types,
+      layouts: offersAtEight?.studioOffers?.layouts,
+      summary: offersAtEight?.studioOffers?.summary,
+      regionSetOk,
+      regionIdsOk,
+      typeSetOk,
+      layoutsOk,
+      schema: { badThemeKeys, badCompositionKeys, badWidgetKeys },
+      noSchemaDrift,
+      contractClosed,
+      contractDiskUnchanged,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -4687,6 +5341,7 @@ async function main() {
       extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
       extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
       trust: path.relative(desktopRoot, TRUST_PNG),
+      studio: path.relative(desktopRoot, STUDIO_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,
