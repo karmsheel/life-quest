@@ -38,8 +38,9 @@
  *     window is narrow.
  *  9. An existing claim regresses while the new surface is added: the document
  *     box, blank-line fidelity, the formatting keys, the snapshot pass (filled
- *     once, inside its markers, under its heading), Preview's whole file, or the
- *     cadence's rules read/written from the page.
+ *     once, inside its markers, under its heading), the one full-width-enough box
+ *     (no Document/Preview second view), or the cadence's rules read/written from
+ *     the page.
  * 10. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
@@ -68,6 +69,7 @@ import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
+import type { HermesSession } from "@/vite-env";
 import "@/styles/global.css";
 
 const skinName = applyAppSkin("dark");
@@ -381,6 +383,15 @@ type HarnessWindow = Window & {
   reviewRigSkillWrites?: string[];
   /** Flipped by the driver: makes `reviewStartOrResume` answer "agent down". */
   reviewRigAgentDown?: boolean;
+  /**
+   * Held open by the driver so the chat list can be sampled while the start's
+   * turn is still RUNNING — the moment the reported bug was about. Released with
+   * `reviewRigReleaseTurns`.
+   */
+  reviewRigHoldTurns?: boolean;
+  reviewRigReleaseTurns?: () => void;
+  /** The chats the gateway holds, so the driver can find the one a start made. */
+  reviewRigSessions?: () => HermesSession[];
   /** The review body as the file holds it, for the driver to assert against. */
   reviewRigBody?: () => string;
   /** The loaded file's scope states, so "the rail said Done" can be cross-checked. */
@@ -398,6 +409,11 @@ harness.reviewRigStarts = [];
 harness.reviewRigKickoffs = [];
 harness.reviewRigSkillWrites = [];
 harness.reviewRigAgentDown = false;
+harness.reviewRigHoldTurns = false;
+harness.reviewRigReleaseTurns = () => {
+  for (const release of heldTurns.splice(0)) release();
+};
+harness.reviewRigSessions = () => gatewaySessions.map((row) => ({ ...row }));
 
 harness.reviewRigBody = () => (activeKey ? (files.get(activeKey)?.body ?? "") : "");
 harness.reviewRigScopes = () => {
@@ -406,12 +422,65 @@ harness.reviewRigScopes = () => {
 };
 harness.reviewRigLocked = () => Boolean(activeKey && files.get(activeKey)?.locked);
 
-const SESSION = {
-  id: "review-rig-session",
-  title: "Review · Weekly · Week of 12 Oct 2026",
-  preview: "Review rig",
-  lastActive: 1_700_000_000,
-};
+/**
+ * One chat row, as the gateway hands it back.
+ *
+ * The list belongs to the gateway, not to the page: a session a start creates
+ * is added here, exactly as `harnessSessionCreate` adds one in main. The
+ * renderer reads that list once on mount (and again only after a turn settles),
+ * so a chat created by a start is NOT in the store until the dock is handed its
+ * row. That is the thing this rig checks.
+ */
+function chatRow(id: string, title: string, lastActive: number): HermesSession {
+  return {
+    id,
+    title,
+    preview: null,
+    lastActive,
+    pinned: false,
+    archived: false,
+    model: null,
+    source: "desktop",
+  };
+}
+
+/** The one conversation the operator already had before the review started. */
+const SESSION = chatRow("review-rig-session", "Packing list for the trip", 1_700_000_000);
+
+/** Every chat the gateway holds, oldest first. */
+const gatewaySessions: HermesSession[] = [SESSION];
+let sessionsMade = 0;
+
+/** Add the chat a start just asked the gateway for, and hand it back. */
+function madeSession(title: string): HermesSession {
+  sessionsMade += 1;
+  const row = chatRow(
+    `review-rig-session-${sessionsMade}`,
+    title,
+    1_700_000_000 + sessionsMade,
+  );
+  gatewaySessions.push(row);
+  return row;
+}
+
+/**
+ * The name main gives a review or plan chat: the period, then the scope's own
+ * area for an area scope. The sidebar row must wear this name from its first
+ * paint, so the driver compares the two.
+ */
+function reviewSessionTitle(
+  cadence: ReviewCadence,
+  period: string,
+  scope: string,
+): string {
+  const periodName = titleFor(cadence, period);
+  return scope === "overall"
+    ? periodName
+    : `${periodName} · ${AREA_NAME.get(scope) ?? scope}`;
+}
+
+/** Every turn the rig is holding open, so the driver can release them. */
+const heldTurns: Array<() => void> = [];
 
 const UNLOCKED_AT = "2026-02-01T00:00:00.000Z";
 
@@ -486,20 +555,31 @@ const bridge: Record<string, unknown> = {
   onVaultFileChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
-  companionSessionsList: () => ok([SESSION]),
-  companionSessionCreate: () => ok(SESSION),
+  // The gateway's chat list, answered as copies the way the real IPC hop does —
+  // a mutable array would let a later create appear in the store's list by
+  // aliasing, hiding the very bug this rig is for.
+  companionSessionsList: () => ok(gatewaySessions.map((row) => ({ ...row }))),
+  companionSessionCreate: (title: string) => ok(madeSession(title)),
   companionSessionMessages: () => ok([]),
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
   /**
    * A start opens the interview, which means the dock sends the kickoff turn.
-   * This rig is not about the chat: the turn is accepted and recorded, and no
-   * stream events are emitted, so the page settles rather than waiting on an
-   * agent.
+   * This rig is not about the chat's every frame: the turn is accepted and
+   * recorded, and no stream events are emitted.
+   *
+   * The driver can hold the turn open (`reviewRigHoldTurns`) so the chat can be
+   * looked up in the sidebar while the agent is still working; releasing it
+   * settles the turn exactly as a finished stream would.
    */
   companionChatStream: (payload: { sessionId: string; input: string }) => {
     harness.reviewRigCalls?.push(`companionChatStream:${payload.sessionId}`);
     harness.reviewRigKickoffs?.push(payload.input);
+    if (harness.reviewRigHoldTurns === true) {
+      return new Promise((resolve) => {
+        heldTurns.push(() => resolve({ ok: true } as const));
+      });
+    }
     return Promise.resolve({ ok: true } as const);
   },
   pinsList: () => ok({ pins: [], locked: false }),
@@ -509,6 +589,14 @@ const bridge: Record<string, unknown> = {
   // under test.
   decisionList: () => ok([]),
   onCompanionStream: () => () => {},
+  // The theme store reads the profile's themes directory on mount and watches
+  // it. A review rig is not about themes, so the list is empty and the watcher
+  // is a no-op — but both must be modelled: the proxy's catch-all answers with a
+  // Promise, and ThemeProvider throws on an `unsubscribe` that is not a
+  // function, leaving the harness never ready.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -645,15 +733,20 @@ const bridge: Record<string, unknown> = {
     }
     activeKey = fileKey(cadence, period);
     const kickoff = kickoffFor(cadence as ReviewCadence, period, scope);
+    // The gateway makes the chat; main hands the page back both its id and its
+    // row, so the dock can list it by name from the first paint.
+    const session = madeSession(
+      reviewSessionTitle(cadence as ReviewCadence, period, scope),
+    );
     harness.reviewRigStarts?.push({
       cadence,
       period,
       scope,
-      sessionId: SESSION.id,
+      sessionId: session.id,
       kickoff,
     });
     return Promise.resolve(
-      ok({ sessionId: SESSION.id, created: true, kickoff }),
+      ok({ sessionId: session.id, created: true, kickoff, session }),
     );
   },
   reviewMarkDone: (cadence: string, period: string, scope: string) => {
@@ -743,8 +836,12 @@ const bridge: Record<string, unknown> = {
     };
     return Promise.resolve(ok(value));
   },
-  planningStartOrResume: () =>
-    Promise.resolve(ok({ sessionId: SESSION.id, created: false, kickoff: "" })),
+  planningStartOrResume: () => {
+    const session = madeSession("Plan · this period");
+    return Promise.resolve(
+      ok({ sessionId: session.id, created: true, kickoff: "", session }),
+    );
+  },
   reviewPeriodPack: () => Promise.resolve(fail("not modelled here")),
   dailyNoteWindow: () => Promise.resolve(ok([])),
   dailyNoteList: () => Promise.resolve(ok([])),

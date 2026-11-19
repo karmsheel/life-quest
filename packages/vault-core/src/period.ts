@@ -315,25 +315,65 @@ export function isFuturePeriod(
   return period > currentPeriod(cadence, weekStartDay, now);
 }
 
+/**
+ * The period's own name, without the cadence's: `14 Nov 2026` for a day,
+ * `Week of 9 Nov 2026` for a week, `Nov 2026` for a month, `2026 Q4` for a
+ * quarter, `2026` for a year.
+ *
+ * This is the review page's heading. The cadence is the page's eyebrow, so
+ * repeating it in the title (`Weekly review · Week of …`) says the same thing
+ * twice; the period alone is what the operator is looking at.
+ */
+export function periodLabel(
+  cadence: ReviewCadence,
+  period: string,
+  weekStartDay: WeekStartDay,
+): string {
+  if (cadence === "daily") return formatDay(period);
+  if (cadence === "weekly") {
+    void weekStartDay;
+    return `Week of ${formatDay(period)}`;
+  }
+  if (cadence === "monthly") {
+    const m = MONTH.exec(period);
+    if (!m) return period;
+    return `${MONTH_SHORT[Number(m[2]) - 1]} ${m[1]}`;
+  }
+  if (cadence === "quarterly") {
+    const q = QUARTER.exec(period);
+    if (!q) return period;
+    return `${q[1]} Q${q[2]}`;
+  }
+  return period;
+}
+
+/** The review's full title: the cadence's name and the period's own label. */
 export function periodTitle(
   cadence: ReviewCadence,
   period: string,
   weekStartDay: WeekStartDay,
 ): string {
-  if (cadence === "daily") return `Daily review · ${formatDay(period)}`;
-  if (cadence === "weekly") {
-    void weekStartDay;
-    return `Weekly review · Week of ${formatDay(period)}`;
-  }
-  if (cadence === "monthly") {
-    const m = MONTH.exec(period);
-    if (!m) return `Monthly review · ${period}`;
-    return `Monthly review · ${MONTH_SHORT[Number(m[2]) - 1]} ${m[1]}`;
-  }
+  const cadenceName = `${cadence.charAt(0).toUpperCase()}${cadence.slice(1)} review`;
+  return `${cadenceName} · ${periodLabel(cadence, period, weekStartDay)}`;
+}
+
+/**
+ * The period that contains a local calendar date.
+ *
+ * The review page's calendar picks a day; a review is a week, month, quarter or
+ * year, so the day is folded into the cadence's own period here — the same fold
+ * the engine's `currentPeriod` makes for "now", applied to a chosen day.
+ */
+export function periodForDate(
+  cadence: ReviewCadence,
+  date: string,
+  weekStartDay: WeekStartDay,
+): string {
+  if (cadence === "daily") return date;
+  if (cadence === "weekly") return weekStartOnOrBefore(date, weekStartDay);
+  if (cadence === "monthly") return date.slice(0, 7);
   if (cadence === "quarterly") {
-    const q = QUARTER.exec(period);
-    if (!q) return `Quarterly review · ${period}`;
-    return `Quarterly review · ${q[1]} Q${q[2]}`;
+    return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
   }
-  return `Yearly review · ${period}`;
+  return date.slice(0, 4);
 }

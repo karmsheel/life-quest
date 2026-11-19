@@ -266,7 +266,13 @@ export default function GoalsPage() {
         return;
       }
       const kickoff = plan.value.created ? plan.value.kickoff : undefined;
-      chatDock.requestSession({ id: plan.value.sessionId, kickoff });
+      chatDock.requestSession({
+        id: plan.value.sessionId,
+        kickoff,
+        // The plan chat's own row, so the dock lists it in Chats from the first
+        // paint instead of waiting for the next session-list read.
+        session: plan.value.session,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

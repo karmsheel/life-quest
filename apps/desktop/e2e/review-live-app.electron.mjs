@@ -78,7 +78,7 @@ const SAMPLE = `(() => {
   return {
     page: Boolean(document.querySelector(".review-page")),
     title: text(document.querySelector(".review-page__title")),
-    period: text(document.querySelector(".review-page__period")),
+    period: text(document.querySelector('[data-testid="review-period"]')),
     error: text(document.querySelector(".form-error")),
     status: text(document.querySelector(".review-page__status")),
     boxes: document.querySelectorAll(".note-live").length,
