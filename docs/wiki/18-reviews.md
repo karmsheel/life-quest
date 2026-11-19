@@ -54,6 +54,12 @@ vertical column to the right of the report:
   with those areas open. A locked or archived area is not listed.
 - Every row is a button, and every row reads **Not started**, **In progress** or
   **Done**. The row for the active scope is highlighted.
+- The checklist is **live**. When the companion finishes an interview and marks
+  an area — or the life review — complete, the row on the page you already have
+  open flips to **Done** and the `n of 5 areas done` count moves with it, with no
+  navigating away and back. The same is true of the Life review unlocking once
+  the last area is finished, and of the **Locked** badge when the life review is
+  completed.
 - The area lens in the window title bar still selects the active area, and
   pressing a checklist row moves the lens to that area. The checklist is the
   control; the lens shows what is selected.

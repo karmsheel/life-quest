@@ -41,7 +41,13 @@
  *     once, inside its markers, under its heading), the one full-width-enough box
  *     (no Document/Preview second view), or the cadence's rules read/written from
  *     the page.
- * 10. A bridge call this rig does not model, or a console error, passes
+ * 10. The checklist is a SNAPSHOT of the file the page loaded, not a live view:
+ *     the companion marks a scope done in the main process, the page never made
+ *     that call, and the open rail keeps showing the old status until the
+ *     operator navigates away and back. This is the reported bug; the rig
+ *     changes the file the way the agent's tool does and announces it the way
+ *     main does, so a window that never listens stays stale here.
+ * 11. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
  * The driver waits on `reviewRigReady`, set after the shell, the page and the
@@ -213,6 +219,66 @@ function getOrSeed(cadence: ReviewCadence, period: string): StoredReview {
   }
   activeKey = key;
   return stored;
+}
+
+/**
+ * The vault's change signal, played by the rig.
+ *
+ * The page cannot see the companion's tool calls — they happen in the main
+ * process — so the only way it learns a scope was marked done is main's
+ * `vault:dataChanged`. This is that announcement: the stub bridge registers the
+ * listeners, and this fires them after the rig has changed the file, exactly as
+ * main does once a tool call has settled (it coalesces them per frame, which one
+ * announcement at a time cannot tell apart from this).
+ */
+let dataRevision = 0;
+const dataChangeListeners = new Set<(revision: number) => void>();
+
+function announceDataChanged(): number {
+  dataRevision += 1;
+  for (const listener of [...dataChangeListeners]) {
+    try {
+      listener(dataRevision);
+    } catch {
+      // A listener's failure is its own; the change it heard about still landed.
+    }
+  }
+  return dataRevision;
+}
+
+/**
+ * Mark one scope done the way the agent's `mark_review_done` tool does: in the
+ * file, outside the page's own bridge call, and then announce the change.
+ *
+ * This is the leg that proves the checklist is live. The page's own Mark-done
+ * button already re-reads the record after its `reviewMarkDone` call, so driving
+ * that path would prove nothing; this one changes the vault the way a tool call
+ * in main does, and leaves the page to hear about it the only way it can.
+ */
+function agentMarksDone(
+  scope: string,
+): { ok: boolean; scopes?: Record<string, ScopeState>; error?: string } {
+  const key = activeKey;
+  const stored = key ? files.get(key) : undefined;
+  if (!stored) return { ok: false, error: "Review file not found" };
+  if (scope === "overall") {
+    // The engine's own rule: the life review cannot be finished before the
+    // areas are. The rig mirrors it, so a live leg that asks for it too early
+    // fails here rather than passing on a state the real tool refuses.
+    const refusal = overallRefusal(stored);
+    if (refusal) return { ok: false, error: refusal };
+    stored.scopes.overall = {
+      status: "done",
+      sessionId: stored.scopes.overall?.sessionId ?? null,
+    };
+    stored.locked = true;
+  } else {
+    const state = stored.scopes[scope];
+    if (!state) return { ok: false, error: `Domain scope not found: ${scope}` };
+    state.status = "done";
+  }
+  announceDataChanged();
+  return { ok: true, scopes: { ...stored.scopes } };
 }
 
 /**
@@ -398,6 +464,14 @@ type HarnessWindow = Window & {
   reviewRigScopes?: () => Record<string, ScopeState>;
   /** The loaded file's lock, so the lock claim is about the file, not just a badge. */
   reviewRigLocked?: () => boolean;
+  /** How many listeners the page holds on the vault's change signal. */
+  reviewRigDataListenerCount?: () => number;
+  /** Fire main's data-change announcement, as it does after a tool call settles. */
+  reviewRigAnnounceDataChange?: () => number;
+  /** The agent's `mark_review_done`, in the file and outside the page's bridge. */
+  reviewRigAgentMarksDone?: (
+    scope: string,
+  ) => { ok: boolean; scopes?: Record<string, ScopeState>; error?: string };
 };
 
 const harness = window as HarnessWindow;
@@ -421,6 +495,9 @@ harness.reviewRigScopes = () => {
   return stored ? { ...stored.scopes } : {};
 };
 harness.reviewRigLocked = () => Boolean(activeKey && files.get(activeKey)?.locked);
+harness.reviewRigDataListenerCount = () => dataChangeListeners.size;
+harness.reviewRigAnnounceDataChange = () => announceDataChanged();
+harness.reviewRigAgentMarksDone = (scope: string) => agentMarksDone(scope);
 
 /**
  * One chat row, as the gateway hands it back.
@@ -553,6 +630,18 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  /**
+   * The vault's change signal, as preload exposes it. The page subscribes to
+   * hear about a scope the companion marked done in main — a tool call that
+   * never passes through this renderer's bridge — and the driver fires it with
+   * `reviewRigAgentMarksDone`, after the rig has changed the file.
+   */
+  onVaultDataChanged: (cb: (revision: number) => void) => {
+    dataChangeListeners.add(cb);
+    return () => {
+      dataChangeListeners.delete(cb);
+    };
+  },
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   // The gateway's chat list, answered as copies the way the real IPC hop does —

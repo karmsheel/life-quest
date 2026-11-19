@@ -166,6 +166,10 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The Review page this rig can navigate to subscribes to the vault's change
+  // signal, so the channel is modelled as a quiet watcher — this rig is about
+  // the editor, and nothing on it writes the review.
+  onVaultDataChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   companionSessionsList: () => ok([SESSION]),

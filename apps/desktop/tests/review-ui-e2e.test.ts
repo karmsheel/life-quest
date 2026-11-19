@@ -6,6 +6,10 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import {
+  channelMayChangeData,
+  toolMayChangeData,
+} from "../electron/data-revision.ts";
 
 /**
  * The Review page: the document and the Review checklist beside it, the per-area
@@ -21,7 +25,7 @@ import { describe, it } from "node:test";
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the nine `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the ten `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -44,6 +48,7 @@ const SHOTS = [
   "review-checklist.png",
   "review-life-ready.png",
   "review-daily.png",
+  "review-live-checklist.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 /** The four-overall-headings order the engine's skeleton uses. */
@@ -322,6 +327,24 @@ type Report = {
     lockedScopes: Record<string, ScopeState>;
     refusedWrite: boolean;
     lockedBody: string;
+    /** The open page before the agent marked anything: the week it is on. */
+    liveBefore: Page;
+    livePeriod: string;
+    /** How many listeners the page holds on the vault's change signal. */
+    liveDataListeners: number;
+    /** The rig's answer to the agent's `mark_review_done` call. */
+    liveFinanceMark: { ok: boolean; error?: string } | null;
+    /** The page after the agent's Finance mark, with no bridge call of its own. */
+    liveFinance: Page;
+    /** How many review reads the page made across that mark (must be ≥1). */
+    liveReReads: number;
+    /** The DOM probe planted before the mark: a remount would lose it. */
+    liveProbe: string | null;
+    /** After the agent finished every area: the Life review unlocks live. */
+    liveGated: Page;
+    liveOverallMark: { ok: boolean; error?: string } | null;
+    /** After the agent completed the life review: the open page locks live. */
+    liveLocked: Page;
     startsAll: StartCall[];
     kickoffsAll: string[];
     scopeSequence: string[];
@@ -376,6 +399,23 @@ describe("review ui e2e", () => {
 
     fs.rmSync(REPORT, { force: true });
     for (const shot of SHOTS) fs.rmSync(shot, { force: true });
+
+    // The premise of the live leg below. The rig plays main's announcement, so
+    // it cannot see whether the real process announces an agent's
+    // `mark_review_done`; these two checks are what make the leg's premise
+    // honest: main's tool classification treats the tool as a write (and so
+    // announces it), and the page's own mark-done channel is announced too.
+    assert.equal(
+      toolMayChangeData("mark_review_done"),
+      true,
+      "main would not announce an agent's mark_review_done, so no open page can hear it",
+    );
+    assert.equal(
+      channelMayChangeData("review:markDone"),
+      true,
+      "the page's own mark-done channel is not announced as a write",
+    );
+
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
@@ -1073,6 +1113,90 @@ describe("review ui e2e", () => {
       report.checks.lockedBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
       1,
       "the lock changed the snapshot block",
+    );
+
+    // ── an agent's mark updates the checklist of the page already open ──────
+    // The reported bug, restated: the companion marks a scope done in the main
+    // process, and the open page's checklist must show it without the operator
+    // leaving the page and coming back. The rig changed the file the way the
+    // agent's tool does and fired main's announcement; the page made no
+    // mark-done call of its own.
+    const live = report.checks;
+    assert.ok(
+      live.liveDataListeners > 0,
+      "the review page holds no listener on the vault's change signal, so an agent's mark can never reach the open checklist",
+    );
+    assert.equal(
+      live.liveFinanceMark?.ok,
+      true,
+      `the agent's Finance mark did not land: ${JSON.stringify(live.liveFinanceMark)}`,
+    );
+    assert.deepEqual(
+      report.checks.liveFinance.periodData,
+      live.livePeriod,
+      "the agent's mark moved the page to another period instead of updating the open one",
+    );
+    assert.equal(
+      railText(live.liveFinance, "financial"),
+      "Done",
+      "the Finance row did not flip to Done when the agent marked it complete",
+    );
+    assert.equal(
+      railText(live.liveFinance, "mind"),
+      "Not started",
+      "the agent's Finance mark also changed an area it did not touch",
+    );
+    assert.equal(
+      live.liveFinance.progress,
+      `2 of ${TOTAL_AREAS} areas done`,
+      "the checklist's progress did not count the agent's mark",
+    );
+    assert.ok(
+      live.liveReReads >= 1,
+      "the checklist flipped without the page re-reading the review: the page was not refreshed from the vault",
+    );
+    assert.equal(
+      live.liveProbe,
+      "kept",
+      "the live update replaced or remounted the page instead of updating it",
+    );
+
+    // The Life review's gate lifts on live marks too — no reload between the
+    // agent's last area and the row becoming usable.
+    assert.match(
+      String(live.liveGated.hint),
+      /All areas are reviewed/i,
+      "the checklist still gates the Life review after the agent finished every area",
+    );
+    assert.equal(
+      live.liveGated.lifeItem !== null && live.liveGated.lifeItem.disabled,
+      false,
+      "the Life review is still disabled after the agent finished every area live",
+    );
+    assert.equal(
+      railText(live.liveGated, "overall"),
+      "In progress",
+      "the Life row does not read In progress once the gate lifts live",
+    );
+    assert.equal(
+      live.liveOverallMark?.ok,
+      true,
+      `the agent's life-review mark did not land: ${JSON.stringify(live.liveOverallMark)}`,
+    );
+    assert.equal(
+      live.liveLocked.lockedBadge,
+      "Locked",
+      "the agent's life-review mark did not lock the open page",
+    );
+    assert.equal(
+      railText(live.liveLocked, "overall"),
+      "Done",
+      "the Life row does not read Done after the agent completed it live",
+    );
+    assert.equal(
+      live.liveLocked.periodData,
+      live.livePeriod,
+      "the agent's life-review mark navigated the page instead of updating it",
     );
 
     // ── every start, one kickoff, and nothing unexpected ───────────────────

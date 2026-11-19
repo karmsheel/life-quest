@@ -26,6 +26,8 @@
  *   review-rules.png      the cadence's rules panel, read and written from the page
  *   review-wide.png       a wide window: the column keeps its measure and the
  *                         page+checklist pair is centred with room on both sides
+ *   review-live-checklist.png  a scope the AGENT marked done, on a page that was
+ *                         already open: the row flipped without a navigation
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -82,6 +84,16 @@
  *     with the calendar key beside it, and the two steps are wordless arrows with
  *     no frame, on the column's edges. The calendar walks to another week and the
  *     arrows walk back to the open week, where Next is the wall.
+ * 14. A review marked done by an AGENT shows on the checklist of the page that is
+ *     already open, with no navigation and no remount. The tool call happens in
+ *     the main process, so the page can only learn about it from the vault's
+ *     data-change announcement; the rig changes the file the way the tool does
+ *     and fires that announcement the way main does. The row must flip, the
+ *     progress must count it, the Life review's gate must lift on the live
+ *     marks, and the final lock badge must appear — all while a DOM probe planted
+ *     before the announcement survives, which a reload or a page navigation
+ *     would destroy. The bridge's own `reviewGet` count is what proves the page
+ *     re-read the vault instead of being handed the new state.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -411,6 +423,18 @@ function fileScopes(win) {
 /** Whether the loaded review file is locked. */
 function fileLocked(win) {
   return win.webContents.executeJavaScript("window.reviewRigLocked()");
+}
+
+/**
+ * How many times the page has READ a review through the bridge.
+ *
+ * The live leg's evidence that a changed checklist came from a re-read of the
+ * vault and not from state handed to the page: the count has to move across the
+ * agent's mark.
+ */
+async function reviewGetCount(win) {
+  const calls = await setHarness(win, "window.reviewRigCalls");
+  return calls.filter((call) => String(call).startsWith("reviewGet:")).length;
 }
 
 /** The status text of one rail row, or null when the row is not drawn. */
@@ -1862,7 +1886,155 @@ async function main() {
     failure("the lock changed the snapshot block");
   }
 
-  // ── 12. nothing unexpected, nothing on fire ──────────────────────────────
+  // ── 12. an agent's mark reaches the checklist of the OPEN page ────────────
+  // The reported bug: the companion finishes an interview and marks the area (or
+  // the life review) done with its own tool call in the main process. The
+  // operator is already on the review page, and the checklist stayed stale until
+  // they left it and came back. This leg walks to the previous, still-open week
+  // so the current week's locked story is untouched, leaves the page there, and
+  // changes that week's file the way the agent's tool does — outside the page's
+  // bridge — then fires main's change announcement.
+  await click(win, '[data-testid="review-prev"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="review-period"]')?.dataset.period !== ${JSON.stringify(period)}`,
+    "the page to move to the previous week",
+  );
+  await waitForRailStatus(win, "financial", "In progress");
+  await waitFor(
+    win,
+    "Boolean(window.reviewRigDataListenerCount && window.reviewRigDataListenerCount() > 0)",
+    "the page to subscribe to the vault's change signal",
+  );
+  await frames(win);
+  const livePeriod = String(await pagePeriod(win));
+  const beforeLive = await sample(win);
+  checks.liveBefore = beforeLive;
+  checks.livePeriod = livePeriod;
+  checks.liveDataListeners = await setHarness(win, "window.reviewRigDataListenerCount()");
+  if (!(checks.liveDataListeners > 0)) {
+    failure(
+      "the review page does not listen to the vault's change signal, so an agent's mark can never reach the open checklist",
+    );
+  }
+  // A probe on the editor's own DOM node: a reload, a remount or a navigation
+  // would lose it, and "the checklist updated" would then be a story about a
+  // rebuilt page rather than about the page that was already open.
+  await setHarness(
+    win,
+    `(() => {
+      const box = document.querySelector(".note-live");
+      if (!box) return false;
+      box.dataset.liveProbe = "kept";
+      return true;
+    })()`,
+  );
+  const getsBefore = await reviewGetCount(win);
+
+  const financeMark = await setHarness(win, 'window.reviewRigAgentMarksDone("financial")');
+  checks.liveFinanceMark = financeMark;
+  if (!financeMark || financeMark.ok !== true) {
+    failure(`the agent's Finance mark was refused by the rig: ${JSON.stringify(financeMark)}`);
+  }
+  await waitForRailStatus(win, "financial", "Done");
+  await frames(win);
+  const liveFinance = await sample(win);
+  checks.liveFinance = liveFinance;
+  const getsAfter = await reviewGetCount(win);
+  checks.liveReReads = getsAfter - getsBefore;
+  if (!(getsAfter > getsBefore)) {
+    failure(
+      "the checklist flipped without the page re-reading the review — the new state was handed to it, not read from the vault",
+    );
+  }
+  if (liveFinance.periodData !== livePeriod) {
+    failure(
+      `the agent's mark moved the page to ${JSON.stringify(liveFinance.periodData)}, from ${JSON.stringify(livePeriod)}`,
+    );
+  }
+  if (liveFinance.progress !== `2 of ${TOTAL_AREAS} areas done`) {
+    failure(
+      `the live progress after the agent's Finance mark reads ${JSON.stringify(liveFinance.progress)}, expected 2 of ${TOTAL_AREAS}`,
+    );
+  }
+  if (liveFinance.financeStatus !== "Done") {
+    failure(`the Finance row reads ${JSON.stringify(liveFinance.financeStatus)} after the agent marked it done`);
+  }
+  if (liveFinance.mindStatus !== "Not started") {
+    failure(`the Mind row reads ${JSON.stringify(liveFinance.mindStatus)} although the agent touched only Finance`);
+  }
+  const liveProbe = await setHarness(
+    win,
+    `document.querySelector(".note-live")?.dataset.liveProbe ?? null`,
+  );
+  checks.liveProbe = liveProbe;
+  if (liveProbe !== "kept") failure("the live update replaced the page instead of updating it");
+  await shot(win, "review-live-checklist.png");
+
+  // The Life review's gate lifts on LIVE marks too. The remaining areas have no
+  // scope on this week — nobody started them — so the rig first creates them the
+  // way the operator's own row press does (`review:ensure`, a write main
+  // announces), and then the agent finishes each one.
+  for (const slug of ["mind", "business", "relationships"]) {
+    await win.webContents.executeJavaScript(
+      `window.lifequest.reviewEnsure("weekly", ${JSON.stringify(livePeriod)}, ${JSON.stringify(slug)})`,
+    );
+  }
+  await setHarness(win, "window.reviewRigAnnounceDataChange()");
+  for (const slug of ["mind", "business", "relationships"]) {
+    await waitForRailStatus(win, slug, "In progress");
+    const marked = await setHarness(win, `window.reviewRigAgentMarksDone(${JSON.stringify(slug)})`);
+    if (!marked || marked.ok !== true) {
+      failure(`the agent's ${slug} mark was refused by the rig: ${JSON.stringify(marked)}`);
+    }
+    await waitForRailStatus(win, slug, "Done");
+  }
+  await waitFor(
+    win,
+    `(document.querySelector('[data-testid="review-area-progress"]')?.textContent ?? "").includes("${TOTAL_AREAS} of ${TOTAL_AREAS}")`,
+    "the live marks to count up",
+  );
+  await frames(win);
+  const liveGated = await sample(win);
+  checks.liveGated = liveGated;
+  if (!/All areas are reviewed/i.test(String(liveGated.hint))) {
+    failure(`the checklist hint after the agent finished every area reads ${JSON.stringify(liveGated.hint)}`);
+  }
+  if (!liveGated.lifeItem || liveGated.lifeItem.disabled) {
+    failure("the Life review is still disabled after the agent finished every area live");
+  }
+  if (liveGated.lifeStatus !== "In progress") {
+    failure(`the Life review's live status reads ${JSON.stringify(liveGated.lifeStatus)}, expected "In progress"`);
+  }
+
+  // And the life review itself, marked done by the agent, locks the open page —
+  // badge, status line, and every rail row dead — with no reload.
+  const overallMark = await setHarness(win, 'window.reviewRigAgentMarksDone("overall")');
+  checks.liveOverallMark = overallMark;
+  if (!overallMark || overallMark.ok !== true) {
+    failure(`the agent's life-review mark was refused by the rig: ${JSON.stringify(overallMark)}`);
+  }
+  await waitFor(
+    win,
+    `(document.querySelector(".review-page__lock-badge")?.textContent ?? "").trim() === "Locked"`,
+    "the live locked badge",
+  );
+  await waitForRailStatus(win, "overall", "Done");
+  await frames(win);
+  const liveLocked = await sample(win);
+  checks.liveLocked = liveLocked;
+  if (liveLocked.lifeStatus !== "Done") {
+    failure(`the Life review row reads ${JSON.stringify(liveLocked.lifeStatus)} after the agent completed it`);
+  }
+  if (liveLocked.status !== "Locked") {
+    failure(`the page's status line reads ${JSON.stringify(liveLocked.status)} after the agent locked the review`);
+  }
+  if (liveLocked.periodData !== livePeriod) {
+    failure("the agent's life-review mark navigated the page");
+  }
+  if (!(await fileLocked(win))) failure("the previous week's file is not locked after the agent completed it");
+
+  // ── 13. nothing unexpected, nothing on fire ──────────────────────────────
   const finalStarts = await setHarness(win, "window.reviewRigStarts");
   checks.startsAll = finalStarts;
   const finalKickoffs = await setHarness(win, "window.reviewRigKickoffs");
