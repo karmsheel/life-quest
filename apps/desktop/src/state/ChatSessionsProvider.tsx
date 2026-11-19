@@ -25,6 +25,12 @@ import {
   writeStoredChatTabs,
   writeStoredLastSessionId,
 } from "@/state/chat-tabs-persistence";
+import {
+  readStoredSessionIcons,
+  writeStoredSessionIcons,
+  type SessionIcon,
+  type SessionIcons,
+} from "@/state/session-icons";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
 import type {
@@ -313,6 +319,15 @@ type ChatSessionsContextValue = {
   /** The ids in `tabIds` that are pinned chats: the ones drawn as squares. */
   pinnedTabIds: string[];
   activeSession: HermesSession | null;
+  /**
+   * The kickoff mark each remembered chat wears at the start of its tab name,
+   * by session id. A chat the app started as a task, a review, a plan or an
+   * automation run is in here; a chat the operator opened from the list is not,
+   * and draws the plain status dot.
+   */
+  sessionIcons: SessionIcons;
+  /** Remember a chat's kickoff mark, or call it back when no icon is given. */
+  markSessionIcon: (id: string, icon: SessionIcon | null | undefined) => void;
 
   runOf: (id: string | null | undefined) => SessionRun;
   updateRun: (id: string, update: (run: SessionRun) => SessionRun) => void;
@@ -361,7 +376,7 @@ type ChatSessionsContextValue = {
    * list has not been re-read yet — without it the new chat's tab would be a
    * bare "Chat" and its row would be missing from the sidebar.
    */
-  openChatInNewTab: (id: string, session?: HermesSession) => Promise<void>;
+  openChatInNewTab: (id: string, session?: HermesSession, icon?: SessionIcon) => Promise<void>;
   resumeLast: () => Promise<void>;
   newChat: () => Promise<string | null>;
   closeTab: (id: string) => void;
@@ -407,6 +422,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const [listError, setListError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [sessionIcons, setSessionIcons] = useState<SessionIcons>({});
   const [runs, setRuns] = useState<Record<string, SessionRun>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, ChatReceipt | null>>({});
@@ -437,6 +453,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   activeIdRef.current = activeId;
   const openTabsRef = useRef(openTabs);
   openTabsRef.current = openTabs;
+  const sessionIconsRef = useRef(sessionIcons);
+  sessionIconsRef.current = sessionIcons;
   const runtimePinsRef = useRef(runtimePins);
   runtimePinsRef.current = runtimePins;
   const runsRef = useRef(runs);
@@ -468,6 +486,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * either.
    */
   const tabsHydrated = useRef(false);
+  /**
+   * Whether the landing has read this vault's remembered kickoff marks. Held off
+   * for the same reason the strip is: the mount before the landing has no marks,
+   * and writing that empty map would erase the icons of the chats it is about to
+   * restore.
+   */
+  const iconsHydrated = useRef(false);
 
   /**
    * The strip the dock draws, and the pinned subset of it. Both are derived:
@@ -928,6 +953,31 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
 
   /**
+   * Remember the small mark a kickoff chat wears at the start of its tab name.
+   *
+   * The mark is the one thing about a chat Hermes's row cannot say: it is the
+   * kind of work that started it, known only to the page that kicked it off.
+   * The request carries it in, and the store keeps it per vault and agent beside
+   * the remembered strip, so the icon survives a restart even when the page
+   * that started the chat never opens again. A chat with no icon (one the
+   * operator opened from the list) keeps the plain dot; passing null is how a
+   * caller takes a mark back.
+   */
+  const markSessionIcon = useCallback(
+    (id: string, icon: SessionIcon | null | undefined) => {
+      if (!id) return;
+      setSessionIcons((prev) => {
+        if (icon) return prev[id] === icon ? prev : { ...prev, [id]: icon };
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    },
+    [],
+  );
+
+  /**
    * Give one chat a tab of its own, without disturbing the one in front.
    *
    * A caller that has just created the chat hands its row along: the row is
@@ -936,8 +986,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * instead would leave both blank for as long as that round trip takes.
    */
   const openChatInNewTab = useCallback(
-    async (id: string, session?: HermesSession) => {
+    async (id: string, session?: HermesSession, icon?: SessionIcon) => {
       closedTabs.current.delete(id);
+      // `undefined` is "this door knows nothing about a mark", which is every
+      // plain open — the sidebar, the New chat slot, a run opening its own tab.
+      // Those must not erase a mark the chat already carries; only an explicit
+      // `null` takes one back.
+      if (icon !== undefined) markSessionIcon(id, icon);
       if (session) {
         const owner = harnessRef.current;
         if (owner) agentOfSession.current.set(session.id, owner);
@@ -952,7 +1007,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setListError(null);
       await loadMessages(id);
     },
-    [loadMessages],
+    [loadMessages, markSessionIcon],
   );
 
   /**
@@ -994,8 +1049,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       try {
         // Read the remembered strip BEFORE the list goes out. The strip is the
         // last thing the dock wrote for this agent and vault, and a write from
-        // the in-flight switch could otherwise land first and blank it.
+        // the in-flight switch could otherwise land first and blank it. The
+        // kickoff marks travel with it for the same reason.
         const stored = readStoredChatTabs(vault, agent);
+        const storedIcons = readStoredSessionIcons(vault, agent);
         const listed =
           !fresh && sessionsRef.current.length
             ? sessionsRef.current
@@ -1007,6 +1064,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         // The vault moved while the list was in flight: this landing would now
         // read the previous vault's strip and chats onto the new one.
         if (vaultAtStart !== vaultEpoch.current) return;
+        // The marks are the strip's companions: hydrate them with the landing,
+        // before any paint that could write the mount's empty map back over
+        // them. A mark a kickoff wrote while the list was in flight is kept —
+        // its chat is on screen already, even when the list has not caught up.
+        iconsHydrated.current = true;
+        setSessionIcons((prev) => ({ ...storedIcons, ...prev }));
         const lastSessionId = readStoredLastSessionId(vault, agent);
         const live = new Set(listed.map((s) => s.id));
         // A tab a live turn opened while the list was in flight belongs to the
@@ -1135,6 +1198,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     sessionsRef.current = [];
     activeIdRef.current = null;
     openTabsRef.current = [];
+    sessionIconsRef.current = {};
     runsRef.current = {};
     runtimePinsRef.current = {};
     harnessSnapshots.current.clear();
@@ -1147,6 +1211,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     landingFor.current = null;
     landingToken.current = 0;
     tabsHydrated.current = false;
+    iconsHydrated.current = false;
     for (const url of receiptPreviews.current.values()) URL.revokeObjectURL(url);
     receiptPreviews.current.clear();
     for (const urls of attachmentPreviews.current.values()) {
@@ -1158,6 +1223,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     setListError(null);
     setActiveId(null);
     setOpenTabs([]);
+    setSessionIcons({});
     setRuns({});
     setDrafts({});
     setReceipts({});
@@ -1244,6 +1310,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         openTabsRef.current,
         activeIdRef.current,
       );
+      // The kickoff marks follow their chats: this agent's own marks are written
+      // under its key before its chats leave the screen, and the incoming agent
+      // reads its own back rather than inheriting these.
+      if (iconsHydrated.current) {
+        writeStoredSessionIcons(
+          vaultIdRef.current,
+          previous,
+          sessionIconsRef.current,
+        );
+      }
     }
     const cached = harnessSnapshots.current.get(harness) ?? null;
     // The incoming agent's remembered strip is read HERE, before any state is
@@ -1253,6 +1329,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     const stored = readStoredChatTabs(vaultIdRef.current, harness);
     const seedTabs = cached?.openTabs ?? (stored.known ? stored.tabs : []);
     const seedActive = cached?.activeId ?? stored.activeId ?? null;
+    iconsHydrated.current = true;
+    setSessionIcons(readStoredSessionIcons(vaultIdRef.current, harness));
     setListError(null);
     setSessionsLoaded(Boolean(cached));
     setSessions(cached?.sessions ?? []);
@@ -1497,6 +1575,15 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         return next;
       });
       automationContexts.current.delete(id);
+      // The chat is gone from Hermes everywhere, so its mark goes with it: a
+      // deleted id must not come back wearing an icon if a later list read ever
+      // carried the same id again.
+      setSessionIcons((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       setRuntimePins((prev) => {
         if (!(id in prev)) return prev;
         const pins = { ...prev };
@@ -2172,6 +2259,18 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     if (activeId) writeStoredLastSessionId(vaultIdRef.current, harnessRef.current, activeId);
   }, [openTabs, activeId]);
 
+  /**
+   * Remember the kickoff marks beside the strip, under the same vault and agent
+   * key. Held off until the landing has read the profile for the same reason the
+   * strip is: the mount before it has no marks, and writing that empty map would
+   * erase the icons of the chats the landing is about to restore.
+   */
+  useEffect(() => {
+    if (!iconsHydrated.current) return;
+    if (landingFor.current) return;
+    writeStoredSessionIcons(vaultIdRef.current, harnessRef.current, sessionIcons);
+  }, [sessionIcons]);
+
   useEffect(() => {
     // A scheduled automation writes its run to the vault and fires the shelf's
     // change event; re-reading the list picks up the chat it started.
@@ -2213,6 +2312,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       tabIds,
       pinnedTabIds,
       activeSession,
+      sessionIcons,
+      markSessionIcon,
       runOf,
       updateRun,
       draftOf,
@@ -2272,6 +2373,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       openTabs,
       pinnedTabIds,
       tabIds,
+      sessionIcons,
+      markSessionIcon,
       patchSession,
       receiptOf,
       resumeLast,

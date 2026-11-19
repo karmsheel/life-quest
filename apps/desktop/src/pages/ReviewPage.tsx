@@ -587,6 +587,7 @@ export default function ReviewPage() {
           // happen until the interview's turn settles, so the chat was missing
           // from the sidebar for the whole run.
           session: start.value.session,
+          icon: "review",
         });
         setNotice(
           [
@@ -753,6 +754,7 @@ export default function ReviewPage() {
         // The plan chat's own row, so the dock lists it in Chats from the first
         // paint instead of waiting for the next session-list read.
         session: plan.value.session,
+        icon: "plan",
       });
       navigate("/goals");
     } catch (err) {

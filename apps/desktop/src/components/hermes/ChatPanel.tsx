@@ -17,11 +17,14 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowUp,
+  BookOpenCheck,
   Eye,
   EyeOff,
+  Goal,
   ImagePlus,
   Keyboard,
   Link2,
+  ListTodo,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -35,8 +38,10 @@ import {
   Radio,
   SquarePen,
   Type,
+  WandSparkles,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   matchingChatQuestions,
   unlockedAreas,
@@ -80,6 +85,7 @@ import { normalizeCapabilities } from "@/lib/turn-timeline";
 import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
+import type { SessionIcon } from "@/state/session-icons";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
@@ -97,6 +103,20 @@ function formatReceiptSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * The mark a kicked-off chat wears before its tab name, by the kind of work
+ * that started it. Each icon is the one its own feature already uses in the
+ * rail — a task from the Act board, a review, a plan toward a goal, an
+ * automation run — so the tab says which door the chat came through without a
+ * word. `aria-hidden`: the tab's accessible name is still its chat name.
+ */
+const SESSION_ICON: Record<SessionIcon, LucideIcon> = {
+  task: ListTodo,
+  review: BookOpenCheck,
+  plan: Goal,
+  automation: WandSparkles,
+};
 
 /**
  * Where a saved question belongs, in the words the settings page uses for it.
@@ -180,6 +200,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     requestedKickoff,
     requestedSession,
     requestedAutomationContext,
+    requestedSessionIcon,
     clearRequestedSession,
     contextCards,
     removeCardContext,
@@ -776,6 +797,63 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (!open || view !== "thread") setTabMenu(null);
   }, [open, view]);
 
+  /**
+   * The strip's browser habit: the tab in front is always scrolled into view.
+   *
+   * Tabs keep a floor of about three characters, so a strip with many chats is
+   * wider than the dock and scrolls instead of squeezing them (see
+   * `.chat-panel__tabs`). A tab that opened off the right edge would be in front
+   * but invisible — the operator would have a chat on screen and no tab to find
+   * it by — so every change of the front tab or the strip walks it back into the
+   * visible band, and no further. The trailing full-screen control sticks to
+   * that edge, so the band ends where the control begins.
+   */
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip || !sessionId) return;
+    if (strip.scrollWidth <= strip.clientWidth + 1) return;
+    const tab = strip.querySelector<HTMLElement>(
+      `[data-tab-id="${CSS.escape(sessionId)}"]`,
+    );
+    if (!tab) return;
+    const trailing = strip.querySelector<HTMLElement>(
+      ".chat-panel__tabs-trailing",
+    );
+    const rightInset = trailing ? trailing.getBoundingClientRect().width : 0;
+    const port = strip.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    const gap = 8;
+    if (box.left < port.left) {
+      strip.scrollLeft -= port.left - box.left + gap;
+    } else if (box.right > port.right - rightInset) {
+      strip.scrollLeft += box.right - (port.right - rightInset) + gap;
+    }
+  }, [sessionId, orderedTabIds, view, open]);
+
+  /**
+   * A vertical wheel over the strip walks it sideways, the way a browser walks
+   * a crowded tab band: the strip is the only thing under the pointer that can
+   * move horizontally, and the page has nothing to scroll there. A horizontal
+   * gesture (a trackpad's two-finger swipe) is left to the platform's own
+   * scrolling, and a strip with room to spare keeps the wheel for its ancestors.
+   *
+   * Registered natively rather than as an `onWheel` prop: React's delegated
+   * wheel listener is passive, so `preventDefault` there would warn and do
+   * nothing.
+   */
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent) => {
+      if (strip.scrollWidth <= strip.clientWidth + 1) return;
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      strip.scrollLeft += event.deltaY;
+      event.preventDefault();
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, [view, open, orderedTabIds]);
+
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -1060,7 +1138,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     const kickoff = requestedKickoff;
     (async () => {
       onOpenChange(true);
-      await chatRef.current.openChatInNewTab(targetId, requestedSession ?? undefined);
+      await chatRef.current.openChatInNewTab(
+        targetId,
+        requestedSession ?? undefined,
+        requestedSessionIcon ?? undefined,
+      );
       if (cancelled) return;
       // Bind the automation's page material before the first turn is sent, so
       // that turn carries the same context every later turn in the chat will.
@@ -1878,6 +1960,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 const pinned = row?.pinned === true;
                 const live = tabRun.sending;
                 const waiting = tabRun.approval !== null;
+                // A kickoff chat wears the mark of the work that started it
+                // instead of the plain status dot; the square keeps its letter.
+                const iconKind = chat.sessionIcons[id] ?? null;
+                const Icon = iconKind ? SESSION_ICON[iconKind] : null;
                 // The square has room for one glyph, so it takes the first
                 // letter of the whitespace-trimmed label, uppercased.
                 const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
@@ -1885,6 +1971,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   <div
                     key={id}
                     role="presentation"
+                    data-tab-id={id}
+                    data-icon={iconKind ?? undefined}
                     className={[
                       "chat-panel__tab",
                       pinned ? "chat-panel__tab--pinned" : "",
@@ -1937,7 +2025,20 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         </>
                       ) : (
                         <>
-                          <span className="chat-panel__tab-dot" aria-hidden />
+                          {/*
+                            The tab's leading mark: the status dot at rest, or
+                            the kickoff chat's own icon. The state (a live
+                            pulse, an approval ring) paints this one slot
+                            whichever mark it holds, so a chat with an icon
+                            loses nothing a plain tab shows.
+                          */}
+                          <span className="chat-panel__tab-mark" aria-hidden>
+                            {Icon ? (
+                              <Icon className="chat-panel__tab-icon" size={11} />
+                            ) : (
+                              <span className="chat-panel__tab-dot" />
+                            )}
+                          </span>
                           <span className="chat-panel__tab-label">{label}</span>
                         </>
                       )}

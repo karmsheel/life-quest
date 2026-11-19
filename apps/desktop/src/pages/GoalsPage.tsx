@@ -272,6 +272,7 @@ export default function GoalsPage() {
         // The plan chat's own row, so the dock lists it in Chats from the first
         // paint instead of waiting for the next session-list read.
         session: plan.value.session,
+        icon: "plan",
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

@@ -186,11 +186,21 @@ The chat dock:
   neutral-gray text with no box and no pencil, and the whole name is the **Rename
   chat** target — a click opens the rename field in place, a click anywhere
   outside it or **Enter** saves, and **Escape** cancels and keeps the old name. A
-  **+** immediately after the last tab is **New chat tab** — the plus sits where
-  the next tab will appear, not on the strip's trailing edge. A middle click
-  closes a tab and **Ctrl/Cmd+W** closes the tab in front. Right-clicking a tab
-  opens **Pin**, **Rename**, **Archive** and **Delete**.
-- **Pinned chats** lead the strip as squares: the label's first letter and a
+  tab leads with a small mark: a status mark that is invisible at rest and shows
+  as a pulsing dot while the chat works or an accent ring while it waits on an
+  approval, or — for a chat the app started rather than the operator — a small
+  icon for what started it, chosen from a task handed over with **Send to
+  agent**, a review interview, a planning session or an automation run, and
+  remembered with the chat. Tabs share the strip and shrink with the dock the way
+  a browser's do, each keeping a floor of about three characters of its chat's
+  name and then an ellipsis, beside that mark and its close control; once they
+  are all at the floor the strip stops squeezing and scrolls sideways, moved by
+  the wheel or its own thin scrollbar, and the tab that comes in front is
+  scrolled into view. A **+** immediately after the last tab is **New chat tab** —
+  the plus sits where the next tab will appear, not on the strip's trailing edge.
+  A middle click closes a tab and **Ctrl/Cmd+W** closes the tab in front.
+  Right-clicking a tab opens **Pin**, **Rename**, **Archive** and **Delete**.
+- **Pinned chats** lead the strip as fixed squares: the label's first letter and a
   small pin, no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
   until it is unpinned.
@@ -255,10 +265,10 @@ The chat dock:
   the mode and brings the page and launcher back, and entering it from a
   collapsed dock reopens the dock. The dock's side does not matter: the dock is
   always immediately right of the rail, with no divider.
-- The open chat tabs are remembered per installation (`lifequest.companion.openTabs`)
-  and reconciled against the chat list on landing, so a restart brings the strip
-  back. Archived or deleted chats lose their tabs; a deliberately closed strip
-  stays closed.
+- The open chat tabs are remembered per vault and agent, and reconciled against
+  the chat list on landing, so a restart brings the strip back. A tab's kickoff
+  mark is remembered with it. Archived or deleted chats lose their tabs; a
+  deliberately closed strip stays closed.
 - Wings filter the rail, never a page's data
   ([LAWS/WINGS.md](../../LAWS/WINGS.md)). Each wing's memory defaults to Home
   `/home`, Define `/dream`, Plan `/goals`, Act `/daily`, Review `/review/daily`
@@ -322,6 +332,10 @@ catalogued in [Settings](./28-settings.md).
 - A pinned chat cannot be archived or deleted until it is unpinned: while pinned,
   its sidebar row hides the hover archive control and its row menu loses
   **Archive** and **Delete**. The tab's own menu offers **Unpin**.
+- A tab keeps at least about three characters of its chat's name and an ellipsis
+  beside its leading mark and close control. When the strip runs out of room it
+  scrolls sideways rather than squeezing the tabs further, and the tab that comes
+  in front is scrolled into view.
 - A page-started chat — **Analyze note**, **Send to agent**, a review interview —
   opens in its own tab beside the conversation on screen rather than replacing it.
 - If the window falls back to LifeQuest's own minimize/maximize/close buttons, the

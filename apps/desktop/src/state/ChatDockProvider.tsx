@@ -13,6 +13,7 @@ import type { Pin } from "@lifequest/vault-core";
 import { pageLabelFor } from "@/lib/page-context";
 import { useVault } from "@/state/VaultProvider";
 import type { HermesSession } from "@/vite-env";
+import type { SessionIcon } from "@/state/session-icons";
 
 /**
  * One chat a page asks the dock to show.
@@ -31,6 +32,13 @@ export type ChatSessionRequest = {
   kickoff?: string;
   automationContext?: string;
   session?: HermesSession;
+  /**
+   * What kind of work started this chat, when the app started it rather than
+   * the operator: a task handed over from the Act board, a review or plan
+   * interview, an automation run. The dock remembers it with the chat, so the
+   * tab wears the matching icon before its name — now and after a restart.
+   */
+  icon?: SessionIcon;
 };
 
 /**
@@ -143,6 +151,12 @@ type ChatDockContextValue = {
    * the first send of that chat.
    */
   requestedAutomationContext: string | null;
+  /**
+   * The kickoff mark this chat wears at the start of its tab name, when a page
+   * started it as a task, a review, a plan or an automation run. Null for a
+   * chat the operator opened from the list.
+   */
+  requestedSessionIcon: SessionIcon | null;
   requestSession: (request: ChatSessionRequest) => void;
   clearRequestedSession: () => void;
   /**
@@ -235,6 +249,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [requestedAutomationContext, setRequestedAutomationContext] = useState<
     string | null
   >(null);
+  const [requestedSessionIcon, setRequestedSessionIcon] =
+    useState<SessionIcon | null>(null);
   const [contextCards, setContextCards] = useState<ChatCardContext[]>([]);
   /**
    * The same array, synchronously.
@@ -303,6 +319,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setRequestedAutomationContext(
       request.automationContext?.trim() ? request.automationContext : null,
     );
+    setRequestedSessionIcon(request.icon ?? null);
   }, []);
 
   const clearRequestedSession = useCallback(() => {
@@ -310,6 +327,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setRequestedKickoff(null);
     setRequestedSession(null);
     setRequestedAutomationContext(null);
+    setRequestedSessionIcon(null);
   }, []);
 
   /**
@@ -400,6 +418,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestedKickoff,
       requestedSession,
       requestedAutomationContext,
+      requestedSessionIcon,
       requestSession,
       clearRequestedSession,
       contextCards,
@@ -426,6 +445,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestedKickoff,
       requestedSession,
       requestedAutomationContext,
+      requestedSessionIcon,
       requestSession,
       clearRequestedSession,
       contextCards,
