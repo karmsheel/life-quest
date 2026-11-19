@@ -62,11 +62,14 @@
  *  9. The daily review ignores the title-bar area lens: the rig is on an area
  *     lens (Relationships) when it navigates to Daily, and the daily review still
  *     starts `overall`. Back on the weekly page the lens is still there.
- * 10. The old claims survive the new surface: the document's blocks and the
- *     blank line the operator typed, Ctrl+B/U/2/3 on the selection, the snapshot
- *     filled once inside its markers in the right section with the agent down,
- *     Preview rendering the whole file (and no longer a domains list), and the
- *     cadence's rules read and written from the page.
+ * 10. There is no second view of the file: no Document/Preview pair, no
+ *     `review-mode-*` buttons and no preview surface — the one box holds the
+ *     whole file, including the paragraph the operator wrote outside the
+ *     skeleton and the area sections the rail maps. The old claims survive the
+ *     surface: the document's blocks and the blank line the operator typed,
+ *     Ctrl+B/U/2/3 on the selection, the snapshot filled once inside its markers
+ *     in the right section with the agent down, and the cadence's rules read and
+ *     written from the page.
  * 11. No bridge call this rig does not model, and no console error.
  * 12. A started review's chat is in the LEFT SIDEBAR from its first paint, while
  *     the agent is still working. The chat list was read before that session
@@ -330,12 +333,22 @@ const SAMPLE = `(() => {
             }
           : null,
         layout: rect(layoutEl),
+        // The page's own side padding: the pair is centred inside it, and the
+        // trailing band is deliberately deeper than the leading one.
+        layoutPadding: (() => {
+          if (!layoutEl) return null;
+          const style = getComputedStyle(layoutEl);
+          return {
+            left: Math.round(parseFloat(style.paddingLeft) || 0),
+            right: Math.round(parseFloat(style.paddingRight) || 0),
+          };
+        })(),
         page: rect(page),
         pageMaxWidth: page ? getComputedStyle(page).maxWidth : null,
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
         header: rect(document.querySelector(".review-page__header")),
-        modes: rect(document.querySelector(".review-page__modes")),
+        toolbar: rect(document.querySelector(".review-page__toolbar")),
         editor: rect(document.querySelector(".review-page__editor")),
         scope: rect(document.querySelector('[data-testid="review-scope"]')),
         pageActions: rect(document.querySelector(".review-page__actions")),
@@ -603,6 +616,22 @@ function layoutReport(layout) {
     contentCentre: content ? content.centerX : null,
     layoutLeft: layout?.layout?.left ?? null,
     layoutWidth: layout?.layout?.width ?? null,
+    layoutPadLeft: layout?.layoutPadding?.left ?? null,
+    layoutPadRight: layout?.layoutPadding?.right ?? null,
+    innerLeft:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left + layout.layoutPadding.left
+        : null,
+    innerRight:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left + layout.layout.width - layout.layoutPadding.right
+        : null,
+    innerCentre:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left +
+          layout.layoutPadding.left +
+          (layout.layout.width - layout.layoutPadding.left - layout.layoutPadding.right) / 2
+        : null,
     pageLeft: page ? page.left : null,
     pageRight,
     pageWidth: page ? page.width : null,
@@ -616,8 +645,20 @@ function layoutReport(layout) {
     railPosition: layout?.railPosition ?? null,
     gap: page && rail ? rail.left - pageRight : null,
     groupCentre: page && rail ? (page.left + railRight) / 2 : null,
+    // The room either side of the pair, measured from the page's padded inner box.
+    gapBefore:
+      page && layout?.layout && layout?.layoutPadding
+        ? page.left - (layout.layout.left + layout.layoutPadding.left)
+        : null,
+    gapAfter:
+      rail && layout?.layout && layout?.layoutPadding
+        ? layout.layout.left +
+          layout.layout.width -
+          layout.layoutPadding.right -
+          railRight
+        : null,
     headerLeft: layout?.header?.left ?? null,
-    modesLeft: layout?.modes?.left ?? null,
+    toolbarLeft: layout?.toolbar?.left ?? null,
     editorLeft: layout?.editor?.left ?? null,
     scopeLeft: layout?.scope?.left ?? null,
     actionsLeft: layout?.pageActions?.left ?? null,
@@ -628,11 +669,14 @@ function layoutReport(layout) {
 /**
  * Claim the two-column reading page: the column keeps its 48rem measure where the
  * sheet has room for it, the checklist is a real column to its right with the
- * stylesheet's gap, and the pair is centred together — not the page centred with
- * the rail hung off one edge.
+ * stylesheet's gap, and the pair is centred together inside the page's own side
+ * padding — not the page centred with the rail hung off one edge, and not the
+ * pair run out to the sheet's edges.
  *
- * `spareFloor` is the empty page the claim demands on each side of the pair; it
- * is only meaningful when the window is wider than the pair needs.
+ * The trailing band is deliberately deeper than the leading one, so the checklist
+ * reads as sitting inside the right padding. `spareFloor` is the empty page the
+ * claim demands on each side of the pair; it is only meaningful when the window
+ * is wider than the pair needs.
  */
 function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   const report = layoutReport(layout);
@@ -647,6 +691,20 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   if (report.contentCentre === null || report.contentLeft === null) {
     failure(`${when}: the sheet's content box could not be read`);
     return report;
+  }
+  // The page's own side padding: it must exist, and the trailing band must be
+  // deeper than the leading one.
+  if (report.layoutPadLeft === null || report.layoutPadRight === null) {
+    failure(`${when}: the page's side padding could not be read`);
+    return report;
+  }
+  if (!(report.layoutPadLeft >= 8)) {
+    failure(`${when}: the page has only ${report.layoutPadLeft}px of leading padding`);
+  }
+  if (!(report.layoutPadRight > report.layoutPadLeft + 4)) {
+    failure(
+      `${when}: the trailing padding (${report.layoutPadRight}px) is not deeper than the leading padding (${report.layoutPadLeft}px)`,
+    );
   }
   // The measure: the column never grows past 48rem.
   if (report.pageWidth > READING_MEASURE + 1) {
@@ -673,17 +731,20 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
       `${when}: the checklist starts at ${report.railLeft}, not to the right of the column's ${report.pageRight} with a gap (gap ${report.gap}px)`,
     );
   }
-  const offBy = report.groupCentre === null ? null : report.groupCentre - report.contentCentre;
+  const offBy =
+    report.groupCentre === null || report.innerCentre === null
+      ? null
+      : report.groupCentre - report.innerCentre;
   if (offBy === null || Math.abs(offBy) > 2) {
     failure(
-      `${when}: the page+checklist group's centre is ${report.groupCentre}, ${offBy}px from the sheet's ${report.contentCentre}`,
+      `${when}: the page+checklist group's centre is ${report.groupCentre}, ${offBy}px from the page's padded centre ${report.innerCentre}`,
     );
   }
   // Every part of the page rides the column: a centred title over a body run
   // from the leading edge would be a page divided against itself.
   for (const [part, left] of [
     ["header", report.headerLeft],
-    ["modes", report.modesLeft],
+    ["toolbar", report.toolbarLeft],
     ["editor", report.editorLeft],
     ["scope line", report.scopeLeft],
     ["actions", report.actionsLeft],
@@ -696,9 +757,10 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
       );
     }
   }
-  // The leftover room is empty page on both sides of the pair, split evenly.
-  const before = report.pageLeft - (report.contentLeft ?? 0);
-  const after = (report.contentRight ?? 0) - (report.railRight ?? 0);
+  // Inside the page's padding the pair is centred: the leftover room is empty
+  // page on both sides of it, split evenly.
+  const before = report.gapBefore ?? 0;
+  const after = report.gapAfter ?? 0;
   checks[`${when}:gaps`] = { before, after };
   if (spareFloor > 0) {
     if (!(before > spareFloor) || !(after > spareFloor)) {
@@ -976,7 +1038,7 @@ async function main() {
   // The pair must be centred at the default window, where the sheet has room for
   // the column's full measure.
   checks.centering = assertTwoColumn(opened.layout, "at the default window", {
-    spareFloor: 4,
+    spareFloor: 2,
   });
   await shot(win, "review-document.png");
   await shot(win, "review-checklist.png");
@@ -1597,7 +1659,7 @@ async function main() {
   await foldDock(win);
   await shot(win, "review-daily.png");
 
-  // ── 10. back on the weekly review: rules and Preview still work ──────────
+  // ── 10. back on the weekly review: no second view, and the rules work ────
   // The daily review ignored the lens but did not consume it: the weekly page is
   // still on the area that was pressed last, which is the whole point of the
   // title-bar lens surviving a page that has no areas.
@@ -1615,6 +1677,27 @@ async function main() {
   }
   if (back.markDoneLabel !== "Mark Relationships review complete") {
     failure(`the weekly mark-done button reads ${JSON.stringify(back.markDoneLabel)}`);
+  }
+  // The box is the page: there is no Document/Preview pair to switch between,
+  // and no second surface of the file. The whole file is in the one box, its
+  // operator-written parts included.
+  const modeButtons = await setHarness(
+    win,
+    `Array.from(document.querySelectorAll('[data-testid^="review-mode-"]')).map((el) => el.getAttribute("data-testid"))`,
+  );
+  checks.modeButtons = modeButtons;
+  if (back.modes.length !== 0) {
+    failure(`the review page still offers view controls: ${JSON.stringify(back.modes)}`);
+  }
+  if (modeButtons.length > 0) {
+    failure(`the review page still has view buttons: ${JSON.stringify(modeButtons)}`);
+  }
+  if (back.previewShown) failure("the review page still draws a Preview surface");
+  if (!String(back.boxText).includes("A note outside the skeleton.")) {
+    failure("the one box dropped a section the operator wrote");
+  }
+  if (!String(back.boxText).includes("alpha beta gamma")) {
+    failure("the one box dropped the heading the operator wrote");
   }
   assertRail(back, "back on the weekly review", {
     statuses: {
@@ -1682,41 +1765,7 @@ async function main() {
     "the rules panel to fold away",
   );
 
-  // ── 11. Preview is the whole file, and no longer a domains list ──────────
-  await click(win, '[data-testid="review-mode-preview"]');
-  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-preview"]'))`, "the preview");
-  await frames(win);
-  const preview = await sample(win);
-  checks.preview = preview;
-  if (!preview.previewShown) failure("the preview mode drew no preview");
-  if (preview.boxes !== 0) failure("the preview mode left the editor box on the page");
-  const previewText = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="review-preview"]').textContent`,
-  );
-  checks.previewText = previewText.slice(0, 600);
-  // The preview is the whole file: the paragraph and heading the operator wrote,
-  // and the area sections the rail maps, are all in it.
-  if (!previewText.includes("A note outside the skeleton.")) {
-    failure("the preview dropped a section the operator wrote");
-  }
-  if (!previewText.includes("alpha beta gamma")) {
-    failure("the preview dropped the heading the operator wrote");
-  }
-  if (!previewText.includes("Relationships")) {
-    failure("the preview dropped an area section the checklist maps");
-  }
-  if (previewText.includes("lifequest:snapshot")) {
-    failure("the preview printed the snapshot marker");
-  }
-  // The old `ReviewPreview` drew a domains list with Not started/Done chips
-  // inside Preview. The checklist is the one place statuses live now.
-  if (previewText.includes("Not started")) {
-    failure("the preview still draws the old domains/status list");
-  }
-  await click(win, '[data-testid="review-mode-document"]');
-  await waitFor(win, `Boolean(document.querySelector(".note-live"))`, "the document mode");
-
-  // ── 12. the life review: summarise across the areas, then lock the file ──
+  // ── 11. the life review: summarise across the areas, then lock the file ──
   // The daily review also started scope `overall`, so the wait is for a NEW
   // session at the next index, not merely for the last one to be `overall`.
   const startsBeforeLife = (await setHarness(win, "window.reviewRigStarts")).length;
@@ -1813,7 +1862,7 @@ async function main() {
     failure("the lock changed the snapshot block");
   }
 
-  // ── 13. nothing unexpected, nothing on fire ──────────────────────────────
+  // ── 12. nothing unexpected, nothing on fire ──────────────────────────────
   const finalStarts = await setHarness(win, "window.reviewRigStarts");
   checks.startsAll = finalStarts;
   const finalKickoffs = await setHarness(win, "window.reviewRigKickoffs");

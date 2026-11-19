@@ -117,6 +117,13 @@ type Column = {
   contentCentre: number | null;
   layoutLeft: number | null;
   layoutWidth: number | null;
+  layoutPadLeft: number | null;
+  layoutPadRight: number | null;
+  innerLeft: number | null;
+  innerRight: number | null;
+  innerCentre: number | null;
+  gapBefore: number | null;
+  gapAfter: number | null;
   pageLeft: number | null;
   pageRight: number | null;
   pageWidth: number | null;
@@ -131,7 +138,7 @@ type Column = {
   gap: number | null;
   groupCentre: number | null;
   headerLeft: number | null;
-  modesLeft: number | null;
+  toolbarLeft: number | null;
   editorLeft: number | null;
   scopeLeft: number | null;
   actionsLeft: number | null;
@@ -307,8 +314,7 @@ type Report = {
     back: Page;
     rules: Page;
     skillWrites: string[];
-    preview: Page;
-    previewText: string;
+    modeButtons: string[];
     lifeStarted: Page;
     lifeStart: StartCall;
     locked: Page;
@@ -531,12 +537,22 @@ describe("review ui e2e", () => {
       `the checklist is not to the right of the column with a gap: ${centred.gap}px`,
     );
     assert.ok(
-      Math.abs((centred.groupCentre ?? NaN) - (centred.contentCentre ?? NaN)) <= 2,
-      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.contentCentre} is the sheet's`,
+      Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
+      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
+    );
+    // The page has its own side padding, and the trailing band is deeper than
+    // the leading one so the checklist reads as inside the right padding.
+    assert.ok(
+      Number(centred.layoutPadLeft) >= 8,
+      `the page has only ${centred.layoutPadLeft}px of leading padding`,
+    );
+    assert.ok(
+      Number(centred.layoutPadRight) > Number(centred.layoutPadLeft) + 4,
+      `the trailing padding (${centred.layoutPadRight}px) is not deeper than the leading padding (${centred.layoutPadLeft}px)`,
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
-      ["modes", centred.modesLeft],
+      ["toolbar", centred.toolbarLeft],
       ["editor", centred.editorLeft],
       ["scope line", centred.scopeLeft],
       ["actions", centred.actionsLeft],
@@ -554,8 +570,8 @@ describe("review ui e2e", () => {
     assert.ok(wide.pageWidth !== null, "the wide page column's width could not be read");
     assert.ok(wide.contentCentre !== null, "the wide sheet's centre could not be read");
     assert.ok(
-      Math.abs((wide.groupCentre ?? NaN) - (wide.contentCentre ?? NaN)) <= 2,
-      "in a wide window the page+checklist group is not centred on the sheet",
+      Math.abs((wide.groupCentre ?? NaN) - (wide.innerCentre ?? NaN)) <= 2,
+      "in a wide window the page+checklist group is not centred inside the page padding",
     );
     assert.ok(
       Number(wide.pageWidth) >= 48 * 16 - 1 && Number(wide.pageWidth) <= 48 * 16 + 1,
@@ -985,33 +1001,19 @@ describe("review ui e2e", () => {
       "the rules write did not carry what the operator wrote",
     );
 
-    // ── Preview is the whole file, and no longer a domains list ────────────
-    assert.equal(report.checks.preview.previewShown, true, "the preview mode drew no preview");
-    assert.equal(report.checks.preview.boxes, 0, "the preview mode left the editor on the page");
+    // ── there is no second view: the one box holds the whole file ──────────
+    assert.deepEqual(report.checks.modeButtons, [], "the review page still has Document/Preview buttons");
+    assert.deepEqual(back.modes, [], "the review page still draws a view switch");
+    assert.equal(back.previewShown, false, "the review page still draws a Preview surface");
     assert.match(
-      report.checks.previewText,
+      String(back.boxText),
       /A note outside the skeleton\./,
-      "the preview dropped a section the operator wrote",
+      "the one box dropped a section the operator wrote",
     );
     assert.match(
-      report.checks.previewText,
+      String(back.boxText),
       /alpha beta gamma/,
-      "the preview dropped the heading the operator wrote",
-    );
-    assert.match(
-      report.checks.previewText,
-      /Relationships/,
-      "the preview dropped an area section the checklist maps",
-    );
-    assert.equal(
-      report.checks.previewText.includes("lifequest:snapshot"),
-      false,
-      "the preview printed the snapshot marker",
-    );
-    assert.equal(
-      report.checks.previewText.includes("Not started"),
-      false,
-      "the preview still draws the old domains/status list",
+      "the one box dropped the heading the operator wrote",
     );
 
     // ── the life review is the summary, and marking it complete locks ──────

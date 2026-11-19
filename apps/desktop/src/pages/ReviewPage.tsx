@@ -25,7 +25,6 @@ import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
-import { MarkdownView } from "@/components/documents/MarkdownView";
 import { AreaReviewsPanel } from "@/components/reviews/AreaReviewsPanel";
 import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
 import { ReviewPeriodPicker } from "@/components/reviews/ReviewPeriodPicker";
@@ -111,7 +110,6 @@ export default function ReviewPage() {
   /** The period whose body is in `draft`; null while one is still on its way in. */
   const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"document" | "preview">("document");
   const [skill, setSkill] = useState<ReviewSkill | null>(null);
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillDraft, setSkillDraft] = useState("");
@@ -435,7 +433,6 @@ export default function ReviewPage() {
       setDraft(asHeld(ensure.value.bodyMarkdown));
       setSavedBody(asHeld(ensure.value.bodyMarkdown));
       setLoadedPeriod(period);
-      setMode("document");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -472,7 +469,6 @@ export default function ReviewPage() {
         setDraft(asHeld(ensure.value.bodyMarkdown));
         setSavedBody(asHeld(ensure.value.bodyMarkdown));
         setLoadedPeriod(period);
-        setMode("document");
 
         // 2. The figures the cadence's rules ask for, filled by the app rather
         //    than the model, so they are there whether or not an agent is.
@@ -561,7 +557,7 @@ export default function ReviewPage() {
   // editor is a whole-file box, so the heading is found in the rendered blocks
   // and scrolled to; a heading that is not drawn is simply not scrolled to.
   useEffect(() => {
-    if (!scrollToArea || mode !== "document") return;
+    if (!scrollToArea) return;
     const area = liveAreas.find((item) => item.slug === scrollToArea);
     if (!area) {
       setScrollToArea(null);
@@ -580,7 +576,7 @@ export default function ReviewPage() {
       setScrollToArea(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [scrollToArea, mode, liveAreas, draft, loadedPeriod, period]);
+  }, [scrollToArea, liveAreas, draft, loadedPeriod, period]);
 
   const onMarkDone = useCallback(async () => {
     if (!snapshot) return;
@@ -923,56 +919,38 @@ export default function ReviewPage() {
           </div>
         ) : (
           <>
-            <div className="review-page__modes" role="group" aria-label="Review view">
-              <Button
-                variant={mode === "document" ? "primary" : "outline"}
-                data-testid="review-mode-document"
-                onClick={() => setMode("document")}
-              >
-                Document
-              </Button>
-              <Button
-                variant={mode === "preview" ? "primary" : "outline"}
-                data-testid="review-mode-preview"
-                onClick={() => setMode("preview")}
-              >
-                Preview
-              </Button>
+            {/* The box is the page: there is no second view of it to switch
+                between, so the row above the prose is only what the prose is —
+                the scope line — and whether it has reached the vault. */}
+            <div className="review-page__toolbar">
+              {isDaily ? null : (
+                <div className="review-page__scope" data-testid="review-scope">
+                  <span className="review-page__scope-label">Reviewing</span>
+                  <span
+                    className="review-page__scope-name"
+                    data-testid="review-scope-name"
+                  >
+                    {activeDomainName ?? "Life"}
+                  </span>
+                  {activeScope === "overall" ? null : (
+                    <button
+                      type="button"
+                      className="review-page__scope-link"
+                      data-testid="review-scope-life"
+                      onClick={onOpenLifeScope}
+                    >
+                      Whole-life review
+                    </button>
+                  )}
+                </div>
+              )}
               <span className="muted review-page__status" data-testid="review-status">
                 {status}
               </span>
             </div>
 
-            {/* What this box is: the whole-life review, or one area's section of
-                it. The line is the page's one statement of the active scope, and
-                an area's line offers the way back to the whole review without
-                starting anything. The daily review says neither — it is one
-                general review with no scope to name. */}
-            {isDaily ? null : (
-              <div className="review-page__scope" data-testid="review-scope">
-                <span className="review-page__scope-label">Reviewing</span>
-                <span
-                  className="review-page__scope-name"
-                  data-testid="review-scope-name"
-                >
-                  {activeDomainName ?? "Life"}
-                </span>
-                {activeScope === "overall" ? null : (
-                  <button
-                    type="button"
-                    className="review-page__scope-link"
-                    data-testid="review-scope-life"
-                    onClick={onOpenLifeScope}
-                  >
-                    Whole-life review
-                  </button>
-                )}
-              </div>
-            )}
-
-            {mode === "document" ? (
-              <div
-                className="review-page__editor"
+            <div
+              className="review-page__editor"
                 // The pointer leaving the box — for another pane, another app — is
                 // the operator stepping away, so the review is written then rather
                 // than at the end of the debounce. Moving between paragraphs stays
@@ -991,19 +969,7 @@ export default function ReviewPage() {
                   placeholder="Write this review."
                   readOnly={locked}
                 />
-              </div>
-            ) : (
-              // The whole file, rendered — not an extract of the four required
-              // headings. A heading the operator typed is their document, and a
-              // preview that dropped it is what made the editor feel like it was
-              // ignoring what they wrote.
-              <div className="review-page__preview" data-testid="review-preview">
-                <MarkdownView
-                  markdown={record.bodyMarkdown}
-                  slug={`review-${cadence}-${period}`}
-                />
-              </div>
-            )}
+            </div>
 
             <div className="review-page__actions">
               <Button

@@ -38,8 +38,9 @@
  *     window is narrow.
  *  9. An existing claim regresses while the new surface is added: the document
  *     box, blank-line fidelity, the formatting keys, the snapshot pass (filled
- *     once, inside its markers, under its heading), Preview's whole file, or the
- *     cadence's rules read/written from the page.
+ *     once, inside its markers, under its heading), the one full-width-enough box
+ *     (no Document/Preview second view), or the cadence's rules read/written from
+ *     the page.
  * 10. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *

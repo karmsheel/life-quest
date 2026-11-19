@@ -1446,12 +1446,13 @@
   color: var(--muted);
 }
 
-/* Document / Preview, and the autosave line that shares the row. */
-.review-page__modes {
+/* The row above the prose: the scope line on the leading edge and the autosave
+   line on the trailing one. There is no second view of the box to switch to. */
+.review-page__toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
 }
 
 .review-page__status {
@@ -1459,17 +1460,16 @@
   font-size: 0.85rem;
 }
 
-.review-page__preview {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+/* The box is the Daily Journal's box: the same live surface, the same generous
+   height (a review is as long as a day's prose), inside the report's 48rem
+   column rather than the studio's default note height. */
+.review-page__editor {
+  width: 100%;
 }
 
-.review-page__preview > .md-view {
-  padding: 1.15rem 1.35rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--card);
+.review-page__editor .note-live {
+  min-height: 32rem;
+  max-height: min(80vh, 68rem);
 }
 
 .review-page__actions {
@@ -1622,7 +1622,12 @@
    has no room for a 48rem page beside a 17rem rail worth reading, so below that
    the checklist stacks ABOVE the reading column (the order of a review: tick the
    parts off, then write the whole). The daily review is one general review and
-   has no checklist at all, which is what `--single` says. */
+   has no checklist at all, which is what `--single` says.
+
+   The pair sits inside the page's own side padding (below), not against the
+   sheet's edges: the report keeps the Daily Journal's 48rem measure and the
+   checklist rides in the room to its right, with the deeper trailing band making
+   it read as inside the right padding. */
 .review-page-layout {
   display: flex;
   flex-direction: row;
@@ -1630,6 +1635,13 @@
   justify-content: center;
   gap: 1.5rem;
   width: 100%;
+  box-sizing: border-box;
+  /* The page no longer runs to the sheet's edges: the report + checklist pair is
+     centred inside the page's own side padding. The trailing band is deeper than
+     the leading one on purpose — the vertical checklist should read as sitting
+     inside the right padding rather than flush with the sheet's edge. */
+  padding-left: clamp(0.75rem, 1.25vw, 2rem);
+  padding-right: clamp(1.75rem, 2.75vw, 3.25rem);
 }
 
 /* The reading column keeps its measure and gives width back when the window has
