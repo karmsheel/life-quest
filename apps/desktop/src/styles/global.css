@@ -1048,12 +1048,13 @@ a {
 
 /* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
    32px row), width taken from the artwork's own aspect, on the rail's content
-   edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), so
-   the L begins exactly on that edge — in line with the wing switcher's frame and
-   the page rows beneath — instead of the padded box's ~15px of transparent
-   margin. The art's three groups are painted from the theme tokens below; the
-   component never carries a fill of its own. It yields to the toggle rather than
-   pushing it off the row on a narrow theme. */
+   edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and
+   the mark is then held one row-content inset in from that edge — the same
+   `--density-pad-row-x` that inside the page rows holds the icons — so the L
+   begins on the line the page icons and the wing switcher's Home stroke share,
+   instead of the rail's box edge. The art's three groups are painted from the
+   theme tokens below; the component never carries a fill of its own. It yields
+   to the toggle rather than pushing it off the row on a narrow theme. */
 .nav-rail__brand {
   display: flex;
   align-items: center;
@@ -1061,7 +1062,12 @@ a {
   min-width: 0;
   width: auto;
   height: 1.7rem;
-  margin-left: 0.35rem;
+  /* 0.35rem cancels the header's negative inline margin (content edge); the row
+     inset then moves the mark in to the line the page rows' icons sit on, and
+     the final 1.5px is optical: the icons' strokes start about that far inside
+     their boxes, so it lands the L on the wing switcher's H stroke and the
+     icons' left edges rather than just on their boxes. */
+  margin-left: calc(0.35rem + var(--density-pad-row-x) + 1.5px);
 }
 
 .nav-rail__brand svg {

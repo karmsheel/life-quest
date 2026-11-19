@@ -42,9 +42,11 @@ splash (injected by `vite.config.ts` from these same files) draw from the tokens
 only, so the mark follows the active theme and cannot go invisible on a day
 skin. The picker (Settings → Developer) stores the variant in localStorage under
 `lifequest-logo`; `theme-boot.js` reads the same key for the splash. The rail's header draws the art's
-ink-tight viewBox (`headerViewBox` in `src/lib/brand/logo.ts`) so its leading
-letter sits on the rail's content edge; the splash and picker keep the padded
-box, which preserves the mark's scale there.
+ink-tight viewBox (`headerViewBox` in `src/lib/brand/logo.ts`) and holds it one
+row-content inset in (`--density-pad-row-x`) plus a 1.5px optical nudge, so the
+leading letter sits on the line the page rows' icons and the wing switcher's H
+stroke share. The splash and picker keep the padded box, which preserves the
+mark's scale there.
 
 The emblem/wordmark/lockup SVGs above are the earlier extraction of the single
 supplied PNG, kept as static brand art (app icon, media).

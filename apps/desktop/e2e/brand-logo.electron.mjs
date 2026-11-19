@@ -94,6 +94,25 @@ const SAMPLE = `(() => {
   const toggle = document.querySelector(".nav-rail .nav-toggle");
   const firstLink = document.querySelector(".nav-rail__link");
   const wings = document.querySelector(".nav-rail__wings");
+  const wingOption = wings ? wings.querySelector(".ui-segmented__option") : null;
+  const wingText = wingOption
+    ? (() => {
+        const range = document.createRange();
+        range.selectNodeContents(wingOption);
+        const r = range.getBoundingClientRect();
+        return {
+          left: Math.round(r.left),
+          top: Math.round(r.top),
+          right: Math.round(r.right),
+          bottom: Math.round(r.bottom),
+          width: Math.round(r.width),
+          height: Math.round(r.height)
+        };
+      })()
+    : null;
+  const firstIcon = document.querySelector(
+    ".nav-rail__link .nav-rail__icon-wrap svg",
+  );
   const rootStyle = getComputedStyle(document.documentElement);
   const token = (name) => rootStyle.getPropertyValue(name).trim();
   const fillOf = (el) => (el ? getComputedStyle(el).fill : null);
@@ -111,6 +130,9 @@ const SAMPLE = `(() => {
     toggle: box(toggle),
     firstLink: box(firstLink),
     wings: box(wings),
+    wingText,
+    icon: box(firstIcon),
+    rowPad: firstLink ? parseFloat(getComputedStyle(firstLink).paddingLeft) : null,
     lifeLeft: lifeText
       ? Math.round(lifeText.getBoundingClientRect().left)
       : null,
@@ -496,14 +518,16 @@ async function main() {
       `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup's L starts on the rail's content edge, level with the wing switcher and the page rows",
-      expanded.rail !== null &&
-        expanded.lifeLeft !== null &&
-        expanded.firstLink !== null &&
-        expanded.wings !== null &&
-        Math.abs(expanded.lifeLeft - expanded.firstLink.left) <= 1 &&
-        Math.abs(expanded.lifeLeft - expanded.wings.left) <= 1,
-      `L left ${expanded.lifeLeft}px, first row ${expanded.firstLink?.left}px, wing switcher ${expanded.wings?.left}px, rail ${expanded.rail?.left}px`,
+      "the lockup's L sits on the line the wing switcher's H and the page icons share",
+      Boolean(brand && expanded.firstLink && expanded.wings && expanded.wingText && expanded.icon) &&
+        expanded.rowPad !== null &&
+        Math.abs(brand.box.left - expanded.wingText.left) <= 1.5 &&
+        brand.box.left - expanded.icon.left >= 0.5 &&
+        brand.box.left - expanded.icon.left <= 3 &&
+        Math.abs(
+          brand.box.left - expanded.firstLink.left - (expanded.rowPad + 1.5),
+        ) <= 0.6,
+      `lockup ${brand?.box.left}px, H text ${expanded.wingText?.left}px, icon ${expanded.icon?.left}px, row ${expanded.firstLink?.left}px + ${expanded.rowPad}px + 1.5px`,
     );
     check(
       "the header keeps the collapse chevron beside the lockup",

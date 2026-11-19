@@ -46,6 +46,9 @@ type State = {
   toggle: Box | null;
   firstLink: Box | null;
   wings: Box | null;
+  wingText: Box | null;
+  icon: Box | null;
+  rowPad: number | null;
   lifeLeft: number | null;
   brand: BrandSample | null;
   toggleMode: string | null;
@@ -206,21 +209,34 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       "chevron",
       "the wide rail's control is not the collapse chevron",
     );
-    // The crop's whole point: the L begins where the rail's own items begin, not
-    // ~15px into a padded box.
+    // The lockup is shifted one row-content inset in from the rail's edge (plus
+    // the optical 1.5px), so its L starts on the line the wing switcher's H and
+    // the page icons share: the logo box sits on the H's text box and just inside
+    // the icons' SVG boxes.
     assert.ok(
-      expanded?.lifeLeft != null &&
-        expanded?.firstLink != null &&
-        expanded?.wings != null,
-      "the rig could not measure the L, the first row and the wing switcher",
+      expanded?.firstLink != null &&
+        expanded?.wings != null &&
+        expanded?.wingText != null &&
+        expanded?.icon != null &&
+        expanded?.rowPad != null,
+      "the rig could not measure the H, the page icon and the row inset",
     );
     assert.ok(
-      Math.abs(expanded.lifeLeft - expanded.firstLink.left) <= 1,
-      `the lockup's L is at ${expanded.lifeLeft}px, the page rows at ${expanded.firstLink.left}px`,
+      Math.abs(expanded.brand.box.left - expanded.wingText.left) <= 1.5,
+      `the lockup starts at ${expanded.brand.box.left}px, the H's text box at ${expanded.wingText.left}px`,
     );
     assert.ok(
-      Math.abs(expanded.lifeLeft - expanded.wings.left) <= 1,
-      `the lockup's L is at ${expanded.lifeLeft}px, the wing switcher at ${expanded.wings.left}px`,
+      expanded.brand.box.left - expanded.icon.left >= 0.5 &&
+        expanded.brand.box.left - expanded.icon.left <= 3,
+      `the lockup starts at ${expanded.brand.box.left}px, the page icon box at ${expanded.icon.left}px`,
+    );
+    assert.ok(
+      Math.abs(
+        expanded.brand.box.left -
+          expanded.firstLink.left -
+          (expanded.rowPad + 1.5),
+      ) <= 0.6,
+      `the lockup's inset is ${expanded.brand.box.left - expanded.firstLink.left}px, not ${expanded.rowPad + 1.5}px`,
     );
     assert.ok(
       Math.abs(brand.box.width / brand.box.height - 847 / 161.78) < 0.15,
