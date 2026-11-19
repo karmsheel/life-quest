@@ -6,6 +6,16 @@ export type CompanionInstructionsInput = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  /**
+   * The open vault's absolute root, when one is open.
+   *
+   * The picture rule tells the companion to save a generated or shared picture
+   * into the vault before writing the markdown tag that draws it, and the
+   * gateway process's working directory is neither the vault nor stable — so a
+   * turn names the root it may actually save under. Absent when no vault is
+   * open, and the rule then names only a vault-relative path.
+   */
+  vaultRoot?: string | null;
   /** Which home Dashboard board the operator is looking at: null = Overview. */
   viewingBoard?: string | null;
   /**
@@ -340,6 +350,17 @@ export type TurnUsage = {
 };
 
 /**
+ * One picture a transcript row carries.
+ *
+ * `src` is a data URL the row already holds — the built-in companion stores its
+ * image parts that way, and the CSP already allows `data:`. `ref` is a path main
+ * can read through `chat:imageRead`: a vault-relative one, or the absolute
+ * `native-inputs/` hint Hermes persists for a picture the operator sent. A row
+ * carries at least one of them.
+ */
+export type TranscriptImage = { name: string; ref?: string; src?: string };
+
+/**
  * One structured transcript row: a user message, an assistant message with the
  * calls it requested, or the result of one of those calls.
  *
@@ -353,6 +374,8 @@ export type TranscriptMessage = {
   content: string;
   /** Creation time as epoch milliseconds. */
   at?: number;
+  /** User rows: the pictures this message carried, in the order they were sent. */
+  images?: TranscriptImage[];
   /** Assistant rows: the tool calls this message requested. */
   toolCalls?: { id: string; name: string; args?: unknown }[];
   /** Tool rows: which assistant call this result answers. */
@@ -800,12 +823,88 @@ function toolCallsOf(raw: unknown): { id: string; name: string; args?: unknown }
 }
 
 /**
+ * The gateway's evidence that a user message carried a picture.
+ *
+ * Hermes keeps a sent picture as two persisted lines rather than as a content
+ * part: a `[screenshot]` marker (sometimes with a detail hint) and a line naming
+ * where its retained copy lives. `[Image attached at: …]` names a local copy the
+ * read door may open; `[Image attached: …]` is a remote one, which the chat
+ * deliberately never draws. Neither line is conversation text — the operator
+ * never typed it — so both are stripped from the displayed content.
+ */
+const SCREENSHOT_MARKER = /^\[screenshot(?: detail=(?:low|high|auto))?\]$/;
+const LOCAL_IMAGE_HINT = /^\[Image attached at: (.+)\]$/;
+const REMOTE_IMAGE_HINT = /^\[Image attached: (.+)\]$/;
+
+/** At most this many pictures come out of one stored row. */
+const MAX_TRANSCRIPT_IMAGES = 8;
+
+/** The last path segment, without dragging node:path into the renderer bundle. */
+function baseName(value: string): string {
+  const parts = value.split(/[\\/]+/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * A user row's pictures, and its text with their evidence removed.
+ *
+ * The two kinds of line pair up IN ORDER, one marker per hint. A row whose
+ * counts disagree is left exactly as it was: a half pair is not evidence of
+ * anything, and stripping it would eat a line the operator may have typed. A
+ * pair with a remote hint is stripped without becoming an image, so a URL never
+ * turns into a ref the door would then have to refuse.
+ */
+function userImagesOf(content: string): {
+  content: string;
+  images: { name: string; ref: string }[];
+} {
+  const lines = content.split("\n");
+  const markers: number[] = [];
+  const hints: { index: number; ref: string | null }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    // A CRLF row keeps its \r in the split; the match sees the line without it.
+    const line = (lines[i] ?? "").replace(/\r$/, "");
+    if (SCREENSHOT_MARKER.test(line)) {
+      markers.push(i);
+      continue;
+    }
+    const local = LOCAL_IMAGE_HINT.exec(line);
+    if (local) {
+      hints.push({ index: i, ref: local[1]!.trim() });
+      continue;
+    }
+    if (REMOTE_IMAGE_HINT.test(line)) hints.push({ index: i, ref: null });
+  }
+  if (markers.length === 0 || markers.length !== hints.length) {
+    return { content, images: [] };
+  }
+  const dropped = new Set<number>(markers);
+  for (const hint of hints) dropped.add(hint.index);
+  const images: { name: string; ref: string }[] = [];
+  for (const hint of hints) {
+    if (!hint.ref || images.length >= MAX_TRANSCRIPT_IMAGES) continue;
+    images.push({ name: baseName(hint.ref), ref: hint.ref });
+  }
+  return {
+    // Dropping lines leaves the newline that ended them behind; the displayed
+    // text is the operator's words, so only that removal artifact is trimmed.
+    content: lines
+      .filter((_, i) => !dropped.has(i))
+      .join("\n")
+      .replace(/[\r\n]+$/, ""),
+    images,
+  };
+}
+
+/**
  * Turn gateway rows into the dock's structured transcript.
  *
  * Assistant rows keep the calls they requested, result rows keep the id they
  * answer, and each keeps whatever accounting the row carried. A result row is
  * not dropped when its text is empty: the row is evidence a call happened even
- * when the tool returned nothing.
+ * when the tool returned nothing. A user row that held only a picture is the
+ * same case: its text is empty after the evidence is stripped, and dropping it
+ * would lose the operator's own message from a reloaded chat.
  */
 export function messagesFromPayload(payload: unknown): TranscriptMessage[] {
   const value: TranscriptMessage[] = [];
@@ -847,15 +946,19 @@ export function messagesFromPayload(payload: unknown): TranscriptMessage[] {
       continue;
     }
     const toolCalls = role === "assistant" ? toolCallsOf(r.tool_calls) : undefined;
+    const userPictures = role === "user" ? userImagesOf(content) : null;
+    const shown = userPictures ? userPictures.content : content;
+    const images = userPictures?.images ?? [];
     if (role === "assistant" && !content.trim() && !toolCalls) continue;
-    if (role === "user" && !content.trim()) continue;
+    if (role === "user" && !shown.trim() && images.length === 0) continue;
     const reasoning = role === "assistant" && typeof r.reasoning === "string" && r.reasoning.trim()
       ? r.reasoning
       : undefined;
     value.push({
       role,
-      content,
+      content: shown,
       ...(at == null ? {} : { at }),
+      ...(images.length > 0 ? { images } : {}),
       ...(toolCalls ? { toolCalls } : {}),
       ...(reasoning ? { reasoning } : {}),
       ...(usage ? { usage } : {}),
@@ -1039,6 +1142,29 @@ function attachmentsInstructions(attachments?: TurnAttachment[] | null): string 
   ].join("\n");
 }
 
+/**
+ * The permanent picture rule: the chat draws a file in the vault, never a URL.
+ *
+ * Every reply carries it because drawing is a capability of the app, not of a
+ * turn. When a vault is open its root is named, so "save it inside the vault" is
+ * a path the agent can actually write: the gateway process's working directory
+ * is neither the vault nor stable, and a relative save would land somewhere
+ * nobody looks. With no vault open the rule stays correct by asking for a
+ * vault-relative path only.
+ */
+function pictureInstructions(vaultRoot?: string | null): string {
+  const root = vaultRoot ? vaultRoot.replace(/[\\/]+$/, "") : "";
+  return [
+    "The chat draws a picture only when it is a file in the vault: save it inside the vault first, then write ![short caption](vault-relative-path) in your reply — for example ![floor plan](attachments/chat/floor-plan.png).",
+    root
+      ? `The vault's root on this machine is ${root}; save the file under it (for example ${root}/attachments/chat/name.png) and then write ![short caption](attachments/chat/name.png).`
+      : "",
+    "A remote URL or a data URL is never drawn, so download a generated picture into the vault before you reference it.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** The word the instruction uses for each kind of attachment. */
 const ATTACHMENT_KIND_WORDS: Record<TurnAttachment["kind"], string> = {
   image: "image",
@@ -1181,6 +1307,9 @@ export function buildInstructions(
   // vault nor stable. A relative path here would be a path the agent cannot
   // open, and the turn would read as though the attachment had been ignored.
   const attachmentsLine = attachmentsInstructions(input.attachments);
+  // The picture rule rides every turn, not only turns that carry a file: the
+  // agent has to know a markdown tag can draw before it writes one.
+  const pictureRule = pictureInstructions(input.vaultRoot);
   // The cards the operator pointed at, if they pointed at any. Absent is the
   // ordinary turn and must stay the ordinary turn: no line, no change in shape.
   const focusedCards =
@@ -1221,6 +1350,7 @@ export function buildInstructions(
     "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,
     attachmentsLine,
+    pictureRule,
     "Database writes split by what they touch. ADDING DATA is written at once, with no Decision: create_database writes a new database and its columns (it refuses a name that area already has), upsert_row without an id creates a row, and insert_rows adds up to 200 new rows; their results say applied: true / posted: true. CHANGING OR REMOVING DATA THAT ALREADY EXISTS still files a pending Decision and writes nothing until the operator approves it: upsert_row WITH an id (an update), delete_row, add_column, delete_database (deleting a whole database and every row in it) and merge_databases (collapsing duplicate databases into one — the rows move into the target, then the sources are deleted). Each of those returns a decisionId and status: \"pending\" and writes nothing, so describe it as a decision waiting for the operator, never as done. The chat confirmation is the operator's yes, so call a direct write only after the operator has agreed in this chat to that exact database or those exact rows — never create a database or add rows speculatively, and never claim a database or row exists unless the tool result says applied: true / posted: true. For a write that became a Decision, say a decision is waiting and name it; a rejected Decision must not be retried as a silent write.",
     "Before create_database, call list_databases for that area and REUSE a database that already has the same name or the same shape — a second same-named database is refused, and duplicate tables are drift. A project is a project record, not a table: use list_projects / create_project, never a 'Projects' database.",
     "When adding many new rows to one database, call insert_rows once. Use upsert_row without an id for a single new row. With an id, upsert_row is an EDIT of existing data and files a Decision instead of writing; say the decision is waiting.",
@@ -1539,19 +1669,48 @@ function sanitizeSnapshot(rows: TranscriptEntry[]): TranscriptEntry[] {
 }
 
 /**
+ * A row's pictures, bounded and reduced to strings.
+ *
+ * A transcript may come from a persisted file this process did not write, so a
+ * field is kept only when it is a string and a picture is kept only when it
+ * names something drawable. A path is not a credential — the read door is what
+ * decides whether it may be opened — so no redaction happens here.
+ */
+function sanitizeRowImages(
+  images: TranscriptImage[] | undefined,
+): TranscriptImage[] | undefined {
+  if (!Array.isArray(images) || images.length === 0) return undefined;
+  const kept: TranscriptImage[] = [];
+  for (const image of images) {
+    if (kept.length >= MAX_TRANSCRIPT_IMAGES) break;
+    if (!image || typeof image !== "object") continue;
+    const name = typeof image.name === "string" ? image.name : "";
+    const ref = typeof image.ref === "string" && image.ref ? image.ref : undefined;
+    const src = typeof image.src === "string" && image.src ? image.src : undefined;
+    if (!ref && !src) continue;
+    kept.push({ name, ...(ref ? { ref } : {}), ...(src ? { src } : {}) });
+  }
+  return kept.length > 0 ? kept : undefined;
+}
+
+/**
  * The last gate before a stored transcript crosses IPC.
  *
  * Assistant and user text is passed through: it is the conversation, and its
  * length is the answer's length. Tool rows are evidence, not prose — their
  * result text and call arguments are clipped and redacted exactly like a live
  * tool frame, so an old transcript cannot carry a file or a key the live path
- * would have refused.
+ * would have refused. A user row's pictures are bounded and string-only, for
+ * the same reason: the renderer must not have to trust a stored session with
+ * more than it can draw.
  */
 export function sanitizeTranscriptRows(rows: TranscriptMessage[]): TranscriptMessage[] {
   return rows.map((row) => {
-    if (row.role !== "tool" && !row.toolCalls && !row.reasoning) return row;
+    const images = sanitizeRowImages(row.images);
+    if (row.role !== "tool" && !row.toolCalls && !row.reasoning && !images) return row;
     return {
       ...row,
+      ...(images ? { images } : {}),
       ...(row.role === "tool"
         ? { content: redactSecrets(clipText(row.content, SNAPSHOT_ROW_BOUND)) }
         : {}),

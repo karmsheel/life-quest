@@ -19,6 +19,7 @@
  *    interrupted turn is never reported as completed. The renderer's capability
  *    descriptor then hides whatever a harness cannot supply.
  */
+import type { ChatImageSource } from "@/lib/chat-images";
 import { summarizeToolRun, toolCategory, type ToolCategory } from "@/lib/tool-run";
 import type {
   ChatStreamEvent,
@@ -65,10 +66,21 @@ export type ToolCallRecord = {
   progress?: string;
 };
 
+/**
+ * The pictures a turn carried, in the order they were attached.
+ *
+ * A live send names the paths main minted; a reloaded transcript names either
+ * those paths again (Hermes) or the inline source its row kept (Pi). The
+ * renderer reads whatever it names through one door — see `ChatImage`.
+ */
+export type TurnImage = ChatImageSource;
+
 export type TurnUser = {
   text: string;
   at?: number;
   receipt?: { name: string; size: number };
+  /** Pictures this turn carried: the receipt first, then the attachments. */
+  images?: TurnImage[];
   /** True when this text was steered into a turn already running. */
   steer?: boolean;
 };
@@ -526,6 +538,11 @@ export function buildTurnTimeline(
         {
           text: entry.content,
           ...(entry.at === undefined ? {} : { at: entry.at }),
+          // The transcript keeps a sent picture as metadata on the user row: the
+          // gateway's marker pairing (Hermes) or the row's own part (Pi). It
+          // rides the turn the same way the live send did, so a reloaded bubble
+          // draws the picture instead of the `[screenshot]` text it used to show.
+          ...(entry.images && entry.images.length > 0 ? { images: entry.images } : {}),
         },
         when,
       );

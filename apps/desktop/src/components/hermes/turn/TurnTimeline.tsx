@@ -1,11 +1,14 @@
 import { Check, Copy, ImagePlus } from "lucide-react";
 import { formatMessageWhen } from "../../../../electron/companion-client.ts";
+import { parseChatImages } from "@/lib/chat-images";
 import {
   hasWorkLog,
+  type TurnImage,
   type TurnRecord,
   type TurnUser,
 } from "@/lib/turn-timeline";
 import type { HarnessTurnCapabilities } from "@/vite-env";
+import { ChatImage } from "../ChatImage";
 import { TurnFooter } from "./TurnFooter";
 import { TurnProcess } from "./TurnProcess";
 
@@ -66,6 +69,7 @@ export function TurnTimeline({
                 content={turn.user.text}
                 at={turn.user.at ?? turn.startedAt}
                 receipt={turn.user.receipt}
+                images={turn.user.images}
                 steer={turn.user.steer === true}
                 companionName={companionName}
                 copied={copied}
@@ -125,6 +129,7 @@ function TurnBubble({
   content,
   at,
   receipt,
+  images,
   steer,
   companionName,
   copied,
@@ -135,6 +140,7 @@ function TurnBubble({
   content: string;
   at?: number;
   receipt?: TurnUser["receipt"];
+  images?: TurnImage[];
   steer?: boolean;
   companionName: string;
   copied: TurnCopyState;
@@ -148,6 +154,10 @@ function TurnBubble({
   const stampedAt = at !== undefined && at > 0 ? at : undefined;
   const when = formatMessageWhen(stampedAt);
   const copy = content || receipt?.name || "";
+  // A reply may name its pictures in the prose it streamed. Only the markdown
+  // image syntax is taken out; every other character stays where the model put
+  // it, so a message with no pictures reads exactly as it always did.
+  const segments = parseChatImages(content);
   return (
     <div
       className={`chat-panel__message chat-panel__message--${role}`}
@@ -166,6 +176,20 @@ function TurnBubble({
         ) : null}
       </span>
       <div className="chat-panel__message-content">
+        {images && images.length > 0 ? (
+          // The pictures ride above the receipt chip and the words: they are
+          // what the operator handed over, and the chip beside them keeps naming
+          // the receipt the finance flow knows about.
+          <div className="chat-panel__user-images" data-testid="turn-user-images">
+            {images.map((image, index) => (
+              <ChatImage
+                key={`${image.ref ?? image.src ?? image.name}:${index}`}
+                source={image}
+                variant="sent"
+              />
+            ))}
+          </div>
+        ) : null}
         {receipt ? (
           <span className="chat-panel__message-receipt">
             <ImagePlus size={12} aria-hidden />
@@ -175,7 +199,17 @@ function TurnBubble({
             </span>
           </span>
         ) : null}
-        {content}
+        {segments.map((segment, index) =>
+          segment.kind === "text" ? (
+            <span key={`t${index}`}>{segment.text}</span>
+          ) : (
+            <ChatImage
+              key={`i${index}`}
+              source={segment.source}
+              variant={role === "user" ? "sent" : "answer"}
+            />
+          ),
+        )}
       </div>
       <div className="chat-panel__message-meta">
         {when ? (

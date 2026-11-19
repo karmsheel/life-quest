@@ -296,6 +296,15 @@ type CompanionInstructionsContext = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  /**
+   * The open vault's absolute root, when one is open.
+   *
+   * The picture rule tells the companion to save a generated or shared picture
+   * into the vault before writing the markdown tag that draws it, and the
+   * gateway's working directory is neither the vault nor stable — so a turn
+   * names the root it may save under. Absent when no vault is open.
+   */
+  vaultRoot?: string | null;
   reviewContext?: string;
   /** The page material an automation opened this chat with, already fenced. */
   automationContext?: string;
@@ -338,6 +347,14 @@ type TurnUsage = {
 };
 
 /**
+ * One picture a transcript row carries. `src` (a data URL) paints directly;
+ * `ref` is a path main reads through `chat:imageRead`, because a reloaded
+ * Hermes turn records where the gateway kept the operator's picture rather than
+ * the bytes. A row has at least one of them.
+ */
+export type TranscriptImage = { name: string; ref?: string; src?: string };
+
+/**
  * One structured transcript row, as history rebuilds it: a user message, an
  * assistant message with the calls it requested, or a tool result. The flat
  * `{role, content, at}` rows older stubs return are a strict subset.
@@ -346,6 +363,8 @@ type TranscriptMessage = {
   role: "user" | "assistant" | "tool";
   content: string;
   at?: number;
+  /** User rows: the pictures this message carried. */
+  images?: TranscriptImage[];
   toolCalls?: { id: string; name: string; args?: unknown }[];
   toolCallId?: string;
   toolName?: string;
@@ -671,6 +690,13 @@ type LifequestApi = {
   }) => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (id: string) => Promise<Result<TranscriptMessage[]>>;
+  /**
+   * One picture a chat bubble wants to draw. `ref` is what the transcript
+   * stored — a vault-relative path, or the gateway's absolute `native-inputs`
+   * hint — and main decides whether it may be read. A refusal is the bubble's
+   * quiet missing chip, never an error page.
+   */
+  chatImageRead: (ref: string) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
   /**
    * Persist the model this chat runs on.
    *
@@ -1132,6 +1158,7 @@ export type {
   ChatStreamEvent,
   HarnessTurnCapabilities,
   TranscriptEntry,
+  TranscriptImage,
   TranscriptMessage,
   TurnUsage,
   CompanionHarnessChanged,

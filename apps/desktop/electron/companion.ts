@@ -740,6 +740,19 @@ async function activeProfileName(): Promise<string> {
 }
 
 /**
+ * The active companion profile's home on this machine.
+ *
+ * The chat's read door allows one directory outside the vault — the profile's
+ * `native-inputs/`, where Hermes keeps its copy of a picture the operator sent —
+ * and that allowance is only as tight as the profile it names. The profile is
+ * resolved exactly the way the gateway path resolves it, so a transcript hint
+ * can never point the door at a profile the app is not on.
+ */
+export async function activeProfileHome(): Promise<string> {
+  return profileDir(hermesRoot(process.env, os.homedir()), await activeProfileName());
+}
+
+/**
  * The `ensure` that is running right now, if one is.
  *
  * The post-bind door check must not cycle the profile while an ensure is
@@ -1938,6 +1951,9 @@ async function currentInstructionsContext(): Promise<CompanionInstructionsInput>
       // false and so does this, so the two texts agree.
       locked: false,
       vaultOpen: Boolean(snapshot),
+      // The picture rule tells the companion where the vault is, so the path the
+      // preview names is the path a turn would name.
+      vaultRoot: snapshot?.rootPath ?? null,
       fileUnsolicited,
       // The Settings preview has to show the same paragraph the turn would: a
       // companion that is told the rubric on one screen and not the other is
@@ -1956,6 +1972,7 @@ async function currentInstructionsContext(): Promise<CompanionInstructionsInput>
       aboutMe: "",
       locked: false,
       vaultOpen: false,
+      vaultRoot: null,
       fileUnsolicited,
     };
   }

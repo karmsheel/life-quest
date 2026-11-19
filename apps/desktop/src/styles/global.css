@@ -9550,6 +9550,165 @@ button.chat-panel__activity-line:hover {
   vertical-align: middle;
 }
 
+/* Pictures in the thread. One control for both directions: a thumbnail that
+   opens a bigger copy, and a quiet chip when the file behind it cannot be read.
+   The operator's pictures are squares inside their accent bubble; the
+   companion's take the transcript's column, capped so a tall picture never
+   pushes the conversation off the screen. */
+.chat-panel__image {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 0.4rem;
+  background: var(--bg-muted);
+  color: var(--muted);
+  font: inherit;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.chat-panel__image:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The operator's bubble: a row of 3.5rem squares, wrapped, above the receipt
+   chip and the words. */
+.chat-panel__user-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.chat-panel__image--sent {
+  flex: none;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+/* The companion's prose: as wide as the column, never taller than 18rem, and
+   left-aligned with the words it sits among. */
+.chat-panel__image--answer {
+  max-width: 100%;
+  border-color: var(--border-soft);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.chat-panel__image-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-panel__image--answer .chat-panel__image-img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 18rem;
+  object-fit: contain;
+}
+
+/* A file that could not be read is a small chip, not a broken-image glyph: it
+   names the picture and says why, and it stays inside the bubble it landed in. */
+.chat-panel__image-missing {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-pill);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  font-size: 0.6875rem;
+  cursor: default;
+}
+
+.chat-panel__image-name {
+  min-width: 0;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The reserved box. A sent picture is exactly the square it will become; an
+   answer reserves the column, so the words under it do not jump when the bytes
+   land. */
+.chat-panel__image[data-image-state="loading"] {
+  cursor: default;
+}
+
+.chat-panel__image--answer[data-image-state="loading"] {
+  width: 100%;
+  min-height: 7rem;
+}
+
+/* The overlay lives on `body`: the dock clips its own overflow, and a picture
+   opened for a closer look should clear the whole window rather than the pane
+   it came from. Above the sheets (50) and the app's questions (60/70), because
+   the picture is what the operator asked to see. */
+.chat-panel__image-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2vmin;
+  background: color-mix(in srgb, var(--canvas-base) 62%, transparent);
+  -webkit-backdrop-filter: blur(6px) saturate(0.94);
+  backdrop-filter: blur(6px) saturate(0.94);
+  cursor: zoom-out;
+}
+
+.chat-panel__image-overlay-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  cursor: default;
+}
+
+.chat-panel__image-overlay-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__image-overlay-close:hover {
+  color: var(--fg);
+  background: var(--bg-muted);
+}
+
+.chat-panel__image-overlay-close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* The chain composer's row is its field's own surface: the control (send
    arrow, or the stop square while a write is live) is positioned inside it
    rather than sitting beside it, so the field keeps the full width of the

@@ -31,6 +31,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type {
   ChatStreamEvent,
   CompanionModelCatalog,
+  TranscriptImage,
   TranscriptMessage,
   TurnAttachment,
   TurnUsage,
@@ -371,6 +372,57 @@ function usageOfPi(raw: unknown): TurnUsage | undefined {
   };
 }
 
+/** At most this many stored image parts become pictures in one row. */
+const MAX_ROW_IMAGES = 4;
+
+/**
+ * How much of one stored image source is trusted.
+ *
+ * Eight million base64 characters is about 6 MB of picture, which is the most a
+ * reloaded bubble should ever be handed; anything larger is a session file this
+ * process did not bound, and the chat shows no picture rather than freezing on
+ * one data URL.
+ */
+const MAX_IMAGE_DATA_CHARS = 8_000_000;
+
+/** A picture's name from its mime, because the part carries no file name. */
+function imageNameFor(mime: string): string {
+  const extension: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+  };
+  return `image.${extension[mime] ?? "png"}`;
+}
+
+/**
+ * The pictures a stored user row carried, as the data URL the bubble can paint.
+ *
+ * Pi keeps what the model was sent: the operator's picture as an `image` content
+ * part with its own base64. That part IS the bytes, so the reloaded row needs no
+ * read door — but the source array is a persisted file this process did not
+ * write, so the list and each source are bounded before they cross IPC.
+ */
+function rowImagesOf(content: unknown): TranscriptImage[] {
+  if (!Array.isArray(content)) return [];
+  const images: TranscriptImage[] = [];
+  for (const rawPart of content) {
+    if (images.length >= MAX_ROW_IMAGES) break;
+    if (!rawPart || typeof rawPart !== "object") continue;
+    const part = rawPart as { type?: unknown; mimeType?: unknown; data?: unknown };
+    if (part.type !== "image") continue;
+    const mime =
+      typeof part.mimeType === "string" && part.mimeType.trim()
+        ? part.mimeType.trim()
+        : "image/png";
+    const data = typeof part.data === "string" ? part.data : "";
+    if (!data || data.length > MAX_IMAGE_DATA_CHARS) continue;
+    images.push({ name: imageNameFor(mime), src: `data:${mime};base64,${data}` });
+  }
+  return images;
+}
+
 /**
  * The turn's rows, in order, with everything Pi kept: assistant text, thinking,
  * the calls the assistant requested, and the tool results that answered them.
@@ -388,8 +440,16 @@ function projectTranscript(messages: unknown[]): TranscriptMessage[] {
     const at = typeof m.timestamp === "number" ? m.timestamp : undefined;
     if (m.role === "user") {
       const content = textOf(m.content);
-      if (!content.trim()) continue;
-      rows.push({ role: "user", content, ...(at == null ? {} : { at }) });
+      const images = rowImagesOf(m.content);
+      // A row that held only a picture still happened: dropping it would lose
+      // the operator's own message from the reloaded chat.
+      if (!content.trim() && images.length === 0) continue;
+      rows.push({
+        role: "user",
+        content,
+        ...(at == null ? {} : { at }),
+        ...(images.length > 0 ? { images } : {}),
+      });
       continue;
     }
     if (m.role === "assistant") {

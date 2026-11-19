@@ -111,8 +111,8 @@ npm test               # from the repo root → apps/desktop/scripts/test.mjs
 ```
 
 That runs `node --experimental-strip-types --test "tests/**/*.test.ts"` in
-`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 103 test
-wrappers over 82 Electron rig drivers.
+`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 123 test
+wrappers over 99 Electron rig drivers.
 
 The testing discipline in this repository is E2E, and the layout enforces it:
 
@@ -125,10 +125,10 @@ The testing discipline in this repository is E2E, and the layout enforces it:
 
 The suite spans the whole product: `pi-companion` and `onboarding` (the built-in
 companion and the first-run interview against a fake endpoint), `life-areas`,
-`companion-brief-ui`, `images-board`, `attachments`, `archive-fence`,
-`chat-tabs-restore`, `keyboard-shortcuts`, `theme-quick-menu`, the dashboard,
-decisions, projects, review, settings and shell rigs, and engine-level tests such
-as `database-write-policy` and `life-areas-engine`.
+`companion-brief-ui`, `images-board`, `attachments`, `chat-images`,
+`archive-fence`, `chat-tabs-restore`, `keyboard-shortcuts`, `theme-quick-menu`, the
+dashboard, decisions, projects, review, settings and shell rigs, and engine-level
+tests such as `database-write-policy` and `life-areas-engine`.
 
 Two rules matter when you run them:
 
