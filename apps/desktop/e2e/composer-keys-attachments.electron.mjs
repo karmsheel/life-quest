@@ -30,6 +30,16 @@
  *     `image/jpeg`), because a receipt is what the ledger cites as a
  *     transaction's source. One picker serving both would silently stop a clip
  *     from being attached, or a receipt from being cited.
+ *  9. The operator's other keyboard is missing. Settings → Composer can put the
+ *     send on plain Enter; with `lifequest-composer-send-key` set to "enter", a
+ *     plain Enter must send and clear the draft, Shift+Enter must break the line
+ *     and send nothing, and Ctrl/Cmd+Enter must still send — each exactly once,
+ *     because a send key that fires twice sends the same words twice.
+ *
+ * The enter-mode leg is LAST on purpose: it stores the choice and reloads the
+ * page, which is how it proves the composer reads the key from storage at mount
+ * rather than from a session flag. Everything before it is measured on the
+ * default (`modified`) keyboard, which is also the state an unset window keeps.
  *
  * Exit code 0 = every invariant held.
  */
@@ -79,12 +89,23 @@ async function main() {
 
   let report;
   const timeout = setTimeout(() => {
-    console.error("composer-keys-attachments: timed out after 90s");
+    console.error("composer-keys-attachments: timed out after 120s");
     app.exit(1);
-  }, 90_000);
+  }, 120_000);
 
   try {
     await win.loadURL(url);
+    await run("window.chatPanelHarnessReady.then(() => true)");
+
+    // Settings → Composer's send key is window storage, and the enter-mode leg
+    // below leaves "enter" in this rig's own profile. A run that started on the
+    // other keyboard would measure a page the operator never changed — the
+    // default (`modified`) is what an unset window gets, so it is cleared here
+    // and the page reloaded to read it.
+    await run(
+      "(() => { localStorage.removeItem('lifequest-composer-send-key'); return true; })()",
+    );
+    await win.webContents.reload();
     await run("window.chatPanelHarnessReady.then(() => true)");
 
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
@@ -687,6 +708,167 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 400));
     fs.writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
 
+    // ── 8. the operator's other keyboard: Enter sends ──────────────────────
+    //
+    // LAST, and deliberately so: this leg stores the Settings → Composer choice
+    // and reloads the page, so nothing after it could measure the default
+    // keyboard the earlier legs measure. The reload is also the proof the
+    // composer reads the key at mount, the way it does on a launch.
+    await run(
+      `(() => { localStorage.setItem("lifequest-composer-send-key", "enter"); return true; })()`,
+    );
+    await win.webContents.reload();
+    await run("window.chatPanelHarnessReady.then(() => true)");
+    win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    // A fresh page: the previous legs' sends belong to the other keyboard.
+    await run("(() => { window.__lqChatCalls = []; return true; })()");
+
+    /** A plain Enter from the field's own keydown: sends once, clears once. */
+    const enterModePlain = await run(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const field = document.querySelector(".chat-panel__composer-input");
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(field, "enter mode prompt");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.focus();
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      await wait(300);
+      return {
+        stored: (() => {
+          try {
+            return localStorage.getItem("lifequest-composer-send-key");
+          } catch {
+            return "unavailable";
+          }
+        })(),
+        sends: (window.__lqChatCalls ?? []).length,
+        calls: window.__lqChatCalls ?? [],
+        draft: field.value,
+      };
+    })()`);
+
+    check(
+      "the enter keyboard is the one in storage",
+      enterModePlain.stored === "enter",
+      `storage holds ${JSON.stringify(enterModePlain.stored)}`,
+    );
+    check(
+      "plain Enter sent exactly one message",
+      enterModePlain.sends === 1,
+      `${enterModePlain.sends} chat call(s) after Enter`,
+    );
+    check(
+      "the Enter message carried the draft",
+      enterModePlain.calls[0]?.input === "enter mode prompt",
+      `sent ${JSON.stringify(enterModePlain.calls[0]?.input)}`,
+    );
+    check(
+      "plain Enter cleared the draft",
+      enterModePlain.draft === "",
+      `draft is ${JSON.stringify(enterModePlain.draft)}`,
+    );
+
+    /** Shift+Enter is a line break, not a send. */
+    await run(`(() => {
+      const field = document.querySelector(".chat-panel__composer-input");
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(field, "first line");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.focus();
+      return true;
+    })()`);
+    // A real keystroke, through Chromium's own input path, so the newline is the
+    // browser's insertion and not a fixture's.
+    win.webContents.sendInputEvent({
+      type: "keyDown",
+      keyCode: "Enter",
+      modifiers: ["shift"],
+    });
+    win.webContents.sendInputEvent({
+      type: "char",
+      keyCode: "Enter",
+      modifiers: ["shift"],
+    });
+    win.webContents.sendInputEvent({
+      type: "keyUp",
+      keyCode: "Enter",
+      modifiers: ["shift"],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const enterModeShift = await run(`(() => {
+      const field = document.querySelector(".chat-panel__composer-input");
+      return {
+        value: field.value,
+        lines: field.value.split("\\n").length,
+        sends: (window.__lqChatCalls ?? []).length,
+      };
+    })()`);
+
+    check(
+      "Shift+Enter broke the line",
+      enterModeShift.lines >= 2,
+      `field holds ${JSON.stringify(enterModeShift.value)}`,
+    );
+    check(
+      "Shift+Enter sent nothing",
+      enterModeShift.sends === 1,
+      `${enterModeShift.sends} chat call(s) after Shift+Enter`,
+    );
+
+    /** Ctrl+Enter still sends, exactly once: the two keys are not an either/or. */
+    const enterModeCtrl = await run(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const field = document.querySelector(".chat-panel__composer-input");
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(field, "ctrl prompt");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.focus();
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await wait(300);
+      const calls = window.__lqChatCalls ?? [];
+      return {
+        sends: calls.length,
+        last: calls[calls.length - 1],
+        draft: field.value,
+      };
+    })()`);
+
+    check(
+      "Ctrl+Enter in enter mode sent exactly one more message",
+      enterModeCtrl.sends === 2,
+      `${enterModeCtrl.sends} chat call(s) after Ctrl+Enter`,
+    );
+    check(
+      "the Ctrl+Enter message carried the draft",
+      enterModeCtrl.last?.input === "ctrl prompt",
+      `sent ${JSON.stringify(enterModeCtrl.last?.input)}`,
+    );
+    check(
+      "Ctrl+Enter in enter mode cleared the draft",
+      enterModeCtrl.draft === "",
+      `draft is ${JSON.stringify(enterModeCtrl.draft)}`,
+    );
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -699,6 +881,11 @@ async function main() {
       live,
       steered,
       queued,
+      enterMode: {
+        plain: enterModePlain,
+        shift: enterModeShift,
+        ctrl: enterModeCtrl,
+      },
       screenshots: [shot],
       failures,
       pass: failures.length === 0,
@@ -746,6 +933,11 @@ async function main() {
       `steer: ${report.steered?.calls?.length} call(s) → ${JSON.stringify(report.steered?.calls?.[0])}`,
     );
     console.log(`queue: ${JSON.stringify(report.queued?.rows)}`);
+    console.log(
+      `enter mode: plain Enter sent ${report.enterMode?.plain?.sends}, ` +
+        `Shift+Enter made ${report.enterMode?.shift?.lines} line(s) and sent ` +
+        `${report.enterMode?.shift?.sends}, Ctrl+Enter sent ${report.enterMode?.ctrl?.sends}`,
+    );
     console.log("");
   }
   console.log(`report: ${reportFile}`);

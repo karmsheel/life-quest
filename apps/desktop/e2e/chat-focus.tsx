@@ -5,13 +5,14 @@
  * This is a system-in-isolation rig, so the ways it can fail are written down
  * before the assertions:
  *
- *  1. **No doors.** The dock's top row carries no full-screen control, or the
- *     window strip carries no main-page control, so the operator has no way in.
+ *  1. **No door.** The dock's top row carries no full-screen control, so the
+ *     operator has no way in from the conversation.
  *  2. **A door in the wrong place.** The dock control is not the trailing item
- *     of the top row after the new-chat plus, or the titlebar control does not
- *     sit immediately before the theme control — a control that merely exists
- *     is not a control an operator finds.
- *  3. **A dead click.** Pressing either door changes nothing on screen.
+ *     of the top row after the new-chat plus — a control that merely exists is
+ *     not a control an operator finds. The window strip must not grow a second
+ *     door either: its trailing cluster is the day/night control and the gear,
+ *     and nothing in it opens the mode.
+ *  3. **A dead click.** Pressing the dock's door changes nothing on screen.
  *  4. **The main pane is still painted.** The shell class flips but the page is
  *     still there, behind the chat, at its old width.
  *  5. **The dock stops short.** It does not reach the rail's trailing edge, the
@@ -132,13 +133,22 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback below is wrong
+  // for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page, leaving the driver waiting
+  // on a ready flag that never comes.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
     ok([{ role: "assistant" as const, content: "Full-screen chat harness turn" }]),
   onCompanionStream: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
-  // its trailing cluster (the main-page control, theme and settings) and not the
+  // its trailing cluster (the day/night control and the gear) and not the
   // fallback window controls.
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
@@ -155,6 +165,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -269,11 +283,9 @@ const waitForShell = () => {
   const shell = document.querySelector(".shell");
   const chat = document.querySelector(".chat-panel");
   const tabs = document.querySelector(".chat-panel__tabs");
+  const strip = document.querySelector(".window-titlebar__trailing");
   const dockControl = document.querySelector('[data-testid="chat-fullscreen"]');
-  const titleControl = document.querySelector(
-    '[data-testid="titlebar-main-page"]',
-  );
-  if (!shell || !chat || !tabs || !dockControl || !titleControl) {
+  if (!shell || !chat || !tabs || !strip || !dockControl) {
     requestAnimationFrame(waitForShell);
     return;
   }

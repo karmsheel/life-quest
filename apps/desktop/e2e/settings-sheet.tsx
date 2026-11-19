@@ -53,6 +53,7 @@ import { ThemeQuickMenu } from "@/components/shell/ThemeQuickMenu";
 import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import SettingsPage from "@/pages/SettingsPage";
@@ -71,6 +72,16 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  /*
+   * ThemeProvider reads the profile's theme files at mount and subscribes for
+   * writes from the companion. The generic `ok(null)` fallback below is wrong
+   * for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+   * unsubscribe the effect calls on cleanup — a Promise there throws, and React
+   * unmounts the sheet, leaving the driver a blank window.
+   */
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   companionEnsure: () => ok({ kind: "disconnected" }),
   companionProfilesList: () => ok({ profiles: [], active: null }),
   windowChrome: {
@@ -88,6 +99,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -190,7 +205,14 @@ createRoot(root).render(
       <ThemeProvider>
         <UpdateProvider>
           <VaultProvider>
-            <Harness />
+            {/* Settings → Chat display is one of the sheet's pages, and the page
+                reads the window's reading settings from this provider. Mounting
+                it here puts the harness's sheet in the same relation the app
+                has: one provider above every route, so a line spacing picked in
+                the sheet is the one the dock behind it wears. */}
+            <ChatDisplayProvider>
+              <Harness />
+            </ChatDisplayProvider>
           </VaultProvider>
         </UpdateProvider>
       </ThemeProvider>

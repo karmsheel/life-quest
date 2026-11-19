@@ -247,7 +247,9 @@ under the buttons. Nothing is modified.
 5. **Say hello.** In the chat dock, type in the composer (*Message Pi…* when Pi
    answers) and press **Ctrl+Enter** to send. Enter breaks the line; the modified
    key sends, and the **Steer** and **Queue** controls work while a turn runs.
-   The companion can read the page you are on and answer from the vault.
+   If you would rather that plain Enter send, switch it in Settings → **Composer**
+   (Ctrl/Cmd+Enter keeps sending either way). The companion can read the page you
+   are on and answer from the vault.
 
 ## Where the vault and companion data go
 

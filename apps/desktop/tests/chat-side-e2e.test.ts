@@ -120,9 +120,17 @@ type Arrangement = {
     icon?: string | null;
     box?: Box;
   };
-  /** A stale copy of any control that moved into the dock's bar: all must be
-   *  gone from the titlebar. */
-  staleTitlebar: { side: boolean; collapse: boolean; shortcuts: boolean };
+  /** A stale copy of any control that moved out of the strip: all must be
+   *  gone from the titlebar. `fullScreen` and `mainPage` are the retired
+   *  full-screen door / main-page toggle that used to ride the trailing
+   *  cluster. */
+  staleTitlebar: {
+    side: boolean;
+    collapse: boolean;
+    shortcuts: boolean;
+    fullScreen: boolean;
+    mainPage: boolean;
+  };
   owners: {
     topLeft: string | null;
     bottomLeft: string | null;
@@ -315,17 +323,16 @@ describe("chat dock side switch", () => {
 
     // The control itself: in the dock's bottom action bar, immediately before the
     // collapse it belongs with, wearing the swap icon and naming the move it
-    // makes. The titlebar no longer carries a copy of either chat control; the
-    // one chat control it does carry is the full-screen door, which leads the
-    // trailing cluster.
+    // makes. The titlebar no longer carries any chat control, the full-screen
+    // door included: the strip's trailing cluster is the day/night control and
+    // the settings menu, and nothing else.
     const rightTrailing = (right.trailing?.controls ?? []).map((row) => row.className);
     assert.deepEqual(
       rightTrailing.length,
-      3,
+      2,
       `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(rightTrailing)}`,
     );
     for (const [index, needle] of [
-      "chat-focus-toggle",
       "theme-mode-toggle",
       "settings-menu",
     ].entries()) {
@@ -334,6 +341,16 @@ describe("chat dock side switch", () => {
         `the titlebar's trailing child ${index} is not ${needle}: ${JSON.stringify(rightTrailing)}`,
       );
     }
+    assert.equal(
+      right.staleTitlebar.fullScreen,
+      false,
+      "a full-screen chat door is still riding the titlebar's trailing cluster",
+    );
+    assert.equal(
+      right.staleTitlebar.mainPage,
+      false,
+      "a [data-testid=titlebar-main-page] toggle is back in the strip",
+    );
     assert.equal(
       right.staleTitlebar.side,
       false,

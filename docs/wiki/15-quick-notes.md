@@ -105,9 +105,10 @@ Enter submits only when it is not composing text and not a held-down repeat:
   signal.
 - A key repeat from holding Enter down is ignored, so one thought cannot fire several writes.
 
-The page's own composer is the Quick Notes gesture. The chat composer is different now: in
-chat, **Enter** breaks the line and **Ctrl/Cmd+Enter** sends, so Quick Notes is the one place
-where the plain key logs.
+The page's own composer is the Quick Notes gesture, and it is not the chat composer: Quick
+Notes keeps **Enter** to log and **Shift+Enter** for a new line, whatever the chat is set
+to. The chat box defaults to **Enter** breaking the line and **Ctrl/Cmd+Enter** sending,
+though Settings → **Composer** can hand that send to plain Enter.
 
 ### What a signal is
 

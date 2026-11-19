@@ -21,7 +21,7 @@ import { describe, it } from "node:test";
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the seven `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the nine `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -37,6 +37,8 @@ const REPORT = path.join(desktopRoot, "e2e/artifacts/review.json");
 const SHOTS = [
   "review-document.png",
   "review-started.png",
+  "review-chat-sidebar.png",
+  "review-calendar.png",
   "review-rules.png",
   "review-wide.png",
   "review-checklist.png",
@@ -115,6 +117,13 @@ type Column = {
   contentCentre: number | null;
   layoutLeft: number | null;
   layoutWidth: number | null;
+  layoutPadLeft: number | null;
+  layoutPadRight: number | null;
+  innerLeft: number | null;
+  innerRight: number | null;
+  innerCentre: number | null;
+  gapBefore: number | null;
+  gapAfter: number | null;
   pageLeft: number | null;
   pageRight: number | null;
   pageWidth: number | null;
@@ -129,11 +138,23 @@ type Column = {
   gap: number | null;
   groupCentre: number | null;
   headerLeft: number | null;
-  modesLeft: number | null;
+  toolbarLeft: number | null;
   editorLeft: number | null;
   scopeLeft: number | null;
   actionsLeft: number | null;
   notesLeft: number | null;
+};
+
+/** One box in the review page's header, as the driver measured it. */
+type HeaderBox = { left: number; right: number; width: number };
+
+/** One of the header's two step keys: its paint, and whether it has a label. */
+type HeaderKey = {
+  text: string;
+  borderTop: string;
+  borderStyle: string;
+  background: string;
+  width: number;
 };
 
 /** One row of the Review checklist. */
@@ -162,6 +183,18 @@ type Page = {
   headings: number;
   title: string | null;
   period: string | null;
+  eyebrow: string | null;
+  periodData: string | null;
+  calendar: boolean;
+  nextDisabled: boolean | null;
+  headerParts: {
+    page: HeaderBox | null;
+    prev: HeaderBox | null;
+    next: HeaderBox | null;
+    block: HeaderBox | null;
+    prevShape: HeaderKey | null;
+    nextShape: HeaderKey | null;
+  };
   notice: string | null;
   error: string | null;
   status: string | null;
@@ -246,6 +279,22 @@ type Report = {
     started: Page;
     starts: StartCall[];
     financeKickoffs: string[];
+    /** The rail's Chats list at the moment the Finance interview is running. */
+    startedSidebar: {
+      present: boolean;
+      rows: { label: string; active: boolean; live: boolean }[];
+    };
+    /** The chat row the gateway made for that start. */
+    startedChat: { id: string; title: string } | null;
+    /** The calendar key's walk to another week and back to the open one. */
+    picker: {
+      baseWeek: string | null;
+      pickerMonth: string | null;
+      chosenDay: string | null;
+      expectedWeek?: string;
+      moved?: { period: string | null; title: string | null; nextDisabled: boolean | null };
+      back?: { period: string | null; nextDisabled: boolean | null; steps: number };
+    };
     startedTwiceBody: string;
     financeDone: Page;
     financeDoneRail: RailState;
@@ -265,8 +314,7 @@ type Report = {
     back: Page;
     rules: Page;
     skillWrites: string[];
-    preview: Page;
-    previewText: string;
+    modeButtons: string[];
     lifeStarted: Page;
     lifeStart: StartCall;
     locked: Page;
@@ -342,13 +390,57 @@ describe("review ui e2e", () => {
     assert.equal(opened.blockCount, 35, "the review did not render its own file");
     assert.equal(opened.editing, false, "the review opened a writing line on arrival");
     assert.equal(opened.blanks, 1, "the blank line the operator typed is not drawn");
-    assert.equal(opened.title, "Weekly review", "the review page is not titled for its cadence");
+    // The header is the Daily Journal's shape: the cadence is the page's name in
+    // the eyebrow, the period is its one heading, and the calendar key beside
+    // the heading walks to another period. The old `Weekly review` title would
+    // say the cadence twice and the period in a second, subordinate line.
+    assert.equal(opened.eyebrow, "Weekly", "the review page's eyebrow is not its cadence");
     // The page opens on the CURRENT week, which is whatever week the suite runs
     // in: the claim is the shape of its own label, not a pinned date.
     assert.match(
-      String(opened.period),
-      /^Weekly review · Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/,
-      "the review page does not label its period",
+      String(opened.title),
+      /^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/,
+      "the review page's heading is not its period",
+    );
+    assert.equal(
+      opened.title,
+      opened.period,
+      "the heading and the tested period read differently",
+    );
+    assert.ok(opened.periodData, "the page does not record the period it is on");
+    assert.equal(opened.calendar, true, "the header has no calendar key beside the period");
+    // The steps are keys: no label and no frame, on the column's edges, with the
+    // period block (heading + calendar) centred between them.
+    for (const [name, key] of [
+      ["previous", opened.headerParts.prevShape],
+      ["next", opened.headerParts.nextShape],
+    ] as const) {
+      assert.ok(key, `the ${name} step is not on the page`);
+      assert.equal(key.text, "", `the ${name} step carries a label instead of an arrow`);
+      assert.equal(key.borderStyle, "none", `the ${name} step wears a frame`);
+      assert.equal(key.borderTop, "0px", `the ${name} step wears a border`);
+      assert.ok(
+        key.background === "rgba(0, 0, 0, 0)" || key.background === "transparent",
+        `the ${name} step wears a fill`,
+      );
+    }
+    const pageBox = opened.headerParts.page;
+    const blockBox = opened.headerParts.block;
+    assert.ok(pageBox && blockBox, "the header's column or period block could not be measured");
+    assert.ok(
+      Math.abs((blockBox.left + blockBox.right) / 2 - (pageBox.left + pageBox.right) / 2) <= 2,
+      "the period block is not centred over the reading column",
+    );
+    const prevBox = opened.headerParts.prev;
+    const nextBox = opened.headerParts.next;
+    assert.ok(prevBox && nextBox, "the step keys could not be measured");
+    assert.ok(
+      Math.abs(prevBox.left - pageBox.left) <= 2,
+      "the previous step is not on the column's leading edge",
+    );
+    assert.ok(
+      Math.abs(nextBox.right - pageBox.right) <= 2,
+      "the next step is not on the column's trailing edge",
     );
     assert.equal(
       opened.actions.includes("Edit"),
@@ -445,12 +537,22 @@ describe("review ui e2e", () => {
       `the checklist is not to the right of the column with a gap: ${centred.gap}px`,
     );
     assert.ok(
-      Math.abs((centred.groupCentre ?? NaN) - (centred.contentCentre ?? NaN)) <= 2,
-      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.contentCentre} is the sheet's`,
+      Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
+      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
+    );
+    // The page has its own side padding, and the trailing band is deeper than
+    // the leading one so the checklist reads as inside the right padding.
+    assert.ok(
+      Number(centred.layoutPadLeft) >= 8,
+      `the page has only ${centred.layoutPadLeft}px of leading padding`,
+    );
+    assert.ok(
+      Number(centred.layoutPadRight) > Number(centred.layoutPadLeft) + 4,
+      `the trailing padding (${centred.layoutPadRight}px) is not deeper than the leading padding (${centred.layoutPadLeft}px)`,
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
-      ["modes", centred.modesLeft],
+      ["toolbar", centred.toolbarLeft],
       ["editor", centred.editorLeft],
       ["scope line", centred.scopeLeft],
       ["actions", centred.actionsLeft],
@@ -468,8 +570,8 @@ describe("review ui e2e", () => {
     assert.ok(wide.pageWidth !== null, "the wide page column's width could not be read");
     assert.ok(wide.contentCentre !== null, "the wide sheet's centre could not be read");
     assert.ok(
-      Math.abs((wide.groupCentre ?? NaN) - (wide.contentCentre ?? NaN)) <= 2,
-      "in a wide window the page+checklist group is not centred on the sheet",
+      Math.abs((wide.groupCentre ?? NaN) - (wide.innerCentre ?? NaN)) <= 2,
+      "in a wide window the page+checklist group is not centred inside the page padding",
     );
     assert.ok(
       Number(wide.pageWidth) >= 48 * 16 - 1 && Number(wide.pageWidth) <= 48 * 16 + 1,
@@ -628,6 +730,68 @@ describe("review ui e2e", () => {
     assert.match(financeStart.kickoff, /only/, "the Finance kickoff does not scope the companion to one section");
     assert.equal(report.checks.financeKickoffs.length, 1, "the dock was not sent exactly the Finance kickoff");
     assert.match(String(report.checks.financeKickoffs[0]), /## Finance/, "the dock was sent another kickoff");
+
+    // ── the started interview is in Chats while the agent is still working ──
+    // The chat list was read before this session existed and is not read again
+    // until the turn settles: the row is there only because the dock adopted the
+    // row main handed back with the session id. A chat that shows up only after
+    // the run is the reported bug.
+    assert.equal(
+      report.checks.startedSidebar.present,
+      true,
+      "the shell has no Chats list to list the started interview in",
+    );
+    const startedChat = report.checks.startedChat;
+    assert.ok(startedChat, "the gateway has no chat row for the Finance start");
+    const listedChat = report.checks.startedSidebar.rows.find(
+      (row) => row.label === startedChat.title,
+    );
+    assert.ok(
+      listedChat,
+      `the started review chat is missing from Chats while its turn runs (listed: ${JSON.stringify(
+        report.checks.startedSidebar.rows.map((row) => row.label),
+      )})`,
+    );
+    assert.equal(
+      listedChat.active,
+      true,
+      "the started review chat is not the open chat in Chats",
+    );
+    assert.equal(
+      listedChat.live,
+      true,
+      "the started review chat's row does not show its turn running",
+    );
+
+    // ── the calendar beside the period walks to another week ───────────────
+    // The period heading is the page's one navigation, so the calendar key and
+    // the arrow steps must actually move it: choosing a day in the previous
+    // month takes the page to that day's week, and the steps walk back to the
+    // open week, where Next is the wall.
+    const picker = report.checks.picker;
+    assert.ok(picker.chosenDay, "the calendar drew no selectable day");
+    assert.ok(picker.expectedWeek, "the driver did not compute the chosen day's week");
+    assert.equal(
+      picker.moved?.period,
+      picker.expectedWeek,
+      "choosing a day in the calendar did not move the page to that day's week",
+    );
+    assert.match(
+      String(picker.moved?.title),
+      /^Week of /,
+      "the moved page's heading is not its week",
+    );
+    assert.equal(
+      picker.moved?.nextDisabled,
+      false,
+      "Next is disabled on an older week, where the open week is still ahead",
+    );
+    assert.equal(
+      picker.back?.period,
+      picker.baseWeek,
+      "the arrow steps did not walk back to the open week",
+    );
+    assert.equal(picker.back?.nextDisabled, true, "Next is not disabled on the open week");
     assert.match(String(started.notice), /snapshot/i, "the page did not say what it filled");
     assert.match(String(started.notice), /chat/i, "the page did not say the interview opened");
     assert.equal(
@@ -837,33 +1001,19 @@ describe("review ui e2e", () => {
       "the rules write did not carry what the operator wrote",
     );
 
-    // ── Preview is the whole file, and no longer a domains list ────────────
-    assert.equal(report.checks.preview.previewShown, true, "the preview mode drew no preview");
-    assert.equal(report.checks.preview.boxes, 0, "the preview mode left the editor on the page");
+    // ── there is no second view: the one box holds the whole file ──────────
+    assert.deepEqual(report.checks.modeButtons, [], "the review page still has Document/Preview buttons");
+    assert.deepEqual(back.modes, [], "the review page still draws a view switch");
+    assert.equal(back.previewShown, false, "the review page still draws a Preview surface");
     assert.match(
-      report.checks.previewText,
+      String(back.boxText),
       /A note outside the skeleton\./,
-      "the preview dropped a section the operator wrote",
+      "the one box dropped a section the operator wrote",
     );
     assert.match(
-      report.checks.previewText,
+      String(back.boxText),
       /alpha beta gamma/,
-      "the preview dropped the heading the operator wrote",
-    );
-    assert.match(
-      report.checks.previewText,
-      /Relationships/,
-      "the preview dropped an area section the checklist maps",
-    );
-    assert.equal(
-      report.checks.previewText.includes("lifequest:snapshot"),
-      false,
-      "the preview printed the snapshot marker",
-    );
-    assert.equal(
-      report.checks.previewText.includes("Not started"),
-      false,
-      "the preview still draws the old domains/status list",
+      "the one box dropped the heading the operator wrote",
     );
 
     // ── the life review is the summary, and marking it complete locks ──────

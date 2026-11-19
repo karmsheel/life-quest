@@ -102,7 +102,7 @@ wants to know what is on disk and what runs where.
 | Page | What it covers |
 |---|---|
 | [27 · Updates](./27-updates.md) | The version badge, hourly release watch, update notice and dialog |
-| [28 · Settings](./28-settings.md) | All twelve settings tabs and the settings search |
+| [28 · Settings](./28-settings.md) | All fourteen settings tabs and the settings search |
 | [29 · Security](./29-security.md) | Secrets, vault containment, update trust, MCP door auth |
 | [30 · System architecture](./30-system-architecture.md) | Processes, harness seam, IPC, vault-core, MCP, repo layout |
 | [31 · Development](./31-development.md) | Scripts, dev loop, E2E rigs, build/package/release, docs gate |

@@ -59,7 +59,8 @@ goal has no lock and no body document.
 8. To start or resume a planning session around the current period, choose a
    cadence — **Weekly**, **Monthly**, **Quarterly**, or **Yearly** — and click
    **Plan this period**. The plan opens as a companion session in the chat pane,
-   scoped to the active area lens if you are in one.
+   listed in **Chats** from its first paint, and scoped to the active area lens
+   if you are in one.
 
 Area lens behaviour: on the **Life** lens the list shows every goal, including
 unassigned ones. With an area lens, only that area's goals are listed, and

@@ -675,8 +675,7 @@ a {
 }
 
 .window-titlebar__trailing .theme-mode-toggle svg,
-.window-titlebar__trailing .settings-menu__trigger svg,
-.window-titlebar__trailing .chat-focus-toggle svg {
+.window-titlebar__trailing .settings-menu__trigger svg {
   width: 14px;
   height: 14px;
 }
@@ -1165,8 +1164,12 @@ a {
    of its own: at this tight padding the shared active border sat three pixels
    inside the frame's line and read as a second, nested outline around the wing.
    The transparent border keeps the box the same size, so switching wings moves
-   nothing. */
-.nav-rail__wings .ui-segmented__option.is-active {
+   nothing. Both markers are matched: the SDK segmented control marks its checked
+   item with `aria-checked`, while the app-local class was `.is-active` — the
+   aria rule came after this one and brought the nested outline back when the
+   wings moved to the shared control. */
+.nav-rail__wings .ui-segmented__option.is-active,
+.nav-rail__wings .ui-segmented__option[aria-checked="true"] {
   border-color: transparent;
 }
 
@@ -6049,6 +6052,143 @@ a.home-mini-list__link:hover {
   align-items: flex-start;
 }
 
+/* —— Settings → Chat display ——
+   The page is two axes — size and line spacing — plus a preview in the dock's
+   own reading measures. The controls are the card's own quiet buttons rather
+   than the app-wide pill: they live beside a label line, like every other
+   settings control. */
+.chat-display-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chat-display-zoom__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-display-zoom__step:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.chat-display-zoom__step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-display-zoom__step:focus-visible,
+.chat-display-reset:focus-visible,
+.chat-display-lines__option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chat-display-zoom__value {
+  min-width: 3.25rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.chat-display-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.35rem;
+  padding: 0.42rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.chat-display-reset:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.chat-display-lines {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.chat-display-lines__option {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.chat-display-lines__option:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.chat-display-lines__option.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: var(--selected-soft);
+  color: var(--text);
+}
+
+.chat-display-lines__value {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* The preview row takes the card's full width: a sample set to a line spacing
+   needs more than one line to show it. The row's copy must not keep the row
+   layout's `flex: 1 1 14rem` — in a column that basis is a height, and the
+   preview would sit 14rem below its own label. */
+.settings-card__row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+
+.settings-card__row--stacked .settings-card__copy,
+.settings-card__row--stacked .chat-display-preview {
+  flex: 0 0 auto;
+}
+
+.chat-display-preview {
+  max-width: 34rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.chat-display-preview__prose {
+  margin: 0;
+  font-size: calc(0.8125rem * var(--chat-reading-scale, 1));
+  line-height: var(--chat-reading-line, 1.5);
+  color: var(--text);
+}
+
 /* —— Developer page ——
    Every developer switch is one row of this list. The row pair itself — copy on
    the leading edge, switch on the trailing edge, the hairline between rows — is
@@ -6167,6 +6307,44 @@ a.home-mini-list__link:hover {
   color: var(--text-muted);
 }
 
+/* —— Composer page ——
+   One row, and the row pair is `SettingsRow`'s own layout: the copy on the
+   leading edge, the send-key control on the trailing edge. The page keeps only
+   its own measures — the description wants a column, and the segmented control
+   sits at the top of the row rather than floating in its middle. */
+.settings-composer {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-composer .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-composer .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-composer .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.12rem;
+}
+
+/* The row's own report: which key the message box answers to now, and what the
+   other key does. */
+.settings-composer__state {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.settings-composer__state strong {
+  color: var(--text);
+  font-weight: 500;
+}
 /* —— Decisions page ——
    The same list shape as Developer, because it is the same kind of page: two
    switches, each one row. `SettingsRow` now owns the row pair and the hairline
@@ -7368,6 +7546,12 @@ a.home-mini-list__link:hover {
   --transcript-gutter: max(0.875rem, var(--composer-gutter));
   /* The app's scrollbar width (see the global `::-webkit-scrollbar` rule). */
   --dock-scrollbar: 0.5rem;
+  /* The transcript's reading settings (Settings → Chat display, and the dock's
+     zoom keys): a size multiplier and a line-height. The provider publishes
+     them on this element; these are the defaults the dock ships with, so a
+     harness page without the provider still draws the shipped transcript. */
+  --chat-reading-scale: 1;
+  --chat-reading-line: 1.5;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -7546,15 +7730,17 @@ a.home-mini-list__link:hover {
   display: none;
 }
 
-/* The thread's name row, as a chip rather than a band.
+/* The thread's name row, as the name itself rather than a chip.
 
    The row used to be a full-width band under the tab strip holding one line of
-   text — 44px of chrome for a name the tab already carries. It is now the name's
-   own box: a small, bordered rectangle sized to the text, centred on the dock,
-   hanging flush off the strip's bottom edge, with the rename pencil at its
-   trailing end. The band around it is only the room the chip needs under the
-   strip and over the transcript; it paints no hairline of its own, so the strip's
-   bottom edge is the only line between the two rows. */
+   text — 44px of chrome for a name the tab already carries — then a small
+   bordered box with a rename pencil at its end. It is now just the name: quiet,
+   neutral-gray text hanging flush off the strip's bottom edge and centred on the
+   dock, with no box, no outline and no pencil. The whole name is the control —
+   click it and the rename field opens in place; click anywhere else and the
+   field's blur saves. The row around it is only the room the name needs under
+   the strip and over the transcript; it paints no hairline of its own, so the
+   strip's bottom edge is the only line between the two rows. */
 .chat-panel__header--thread {
   gap: 0.35rem;
   justify-content: center;
@@ -7564,61 +7750,32 @@ a.home-mini-list__link:hover {
   border-bottom: 0;
 }
 
-/* The box around the name: its width is the name's width, up to the row's own.
-   A long title keeps the box inside the dock and ellipsizes its own text, so the
-   pencil is never pushed off the edge it belongs to. */
+/* The name itself: a quiet button whose whole box is the rename target. Its
+   width is the name's width, up to the row's own, and a long title keeps it
+   inside the dock and ellipsizes rather than pushing anything out. There is no
+   border, no fill and no pencil: resting state is text, and only the hover wash
+   and the focus ring say it can be pressed. Neutral gray, not the transcript's
+   full ink — the tab above already names the chat, so this row is its caption. */
 .chat-panel__name {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
   min-width: 0;
   max-width: 100%;
-  padding: 0.13rem 0.26rem 0.13rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--card);
-  /* The name stays as bright as the tab above it: the row is smaller, not
-     quieter. The pencil is the quiet part. */
-  color: var(--fg);
+  padding: 0.13rem 0.3rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: text;
 }
 
 .chat-panel__name:hover {
-  border-color: var(--border-strong, var(--border));
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: color-mix(in srgb, var(--muted) 80%, var(--fg));
 }
 
-/* The pencil at the chip's end: the quick way into the rename field the tab
-   menu also offers. It is the chip's one control, so it stays a quiet glyph
-   until the pointer is on it. */
-.chat-panel__name-edit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  flex: 0 0 auto;
-  width: 1.1rem;
-  height: 1.1rem;
-  padding: 0;
-  border: 0;
-  border-radius: 0.25rem;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-/* The glyph is chip-sized, but its pressable box is not: the pad widens the
-   target to the 24px a pointer (and WCAG 2.2) expects without growing the chip. */
-.chat-panel__name-edit::after {
-  content: "";
-  position: absolute;
-  inset: -0.25rem;
-}
-
-.chat-panel__name-edit:hover {
-  background: var(--selected-soft);
-  color: var(--accent);
-}
-
-.chat-panel__name-edit:focus-visible {
+.chat-panel__name:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
@@ -7635,17 +7792,18 @@ a.home-mini-list__link:hover {
 }
 
 .chat-panel__header--thread .chat-panel__heading--thread {
-  /* The chip is the box; the label is the text in it. One step down from the
-     heading's 0.85rem, so the row reads as a caption of the tab above it rather
-     than as a second title. */
+  /* The name is the row's only text. One step down from the heading's 0.85rem,
+     so the row reads as a caption of the tab above it rather than as a second
+     title. */
   flex: 0 1 auto;
   max-width: 100%;
   font-size: 0.7rem;
   letter-spacing: 0.01em;
 }
 
-/* Renaming happens in the same chip: the field and its two keys replace the name
-   inside the box, so the row does not jump when the pencil is pressed. */
+/* Renaming happens in the name's own place: the field replaces it, so the row
+   does not jump when the name is clicked. This soft box is the only outline the
+   row draws, and only while the field is open — the resting name has none. */
 .chat-panel__rename {
   display: inline-flex;
   align-items: center;
@@ -8190,8 +8348,10 @@ a.home-mini-list__link:hover {
 
 .chat-panel__message-content {
   max-width: 100%;
-  font-size: 0.8125rem;
-  line-height: 1.45;
+  /* The reading settings: the dock's 13px base multiplied by the operator's
+     zoom, set on the line spacing they picked (1.5 to begin with). */
+  font-size: calc(0.8125rem * var(--chat-reading-scale));
+  line-height: var(--chat-reading-line);
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--fg);
@@ -8525,8 +8685,8 @@ button.chat-panel__activity-line:hover {
 .chat-panel__process-narration,
 .chat-panel__process-commentary {
   margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.45;
+  font-size: calc(0.75rem * var(--chat-reading-scale));
+  line-height: var(--chat-reading-line);
   white-space: pre-wrap;
   word-break: break-word;
   color: color-mix(in srgb, var(--fg) 72%, var(--muted));
@@ -8587,8 +8747,8 @@ button.chat-panel__activity-line:hover {
   overflow-y: auto;
   padding-left: 0.55rem;
   border-left: 1px solid var(--border);
-  font-size: 0.75rem;
-  line-height: 1.45;
+  font-size: calc(0.75rem * var(--chat-reading-scale));
+  line-height: var(--chat-reading-line);
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--muted);
@@ -12373,12 +12533,11 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's trailing corner, as one sticky group: the plus that opens a new
- * chat, then the full-screen door. It sticks to the band's trailing edge, so a
- * strip with more tabs than the dock is wide still ends with both controls; the
- * dock's canvas behind it keeps a tab sliding under it from showing through.
- * One sticky box rather than two sticky children, or the two marks would paint
- * over each other at the same `right: 0`.
+ * The strip's trailing corner: the full-screen door, and nothing else. It sticks
+ * to the band's trailing edge, so a strip with more tabs than the dock is wide
+ * still ends with the way to the whole workspace; the dock's canvas behind it
+ * keeps a tab sliding under it from showing through. The plus is not in here: it
+ * travels with the tabs, directly after the last one.
  */
 .chat-panel__tabs-trailing {
   position: sticky;
@@ -12386,7 +12545,6 @@ button.chat-panel__activity-line:hover {
   align-self: stretch;
   display: flex;
   align-items: center;
-  gap: 0.15rem;
   flex: 0 0 auto;
   margin-left: auto;
   padding-left: 0.3rem;
@@ -12394,9 +12552,10 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's own door to a new chat: the browser's plus, set after the last tab
- * and a share of the band rather than a tab itself — it opens a conversation, it
- * does not represent one.
+ * The strip's own door to a new chat: the browser's plus, set directly after the
+ * last tab in the strip's flow — where the next tab will appear — rather than on
+ * the band's trailing edge. It opens a conversation, it does not represent one,
+ * so it never grows: the tabs share the band, and the slack falls after it.
  */
 .chat-panel__tab-new {
   display: inline-flex;
@@ -12406,7 +12565,6 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
   width: 1.6rem;
   height: 1.6rem;
-  margin-left: 0.15rem;
   padding: 0;
   border: 0;
   border-radius: 0.35rem;
@@ -12422,7 +12580,7 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The strip's full-screen door, sized to the band rather than to the header's
-   utility row: the plus beside it is 1.6rem, and the two controls are one group. */
+   utility row: 1.6rem, the same mark as the plus beside the tabs. */
 .chat-panel__tab-focus {
   width: 1.6rem;
   height: 1.6rem;

@@ -69,6 +69,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
@@ -339,6 +340,26 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback below is wrong
+  // for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page, leaving the driver waiting
+  // on a ready flag that never comes.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
+  // The theme chrome repaints the window's caption strip; the harness has no
+  // Electron frame, so the shipped overlay API is stubbed as absent-but-callable.
+  windowChrome: {
+    get: () => Promise.resolve({ overlay: true, platform: "win32" }),
+    setTitleBarOverlay: () => Promise.resolve(),
+    minimize: () => {},
+    toggleMaximize: () => {},
+    close: () => {},
+    isMaximized: () => Promise.resolve(false),
+    onMaximizeChange: () => () => {},
+  },
   pinsList: () => ok({ locked: false, pins: [] }),
   // The chain surface reads this the moment it is opened. The rig only claims
   // that the chain STAYS up through a sidebar archive, so an empty chain is
@@ -419,6 +440,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -457,7 +482,10 @@ function HarnessChatHandle() {
 createRoot(root).render(
   <StrictMode>
     <MemoryRouter initialEntries={["/home"]}>
-      <VaultProvider>
+      {/* The shell reads the theme context (nav placement, the strip's own
+          chrome), so the harness mounts the real provider above it. */}
+      <ThemeProvider>
+        <VaultProvider>
         <ChatDockProvider>
           <NavDockProvider>
             {/* The real shell, sidebar and dock: the chats section is a part of
@@ -480,7 +508,8 @@ createRoot(root).render(
             </Routes>
           </NavDockProvider>
         </ChatDockProvider>
-      </VaultProvider>
+        </VaultProvider>
+      </ThemeProvider>
     </MemoryRouter>
   </StrictMode>,
 );

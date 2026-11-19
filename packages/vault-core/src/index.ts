@@ -115,6 +115,8 @@ export {
   nextPeriod,
   isFuturePeriod,
   isCurrentPeriod,
+  periodLabel,
+  periodForDate,
   periodTitle,
   isValidLocalIsoDate,
   shiftLocalIsoDate,

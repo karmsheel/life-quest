@@ -213,7 +213,7 @@ const SAMPLE = `(() => {
       : null,
     reviewEditing: Boolean(document.querySelector(".review-page__actions")),
     reviewSaveDisabled: reviewSave ? reviewSave.disabled : null,
-    reviewPeriod: text(document.querySelector(".review-page__period")),
+    reviewPeriod: text(document.querySelector('[data-testid="review-period"]')),
     error: text(document.querySelector(".form-error")),
     unexpected: (window.liveEditorUnexpectedCalls ?? []).slice(),
   };

@@ -96,6 +96,14 @@ const COMPOSITION_VOCABULARY_PNG = path.join(
 );
 const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
 const EXTENSIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
+const EXTENSIONS_ON_PNG = path.join(
+  artifactsDir,
+  "themes-v2-extensions-on.png",
+);
+const EXTENSIONS_OFF_PNG = path.join(
+  artifactsDir,
+  "themes-v2-extensions-off.png",
+);
 
 const failures = [];
 const checks = [];
@@ -202,6 +210,15 @@ const SAMPLE = `(async () => {
     domainPill: Boolean(document.querySelector(".domain-switcher--pill")),
     lensInStrip: Boolean(document.querySelector(".window-titlebar__lens")),
     settingsEntry: Boolean(document.querySelector(".window-titlebar__settings")),
+    // The strip's trailing cluster is the day/night control and the gear: the
+    // window's full-screen door is the dock's own top-row toggle now, so the
+    // old titlebar copy (and its "main page" wording) may not come back.
+    titlebarFullScreen: Boolean(
+      document.querySelector(".window-titlebar__trailing .chat-focus-toggle"),
+    ),
+    titlebarMainPage: Boolean(
+      document.querySelector('[data-testid="titlebar-main-page"]'),
+    ),
     areaNames: [...document.querySelectorAll(".domain-switcher__name")].map((n) => n.textContent.trim()),
     kept: state && state.ok ? state.value.keptFile : null,
     density: document.documentElement.dataset.materialDensity ?? null,
@@ -1324,6 +1341,8 @@ async function main() {
   // column to lead the dock. This section is the seam between them: the mode
   // must still take the workspace, leave the floating rail painted as the
   // window's card, hide the page, drop the divider, and come back exactly.
+  // The door clicked here is the dock's own top-row toggle: the strip's second
+  // copy is gone, so `chat-fullscreen` is the window's one way into the mode.
   writeThemeFile("float-focus.json", {
     name: "float-focus",
     label: "Float Focus",
@@ -1340,8 +1359,19 @@ async function main() {
     (s) => floatFocusPreview !== null && s.railBox !== null && s.dockBox !== null && !s.chatFocus,
     20_000,
   );
+  check(
+    "the strip carries no second full-screen chat door",
+    floatBaseline.settingsEntry === true &&
+      floatBaseline.titlebarFullScreen === false &&
+      floatBaseline.titlebarMainPage === false,
+    JSON.stringify({
+      settings: floatBaseline?.settingsEntry,
+      fullScreen: floatBaseline?.titlebarFullScreen,
+      mainPage: floatBaseline?.titlebarMainPage,
+    }),
+  );
   const enteredFocus = await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="chat-fullscreen"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const floatFocused = await waitFor(
     (s) =>
@@ -1383,7 +1413,7 @@ async function main() {
   fs.writeFileSync(FOCUS_FLOATING_PNG, focusFloatingShot.toPNG());
 
   const leftFocus = await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="chat-fullscreen"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const floatRestored = await waitFor(
     (s) =>
@@ -1427,7 +1457,7 @@ async function main() {
     20_000,
   );
   const enteredRightFocus = await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="chat-fullscreen"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const rightFocused = await waitFor(
     (s) =>
@@ -1463,7 +1493,7 @@ async function main() {
     }),
   );
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="titlebar-main-page"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="chat-fullscreen"]'); if (!b) return false; b.click(); return true; })()`,
   );
   await waitFor((s) => !s.chatFocus && s.pageVisible === true);
 
@@ -4014,6 +4044,79 @@ async function main() {
     20_000,
   );
 
+  // ── 12h: switching an extension off hands the palette back ───────────────
+  // The switch is over *the window's look*, and the look includes the colours:
+  // an extension may carry a complete palette (the seeded Solar System does),
+  // and the document's colour tokens must land back on the default look the
+  // moment it goes off — not stay on the departing theme's colours until the
+  // operator picks another skin in the titlebar. Read the tokens on the default
+  // look (the state the switch above just produced), wear Solar System, and
+  // read them again after switching it off.
+  const readPalette = `(() => {
+    const root = document.documentElement;
+    const read = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+    return {
+      background: read("--background"),
+      canvasBase: read("--canvas-base"),
+      card: read("--card"),
+      accent: read("--accent"),
+      foreground: read("--foreground"),
+    };
+  })()`;
+  const paletteOff = await evaluate(readPalette);
+  const solarToggle = `(() => {
+    const b = document.querySelector('[data-testid="extension-showcase-solar-system"] [data-testid="extension-toggle"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`;
+  await evaluate(solarToggle);
+  const solarWorn = await waitFor(
+    (s) =>
+      s.kept === "showcase-solar-system.json" &&
+      s.extensionsActive === true &&
+      ["#0a0e1f", "#070b17"].includes((s.bgVar ?? "").toLowerCase()),
+    20_000,
+  );
+  await sleep(600);
+  const solarShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_ON_PNG, solarShot.toPNG());
+  await evaluate(solarToggle);
+  const solarOff = await waitFor(
+    (s) =>
+      s.kept === null &&
+      s.extensionsActive === false &&
+      (s.bgVar ?? "").toLowerCase() === (paletteOff?.background ?? "").toLowerCase(),
+    20_000,
+  );
+  await sleep(600);
+  const paletteBack = await evaluate(readPalette);
+  const extensionsOffShot = await win.webContents.capturePage();
+  fs.writeFileSync(EXTENSIONS_OFF_PNG, extensionsOffShot.toPNG());
+  const samePalette =
+    paletteOff !== null &&
+    paletteBack !== null &&
+    paletteOff.background === paletteBack.background &&
+    paletteOff.canvasBase === paletteBack.canvasBase &&
+    paletteOff.card === paletteBack.card &&
+    paletteOff.accent === paletteBack.accent &&
+    paletteOff.foreground === paletteBack.foreground;
+  check(
+    "switching-an-extension-off-hands-the-palette-back",
+    solarWorn?.kept === "showcase-solar-system.json" &&
+      solarWorn?.bgVar?.toLowerCase() !== paletteOff?.background?.toLowerCase() &&
+      solarOff?.kept === null &&
+      solarOff.extensionsActive === false &&
+      samePalette,
+    JSON.stringify({
+      offBefore: paletteOff,
+      worn: { bg: solarWorn?.bgVar, kept: solarWorn?.kept },
+      offAfter: paletteBack,
+      solarOff: solarOff?.kept,
+      samePalette,
+    }),
+  );
+
   // Remove: two presses, and the file leaves the profile.
   await evaluate(
     `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
@@ -4081,6 +4184,8 @@ async function main() {
       ),
       helios: path.relative(desktopRoot, HELIOS_PNG),
       extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
+      extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
+      extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

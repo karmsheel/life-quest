@@ -8,24 +8,27 @@
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same geometry, no eyeballing the app required. It
- * carries the shipped layout before the mode, the mode entered through each of
- * its two doors, the round trips back to the exact boxes it started from, the
- * mode toggled from a real `Ctrl+Shift+F` keydown through the browser's input
- * pipeline, the dock collapsed out from under the mode, the mode opened from a
- * collapsed dock, the rail-collapsed arrangement and the dock-side-left
+ * carries the shipped layout before the mode, the mode entered through the
+ * dock's control and through its shortcut, the round trips back to the exact
+ * boxes it started from, the mode toggled from a real `Ctrl+Shift+F` keydown
+ * through the browser's input pipeline, the dock collapsed out from under the
+ * mode, the mode opened from a collapsed dock (where the shortcut is the only
+ * door left), the rail-collapsed arrangement and the dock-side-left
  * arrangement.
  *
- * The mode is one session-only shell state, so every door must move the same
- * marks: the shell wears `shell--chat-focus`, the page stops painting, the dock
- * takes the whole workspace right of the rail down to the window's bottom, the
- * divider leaves, and the rail keeps the window's leading edge. The transcript
- * and the composer band keep their readable measure while the tab strip, the
- * header and the bottom action bar stay full width.
+ * The mode is one session-only shell state, so the door and the shortcut must
+ * move the same marks: the shell wears `shell--chat-focus`, the page stops
+ * painting, the dock takes the whole workspace right of the rail down to the
+ * window's bottom, the divider leaves, and the rail keeps the window's leading
+ * edge. The transcript and the composer band keep their readable measure while
+ * the tab strip, the header and the bottom action bar stay full width. The
+ * window strip carries no second door: its trailing cluster is the day/night
+ * control and the gear.
  *
- * NOT covered here: whether a real mouse can press the titlebar control through
- * the strip's drag band. The rig clicks both controls with `el.click()` (the
- * same gesture the chat-side rig uses for the titlebar's theme control), so a
- * `-webkit-app-region` carve-out regression is not in its path.
+ * NOT covered here: whether a real mouse can press the dock's control through
+ * whatever is painted over it. The rig clicks it with `el.click()` (the same
+ * gesture the chat-side rig uses for the titlebar's theme control), so a
+ * hit-testing regression is not in its path.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -116,7 +119,6 @@ const SAMPLE = `(() => {
   const actions = document.querySelector(".chat-panel__actions");
   const trailing = document.querySelector(".window-titlebar__trailing");
   const dockCtl = document.querySelector('[data-testid="chat-fullscreen"]');
-  const titleCtl = document.querySelector('[data-testid="titlebar-main-page"]');
   const plus = document.querySelector(".chat-panel__tab-new");
 
   const topRow = dockCtl
@@ -126,6 +128,16 @@ const SAMPLE = `(() => {
     ? Array.from(topRow.children).find((el) => el.contains(dockCtl))
     : null;
   const lastTop = topRow ? topRow.children[topRow.children.length - 1] : null;
+  // The plus is a sibling of the tabs in the strip's flow, directly after the
+  // last tab; the full-screen door keeps the band's trailing corner. Both facts
+  // are measured here, because "next to the last tab" and "at the end of the
+  // strip" are different arrangements that both look like a plus on screen.
+  const tabEls = topRow
+    ? Array.from(topRow.children).filter((el) =>
+        el.classList.contains("chat-panel__tab")
+      )
+    : [];
+  const lastTab = tabEls.length > 0 ? tabEls[tabEls.length - 1] : null;
   const topRowInfo = topRow
     ? {
         className: String(topRow.className || ""),
@@ -134,11 +146,18 @@ const SAMPLE = `(() => {
         box: box(topRow),
         controlIsTrailing: Boolean(topLevel && lastTop && topLevel === lastTop),
         trailingGap: dockCtl ? box(topRow).right - box(dockCtl).right : null,
+        lastTabBox: lastTab ? box(lastTab) : null,
         plusBox: plus ? box(plus) : null,
+        plusInTrailingGroup: Boolean(
+          plus && plus.closest(".chat-panel__tabs-trailing")
+        ),
+        plusAfterLastTab: Boolean(
+          plus && lastTab && box(plus).left >= box(lastTab).right
+        ),
+        plusGap: plus && lastTab ? box(plus).left - box(lastTab).right : null,
         afterPlus: Boolean(
           plus && dockCtl && box(dockCtl).left >= box(plus).right
         ),
-        afterPlusGap: plus && dockCtl ? box(dockCtl).left - box(plus).right : null,
         children: Array.from(topRow.children).map((el) => ({
           classes: String(el.className || ""),
           box: box(el),
@@ -171,22 +190,45 @@ const SAMPLE = `(() => {
         testid: el.getAttribute("data-testid"),
         label: el.getAttribute("aria-label"),
         icon: iconClass(el),
-        box: box(el),
-        holdsTitleControl: Boolean(titleCtl && el.contains(titleCtl))
+        box: box(el)
       }))
     : [];
-  const themeEl =
-    trailing && Array.from(trailing.children).find((el) =>
-      String(el.className || "").includes("theme-mode-toggle")
-    );
-  const titleControl = control(titleCtl);
-  if (titleCtl && themeEl) {
-    titleControl.gapToTheme = box(themeEl).left - box(titleCtl).right;
-    titleControl.beforeTheme = box(themeEl).left >= box(titleCtl).right;
-  } else {
-    titleControl.gapToTheme = null;
-    titleControl.beforeTheme = false;
+
+  /*
+   * The strip's negative reading: the mode has one door, in the dock's top row,
+   * so the strip must carry no full-screen control at all and no leftover words
+   * from the removed copy. Both are measured rather than assumed, because a
+   * control that has merely been moved out of sight is still a second door the
+   * operator can tab to.
+   */
+  const stripChatControls = trailing
+    ? Array.from(trailing.querySelectorAll(".chat-focus-toggle"))
+    : [];
+  const staleMainPageLabels = new Set();
+  for (const el of document.querySelectorAll("[aria-label], [title]")) {
+    for (const value of [
+      el.getAttribute("aria-label"),
+      el.getAttribute("title")
+    ]) {
+      if (typeof value === "string" && /main page/i.test(value)) {
+        staleMainPageLabels.add(value);
+      }
+    }
   }
+  const strip = {
+    present: Boolean(trailing),
+    box: trailing ? box(trailing) : null,
+    childCount: trailing ? trailing.children.length : 0,
+    classes: cluster.map((entry) => entry.classes),
+    testids: cluster.map((entry) => entry.testid),
+    holdsChatFocus:
+      stripChatControls.length > 0 ||
+      Boolean(trailing && trailing.matches(".chat-focus-toggle")),
+    hasMainPageControl: Boolean(
+      document.querySelector('[data-testid="titlebar-main-page"]')
+    ),
+    staleMainPageLabels: Array.from(staleMainPageLabels)
+  };
 
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -259,11 +301,8 @@ const SAMPLE = `(() => {
       : null,
     divider: { present: Boolean(divider), box: divider ? box(divider) : null },
     dockControl: control(dockCtl),
-    titlebarControl: titleControl,
     topRow: topRowInfo,
-    trailing: trailing
-      ? { box: box(trailing), cluster }
-      : null,
+    strip,
     cluster,
     content: {
       tabs: present(tabs),
@@ -373,13 +412,63 @@ function checkUnfocused(label, state) {
 }
 
 /**
- * The two doors: the dock's top-row control and the titlebar's main-page
- * control. A control that exists in the wrong corner is not a control the
- * operator finds, so both placement and label are asserted.
+ * The window strip: the mode has one door, in the dock's top row, so the strip's
+ * trailing cluster is the day/night control and the gear — in that order — and
+ * nothing in it opens the mode. A second door here is exactly the duplicate the
+ * change removed, so it is asserted absent in every arrangement the run samples,
+ * not only while the mode is on.
+ */
+function checkStrip(label, state) {
+  const strip = state.strip;
+  check(
+    `${label}: the window strip's trailing cluster is on screen`,
+    strip?.present === true && Boolean(strip?.box),
+    `strip ${JSON.stringify(strip)}`,
+  );
+  const classes = Array.isArray(strip?.classes) ? strip.classes : [];
+  check(
+    `${label}: the strip's trailing cluster is the shipped pair`,
+    strip?.childCount === 2 && classes.length === 2,
+    `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: the day/night control leads the strip's cluster`,
+    String(classes[0] ?? "").includes("theme-mode-toggle"),
+    `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: the settings menu trails the strip's cluster`,
+    String(classes[1] ?? "").includes("settings-menu"),
+    `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: no full-screen control rides the window strip`,
+    strip?.holdsChatFocus === false && strip?.hasMainPageControl === false,
+    `chat-focus-toggle on the strip: ${strip?.holdsChatFocus}, titlebar-main-page: ${strip?.hasMainPageControl}`,
+  );
+  check(
+    `${label}: the Collapse/Restore main page labels are gone from the app`,
+    Array.isArray(strip?.staleMainPageLabels) &&
+      strip.staleMainPageLabels.length === 0,
+    `labels ${JSON.stringify(strip?.staleMainPageLabels)}`,
+  );
+
+  const boxes = state.cluster ?? [];
+  check(
+    `${label}: the strip's pair is drawn day/night then gear, left to right`,
+    Boolean(boxes[0]?.box && boxes[1]?.box) &&
+      boxes[0].box.right <= boxes[1].box.left,
+    `boxes ${JSON.stringify([boxes[0]?.box, boxes[1]?.box])}`,
+  );
+}
+
+/**
+ * The mode's one door: the dock's top-row control. A control that exists in the
+ * wrong corner is not a control the operator finds, so placement and label are
+ * asserted; the strip is checked for the duplicate that used to sit there.
  */
 function checkDoors(label, state, focused) {
   const expectedDockLabel = focused ? "Exit full screen chat" : "Full screen chat";
-  const expectedTitleLabel = focused ? "Restore main page" : "Collapse main page";
   const expectedIcon = focused ? "lucide-minimize-2" : "lucide-maximize-2";
   const expectedPressed = focused ? "true" : "false";
 
@@ -419,8 +508,9 @@ function checkDoors(label, state, focused) {
     `dock control ${JSON.stringify(dock)}`,
   );
 
-  // The top row is the tab strip here (the harness seeds a pinned chat), and the
-  // control is its trailing item, after the new-chat plus.
+  // The top row is the tab strip here (the harness seeds a pinned chat): the
+  // plus follows the last tab in the strip's flow, and the full-screen control
+  // holds the band's trailing corner after it.
   const topRow = state.topRow;
   check(
     `${label}: the dock's top row is the pinned chat's tab strip`,
@@ -433,11 +523,24 @@ function checkDoors(label, state, focused) {
     `control is trailing: ${topRow?.controlIsTrailing}, children ${JSON.stringify(topRow?.children)}`,
   );
   check(
-    `${label}: the dock control follows the new-chat plus`,
-    topRow?.afterPlus === true &&
-      near(topRow?.afterPlusGap, 0, 12) &&
-      (topRow?.afterPlusGap ?? -1) >= 0,
-    `plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}, gap ${topRow?.afterPlusGap}`,
+    `${label}: the new-chat plus sits directly after the last tab`,
+    Boolean(topRow?.lastTabBox && topRow?.plusBox) &&
+      topRow.plusAfterLastTab === true &&
+      (topRow.plusGap ?? -1) >= 0 &&
+      topRow.plusGap <= 12,
+    `last tab ${JSON.stringify(topRow?.lastTabBox)}, plus ${JSON.stringify(topRow?.plusBox)}, gap ${topRow?.plusGap}`,
+  );
+  check(
+    `${label}: the new-chat plus rides the tab flow, not the trailing corner`,
+    topRow?.plusInTrailingGroup === false &&
+      Boolean(topRow?.plusBox && dock?.box) &&
+      dock.box.left >= topRow.plusBox.right,
+    `plus in trailing group ${topRow?.plusInTrailingGroup}, plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
+  );
+  check(
+    `${label}: the dock control stands after the plus, in the row's trailing corner`,
+    topRow?.afterPlus === true,
+    `plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
   );
   check(
     `${label}: the dock control sits inside the top row's trailing edge`,
@@ -450,71 +553,7 @@ function checkDoors(label, state, focused) {
     `control ${JSON.stringify(dock.box)} in row ${JSON.stringify(topRow?.box)}, gap ${topRow?.trailingGap}`,
   );
 
-  const title = state.titlebarControl;
-  check(
-    `${label}: the titlebar carries the main-page control`,
-    title.found === true,
-    "no [data-testid=titlebar-main-page] in the strip",
-  );
-  check(
-    `${label}: the titlebar control wears the strip's control classes`,
-    String(title.classes ?? "").includes("chat-focus-toggle") &&
-      String(title.classes ?? "").includes("window-titlebar__btn"),
-    `titlebar control classes ${JSON.stringify(title.classes)}`,
-  );
-  check(
-    `${label}: the titlebar control names the move it makes`,
-    title.label === expectedTitleLabel && title.title === expectedTitleLabel,
-    `label ${JSON.stringify(title.label)}, title ${JSON.stringify(title.title)}`,
-  );
-  check(
-    `${label}: the titlebar control's pressed state follows the mode`,
-    title.pressed === expectedPressed,
-    `aria-pressed ${JSON.stringify(title.pressed)}`,
-  );
-  check(
-    `${label}: the titlebar control wears the mode's icon`,
-    String(title.icon ?? "").includes(expectedIcon),
-    `icon ${JSON.stringify(title.icon)}`,
-  );
-
-  // The trailing cluster, in order: main-page control, theme, settings.
-  const cluster = state.cluster ?? [];
-  const classes = cluster.map((entry) => String(entry.classes ?? ""));
-  check(
-    `${label}: the titlebar's trailing cluster leads with the main-page control`,
-    cluster.length === 3 &&
-      cluster[0]?.holdsTitleControl === true &&
-      classes[0].includes("chat-focus-toggle") &&
-      classes[0].includes("window-titlebar__btn"),
-    `cluster ${JSON.stringify(classes)}`,
-  );
-  check(
-    `${label}: the theme control follows it`,
-    classes[1]?.includes("theme-mode-toggle"),
-    `cluster ${JSON.stringify(classes)}`,
-  );
-  check(
-    `${label}: the settings menu trails the cluster`,
-    classes[2]?.includes("settings-menu"),
-    `cluster ${JSON.stringify(classes)}`,
-  );
-  check(
-    `${label}: the main-page control sits immediately before the theme control`,
-    title.beforeTheme === true &&
-      (title.gapToTheme ?? -1) >= 0 &&
-      title.gapToTheme <= 8,
-    `gap to theme ${title.gapToTheme}, cluster ${JSON.stringify(cluster.map((entry) => entry.box))}`,
-  );
-
-  // Both controls share the mode's marker: a labelled click on the titlebar's
-  // button is a door to the same state as the dock's.
-  check(
-    `${label}: the two doors are marked with the same control class`,
-    String(dock.classes ?? "").includes("chat-focus-toggle") &&
-      String(title.classes ?? "").includes("chat-focus-toggle"),
-    `dock ${JSON.stringify(dock.classes)}, titlebar ${JSON.stringify(title.classes)}`,
-  );
+  checkStrip(label, state);
 }
 
 /** The mode's one layout: rail, then the dock to the window's edges. */
@@ -734,14 +773,18 @@ function checkRestored(label, before, after) {
     `divider ${JSON.stringify(after.divider)} vs ${JSON.stringify(before.divider)}`,
   );
   check(
-    `${label}: the doors name the shipped moves again`,
+    `${label}: the door names the shipped move again`,
     after.dockControl.label === before.dockControl.label &&
       after.dockControl.pressed === before.dockControl.pressed &&
-      after.dockControl.icon === before.dockControl.icon &&
-      after.titlebarControl.label === before.titlebarControl.label &&
-      after.titlebarControl.pressed === before.titlebarControl.pressed &&
-      after.titlebarControl.icon === before.titlebarControl.icon,
-    `dock ${after.dockControl.label}/${after.dockControl.pressed}/${after.dockControl.icon}, titlebar ${after.titlebarControl.label}/${after.titlebarControl.pressed}/${after.titlebarControl.icon}`,
+      after.dockControl.icon === before.dockControl.icon,
+    `dock ${after.dockControl.label}/${after.dockControl.pressed}/${after.dockControl.icon}`,
+  );
+  check(
+    `${label}: no second full-screen door returned to the strip`,
+    after.strip?.holdsChatFocus === false &&
+      after.strip?.hasMainPageControl === false &&
+      after.strip?.childCount === 2,
+    `strip ${JSON.stringify(after.strip)}`,
   );
   check(
     `${label}: the page is painted on the same boxes again`,
@@ -781,12 +824,9 @@ function checkCollapsedExit(label, state) {
     state.dockControl.found === false,
     `dock control ${JSON.stringify(state.dockControl)}`,
   );
-  check(
-    `${label}: the titlebar control asks to collapse the page again`,
-    state.titlebarControl.label === "Collapse main page" &&
-      state.titlebarControl.pressed === "false",
-    `label ${JSON.stringify(state.titlebarControl.label)}, pressed ${JSON.stringify(state.titlebarControl.pressed)}`,
-  );
+  // The strip is still the shipped pair while the dock is collapsed: the mode's
+  // one door left with the dock, but no second door replaces it up there.
+  checkStrip(label, state);
   check(
     `${label}: the divider is gone with the dock`,
     state.divider.present === false,
@@ -1103,31 +1143,9 @@ async function main() {
     checkDoors("dock door exit", restoredAfterDock, false);
     await capture("chat-focus-restored.png");
 
-    // 4 — the titlebar's door, in and out.
-    at("titlebar door: enter");
-    beginScenario("titlebar door: enter");
-    await click('[data-testid="titlebar-main-page"]');
-    await waitFor(focusClassExpression, "the mode's shell class from the strip");
-    const focusedViaTitlebar = record("focusedViaTitlebar", await settle());
-    checkFocused("titlebar door", focusedViaTitlebar, initial);
-    checkDoors("titlebar door", focusedViaTitlebar, true);
-    await capture("chat-focus-titlebar.png", {
-      x: 0,
-      y: 0,
-      width: DEFAULT_SIZE.width,
-      height: 140,
-    });
-
-    at("titlebar door: exit");
-    beginScenario("titlebar door: exit");
-    await click('[data-testid="titlebar-main-page"]');
-    await waitFor(unfocusedExpression, "the page and the mode class gone");
-    const restoredAfterTitlebar = record("restoredAfterTitlebar", await settle());
-    checkRestored("titlebar door exit", initial, restoredAfterTitlebar);
-    checkDoors("titlebar door exit", restoredAfterTitlebar, false);
-
-    // 5 — the shortcut: a real Ctrl+Shift+F through the browser's input
-    // pipeline toggles the mode both ways.
+    // 4 — the shortcut: a real Ctrl+Shift+F through the browser's input
+    // pipeline toggles the mode both ways. With one door in the dock, this is
+    // the other way an operator reaches the mode.
     at("shortcut: enter");
     beginScenario("shortcut: enter");
     await press("F", ["control", "shift"]);
@@ -1146,7 +1164,7 @@ async function main() {
     checkRestored("shortcut exit", initial, shortcutRestored);
     checkShortcutKeys("shortcut off", shortcutRestored, 2);
 
-    // 6 — collapsing the dock while the mode is on leaves the mode: the dock's
+    // 5 — collapsing the dock while the mode is on leaves the mode: the dock's
     // own close is the way out, and the page and launcher come back.
     at("collapse the dock while in the mode");
     beginScenario("collapse while in the mode");
@@ -1158,11 +1176,13 @@ async function main() {
     checkCollapsedExit("collapse while focused", collapsedFromFocus);
     await capture("chat-focus-collapsed.png");
 
-    // 7 — entering from a collapsed dock reopens it: a mode with no dock would
-    // be a blank page.
-    at("enter from a collapsed dock");
-    beginScenario("enter from a collapsed dock");
-    await click('[data-testid="titlebar-main-page"]');
+    // 6 — the shortcut from a collapsed dock: with the dock hidden there is no
+    // control to press, so Ctrl+Shift+F is the only door left. Entering the mode
+    // has to reopen the dock (a mode with no dock would be a blank page), and
+    // the same key has to bring the whole arrangement back.
+    at("enter from a collapsed dock: shortcut");
+    beginScenario("from collapsed: shortcut");
+    await press("F", ["control", "shift"]);
     await waitFor(reopenedExpression, "the mode with the dock reopened");
     const focusFromCollapsed = record("focusFromCollapsed", await settle());
     checkFocused("from collapsed", focusFromCollapsed, initial);
@@ -1175,19 +1195,20 @@ async function main() {
         ),
       `dock ${JSON.stringify(focusFromCollapsed.chat)}, shell ${JSON.stringify(focusFromCollapsed.shell?.className)}`,
     );
+    checkShortcutKeys("from collapsed on", focusFromCollapsed, 3);
     await capture("chat-focus-from-collapsed.png");
 
-    at("exit after entering from collapsed");
-    beginScenario("from collapsed: exit");
-    await click('[data-testid="titlebar-main-page"]');
+    at("exit from the reopened dock: shortcut");
+    await press("F", ["control", "shift"]);
     await waitFor(unfocusedExpression, "the page and the mode class gone");
     const restoredFromCollapsed = record(
       "restoredFromCollapsed",
       await settle(),
     );
     checkRestored("from collapsed exit", initial, restoredFromCollapsed);
+    checkShortcutKeys("from collapsed off", restoredFromCollapsed, 4);
 
-    // 8 — the rail collapsed to its icon column first: the dock starts at 56px,
+    // 7 — the rail collapsed to its icon column first: the dock starts at 56px,
     // the rail's own track, not the window's edge.
     at("rail collapsed: arrangement before");
     beginScenario("rail collapsed: base");
@@ -1262,7 +1283,7 @@ async function main() {
     checkRestored("rail restore", initial, railRestored);
     checkDoors("rail restore", railRestored, false);
 
-    // 9 — the dock on the leading side: the mode ignores the side. The dock is
+    // 8 — the dock on the leading side: the mode ignores the side. The dock is
     // still immediately right of the rail, reaches the window's trailing edge
     // and draws no divider.
     at("dock left: arrangement before");

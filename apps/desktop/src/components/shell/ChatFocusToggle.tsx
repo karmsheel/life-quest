@@ -4,13 +4,10 @@ import { useChatDock } from "@/state/ChatDockProvider";
 /**
  * The full-screen chat door.
  *
- * One component, two places: the chat dock's top row and the window title bar's
- * trailing cluster. Both toggle the same dock flag, so they can never disagree
- * about the mode; the only difference is the words each says. The dock's control
- * names the mode from inside the chat ("Full screen chat" → "Exit full screen
- * chat"), and the title bar's names the pane it takes away ("Collapse main
- * page" → "Restore main page"), because the title bar's operator is reading the
- * page, not the dock.
+ * The dock's own control, drawn at the trailing end of its top row. It is the
+ * window's one door to the mode (the title bar carries no second copy, and
+ * Mod+Shift+F is the shortcut), so it names the mode from inside the chat:
+ * "Full screen chat" → "Exit full screen chat".
  *
  * The icon turns around rather than changing meaning: maximize while the mode is
  * off, minimize while it is on, the same arrow-pair language the rail's own
@@ -24,7 +21,7 @@ export function ChatFocusToggle({
   onLabel,
 }: {
   className?: string;
-  /** Which door this instance is — the two are told apart by the rigs. */
+  /** The rigs tell this control apart by its test id. */
   testId: string;
   /** The words said while the mode is off. */
   offLabel: string;

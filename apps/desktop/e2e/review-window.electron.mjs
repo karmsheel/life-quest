@@ -71,8 +71,9 @@ const REVIEW_SCENARIOS = [
     name: "dailyBefore",
     params: { cadence: "daily", now: "2026-11-15T17:59:00" },
     expect: {
-      title: "Daily review",
-      periodLabel: "Daily review · 14 Nov 2026",
+      eyebrow: "Daily",
+      title: "14 Nov 2026",
+      periodLabel: "14 Nov 2026",
       note: "The daily review for the current period opens 15 Nov 2026 at 18:00.",
       nextDisabled: true,
     },
@@ -82,8 +83,9 @@ const REVIEW_SCENARIOS = [
     name: "dailyOpen",
     params: { cadence: "daily", now: "2026-11-15T18:00:00" },
     expect: {
-      title: "Daily review",
-      periodLabel: "Daily review · 15 Nov 2026",
+      eyebrow: "Daily",
+      title: "15 Nov 2026",
+      periodLabel: "15 Nov 2026",
       note: null,
       nextDisabled: true,
     },
@@ -93,8 +95,9 @@ const REVIEW_SCENARIOS = [
     name: "weeklyBefore",
     params: { cadence: "weekly", now: "2026-11-10T09:00:00" },
     expect: {
-      title: "Weekly review",
-      periodLabel: "Weekly review · Week of 2 Nov 2026",
+      eyebrow: "Weekly",
+      title: "Week of 2 Nov 2026",
+      periodLabel: "Week of 2 Nov 2026",
       note: "The weekly review for the current period opens 15 Nov 2026 at 08:00.",
       nextDisabled: true,
     },
@@ -104,8 +107,9 @@ const REVIEW_SCENARIOS = [
     name: "weeklyOpen",
     params: { cadence: "weekly", now: "2026-11-15T08:00:00" },
     expect: {
-      title: "Weekly review",
-      periodLabel: "Weekly review · Week of 9 Nov 2026",
+      eyebrow: "Weekly",
+      title: "Week of 9 Nov 2026",
+      periodLabel: "Week of 9 Nov 2026",
       note: null,
       nextDisabled: true,
     },
@@ -114,8 +118,9 @@ const REVIEW_SCENARIOS = [
     name: "monthlyBefore",
     params: { cadence: "monthly", now: "2026-11-28T12:00:00" },
     expect: {
-      title: "Monthly review",
-      periodLabel: "Monthly review · Oct 2026",
+      eyebrow: "Monthly",
+      title: "Oct 2026",
+      periodLabel: "Oct 2026",
       note: "The monthly review for the current period opens 29 Nov 2026 at 00:00.",
       nextDisabled: true,
     },
@@ -124,8 +129,9 @@ const REVIEW_SCENARIOS = [
     name: "monthlyOpen",
     params: { cadence: "monthly", now: "2026-11-29T00:00:00" },
     expect: {
-      title: "Monthly review",
-      periodLabel: "Monthly review · Nov 2026",
+      eyebrow: "Monthly",
+      title: "Nov 2026",
+      periodLabel: "Nov 2026",
       note: null,
       nextDisabled: true,
     },
@@ -135,8 +141,9 @@ const REVIEW_SCENARIOS = [
     name: "quarterlyBefore",
     params: { cadence: "quarterly", now: "2026-12-28T12:00:00" },
     expect: {
-      title: "Quarterly review",
-      periodLabel: "Quarterly review · 2026 Q3",
+      eyebrow: "Quarterly",
+      title: "2026 Q3",
+      periodLabel: "2026 Q3",
       note: "The quarterly review for the current period opens 29 Dec 2026 at 00:00.",
       nextDisabled: true,
     },
@@ -145,8 +152,9 @@ const REVIEW_SCENARIOS = [
     name: "quarterlyOpen",
     params: { cadence: "quarterly", now: "2026-12-29T00:00:00" },
     expect: {
-      title: "Quarterly review",
-      periodLabel: "Quarterly review · 2026 Q4",
+      eyebrow: "Quarterly",
+      title: "2026 Q4",
+      periodLabel: "2026 Q4",
       note: null,
       nextDisabled: true,
     },
@@ -155,8 +163,9 @@ const REVIEW_SCENARIOS = [
     name: "yearlyBefore",
     params: { cadence: "yearly", now: "2026-12-24T23:59:00" },
     expect: {
-      title: "Yearly review",
-      periodLabel: "Yearly review · 2025",
+      eyebrow: "Yearly",
+      title: "2025",
+      periodLabel: "2025",
       note: "The yearly review for the current period opens 25 Dec 2026 at 00:00.",
       nextDisabled: true,
     },
@@ -166,8 +175,9 @@ const REVIEW_SCENARIOS = [
     name: "yearlyOpen",
     params: { cadence: "yearly", now: "2026-12-25T00:00:00" },
     expect: {
-      title: "Yearly review",
-      periodLabel: "Yearly review · 2026",
+      eyebrow: "Yearly",
+      title: "2026",
+      periodLabel: "2026",
       note: null,
       nextDisabled: true,
     },
@@ -185,8 +195,9 @@ const REVIEW_SCENARIOS = [
       }),
     },
     expect: {
-      title: "Daily review",
-      periodLabel: "Daily review · 14 Nov 2026",
+      eyebrow: "Daily",
+      title: "14 Nov 2026",
+      periodLabel: "14 Nov 2026",
       note: "The daily review for the current period opens 15 Nov 2026 at 20:00.",
       nextDisabled: true,
     },
@@ -206,6 +217,40 @@ const SAMPLE = `(() => {
     shell: Boolean(document.querySelector(".nav-rail")),
     title: text(document.querySelector(".review-page__title")),
     periodLabel: text(document.querySelector('[data-testid="review-period"]')),
+    eyebrow: text(document.querySelector('[data-testid="wing-eyebrow"]')),
+    calendar: Boolean(document.querySelector('[data-testid="review-calendar"]')),
+    // The header's boxes: the column, the two step keys and the period block.
+    // They must not run into each other when the checklist and the dock squeeze
+    // the reading column — the operator still has to be able to press a step.
+    headerBoxes: (() => {
+      const box = (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { left: Math.round(r.left), right: Math.round(r.right) };
+      };
+      return {
+        page: box(".review-page"),
+        prev: box('[data-testid="review-prev"]'),
+        next: box('[data-testid="review-next"]'),
+        block: box(".review-page__period-block"),
+      };
+    })(),
+    // The header's step keys: the same wordless arrows on every cadence.
+    prevText: (document.querySelector('[data-testid="review-prev"]')?.textContent || "").trim(),
+    nextText: (document.querySelector('[data-testid="review-next"]')?.textContent || "").trim(),
+    prevBorder: (() => {
+      const el = document.querySelector('[data-testid="review-prev"]');
+      if (!el) return null;
+      const style = getComputedStyle(el);
+      return style.borderTopStyle + " " + style.borderTopWidth;
+    })(),
+    nextBorder: (() => {
+      const el = document.querySelector('[data-testid="review-next"]');
+      if (!el) return null;
+      const style = getComputedStyle(el);
+      return style.borderTopStyle + " " + style.borderTopWidth;
+    })(),
     note: text(document.querySelector('[data-testid="review-window-note"]')),
     error: text(document.querySelector('[data-testid="review-error"]')),
     notice: text(document.querySelector('[data-testid="review-notice"]')),
@@ -418,10 +463,45 @@ function verifyReviewScenario(scenario, sampleValue) {
   const { name, expect } = scenario;
   if (!sampleValue.shell) failure(`${name}: the Review page did not render inside the app shell`);
   if (!sampleValue.editor) failure(`${name}: the Review page drew no document`);
+  if (sampleValue.eyebrow !== expect.eyebrow) {
+    failure(
+      `${name}: the page's eyebrow reads ${JSON.stringify(sampleValue.eyebrow)}, expected ${JSON.stringify(expect.eyebrow)}`,
+    );
+  }
+  // The cadence is the eyebrow now, and the period is the page's one heading:
+  // `Weekly review · Week of 9 Nov 2026` said the same thing twice.
   if (sampleValue.title !== expect.title) {
     failure(
-      `${name}: the page is titled ${JSON.stringify(sampleValue.title)}, expected ${JSON.stringify(expect.title)}`,
+      `${name}: the page's heading reads ${JSON.stringify(sampleValue.title)}, expected ${JSON.stringify(expect.title)}`,
     );
+  }
+  if (!sampleValue.calendar) failure(`${name}: the header has no calendar key beside the period`);
+  for (const [which, text, border] of [
+    ["previous", sampleValue.prevText, sampleValue.prevBorder],
+    ["next", sampleValue.nextText, sampleValue.nextBorder],
+  ]) {
+    if (text !== "") {
+      failure(`${name}: the ${which} step carries a label ${JSON.stringify(text)} instead of an arrow`);
+    }
+    if (border !== "none 0px") {
+      failure(`${name}: the ${which} step wears a frame (${border})`);
+    }
+  }
+  const boxes = sampleValue.headerBoxes;
+  if (!boxes?.page || !boxes.prev || !boxes.next || !boxes.block) {
+    failure(`${name}: the header's boxes could not be measured`);
+  } else {
+    if (boxes.prev.right > boxes.block.left + 1) {
+      failure(`${name}: the previous step runs into the period (${boxes.prev.right} > ${boxes.block.left})`);
+    }
+    if (boxes.block.right > boxes.next.left + 1) {
+      failure(`${name}: the period runs into the next step (${boxes.block.right} > ${boxes.next.left})`);
+    }
+    const pageCentre = (boxes.page.left + boxes.page.right) / 2;
+    const blockCentre = (boxes.block.left + boxes.block.right) / 2;
+    if (Math.abs(blockCentre - pageCentre) > 2) {
+      failure(`${name}: the period block is not centred over the column (${blockCentre} vs ${pageCentre})`);
+    }
   }
   if (sampleValue.periodLabel !== expect.periodLabel) {
     failure(
@@ -477,15 +557,15 @@ async function main() {
   if (!clickedPrev) failure("prevNav: the Prev control was not on the page");
   await waitFor(
     win,
-    `(document.querySelector('[data-testid="review-period"]')?.textContent || "").trim() === "Daily review · 14 Nov 2026"`,
+    `(document.querySelector('[data-testid="review-period"]')?.textContent || "").trim() === "14 Nov 2026"`,
     "the previous daily period",
   );
   await frames(win);
   const previous = await sample(win);
   scenarios.prevNav = { params: { from: atOpen.periodLabel }, ...previous };
-  if (previous.periodLabel !== "Daily review · 14 Nov 2026") {
+  if (previous.periodLabel !== "14 Nov 2026") {
     failure(
-      `prevNav: Prev landed on ${JSON.stringify(previous.periodLabel)}, expected "Daily review · 14 Nov 2026"`,
+      `prevNav: Prev landed on ${JSON.stringify(previous.periodLabel)}, expected "14 Nov 2026"`,
     );
   }
   if (previous.nextDisabled !== false) {
@@ -496,7 +576,7 @@ async function main() {
   if (!clickedNext) failure("prevNav: the Next control was not on the page");
   await waitFor(
     win,
-    `(document.querySelector('[data-testid="review-period"]')?.textContent || "").trim() === "Daily review · 15 Nov 2026"`,
+    `(document.querySelector('[data-testid="review-period"]')?.textContent || "").trim() === "15 Nov 2026"`,
     "the open daily period after Next",
   );
   await frames(win);
@@ -523,9 +603,9 @@ async function main() {
   if (!settingsSheet.backgroundReview) {
     failure("settingsDefaults: the sheet does not sit over the Review page it was opened from");
   }
-  if (settingsSheet.navLabels.length !== 12) {
+  if (settingsSheet.navLabels.length !== 14) {
     failure(
-      `settingsDefaults: the section column holds ${settingsSheet.navLabels.length} sections, expected 12`,
+      `settingsDefaults: the section column holds ${settingsSheet.navLabels.length} sections, expected 14`,
     );
   }
   if (!settingsSheet.navLabels.includes("Review")) {
