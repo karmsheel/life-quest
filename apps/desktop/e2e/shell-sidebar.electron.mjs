@@ -52,6 +52,9 @@ const SAMPLE = `(() => {
   const root = getComputedStyle(document.documentElement);
   const rail = document.querySelector(".nav-rail");
   const header = document.querySelector(".nav-rail__header");
+  // The lockup's own box: the reference the header's equal-inset claim is read
+  // from (space above it, beside it, and down to the wing switcher).
+  const railBrand = document.querySelector(".nav-rail__brand");
   const controls = header
     ? Array.from(header.querySelectorAll("button, a, input, select, [role=button]"))
     : [];
@@ -128,11 +131,11 @@ const SAMPLE = `(() => {
   const domainSwitcher = document.querySelector(".window-titlebar__lens .domain-switcher");
   const lensTabsEl = lens ? lens.querySelector(".domain-switcher__tabs") : null;
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
-  // The band the rail's wing switcher still wears under the strip — the 44px the
-  // page gave back. (The dock's tab strip is the same height; the thread's name
-  // row below it is a chip now, not a band.) Measured through a probe box, not
-  // rounded from the token text: --shell-topbar-height is 2.75rem, and parseFloat
-  // on that string is 2.75, not 44.
+  // The height of the rail's wing-switcher band — the 44px the page gave back.
+  // (The dock's tab strip is the same height but no longer level with it: the
+  // rail's header now holds the band below its own inset.) Measured through a
+  // probe box, not rounded from the token text: --shell-topbar-height is 2.75rem,
+  // and parseFloat on that string is 2.75, not 44.
   const measureHeight = (value) => {
     const probe = document.createElement("div");
     probe.style.cssText = "position:absolute;left:-9999px;top:0;width:0;height:" + value;
@@ -254,6 +257,11 @@ const SAMPLE = `(() => {
           }))
         }
       : null,
+    // The lockup's box: the reference for the header's equal-inset claims. The
+    // space above it, the space beside it and the space under it to the wing
+    // switcher are all read off this box, not off a token, so the three numbers
+    // answer to each other.
+    railBrand: box(railBrand),
     railToggle: railToggle
       ? {
           label: railToggle.getAttribute("aria-label"),
@@ -1170,11 +1178,49 @@ async function main() {
       `borders t/r/b/l ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
     );
 
-    // 2 — the topband: the titlebar row, carrying exactly one control.
+    // 2 — the topband: the rail's first row, carrying the lockup and exactly one
+    // control. It still starts on the window's top edge, so the leading corner of
+    // the strip stays a drag handle; its content now sits one rail-content inset
+    // down from that edge instead of being squeezed into the titlebar's 32px.
     check(
-      "topband sits on the window edge",
-      expanded.header?.box.top === 0 && expanded.header?.box.bottom === titlebarHeight,
-      `band ${expanded.header?.box.top}–${expanded.header?.box.bottom}px vs titlebar height ${titlebarHeight}px`,
+      "the topband starts on the window edge and runs past the strip",
+      expanded.header?.box.top === 0 &&
+        expanded.header?.box.bottom > titlebarHeight,
+      `band ${JSON.stringify(expanded.header?.box)} vs titlebar height ${titlebarHeight}px`,
+    );
+    // The request this claims: the lockup gets the same air above it as the rail
+    // has always held at its leading edge, and the wing switcher sits that same
+    // distance under the mark. All three are forked off the lockup's own box, so
+    // a change to any one of them breaks the equality rather than silently
+    // drifting. The toggle was asked to move down with the mark, so its top
+    // rides beside the lockup's.
+    const brandBox = expanded.railBrand;
+    const leadInset =
+      brandBox && expanded.rail ? brandBox.left - expanded.rail.box.left : -1;
+    const topInset =
+      brandBox && expanded.rail ? brandBox.top - expanded.rail.box.top : -1;
+    const wingInset =
+      brandBox && expanded.wingSwitcher
+        ? expanded.wingSwitcher.box.top - brandBox.bottom
+        : -1;
+    check(
+      "the lockup is held off the top and leading edges by one equal inset",
+      brandBox !== null && leadInset >= 12 && Math.abs(topInset - leadInset) <= 1,
+      `top inset ${topInset}px vs leading inset ${leadInset}px, lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the wing switcher sits one inset below the lockup",
+      brandBox !== null &&
+        wingInset >= 12 &&
+        Math.abs(wingInset - leadInset) <= 1,
+      `wing gap ${wingInset}px vs leading inset ${leadInset}px, switcher ${JSON.stringify(expanded.wingSwitcher?.box)}, lockup ${JSON.stringify(brandBox)}`,
+    );
+    check(
+      "the collapse toggle drops with the lockup",
+      Boolean(expanded.railToggle && brandBox && expanded.rail) &&
+        Math.abs(expanded.railToggle.box.top - brandBox.top) <= 1 &&
+        expanded.railToggle.box.top - expanded.rail.box.top >= 12,
+      `toggle ${JSON.stringify(expanded.railToggle?.box)} vs lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
     );
     check(
       "topband holds one control",
@@ -1248,8 +1294,8 @@ async function main() {
     );
 
     // 2b — the sidebar's first level: the five-wing switcher in its own band,
-    // above the wing's pages and directly under the window strip. The band paints
-    // no line of its own: the hairline in that row is the dock's tab strip's rule.
+    // above the wing's pages and under the header's own breathing room. The band
+    // paints no line of its own: the rail's band never had a rule of its own.
     const wingBand = expanded.wingsBand;
     const switcher = expanded.wingSwitcher;
     check(
@@ -1321,20 +1367,20 @@ async function main() {
     );
     // The sheet gave its band back: the page now starts at the strip's bottom
     // edge, 44px higher than it did when `.top-bar` sat in the sheet. The rail's
-    // wing band did NOT give its band back: it starts at the strip's bottom and
-    // keeps its 44px, level with the dock's tab strip across the pane seam. The
-    // dock's own 44px band is GONE — below that strip the thread's name row is a
-    // chip's row, not a second band — so the level claim is between the rail's
-    // band and the strip, and the name row is asserted on its own underneath.
+    // wing band keeps its own 44px, but it is the RAIL's band now: the header's
+    // equal inset above the lockup pushed the band down, so it follows the header
+    // inside the rail's column and no longer sits level with the dock's tab strip
+    // across the pane seam. The dock's band keeps the strip's 44px on its own.
     check(
-      "the rail's band keeps its 44px beside the dock's tab strip",
-      Boolean(wingBand && expanded.chatStrip) &&
-        wingBand.box.top === titlebarHeight &&
-        wingBand.box.bottom === titlebarHeight + expanded.tokens.topbarHeight &&
+      "the rail's band keeps its 44px under the header, not beside the dock strip",
+      Boolean(wingBand && expanded.chatStrip && expanded.header) &&
+        wingBand.box.top >= expanded.header.box.bottom &&
+        wingBand.box.height === expanded.tokens.topbarHeight &&
+        wingBand.box.bottom === wingBand.box.top + expanded.tokens.topbarHeight &&
         expanded.chatStrip.box.top === titlebarHeight &&
         expanded.chatStrip.box.bottom ===
           titlebarHeight + expanded.tokens.topbarHeight,
-      `rail band ${JSON.stringify(wingBand?.box)}, dock strip ${JSON.stringify(expanded.chatStrip?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
+      `rail band ${JSON.stringify(wingBand?.box)} under header ${JSON.stringify(expanded.header?.box)}, dock strip ${JSON.stringify(expanded.chatStrip?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
     );
     // The name row is the chip under the strip now: it starts where the strip
     // ends (the seam is unchanged), it is a chip's row rather than the old 44px
@@ -1556,7 +1602,7 @@ async function main() {
       expanded.header?.background === "rgba(0, 0, 0, 0)" &&
         expanded.rail?.background === rgbOf(expanded.theme?.canvasBase) &&
         expanded.header?.box.top === 0 &&
-        expanded.header?.box.bottom === titlebarHeight &&
+        expanded.header?.box.bottom > titlebarHeight &&
         expanded.titlebarBackground !== expanded.rail?.background,
       `rail topband ${expanded.header?.background} vs rail ${expanded.rail?.background} vs --canvas-base ${expanded.theme?.canvasBase}; topband ${JSON.stringify(expanded.header?.box)}`,
     );
@@ -2050,8 +2096,23 @@ async function main() {
       "the thin rail's topband still holds exactly one control",
       collapsed.header?.controls.length === 1 &&
         collapsed.header?.box.top === 0 &&
-        collapsed.header?.box.bottom === titlebarHeight,
+        collapsed.header?.box.bottom > titlebarHeight,
       `controls ${JSON.stringify(collapsed.header?.controls)}, band ${JSON.stringify(collapsed.header?.box)}`,
+    );
+    // The header's top inset travels with the collapse: the thin rail's one
+    // control (the emblem toggle) drops with the wide rail's lockup, and the
+    // vertical wing tabs follow at the same measure the wide pair keeps.
+    const collapsedWingGap =
+      collapsed.wingsBand && collapsed.railToggle
+        ? collapsed.wingsBand.box.top - collapsed.railToggle.box.bottom
+        : -1;
+    check(
+      "the thin rail's toggle drops with the header's inset",
+      Boolean(collapsed.railToggle && collapsed.rail && collapsed.wingsBand) &&
+        collapsed.railToggle.box.top - collapsed.rail.box.top >= 12 &&
+        collapsed.wingsBand.box.top >= collapsed.railToggle.box.bottom &&
+        Math.abs(collapsedWingGap - leadInset) <= 2,
+      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}, band ${JSON.stringify(collapsed.wingsBand?.box)}, gap ${collapsedWingGap}px vs leading inset ${leadInset}px`,
     );
     check(
       "that control is the studio's pure emblem, and it expands the rail",
