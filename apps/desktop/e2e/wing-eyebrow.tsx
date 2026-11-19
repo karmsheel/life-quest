@@ -153,6 +153,9 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The review cadences are among the routes this rig walks, and that page
+  // subscribes to the vault's change signal. A quiet watcher is enough here.
+  onVaultDataChanged: () => () => {},
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>

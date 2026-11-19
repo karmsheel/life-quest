@@ -801,14 +801,26 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<
-    Result<{ sessionId: string; created: boolean; kickoff: string }>
+    Result<{
+      sessionId: string;
+      created: boolean;
+      kickoff: string;
+      /** The chat's own row, so the dock lists it before the next list read. */
+      session: HermesSession;
+    }>
   >;
   planningStartOrResume: (
     cadence: ReviewCadence,
     period: string,
     scope: "overall" | string,
   ) => Promise<
-    Result<{ sessionId: string; created: boolean; kickoff: string }>
+    Result<{
+      sessionId: string;
+      created: boolean;
+      kickoff: string;
+      /** The chat's own row, so the dock lists it before the next list read. */
+      session: HermesSession;
+    }>
   >;
   /** The one note a day has. Missing is `Daily note not found`, not an error. */
   dailyNoteGet: (date: string) => Promise<Result<DailyNote>>;

@@ -41,6 +41,9 @@
  *     defaults does not put the five rows back.
  *  7. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
+ *  8. The header says the cadence twice: the eyebrow is the cadence and the
+ *     period is the page's one heading, with the calendar key beside it and the
+ *     two wordless arrow steps — on every cadence, not just weekly.
  *
  * The driver waits on `window.reviewWindowRigReady`, set after the shell and the
  * requested surface (review page or settings sheet) have committed, so it never
@@ -262,6 +265,10 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   vaultOpen: () => ok(snapshot()),
   onVaultFileChanged: () => () => {},
+  // The Review page is this rig's subject and subscribes to the vault's change
+  // signal. This rig is about WHEN a review may be written, not about live
+  // updates (that is `e2e/review.tsx`), so the channel is a quiet watcher here.
+  onVaultDataChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   dialogOpenDirectory: () => Promise.resolve(null),
@@ -283,6 +290,14 @@ const bridge: Record<string, unknown> = {
   // The shell's pending-decisions badge reads the inbox on mount.
   decisionList: () => ok([]),
   onCompanionStream: () => () => {},
+  // The theme store reads the profile's themes directory on mount and watches
+  // it. This rig is not about themes, so the list is empty and the watcher is a
+  // no-op — but both must be modelled: the proxy's catch-all answers with a
+  // Promise, and ThemeProvider throws on an `unsubscribe` that is not a
+  // function, leaving the harness never ready.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -371,13 +386,6 @@ const bridge: Record<string, unknown> = {
   reviewPeriodPack: () => Promise.resolve(fail("not modelled here")),
   dailyNoteWindow: () => Promise.resolve(ok([])),
   dailyNoteList: () => Promise.resolve(ok([])),
-  // ThemeProvider watches the profile's theme folder on mount; the harness has
-  // no profile, so answer the read and the subscription with their real shapes.
-  // Without these the Proxy's `fail(...)` answers are called as the unsubscribe
-  // and StrictMode's first cleanup takes the tree down.
-  themesList: () => Promise.resolve(ok([])),
-  themeGetState: () => Promise.resolve(ok({ keptFile: null })),
-  onThemesChanged: () => () => {},
 };
 
 const stubbed = new Proxy(bridge, {

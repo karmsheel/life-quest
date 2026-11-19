@@ -72,8 +72,16 @@ type Sample = {
   rigView: string | null;
   pinnedNow: string | null;
   shell: boolean;
+  /** The cadence, in the page's eyebrow. */
+  eyebrow: string | null;
+  /** The period, as the page's one heading (and the tested element). */
   title: string | null;
   periodLabel: string | null;
+  calendar: boolean;
+  prevText: string | null;
+  nextText: string | null;
+  prevBorder: string | null;
+  nextBorder: string | null;
   note: string | null;
   error: string | null;
   notice: string | null;
@@ -97,6 +105,7 @@ type Report = {
 /** Every review scenario the driver samples, with the exact text it must show. */
 const REVIEW_SCENARIOS: {
   name: string;
+  eyebrow: string;
   title: string;
   periodLabel: string;
   note: string | null;
@@ -104,71 +113,81 @@ const REVIEW_SCENARIOS: {
 }[] = [
   {
     name: "dailyBefore",
-    title: "Daily review",
-    periodLabel: "Daily review · 14 Nov 2026",
+    eyebrow: "Daily",
+    title: "14 Nov 2026",
+    periodLabel: "14 Nov 2026",
     note: "The daily review for the current period opens 15 Nov 2026 at 18:00.",
     now: "2026-11-15T17:59:00",
   },
   {
     name: "dailyOpen",
-    title: "Daily review",
-    periodLabel: "Daily review · 15 Nov 2026",
+    eyebrow: "Daily",
+    title: "15 Nov 2026",
+    periodLabel: "15 Nov 2026",
     note: null,
     now: "2026-11-15T18:00:00",
   },
   {
     name: "weeklyBefore",
-    title: "Weekly review",
-    periodLabel: "Weekly review · Week of 2 Nov 2026",
+    eyebrow: "Weekly",
+    title: "Week of 2 Nov 2026",
+    periodLabel: "Week of 2 Nov 2026",
     note: "The weekly review for the current period opens 15 Nov 2026 at 08:00.",
     now: "2026-11-10T09:00:00",
   },
   {
     name: "weeklyOpen",
-    title: "Weekly review",
-    periodLabel: "Weekly review · Week of 9 Nov 2026",
+    eyebrow: "Weekly",
+    title: "Week of 9 Nov 2026",
+    periodLabel: "Week of 9 Nov 2026",
     note: null,
     now: "2026-11-15T08:00:00",
   },
   {
     name: "monthlyBefore",
-    title: "Monthly review",
-    periodLabel: "Monthly review · Oct 2026",
+    eyebrow: "Monthly",
+    title: "Oct 2026",
+    periodLabel: "Oct 2026",
     note: "The monthly review for the current period opens 29 Nov 2026 at 00:00.",
     now: "2026-11-28T12:00:00",
   },
   {
     name: "monthlyOpen",
-    title: "Monthly review",
-    periodLabel: "Monthly review · Nov 2026",
+    eyebrow: "Monthly",
+    title: "Nov 2026",
+    periodLabel: "Nov 2026",
     note: null,
     now: "2026-11-29T00:00:00",
   },
   {
     name: "quarterlyBefore",
-    title: "Quarterly review",
-    periodLabel: "Quarterly review · 2026 Q3",
+    eyebrow: "Quarterly",
+    title: "2026 Q3",
+    periodLabel: "2026 Q3",
     note: "The quarterly review for the current period opens 29 Dec 2026 at 00:00.",
     now: "2026-12-28T12:00:00",
   },
   {
     name: "quarterlyOpen",
-    title: "Quarterly review",
-    periodLabel: "Quarterly review · 2026 Q4",
+    eyebrow: "Quarterly",
+    title: "2026 Q4",
+    periodLabel: "2026 Q4",
     note: null,
     now: "2026-12-29T00:00:00",
   },
   {
     name: "yearlyBefore",
-    title: "Yearly review",
-    periodLabel: "Yearly review · 2025",
+    eyebrow: "Yearly",
+    title: "2025",
+    periodLabel: "2025",
     note: "The yearly review for the current period opens 25 Dec 2026 at 00:00.",
     now: "2026-12-24T23:59:00",
   },
   {
     name: "yearlyOpen",
-    title: "Yearly review",
-    periodLabel: "Yearly review · 2026",
+    eyebrow: "Yearly",
+    title: "2026",
+    periodLabel: "2026",
     note: null,
     now: "2026-12-25T00:00:00",
   },
@@ -272,7 +291,15 @@ describe("review window e2e", () => {
       assert.equal(sample.note, scenario.note, `${scenario.name}: wrong (or missing) window note`);
       assert.equal(sample.nextDisabled, true, `${scenario.name}: Next walks past the open period`);
       assert.equal(sample.error, null, `${scenario.name}: the page reported ${String(sample.error)}`);
-      assert.equal(sample.title, scenario.title, `${scenario.name}: the page is titled for another cadence`);
+      // The cadence is the eyebrow and the period is the page's one heading; a
+      // second `Weekly review` title would name the cadence twice.
+      assert.equal(sample.eyebrow, scenario.eyebrow, `${scenario.name}: the page's eyebrow is not its cadence`);
+      assert.equal(sample.title, scenario.title, `${scenario.name}: the page's heading is not its period`);
+      assert.equal(sample.calendar, true, `${scenario.name}: no calendar key beside the period`);
+      assert.equal(sample.prevText, "", `${scenario.name}: the previous step carries a label`);
+      assert.equal(sample.nextText, "", `${scenario.name}: the next step carries a label`);
+      assert.equal(sample.prevBorder, "none 0px", `${scenario.name}: the previous step wears a frame`);
+      assert.equal(sample.nextBorder, "none 0px", `${scenario.name}: the next step wears a frame`);
       // The page is the REAL page in the REAL shell, and the pinned clock
       // reached it: the page computed its period from the URL's instant.
       assert.equal(sample.shell, true, `${scenario.name}: no app shell around the Review page`);
@@ -308,7 +335,7 @@ describe("review window e2e", () => {
     );
     assert.equal(
       honours.periodLabel,
-      "Daily review · 14 Nov 2026",
+      "14 Nov 2026",
       "at 19:00 with daily set to 20:00 the page showed today's review instead of yesterday's",
     );
     assert.equal(
@@ -322,7 +349,7 @@ describe("review window e2e", () => {
     assert.ok(previous, "the driver did not sample Prev navigation");
     assert.equal(
       previous.periodLabel,
-      "Daily review · 14 Nov 2026",
+      "14 Nov 2026",
       "Prev did not reach the previous period",
     );
     assert.equal(previous.nextDisabled, false, "Next is disabled while viewing an older period");
@@ -330,7 +357,7 @@ describe("review window e2e", () => {
     assert.ok(back, "the driver did not sample Next navigation");
     assert.equal(
       back.periodLabel,
-      "Daily review · 15 Nov 2026",
+      "15 Nov 2026",
       "Next did not return to the open period",
     );
     assert.equal(back.nextDisabled, true, "Next did not stop at the open period");

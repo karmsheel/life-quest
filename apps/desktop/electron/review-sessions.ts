@@ -14,6 +14,7 @@ import {
   type VaultSnapshot,
   type WeekStartDay,
 } from "@lifequest/vault-core";
+import type { HermesSession } from "./companion-client.js";
 
 export type BoundSessionKind = "review" | "plan";
 
@@ -28,6 +29,16 @@ export type BoundSessionResult = {
   sessionId: string;
   created: boolean;
   kickoff: string;
+  /**
+   * The chat's own row, exactly as the gateway made it.
+   *
+   * The renderer's chat store reads the session list once and then only after a
+   * turn settles, so an id alone leaves a chat this page created out of the
+   * sidebar for the whole interview. The row travels back with the id for the
+   * same reason every other page-started chat hands the dock the row it created:
+   * the tab and the Chats list wear its name from the first paint.
+   */
+  session: HermesSession;
 };
 
 export type CompanionSessionFns = {
@@ -39,13 +50,12 @@ export type CompanionSessionFns = {
    */
   open?: () => Promise<{ ok: true } | { ok: false; error: string }>;
   list: () => Promise<
-    { ok: true; value: Array<{ id: string }> } | { ok: false; error: string }
+    { ok: true; value: HermesSession[] } | { ok: false; error: string }
   >;
   create: (
     title: string,
   ) => Promise<
-    | { ok: true; value: { id: string; title: string } }
-    | { ok: false; error: string }
+    { ok: true; value: HermesSession } | { ok: false; error: string }
   >;
 };
 
@@ -331,7 +341,15 @@ async function startOrResumeBoundSession(
   if (!listed.ok) return listed;
 
   if (resolveBoundSession(storedId, listed.value) === "reuse" && storedId) {
-    return { ok: true, value: { sessionId: storedId, created: false, kickoff } };
+    const reused = listed.value.find((session) => session.id === storedId);
+    // An id the list named but did not carry is not a row the dock can show;
+    // creating a fresh chat is the honest answer rather than a bare id.
+    if (reused) {
+      return {
+        ok: true,
+        value: { sessionId: storedId, created: false, kickoff, session: reused },
+      };
+    }
   }
 
   const created = await companion.create(title);
@@ -354,7 +372,10 @@ async function startOrResumeBoundSession(
     });
   }
 
-  return { ok: true, value: { sessionId, created: true, kickoff } };
+  return {
+    ok: true,
+    value: { sessionId, created: true, kickoff, session: created.value },
+  };
 }
 
 export async function startOrResumeReviewSession(

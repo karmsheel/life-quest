@@ -15,12 +15,19 @@
  *                         statuses, the gate on the Life review, the progress
  *   review-started.png    after the Finance row ran the snapshot pass: the
  *                         figures are in the file and the document is still open
+ *   review-chat-sidebar.png  the moment the Finance interview starts: the new
+ *                         chat is already a row in **Chats**, marked as the open
+ *                         chat and as a live turn, while the agent is working
+ *   review-calendar.png   the period's calendar open on the month before: the
+ *                         grid the operator chooses another week from
  *   review-life-ready.png after the last area was completed: every row Done, the
  *                         Life review unlocked, the "ready" hint showing
  *   review-daily.png      the daily review: one general review, no checklist
  *   review-rules.png      the cadence's rules panel, read and written from the page
  *   review-wide.png       a wide window: the column keeps its measure and the
  *                         page+checklist pair is centred with room on both sides
+ *   review-live-checklist.png  a scope the AGENT marked done, on a page that was
+ *                         already open: the row flipped without a navigation
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -57,12 +64,36 @@
  *  9. The daily review ignores the title-bar area lens: the rig is on an area
  *     lens (Relationships) when it navigates to Daily, and the daily review still
  *     starts `overall`. Back on the weekly page the lens is still there.
- * 10. The old claims survive the new surface: the document's blocks and the
- *     blank line the operator typed, Ctrl+B/U/2/3 on the selection, the snapshot
- *     filled once inside its markers in the right section with the agent down,
- *     Preview rendering the whole file (and no longer a domains list), and the
- *     cadence's rules read and written from the page.
+ * 10. There is no second view of the file: no Document/Preview pair, no
+ *     `review-mode-*` buttons and no preview surface — the one box holds the
+ *     whole file, including the paragraph the operator wrote outside the
+ *     skeleton and the area sections the rail maps. The old claims survive the
+ *     surface: the document's blocks and the blank line the operator typed,
+ *     Ctrl+B/U/2/3 on the selection, the snapshot filled once inside its markers
+ *     in the right section with the agent down, and the cadence's rules read and
+ *     written from the page.
  * 11. No bridge call this rig does not model, and no console error.
+ * 12. A started review's chat is in the LEFT SIDEBAR from its first paint, while
+ *     the agent is still working. The chat list was read before that session
+ *     existed and is not read again until the turn settles, so the row can only
+ *     be there if the dock adopted the row main handed back with the id. The
+ *     turn is held open for the check — a chat that appears only once the run
+ *     ends is the reported bug, not a pass.
+ * 13. The header is the Daily Journal's shape, not a second title: the cadence is
+ *     the eyebrow, the period is the page's one heading CENTRED over the prose
+ *     with the calendar key beside it, and the two steps are wordless arrows with
+ *     no frame, on the column's edges. The calendar walks to another week and the
+ *     arrows walk back to the open week, where Next is the wall.
+ * 14. A review marked done by an AGENT shows on the checklist of the page that is
+ *     already open, with no navigation and no remount. The tool call happens in
+ *     the main process, so the page can only learn about it from the vault's
+ *     data-change announcement; the rig changes the file the way the tool does
+ *     and fires that announcement the way main does. The row must flip, the
+ *     progress must count it, the Life review's gate must lift on the live
+ *     marks, and the final lock badge must appear — all while a DOM probe planted
+ *     before the announcement survives, which a reload or a page navigation
+ *     would destroy. The bridge's own `reviewGet` count is what proves the page
+ *     re-read the vault instead of being handed the new state.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -177,7 +208,53 @@ const SAMPLE = `(() => {
       : [],
     headings: box ? box.querySelectorAll("h1, h2, h3, h4, h5, h6").length : 0,
     title: text(document.querySelector(".review-page__title")),
-    period: text(document.querySelector(".review-page__period")),
+    period: text(document.querySelector('[data-testid="review-period"]')),
+    eyebrow: text(document.querySelector('[data-testid="wing-eyebrow"]')),
+    // The period the page is on, as the page itself records it: the driver can
+    // compare it to a computed week start without parsing a display label.
+    periodData: (() => {
+      const el = document.querySelector('[data-testid="review-period"]');
+      return el ? el.dataset.period ?? null : null;
+    })(),
+    calendar: Boolean(document.querySelector('[data-testid="review-calendar"]')),
+    nextDisabled: (() => {
+      const el = document.querySelector('[data-testid="review-next"]');
+      return el ? el.disabled === true : null;
+    })(),
+    // The header's shape: the two step keys' own boxes and computed chrome, the
+    // period block they flank, and the page column all three ride. The steps are
+    // keys — no label, no frame — and the steps sit on the column's edges while
+    // the period block (headline + calendar) is centred on it.
+    headerParts: (() => {
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          width: Math.round(r.width),
+        };
+      };
+      const shape = (el) => {
+        if (!el) return null;
+        const style = getComputedStyle(el);
+        return {
+          text: (el.textContent || "").trim(),
+          borderTop: style.borderTopWidth,
+          borderStyle: style.borderTopStyle,
+          background: style.backgroundColor,
+          width: Math.round(el.getBoundingClientRect().width),
+        };
+      };
+      return {
+        page: box(document.querySelector(".review-page")),
+        prev: box(document.querySelector('[data-testid="review-prev"]')),
+        next: box(document.querySelector('[data-testid="review-next"]')),
+        block: box(document.querySelector(".review-page__period-block")),
+        prevShape: shape(document.querySelector('[data-testid="review-prev"]')),
+        nextShape: shape(document.querySelector('[data-testid="review-next"]')),
+      };
+    })(),
     notice: text(document.querySelector(".review-page__notice")),
     error: text(document.querySelector(".form-error")),
     status: text(document.querySelector(".review-page__status")),
@@ -268,12 +345,22 @@ const SAMPLE = `(() => {
             }
           : null,
         layout: rect(layoutEl),
+        // The page's own side padding: the pair is centred inside it, and the
+        // trailing band is deliberately deeper than the leading one.
+        layoutPadding: (() => {
+          if (!layoutEl) return null;
+          const style = getComputedStyle(layoutEl);
+          return {
+            left: Math.round(parseFloat(style.paddingLeft) || 0),
+            right: Math.round(parseFloat(style.paddingRight) || 0),
+          };
+        })(),
         page: rect(page),
         pageMaxWidth: page ? getComputedStyle(page).maxWidth : null,
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
         header: rect(document.querySelector(".review-page__header")),
-        modes: rect(document.querySelector(".review-page__modes")),
+        toolbar: rect(document.querySelector(".review-page__toolbar")),
         editor: rect(document.querySelector(".review-page__editor")),
         scope: rect(document.querySelector('[data-testid="review-scope"]')),
         pageActions: rect(document.querySelector(".review-page__actions")),
@@ -338,6 +425,18 @@ function fileLocked(win) {
   return win.webContents.executeJavaScript("window.reviewRigLocked()");
 }
 
+/**
+ * How many times the page has READ a review through the bridge.
+ *
+ * The live leg's evidence that a changed checklist came from a re-read of the
+ * vault and not from state handed to the page: the count has to move across the
+ * agent's mark.
+ */
+async function reviewGetCount(win) {
+  const calls = await setHarness(win, "window.reviewRigCalls");
+  return calls.filter((call) => String(call).startsWith("reviewGet:")).length;
+}
+
 /** The status text of one rail row, or null when the row is not drawn. */
 function railStatus(win, slug) {
   return win.webContents.executeJavaScript(
@@ -363,6 +462,39 @@ function waitForDockKickoffs(win, expected, timeoutMs = 8_000) {
     `the dock to receive ${expected} kickoff turn(s)`,
     timeoutMs,
   );
+}
+
+/**
+ * The rail's Chats list as the operator sees it: one row per chat, the label it
+ * wears, and whether the row is the open chat and has a live turn.
+ */
+function chatSidebar(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const rows = Array.from(document.querySelectorAll(".chats-rail__row"));
+    return {
+      present: Boolean(document.querySelector(".chats-rail")),
+      rows: rows.map((row) => ({
+        label: (row.querySelector(".chats-rail__label")?.textContent || "").trim(),
+        active: row.hasAttribute("data-active"),
+        live: row.hasAttribute("data-live"),
+      })),
+    };
+  })()`);
+}
+
+/** The period the page records on its headline (`data-period`), e.g. 2026-11-09. */
+function pagePeriod(win) {
+  return win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="review-period"]')?.dataset.period ?? null`,
+  );
+}
+
+/** The Monday-first week start of an ISO day, the way the page computes it. */
+function weekStartOnOrBefore(iso) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  const dayOfWeek = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  return date.toISOString().slice(0, 10);
 }
 
 /** Open a paragraph the way a person does — a click on the prose. */
@@ -508,6 +640,22 @@ function layoutReport(layout) {
     contentCentre: content ? content.centerX : null,
     layoutLeft: layout?.layout?.left ?? null,
     layoutWidth: layout?.layout?.width ?? null,
+    layoutPadLeft: layout?.layoutPadding?.left ?? null,
+    layoutPadRight: layout?.layoutPadding?.right ?? null,
+    innerLeft:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left + layout.layoutPadding.left
+        : null,
+    innerRight:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left + layout.layout.width - layout.layoutPadding.right
+        : null,
+    innerCentre:
+      layout?.layout && layout?.layoutPadding
+        ? layout.layout.left +
+          layout.layoutPadding.left +
+          (layout.layout.width - layout.layoutPadding.left - layout.layoutPadding.right) / 2
+        : null,
     pageLeft: page ? page.left : null,
     pageRight,
     pageWidth: page ? page.width : null,
@@ -521,8 +669,20 @@ function layoutReport(layout) {
     railPosition: layout?.railPosition ?? null,
     gap: page && rail ? rail.left - pageRight : null,
     groupCentre: page && rail ? (page.left + railRight) / 2 : null,
+    // The room either side of the pair, measured from the page's padded inner box.
+    gapBefore:
+      page && layout?.layout && layout?.layoutPadding
+        ? page.left - (layout.layout.left + layout.layoutPadding.left)
+        : null,
+    gapAfter:
+      rail && layout?.layout && layout?.layoutPadding
+        ? layout.layout.left +
+          layout.layout.width -
+          layout.layoutPadding.right -
+          railRight
+        : null,
     headerLeft: layout?.header?.left ?? null,
-    modesLeft: layout?.modes?.left ?? null,
+    toolbarLeft: layout?.toolbar?.left ?? null,
     editorLeft: layout?.editor?.left ?? null,
     scopeLeft: layout?.scope?.left ?? null,
     actionsLeft: layout?.pageActions?.left ?? null,
@@ -533,11 +693,14 @@ function layoutReport(layout) {
 /**
  * Claim the two-column reading page: the column keeps its 48rem measure where the
  * sheet has room for it, the checklist is a real column to its right with the
- * stylesheet's gap, and the pair is centred together — not the page centred with
- * the rail hung off one edge.
+ * stylesheet's gap, and the pair is centred together inside the page's own side
+ * padding — not the page centred with the rail hung off one edge, and not the
+ * pair run out to the sheet's edges.
  *
- * `spareFloor` is the empty page the claim demands on each side of the pair; it
- * is only meaningful when the window is wider than the pair needs.
+ * The trailing band is deliberately deeper than the leading one, so the checklist
+ * reads as sitting inside the right padding. `spareFloor` is the empty page the
+ * claim demands on each side of the pair; it is only meaningful when the window
+ * is wider than the pair needs.
  */
 function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   const report = layoutReport(layout);
@@ -552,6 +715,20 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   if (report.contentCentre === null || report.contentLeft === null) {
     failure(`${when}: the sheet's content box could not be read`);
     return report;
+  }
+  // The page's own side padding: it must exist, and the trailing band must be
+  // deeper than the leading one.
+  if (report.layoutPadLeft === null || report.layoutPadRight === null) {
+    failure(`${when}: the page's side padding could not be read`);
+    return report;
+  }
+  if (!(report.layoutPadLeft >= 8)) {
+    failure(`${when}: the page has only ${report.layoutPadLeft}px of leading padding`);
+  }
+  if (!(report.layoutPadRight > report.layoutPadLeft + 4)) {
+    failure(
+      `${when}: the trailing padding (${report.layoutPadRight}px) is not deeper than the leading padding (${report.layoutPadLeft}px)`,
+    );
   }
   // The measure: the column never grows past 48rem.
   if (report.pageWidth > READING_MEASURE + 1) {
@@ -578,17 +755,20 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
       `${when}: the checklist starts at ${report.railLeft}, not to the right of the column's ${report.pageRight} with a gap (gap ${report.gap}px)`,
     );
   }
-  const offBy = report.groupCentre === null ? null : report.groupCentre - report.contentCentre;
+  const offBy =
+    report.groupCentre === null || report.innerCentre === null
+      ? null
+      : report.groupCentre - report.innerCentre;
   if (offBy === null || Math.abs(offBy) > 2) {
     failure(
-      `${when}: the page+checklist group's centre is ${report.groupCentre}, ${offBy}px from the sheet's ${report.contentCentre}`,
+      `${when}: the page+checklist group's centre is ${report.groupCentre}, ${offBy}px from the page's padded centre ${report.innerCentre}`,
     );
   }
   // Every part of the page rides the column: a centred title over a body run
   // from the leading edge would be a page divided against itself.
   for (const [part, left] of [
     ["header", report.headerLeft],
-    ["modes", report.modesLeft],
+    ["toolbar", report.toolbarLeft],
     ["editor", report.editorLeft],
     ["scope line", report.scopeLeft],
     ["actions", report.actionsLeft],
@@ -601,9 +781,10 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
       );
     }
   }
-  // The leftover room is empty page on both sides of the pair, split evenly.
-  const before = report.pageLeft - (report.contentLeft ?? 0);
-  const after = (report.contentRight ?? 0) - (report.railRight ?? 0);
+  // Inside the page's padding the pair is centred: the leftover room is empty
+  // page on both sides of it, split evenly.
+  const before = report.gapBefore ?? 0;
+  const after = report.gapAfter ?? 0;
   checks[`${when}:gaps`] = { before, after };
   if (spareFloor > 0) {
     if (!(before > spareFloor) || !(after > spareFloor)) {
@@ -794,13 +975,61 @@ async function main() {
   checks.opened = opened;
   checks.openedRail = railState(opened);
   assertDocument(opened, "on arrival", { blocks: 35 });
-  if (opened.title !== "Weekly review") {
-    failure(`the review's title read ${JSON.stringify(opened.title)}`);
+  // The header is the Daily Journal's shape: the cadence is the page's eyebrow
+  // (the name is not repeated as the title), the period is the page's one
+  // heading over the prose with a calendar key beside it, and the two step keys
+  // sit on the column's own edges as arrows with no label and no frame.
+  if (opened.eyebrow !== "Weekly") {
+    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Weekly"`);
   }
-  // The page opens on the CURRENT week, which is whatever week the suite runs
-  // in: the claim is the shape of its own label, not a pinned date.
-  if (!/^Weekly review · Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.period))) {
-    failure(`the review page does not label its period: ${JSON.stringify(opened.period)}`);
+  if (!/^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.title))) {
+    failure(`the page's heading is not its period: ${JSON.stringify(opened.title)}`);
+  }
+  if (opened.title !== opened.period) {
+    failure(
+      `the heading and the period read differently: ${JSON.stringify(opened.title)} / ${JSON.stringify(opened.period)}`,
+    );
+  }
+  if (!opened.calendar) {
+    failure("the review header has no calendar key beside the period");
+  }
+  const headerParts = opened.headerParts;
+  for (const [name, shape] of [
+    ["previous", headerParts.prevShape],
+    ["next", headerParts.nextShape],
+  ]) {
+    if (!shape) {
+      failure(`the ${name} step is not on the page`);
+      continue;
+    }
+    if (shape.text !== "") {
+      failure(`the ${name} step carries text ${JSON.stringify(shape.text)}; it must be an arrow only`);
+    }
+    if (shape.borderStyle !== "none" || shape.borderTop !== "0px") {
+      failure(`the ${name} step wears a frame (${shape.borderStyle} ${shape.borderTop})`);
+    }
+    if (shape.background !== "rgba(0, 0, 0, 0)" && shape.background !== "transparent") {
+      failure(`the ${name} step wears a fill (${shape.background})`);
+    }
+  }
+  if (!headerParts.page || !headerParts.block) {
+    failure("the header's column or period block could not be measured");
+  } else {
+    const pageCentre = (headerParts.page.left + headerParts.page.right) / 2;
+    const blockCentre = (headerParts.block.left + headerParts.block.right) / 2;
+    if (Math.abs(blockCentre - pageCentre) > 2) {
+      failure(`the period block is not centred over the column: ${blockCentre} vs ${pageCentre}`);
+    }
+    if (headerParts.prev && Math.abs(headerParts.prev.left - headerParts.page.left) > 2) {
+      failure(
+        `the previous step is not on the column's leading edge: ${headerParts.prev.left} vs ${headerParts.page.left}`,
+      );
+    }
+    if (headerParts.next && Math.abs(headerParts.next.right - headerParts.page.right) > 2) {
+      failure(
+        `the next step is not on the column's trailing edge: ${headerParts.next.right} vs ${headerParts.page.right}`,
+      );
+    }
   }
   assertRail(opened, "on arrival", {
     statuses: {
@@ -833,7 +1062,7 @@ async function main() {
   // The pair must be centred at the default window, where the sheet has room for
   // the column's full measure.
   checks.centering = assertTwoColumn(opened.layout, "at the default window", {
-    spareFloor: 4,
+    spareFloor: 2,
   });
   await shot(win, "review-document.png");
   await shot(win, "review-checklist.png");
@@ -1063,6 +1292,10 @@ async function main() {
   // ── 7. the Finance row opens the Finance interview, and finishing it flips
   //       the row ────────────────────────────────────────────────────────────
   await setHarness(win, "window.reviewRigAgentDown = false");
+  // Hold the start's turn open until the sidebar has been sampled: the reported
+  // bug was that the chat was missing from Chats FOR THE WHOLE RUN, so the check
+  // is only meaningful while the turn is still going.
+  await setHarness(win, "window.reviewRigHoldTurns = true");
   await click(win, '[data-testid="review-area-financial"]');
   await waitFor(
     win,
@@ -1095,6 +1328,153 @@ async function main() {
   if (kickoffs.length !== 1 || !kickoffs[0].includes("## Finance")) {
     failure(`the dock was sent ${kickoffs.length} kickoff(s), not the Finance one`);
   }
+
+  // ── 7b. the started interview is in Chats WHILE the agent is working ─────
+  // The renderer read the chat list before this session existed, and it will
+  // not read it again until the turn settles. So this row can only be there if
+  // the dock adopted the row the page was handed; waiting for the next list
+  // read is exactly the bug — the chat missing from Chats for the whole run.
+  await frames(win);
+  const createdChats = await setHarness(win, "window.reviewRigSessions()");
+  const startedChat =
+    createdChats.find((row) => row.id === starts[0]?.sessionId) ?? null;
+  const sidebar = await chatSidebar(win);
+  checks.startedSidebar = sidebar;
+  checks.startedChat = startedChat;
+  if (!sidebar.present) {
+    failure("the shell has no Chats list to check the started interview against");
+  }
+  if (!startedChat) {
+    failure(
+      `the gateway has no chat for the Finance start ${JSON.stringify(starts[0]?.sessionId)}`,
+    );
+  }
+  const listedChat = sidebar.rows.find((row) => row.label === startedChat?.title) ?? null;
+  if (!listedChat) {
+    failure(
+      `the started review chat is not listed in Chats while it runs: ${JSON.stringify(
+        sidebar.rows.map((row) => row.label),
+      )}`,
+    );
+  } else {
+    if (!listedChat.active) {
+      failure("the started review chat's Chats row is not the open chat");
+    }
+    if (!listedChat.live) {
+      failure("the started review chat's Chats row does not show its turn running");
+    }
+  }
+  await shot(win, "review-chat-sidebar.png");
+  // Release the held turn: the rest of the run is not about a live turn.
+  await setHarness(win, "window.reviewRigHoldTurns = false");
+  await setHarness(win, "window.reviewRigReleaseTurns()");
+
+  // ── 7c. the calendar beside the period walks to another week ────────────
+  // The period is the page's one heading, and the calendar key beside it opens
+  // the app's day picker; choosing a day takes the page to that day's week. The
+  // arrows then walk back to the open week, where Next is the wall.
+  const baseWeek = opened.periodData;
+  // Starting the Finance interview scrolled the reading column to Finance's
+  // section; bring the header back into view so the calendar's popover is
+  // anchored under a visible key (and the picture shows what the operator does).
+  await win.webContents.executeJavaScript(`(() => {
+    document.querySelector(".shell__content")?.scrollTo({ top: 0 });
+    window.scrollTo(0, 0);
+    return true;
+  })()`);
+  await frames(win);
+  await click(win, '[data-testid="review-calendar"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="day-picker"]'))`,
+    "the period calendar to open",
+  );
+  const pickerMonth = await setHarness(
+    win,
+    `document.querySelector('[data-testid="day-picker-month"]').textContent.trim()`,
+  );
+  await click(win, '[data-testid="day-picker-prev-month"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="day-picker-month"]').textContent.trim() !== ${JSON.stringify(pickerMonth)}`,
+    "the calendar's previous month",
+  );
+  await shot(win, "review-calendar.png");
+  const chosenDay = await win.webContents.executeJavaScript(`(() => {
+    const day = Array.from(document.querySelectorAll('[data-testid^="day-picker-day-"]')).find(
+      (el) => !el.disabled,
+    );
+    if (!day) return null;
+    const iso = day.dataset.date;
+    day.click();
+    return iso;
+  })()`);
+  checks.picker = { baseWeek, pickerMonth, chosenDay };
+  if (!chosenDay) {
+    failure("the calendar drew no selectable day");
+  } else {
+    const expectedWeek = weekStartOnOrBefore(chosenDay);
+    checks.picker.expectedWeek = expectedWeek;
+    await waitFor(
+      win,
+      `(document.querySelector('[data-testid="review-period"]')?.dataset.period ?? "") === ${JSON.stringify(expectedWeek)}`,
+      "the page to move to the chosen day's week",
+    );
+    await frames(win);
+    const moved = await sample(win);
+    checks.picker.moved = {
+      period: moved.periodData,
+      title: moved.title,
+      nextDisabled: moved.nextDisabled,
+    };
+    if (moved.periodData !== expectedWeek) {
+      failure(
+        `the calendar opened week ${JSON.stringify(moved.periodData)}, expected ${JSON.stringify(expectedWeek)}`,
+      );
+    }
+    if (!/^Week of /.test(String(moved.title))) {
+      failure(`the moved page's heading is not a week: ${JSON.stringify(moved.title)}`);
+    }
+    if (moved.nextDisabled !== false) {
+      failure("Next is disabled on an older week, where the open week is still ahead");
+    }
+    await waitFor(
+      win,
+      `!document.querySelector('[data-testid="day-picker"]')`,
+      "the calendar to close after choosing",
+    );
+    // Walk back with the arrow steps; the open week is the wall.
+    let steps = 0;
+    while ((await pagePeriod(win)) !== baseWeek && steps < 12) {
+      const before = await pagePeriod(win);
+      const stepped = await click(win, '[data-testid="review-next"]');
+      if (!stepped) {
+        failure("the Next step disappeared while walking back to the open week");
+        break;
+      }
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="review-period"]')?.dataset.period ?? "") !== ${JSON.stringify(before)}`,
+        "the Next step to move the page",
+      );
+      steps += 1;
+    }
+    const back = await sample(win);
+    checks.picker.back = {
+      period: back.periodData,
+      nextDisabled: back.nextDisabled,
+      steps,
+    };
+    if (back.periodData !== baseWeek) {
+      failure(
+        `the steps did not walk back to the open week: ended on ${JSON.stringify(back.periodData)}, expected ${JSON.stringify(baseWeek)}`,
+      );
+    }
+    if (back.nextDisabled !== true) {
+      failure("Next is not disabled on the open week");
+    }
+  }
+
   if (!started.notice || !/snapshot/i.test(started.notice)) {
     failure(`the page did not say what it filled: ${JSON.stringify(started.notice)}`);
   }
@@ -1222,8 +1602,8 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-      const title = document.querySelector(".review-page__title");
-      return Boolean(title) && title.textContent.trim() === "Daily review";
+      const eyebrow = document.querySelector('[data-testid="wing-eyebrow"]');
+      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Daily";
     })()`,
     "the daily review page",
   );
@@ -1303,7 +1683,7 @@ async function main() {
   await foldDock(win);
   await shot(win, "review-daily.png");
 
-  // ── 10. back on the weekly review: rules and Preview still work ──────────
+  // ── 10. back on the weekly review: no second view, and the rules work ────
   // The daily review ignored the lens but did not consume it: the weekly page is
   // still on the area that was pressed last, which is the whole point of the
   // title-bar lens surviving a page that has no areas.
@@ -1321,6 +1701,27 @@ async function main() {
   }
   if (back.markDoneLabel !== "Mark Relationships review complete") {
     failure(`the weekly mark-done button reads ${JSON.stringify(back.markDoneLabel)}`);
+  }
+  // The box is the page: there is no Document/Preview pair to switch between,
+  // and no second surface of the file. The whole file is in the one box, its
+  // operator-written parts included.
+  const modeButtons = await setHarness(
+    win,
+    `Array.from(document.querySelectorAll('[data-testid^="review-mode-"]')).map((el) => el.getAttribute("data-testid"))`,
+  );
+  checks.modeButtons = modeButtons;
+  if (back.modes.length !== 0) {
+    failure(`the review page still offers view controls: ${JSON.stringify(back.modes)}`);
+  }
+  if (modeButtons.length > 0) {
+    failure(`the review page still has view buttons: ${JSON.stringify(modeButtons)}`);
+  }
+  if (back.previewShown) failure("the review page still draws a Preview surface");
+  if (!String(back.boxText).includes("A note outside the skeleton.")) {
+    failure("the one box dropped a section the operator wrote");
+  }
+  if (!String(back.boxText).includes("alpha beta gamma")) {
+    failure("the one box dropped the heading the operator wrote");
   }
   assertRail(back, "back on the weekly review", {
     statuses: {
@@ -1388,41 +1789,7 @@ async function main() {
     "the rules panel to fold away",
   );
 
-  // ── 11. Preview is the whole file, and no longer a domains list ──────────
-  await click(win, '[data-testid="review-mode-preview"]');
-  await waitFor(win, `Boolean(document.querySelector('[data-testid="review-preview"]'))`, "the preview");
-  await frames(win);
-  const preview = await sample(win);
-  checks.preview = preview;
-  if (!preview.previewShown) failure("the preview mode drew no preview");
-  if (preview.boxes !== 0) failure("the preview mode left the editor box on the page");
-  const previewText = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="review-preview"]').textContent`,
-  );
-  checks.previewText = previewText.slice(0, 600);
-  // The preview is the whole file: the paragraph and heading the operator wrote,
-  // and the area sections the rail maps, are all in it.
-  if (!previewText.includes("A note outside the skeleton.")) {
-    failure("the preview dropped a section the operator wrote");
-  }
-  if (!previewText.includes("alpha beta gamma")) {
-    failure("the preview dropped the heading the operator wrote");
-  }
-  if (!previewText.includes("Relationships")) {
-    failure("the preview dropped an area section the checklist maps");
-  }
-  if (previewText.includes("lifequest:snapshot")) {
-    failure("the preview printed the snapshot marker");
-  }
-  // The old `ReviewPreview` drew a domains list with Not started/Done chips
-  // inside Preview. The checklist is the one place statuses live now.
-  if (previewText.includes("Not started")) {
-    failure("the preview still draws the old domains/status list");
-  }
-  await click(win, '[data-testid="review-mode-document"]');
-  await waitFor(win, `Boolean(document.querySelector(".note-live"))`, "the document mode");
-
-  // ── 12. the life review: summarise across the areas, then lock the file ──
+  // ── 11. the life review: summarise across the areas, then lock the file ──
   // The daily review also started scope `overall`, so the wait is for a NEW
   // session at the next index, not merely for the last one to be `overall`.
   const startsBeforeLife = (await setHarness(win, "window.reviewRigStarts")).length;
@@ -1518,6 +1885,154 @@ async function main() {
   if (occurrences(lockedBody, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
     failure("the lock changed the snapshot block");
   }
+
+  // ── 12. an agent's mark reaches the checklist of the OPEN page ────────────
+  // The reported bug: the companion finishes an interview and marks the area (or
+  // the life review) done with its own tool call in the main process. The
+  // operator is already on the review page, and the checklist stayed stale until
+  // they left it and came back. This leg walks to the previous, still-open week
+  // so the current week's locked story is untouched, leaves the page there, and
+  // changes that week's file the way the agent's tool does — outside the page's
+  // bridge — then fires main's change announcement.
+  await click(win, '[data-testid="review-prev"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="review-period"]')?.dataset.period !== ${JSON.stringify(period)}`,
+    "the page to move to the previous week",
+  );
+  await waitForRailStatus(win, "financial", "In progress");
+  await waitFor(
+    win,
+    "Boolean(window.reviewRigDataListenerCount && window.reviewRigDataListenerCount() > 0)",
+    "the page to subscribe to the vault's change signal",
+  );
+  await frames(win);
+  const livePeriod = String(await pagePeriod(win));
+  const beforeLive = await sample(win);
+  checks.liveBefore = beforeLive;
+  checks.livePeriod = livePeriod;
+  checks.liveDataListeners = await setHarness(win, "window.reviewRigDataListenerCount()");
+  if (!(checks.liveDataListeners > 0)) {
+    failure(
+      "the review page does not listen to the vault's change signal, so an agent's mark can never reach the open checklist",
+    );
+  }
+  // A probe on the editor's own DOM node: a reload, a remount or a navigation
+  // would lose it, and "the checklist updated" would then be a story about a
+  // rebuilt page rather than about the page that was already open.
+  await setHarness(
+    win,
+    `(() => {
+      const box = document.querySelector(".note-live");
+      if (!box) return false;
+      box.dataset.liveProbe = "kept";
+      return true;
+    })()`,
+  );
+  const getsBefore = await reviewGetCount(win);
+
+  const financeMark = await setHarness(win, 'window.reviewRigAgentMarksDone("financial")');
+  checks.liveFinanceMark = financeMark;
+  if (!financeMark || financeMark.ok !== true) {
+    failure(`the agent's Finance mark was refused by the rig: ${JSON.stringify(financeMark)}`);
+  }
+  await waitForRailStatus(win, "financial", "Done");
+  await frames(win);
+  const liveFinance = await sample(win);
+  checks.liveFinance = liveFinance;
+  const getsAfter = await reviewGetCount(win);
+  checks.liveReReads = getsAfter - getsBefore;
+  if (!(getsAfter > getsBefore)) {
+    failure(
+      "the checklist flipped without the page re-reading the review — the new state was handed to it, not read from the vault",
+    );
+  }
+  if (liveFinance.periodData !== livePeriod) {
+    failure(
+      `the agent's mark moved the page to ${JSON.stringify(liveFinance.periodData)}, from ${JSON.stringify(livePeriod)}`,
+    );
+  }
+  if (liveFinance.progress !== `2 of ${TOTAL_AREAS} areas done`) {
+    failure(
+      `the live progress after the agent's Finance mark reads ${JSON.stringify(liveFinance.progress)}, expected 2 of ${TOTAL_AREAS}`,
+    );
+  }
+  if (liveFinance.financeStatus !== "Done") {
+    failure(`the Finance row reads ${JSON.stringify(liveFinance.financeStatus)} after the agent marked it done`);
+  }
+  if (liveFinance.mindStatus !== "Not started") {
+    failure(`the Mind row reads ${JSON.stringify(liveFinance.mindStatus)} although the agent touched only Finance`);
+  }
+  const liveProbe = await setHarness(
+    win,
+    `document.querySelector(".note-live")?.dataset.liveProbe ?? null`,
+  );
+  checks.liveProbe = liveProbe;
+  if (liveProbe !== "kept") failure("the live update replaced the page instead of updating it");
+  await shot(win, "review-live-checklist.png");
+
+  // The Life review's gate lifts on LIVE marks too. The remaining areas have no
+  // scope on this week — nobody started them — so the rig first creates them the
+  // way the operator's own row press does (`review:ensure`, a write main
+  // announces), and then the agent finishes each one.
+  for (const slug of ["mind", "business", "relationships"]) {
+    await win.webContents.executeJavaScript(
+      `window.lifequest.reviewEnsure("weekly", ${JSON.stringify(livePeriod)}, ${JSON.stringify(slug)})`,
+    );
+  }
+  await setHarness(win, "window.reviewRigAnnounceDataChange()");
+  for (const slug of ["mind", "business", "relationships"]) {
+    await waitForRailStatus(win, slug, "In progress");
+    const marked = await setHarness(win, `window.reviewRigAgentMarksDone(${JSON.stringify(slug)})`);
+    if (!marked || marked.ok !== true) {
+      failure(`the agent's ${slug} mark was refused by the rig: ${JSON.stringify(marked)}`);
+    }
+    await waitForRailStatus(win, slug, "Done");
+  }
+  await waitFor(
+    win,
+    `(document.querySelector('[data-testid="review-area-progress"]')?.textContent ?? "").includes("${TOTAL_AREAS} of ${TOTAL_AREAS}")`,
+    "the live marks to count up",
+  );
+  await frames(win);
+  const liveGated = await sample(win);
+  checks.liveGated = liveGated;
+  if (!/All areas are reviewed/i.test(String(liveGated.hint))) {
+    failure(`the checklist hint after the agent finished every area reads ${JSON.stringify(liveGated.hint)}`);
+  }
+  if (!liveGated.lifeItem || liveGated.lifeItem.disabled) {
+    failure("the Life review is still disabled after the agent finished every area live");
+  }
+  if (liveGated.lifeStatus !== "In progress") {
+    failure(`the Life review's live status reads ${JSON.stringify(liveGated.lifeStatus)}, expected "In progress"`);
+  }
+
+  // And the life review itself, marked done by the agent, locks the open page —
+  // badge, status line, and every rail row dead — with no reload.
+  const overallMark = await setHarness(win, 'window.reviewRigAgentMarksDone("overall")');
+  checks.liveOverallMark = overallMark;
+  if (!overallMark || overallMark.ok !== true) {
+    failure(`the agent's life-review mark was refused by the rig: ${JSON.stringify(overallMark)}`);
+  }
+  await waitFor(
+    win,
+    `(document.querySelector(".review-page__lock-badge")?.textContent ?? "").trim() === "Locked"`,
+    "the live locked badge",
+  );
+  await waitForRailStatus(win, "overall", "Done");
+  await frames(win);
+  const liveLocked = await sample(win);
+  checks.liveLocked = liveLocked;
+  if (liveLocked.lifeStatus !== "Done") {
+    failure(`the Life review row reads ${JSON.stringify(liveLocked.lifeStatus)} after the agent completed it`);
+  }
+  if (liveLocked.status !== "Locked") {
+    failure(`the page's status line reads ${JSON.stringify(liveLocked.status)} after the agent locked the review`);
+  }
+  if (liveLocked.periodData !== livePeriod) {
+    failure("the agent's life-review mark navigated the page");
+  }
+  if (!(await fileLocked(win))) failure("the previous week's file is not locked after the agent completed it");
 
   // ── 13. nothing unexpected, nothing on fire ──────────────────────────────
   const finalStarts = await setHarness(win, "window.reviewRigStarts");

@@ -998,22 +998,119 @@ a {
   z-index: 20;
 }
 
-/* The band the sidebar shares with the titlebar: one control at its trailing
-   edge while the rail is wide, and the rest of the strip stays a window drag
-   handle. A wide column puts a centred chevron in the middle of nowhere; at the
-   edge it points at the seam it moves. Collapsed, the band's own rule centres the
-   same control in the thin column (see "The thin rail"). It paints the rail's own
+/* The top line of the rail, in the window strip: the lockup at the leading edge
+   and the collapse toggle at the trailing one, both centred on the strip's line.
+   That is the DSH arrangement, and it is why the mark sits here rather than on a
+   band of its own: the toggle and the logo share one row. The rest of the strip
+   stays a window drag handle. Collapsed, the band's own rule centres the one
+   control the thin column keeps (see "The thin rail"). It paints the rail's own
    mat, so the sidebar runs to the window's top and the titlebar's fill begins
    only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   height: var(--window-titlebar-height);
   margin: 0 -0.35rem 0.1rem;
   padding-right: 0.45rem;
   -webkit-app-region: drag;
+}
+
+/* One lockup, one ink model. The three groups are the supplied art's own classes:
+   `life-text` is the LIFE word, `quest-icon` the Q emblem, `uest-text` the UEST
+   word. A theme, the splash and any override write the variables, never the
+   fills. */
+.lifequest-logo {
+  display: block;
+  width: 100%;
+  color: inherit;
+}
+
+.lifequest-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lifequest-logo .life-text {
+  fill: var(--life-color);
+}
+
+.lifequest-logo .quest-icon {
+  fill: var(--icon-color);
+}
+
+.lifequest-logo .uest-text {
+  fill: var(--uest-color);
+}
+
+/* The lockup's flanking rules are part of the art and take the word inks: the
+   left rule the LIFE ink, the right rule the UEST ink, so a theme that splits
+   the words splits the rules with them. */
+.lifequest-logo .life-rule {
+  fill: var(--life-color);
+}
+
+.lifequest-logo .uest-rule {
+  fill: var(--uest-color);
+}
+
+/* The lockup in the rail's header: height-sized to the strip (1.7rem inside a
+   32px row), width taken from the artwork's own aspect, on the rail's content
+   edge. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and
+   the mark is then held one row-content inset in from that edge — the same
+   `--density-pad-row-x` that inside the page rows holds the icons — so the L
+   begins on the line the page icons and the wing switcher's Home stroke share,
+   instead of the rail's box edge. The art's three groups are painted from the
+   theme tokens below; the component never carries a fill of its own. It yields
+   to the toggle rather than pushing it off the row on a narrow theme. */
+.nav-rail__brand {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 1.7rem;
+  /* Never wider than the row leaves between the rail's content edge and the
+     toggle; on a narrow rail the mark scales down inside that box instead of
+     running under the control. */
+  max-width: calc(100% - 1.75rem - 0.5rem);
+  /* 0.35rem cancels the header's negative inline margin (content edge); the row
+     inset then moves the mark in to the line the page rows' icons sit on, and
+     the final 1.5px is optical: the icons' strokes start about that far inside
+     their boxes, so it lands the L on the wing switcher's H stroke and the
+     icons' left edges rather than just on their boxes. */
+  margin-left: calc(0.35rem + var(--density-pad-row-x) + 1.5px);
+}
+
+.nav-rail__brand svg {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+}
+
+/* The lockups' Q emblem alone: the pure mark the thin rail's expand control
+   wears. One ink, `--icon-color`, exactly as the emblem group inside a lockup. */
+.lifequest-emblem {
+  display: block;
+}
+
+.lifequest-emblem svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lifequest-emblem path {
+  fill: var(--icon-color);
+}
+
+.nav-toggle__brand {
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .nav-rail__section {
@@ -1275,6 +1372,12 @@ a {
      a wide rail puts the toggle, and at this width it would read as an accident. */
   justify-content: center;
   padding-right: 0;
+}
+
+/* 56px cannot hold a word, and a second mark would compete with the icon column's
+   own rows: the lockup leaves with the labels, the toggle keeps the strip. */
+.shell--nav-collapsed .nav-rail__brand {
+  display: none;
 }
 
 .shell--nav-collapsed .chats-rail,
@@ -6129,6 +6232,82 @@ a.home-mini-list__link:hover {
   color: var(--amber);
 }
 
+/* —— The logo bench ——
+   Four lockups under the Developer rows. The block takes the card's full width
+   because a preview has to show the mark at a readable size: the art's letters
+   are a quarter of its canvas, so a narrow trailing control would draw the word
+   at a few pixels. A hairline separates it from the switch above, the same rule
+   the rows use between themselves. */
+.settings-developer__logo {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-developer__logo .settings-card__desc {
+  margin: 0.25rem 0 0;
+}
+
+/* Two columns of real previews. Each option is a radio: the preview on the
+   rail's own mat (so the three inks are read where they will be worn), the
+   label and the one-line distinction beneath it, and the ring the theme's
+   selected state uses, never a second border inside the frame. */
+.logo-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.logo-picker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.logo-picker__option:hover {
+  background: var(--bg-subtle);
+}
+
+.logo-picker__option.is-active {
+  border-color: var(--ring);
+  background: var(--accent-fill);
+}
+
+.logo-picker__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--canvas-base);
+}
+
+.logo-picker__preview .lifequest-logo {
+  max-width: 15rem;
+  margin: 0 auto;
+}
+
+.logo-picker__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.logo-picker__desc {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* —— Composer page ——
    One row, and the row pair is `SettingsRow`'s own layout: the copy on the
    leading edge, the send-key control on the trailing edge. The page keeps only
@@ -6167,7 +6346,6 @@ a.home-mini-list__link:hover {
   color: var(--text);
   font-weight: 500;
 }
-
 /* —— Decisions page ——
    The same list shape as Developer, because it is the same kind of page: two
    switches, each one row. `SettingsRow` now owns the row pair and the hairline

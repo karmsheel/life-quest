@@ -525,7 +525,7 @@ const PANEL_SAMPLE = `(() => {
     empty: text(".review-notes .muted"),
     rows,
     noteLinks: Array.from(document.querySelectorAll('.review-notes a[href]')).map((a) => a.getAttribute("href")),
-    reviewPeriod: text(".review-page__period"),
+    reviewPeriod: text('[data-testid="review-period"]'),
     onFire: text(".form-error"),
   };
 })()`;
