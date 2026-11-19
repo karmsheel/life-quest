@@ -54,6 +54,7 @@ type Report = {
     extensionsOff: string;
     trust: string;
     studio: string;
+    look: string;
   };
   theme: unknown;
   refused: unknown;
@@ -167,6 +168,7 @@ describe("theme files v2", () => {
         report.artifacts.extensionsOff,
         report.artifacts.trust,
         report.artifacts.studio,
+        report.artifacts.look,
       ]) {
         assert.ok(
           fs.existsSync(path.resolve(desktopRoot, artifact)),

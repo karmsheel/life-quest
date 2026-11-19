@@ -106,6 +106,7 @@ const EXTENSIONS_OFF_PNG = path.join(
 );
 const TRUST_PNG = path.join(artifactsDir, "themes-v2-trust.png");
 const STUDIO_PNG = path.join(artifactsDir, "themes-v2-studio.png");
+const STUDIO_LOOK_PNG = path.join(artifactsDir, "themes-v2-studio-look.png");
 
 const failures = [];
 const checks = [];
@@ -610,6 +611,65 @@ const SAMPLE = `(async () => {
     })(),
     studioStatus:
       document.querySelector('[data-testid="studio-status"]')?.textContent?.trim() ?? null,
+    // S3 Studio: the look sections and the palette editor's live verdict.
+    studioSection: (() => {
+      const active = [...document.querySelectorAll('[data-testid^="studio-section-tab-"]')].find(
+        (tab) => tab.getAttribute("aria-selected") === "true",
+      );
+      if (!active) return null;
+      return (active.getAttribute("data-testid") ?? "").replace("studio-section-tab-", "");
+    })(),
+    draftWingPlace: (() => {
+      if (document.querySelector(".nav-rail__wings-band")) return "rail-top";
+      if (document.querySelector('[data-chrome-place="titlebar-left"]')) return "titlebar-left";
+      if (document.querySelector('[data-chrome-place="floating-left"]')) return "floating-left";
+      return null;
+    })(),
+    studioMaterialRadius: (() => {
+      // The Settings controls are segmented role="radio" groups, so the
+      // selected option carries aria-checked, not aria-pressed. Scope to the
+      // radius group itself so the axis cannot be confused with the others.
+      const group = document.querySelector('[data-testid="studio-material-radius"]');
+      if (!group) return null;
+      const options = [...group.querySelectorAll('[role="radio"], button')];
+      const active = options.find(
+        (option) =>
+          option.getAttribute("aria-checked") === "true" ||
+          option.getAttribute("aria-pressed") === "true",
+      );
+      return active ? active.getAttribute("data-testid") : null;
+    })(),
+    studioPaletteVerdict:
+      document.querySelector('[data-testid="studio-palette-verdict"]')?.textContent?.trim() ?? null,
+    studioPaletteEnabled: (() => {
+      const read = (id) => {
+        const control = document.querySelector('[data-testid="' + id + '"]');
+        if (!control) return null;
+        if (control.tagName === "INPUT") return Boolean(control.checked);
+        return control.getAttribute("aria-pressed") === "true";
+      };
+      return {
+        light: read("studio-palette-light-enabled"),
+        dark: read("studio-palette-dark-enabled"),
+      };
+    })(),
+    paletteTokens: (() => {
+      const palette = document.querySelector('[data-testid="studio-palette"]');
+      if (!palette) return null;
+      const group = (name) => {
+        const prefix = "studio-palette-" + name + "-";
+        const tokens = {};
+        for (const control of palette.querySelectorAll('[data-testid^="' + prefix + '"]')) {
+          const id = control.getAttribute("data-testid") ?? "";
+          const token = id.slice(prefix.length);
+          if (token === "enabled") continue;
+          if (control.tagName !== "INPUT" || control.type === "checkbox") continue;
+          tokens[token] = control.value;
+        }
+        return tokens;
+      };
+      return { light: group("light"), dark: group("dark") };
+    })(),
   };
 })()`;
 
@@ -5301,6 +5361,501 @@ async function main() {
     }),
   );
 
+  // ── 12k: Studio — the rest of the look, on the same live draft ──────────
+  // Chrome and material edits must repaint the shell with no write; the palette
+  // editor must refuse a failing pair by naming it and the ratio (Save off, no
+  // file change), then write the complete palette; removing the palette groups
+  // must hand the window back to the skin. The target is the profile file 12j
+  // left behind.
+  const lookFile = studioFile;
+  const lookPath = studioPath;
+  const requiredLookColors = [
+    "background",
+    "foreground",
+    "card",
+    "cardForeground",
+    "muted",
+    "mutedForeground",
+    "popover",
+    "popoverForeground",
+    "primary",
+    "primaryForeground",
+    "secondary",
+    "secondaryForeground",
+    "accent",
+    "accentForeground",
+    "border",
+    "input",
+    "ring",
+    "destructive",
+    "destructiveForeground",
+  ];
+  const readLookTokens = async () =>
+    evaluate(`(() => {
+      const root = document.documentElement;
+      const read = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+      return {
+        background: read("--background"),
+        foreground: read("--foreground"),
+        card: read("--card"),
+        accent: read("--accent"),
+        border: read("--border"),
+        muted: read("--muted-surface"),
+      };
+    })()`);
+  /**
+   * The studio's Fields view swaps one look section at a time behind a section
+   * strip, so a control is only in the DOM once its section is chosen. The
+   * Settings controls keep their own ids in Settings and take the `studio-`
+   * prefix here, so the picks below drive the real segmented options.
+   */
+  const openStudioSection = async (section) => {
+    const clicked = await click(`studio-section-tab-${section}`);
+    if (!clicked) return false;
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="studio-${section}"]')) && (document.querySelector('[data-testid="studio-section-tab-${section}"]')?.getAttribute("aria-selected") === "true")`,
+      10_000,
+    );
+  };
+
+  const skinTokens = await readLookTokens();
+  const lookOpened = await openStudioEditor();
+  const lookReady = lookOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.preview === false,
+        15_000,
+      )
+    : null;
+  const lookBaseline = await evaluate(SAMPLE);
+  const wingBefore = lookBaseline?.draftWingPlace ?? null;
+  const radiusBefore = lookBaseline?.radiusLg ?? null;
+  const lookDiskBefore = fs.readFileSync(lookPath);
+
+  const chromeSectionOpened = await openStudioSection("chrome");
+  const wingChosen = chromeSectionOpened
+    ? await click("studio-chrome-wing-place-floating-left")
+    : false;
+  const wingPainted = wingChosen
+    ? await waitFor(
+        (s) =>
+          s.draftWingPlace === "floating-left" && s.wingFloating === true,
+        12_000,
+      )
+    : null;
+  const materialSectionOpened = await openStudioSection("material");
+  const materialChosen = materialSectionOpened
+    ? await click("studio-material-option-radius-round")
+    : false;
+  const radiusChanged = materialChosen
+    ? await waitFor((s) => s.radiusLg === "28px", 12_000)
+    : null;
+  const radiusState = radiusChanged ? await evaluate(SAMPLE) : null;
+  const controlShowsRound = String(
+    radiusState?.studioMaterialRadius ?? "",
+  ).includes("round");
+  const lookNoPreview = await evaluate(
+    `!document.querySelector('[data-testid="theme-preview-bar"]')`,
+  );
+  const lookDiskAfterDraft = fs.readFileSync(lookPath);
+  const draftKeptLookDisk = lookDiskBefore.equals(lookDiskAfterDraft);
+  check(
+    "the-studio-moves-chrome-and-material-in-a-draft",
+    lookOpened === true &&
+      lookReady?.editorTab === "fields" &&
+      wingBefore === "rail-top" &&
+      chromeSectionOpened === true &&
+      wingChosen === true &&
+      wingPainted?.draftWingPlace === "floating-left" &&
+      wingPainted?.wingFloating === true &&
+      materialSectionOpened === true &&
+      materialChosen === true &&
+      radiusBefore === "24px" &&
+      radiusChanged?.radiusLg === "28px" &&
+      controlShowsRound === true &&
+      lookNoPreview === true &&
+      draftKeptLookDisk === true,
+    JSON.stringify({
+      lookOpened,
+      tab: lookReady?.editorTab,
+      wingBefore,
+      chromeSectionOpened,
+      wingChosen,
+      wingPainted: wingPainted?.draftWingPlace,
+      wingFloating: wingPainted?.wingFloating,
+      materialSectionOpened,
+      radiusBefore,
+      radiusAfter: radiusChanged?.radiusLg,
+      materialChosen,
+      controlShowsRound,
+      controlRadius: radiusState?.studioMaterialRadius,
+      noPreview: lookNoPreview,
+      diskUnchanged: draftKeptLookDisk,
+    }),
+  );
+
+  // ── 12k.2: the palette refuses a failing pair, then saves the whole thing ─
+  const paletteSectionOpened = await openStudioSection("palette");
+  const paletteCopyClicked = paletteSectionOpened
+    ? await click("studio-palette-copy")
+    : false;
+  const paletteCopied = paletteCopyClicked
+    ? await waitFor(
+        (s) =>
+          s.paletteTokens !== null &&
+          requiredLookColors.every(
+            (token) =>
+              typeof s.paletteTokens.light?.[token] === "string" &&
+              /^#/.test(s.paletteTokens.light[token]),
+          ) &&
+          requiredLookColors.every(
+            (token) =>
+              typeof s.paletteTokens.dark?.[token] === "string" &&
+              /^#/.test(s.paletteTokens.dark[token]),
+          ),
+        15_000,
+      )
+    : null;
+  const lightCopy = paletteCopied?.paletteTokens?.light ?? {};
+  const darkCopy = paletteCopied?.paletteTokens?.dark ?? {};
+  /*
+   * Copy is the safe starting point the contract claims: it seeds both groups
+   * from the worn skin and nudges only the skin's own sub-AA pair, so the draft
+   * passes the parser as soon as it lands. Assert that before breaking a pair of
+   * our own, or a later refusal would be attributable to the skin instead.
+   */
+  const copyVerdict = paletteCopied
+    ? await waitFor(
+        (s) => (s.studioPaletteVerdict ?? "").includes("Palettes pass"),
+        12_000,
+      )
+    : null;
+  const failingBackgroundValue = lightCopy.foreground;
+  const failingTyped = failingBackgroundValue
+    ? await setStudioValue(
+        "studio-palette-light-background",
+        failingBackgroundValue,
+      )
+    : false;
+  const failingVerdict = failingTyped
+    ? await waitFor(
+        (s) =>
+          (s.studioPaletteVerdict ?? "").includes("background/foreground") &&
+          /4\.5/.test(s.studioPaletteVerdict ?? "") &&
+          /1(?:\.0)?:1/.test(s.studioPaletteVerdict ?? ""),
+        12_000,
+      )
+    : null;
+  const failingState = failingVerdict ? await evaluate(SAMPLE) : null;
+  const saveDisabledFailing = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && b.disabled); })()`,
+  );
+  const diskOnFailing = fs.readFileSync(lookPath);
+  const failingKeptDisk = lookDiskBefore.equals(diskOnFailing);
+  // The artifact: the studio with the live failing-pair verdict in frame. Put
+  // the verdict's floor just above the scroll port's, so the palette editor's
+  // inputs and the named pair are both visible.
+  await evaluate(`(() => {
+    const editor = document.querySelector('[data-testid="extension-editor"]');
+    const verdict = document.querySelector('[data-testid="studio-palette-verdict"]');
+    if (!editor || !verdict) return false;
+    const scroller = editor.closest(".shell__content");
+    if (!scroller) {
+      verdict.scrollIntoView({ block: "center" });
+      return true;
+    }
+    const scrollerRect = scroller.getBoundingClientRect();
+    const verdictRect = verdict.getBoundingClientRect();
+    scroller.scrollTop += verdictRect.bottom - scrollerRect.bottom + 28;
+    return true;
+  })()`);
+  await sleep(400);
+  const lookShot = await win.webContents.capturePage();
+  fs.writeFileSync(STUDIO_LOOK_PNG, lookShot.toPNG());
+
+  // Fix the pair the verdict named, and give each copied palette a `border` the
+  // skin does not own (`border` has no text pair, so it cannot make the file
+  // invalid). The window's mode decides which palette paints the shell, so both
+  // borders are distinct: "back to the skin" below is then a real return in
+  // either mode rather than a same-value no-op.
+  const backgroundFixed = await setStudioValue(
+    "studio-palette-light-background",
+    lightCopy.background,
+  );
+  const backgroundLanded = backgroundFixed
+    ? await waitFor(
+        (s) => s.paletteTokens?.light?.background === lightCopy.background,
+        8_000,
+      )
+    : null;
+  const lightBorderTyped = await setStudioValue(
+    "studio-palette-light-border",
+    "#123456",
+  );
+  const lightBorderLanded = lightBorderTyped
+    ? await waitFor(
+        (s) => s.paletteTokens?.light?.border === "#123456",
+        8_000,
+      )
+    : null;
+  const darkBorderTyped = await setStudioValue(
+    "studio-palette-dark-border",
+    "#654321",
+  );
+  const darkBorderLanded = darkBorderTyped
+    ? await waitFor(
+        (s) => s.paletteTokens?.dark?.border === "#654321",
+        8_000,
+      )
+    : null;
+  const paletteValidAgain =
+    backgroundLanded && lightBorderLanded && darkBorderLanded
+      ? await waitFor(
+          (s) =>
+            (s.studioPaletteVerdict ?? "").includes("Palettes pass") &&
+            !(s.studioPaletteVerdict ?? "").includes(
+              "background/foreground",
+            ) &&
+            s.studioPaletteEnabled?.light === true &&
+            s.studioPaletteEnabled?.dark === true,
+          12_000,
+        )
+      : null;
+  const palettePassesAgain = Boolean(
+    (paletteValidAgain?.studioPaletteVerdict ?? "").includes("Palettes pass"),
+  );
+  const editsLanded =
+    backgroundLanded?.paletteTokens?.light?.background ===
+      lightCopy.background &&
+    lightBorderLanded?.paletteTokens?.light?.border === "#123456" &&
+    darkBorderLanded?.paletteTokens?.dark?.border === "#654321";
+  const saveEnabledAfterFix = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const diskBeforePaletteSave = fs.readFileSync(lookPath);
+  const paletteSaveClicked = saveEnabledAfterFix
+    ? await click("studio-save")
+    : false;
+  const palettePreview = paletteSaveClicked
+    ? await waitFor(
+        (s) => !s.editorTab && (s.previewText ?? "").includes(lookFile),
+        20_000,
+      )
+    : null;
+  let paletteSavedLook = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      paletteSavedLook = JSON.parse(fs.readFileSync(lookPath, "utf8"));
+    } catch {
+      paletteSavedLook = null;
+    }
+    if (
+      paletteSavedLook?.colors &&
+      requiredLookColors.every(
+        (token) => typeof paletteSavedLook.colors[token] === "string",
+      )
+    ) {
+      break;
+    }
+    await sleep(100);
+  }
+  const savedLightNames = paletteSavedLook?.colors
+    ? Object.keys(paletteSavedLook.colors).sort()
+    : [];
+  const savedDarkNames = paletteSavedLook?.darkColors
+    ? Object.keys(paletteSavedLook.darkColors).sort()
+    : [];
+  const completePalette =
+    JSON.stringify(savedLightNames) ===
+      JSON.stringify([...requiredLookColors].sort()) &&
+    JSON.stringify(savedDarkNames) ===
+      JSON.stringify([...requiredLookColors].sort());
+  const borderWritten =
+    String(paletteSavedLook?.colors?.border ?? "").toLowerCase() === "#123456";
+  const darkBorderWritten =
+    String(paletteSavedLook?.darkColors?.border ?? "").toLowerCase() ===
+    "#654321";
+  const backgroundWritten =
+    paletteSavedLook?.colors?.background === lightCopy.background;
+  const paletteDiskChanged = !lookDiskBefore.equals(
+    fs.readFileSync(lookPath),
+  );
+  check(
+    "the-studio-refuses-a-palette-that-fails-contrast",
+    paletteSectionOpened === true &&
+      paletteCopyClicked === true &&
+      paletteCopied !== null &&
+      copyVerdict !== null &&
+      (copyVerdict?.studioPaletteVerdict ?? "").includes("Palettes pass") &&
+      failingTyped === true &&
+      failingVerdict !== null &&
+      (failingVerdict?.studioPaletteVerdict ?? "").includes(
+        "background/foreground",
+      ) &&
+      /4\.5/.test(failingVerdict?.studioPaletteVerdict ?? "") &&
+      /1(?:\.0)?:1/.test(failingVerdict?.studioPaletteVerdict ?? "") &&
+      (failingState?.studioStatus ?? "").includes(
+        "colors fails WCAG AA contrast",
+      ) &&
+      (failingState?.studioStatus ?? "").includes("background/foreground") &&
+      saveDisabledFailing === true &&
+      failingKeptDisk === true &&
+      palettePassesAgain === true &&
+      editsLanded === true &&
+      saveEnabledAfterFix === true &&
+      paletteSaveClicked === true &&
+      (palettePreview?.previewText ?? "").includes(lookFile) &&
+      lookDiskBefore.equals(diskBeforePaletteSave) &&
+      completePalette === true &&
+      borderWritten === true &&
+      darkBorderWritten === true &&
+      backgroundWritten === true &&
+      paletteDiskChanged === true,
+    JSON.stringify({
+      paletteSectionOpened,
+      paletteCopyClicked,
+      copiedTokens: {
+        light: Object.keys(lightCopy).length,
+        dark: Object.keys(paletteCopied?.paletteTokens?.dark ?? {}).length,
+      },
+      copyVerdict: copyVerdict?.studioPaletteVerdict,
+      failingTyped,
+      verdict: failingVerdict?.studioPaletteVerdict,
+      failingStatus: failingState?.studioStatus,
+      saveDisabledFailing,
+      diskUnchangedWhileFailing: failingKeptDisk,
+      validAgain: paletteValidAgain?.studioPaletteVerdict,
+      editsLanded,
+      editedTokens: paletteValidAgain?.paletteTokens,
+      saveEnabledAfterFix,
+      paletteSaveClicked,
+      previewed: (palettePreview?.previewText ?? "").slice(0, 80),
+      diskUnchangedBeforeSave: lookDiskBefore.equals(diskBeforePaletteSave),
+      savedLightNames: savedLightNames.length,
+      savedDarkNames: savedDarkNames.length,
+      completePalette,
+      borderWritten,
+      darkBorderWritten,
+      darkCopyBorder: darkCopy.border,
+      backgroundWritten,
+      paletteDiskChanged,
+    }),
+  );
+
+  // ── 12k.3: removing the palette hands the window back to the skin ────────
+  const palettedTokens = await readLookTokens();
+  // Both copied palettes carry a border the skin does not, so the shell shows a
+  // changed border whichever mode it paints with.
+  const paletteWorn =
+    String(palettedTokens.border ?? "") !== String(skinTokens.border ?? "");
+  const removeOpened = await openStudioEditor();
+  const removeSectionOpened = removeOpened
+    ? await openStudioSection("palette")
+    : false;
+  const removeReady = removeSectionOpened
+    ? await waitFor(
+        (s) =>
+          s.editorTab === "fields" &&
+          s.studioPaletteEnabled?.light === true &&
+          s.studioPaletteEnabled?.dark === true,
+        15_000,
+      )
+    : null;
+  const lightToggleClicked = await click("studio-palette-light-enabled");
+  // Confirm the first group actually left the draft before the second click, so
+  // a stale draft prop cannot resurrect it.
+  const lightGroupOff = lightToggleClicked
+    ? await waitFor(
+        (s) => s.studioPaletteEnabled?.light === false,
+        8_000,
+      )
+    : null;
+  const darkToggleClicked = await click("studio-palette-dark-enabled");
+  const palettesOff = darkToggleClicked
+    ? await waitFor(
+        (s) =>
+          s.studioPaletteEnabled?.light === false &&
+          s.studioPaletteEnabled?.dark === false,
+        12_000,
+      )
+    : null;
+  const saveEnabledNoPalette = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const removeSaveClicked = saveEnabledNoPalette
+    ? await click("studio-save")
+    : false;
+  const removePreview = removeSaveClicked
+    ? await waitFor(
+        (s) => !s.editorTab && (s.previewText ?? "").includes(lookFile),
+        20_000,
+      )
+    : null;
+  let strippedLook = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      strippedLook = JSON.parse(fs.readFileSync(lookPath, "utf8"));
+    } catch {
+      strippedLook = null;
+    }
+    if (
+      strippedLook &&
+      !("colors" in strippedLook) &&
+      !("darkColors" in strippedLook)
+    ) {
+      break;
+    }
+    await sleep(100);
+  }
+  const skinBackTokens = await readLookTokens();
+  const skinPaletteBack =
+    JSON.stringify(skinBackTokens) === JSON.stringify(skinTokens);
+  const paletteAbsent =
+    Boolean(strippedLook) &&
+    !("colors" in strippedLook) &&
+    !("darkColors" in strippedLook);
+  const chromeKept =
+    strippedLook?.chrome?.wingSwitcher?.place === "floating-left";
+  const materialKept = strippedLook?.material?.radius === "round";
+  check(
+    "the-studio-can-hand-the-palette-back-to-the-skin",
+    paletteWorn === true &&
+      removeOpened === true &&
+      removeSectionOpened === true &&
+      removeReady?.studioPaletteEnabled?.light === true &&
+      removeReady?.studioPaletteEnabled?.dark === true &&
+      lightToggleClicked === true &&
+      lightGroupOff?.studioPaletteEnabled?.light === false &&
+      darkToggleClicked === true &&
+      palettesOff?.studioPaletteEnabled?.light === false &&
+      palettesOff?.studioPaletteEnabled?.dark === false &&
+      saveEnabledNoPalette === true &&
+      removeSaveClicked === true &&
+      (removePreview?.previewText ?? "").includes(lookFile) &&
+      paletteAbsent === true &&
+      chromeKept === true &&
+      materialKept === true &&
+      skinPaletteBack === true,
+    JSON.stringify({
+      paletteWorn,
+      palettedBorder: palettedTokens.border,
+      removeOpened,
+      removeSectionOpened,
+      toggles: { light: lightToggleClicked, dark: darkToggleClicked },
+      lightGroupOff: lightGroupOff?.studioPaletteEnabled,
+      off: palettesOff?.studioPaletteEnabled,
+      saveEnabledNoPalette,
+      removeSaveClicked,
+      previewed: (removePreview?.previewText ?? "").slice(0, 80),
+      paletteAbsent,
+      fileKeys: strippedLook ? Object.keys(strippedLook) : null,
+      chromeKept,
+      materialKept,
+      skinTokens,
+      skinBackTokens,
+      skinPaletteBack,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -5342,6 +5897,7 @@ async function main() {
       extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
       trust: path.relative(desktopRoot, TRUST_PNG),
       studio: path.relative(desktopRoot, STUDIO_PNG),
+      look: path.relative(desktopRoot, STUDIO_LOOK_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

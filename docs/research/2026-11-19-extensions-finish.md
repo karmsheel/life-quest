@@ -1,13 +1,16 @@
-# Extensions, finished — S1 trust and S2 studio
+# Extensions, finished — S1 trust, S2 studio, S3 look
 
 - **Date:** 2026-11-19
 - **Branch:** `feat/extensions-finish` (off master `d2b11a2`)
-- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7 (S1) and §8
-  (S2); interfaces in `.scratch/extensions-finish/contract.md` §3 (S1) and §4 (S2).
-- **Decision it serves:** the epic's operator side — *confidence* and *authorship*. S1 made
-  an edit safe to take back and a theme file portable between profiles; S2 made the
-  composition authorable without JSON. Neither slice adds a schema field: both are gestures
-  over the data model the ladder already proved.
+- **Brief:** `docs/superpowers/specs/2026-11-19-extensions-finish-scope.md` §7 (S1), §8 (S2)
+  and §9 (S3); interfaces in `.scratch/extensions-finish/contract.md` §3 (S1), §4 (S2) and
+  §5 (S3).
+- **Decision it serves:** the epic's operator side — *confidence*, *authorship* and *control
+  of the whole file*. S1 made an edit safe to take back and a theme file portable between
+  profiles; S2 made the composition authorable without JSON; S3 made the rest of the file —
+  chrome, material, scene and palette — authorable in the same studio, refusing an unsafe
+  palette before it can be saved. None adds a schema field: all three are gestures over the
+  data model the ladder already proved.
 
 ## S1 result (2026-11-19)
 
@@ -230,10 +233,115 @@ nothing: the run counts only when `pass: true` and the artifact above exists.
   keyboard operable, and the schematic is announced through its summary rather than as a
   control.
 
+## S3 result (2026-11-19)
+
+**The claim:** "The same editor can change chrome, material, scene and palette, with
+validation that refuses unsafe palettes before the file is saved."
+
+### What shipped
+
+**Settings' controls, made reusable (D9).** `MaterialControls`, `LayoutControls`,
+`SceneControls` and `CompositionControls` accept optional `value` / `onChange` (plus a
+test-id prefix). Without those props they are exactly today's override-bound controls with
+the same Settings ids and behaviour; the studio passes the draft's values, so both surfaces
+render one control set from one implementation. The existing Appearance rig checks staying
+green is the behaviour-preservation proof.
+
+**The studio now authors the whole file.** Below the composition, the Fields view gained
+four sections: `studio-chrome` (wing place/variant, domain place/variant, rail place/width,
+dock side, titlebar size), `studio-material` (radius, elevation, type scale, density, motion,
+backdrop), `studio-scene` (backdrop preset and intensity, page edge, card frame) and
+`studio-palette`.
+
+**The palette editor.** Light (`colors`) and dark (`darkColors`) groups over the complete
+`THEME_REQUIRED_COLORS` set — 19 colours: surfaces, each surface's paired text colour, and
+the border/input/ring/destructive entries. Per colour: a `<input type="color">` plus a hex
+text field. **Copy current palette** (`studio-palette-copy`) seeds both groups from the
+palette the window is wearing, so the operator edits deltas instead of typing nineteen
+values. Each palette has its own include toggle: turning one off removes that palette from
+the file, so that half inherits the skin (light and dark are independent). A live verdict
+(`studio-palette-verdict`) runs the same `checkThemeContrast` the parser uses and lists
+**every failing text-on-surface pair with its measured ratio and the 4.5:1 minimum**.
+`studio-save` is disabled while the assembled file fails `parseThemeFile`, and a main-side
+refusal is shown with the exact sentence — `… fails WCAG AA contrast on <pair>: <ratio>:1
+(needs 4.5:1)` — so the studio has no way to write an unreadable window.
+
+**The draft rule carries over.** Every chrome, material, scene or palette change rebuilds the
+schema-only draft and paints it through `setDraftTheme`: nothing is written, kept or
+previewed, and no preview bar appears. Cancel hands the kept look back. Save serialises the
+file and calls the existing `writeThemeFile`, which runs the S1 store's parser and write gate
+and then previews through the ten-second watcher gate like any save. Draft mode still never
+touches the localStorage overrides, `keptFile` or the preview bar.
+
+No backend work, no new IPC, no persistence beyond the file, no new route/tab/rail row.
+Settings' overrides keep their own semantics and test ids.
+
+### Rig evidence (new section `12k`)
+
+The theme rig gains a section after `12j` that carries the slice's claims:
+
+- `the-studio-moves-chrome-and-material-in-a-draft` — change the wing switcher's place in
+  Fields; the shell repaints while the file bytes on disk are unchanged. Change material
+  radius; the document's `--radius` family changes without a save.
+- `the-studio-refuses-a-palette-that-fails-contrast` — start from **Copy current palette**,
+  break a text/surface pair: the verdict names the pair and its ratio, Save is refused with
+  that message and no file changes; fix the pair and save: the file carries the complete
+  palette and the preview appears.
+- `the-studio-can-hand-the-palette-back-to-the-skin` — remove a palette and save;
+  `colors`/`darkColors` are absent from the file and the window is back on the skin palette.
+- The existing Settings Appearance checks stay green in the same run — the D9 refactor is
+  behaviour-preserving.
+
+Artifact: `apps/desktop/e2e/artifacts/themes-v2-studio-look.png` — the studio with the palette
+verdict visible, captured with `capturePage` at 1280×800. Report:
+`apps/desktop/e2e/artifacts/themes-v2.json`, wrapped by
+`apps/desktop/tests/theme-chrome-e2e.test.ts` (artifact key and existence loop added with
+the section).
+
+**Check count:** the report is the source of truth. The gate started from the S2 run's **119**
+checks; `12k` adds the S3 checks and the measured total is **122 checks, all passing**
+(`report.pass: true`, `failures: []`) in the slice's authoritative run on 2026-11-19, with all
+119 earlier checks — including the Settings Appearance / controlled-control checks — green in
+the same run. A skipped rig is evidence of nothing: the run counts only when `pass: true` and
+the artifact above exists.
+
+### Risks, and how the rig falsifies them
+
+| Risk | Falsified by |
+| --- | --- |
+| The palette editor writes an unsafe palette | a live verdict names the pair and ratio; Save disabled pre-write; a save through the JSON tab is refused by main with the same sentence and no file change |
+| Studio edits persist without Save | disk bytes unchanged while chrome/material/scene/palette change; no preview bar; `keptFile` unchanged |
+| The verdict and the file disagree | the verdict runs the same `checkThemeContrast` the parser uses, and the saved file is re-parsed by main before it lands |
+| A partial palette or schema drift is written | an enabled palette is written as the complete required set, a disabled one is absent; the saved file parses and carries no keys outside the schema |
+| The Settings refactor changes Appearance | existing Settings Appearance checks stay green in the same run; without controlled props the controls are override-bound and unchanged |
+
+### Limits — what S3 does not claim
+
+- The studio writes a palette only as the complete required set, or not at all; the schema
+  has no partial palette.
+- The palette editor is a hex field plus a colour picker. There is no eyedropper, no palette
+  import/export and no colour outside the declared set.
+- Chrome, material and scene options are the same closed enums Settings already offers; no
+  free CSS, no image, no animation, no new token.
+- Settings stays the override layer; a draft never touches it, and the two layers are not
+  unified.
+- No new persistence, no new schema field, no new route/tab/rail row, no unit tests — the rig
+  is the evidence.
+
+### Open notes
+
+- Both palettes are independent: handing one half back to the skin leaves the other in the
+  file.
+- **Copy current palette** starts from the palette the window wears, so deltas are relative
+  to the visible baseline rather than to the bundled skin's raw values.
+- The live verdict is advisory-plus-blocking (Save disabled); main remains the final gate and
+  names the pair in the same words the verdict uses.
+- The spec's open decision §14.5 (palette editor depth) shipped as the full required set for
+  both palettes with hex and picker, not a reduced editor.
+- Tab defaults and the draft-abandon notice are S2's and unchanged.
+
 ## What comes next (this doc is appended per slice)
 
-- **S3 Studio: the rest of the look** — chrome, material, scene and palette visually, with
-  the palette verdict refusing unsafe colours before a write.
 - **S4 Gallery** — three more bundled showcase themes, seeded versionally so a fresh profile
   shows the possibility space and a removed file stays removed.
 

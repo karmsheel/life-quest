@@ -5,7 +5,6 @@ import {
   MAX_COMPOSITION_LABEL,
   MAX_COMPOSITION_LIST_ITEMS,
   MAX_COMPOSITION_WIDGETS,
-  parseThemeFile,
   type CompositionClockFormat,
   type CompositionDataSource,
   type CompositionLayout,
@@ -65,17 +64,11 @@ interface CompositionStudioProps {
   draft: ThemeFile;
   /** Paint a new draft. The page owns the provider's `setDraftTheme`. */
   onChange: (next: ThemeFile) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  saving: boolean;
 }
 
 export function CompositionStudio({
   draft,
   onChange,
-  onSave,
-  onCancel,
-  saving,
 }: CompositionStudioProps) {
   const studio = studioCompositionOf(draft);
   const idPrefix = useId();
@@ -96,7 +89,6 @@ export function CompositionStudio({
     selected !== null && selected < studio.widgets.length ? selected : null;
   const selectedWidget =
     selectedIndex === null ? null : studio.widgets[selectedIndex];
-  const verdict = parseThemeFile(draft);
   const atCap = studio.widgets.length >= MAX_COMPOSITION_WIDGETS;
 
   const commit = (next: StudioComposition) =>
@@ -190,8 +182,8 @@ export function CompositionStudio({
   return (
     <section
       className="studio"
-      aria-label="Composition studio"
-      data-testid="extension-studio"
+      aria-label="Composition section"
+      data-testid="studio-composition"
     >
       {/* Schematic — a map of the shell's five regions. The chips are real
           buttons (a focusable control inside aria-hidden content is an
@@ -670,31 +662,6 @@ export function CompositionStudio({
             : `${studio.widgets.length} of ${STUDIO_CAPS.widgets} widgets placed.`}
         </p>
       </fieldset>
-
-      <div className="studio__actions">
-        <Button
-          variant="primary"
-          data-testid="studio-save"
-          disabled={!verdict.ok || saving}
-          onClick={onSave}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" data-testid="studio-cancel" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-      <p
-        className={verdict.ok ? "studio__valid" : "form-error"}
-        role={verdict.ok ? "status" : "alert"}
-        data-testid="studio-status"
-      >
-        {verdict.ok
-          ? studio.widgets.length === 0
-            ? "Valid extension — no composition; saving keeps the file without widgets."
-            : `Valid extension — ${compositionSummary(studio.widgets)}.`
-          : verdict.error}
-      </p>
     </section>
   );
 }

@@ -63,7 +63,7 @@ the studio has nothing valid to paint. Switching tabs keeps the draft: Fields �
 the draft into the textarea, and JSON → Fields takes the text back only when it parses
 (otherwise the parse error is shown and you stay on JSON).
 
-The Fields tab has three parts:
+The composition is authored first, in three parts:
 
 - **The schematic** — the shell drawn as its five widget regions: the page's masthead, footer
   and orbit, and the rail's top and foot. Each region holds a chip for every widget placed
@@ -101,8 +101,50 @@ If the file changes on disk while the studio is open — the companion writes it
 save lands — the draft is abandoned with a visible notice (*the file changed on disk — your
 draft was discarded*) rather than fighting the newer file.
 
-The Fields tab covers the **composition** — widgets, regions and layout. The rest of the file
-(palette, chrome, material and scene) stays in the JSON tab.
+The composition has those three parts; the rest of the look — chrome, material, scene and
+palette — sits below them in the same tab, described next. The **JSON** tab remains the whole
+file as text.
+
+## Look, without JSON
+
+Below the composition, the same studio authors the rest of the theme file, so a whole look can
+be built without opening the JSON tab.
+
+- **Chrome** — where the wing switcher and the area lens sit and how they look, the sidebar's
+  place and width, the chat dock's side and the height of the window strip: the same
+  placements and variants Settings offers, written into the file's `chrome` block instead of
+  stored as your overrides.
+- **Material** — the six axes: radius, elevation, type scale, density, motion and backdrop.
+  They are named steps, not free values, and the shell reads them as its own tokens.
+- **Scene** — the backdrop (`plain`, `starfield`, `orbit` or `aurora`) and how lively it runs,
+  plus the page's decorative edge and how its cards are drawn. The scene is the app's drawing;
+  the file names it and supplies no image, shader or stylesheet.
+- **Palette** — the light (`colors`) and dark (`darkColors`) palettes. Each is optional, but a
+  palette that is present is **complete**: the editor writes the full set of colours the shell
+  paints with — surfaces, text, borders and accents, each with the text colour it is paired
+  with (19 colours). For each colour there is a colour picker and a hex field; **Copy current
+  palette** seeds both groups from what the window is wearing now, so you edit deltas rather
+  than type nineteen hex values. Each palette has its own on/off switch: turning one off
+  removes that palette from the file and hands that half back to the skin, so a theme can set
+  a day palette and inherit its night one, or the other way round.
+
+**Contrast is checked before the file is saved.** Every text-on-surface pair the shell draws
+runs through the same WCAG AA check the parser uses — 4.5:1 for normal text — and the verdict
+under the palette lists each failing pair with its measured ratio and the minimum it needs.
+While a pair fails, **Save** stays disabled; a save attempted through the JSON tab with an
+unsafe palette is refused by main with the same sentence, naming the pair and both ratios.
+
+**The draft rule is the same as for the composition.** Every chrome, material, scene or
+palette change repaints the window at once; nothing is written, kept or previewed while you
+edit, and no preview bar appears. **Cancel** drops the draft and hands the kept look back.
+**Save** validates the whole file with the shared parser and writes it through the same gate
+as any save, so it previews for ten seconds with **Keep** and **Revert**. The studio writes
+only declared fields: no free CSS, no colour outside the palette set, no image, no new key.
+
+**This is not the same layer as Settings.** Settings → Appearance is *your* override layer: a
+pick made there outranks the theme, is marked as yours, and survives the file being kept,
+swapped or removed. The studio writes the file itself. The two stack — build a baseline in
+the studio, tune it in Settings — and they are deliberately not unified.
 
 ## History
 
@@ -167,6 +209,9 @@ move between profiles without anyone finding a folder.
 
 - It cannot run code, make a request or draw markup — the file schema is the closed vocabulary
   described in [Settings](./28-settings.md), and main re-validates every save.
+- It cannot carry a partial palette, or a colour outside the declared set: a palette is the
+  complete required colour set when present, or absent so the skin shows through, and every
+  text pair it paints must pass WCAG AA or the file is refused with the failing pair named.
 - It cannot be arranged by dragging or given a new region: the schematic is a map of the
   regions a theme may use, and the form is the control. Placement is the closed vocabulary,
   never free positioning or CSS.
@@ -177,7 +222,8 @@ move between profiles without anyone finding a folder.
 ## Related
 
 - [Settings](./28-settings.md) — Appearance, the theme layers a file may set, and the same
-  file list inside Settings.
+  file list inside Settings; its picks are your overrides and outrank the file the studio
+  writes.
 - [Automations](./17-automations.md) — the neighbouring shelf page that manages a different
   saved object.
 - [Companion](./24-companion.md) — the theme tools the companion uses to author files.

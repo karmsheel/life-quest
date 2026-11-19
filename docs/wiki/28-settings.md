@@ -114,8 +114,8 @@ back by itself. A fresh profile also starts with two **showcase** themes —
 copied into the folder on first run so you can see the whole ladder without
 asking an agent for anything; they are normal files from then on, and if you
 Remove one, it stays removed. The **Extensions** page (route `/extensions`) is the workshop for those same
-files — select, switch active or off, edit the JSON with live validation, or
-create a new one. The **Theme files** list on this page shows every file the app
+files — select, switch active or off, edit the JSON with live validation or build the look in
+the **Fields** studio, or create a new one. The **Theme files** list on this page shows every file the app
 could read, with **Try** (enter the preview again), **Keep** (wear it from now
 on), **Kept** on the file you kept, and **Remove** (two presses: Remove →
 Remove?). **Open folder** opens the profile's `themes/` folder and **Export
@@ -124,9 +124,11 @@ JSON file you can share. A file whose placement is not one of the declared
 values, or whose palette fails WCAG AA contrast, is refused with the field — or
 the failing colour pair — named. Every save made from the **Extensions** page can
 be stepped back through that file's **History** there, and a file can be brought
-in from disk with **Import from file**; both are workshop gestures on
-`/extensions`, while this tab stays the place where your own Appearance picks
-outrank the file.
+in from disk with **Import from file**. The division between the two surfaces is
+deliberate: **Appearance is your own override layer** — a pick made here outranks
+the theme, is marked as yours, and survives the file being kept, swapped or
+removed — while the **Extensions studio authors the file** itself (its chrome,
+material, scene, palette and composition). The two stack; they are not unified.
 
 Theme, skin, starred list and installed themes are stored in the window's local
 storage, not in the vault: they are this installation's look, and they do not

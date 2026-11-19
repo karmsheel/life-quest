@@ -10,7 +10,7 @@ import {
   useTheme,
   type ThemeHistoryVersion,
 } from "@/components/theme/ThemeProvider";
-import { CompositionStudio } from "@/components/theme/studio/CompositionStudio";
+import { StudioFields } from "@/components/theme/studio/StudioFields";
 import {
   parseThemeFile,
   resolveChrome,
@@ -176,6 +176,11 @@ export default function ExtensionsPage() {
   const [draft, setDraft] = useState<ThemeFile | null>(null);
   /** True after an external write took the draft away; the editor says why. */
   const [draftLost, setDraftLost] = useState(false);
+  /**
+   * True after main refused the last Save. The provider put the exact refusal
+   * in `themeError`; the studio shows it under Save, where the operator acted.
+   */
+  const [saveRefused, setSaveRefused] = useState(false);
   const fieldsTabRef = useRef<HTMLButtonElement | null>(null);
   const jsonTabRef = useRef<HTMLButtonElement | null>(null);
   const refreshedOnMount = useRef(false);
@@ -326,6 +331,7 @@ export default function ExtensionsPage() {
     setError(null);
     setStatus(null);
     setDraftLost(false);
+    setSaveRefused(false);
     const raw = await readThemeFile(file);
     if (raw === null) return;
     // The parsed file is the draft's starting point. Opening the editor is the
@@ -344,6 +350,7 @@ export default function ExtensionsPage() {
     setDraftTheme(null);
     setDraft(null);
     setDraftLost(false);
+    setSaveRefused(false);
     setEditing(null);
   }
 
@@ -406,11 +413,15 @@ export default function ExtensionsPage() {
   async function onStudioSave() {
     if (!editing || !draft) return;
     setEditing({ ...editing, saving: true });
+    setSaveRefused(false);
     const written = await writeThemeFile(
       editing.file,
       `${JSON.stringify(draft, null, 2)}\n`,
     );
     if (!written) {
+      // Main's refusal is already in `themeError`; flag it so the studio shows
+      // the exact sentence under Save instead of only in the page banner.
+      setSaveRefused(true);
       setEditing({ ...editing, saving: false });
       return;
     }
@@ -423,6 +434,9 @@ export default function ExtensionsPage() {
 
   /** Paint the theme the studio just built; the provider writes nothing. */
   function onDraftChange(next: ThemeFile) {
+    // One edit is one fresh attempt: an old refusal must not outlive the bytes
+    // it named.
+    setSaveRefused(false);
     setDraft(next);
     setDraftTheme(next);
   }
@@ -710,12 +724,13 @@ export default function ExtensionsPage() {
           {editing.tab === "fields" ? (
             <div role="tabpanel" aria-label="Fields editor">
               {draft ? (
-                <CompositionStudio
+                <StudioFields
                   draft={draft}
                   onChange={onDraftChange}
                   onSave={() => void onStudioSave()}
                   onCancel={closeEditor}
                   saving={editing.saving}
+                  refusal={saveRefused ? themeError : null}
                 />
               ) : (
                 <p className="extensions-page__empty">
