@@ -61,6 +61,18 @@ type ThemeFileEntry =
   | { file: string; raw: string; mtime: number }
   | { file: string; error: string };
 
+/**
+ * One saved version of one theme file. Declared locally (rather than imported
+ * from main's store) so the preload bundle stays a bridge and nothing more;
+ * the fields mirror `ThemeVersion` in `theme-store.ts` and `vite-env.d.ts`.
+ */
+type ThemeVersion = {
+  id: string;
+  savedAt: string;
+  label: string;
+  bytes: number;
+};
+
 const lifequest = {
   vaultCreate: (path: string, name?: string) =>
     ipcRenderer.invoke("vault:create", path, name) as Promise<Result<unknown>>,
@@ -799,6 +811,21 @@ const lifequest = {
   themeExport: (theme: unknown) =>
     ipcRenderer.invoke("theme:export", theme) as Promise<
       Result<{ path: string } | null>
+    >,
+  /** The saved versions behind one file, newest first; empty means none yet. */
+  themeHistory: (file: string) =>
+    ipcRenderer.invoke("theme:history", file) as Promise<
+      Result<{ file: string; versions: ThemeVersion[] }>
+    >,
+  /** Put a saved version back; it previews like any other write. */
+  themeRestore: (file: string, id: string) =>
+    ipcRenderer.invoke("theme:restore", file, id) as Promise<
+      Result<{ file: string; label: string }>
+    >,
+  /** Import a theme through main's dialog; `null` is the operator cancelling. */
+  themeImport: () =>
+    ipcRenderer.invoke("theme:import") as Promise<
+      Result<{ file: string; label: string } | null>
     >,
   onThemesChanged: (cb: () => void) => {
     const listener = () => {

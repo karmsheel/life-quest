@@ -20,6 +20,11 @@ import {
  * over the theme, marked "yours", and persisted per window; Reset hands the
  * scene back to the theme.
  *
+ * Optional controlled props (D9) let the Extensions studio edit the same four
+ * picks as a draft theme: `value` is the resolved scene, `onChange` receives the
+ * patch, and no override is written. Settings renders it with no props and keeps
+ * today's behaviour and ids.
+ *
  * The classes are the material section's — the two sections are one stack of
  * rows and sharing the stylesheet is what keeps them the same shape — but the
  * ids and testids are this section's own.
@@ -46,6 +51,15 @@ const CARD_FRAME_LABELS: Record<ThemeScene["frames"]["cards"], string> = {
   outline: "Outline",
   raised: "Raised",
 };
+
+export interface SceneControlsProps {
+  /** Controlled scene: the resolved decoration to render. */
+  value?: ThemeScene;
+  /** Controlled mode only: the group/axis the operator just picked. */
+  onChange?: (patch: ThemeSceneOverride) => void;
+  /** Prefix for every data-testid; "" leaves the Settings ids untouched. */
+  testIdPrefix?: string;
+}
 
 type Group = keyof ThemeScene;
 type AxisValue =
@@ -108,18 +122,32 @@ const AXES: readonly SceneAxis[] = [
   },
 ];
 
-export function SceneControls() {
+export function SceneControls({
+  value,
+  onChange,
+  testIdPrefix = "",
+}: SceneControlsProps = {}) {
   const { scene, sceneOverride, setSceneOverride, resetSceneOverride } =
     useTheme();
+  const controlled = value !== undefined;
+  const effectiveScene = value ?? scene;
   const headingId = useId();
   const labelPrefix = useId();
-  const hasOverrides = Object.keys(sceneOverride).length > 0;
+  const hasOverrides = !controlled && Object.keys(sceneOverride).length > 0;
+
+  const pick = (patch: ThemeSceneOverride) => {
+    if (controlled) {
+      onChange?.(patch);
+      return;
+    }
+    setSceneOverride(patch);
+  };
 
   return (
     <section
       className="theme-material theme-scene"
       aria-labelledby={headingId}
-      data-testid="theme-scene"
+      data-testid={controlled ? `${testIdPrefix}scene-panel` : "theme-scene"}
     >
       <div className="theme-material__header">
         <div className="theme-material__heading">
@@ -127,30 +155,43 @@ export function SceneControls() {
             Scene
           </h3>
           <p className="theme-material__intro">
-            The decoration behind the page. A theme picks one of the bundled
-            skies and how lively it runs; your pick outranks it, and{" "}
-            <strong>Reset to theme</strong> hands it back.
+            {controlled ? (
+              <>
+                The decoration the theme file names. Picks paint the draft at
+                once and only <strong>Save</strong> writes them; reduced-motion
+                still turns the motion off in the shell.
+              </>
+            ) : (
+              <>
+                The decoration behind the page. A theme picks one of the bundled
+                skies and how lively it runs; your pick outranks it, and{" "}
+                <strong>Reset to theme</strong> hands it back.
+              </>
+            )}
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="theme-material__reset"
-          data-testid="scene-reset"
-          disabled={!hasOverrides}
-          onClick={() => resetSceneOverride()}
-        >
-          <RotateCcw size={13} aria-hidden />
-          Reset to theme
-        </Button>
+        {controlled ? null : (
+          <Button
+            variant="outline"
+            className="theme-material__reset"
+            data-testid="scene-reset"
+            disabled={!hasOverrides}
+            onClick={() => resetSceneOverride()}
+          >
+            <RotateCcw size={13} aria-hidden />
+            Reset to theme
+          </Button>
+        )}
       </div>
 
       <div className="theme-material__rows">
         {AXES.map((spec) => {
-          const group = scene[spec.group] as Record<string, AxisValue>;
+          const group = effectiveScene[spec.group] as Record<string, AxisValue>;
           const effective = group[spec.axis];
           const overridden =
+            !controlled &&
             spec.axis in
-            ((sceneOverride[spec.group] ?? {}) as Record<string, unknown>);
+              ((sceneOverride[spec.group] ?? {}) as Record<string, unknown>);
           const labelId = `${labelPrefix}-${spec.axis}`;
           return (
             <div
@@ -180,7 +221,9 @@ export function SceneControls() {
                 className="ui-segmented ui-segmented--sm theme-material__control"
                 role="radiogroup"
                 aria-labelledby={labelId}
-                data-testid={spec.testId}
+                data-testid={
+                  controlled ? `${testIdPrefix}${spec.testId}` : spec.testId
+                }
               >
                 {spec.options.map((option) => {
                   const active = effective === option.value;
@@ -192,9 +235,13 @@ export function SceneControls() {
                       aria-checked={active}
                       aria-label={`${spec.label}: ${option.label}`}
                       className={`ui-segmented__option${active ? " is-active" : ""}`}
-                      data-testid={`scene-option-${spec.axis}-${option.value}`}
+                      data-testid={
+                        controlled
+                          ? `${testIdPrefix}scene-option-${spec.axis}-${option.value}`
+                          : `scene-option-${spec.axis}-${option.value}`
+                      }
                       onClick={() =>
-                        setSceneOverride({
+                        pick({
                           [spec.group]: { [spec.axis]: option.value },
                         } as ThemeSceneOverride)
                       }

@@ -9,6 +9,18 @@
   flex-direction: column;
   gap: 1.1rem;
   container-type: inline-size;
+  /*
+   * Ink for the quiet band. The `--muted` alias points at `--muted-foreground`
+   * (a text colour), so it is never a surface; `--muted-surface` is the band.
+   * Plain muted text on that band lands at 4.29:1 by day — just under the 4.5
+   * AA floor for small text — so these labels take one 8% step toward the
+   * foreground: still quiet, 4.76:1 by day and 6.1:1 at night.
+   */
+  --extensions-quiet-ink: color-mix(
+    in srgb,
+    var(--muted-foreground) 92%,
+    var(--foreground)
+  );
 }
 
 .extensions-page__header {
@@ -144,6 +156,47 @@
   font-weight: 500;
 }
 
+/* Editor tabs — Fields (the studio) and JSON (the raw file). One panel at a
+   time; History stays under both, because a save is a save from either. The
+   strip is the quiet band so the raised active tab reads against it; the
+   inactive label is quiet ink, not the old `--muted` text colour. */
+.extensions-page__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted-surface);
+  align-self: flex-start;
+}
+
+.extensions-page__tab {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--extensions-quiet-ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.extensions-page__tab.is-active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+}
+
+.extensions-page__tab:hover {
+  color: var(--foreground);
+}
+
+.extensions-page__tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .extensions-page__editor-raw {
   width: 100%;
   min-height: 16rem;
@@ -163,6 +216,74 @@
   margin: 0;
   font-size: 0.78rem;
   color: var(--muted-foreground);
+}
+
+/* History — the undo the editor grew: one row per saved version, held outside
+   the theme list. A row is a small table: when, what the look was called, how
+   big the snapshot is, and the one verb. */
+.extensions-page__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.extensions-page__history-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.extensions-page__history-note {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.extensions-page__history-empty {
+  margin: 0;
+  padding: 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.extensions-page__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.extensions-page__history-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  font-size: 0.78rem;
+}
+
+.extensions-page__history-time {
+  color: var(--muted-foreground);
+}
+
+.extensions-page__history-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.extensions-page__history-bytes {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Cards */
@@ -237,6 +358,22 @@
   color: var(--foreground);
 }
 
+/* A bundled example says so: the chip keeps the pill's size and takes the quiet
+   band as its surface (never `--muted`, which is a text alias), and one line
+   under the description explains that removing it is final. */
+.extension-card__pill--gallery {
+  border-color: var(--border);
+  background: var(--muted-surface);
+  color: var(--extensions-quiet-ink);
+}
+
+.extension-card__gallery-note {
+  margin: 0;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
 .extension-card__desc {
   margin: 0;
   font-size: 0.8rem;
@@ -250,11 +387,13 @@
   margin: 0;
 }
 
+/* The card's summary chips: the quiet band as their surface (not the text
+   colour), with quiet ink on top. */
 .extension-chip {
   padding: 0.02rem 0.38rem;
   border-radius: var(--radius-pill);
-  background: var(--muted);
-  color: var(--muted-foreground);
+  background: var(--muted-surface);
+  color: var(--extensions-quiet-ink);
   font-size: 0.68rem;
 }
 
@@ -282,7 +421,7 @@
   padding: 0;
   border: 1px solid var(--input);
   border-radius: var(--radius-pill);
-  background: var(--muted);
+  background: var(--muted-surface);
   cursor: pointer;
 }
 
@@ -291,6 +430,9 @@
   border-color: var(--primary);
 }
 
+/* The thumb carries the state colour, like the app's Toggle: the quiet ink
+   when off (4.29:1 against the band by day, 5.66:1 at night — past the 3:1
+   floor for a control part), the card fill when on the accent track. */
 .extension-switch__knob {
   position: absolute;
   top: 50%;
@@ -298,13 +440,14 @@
   width: 0.78rem;
   height: 0.78rem;
   border-radius: 50%;
-  background: var(--card);
+  background: var(--muted-foreground);
   transform: translateY(-50%);
   transition: left 120ms ease;
 }
 
 .extension-switch__control[aria-checked="true"] .extension-switch__knob {
   left: calc(100% - 0.9rem);
+  background: var(--card);
 }
 
 .extension-switch__control:focus-visible {

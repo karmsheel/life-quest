@@ -1,0 +1,11 @@
+{
+  "name": "import-probe-bad",
+  "label": "Import Probe Bad",
+  "description": "Queued for the E2E import seam: one made-up placement, so the copy must be refused by the field it names.",
+  "chrome": {
+    "wingSwitcher": {
+      "place": "sidebar-top",
+      "variant": "labels"
+    }
+  }
+}

@@ -30,6 +30,7 @@ import {
   THEME_VOCABULARY,
   type ThemeFile,
 } from "../shared/theme-file.ts";
+import { saveThemeFile } from "./theme-store.js";
 
 export const THEME_TOOL_DEFS: MapToolDef[] = [
   {
@@ -201,16 +202,15 @@ async function writeTheme(args: Record<string, unknown>): Promise<unknown> {
       "file must be a lowercase slug ending in .json (a-z, 0-9, dash; 2–40 chars before .json)",
     );
   }
-  const dir = themesDirectory();
-  await fs.promises.mkdir(dir, { recursive: true });
-  const target = path.join(dir, file);
-  const serialized = `${JSON.stringify(theme, null, 2)}\n`;
-  await fs.promises.writeFile(`${target}.tmp`, serialized);
-  await fs.promises.rename(`${target}.tmp`, target);
+  // The one write path, shared with the Extensions editor: validation, the
+  // history snapshot and the atomic rename all happen inside the store, so a
+  // companion write is undoable in exactly the way an operator's Save is.
+  const written = await saveThemeFile(file, JSON.stringify(theme, null, 2));
+  if (!written.ok) return malformed(written.error);
   const keptFile = await readKeptFile();
   return {
-    written: file,
-    path: target,
+    written: written.file,
+    path: path.join(themesDirectory(), written.file),
     keptFile,
     preview:
       "Written. The operator's window now wears it as a 10-second preview with Keep and Revert; it is not kept until they press Keep.",

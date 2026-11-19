@@ -316,6 +316,25 @@ function persistSceneOverride(override: ThemeSceneOverride): void {
   }
 }
 
+/**
+ * One saved version of a theme file, as main lists it.
+ *
+ * This is the undo history the preview gate never had: before a write replaces
+ * a file, main snapshots the bytes it is about to replace. The snapshots live
+ * under `userData/theme-history/`, not in `themes/`, so neither the list nor the
+ * watcher can mistake a saved version for a theme.
+ */
+export interface ThemeHistoryVersion {
+  /** Opaque main-side id — the restore call's argument, never a path. */
+  id: string;
+  /** ISO timestamp of the snapshot; the row shows it as relative time. */
+  savedAt: string;
+  /** The snapshot's own theme label, so a row says which look it was. */
+  label: string;
+  /** Size of the snapshot, so a row hints at what came back. */
+  bytes: number;
+}
+
 interface ThemeContextValue {
   preference: ThemePreference;
   resolved: "light" | "dark";
@@ -381,6 +400,19 @@ interface ThemeContextValue {
   themeError: string | null;
   keepThemePreview: () => void;
   revertThemePreview: () => void;
+  /**
+   * Paint a draft theme without writing, keeping or previewing it — the
+   * Extensions studio's live look while the operator edits. `null` ends draft
+   * mode and hands the window back the kept theme; when a save has just left a
+   * preview running, that preview keeps the window instead.
+   */
+  setDraftTheme: (theme: ThemeFile | null) => void;
+  /**
+   * Bumped when a write lands on disk while a draft is open. The draft cannot
+   * survive that (the operator is editing bytes that just changed), so the
+   * provider drops it and the page shows a notice instead of fighting the write.
+   */
+  draftDiscarded: number;
   /** Every valid theme file in the profile, in name order — the Settings list. */
   themeFiles: { file: string; theme: ThemeFile }[];
   /** The file the operator kept, as stored in main so the tools can read it. */
@@ -408,6 +440,23 @@ interface ThemeContextValue {
    * previews through the same gate as a companion write.
    */
   writeThemeFile: (file: string, raw: string) => Promise<boolean>;
+  /**
+   * The saved versions of one theme file, newest first; `null` when main could
+   * not read them (the refusal is in `themeError`).
+   */
+  readThemeHistory: (file: string) => Promise<ThemeHistoryVersion[] | null>;
+  /**
+   * Put one saved version back through main. Main re-validates the snapshot and
+   * writes it through the same store, so a restore is itself undoable; the write
+   * then previews through the watcher like any other change.
+   */
+  restoreThemeVersion: (file: string, id: string) => Promise<boolean>;
+  /**
+   * Bring a theme JSON in from disk. Main owns the file dialog and the parse
+   * gate; the copy is an ordinary write, so it previews and never auto-keeps.
+   * Returns the copied file and its label, or `null` when cancelled or refused.
+   */
+  importTheme: () => Promise<{ file: string; label: string } | null>;
   /** Stop wearing the kept file: the window returns to the shell's default look. */
   clearKeptTheme: () => Promise<void>;
 }
@@ -520,6 +569,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     label: string;
   } | null>(null);
   const [themeError, setThemeError] = useState<string | null>(null);
+  /**
+   * The studio's draft: painted like a preview, but never written, kept or
+   * counted down. `themeFile` holds the draft while `draftActiveRef` is set;
+   * `keptTheme` is untouched until the operator saves or cancels.
+   */
+  const [draftDiscarded, setDraftDiscarded] = useState(0);
+  const draftActiveRef = useRef(false);
   const [themeFiles, setThemeFiles] = useState<
     { file: string; theme: ThemeFile }[]
   >([]);
@@ -617,6 +673,47 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeFile(keptTheme.current);
     paintTheme(keptTheme.current);
   }, [paintTheme]);
+
+  /**
+   * Paint a draft, or end draft mode. The draft is the studio's live look: it
+   * goes through the same `paintTheme` every theme does, but it is never
+   * written, never kept and never counted down — there is no preview bar, no
+   * timer, and no change to `keptTheme`.
+   *
+   * Ending a draft has one deliberate subtlety: a save has just written the
+   * file and its own preview is counting down, so ending draft mode must not
+   * repaint the kept theme over that preview. If a preview is live, only the
+   * draft flag is cleared and the write keeps the window.
+   */
+  const setDraftTheme = useCallback(
+    (next: ThemeFile | null) => {
+      if (next) {
+        // A preview already on screen is evidence of a write the operator has
+        // not decided about. The draft replaces it: stop the countdown and
+        // drop the bar, but do not repaint the kept theme in between — the
+        // operator is looking at what they are building, not a flash of the
+        // look they kept.
+        if (themePreviewTimer.current !== null) {
+          window.clearTimeout(themePreviewTimer.current);
+          themePreviewTimer.current = null;
+        }
+        previewRef.current = null;
+        setThemePreview(null);
+        setThemeError(null);
+        draftActiveRef.current = true;
+        setThemeFile(next);
+        paintTheme(next);
+        return;
+      }
+      draftActiveRef.current = false;
+      // A save leaves its own preview running; ending draft mode must only
+      // clear the flag or the operator loses the ten-second look they just made.
+      if (previewRef.current) return;
+      setThemeFile(keptTheme.current);
+      paintTheme(keptTheme.current);
+    },
+    [paintTheme],
+  );
 
   /**
    * Change one or more material axes. This is an operator preference, not a
@@ -875,11 +972,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setThemeFiles(valid.sort((a, b) => a.file.localeCompare(b.file)));
 
       if (kept) keptTheme.current = kept.theme;
+      /*
+       * A draft owns the shell while the studio is open. If the directory moved
+       * underneath it — an external write, the companion, another window — the
+       * draft is editing bytes that no longer exist. Drop it, hand the shell
+       * back the kept theme and bump the counter so the page can say why, then
+       * carry on with the read: the change still previews like any other write.
+       */
+      if (draftActiveRef.current && (changed !== null || keptChanged)) {
+        draftActiveRef.current = false;
+        setThemeFile(kept?.theme ?? null);
+        paintTheme(kept?.theme ?? null);
+        setDraftDiscarded((count) => count + 1);
+      }
       if (options?.preview === false) {
         // A live preview owns the window: Settings opening (or any other
         // preview-disabled read) must not repaint the kept theme under it while
         // the preview bar is still counting down.
         if (previewRef.current) return;
+        // A draft owns it too: the studio is still editing, so a Settings-driven
+        // read must not snap the shell back to the kept look mid-draft.
+        if (draftActiveRef.current) {
+          if (failure) setThemeError(failure);
+          return;
+        }
         // A preview-disabled read still parses every file. Never swallow the
         // refusal it found: the file it just learned the mtime of will not look
         // "changed" on the next watcher tick, so this is the only chance to say
@@ -1010,6 +1126,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
    * Save an edited file. The write is cleared from the mtime map before the
    * read so the file that just changed proves as "changed" even when the
    * operator saves twice inside one second.
+   *
+   * In draft mode a successful save *is* the end of the draft: clear the flag
+   * before the read so the write previews as an ordinary change instead of
+   * being mistaken for an external edit that steals the operator's draft.
    */
   const writeThemeFile = useCallback(
     async (file: string, raw: string) => {
@@ -1018,12 +1138,64 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setThemeError(answer?.error ?? "could not write the theme file");
         return false;
       }
+      draftActiveRef.current = false;
       themeMtimes.current.delete(file);
       await loadThemeFiles();
       return true;
     },
     [loadThemeFiles],
   );
+
+  /** List one file's saved versions — the editor's History section. */
+  const readThemeHistory = useCallback(async (file: string) => {
+    const answer = await window.lifequest?.themeHistory?.(file);
+    if (!answer || !answer.ok) {
+      setThemeError(answer?.error ?? "could not read the theme history");
+      return null;
+    }
+    return answer.value.versions;
+  }, []);
+
+  /**
+   * Restore one saved version. The write lands on disk in main, so this window
+   * has not "seen" it yet: drop the remembered mtime and read the directory
+   * again, which is exactly the path a companion write takes — the restored
+   * bytes preview for ten seconds and can be kept like any other write.
+   */
+  const restoreThemeVersion = useCallback(
+    async (file: string, id: string) => {
+      const answer = await window.lifequest?.themeRestore?.(file, id);
+      if (!answer || !answer.ok) {
+        setThemeError(answer?.error ?? "could not restore the theme version");
+        return false;
+      }
+      themeMtimes.current.delete(file);
+      await loadThemeFiles();
+      return true;
+    },
+    [loadThemeFiles],
+  );
+
+  /**
+   * Import a theme file. The dialog, the parse gate and the copy all live in
+   * main; this window only asks. A successful copy is a new file, so the same
+   * directory read that follows a write finds it and previews it — import must
+   * never auto-keep a look the operator has not seen yet.
+   */
+  const importTheme = useCallback(async () => {
+    const answer = await window.lifequest?.themeImport?.();
+    if (!answer) return null;
+    if (!answer.ok) {
+      setThemeError(answer.error);
+      return null;
+    }
+    const imported = answer.value;
+    // `null` value is the operator cancelling the file dialog, not a failure.
+    if (!imported) return null;
+    themeMtimes.current.delete(imported.file);
+    await loadThemeFiles();
+    return imported;
+  }, [loadThemeFiles]);
 
   /** Hand the window back its default look — the Extensions page's off switch. */
   const clearKeptTheme = useCallback(async () => {
@@ -1230,6 +1402,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       themeError,
       keepThemePreview,
       revertThemePreview,
+      setDraftTheme,
+      draftDiscarded,
       themeFiles,
       keptFile,
       applyThemeFile,
@@ -1240,6 +1414,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportCurrentTheme,
       readThemeFile,
       writeThemeFile,
+      readThemeHistory,
+      restoreThemeVersion,
+      importTheme,
       clearKeptTheme,
     }),
     [
@@ -1256,6 +1433,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportCurrentTheme,
       readThemeFile,
       writeThemeFile,
+      readThemeHistory,
+      restoreThemeVersion,
+      importTheme,
       clearKeptTheme,
       keepThemeFile,
       keepThemePreview,
@@ -1286,6 +1466,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       themeError,
       themeFile,
       themePreview,
+      setDraftTheme,
+      draftDiscarded,
       toggleFavoriteSkin,
       uninstallSkin,
     ],

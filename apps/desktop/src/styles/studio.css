@@ -1,0 +1,339 @@
+/* Studio — the Extensions editor's Fields view (S2: composition).
+   The schematic is a compact map of the shell's five regions; the form below it
+   is the real editor. Rows keep the same rhythm as the Settings Appearance
+   sections so the two authoring surfaces read as one product. */
+.studio {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.studio__schematic {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+}
+
+.studio__title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.studio__note,
+.studio__hint,
+.studio__notice,
+.studio__valid,
+.studio__summary,
+.studio__count,
+.studio__widget-index {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.studio__regions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.4rem;
+}
+
+.studio__region {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.studio__region-name {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  color: var(--muted-foreground);
+}
+
+.studio__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-height: 1.3rem;
+}
+
+.studio__region-empty {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+/* A widget chip says where one widget stands. Its surface is the quiet band,
+   not `--muted` (that alias is a text colour — the S2 artifact caught the tab
+   strip painted in its own label ink for the same reason). */
+.studio__chip {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--foreground);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+/* Selected reads as a tinted band behind the same strong ink: the accent fill
+   at 18% keeps the 0.7rem label at 12.7:1 by day / 10:1 at night, where white
+   on the solid accent would fall to 3.9:1 by day. */
+.studio__chip[data-selected="true"] {
+  border-color: var(--ring);
+  background: color-mix(in srgb, var(--primary) 18%, var(--muted-surface));
+  color: var(--foreground);
+}
+
+.studio__chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.studio__summary {
+  margin: 0;
+  font-weight: 600;
+}
+
+.studio__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.studio__legend {
+  padding: 0 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.studio__radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.studio__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.studio__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.studio__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+
+.studio__field--wide {
+  grid-column: span 2;
+}
+
+.studio__field--action {
+  justify-content: flex-end;
+}
+
+.studio__field input,
+.studio__field select {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.8rem;
+}
+
+.studio__field input:focus-visible,
+.studio__field select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.studio__count {
+  font-weight: 400;
+  margin-left: 0.25rem;
+}
+
+.studio__widget-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.studio__widget-index {
+  margin-right: auto;
+  font-weight: 600;
+}
+
+.studio__empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+.studio__notice {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.studio__valid {
+  color: var(--muted-foreground);
+}
+
+.studio__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Section strip and panel — the Fields view swaps one layer at a time so the
+   whole look stays reachable at 1280×800 instead of one long scroll. */
+.studio__sections {
+  flex-wrap: wrap;
+}
+
+.studio__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.studio__section-intro {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+/* Palette — two whole palettes, each row a label, a hex field and a picker.
+   Surfaces come from --card/--muted-surface; --muted is a text alias. */
+.studio-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.studio-palette__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.studio-palette__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.studio-palette__group-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.studio-palette__toggle {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.studio-palette__rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.3rem 0.9rem;
+}
+
+.studio-palette__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5rem 1.9rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.studio-palette__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+.studio-palette__hex {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.72rem;
+}
+
+.studio-palette__hex:disabled,
+.studio-palette__picker:disabled {
+  opacity: 0.6;
+}
+
+.studio-palette__hex:focus-visible,
+.studio-palette__picker:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.studio-palette__picker {
+  width: 1.9rem;
+  height: 1.65rem;
+  padding: 0.1rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+}
+
+.studio-palette__failure {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The only motion the studio adds is the browser's own focus/active paint;
+     the shell's ring breathes from the theme, which already respects this. */
+  .studio * {
+    transition: none !important;
+  }
+}

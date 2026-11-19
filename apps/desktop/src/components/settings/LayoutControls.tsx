@@ -26,6 +26,11 @@ import {
  * **Reset to theme** hands every component back to the theme the window is
  * wearing.
  *
+ * Optional controlled props (D9) let the Extensions studio reuse these rows
+ * against a draft theme: `value` is the resolved chrome to show and `onChange`
+ * receives patches instead of the provider writing an override. With no props
+ * Settings keeps exactly the old behaviour and test ids.
+ *
  * The option buttons mirror the shared `SegmentedControl` primitive's markup and
  * classes rather than calling it, for the same reason MaterialControls does:
  * every option needs its own `data-testid` and the label line carries the
@@ -33,6 +38,15 @@ import {
  */
 
 type ComponentKey = keyof ThemeChromeOverride;
+
+export interface LayoutControlsProps {
+  /** Controlled chrome: the resolved layout to render (defaults filled). */
+  value?: ThemeChrome;
+  /** Controlled mode only: a per-component patch from one pick. */
+  onChange?: (patch: ThemeChromeOverride) => void;
+  /** Prefix for every data-testid; "" leaves the Settings ids untouched. */
+  testIdPrefix?: string;
+}
 
 const WING_PLACE_LABELS: Record<ThemeChrome["wingSwitcher"]["place"], string> = {
   "rail-top": "Rail top",
@@ -100,18 +114,32 @@ interface LayoutRow {
   onPick: (value: string) => void;
 }
 
-export function LayoutControls() {
+export function LayoutControls({
+  value,
+  onChange,
+  testIdPrefix = "",
+}: LayoutControlsProps = {}) {
   const { chrome, chromeOverride, setChromeOverride, resetChromeOverride } =
     useTheme();
+  const controlled = value !== undefined;
+  const effectiveChrome = value ?? chrome;
   const headingId = useId();
   const labelPrefix = useId();
-  const hasOverrides = Object.keys(chromeOverride).length > 0;
+  const hasOverrides = !controlled && Object.keys(chromeOverride).length > 0;
+
+  const pick = (patch: ThemeChromeOverride) => {
+    if (controlled) {
+      onChange?.(patch);
+      return;
+    }
+    setChromeOverride(patch);
+  };
 
   /*
    * The rows are built here rather than at module scope because each pick has to
-   * reach the provider with its component's own shape. One row renders once per
-   * option, and the raw enum values ride along as the option values — the words
-   * on screen are the words a theme file may use.
+   * reach the owning surface with its component's own shape. One row renders
+   * once per option, and the raw enum values ride along as the option values —
+   * the words on screen are the words a theme file may use.
    */
   const rows: LayoutRow[] = [
     {
@@ -123,9 +151,9 @@ export function LayoutControls() {
         value,
         label: WING_PLACE_LABELS[value],
       })),
-      selected: chrome.wingSwitcher.place,
+      selected: effectiveChrome.wingSwitcher.place,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           wingSwitcher: {
             place: value as ThemeChrome["wingSwitcher"]["place"],
           },
@@ -140,9 +168,9 @@ export function LayoutControls() {
         value,
         label: WING_VARIANT_LABELS[value],
       })),
-      selected: chrome.wingSwitcher.variant,
+      selected: effectiveChrome.wingSwitcher.variant,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           wingSwitcher: {
             variant: value as ThemeChrome["wingSwitcher"]["variant"],
           },
@@ -157,9 +185,9 @@ export function LayoutControls() {
         value,
         label: DOMAIN_PLACE_LABELS[value],
       })),
-      selected: chrome.domainSwitcher.place,
+      selected: effectiveChrome.domainSwitcher.place,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           domainSwitcher: {
             place: value as ThemeChrome["domainSwitcher"]["place"],
           },
@@ -174,9 +202,9 @@ export function LayoutControls() {
         value,
         label: DOMAIN_VARIANT_LABELS[value],
       })),
-      selected: chrome.domainSwitcher.variant,
+      selected: effectiveChrome.domainSwitcher.variant,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           domainSwitcher: {
             variant: value as ThemeChrome["domainSwitcher"]["variant"],
           },
@@ -191,9 +219,9 @@ export function LayoutControls() {
         value,
         label: TITLEBAR_SIZE_LABELS[value],
       })),
-      selected: chrome.titlebar.size,
+      selected: effectiveChrome.titlebar.size,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           titlebar: { size: value as ThemeChrome["titlebar"]["size"] },
         }),
     },
@@ -206,9 +234,9 @@ export function LayoutControls() {
         value,
         label: CHAT_DOCK_SIDE_LABELS[value],
       })),
-      selected: chrome.chatDock.side,
+      selected: effectiveChrome.chatDock.side,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           chatDock: { side: value as ThemeChrome["chatDock"]["side"] },
         }),
     },
@@ -221,9 +249,9 @@ export function LayoutControls() {
         value,
         label: NAV_RAIL_PLACE_LABELS[value],
       })),
-      selected: chrome.navRail.place,
+      selected: effectiveChrome.navRail.place,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           navRail: { place: value as ThemeChrome["navRail"]["place"] },
         }),
     },
@@ -236,9 +264,9 @@ export function LayoutControls() {
         value,
         label: NAV_RAIL_WIDTH_LABELS[value],
       })),
-      selected: chrome.navRail.width,
+      selected: effectiveChrome.navRail.width,
       onPick: (value) =>
-        setChromeOverride({
+        pick({
           navRail: { width: value as ThemeChrome["navRail"]["width"] },
         }),
     },
@@ -247,7 +275,8 @@ export function LayoutControls() {
   /*
    * A component is "yours" when the override has a branch for it. The marker is
    * drawn on that component's first row so a component picked twice still shows
-   * exactly one marker (and one testid) for the E2E rigs.
+   * exactly one marker (and one testid) for the E2E rigs. Controlled mode has no
+   * overrides to mark: the draft *is* the theme.
    */
   const firstRowOfComponent = new Map<ComponentKey, string>();
   for (const row of rows) {
@@ -260,7 +289,7 @@ export function LayoutControls() {
     <section
       className="theme-layout"
       aria-labelledby={headingId}
-      data-testid="theme-layout"
+      data-testid={controlled ? `${testIdPrefix}layout-panel` : "theme-layout"}
     >
       <div className="theme-layout__header">
         <div className="theme-layout__heading">
@@ -268,28 +297,40 @@ export function LayoutControls() {
             Layout
           </h3>
           <p className="theme-layout__intro">
-            A theme proposes where the wing switcher, the area lens and the
-            sidebar sit, and you can override any of them. A pick marked
-            &ldquo;yours&rdquo; outranks the theme and survives swapping it;{" "}
-            <strong>Reset to theme</strong> returns them to the theme&rsquo;s
-            layout.
+            {controlled ? (
+              <>
+                Where the shell&rsquo;s own components sit, as the theme file
+                carries it. Picks paint the draft at once; only{" "}
+                <strong>Save</strong> writes the file.
+              </>
+            ) : (
+              <>
+                A theme proposes where the wing switcher, the area lens and the
+                sidebar sit, and you can override any of them. A pick marked
+                &ldquo;yours&rdquo; outranks the theme and survives swapping it;{" "}
+                <strong>Reset to theme</strong> returns them to the theme&rsquo;s
+                layout.
+              </>
+            )}
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="theme-layout__reset"
-          data-testid="chrome-reset"
-          disabled={!hasOverrides}
-          onClick={() => resetChromeOverride()}
-        >
-          <RotateCcw size={13} aria-hidden />
-          Reset to theme
-        </Button>
+        {controlled ? null : (
+          <Button
+            variant="outline"
+            className="theme-layout__reset"
+            data-testid="chrome-reset"
+            disabled={!hasOverrides}
+            onClick={() => resetChromeOverride()}
+          >
+            <RotateCcw size={13} aria-hidden />
+            Reset to theme
+          </Button>
+        )}
       </div>
 
       <div className="theme-layout__rows">
         {rows.map((row) => {
-          const overridden = row.component in chromeOverride;
+          const overridden = !controlled && row.component in chromeOverride;
           const markerHere =
             overridden && firstRowOfComponent.get(row.component) === row.key;
           const labelId = `${labelPrefix}-${row.key}`;
@@ -331,7 +372,11 @@ export function LayoutControls() {
                       aria-checked={active}
                       aria-label={`${row.label}: ${option.label}`}
                       className={`ui-segmented__option${active ? " is-active" : ""}`}
-                      data-testid={`${row.testIdPrefix}-${option.value}`}
+                      data-testid={
+                        controlled
+                          ? `${testIdPrefix}${row.testIdPrefix}-${option.value}`
+                          : `${row.testIdPrefix}-${option.value}`
+                      }
                       onClick={() => row.onPick(option.value)}
                     >
                       {option.label}

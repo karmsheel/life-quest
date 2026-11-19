@@ -22,6 +22,12 @@ import {
  * are told apart at a glance, and persisted per window. Reset hands every axis
  * back to the theme the window is wearing, including a preview it has not kept.
  *
+ * Optional controlled props (D9) let the Extensions studio reuse the same rows
+ * without changing any of that: with `value` the section renders the draft's
+ * material and reports picks to `onChange`, writing no override and marking
+ * nothing "yours". Settings renders it with no props and keeps today's
+ * behaviour and test ids exactly.
+ *
  * The option buttons mirror the shared `SegmentedControl` primitive's markup and
  * classes rather than calling it: every option needs its own `data-testid` and
  * the label line carries the override marker, neither of which the primitive
@@ -30,6 +36,15 @@ import {
 
 type Axis = keyof ThemeMaterial;
 type AxisValue = ThemeMaterial[Axis];
+
+export interface MaterialControlsProps {
+  /** Controlled material: render this instead of the provider's. */
+  value?: ThemeMaterial;
+  /** Controlled mode only: one or more axes the operator just picked. */
+  onChange?: (patch: Partial<ThemeMaterial>) => void;
+  /** Prefix for every data-testid; "" leaves the Settings ids untouched. */
+  testIdPrefix?: string;
+}
 
 interface MaterialAxis {
   axis: Axis;
@@ -121,22 +136,36 @@ const AXES = [
   },
 ] satisfies readonly MaterialAxis[];
 
-export function MaterialControls() {
+export function MaterialControls({
+  value,
+  onChange,
+  testIdPrefix = "",
+}: MaterialControlsProps = {}) {
   const {
     material,
     materialOverride,
     setMaterialOverride,
     resetMaterialOverride,
   } = useTheme();
+  const controlled = value !== undefined;
+  const effectiveMaterial = value ?? material;
   const headingId = useId();
   const labelPrefix = useId();
-  const hasOverrides = Object.keys(materialOverride).length > 0;
+  const hasOverrides = !controlled && Object.keys(materialOverride).length > 0;
+
+  const pick = (patch: Partial<ThemeMaterial>) => {
+    if (controlled) {
+      onChange?.(patch);
+      return;
+    }
+    setMaterialOverride(patch);
+  };
 
   return (
     <section
       className="theme-material"
       aria-labelledby={headingId}
-      data-testid="theme-material"
+      data-testid={controlled ? `${testIdPrefix}material-panel` : "theme-material"}
     >
       <div className="theme-material__header">
         <div className="theme-material__heading">
@@ -144,27 +173,39 @@ export function MaterialControls() {
             Material
           </h3>
           <p className="theme-material__intro">
-            A theme picks these named steps, and you can override any of them. A
-            pick marked &ldquo;yours&rdquo; outranks the theme and survives
-            swapping it; <strong>Reset to theme</strong> hands every axis back.
+            {controlled ? (
+              <>
+                The six named steps the theme file carries. Picks paint the draft
+                at once and only <strong>Save</strong> writes them into the file.
+              </>
+            ) : (
+              <>
+                A theme picks these named steps, and you can override any of
+                them. A pick marked &ldquo;yours&rdquo; outranks the theme and
+                survives swapping it; <strong>Reset to theme</strong> hands every
+                axis back.
+              </>
+            )}
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="theme-material__reset"
-          data-testid="material-reset"
-          disabled={!hasOverrides}
-          onClick={() => resetMaterialOverride()}
-        >
-          <RotateCcw size={13} aria-hidden />
-          Reset to theme
-        </Button>
+        {controlled ? null : (
+          <Button
+            variant="outline"
+            className="theme-material__reset"
+            data-testid="material-reset"
+            disabled={!hasOverrides}
+            onClick={() => resetMaterialOverride()}
+          >
+            <RotateCcw size={13} aria-hidden />
+            Reset to theme
+          </Button>
+        )}
       </div>
 
       <div className="theme-material__rows">
         {AXES.map((spec) => {
-          const effective: AxisValue = material[spec.axis];
-          const overridden = spec.axis in materialOverride;
+          const effective: AxisValue = effectiveMaterial[spec.axis];
+          const overridden = !controlled && spec.axis in materialOverride;
           const labelId = `${labelPrefix}-${spec.axis}`;
           return (
             <div
@@ -193,7 +234,9 @@ export function MaterialControls() {
                 className="ui-segmented ui-segmented--sm theme-material__control"
                 role="radiogroup"
                 aria-labelledby={labelId}
-                data-testid={spec.testId}
+                data-testid={
+                  controlled ? `${testIdPrefix}${spec.testId}` : spec.testId
+                }
               >
                 {spec.options.map((option) => {
                   const active = effective === option.value;
@@ -205,9 +248,13 @@ export function MaterialControls() {
                       aria-checked={active}
                       aria-label={`${spec.label}: ${option.label}`}
                       className={`ui-segmented__option${active ? " is-active" : ""}`}
-                      data-testid={`material-option-${spec.axis}-${option.value}`}
+                      data-testid={
+                        controlled
+                          ? `${testIdPrefix}material-option-${spec.axis}-${option.value}`
+                          : `material-option-${spec.axis}-${option.value}`
+                      }
                       onClick={() =>
-                        setMaterialOverride({
+                        pick({
                           [spec.axis]: option.value,
                         } as Partial<ThemeMaterial>)
                       }

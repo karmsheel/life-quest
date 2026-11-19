@@ -104,6 +104,10 @@ const EXTENSIONS_OFF_PNG = path.join(
   artifactsDir,
   "themes-v2-extensions-off.png",
 );
+const TRUST_PNG = path.join(artifactsDir, "themes-v2-trust.png");
+const STUDIO_PNG = path.join(artifactsDir, "themes-v2-studio.png");
+const STUDIO_LOOK_PNG = path.join(artifactsDir, "themes-v2-studio-look.png");
+const GALLERY_PNG = path.join(artifactsDir, "themes-v2-gallery.png");
 
 const failures = [];
 const checks = [];
@@ -530,6 +534,165 @@ const SAMPLE = `(async () => {
     extensionsCountText:
       document.querySelector('[data-testid="extensions-count"]')?.textContent?.trim() ?? null,
     extensionsActive: Boolean(document.querySelector('[data-testid="extension-active"]')),
+    // S1 Trust: the editor's version history and the page's import line.
+    historyRows: (() => {
+      const section = document.querySelector('[data-testid="extension-history"]');
+      if (!section) return null;
+      return [...section.querySelectorAll('[data-testid="extension-history-row"]')].map((row) => ({
+        id: row.getAttribute("data-version-id"),
+        label: row.getAttribute("data-label"),
+        text: (row.textContent || "").replace(/\\s+/g, " ").trim(),
+        restore: Boolean(row.querySelector('[data-testid="extension-history-restore"]')),
+      }));
+    })(),
+    historyEmpty: (() => {
+      const section = document.querySelector('[data-testid="extension-history"]');
+      if (!section) return false;
+      const rows = section.querySelectorAll('[data-testid="extension-history-row"]');
+      return rows.length === 0 && (section.textContent || "").includes("No saved versions yet");
+    })(),
+    editorTabs: ["extension-editor-tab-fields", "extension-editor-tab-json"].filter((id) =>
+      Boolean(document.querySelector('[data-testid="' + id + '"]')),
+    ),
+    importStatus:
+      document.querySelector('[data-testid="extensions-status"]')?.textContent?.trim() ?? null,
+    // S2 Studio: the tab the editor opened on, and the composition editor's own
+    // surface — chips, offers, draft paint and verdict.
+    editorTab: (() => {
+      const fields = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      const json = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      if (!fields || !json) return null;
+      if (fields.getAttribute("aria-selected") === "true") return "fields";
+      if (json.getAttribute("aria-selected") === "true") return "json";
+      return null;
+    })(),
+    studioWidgetCount: (() => {
+      const studio = document.querySelector('[data-testid="extension-studio"]');
+      if (!studio) return null;
+      return studio.querySelectorAll('[data-testid="studio-widget-chip"]').length;
+    })(),
+    studioOffers: (() => {
+      const studio = document.querySelector('[data-testid="extension-studio"]');
+      if (!studio) return null;
+      const optionValues = (testId) => {
+        const select = studio.querySelector('[data-testid="' + testId + '"]');
+        if (!select) return null;
+        return [...select.querySelectorAll("option")].map((option) => option.value);
+      };
+      const addButton = studio.querySelector('[data-testid="studio-add-widget"]');
+      const addNote = studio.querySelector('[data-testid="studio-add-note"]');
+      const labelInput = studio.querySelector('[data-testid="studio-widget-label"]');
+      return {
+        regions: optionValues("studio-add-region"),
+        types: optionValues("studio-add-type"),
+        labelMaxLength: labelInput ? labelInput.maxLength : null,
+        addDisabled: Boolean(addButton && addButton.disabled),
+        addNote: addNote ? (addNote.textContent || "").trim() : null,
+        regionIds: [...studio.querySelectorAll('[data-testid^="studio-region-"]')].map(
+          (region) => region.getAttribute("data-testid"),
+        ),
+        layouts: ["studio-layout-stack", "studio-layout-grid", "studio-layout-polar"].filter(
+          (id) => Boolean(studio.querySelector('[data-testid="' + id + '"]')),
+        ),
+        summary:
+          (studio.querySelector('[data-testid="studio-summary"]')?.textContent ?? "").trim() || null,
+        chips: [...studio.querySelectorAll('[data-testid="studio-widget-chip"]')].map((chip) => ({
+          index: Number(chip.getAttribute("data-index")),
+          selected:
+            chip.getAttribute("aria-pressed") === "true" ||
+            chip.getAttribute("data-selected") === "true",
+        })),
+      };
+    })(),
+    draftPainted: (() => {
+      const regions = [...document.querySelectorAll("[data-composition-region]")];
+      return regions.some((region) =>
+        Boolean(region.querySelector('[data-testid="composition-widget"]')),
+      );
+    })(),
+    studioStatus:
+      document.querySelector('[data-testid="studio-status"]')?.textContent?.trim() ?? null,
+    // S3 Studio: the look sections and the palette editor's live verdict.
+    studioSection: (() => {
+      const active = [...document.querySelectorAll('[data-testid^="studio-section-tab-"]')].find(
+        (tab) => tab.getAttribute("aria-selected") === "true",
+      );
+      if (!active) return null;
+      return (active.getAttribute("data-testid") ?? "").replace("studio-section-tab-", "");
+    })(),
+    draftWingPlace: (() => {
+      if (document.querySelector(".nav-rail__wings-band")) return "rail-top";
+      if (document.querySelector('[data-chrome-place="titlebar-left"]')) return "titlebar-left";
+      if (document.querySelector('[data-chrome-place="floating-left"]')) return "floating-left";
+      return null;
+    })(),
+    studioMaterialRadius: (() => {
+      // The Settings controls are segmented role="radio" groups, so the
+      // selected option carries aria-checked, not aria-pressed. Scope to the
+      // radius group itself so the axis cannot be confused with the others.
+      const group = document.querySelector('[data-testid="studio-material-radius"]');
+      if (!group) return null;
+      const options = [...group.querySelectorAll('[role="radio"], button')];
+      const active = options.find(
+        (option) =>
+          option.getAttribute("aria-checked") === "true" ||
+          option.getAttribute("aria-pressed") === "true",
+      );
+      return active ? active.getAttribute("data-testid") : null;
+    })(),
+    studioPaletteVerdict:
+      document.querySelector('[data-testid="studio-palette-verdict"]')?.textContent?.trim() ?? null,
+    studioPaletteEnabled: (() => {
+      const read = (id) => {
+        const control = document.querySelector('[data-testid="' + id + '"]');
+        if (!control) return null;
+        if (control.tagName === "INPUT") return Boolean(control.checked);
+        return control.getAttribute("aria-pressed") === "true";
+      };
+      return {
+        light: read("studio-palette-light-enabled"),
+        dark: read("studio-palette-dark-enabled"),
+      };
+    })(),
+    paletteTokens: (() => {
+      const palette = document.querySelector('[data-testid="studio-palette"]');
+      if (!palette) return null;
+      const group = (name) => {
+        const prefix = "studio-palette-" + name + "-";
+        const tokens = {};
+        for (const control of palette.querySelectorAll('[data-testid^="' + prefix + '"]')) {
+          const id = control.getAttribute("data-testid") ?? "";
+          const token = id.slice(prefix.length);
+          if (token === "enabled") continue;
+          if (control.tagName !== "INPUT" || control.type === "checkbox") continue;
+          tokens[token] = control.value;
+        }
+        return tokens;
+      };
+      return { light: group("light"), dark: group("dark") };
+    })(),
+    // S4 Gallery: which cards wear the bundled-example chip, and its one line.
+    galleryChips: (() => {
+      const page = document.querySelector('[data-testid="extensions-page"]');
+      if (!page) return null;
+      return [...page.querySelectorAll("li[data-testid^='extension-']")].map((card) => ({
+        file: (card.getAttribute("data-testid") ?? "").replace(/^extension-/, "") + ".json",
+        chip: Boolean(card.querySelector('[data-testid="extension-gallery-chip"]')),
+        chipText:
+          (card.querySelector('[data-testid="extension-gallery-chip"]')?.textContent ?? "").trim() ||
+          null,
+        note:
+          (card.querySelector('[data-testid="extension-gallery-note"]')?.textContent ?? "").trim() ||
+          null,
+      }));
+    })(),
+    galleryNotes: (() => {
+      const page = document.querySelector('[data-testid="extensions-page"]');
+      if (!page) return null;
+      return [...page.querySelectorAll('[data-testid="extension-gallery-note"]')].map((note) =>
+        (note.textContent ?? "").trim(),
+      );
+    })(),
   };
 })()`;
 
@@ -702,10 +865,25 @@ async function main() {
   process.env.HERMES_HOME = hermesHome;
   process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
   process.env.VITE_DEV_SERVER_URL = DEV_URL;
+  // S1 import seam: the product main process reads LIFEQUEST_E2E at import
+  // time, so the queued fixture paths for the three imports below are set
+  // before `bootForE2e` is imported. `theme:import` shifts one per call while
+  // the seam is active; the fixtures themselves are committed beside this rig.
+  const importFixtures = [
+    path.join(here, "fixtures", "theme-import-valid.json"),
+    path.join(here, "fixtures", "theme-import-invalid.json"),
+    path.join(here, "fixtures", "theme-import-collision.json"),
+  ];
+  for (const fixture of importFixtures) {
+    if (!fs.existsSync(fixture)) {
+      throw new Error(`missing import fixture: ${fixture}`);
+    }
+  }
   process.env.LIFEQUEST_E2E = JSON.stringify({
     userData: profileDir,
     showWindow: true,
     mcpPorts: { local: mcpLocal, invite: mcpInvite },
+    themeImportSources: importFixtures,
   });
   delete process.env.ELECTRON_RUN_AS_NODE;
 
@@ -3883,6 +4061,25 @@ async function main() {
     }
     return false;
   };
+  /**
+   * S2: a parseable file now opens the editor on the Fields tab, so the raw
+   * JSON ids (`extension-editor-raw` / `-status` / `-save`) only exist once the
+   * JSON tab is chosen. Every surviving check that drove the textarea takes
+   * this step first; the History section stays visible on both tabs.
+   */
+  const openJsonTab = async () => {
+    const clicked = await evaluate(`(() => {
+      const tab = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      if (!tab) return false;
+      tab.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor-raw"]'))`,
+      10_000,
+    );
+  };
   await evaluate(`(() => {
     const link = [...document.querySelectorAll(".nav-rail__link")].find((el) =>
       (el.textContent ?? "").includes("Extensions"),
@@ -3953,6 +4150,9 @@ async function main() {
   const editorOpen = await untilTrue(
     `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
   );
+  // S2: the editor opens on Fields when the file parses; the textarea lives on
+  // the JSON tab, so the existing text seam takes that tab first.
+  const editorJsonTab = await openJsonTab();
   const validBefore = await untilTrue(
     `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension")`,
   );
@@ -4003,6 +4203,7 @@ async function main() {
       createdOnDisk?.label === "Rig Workshop" &&
       (createdPreview?.previewText ?? "").includes("rig-workshop.json") &&
       editorOpen === true &&
+      editorJsonTab === true &&
       validBefore === true &&
       refusedInvalid === true &&
       saveDisabled === true &&
@@ -4014,6 +4215,7 @@ async function main() {
       createdLabel: createdOnDisk?.label,
       previewed: (createdPreview?.previewText ?? "").slice(0, 80),
       editorOpen,
+      editorJsonTab,
       validBefore,
       refusedInvalid,
       saveDisabled,
@@ -4147,6 +4349,1766 @@ async function main() {
     }),
   );
 
+  // ── 12i: Trust — history kept/restored/capped; import validated and copied ─
+  // A save now snapshots the bytes it replaces, outside `themes/`, and any save
+  // can be put back; a file can also arrive through the import door, validated
+  // and copied under its own slug, never overwriting and never auto-kept. The
+  // import fixtures are queued into the E2E seam before boot (see
+  // `themeImportSources` in the world setup); the saves go through the shipped
+  // editor, so the page's own seam is what is judged, not a second harness.
+  const trustFile = "rig-trust.json";
+  const trustPath = path.join(themesDir, trustFile);
+  const trustTheme = (label) => ({
+    name: "rig-trust",
+    label,
+    description:
+      "History probe: the editor saves this file with distinct labels and restores a version.",
+    chrome: { wingSwitcher: { place: "titlebar-left", variant: "labels" } },
+  });
+  const readLabel = (full) => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(full, "utf8"));
+      return typeof parsed.label === "string" ? parsed.label : null;
+    } catch {
+      return null;
+    }
+  };
+  const untilLabel = async (full, label, timeout = 10_000) => {
+    const until = Date.now() + timeout;
+    while (Date.now() < until) {
+      if (readLabel(full) === label) return true;
+      await sleep(100);
+    }
+    return readLabel(full) === label;
+  };
+  const openTrustEditor = async () => {
+    const clicked = await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-rig-trust"] [data-testid="extension-edit"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    const open = await untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      10_000,
+    );
+    if (!open) return false;
+    // S2: the editor opens on Fields; the saves below drive the raw textarea,
+    // which lives on the JSON tab. History stays visible on both tabs.
+    return openJsonTab();
+  };
+  const setTrustRaw = async (text) =>
+    evaluate(`(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      ).set;
+      setter.call(area, ${JSON.stringify(text)});
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+  const saveTrustEditor = async (label) => {
+    const ready = await untilTrue(
+      `(() => {
+        const status = document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "";
+        const save = document.querySelector('[data-testid="extension-editor-save"]');
+        return status.includes(${JSON.stringify(label)}) && Boolean(save && !save.disabled);
+      })()`,
+      10_000,
+    );
+    if (!ready) return false;
+    await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-editor-save"]');
+      if (!b || b.disabled) return false;
+      b.click();
+      return true;
+    })()`);
+    return untilTrue(
+      `!document.querySelector('[data-testid="extension-editor"]')`,
+      10_000,
+    );
+  };
+
+  fs.writeFileSync(
+    trustPath,
+    `${JSON.stringify(trustTheme("Trust Zero"), null, 2)}\n`,
+  );
+  const trustRow = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-rig-trust"]'))`,
+    15_000,
+  );
+  const openedFirst = await openTrustEditor();
+  const firstEmpty = openedFirst
+    ? await waitFor((s) => s.historyEmpty === true, 10_000)
+    : null;
+  let savesOk = openedFirst;
+  for (const label of ["Trust One", "Trust Two", "Trust Three"]) {
+    if (!savesOk) break;
+    await setTrustRaw(`${JSON.stringify(trustTheme(label), null, 2)}\n`);
+    if (!(await saveTrustEditor(label))) {
+      savesOk = false;
+      break;
+    }
+    // Every save closes the editor; the next pass reopens it, and the third
+    // save stays closed so the final open is the one that reads history.
+    if (label !== "Trust Three" && !(await openTrustEditor())) {
+      savesOk = false;
+      break;
+    }
+  }
+  const reopenedForHistory = savesOk ? await openTrustEditor() : false;
+  const diskAfterThree = await untilLabel(trustPath, "Trust Three");
+  const historyBefore = reopenedForHistory
+    ? await waitFor(
+        (s) => Array.isArray(s.historyRows) && s.historyRows.length >= 3,
+        15_000,
+      )
+    : null;
+  const rowsBefore = historyBefore?.historyRows ?? [];
+  const rowText = (row) => row?.text ?? "";
+  const historyLabelsMatch =
+    rowsBefore.length === 3 &&
+    rowsBefore[0].label === "Trust Two" &&
+    rowsBefore[1].label === "Trust One" &&
+    rowsBefore[2].label === "Trust Zero" &&
+    rowText(rowsBefore[0]).includes("Trust Two") &&
+    rowText(rowsBefore[1]).includes("Trust One") &&
+    rowText(rowsBefore[2]).includes("Trust Zero");
+  const historyRowShape =
+    rowsBefore.length === 3 &&
+    rowsBefore.every(
+      (row) =>
+        typeof row.id === "string" &&
+        row.id.length > 0 &&
+        row.restore === true &&
+        /\d+\s*B/.test(rowText(row)) &&
+        /(just now|ago|\d{4})/.test(rowText(row)),
+    );
+
+  // Put the OLDEST version back. It becomes the previewed look, so the bar has
+  // to name this file, and the bytes it replaced become a new version.
+  const restoreClicked = reopenedForHistory
+    ? await evaluate(`(() => {
+        const rows = [...document.querySelectorAll('[data-testid="extension-history-row"]')];
+        if (rows.length === 0) return false;
+        const last = rows[rows.length - 1];
+        const b = last.querySelector('[data-testid="extension-history-restore"]');
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`)
+    : false;
+  const diskAfterRestore = restoreClicked
+    ? await untilLabel(trustPath, "Trust Zero")
+    : false;
+  const restoredUi = restoreClicked
+    ? await waitFor(
+        (s) =>
+          (s.previewText ?? "").includes(trustFile) &&
+          Array.isArray(s.historyRows) &&
+          s.historyRows.length >= 4,
+        15_000,
+      )
+    : null;
+  const restoredRows = restoredUi?.historyRows ?? [];
+  const rawAfterRestore = restoreClicked
+    ? await untilTrue(
+        `(document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? "").includes("Trust Zero")`,
+        10_000,
+      )
+    : false;
+  const themeList = await evaluate("window.lifequest.themesList()");
+  const listedNames = themeList?.ok
+    ? themeList.value.map((entry) => entry.file)
+    : [];
+  // The artifact claims "the editor with the History list open after a
+  // restore", so put that section in the middle of the 1280x800 frame.
+  await evaluate(`(() => {
+    const section = document.querySelector('[data-testid="extension-history"]');
+    if (section) section.scrollIntoView({ block: "center" });
+    return true;
+  })()`);
+  await sleep(500);
+  const trustShot = await win.webContents.capturePage();
+  fs.writeFileSync(TRUST_PNG, trustShot.toPNG());
+  check(
+    "history-is-kept-and-a-version-can-be-restored",
+    trustRow === true &&
+      firstEmpty?.historyEmpty === true &&
+      savesOk === true &&
+      diskAfterThree === true &&
+      historyLabelsMatch &&
+      historyRowShape &&
+      restoreClicked === true &&
+      diskAfterRestore === true &&
+      restoredUi !== null &&
+      (restoredUi?.previewText ?? "").includes(trustFile) &&
+      restoredRows.length >= 4 &&
+      rowText(restoredRows[0]).includes("Trust Three") &&
+      rawAfterRestore === true &&
+      listedNames.length > 0 &&
+      listedNames.every((name) => name.endsWith(".json")),
+    JSON.stringify({
+      row: trustRow,
+      emptyFirst: firstEmpty?.historyEmpty,
+      savesOk,
+      disk: { afterThree: diskAfterThree, afterRestore: diskAfterRestore },
+      rowsBefore: rowsBefore.map(rowText),
+      restoreClicked,
+      preview: (restoredUi?.previewText ?? "").slice(0, 80),
+      rowsAfter: restoredRows.map(rowText),
+      rawAfterRestore,
+    }),
+  );
+
+  // ── 12i.2: eleven more writes prune to the newest ten ────────────────────
+  // The cap is a main-side fact, so it is judged through the IPC the page uses;
+  // the editor is closed first so a re-render cannot race the answer.
+  await click("extension-editor-cancel");
+  await untilTrue(
+    `!document.querySelector('[data-testid="extension-editor"]')`,
+    8_000,
+  );
+  const retentionWrites = [];
+  for (let i = 0; i < 11; i += 1) {
+    const raw = `${JSON.stringify(trustTheme(`Retention ${i}`), null, 2)}\n`;
+    retentionWrites.push(
+      await evaluate(
+        `window.lifequest.themeWrite(${JSON.stringify(trustFile)}, ${JSON.stringify(raw)})`,
+      ),
+    );
+    await sleep(5);
+  }
+  const cappedAnswer = await evaluate(
+    `window.lifequest.themeHistory(${JSON.stringify(trustFile)})`,
+  );
+  const cappedVersions = cappedAnswer?.ok ? cappedAnswer.value.versions : null;
+  const cappedShape =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.every(
+      (version) =>
+        version &&
+        typeof version.id === "string" &&
+        typeof version.savedAt === "string" &&
+        typeof version.label === "string" &&
+        typeof version.bytes === "number",
+    );
+  const cappedTimes =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.every(
+      (version, index) =>
+        index === 0 ||
+        new Date(cappedVersions[index - 1].savedAt).getTime() >=
+          new Date(version.savedAt).getTime(),
+    );
+  const cappedLabels =
+    Array.isArray(cappedVersions) &&
+    cappedVersions.filter((version) => /^Retention \d+$/.test(version.label))
+      .length >= 8;
+  check(
+    "history-retention-caps-at-ten",
+    retentionWrites.every((result) => result?.ok === true) &&
+      Array.isArray(cappedVersions) &&
+      cappedVersions.length === 10 &&
+      cappedShape &&
+      cappedTimes &&
+      cappedLabels,
+    JSON.stringify({
+      writes: retentionWrites.length,
+      writesOk: retentionWrites.filter((result) => result?.ok).length,
+      versions: cappedVersions?.length,
+      labels: (cappedVersions ?? []).map((version) => version.label),
+    }),
+  );
+
+  // ── 12i.3: three imports through the seam queue ──────────────────────────
+  // The queue was filled before boot: valid, invalid, colliding. The first and
+  // the invalid one go through the shipped button (so the page's status and
+  // refusal are judged too); the colliding copy is asked over the bridge so the
+  // destination name it answers with is checked exactly.
+  const keptBeforeAnswer = await evaluate("window.lifequest.themeGetState()");
+  const keptBefore = keptBeforeAnswer?.ok
+    ? keptBeforeAnswer.value.keptFile
+    : null;
+  const showcaseNames = ["showcase-solar-system.json", "showcase-helios.json"];
+  const showcaseBefore = new Map();
+  for (const name of showcaseNames) {
+    const full = path.join(themesDir, name);
+    if (fs.existsSync(full)) showcaseBefore.set(name, fs.readFileSync(full));
+  }
+  const listBefore = await evaluate("window.lifequest.themesList()");
+  const namesBefore = listBefore?.ok
+    ? listBefore.value.map((entry) => entry.file)
+    : [];
+  const importClicked = await click("extensions-import");
+  const importOne = importClicked
+    ? await waitFor(
+        (s) =>
+          (s.importStatus ?? "").includes("import-probe.json") &&
+          (s.previewText ?? "").includes("import-probe.json"),
+        20_000,
+      )
+    : null;
+  const validImportedPath = path.join(themesDir, "import-probe.json");
+  let validImported = null;
+  try {
+    validImported = JSON.parse(fs.readFileSync(validImportedPath, "utf8"));
+  } catch {
+    validImported = null;
+  }
+  const listAfterOne = await evaluate("window.lifequest.themesList()");
+  const namesAfterOne = listAfterOne?.ok
+    ? listAfterOne.value.map((entry) => entry.file)
+    : [];
+  const invalidClicked = await click("extensions-import");
+  let invalidUi = "";
+  if (invalidClicked) {
+    const invalidDeadline = Date.now() + 15_000;
+    while (Date.now() < invalidDeadline) {
+      invalidUi = await evaluate(`(() => {
+        const themeError = document.querySelector('[data-testid="theme-error"]')?.textContent ?? "";
+        const pageError = document.querySelector('[data-testid="extensions-error"]')?.textContent ?? "";
+        return themeError + " " + pageError;
+      })()`);
+      if (invalidUi.includes("chrome.wingSwitcher.place")) break;
+      await sleep(120);
+    }
+  }
+  const listAfterTwo = await evaluate("window.lifequest.themesList()");
+  const namesAfterTwo = listAfterTwo?.ok
+    ? listAfterTwo.value.map((entry) => entry.file)
+    : [];
+  const noBadFileAdded =
+    !fs.existsSync(path.join(themesDir, "import-probe-bad.json")) &&
+    !fs.existsSync(path.join(themesDir, "import-probe-imported.json"));
+  const collisionAnswer = await evaluate("window.lifequest.themeImport()");
+  const collisionPath = path.join(themesDir, "import-probe-imported.json");
+  let collisionImported = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      collisionImported = JSON.parse(fs.readFileSync(collisionPath, "utf8"));
+    } catch {
+      collisionImported = null;
+    }
+    if (collisionImported?.label === "Import Probe Again") break;
+    await sleep(100);
+  }
+  const collisionPreview = await waitFor(
+    (s) => (s.previewText ?? "").includes("import-probe-imported.json"),
+    15_000,
+  );
+  const listAfterThree = await evaluate("window.lifequest.themesList()");
+  const namesAfterThree = listAfterThree?.ok
+    ? listAfterThree.value.map((entry) => entry.file)
+    : [];
+  const keptAfterAnswer = await evaluate("window.lifequest.themeGetState()");
+  const keptAfter = keptAfterAnswer?.ok
+    ? keptAfterAnswer.value.keptFile
+    : "unreadable";
+  const importedHistory = await evaluate(
+    'window.lifequest.themeHistory("import-probe.json")',
+  );
+  const showcaseUntouched =
+    showcaseBefore.size === showcaseNames.length &&
+    showcaseNames.every((name) => {
+      const before = showcaseBefore.get(name);
+      const full = path.join(themesDir, name);
+      return Boolean(
+        before && fs.existsSync(full) && fs.readFileSync(full).equals(before),
+      );
+    });
+  check(
+    "an-imported-theme-is-validated-and-copied",
+    trustRow === true &&
+      importClicked === true &&
+      (importOne?.importStatus ?? "").includes("import-probe.json") &&
+      validImported?.name === "import-probe" &&
+      validImported?.label === "Import Probe" &&
+      namesAfterOne.includes("import-probe.json") &&
+      invalidClicked === true &&
+      invalidUi.includes("chrome.wingSwitcher.place") &&
+      namesAfterTwo.length === namesAfterOne.length &&
+      namesAfterTwo.every((name) => namesAfterOne.includes(name)) &&
+      noBadFileAdded &&
+      collisionAnswer?.ok === true &&
+      collisionAnswer.value?.file === "import-probe-imported.json" &&
+      collisionAnswer.value?.label === "Import Probe Again" &&
+      collisionImported?.label === "Import Probe Again" &&
+      (collisionPreview?.previewText ?? "").includes(
+        "import-probe-imported.json",
+      ) &&
+      namesAfterThree.includes("import-probe-imported.json") &&
+      showcaseUntouched &&
+      keptAfter === keptBefore &&
+      importedHistory?.ok === true &&
+      importedHistory.value?.versions?.length === 0,
+    JSON.stringify({
+      importClicked,
+      status: importOne?.importStatus,
+      valid: { name: validImported?.name, label: validImported?.label },
+      invalidClicked,
+      invalidUi: invalidUi.slice(0, 160),
+      namesBefore: namesBefore.length,
+      namesAfterOne: namesAfterOne.length,
+      namesAfterTwo: namesAfterTwo.length,
+      addedNothing: namesAfterTwo.length === namesAfterOne.length,
+      noBadFileAdded,
+      collision: collisionAnswer?.ok
+        ? collisionAnswer.value
+        : collisionAnswer?.error,
+      collisionLabel: collisionImported?.label,
+      collisionPreviewed: (collisionPreview?.previewText ?? "").slice(0, 80),
+      showcaseUntouched,
+      keptBefore,
+      keptAfter,
+      importedHistory: importedHistory?.ok
+        ? importedHistory.value.versions.length
+        : importedHistory?.error,
+    }),
+  );
+
+  // ── 12i.4: history never pollutes the theme list ─────────────────────────
+  // History lives outside `themes/`; the list, the watcher and the folder hold
+  // only theme files, and the retention cap is visible on disk as ten snapshots.
+  const finalListAnswer = await evaluate("window.lifequest.themesList()");
+  const finalNames = finalListAnswer?.ok
+    ? finalListAnswer.value.map((entry) => entry.file)
+    : [];
+  const themesEntries = fs.readdirSync(themesDir, { withFileTypes: true });
+  const themeFileCount = themesEntries.filter((entry) => entry.isFile()).length;
+  const nestedEntries = themesEntries
+    .filter((entry) => !entry.isFile())
+    .map((entry) => entry.name);
+  const historyRoot = path.join(profileDir, "theme-history");
+  const historyForTrust = path.join(historyRoot, "rig-trust");
+  const historySnapshots = fs.existsSync(historyForTrust)
+    ? fs.readdirSync(historyForTrust).filter((name) => name.endsWith(".json"))
+    : [];
+  const historyOutsideThemes =
+    fs.existsSync(historyRoot) &&
+    path.resolve(historyRoot) !== path.resolve(themesDir) &&
+    !path.resolve(historyRoot).startsWith(`${path.resolve(themesDir)}${path.sep}`);
+  check(
+    "history-never-appears-in-the-theme-list",
+    finalNames.length > 0 &&
+      finalNames.every(
+        (name) =>
+          name.endsWith(".json") &&
+          !name.includes("theme-history") &&
+          !name.includes("/") &&
+          !name.includes("\\") &&
+          !name.includes("--"),
+      ) &&
+      finalNames.length === themeFileCount &&
+      nestedEntries.length === 0 &&
+      historyOutsideThemes &&
+      historySnapshots.length === 10,
+    JSON.stringify({
+      listed: finalNames.length,
+      themeFileCount,
+      nestedEntries,
+      historyOutsideThemes,
+      snapshots: historySnapshots.length,
+    }),
+  );
+
+  // ── 12j: Studio — the composition is authored visually, as a draft ───────
+  // Fields must paint a draft without writing, keeping or previewing; Save must
+  // write exactly the draft and preview it like any write; Cancel must be a true
+  // undo; and the controls may only offer the closed vocabulary, so the saved
+  // file carries no key the theme schema does not own. The target is a profile
+  // file the rig writes for this section (not the operator's, not a showcase).
+  const studioFile = "rig-studio.json";
+  const studioPath = path.join(themesDir, studioFile);
+  fs.writeFileSync(
+    studioPath,
+    `${JSON.stringify(
+      { name: "rig-studio", label: "Rig Studio", material: { radius: "soft" } },
+      null,
+      2,
+    )}\n`,
+  );
+  const studioSeededBytes = fs.readFileSync(studioPath);
+  const studioRow = await untilTrue(
+    `Boolean(document.querySelector('[data-testid="extension-rig-studio"]'))`,
+    15_000,
+  );
+  const openStudioEditor = async () => {
+    const clicked = await evaluate(`(() => {
+      const b = document.querySelector('[data-testid="extension-rig-studio"] [data-testid="extension-edit"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    const open = await untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      10_000,
+    );
+    if (!open) return false;
+    // A parseable file opens on Fields; make sure, then wait for the studio.
+    // Entering Fields also cancels the watcher's preview of the seed write.
+    await evaluate(`(() => {
+      const tab = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
+      return true;
+    })()`);
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+      10_000,
+    );
+  };
+  const setStudioSelect = async (testId, value) =>
+    evaluate(`(() => {
+      const select = document.querySelector('[data-testid="${testId}"]');
+      if (!select) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        "value",
+      ).set;
+      setter.call(select, ${JSON.stringify(value)});
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+  const setStudioValue = async (testId, value) =>
+    evaluate(`(() => {
+      const control = document.querySelector('[data-testid="${testId}"]');
+      if (!control) return false;
+      const proto =
+        control.tagName === "TEXTAREA"
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+      setter.call(control, ${JSON.stringify(value)});
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+  const addStudioWidget = async (type, region, expectedCount) => {
+    const typeSet = await setStudioSelect("studio-add-type", type);
+    const regionSet = await setStudioSelect("studio-add-region", region);
+    const added = await click("studio-add-widget");
+    if (!(typeSet === true && regionSet === true && added === true)) {
+      return false;
+    }
+    const state = await waitFor(
+      (s) => s.studioWidgetCount === expectedCount,
+      10_000,
+    );
+    return state?.studioWidgetCount === expectedCount;
+  };
+  const clickStudioChip = async (index) =>
+    evaluate(`(() => {
+      const chip = document.querySelector('[data-testid="studio-widget-chip"][data-index="${index}"]');
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`);
+  const stableKeys = (value) => {
+    if (Array.isArray(value)) return value.map(stableKeys);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, stableKeys(value[key])]),
+      );
+    }
+    return value;
+  };
+
+  // ── 12j.1: a draft paints the shell without a write ─────────────────────
+  const studioOpened = await openStudioEditor();
+  const studioTab = studioOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.preview === false,
+        15_000,
+      )
+    : null;
+  const shellWidgetsBefore = await evaluate(
+    `document.querySelectorAll('[data-testid="composition-widget"]').length`,
+  );
+  const diskBeforeDraft = fs.readFileSync(studioPath);
+  const badgeAdded = studioOpened
+    ? await addStudioWidget("badge", "page.masthead", 1)
+    : false;
+  const draftState = badgeAdded
+    ? await waitFor(
+        (s) => s.draftPainted === true && s.studioWidgetCount === 1,
+        10_000,
+      )
+    : null;
+  const draftNoPreview = await evaluate(
+    `!document.querySelector('[data-testid="theme-preview-bar"]')`,
+  );
+  const diskAfterDraft = fs.readFileSync(studioPath);
+  const draftKeptDisk =
+    studioSeededBytes.equals(diskAfterDraft) && diskBeforeDraft.equals(diskAfterDraft);
+  check(
+    "the-studio-paints-a-draft-before-any-write",
+    studioRow === true &&
+      studioOpened === true &&
+      studioTab?.editorTab === "fields" &&
+      shellWidgetsBefore === 0 &&
+      badgeAdded === true &&
+      draftState?.draftPainted === true &&
+      draftState?.studioWidgetCount === 1 &&
+      draftNoPreview === true &&
+      draftKeptDisk === true,
+    JSON.stringify({
+      studioRow,
+      studioOpened,
+      tab: studioTab?.editorTab,
+      shellWidgetsBefore,
+      badgeAdded,
+      draft: {
+        painted: draftState?.draftPainted,
+        widgets: draftState?.studioWidgetCount,
+        summary: draftState?.studioOffers?.summary,
+      },
+      noPreview: draftNoPreview,
+      diskUnchanged: draftKeptDisk,
+    }),
+  );
+
+  // The artifact: the shipped Fields editor framed from the tab strip down —
+  // Fields selected, the five schematic regions with their chips, the live
+  // summary and the layout controls — with the draft the studio has just painted
+  // in the shell. It is taken in this stack-layout draft state on purpose: the
+  // polar draft's 16rem masthead band pushes the summary and controls below a
+  // 1280x800 frame, and the claim is the editor, not the layout. Aligning the
+  // tab strip to the scroll-port top spends the frame on the claim; a centred
+  // crop showed a mid-form sliver instead.
+  await evaluate(`(() => {
+    const editor = document.querySelector('[data-testid="extension-editor"]');
+    const tabs = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+    if (!editor || !tabs) return false;
+    const scroller = editor.closest(".shell__content");
+    if (scroller) {
+      const offset =
+        tabs.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTop += offset - 12;
+    } else {
+      editor.scrollIntoView({ block: "start" });
+    }
+    return true;
+  })()`);
+  await sleep(400);
+  const studioShot = await win.webContents.capturePage();
+  fs.writeFileSync(STUDIO_PNG, studioShot.toPNG());
+
+  // ── 12j.2: build the composition, save it ───────────────────────────────
+  // A quick action in the orbit needs the polar layout; the layout switch is
+  // the control that makes the draft valid again, and the label edit is the
+  // authored word the saved file must carry.
+  const orbitAdded = studioOpened
+    ? await addStudioWidget("quickAction", "page.orbit", 2)
+    : false;
+  const polarClicked = await click("studio-layout-polar");
+  const polarReady = polarClicked
+    ? await waitFor(
+        (s) =>
+          s.compositionOrbit?.layout === "polar" && s.studioWidgetCount === 2,
+        12_000,
+      )
+    : null;
+  const saveEnabledAfterPolar = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const badgeChipClicked = await clickStudioChip(0);
+  const labelTyped = badgeChipClicked
+    ? await setStudioValue("studio-widget-label", "Rig Badge One")
+    : false;
+  const draftLabelPainted = labelTyped
+    ? await waitFor(
+        (s) => (s.compositionMasthead?.labels ?? []).includes("Rig Badge One"),
+        10_000,
+      )
+    : null;
+  // Fields→JSON serialises the draft; capture that text as the draft of record,
+  // then return to Fields and let Save write the draft through the same path.
+  await click("extension-editor-tab-json");
+  const draftRawReady = await untilTrue(
+    `(() => {
+      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      if (!area) return false;
+      try {
+        const parsed = JSON.parse(area.value);
+        return Boolean(
+          parsed &&
+            parsed.composition &&
+            Array.isArray(parsed.composition.widgets) &&
+            parsed.composition.widgets.length === 2,
+        );
+      } catch {
+        return false;
+      }
+    })()`,
+    10_000,
+  );
+  const draftRaw = draftRawReady
+    ? await evaluate(
+        `document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? ""`,
+      )
+    : "";
+  let draftTheme = null;
+  try {
+    draftTheme = JSON.parse(draftRaw);
+  } catch {
+    draftTheme = null;
+  }
+  const backToFields = await click("extension-editor-tab-fields");
+  const fieldsAgain = backToFields
+    ? await untilTrue(
+        `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+        10_000,
+      )
+    : false;
+  const saveReady = fieldsAgain
+    ? await untilTrue(
+        `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+        10_000,
+      )
+    : false;
+  const saveClicked = saveReady ? await click("studio-save") : false;
+  const savedPreview = saveClicked
+    ? await waitFor(
+        (s) =>
+          !s.editorTab &&
+          (s.previewText ?? "").includes(studioFile) &&
+          s.compositionOrbit?.layout === "polar" &&
+          (s.compositionMasthead?.labels ?? []).includes("Rig Badge One"),
+        20_000,
+      )
+    : null;
+  let savedStudio = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      savedStudio = JSON.parse(fs.readFileSync(studioPath, "utf8"));
+    } catch {
+      savedStudio = null;
+    }
+    if (savedStudio?.composition?.widgets?.length === 2) break;
+    await sleep(100);
+  }
+  const draftComposition = draftTheme?.composition ?? null;
+  const savedComposition = savedStudio?.composition ?? null;
+  const compositionEqualsDraft =
+    draftComposition !== null &&
+    savedComposition !== null &&
+    JSON.stringify(stableKeys(draftComposition)) ===
+      JSON.stringify(stableKeys(savedComposition));
+  const savedWidgets = savedComposition?.widgets ?? [];
+  const savedBadge = savedWidgets.find((widget) => widget.type === "badge");
+  const savedQuickAction = savedWidgets.find(
+    (widget) => widget.type === "quickAction",
+  );
+  const savedShapeOk =
+    savedComposition?.layout === "polar" &&
+    savedWidgets.length === 2 &&
+    savedBadge?.region === "page.masthead" &&
+    savedBadge?.label === "Rig Badge One" &&
+    savedQuickAction?.region === "page.orbit";
+  check(
+    "the-studio-saves-the-composition-it-built",
+    studioOpened === true &&
+      orbitAdded === true &&
+      polarClicked === true &&
+      polarReady?.compositionOrbit?.layout === "polar" &&
+      saveEnabledAfterPolar === true &&
+      badgeChipClicked === true &&
+      labelTyped === true &&
+      draftLabelPainted !== null &&
+      (draftLabelPainted?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge One",
+      ) &&
+      draftRawReady === true &&
+      backToFields === true &&
+      fieldsAgain === true &&
+      saveReady === true &&
+      saveClicked === true &&
+      (savedPreview?.previewText ?? "").includes(studioFile) &&
+      savedPreview?.compositionOrbit?.layout === "polar" &&
+      (savedPreview?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge One",
+      ) &&
+      compositionEqualsDraft === true &&
+      savedShapeOk === true,
+    JSON.stringify({
+      orbitAdded,
+      polarClicked,
+      polarLayout: polarReady?.compositionOrbit?.layout,
+      saveEnabledAfterPolar,
+      labelTyped,
+      labelPainted: draftLabelPainted?.compositionMasthead?.labels,
+      draftRawReady,
+      backToFields,
+      fieldsAgain,
+      saveReady,
+      saveClicked,
+      previewed: (savedPreview?.previewText ?? "").slice(0, 80),
+      savedPreviewLayout: savedPreview?.compositionOrbit?.layout,
+      compositionEqualsDraft,
+      draftComposition,
+      savedComposition,
+      savedShapeOk,
+    }),
+  );
+
+  // ── 12j.3: Cancel is a true undo ────────────────────────────────────────
+  const savedBytes = fs.readFileSync(studioPath);
+  const cancelOpened = await openStudioEditor();
+  const cancelReady = cancelOpened
+    ? await waitFor(
+        (s) =>
+          s.editorTab === "fields" &&
+          s.studioWidgetCount === 2 &&
+          s.preview === false,
+        15_000,
+      )
+    : null;
+  const badgeChipAgain = await clickStudioChip(0);
+  const cancelLabelTyped = badgeChipAgain
+    ? await setStudioValue("studio-widget-label", "Rig Badge Cancel")
+    : false;
+  const cancelDraftPainted = cancelLabelTyped
+    ? await waitFor(
+        (s) =>
+          (s.compositionMasthead?.labels ?? []).includes("Rig Badge Cancel"),
+        10_000,
+      )
+    : null;
+  const cancelClicked = await click("studio-cancel");
+  const cancelClosed = cancelClicked
+    ? await untilTrue(
+        `!document.querySelector('[data-testid="extension-editor"]')`,
+        10_000,
+      )
+    : false;
+  const diskAfterCancel = fs.readFileSync(studioPath);
+  const diskUnchangedOnCancel = savedBytes.equals(diskAfterCancel);
+  const backOnKept = cancelClosed
+    ? await waitFor(
+        (s) =>
+          s.draftPainted === false &&
+          !(s.compositionMasthead?.labels ?? []).includes("Rig Badge Cancel") &&
+          s.preview === false,
+        15_000,
+      )
+    : null;
+  const cancelHistory = await evaluate(
+    `window.lifequest.themeHistory(${JSON.stringify(studioFile)})`,
+  );
+  check(
+    "cancelling-a-draft-leaves-the-file-and-shell-alone",
+    cancelOpened === true &&
+      cancelReady?.studioWidgetCount === 2 &&
+      badgeChipAgain === true &&
+      cancelLabelTyped === true &&
+      cancelDraftPainted !== null &&
+      (cancelDraftPainted?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge Cancel",
+      ) &&
+      cancelClicked === true &&
+      cancelClosed === true &&
+      diskUnchangedOnCancel === true &&
+      backOnKept?.draftPainted === false &&
+      backOnKept?.kept === null &&
+      !(backOnKept?.compositionMasthead?.labels ?? []).includes(
+        "Rig Badge Cancel",
+      ) &&
+      cancelHistory?.ok === true &&
+      cancelHistory.value?.versions?.length === 1,
+    JSON.stringify({
+      cancelOpened,
+      widgets: cancelReady?.studioWidgetCount,
+      badgeChipAgain,
+      labelTyped: cancelLabelTyped,
+      draftLabelPainted: cancelDraftPainted?.compositionMasthead?.labels,
+      cancelClicked,
+      cancelClosed,
+      diskUnchanged: diskUnchangedOnCancel,
+      afterCancel: {
+        painted: backOnKept?.draftPainted,
+        kept: backOnKept?.kept,
+        labels: backOnKept?.compositionMasthead?.labels,
+        preview: backOnKept?.preview,
+      },
+      historyVersions: cancelHistory?.ok
+        ? cancelHistory.value.versions.length
+        : cancelHistory?.error,
+    }),
+  );
+
+  // ── 12j.4: the editor only offers the contract's closed vocabulary ──────
+  const contractOpened = await openStudioEditor();
+  const contractReady = contractOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.studioWidgetCount === 2,
+        15_000,
+      )
+    : null;
+  const fillerTypes = ["meter", "list", "avatar", "calendar", "clock", "brief"];
+  let fillerAdded = contractReady?.studioWidgetCount === 2;
+  for (let i = 0; i < fillerTypes.length && fillerAdded; i += 1) {
+    fillerAdded = await addStudioWidget(fillerTypes[i], "page.footer", 3 + i);
+  }
+  const offersAtEight = fillerAdded
+    ? await waitFor(
+        (s) =>
+          s.studioWidgetCount === 8 &&
+          s.studioOffers !== null &&
+          s.studioOffers.addDisabled === true,
+        15_000,
+      )
+    : null;
+  const regionNames = [
+    "page.masthead",
+    "page.footer",
+    "page.orbit",
+    "rail.top",
+    "rail.footer",
+  ];
+  const regionSetOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.regions ?? [])].sort()) ===
+    JSON.stringify([...regionNames].sort());
+  const regionIdsOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.regionIds ?? [])].sort()) ===
+    JSON.stringify(
+      regionNames.map((region) => `studio-region-${region}`).sort(),
+    );
+  const widgetTypes = [
+    "badge",
+    "meter",
+    "quickAction",
+    "avatar",
+    "list",
+    "clock",
+    "calendar",
+    "brief",
+  ];
+  const typeSetOk =
+    JSON.stringify([...(offersAtEight?.studioOffers?.types ?? [])].sort()) ===
+    JSON.stringify([...widgetTypes].sort());
+  const layoutsOk = ["stack", "grid", "polar"].every((layout) =>
+    (offersAtEight?.studioOffers?.layouts ?? []).includes(`studio-layout-${layout}`),
+  );
+  // No schema drift: the saved file may only carry keys the ThemeFile /
+  // ThemeComposition / CompositionWidget types own.
+  const themeSchemaKeys = [
+    "name",
+    "label",
+    "description",
+    "chrome",
+    "material",
+    "scene",
+    "composition",
+    "colors",
+    "darkColors",
+  ];
+  const compositionSchemaKeys = ["layout", "columns", "radius", "widgets"];
+  const widgetSchemaKeys = [
+    "type",
+    "region",
+    "label",
+    "tone",
+    "data",
+    "route",
+    "format",
+    "max",
+    "limit",
+    "caption",
+  ];
+  const badThemeKeys = Object.keys(savedStudio ?? {}).filter(
+    (key) => !themeSchemaKeys.includes(key),
+  );
+  const badCompositionKeys = Object.keys(savedStudio?.composition ?? {}).filter(
+    (key) => !compositionSchemaKeys.includes(key),
+  );
+  const badWidgetKeys = (savedStudio?.composition?.widgets ?? []).flatMap(
+    (widget) => Object.keys(widget).filter((key) => !widgetSchemaKeys.includes(key)),
+  );
+  const noSchemaDrift =
+    badThemeKeys.length === 0 &&
+    badCompositionKeys.length === 0 &&
+    badWidgetKeys.length === 0;
+  const contractCancel = await click("studio-cancel");
+  const contractClosed = contractCancel
+    ? await untilTrue(
+        `!document.querySelector('[data-testid="extension-editor"]')`,
+        10_000,
+      )
+    : false;
+  const diskAfterContract = fs.readFileSync(studioPath);
+  const contractDiskUnchanged = savedBytes.equals(diskAfterContract);
+  check(
+    "the-composition-editor-obeys-the-contract",
+    contractOpened === true &&
+      contractReady?.studioWidgetCount === 2 &&
+      fillerAdded === true &&
+      offersAtEight?.studioWidgetCount === 8 &&
+      offersAtEight?.studioOffers?.addDisabled === true &&
+      (offersAtEight?.studioOffers?.addNote ?? "").toLowerCase().includes("cap") &&
+      offersAtEight?.studioOffers?.labelMaxLength === 32 &&
+      regionSetOk === true &&
+      regionIdsOk === true &&
+      typeSetOk === true &&
+      layoutsOk === true &&
+      (offersAtEight?.studioOffers?.summary ?? "").includes("8 widgets") &&
+      noSchemaDrift === true &&
+      contractClosed === true &&
+      contractDiskUnchanged === true,
+    JSON.stringify({
+      contractOpened,
+      widgets: contractReady?.studioWidgetCount,
+      fillerAdded,
+      atEight: offersAtEight?.studioWidgetCount,
+      addDisabled: offersAtEight?.studioOffers?.addDisabled,
+      addNote: offersAtEight?.studioOffers?.addNote,
+      labelMaxLength: offersAtEight?.studioOffers?.labelMaxLength,
+      regions: offersAtEight?.studioOffers?.regions,
+      regionIds: offersAtEight?.studioOffers?.regionIds,
+      types: offersAtEight?.studioOffers?.types,
+      layouts: offersAtEight?.studioOffers?.layouts,
+      summary: offersAtEight?.studioOffers?.summary,
+      regionSetOk,
+      regionIdsOk,
+      typeSetOk,
+      layoutsOk,
+      schema: { badThemeKeys, badCompositionKeys, badWidgetKeys },
+      noSchemaDrift,
+      contractClosed,
+      contractDiskUnchanged,
+    }),
+  );
+
+  // ── 12k: Studio — the rest of the look, on the same live draft ──────────
+  // Chrome and material edits must repaint the shell with no write; the palette
+  // editor must refuse a failing pair by naming it and the ratio (Save off, no
+  // file change), then write the complete palette; removing the palette groups
+  // must hand the window back to the skin. The target is the profile file 12j
+  // left behind.
+  const lookFile = studioFile;
+  const lookPath = studioPath;
+  const requiredLookColors = [
+    "background",
+    "foreground",
+    "card",
+    "cardForeground",
+    "muted",
+    "mutedForeground",
+    "popover",
+    "popoverForeground",
+    "primary",
+    "primaryForeground",
+    "secondary",
+    "secondaryForeground",
+    "accent",
+    "accentForeground",
+    "border",
+    "input",
+    "ring",
+    "destructive",
+    "destructiveForeground",
+  ];
+  const readLookTokens = async () =>
+    evaluate(`(() => {
+      const root = document.documentElement;
+      const read = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+      return {
+        background: read("--background"),
+        foreground: read("--foreground"),
+        card: read("--card"),
+        accent: read("--accent"),
+        border: read("--border"),
+        muted: read("--muted-surface"),
+      };
+    })()`);
+  /**
+   * The studio's Fields view swaps one look section at a time behind a section
+   * strip, so a control is only in the DOM once its section is chosen. The
+   * Settings controls keep their own ids in Settings and take the `studio-`
+   * prefix here, so the picks below drive the real segmented options.
+   */
+  const openStudioSection = async (section) => {
+    const clicked = await click(`studio-section-tab-${section}`);
+    if (!clicked) return false;
+    return untilTrue(
+      `Boolean(document.querySelector('[data-testid="studio-${section}"]')) && (document.querySelector('[data-testid="studio-section-tab-${section}"]')?.getAttribute("aria-selected") === "true")`,
+      10_000,
+    );
+  };
+
+  const skinTokens = await readLookTokens();
+  const lookOpened = await openStudioEditor();
+  const lookReady = lookOpened
+    ? await waitFor(
+        (s) => s.editorTab === "fields" && s.preview === false,
+        15_000,
+      )
+    : null;
+  const lookBaseline = await evaluate(SAMPLE);
+  const wingBefore = lookBaseline?.draftWingPlace ?? null;
+  const radiusBefore = lookBaseline?.radiusLg ?? null;
+  const lookDiskBefore = fs.readFileSync(lookPath);
+
+  const chromeSectionOpened = await openStudioSection("chrome");
+  const wingChosen = chromeSectionOpened
+    ? await click("studio-chrome-wing-place-floating-left")
+    : false;
+  const wingPainted = wingChosen
+    ? await waitFor(
+        (s) =>
+          s.draftWingPlace === "floating-left" && s.wingFloating === true,
+        12_000,
+      )
+    : null;
+  const materialSectionOpened = await openStudioSection("material");
+  const materialChosen = materialSectionOpened
+    ? await click("studio-material-option-radius-round")
+    : false;
+  const radiusChanged = materialChosen
+    ? await waitFor((s) => s.radiusLg === "28px", 12_000)
+    : null;
+  const radiusState = radiusChanged ? await evaluate(SAMPLE) : null;
+  const controlShowsRound = String(
+    radiusState?.studioMaterialRadius ?? "",
+  ).includes("round");
+  const lookNoPreview = await evaluate(
+    `!document.querySelector('[data-testid="theme-preview-bar"]')`,
+  );
+  const lookDiskAfterDraft = fs.readFileSync(lookPath);
+  const draftKeptLookDisk = lookDiskBefore.equals(lookDiskAfterDraft);
+  check(
+    "the-studio-moves-chrome-and-material-in-a-draft",
+    lookOpened === true &&
+      lookReady?.editorTab === "fields" &&
+      wingBefore === "rail-top" &&
+      chromeSectionOpened === true &&
+      wingChosen === true &&
+      wingPainted?.draftWingPlace === "floating-left" &&
+      wingPainted?.wingFloating === true &&
+      materialSectionOpened === true &&
+      materialChosen === true &&
+      radiusBefore === "24px" &&
+      radiusChanged?.radiusLg === "28px" &&
+      controlShowsRound === true &&
+      lookNoPreview === true &&
+      draftKeptLookDisk === true,
+    JSON.stringify({
+      lookOpened,
+      tab: lookReady?.editorTab,
+      wingBefore,
+      chromeSectionOpened,
+      wingChosen,
+      wingPainted: wingPainted?.draftWingPlace,
+      wingFloating: wingPainted?.wingFloating,
+      materialSectionOpened,
+      radiusBefore,
+      radiusAfter: radiusChanged?.radiusLg,
+      materialChosen,
+      controlShowsRound,
+      controlRadius: radiusState?.studioMaterialRadius,
+      noPreview: lookNoPreview,
+      diskUnchanged: draftKeptLookDisk,
+    }),
+  );
+
+  // ── 12k.2: the palette refuses a failing pair, then saves the whole thing ─
+  const paletteSectionOpened = await openStudioSection("palette");
+  const paletteCopyClicked = paletteSectionOpened
+    ? await click("studio-palette-copy")
+    : false;
+  const paletteCopied = paletteCopyClicked
+    ? await waitFor(
+        (s) =>
+          s.paletteTokens !== null &&
+          requiredLookColors.every(
+            (token) =>
+              typeof s.paletteTokens.light?.[token] === "string" &&
+              /^#/.test(s.paletteTokens.light[token]),
+          ) &&
+          requiredLookColors.every(
+            (token) =>
+              typeof s.paletteTokens.dark?.[token] === "string" &&
+              /^#/.test(s.paletteTokens.dark[token]),
+          ),
+        15_000,
+      )
+    : null;
+  const lightCopy = paletteCopied?.paletteTokens?.light ?? {};
+  const darkCopy = paletteCopied?.paletteTokens?.dark ?? {};
+  /*
+   * Copy is the safe starting point the contract claims: it seeds both groups
+   * from the worn skin and nudges only the skin's own sub-AA pair, so the draft
+   * passes the parser as soon as it lands. Assert that before breaking a pair of
+   * our own, or a later refusal would be attributable to the skin instead.
+   */
+  const copyVerdict = paletteCopied
+    ? await waitFor(
+        (s) => (s.studioPaletteVerdict ?? "").includes("Palettes pass"),
+        12_000,
+      )
+    : null;
+  const failingBackgroundValue = lightCopy.foreground;
+  const failingTyped = failingBackgroundValue
+    ? await setStudioValue(
+        "studio-palette-light-background",
+        failingBackgroundValue,
+      )
+    : false;
+  const failingVerdict = failingTyped
+    ? await waitFor(
+        (s) =>
+          (s.studioPaletteVerdict ?? "").includes("background/foreground") &&
+          /4\.5/.test(s.studioPaletteVerdict ?? "") &&
+          /1(?:\.0)?:1/.test(s.studioPaletteVerdict ?? ""),
+        12_000,
+      )
+    : null;
+  const failingState = failingVerdict ? await evaluate(SAMPLE) : null;
+  const saveDisabledFailing = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && b.disabled); })()`,
+  );
+  const diskOnFailing = fs.readFileSync(lookPath);
+  const failingKeptDisk = lookDiskBefore.equals(diskOnFailing);
+  // The artifact: the studio with the live failing-pair verdict in frame. Put
+  // the verdict's floor just above the scroll port's, so the palette editor's
+  // inputs and the named pair are both visible.
+  await evaluate(`(() => {
+    const editor = document.querySelector('[data-testid="extension-editor"]');
+    const verdict = document.querySelector('[data-testid="studio-palette-verdict"]');
+    if (!editor || !verdict) return false;
+    const scroller = editor.closest(".shell__content");
+    if (!scroller) {
+      verdict.scrollIntoView({ block: "center" });
+      return true;
+    }
+    const scrollerRect = scroller.getBoundingClientRect();
+    const verdictRect = verdict.getBoundingClientRect();
+    scroller.scrollTop += verdictRect.bottom - scrollerRect.bottom + 28;
+    return true;
+  })()`);
+  await sleep(400);
+  const lookShot = await win.webContents.capturePage();
+  fs.writeFileSync(STUDIO_LOOK_PNG, lookShot.toPNG());
+
+  // Fix the pair the verdict named, and give each copied palette a `border` the
+  // skin does not own (`border` has no text pair, so it cannot make the file
+  // invalid). The window's mode decides which palette paints the shell, so both
+  // borders are distinct: "back to the skin" below is then a real return in
+  // either mode rather than a same-value no-op.
+  const backgroundFixed = await setStudioValue(
+    "studio-palette-light-background",
+    lightCopy.background,
+  );
+  const backgroundLanded = backgroundFixed
+    ? await waitFor(
+        (s) => s.paletteTokens?.light?.background === lightCopy.background,
+        8_000,
+      )
+    : null;
+  const lightBorderTyped = await setStudioValue(
+    "studio-palette-light-border",
+    "#123456",
+  );
+  const lightBorderLanded = lightBorderTyped
+    ? await waitFor(
+        (s) => s.paletteTokens?.light?.border === "#123456",
+        8_000,
+      )
+    : null;
+  const darkBorderTyped = await setStudioValue(
+    "studio-palette-dark-border",
+    "#654321",
+  );
+  const darkBorderLanded = darkBorderTyped
+    ? await waitFor(
+        (s) => s.paletteTokens?.dark?.border === "#654321",
+        8_000,
+      )
+    : null;
+  const paletteValidAgain =
+    backgroundLanded && lightBorderLanded && darkBorderLanded
+      ? await waitFor(
+          (s) =>
+            (s.studioPaletteVerdict ?? "").includes("Palettes pass") &&
+            !(s.studioPaletteVerdict ?? "").includes(
+              "background/foreground",
+            ) &&
+            s.studioPaletteEnabled?.light === true &&
+            s.studioPaletteEnabled?.dark === true,
+          12_000,
+        )
+      : null;
+  const palettePassesAgain = Boolean(
+    (paletteValidAgain?.studioPaletteVerdict ?? "").includes("Palettes pass"),
+  );
+  const editsLanded =
+    backgroundLanded?.paletteTokens?.light?.background ===
+      lightCopy.background &&
+    lightBorderLanded?.paletteTokens?.light?.border === "#123456" &&
+    darkBorderLanded?.paletteTokens?.dark?.border === "#654321";
+  const saveEnabledAfterFix = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const diskBeforePaletteSave = fs.readFileSync(lookPath);
+  const paletteSaveClicked = saveEnabledAfterFix
+    ? await click("studio-save")
+    : false;
+  const palettePreview = paletteSaveClicked
+    ? await waitFor(
+        (s) => !s.editorTab && (s.previewText ?? "").includes(lookFile),
+        20_000,
+      )
+    : null;
+  let paletteSavedLook = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      paletteSavedLook = JSON.parse(fs.readFileSync(lookPath, "utf8"));
+    } catch {
+      paletteSavedLook = null;
+    }
+    if (
+      paletteSavedLook?.colors &&
+      requiredLookColors.every(
+        (token) => typeof paletteSavedLook.colors[token] === "string",
+      )
+    ) {
+      break;
+    }
+    await sleep(100);
+  }
+  const savedLightNames = paletteSavedLook?.colors
+    ? Object.keys(paletteSavedLook.colors).sort()
+    : [];
+  const savedDarkNames = paletteSavedLook?.darkColors
+    ? Object.keys(paletteSavedLook.darkColors).sort()
+    : [];
+  const completePalette =
+    JSON.stringify(savedLightNames) ===
+      JSON.stringify([...requiredLookColors].sort()) &&
+    JSON.stringify(savedDarkNames) ===
+      JSON.stringify([...requiredLookColors].sort());
+  const borderWritten =
+    String(paletteSavedLook?.colors?.border ?? "").toLowerCase() === "#123456";
+  const darkBorderWritten =
+    String(paletteSavedLook?.darkColors?.border ?? "").toLowerCase() ===
+    "#654321";
+  const backgroundWritten =
+    paletteSavedLook?.colors?.background === lightCopy.background;
+  const paletteDiskChanged = !lookDiskBefore.equals(
+    fs.readFileSync(lookPath),
+  );
+  check(
+    "the-studio-refuses-a-palette-that-fails-contrast",
+    paletteSectionOpened === true &&
+      paletteCopyClicked === true &&
+      paletteCopied !== null &&
+      copyVerdict !== null &&
+      (copyVerdict?.studioPaletteVerdict ?? "").includes("Palettes pass") &&
+      failingTyped === true &&
+      failingVerdict !== null &&
+      (failingVerdict?.studioPaletteVerdict ?? "").includes(
+        "background/foreground",
+      ) &&
+      /4\.5/.test(failingVerdict?.studioPaletteVerdict ?? "") &&
+      /1(?:\.0)?:1/.test(failingVerdict?.studioPaletteVerdict ?? "") &&
+      (failingState?.studioStatus ?? "").includes(
+        "colors fails WCAG AA contrast",
+      ) &&
+      (failingState?.studioStatus ?? "").includes("background/foreground") &&
+      saveDisabledFailing === true &&
+      failingKeptDisk === true &&
+      palettePassesAgain === true &&
+      editsLanded === true &&
+      saveEnabledAfterFix === true &&
+      paletteSaveClicked === true &&
+      (palettePreview?.previewText ?? "").includes(lookFile) &&
+      lookDiskBefore.equals(diskBeforePaletteSave) &&
+      completePalette === true &&
+      borderWritten === true &&
+      darkBorderWritten === true &&
+      backgroundWritten === true &&
+      paletteDiskChanged === true,
+    JSON.stringify({
+      paletteSectionOpened,
+      paletteCopyClicked,
+      copiedTokens: {
+        light: Object.keys(lightCopy).length,
+        dark: Object.keys(paletteCopied?.paletteTokens?.dark ?? {}).length,
+      },
+      copyVerdict: copyVerdict?.studioPaletteVerdict,
+      failingTyped,
+      verdict: failingVerdict?.studioPaletteVerdict,
+      failingStatus: failingState?.studioStatus,
+      saveDisabledFailing,
+      diskUnchangedWhileFailing: failingKeptDisk,
+      validAgain: paletteValidAgain?.studioPaletteVerdict,
+      editsLanded,
+      editedTokens: paletteValidAgain?.paletteTokens,
+      saveEnabledAfterFix,
+      paletteSaveClicked,
+      previewed: (palettePreview?.previewText ?? "").slice(0, 80),
+      diskUnchangedBeforeSave: lookDiskBefore.equals(diskBeforePaletteSave),
+      savedLightNames: savedLightNames.length,
+      savedDarkNames: savedDarkNames.length,
+      completePalette,
+      borderWritten,
+      darkBorderWritten,
+      darkCopyBorder: darkCopy.border,
+      backgroundWritten,
+      paletteDiskChanged,
+    }),
+  );
+
+  // ── 12k.3: removing the palette hands the window back to the skin ────────
+  const palettedTokens = await readLookTokens();
+  // Both copied palettes carry a border the skin does not, so the shell shows a
+  // changed border whichever mode it paints with.
+  const paletteWorn =
+    String(palettedTokens.border ?? "") !== String(skinTokens.border ?? "");
+  const removeOpened = await openStudioEditor();
+  const removeSectionOpened = removeOpened
+    ? await openStudioSection("palette")
+    : false;
+  const removeReady = removeSectionOpened
+    ? await waitFor(
+        (s) =>
+          s.editorTab === "fields" &&
+          s.studioPaletteEnabled?.light === true &&
+          s.studioPaletteEnabled?.dark === true,
+        15_000,
+      )
+    : null;
+  const lightToggleClicked = await click("studio-palette-light-enabled");
+  // Confirm the first group actually left the draft before the second click, so
+  // a stale draft prop cannot resurrect it.
+  const lightGroupOff = lightToggleClicked
+    ? await waitFor(
+        (s) => s.studioPaletteEnabled?.light === false,
+        8_000,
+      )
+    : null;
+  const darkToggleClicked = await click("studio-palette-dark-enabled");
+  const palettesOff = darkToggleClicked
+    ? await waitFor(
+        (s) =>
+          s.studioPaletteEnabled?.light === false &&
+          s.studioPaletteEnabled?.dark === false,
+        12_000,
+      )
+    : null;
+  const saveEnabledNoPalette = await evaluate(
+    `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
+  );
+  const removeSaveClicked = saveEnabledNoPalette
+    ? await click("studio-save")
+    : false;
+  const removePreview = removeSaveClicked
+    ? await waitFor(
+        (s) => !s.editorTab && (s.previewText ?? "").includes(lookFile),
+        20_000,
+      )
+    : null;
+  let strippedLook = null;
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      strippedLook = JSON.parse(fs.readFileSync(lookPath, "utf8"));
+    } catch {
+      strippedLook = null;
+    }
+    if (
+      strippedLook &&
+      !("colors" in strippedLook) &&
+      !("darkColors" in strippedLook)
+    ) {
+      break;
+    }
+    await sleep(100);
+  }
+  const skinBackTokens = await readLookTokens();
+  const skinPaletteBack =
+    JSON.stringify(skinBackTokens) === JSON.stringify(skinTokens);
+  const paletteAbsent =
+    Boolean(strippedLook) &&
+    !("colors" in strippedLook) &&
+    !("darkColors" in strippedLook);
+  const chromeKept =
+    strippedLook?.chrome?.wingSwitcher?.place === "floating-left";
+  const materialKept = strippedLook?.material?.radius === "round";
+  check(
+    "the-studio-can-hand-the-palette-back-to-the-skin",
+    paletteWorn === true &&
+      removeOpened === true &&
+      removeSectionOpened === true &&
+      removeReady?.studioPaletteEnabled?.light === true &&
+      removeReady?.studioPaletteEnabled?.dark === true &&
+      lightToggleClicked === true &&
+      lightGroupOff?.studioPaletteEnabled?.light === false &&
+      darkToggleClicked === true &&
+      palettesOff?.studioPaletteEnabled?.light === false &&
+      palettesOff?.studioPaletteEnabled?.dark === false &&
+      saveEnabledNoPalette === true &&
+      removeSaveClicked === true &&
+      (removePreview?.previewText ?? "").includes(lookFile) &&
+      paletteAbsent === true &&
+      chromeKept === true &&
+      materialKept === true &&
+      skinPaletteBack === true,
+    JSON.stringify({
+      paletteWorn,
+      palettedBorder: palettedTokens.border,
+      removeOpened,
+      removeSectionOpened,
+      toggles: { light: lightToggleClicked, dark: darkToggleClicked },
+      lightGroupOff: lightGroupOff?.studioPaletteEnabled,
+      off: palettesOff?.studioPaletteEnabled,
+      saveEnabledNoPalette,
+      removeSaveClicked,
+      previewed: (removePreview?.previewText ?? "").slice(0, 80),
+      paletteAbsent,
+      fileKeys: strippedLook ? Object.keys(strippedLook) : null,
+      chromeKept,
+      materialKept,
+      skinTokens,
+      skinBackTokens,
+      skinPaletteBack,
+    }),
+  );
+
+  // ── 12l: Gallery — five bundled examples, seeded once and removable ─────
+  // A fresh profile gets the whole gallery exactly once: five showcase files on
+  // disk and their names recorded in theme-state.json. Each bundled file must
+  // pass the same parser the companion's validator runs. The chip is a card
+  // affordance on the bundled five and nowhere else. Removing one is final:
+  // seeding records the name, so a renderer reload must not bring it back.
+  const expectedGalleryFiles = [
+    "showcase-control-room.json",
+    "showcase-helios.json",
+    "showcase-night-shift.json",
+    "showcase-paper-trail.json",
+    "showcase-solar-system.json",
+  ].sort();
+  const expectedGalleryNames = expectedGalleryFiles.map((file) =>
+    file.replace(/\.json$/, ""),
+  );
+  const validateShowcase = async (theme) => {
+    try {
+      return await gateCall("validate_theme", { theme });
+    } catch (error) {
+      return { json: null, isError: true, error: String(error) };
+    }
+  };
+  const galleryParse = {};
+  for (const file of expectedGalleryFiles) {
+    const full = path.join(themesDir, file);
+    let theme = null;
+    try {
+      theme = JSON.parse(fs.readFileSync(full, "utf8"));
+    } catch {
+      theme = null;
+    }
+    const answer = theme ? await validateShowcase(theme) : null;
+    galleryParse[file] = {
+      present: fs.existsSync(full),
+      parsed: answer?.json?.ok === true,
+      name: theme?.name ?? null,
+      error: answer?.json?.error?.message ?? (theme ? null : "not JSON"),
+    };
+  }
+  const galleryStatePath = path.join(profileDir, "theme-state.json");
+  const readGalleryState = () => {
+    try {
+      return JSON.parse(fs.readFileSync(galleryStatePath, "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const galleryState = readGalleryState();
+  const seededNames = Array.isArray(galleryState?.seededShowcase)
+    ? galleryState.seededShowcase
+    : null;
+  const seededNamesOk =
+    seededNames !== null &&
+    JSON.stringify([...seededNames].sort()) ===
+      JSON.stringify([...expectedGalleryNames].sort());
+  check(
+    "a-fresh-profile-seeds-the-whole-gallery",
+    expectedGalleryFiles.every(
+      (file) =>
+        galleryParse[file].present === true &&
+        galleryParse[file].parsed === true &&
+        galleryParse[file].name === file.replace(/\.json$/, ""),
+    ) &&
+      seededNamesOk === true,
+    JSON.stringify({
+      files: galleryParse,
+      seededNames,
+      stateKeys: galleryState ? Object.keys(galleryState) : null,
+    }),
+  );
+
+  // ── 12l.2: the chip marks the bundled five and nothing else ─────────────
+  // Captured before the removal below, while all five cards are still listed;
+  // it is also the gallery artifact (the list scrolled to the showcase cards).
+  const galleryReady = await waitFor(
+    (s) =>
+      s.extensionsPage === true &&
+      Array.isArray(s.galleryChips) &&
+      s.galleryChips.some(
+        (card) => card.file === "showcase-control-room.json",
+      ),
+    15_000,
+  );
+  // Let any countdown from 12k finish: the screenshot is the list, not a bar.
+  await waitFor((s) => s.preview === false, 15_000);
+  const chipCards = (galleryReady?.galleryChips ?? []).filter(
+    (card) => card.chip === true,
+  );
+  const chippedFiles = chipCards.map((card) => card.file).sort();
+  const chipSetOk =
+    JSON.stringify(chippedFiles) === JSON.stringify([...expectedGalleryFiles].sort());
+  const chipNotesOk =
+    chipCards.length === expectedGalleryFiles.length &&
+    chipCards.every((card) => (card.note ?? "").includes("Bundled example"));
+  const chipLabelsOk = chipCards.every(
+    (card) => typeof card.chipText === "string" && card.chipText.length > 0,
+  );
+  const operatorFilesClear = [
+    "rig-studio.json",
+    "helios-authored.json",
+    "solar-system.json",
+  ].every((file) => {
+    const card = (galleryReady?.galleryChips ?? []).find(
+      (entry) => entry.file === file,
+    );
+    return card === undefined || card.chip === false;
+  });
+  const galleryNotes = galleryReady?.galleryNotes ?? [];
+  await evaluate(`(() => {
+    const card = document.querySelector('[data-testid="extension-showcase-control-room"]');
+    if (!card) return false;
+    card.scrollIntoView({ block: "start" });
+    return true;
+  })()`);
+  await sleep(400);
+  const galleryShot = await win.webContents.capturePage();
+  fs.writeFileSync(GALLERY_PNG, galleryShot.toPNG());
+  check(
+    "the-gallery-chip-marks-the-bundled-examples",
+    galleryReady?.extensionsPage === true &&
+      chipSetOk === true &&
+      chipNotesOk === true &&
+      chipLabelsOk === true &&
+      operatorFilesClear === true &&
+      galleryNotes.length === expectedGalleryFiles.length,
+    JSON.stringify({
+      galleryPage: galleryReady?.extensionsPage,
+      chippedFiles,
+      chipSetOk,
+      chipNotesOk,
+      chipLabelsOk,
+      operatorFilesClear,
+      notes: galleryNotes,
+    }),
+  );
+
+  // ── 12l.3: removing a gallery theme is final ────────────────────────────
+  const controlRoomSelector = '[data-testid="extension-showcase-control-room"]';
+  const controlRoomPath = path.join(themesDir, "showcase-control-room.json");
+  const removeGalleryCard = async () =>
+    evaluate(`(() => {
+      const b = document.querySelector('${controlRoomSelector} [data-testid="extension-remove"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+  const removeFirstPressed = await removeGalleryCard();
+  await sleep(250);
+  const removeSecondPressed = await removeGalleryCard();
+  const removedFromPage =
+    removeSecondPressed &&
+    (await untilTrue(`!document.querySelector('${controlRoomSelector}')`, 15_000));
+  const goneFromDisk = !fs.existsSync(controlRoomPath);
+  const stateAfterRemoval = readGalleryState();
+  const recordedAfterRemoval =
+    Array.isArray(stateAfterRemoval?.seededShowcase) &&
+    stateAfterRemoval.seededShowcase.includes("showcase-control-room");
+  // Reload the renderer: boot-time seeding is not re-run, and the recorded name
+  // means a later boot would not re-add the file either (single-boot rig: the
+  // boot side is covered by the fresh-profile check plus review).
+  win.webContents.reload();
+  await new Promise((resolve) =>
+    win.webContents.once("did-finish-load", resolve),
+  );
+  let galleryUp = null;
+  const galleryDeadline = Date.now() + 60_000;
+  while (Date.now() < galleryDeadline) {
+    try {
+      galleryUp = await evaluate("Boolean(document.querySelector('.shell'))");
+    } catch {
+      galleryUp = null;
+    }
+    if (galleryUp) break;
+    await sleep(100);
+  }
+  await evaluate(`(() => {
+    if (location.hash !== "#/extensions") location.hash = "#/extensions";
+    return true;
+  })()`);
+  const extensionsBack = await waitFor(
+    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) > 0,
+    20_000,
+  );
+  const absentAfterReload = await evaluate(
+    `!document.querySelector('${controlRoomSelector}')`,
+  );
+  const stillGoneFromDisk = !fs.existsSync(controlRoomPath);
+  const stateAfterReload = readGalleryState();
+  const recordedAfterReload =
+    Array.isArray(stateAfterReload?.seededShowcase) &&
+    stateAfterReload.seededShowcase.includes("showcase-control-room");
+  const remainingChipFiles = (extensionsBack?.galleryChips ?? [])
+    .filter((card) => card.chip === true)
+    .map((card) => card.file)
+    .sort();
+  const expectedRemaining = expectedGalleryFiles
+    .filter((file) => file !== "showcase-control-room.json")
+    .sort();
+  const otherGalleryCardsStillChip =
+    JSON.stringify(remainingChipFiles) === JSON.stringify(expectedRemaining);
+  check(
+    "removing-a-gallery-theme-does-not-bring-it-back",
+    removeFirstPressed === true &&
+      removeSecondPressed === true &&
+      removedFromPage === true &&
+      goneFromDisk === true &&
+      recordedAfterRemoval === true &&
+      galleryUp === true &&
+      extensionsBack?.extensionsPage === true &&
+      absentAfterReload === true &&
+      stillGoneFromDisk === true &&
+      recordedAfterReload === true &&
+      otherGalleryCardsStillChip === true,
+    JSON.stringify({
+      removeFirstPressed,
+      removeSecondPressed,
+      removedFromPage,
+      goneFromDisk,
+      recordedAfterRemoval,
+      galleryUp,
+      extensionsPage: extensionsBack?.extensionsPage,
+      absentAfterReload,
+      stillGoneFromDisk,
+      recordedAfterReload,
+      remainingChipFiles,
+      otherGalleryCardsStillChip,
+    }),
+  );
+
   const report = {
     ranAt: new Date().toISOString(),
     world,
@@ -4186,6 +6148,10 @@ async function main() {
       extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
       extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
       extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
+      trust: path.relative(desktopRoot, TRUST_PNG),
+      studio: path.relative(desktopRoot, STUDIO_PNG),
+      look: path.relative(desktopRoot, STUDIO_LOOK_PNG),
+      gallery: path.relative(desktopRoot, GALLERY_PNG),
     },
     theme: THEME,
     refused: BAD_THEME,

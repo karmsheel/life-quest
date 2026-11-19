@@ -1,0 +1,11 @@
+{
+  "name": "import-probe",
+  "label": "Import Probe Again",
+  "description": "Queued for the E2E import seam: the same name as the valid fixture, so the copy lands at import-probe-imported.json and never overwrites.",
+  "chrome": {
+    "wingSwitcher": {
+      "place": "floating-left",
+      "variant": "icons"
+    }
+  }
+}
