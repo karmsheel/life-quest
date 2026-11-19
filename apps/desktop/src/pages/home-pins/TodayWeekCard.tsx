@@ -1,9 +1,28 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Task } from "@lifequest/vault-core/map";
+import { todayLocalIso, type Task } from "@lifequest/vault-core/map";
+import {
+  dueRecurringItems,
+  type RecurringDueItem,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
+import { dueStateLabel } from "@/lib/recurring-copy";
 import { useVault } from "@/state/VaultProvider";
 import { BuiltInBadge } from "@/components/home/BuiltInBadge";
+
+/**
+ * The local calendar day a vault was created on.
+ *
+ * The review rows are floored at it: a vault that did not exist yet cannot owe
+ * an older period's review, so a brand-new vault does not open on a stack of
+ * "overdue" rows for weeks before it existed. `undefined` lets the engine skip
+ * the floor when the timestamp is unreadable rather than hiding reviews.
+ */
+function localDayOf(timestamp: string): string | undefined {
+  const at = new Date(timestamp);
+  if (Number.isNaN(at.getTime())) return undefined;
+  return todayLocalIso(at);
+}
 
 /**
  * Today and this week, with the one action the card can take for you.
@@ -17,6 +36,7 @@ import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 export function TodayWeekCard() {
   const { snapshot, refresh } = useVault();
   const [doneBusyId, setDoneBusyId] = useState<string | null>(null);
+  const [recurringBusyId, setRecurringBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const todayTasks = useMemo(
@@ -27,6 +47,27 @@ export function TodayWeekCard() {
     () => (snapshot?.map?.tasks ?? []).filter((t) => t.column === "this-week"),
     [snapshot?.map?.tasks],
   );
+
+  /**
+   * What comes round and is due now — the operator's own records plus the
+   * built-in review cadences, derived on this render rather than stored.
+   * `new Date()` is the local clock, so a card left open overnight re-asks when
+   * the vault refreshes.
+   */
+  const recurring = useMemo<RecurringDueItem[]>(() => {
+    if (!snapshot?.map) return [];
+    const since = localDayOf(snapshot.lifequest.createdAt);
+    return dueRecurringItems(
+      snapshot.map.recurring ?? [],
+      snapshot.reviews,
+      {
+        weekStartDay: snapshot.settings.weekStartDay,
+        reviewAvailability: snapshot.settings.reviewAvailability,
+        ...(since ? { since } : {}),
+      },
+      new Date(),
+    );
+  }, [snapshot]);
 
   async function markDone(task: Task) {
     if (doneBusyId) return;
@@ -47,6 +88,34 @@ export function TodayWeekCard() {
       setError(err instanceof Error ? err.message : "Failed to complete task");
     } finally {
       setDoneBusyId(null);
+    }
+  }
+
+  /**
+   * Tick one occurrence. The record advances its own due date, which is why the
+   * row leaves this card rather than moving to a Done column — a recurring task
+   * is a schedule, not a card on the board.
+   */
+  async function markRecurringDone(item: RecurringDueItem) {
+    if (recurringBusyId) return;
+    setRecurringBusyId(item.id);
+    setError(null);
+    try {
+      const result = await api().mapApply({
+        type: "completeRecurring",
+        id: item.id,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to complete recurring task",
+      );
+    } finally {
+      setRecurringBusyId(null);
     }
   }
 
@@ -102,6 +171,71 @@ export function TodayWeekCard() {
           {taskList(weekTasks, "Nothing queued this week.")}
         </div>
       </div>
+
+      {/* The card's schedule half: what comes round, beside the board's own
+          two horizons. A review row carries no tick — its page is the truth,
+          so the row clears when the review is marked done there. */}
+      <div className="home-recurring">
+        <h3 className="home-task-cols__head">
+          Recurring
+          <span className="home-task-cols__count">{recurring.length}</span>
+        </h3>
+        {recurring.length === 0 ? (
+          <p className="muted home-card__empty">Nothing recurring due.</p>
+        ) : (
+          <ul className="home-recurring-list">
+            {recurring.map((item) => {
+              const busy = recurringBusyId === item.id;
+              return (
+                <li
+                  key={item.id}
+                  className="home-task-row home-recurring-row"
+                  data-testid={`recurring-row-${item.id}`}
+                  data-state={item.state}
+                >
+                  {item.completable ? (
+                    <input
+                      type="checkbox"
+                      className="home-task-row__check"
+                      checked={busy}
+                      disabled={recurringBusyId !== null}
+                      onChange={() => void markRecurringDone(item)}
+                      aria-label={`Mark "${item.title}" done`}
+                      data-testid={`recurring-done-${item.id}`}
+                      title="Mark done"
+                    />
+                  ) : null}
+                  <span className="home-task-row__title home-recurring-row__title">
+                    {item.link ? (
+                      <Link
+                        to={item.link}
+                        className="home-recurring-row__link"
+                      >
+                        {item.title}
+                      </Link>
+                    ) : (
+                      item.title
+                    )}
+                  </span>
+                  <span
+                    className={`home-recurring-row__state home-recurring-row__state--${item.state}`}
+                  >
+                    {dueStateLabel(item.state)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <Link
+          to="/act?manage=recurring"
+          className="home-card__more home-recurring__manage"
+          data-testid="today-week-recurring-manage"
+        >
+          Manage recurring →
+        </Link>
+      </div>
+
       <Link to="/act" className="home-card__more">
         Open Act →
       </Link>

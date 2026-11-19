@@ -33,3 +33,7 @@ export {
   isoWeekOf,
   type IsoWeek,
 } from "./period.ts";
+// The Dashboard's recurring block asks "what is due today?" with the same rules
+// the engine and the tools use. Browser-safe: imports only dates, review
+// windows and the map's pure cadence helpers.
+export * from "./recurrence.ts";

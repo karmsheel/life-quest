@@ -87,6 +87,37 @@ an area, in which case it shows only on that area's board; vault-wide items show
 everywhere. It is never task-work and it is not your own writing — if you want
 to keep something the companion says, put it in a page or a note.
 
+### Work the recurring block
+
+The **Today & this week** card carries its two task columns and, under them, a
+**Recurring** block. Its rows are the things that come round: what is due today,
+what you did not do, and what falls due later this week.
+
+1. Read the rows top to bottom. They are in urgency order — the oldest
+   **Overdue** row first, then **Due today**, then **This week** — and each row is
+   the recurring task's title and one state label: **Overdue**, **Due today** or
+   **This week**. The heading's count is the number of rows.
+2. Tick a row to finish that occurrence. The app records the completion, moves
+   the task's next due date on, and the row leaves the card with the count
+   following it. A tick that fails prints its error on the card instead of moving
+   the row, and ticks wait while a write is in flight.
+3. A row whose task has a page opens that page when you choose its title — a
+   recurring task can point at the page it is about, for example a review or a
+   checklist.
+4. The five reviews come with the app. A review whose window has opened and whose
+   overall review is not marked done shows here as its own row — **Daily
+   review**, **Weekly review**, **Monthly review**, **Quarterly review**,
+   **Yearly review** — linking to the review's page. It has no tick: the review
+   file is the record, and the row clears once the overall review is marked done
+   there. See [Reviews](./18-reviews.md).
+5. The block's footer link **Manage recurring →** opens the Task Manager's
+   **Recurring tasks** section, where a recurring task is added, edited, paused
+   and deleted. See [Task Manager](./14-task-manager.md).
+
+With nothing due the block says **Nothing recurring due.** and still offers the
+manage link. A paused recurring task is not due, so the card does not draw it
+while it stays in the manager's list.
+
 ### Add a card
 
 1. Choose the area whose board you want to change; **Life** is the board that
@@ -197,7 +228,7 @@ same menu.
 | Companion brief (`companion-brief`) | The companion's typed items — watch, prompt, ahead, commitment, pattern — in priority order with the reason beneath; items expire and you dismiss them. Seeded first on the board; an empty brief says so |
 | Goals (`goal-progress`) | A count of open goals in the lens. Each goal names the area it is filed under (or **No area**) and, for a metric goal, its current value, pace and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | A **Deadline pressure** banner when an open goal in the lens is due within seven days or already overdue: the first goal's name (or that name and "N others") and **Dismiss**, which hides it until tomorrow |
-| Today & this week (`today-week`) | Two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done |
+| Today & this week (`today-week`) | Two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done. Under them, the card's **Recurring** block: the recurring tasks that are overdue, due today or due later this week, each with a tick, and the built-in review rows, which link to the review's page and carry no tick — then **Manage recurring →** |
 | Pending decisions (`pending-decisions`) | A count, then up to four pending Decisions visible in this lens, linked to the inbox |
 | Recent activity (`recent-log`) | The five newest Life log entries in the lens, one line each: the summary, then the event type and its time |
 
@@ -239,6 +270,22 @@ there is no migration write.
   `domains/<slug>/pins.json` for an area. It stores the pins, their order and
   sizes, and the board's lock state; the board's Decision headline names it,
   e.g. **Life dashboard pins**.
+- The **Recurring** block on **Today & this week** is the card's one schedule:
+  its rows are read from the recurring records and the review index every time
+  the card draws, so a row is due because its due date is today, earlier, or
+  still to come this week — not because anything was created for it. Drawing the
+  card writes nothing and opens no file.
+- A tick on a **Recurring** row completes that occurrence and writes no board
+  change: the record's next due date moves on, so the row leaves the card while
+  the task itself stays off the board. The tick is the row's only control; the
+  title, when the task has a page, is a link.
+- A **review** is a built-in recurring item, not a record in the manager: its
+  row is derived from the review index, it links to the cadence's page, it
+  carries no tick, and it clears when the overall review is marked done. There
+  is nothing to add, pause or delete in the manager for it.
+- **Manage recurring →** is the block's only link out: it opens the Task
+  Manager's **Recurring tasks** section, which is where a recurring task is
+  edited. The card does not edit one in place.
 - The **companion brief** is one record for the studio, at
   `.lifequest/companion-brief.json`. It is rewritten wholesale each time — a
   write replaces the active set rather than appending to it — while the
@@ -255,7 +302,9 @@ there is no migration write.
   name is legacy, the wording the app uses is area.
 
 These are the Dashboard laws; [`LAWS/DASHBOARD.md`](../../LAWS/DASHBOARD.md) is
-the contract.
+the contract. The **Recurring** block's own laws — a standing record rather than
+a board card, due rows derived from the date and the local day, review rows from
+the review index — are in [`LAWS/RECURRING.md`](../../LAWS/RECURRING.md).
 
 ## Tips and edge cases
 
@@ -274,6 +323,16 @@ the contract.
 - A tick on **Today & this week** finishes the task: it writes the same move to
   Done that the Task Manager board's drag makes, and the task leaves the card
   with the group's count following it.
+- A tick on a **Recurring** row is a completion, not a task move: it records the
+  occurrence and moves the task's next due date on, and the row leaves the card
+  with no Done card written anywhere. A tick on an overdue row schedules the next
+  occurrence after today, so one tick catches you up instead of leaving a queue
+  of past dates.
+- A **Recurring** row that names a review — **Weekly review** and the other four
+  cadences — has no tick. The review's own page is where it is finished, and
+  marking the overall review done there clears the row.
+- A paused recurring task is still a record — it is in the Task Manager's list
+  with its next due date — but it is not due, so the card does not draw it.
 - A locked board is read-only *here*; the operator can still unlock it from the
   same menu. Locking is not encryption and not a permission system — it is a
   statement that this board is finished for now.
@@ -296,6 +355,7 @@ the contract.
 - [Areas](./05-areas.md)
 - [Goals](./10-goals.md)
 - [Task Manager](./14-task-manager.md)
+- [Reviews](./18-reviews.md)
 - [Data and databases](./19-data-and-databases.md)
 - [Pages](./21-pages.md)
 - [Decisions](./23-decisions.md)

@@ -27,11 +27,18 @@ import {
   updateLiveBlock,
 } from "./live-days.ts";
 import { createTask, deleteTask, moveTask, updateTask } from "./tasks.ts";
+import {
+  completeRecurring,
+  createRecurring,
+  deleteRecurring,
+  updateRecurring,
+} from "./recurring.ts";
 import type {
   ApplyContext,
   Command,
   DayType,
   MapEvent,
+  RecurringTask,
   Result,
   StoreState,
   Task,
@@ -164,6 +171,32 @@ export function applyCommand(
       return moveTask(state, command.id, command.column, command.beforeId);
     case "deleteTask":
       return deleteTask(state, command.id);
+    case "createRecurring":
+      return createRecurring(
+        state,
+        command.title,
+        command.recurrence,
+        ctx,
+        command.notes,
+        command.dueDate,
+        command.link,
+      );
+    case "updateRecurring": {
+      const patch: Partial<
+        Pick<RecurringTask, "title" | "notes" | "recurrence" | "dueDate" | "link" | "paused">
+      > = {};
+      if (command.title !== undefined) patch.title = command.title;
+      if (command.notes !== undefined) patch.notes = command.notes;
+      if (command.recurrence !== undefined) patch.recurrence = command.recurrence;
+      if (command.dueDate !== undefined) patch.dueDate = command.dueDate;
+      if (command.link !== undefined) patch.link = command.link;
+      if (command.paused !== undefined) patch.paused = command.paused;
+      return updateRecurring(state, command.id, patch, ctx);
+    }
+    case "deleteRecurring":
+      return deleteRecurring(state, command.id);
+    case "completeRecurring":
+      return completeRecurring(state, command.id, ctx);
     case "setAboutMe":
       return setAboutMe(state, command.text);
     case "ensureLiveDay":
