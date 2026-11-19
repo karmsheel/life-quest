@@ -86,6 +86,8 @@ type State = {
     appRegion: string;
     controls: { tag: string; label: string | null }[];
   } | null;
+  /** The lockup's box: the reference for the header's equal-inset claims. */
+  railBrand: Box | null;
   railToggle: {
     label: string | null;
     box: Box;
@@ -549,10 +551,31 @@ describe("shell sidebar (docked rail)", () => {
 
     assert.ok(expanded.header, "rail rendered no topband");
     assert.equal(expanded.header.box.top, 0, "topband left the window edge");
-    assert.equal(
-      expanded.header.box.height,
-      titlebarHeight,
-      "topband is not the titlebar row's height",
+    // The reported complaint: the lockup was cramped against the window's top
+    // while the rail held comfortable air at its leading edge. The header now
+    // spends the rail's leading inset above the mark too, so it runs taller than
+    // the titlebar row instead of being squeezed into it.
+    assert.ok(
+      expanded.header.box.bottom > titlebarHeight,
+      `the rail's header ends at ${expanded.header.box.bottom}px, not below the ${titlebarHeight}px titlebar row`,
+    );
+    assert.ok(expanded.railBrand, "the rig did not measure the rail's lockup");
+    const lockupBox = expanded.railBrand!;
+    const leadingInset = lockupBox.left - expanded.rail!.box.left;
+    const topInset = lockupBox.top - expanded.rail!.box.top;
+    const wingInset = (expanded.wingSwitcher?.box.top ?? 0) - lockupBox.bottom;
+    assert.ok(
+      leadingInset >= 12 && Math.abs(topInset - leadingInset) <= 1,
+      `the lockup's top inset (${topInset}px) is not its leading inset (${leadingInset}px)`,
+    );
+    assert.ok(
+      wingInset >= 12 && Math.abs(wingInset - leadingInset) <= 1,
+      `the wing switcher's gap under the lockup (${wingInset}px) is not the lockup's leading inset (${leadingInset}px)`,
+    );
+    assert.ok(
+      Math.abs((expanded.railToggle?.box.top ?? 0) - lockupBox.top) <= 1 &&
+        (expanded.railToggle?.box.top ?? 0) - expanded.rail!.box.top >= 12,
+      `the collapse toggle (${JSON.stringify(expanded.railToggle?.box)}) did not drop with the lockup (${JSON.stringify(lockupBox)})`,
     );
     assert.equal(
       expanded.header.controls.length,
@@ -619,8 +642,8 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     // The rail's first level: the five-wing switcher in a band of its own, above
-    // the wing's rows and directly under the window strip. The band paints no
-    // line of its own — the hairline in that row is the dock's own tab strip rule.
+    // the wing's rows and under the header's breathing room. The band paints no
+    // line of its own — the rail's band never had a rule of its own.
     assert.ok(expanded.wingSwitcher, "the rail rendered no wing switcher");
     assert.equal(
       expanded.wingSwitcher.inRail,
@@ -655,18 +678,18 @@ describe("shell sidebar (docked rail)", () => {
       `the wide wing switcher is ${expanded.wingSwitcher.flexDirection}, not one row`,
     );
     assert.ok(expanded.wingsBand, "the rail drew no band for the wing switcher");
-    // The rail's band did not give its height back with the sheet's band: it
-    // starts at the strip's bottom edge and keeps the 44px band the dock's tab
-    // strip wears, so the two chrome rows stay level across the pane seam.
-    assert.equal(
-      expanded.wingsBand.box.top,
-      titlebarHeight,
-      `the rail's band starts at ${expanded.wingsBand.box.top}px, not at the strip's bottom edge (${titlebarHeight}px)`,
+    // The rail's band keeps the 44px the dock's tab strip wears, but it is the
+    // rail's own band now: the header's equal inset above the lockup pushed it
+    // down, so it follows the header inside the rail's column rather than sitting
+    // level with the dock's strip across the pane seam.
+    assert.ok(
+      expanded.wingsBand.box.top >= expanded.header.box.bottom,
+      `the rail's band starts at ${expanded.wingsBand.box.top}px, above the header's bottom (${expanded.header.box.bottom}px)`,
     );
     assert.equal(
-      expanded.wingsBand.box.bottom,
-      titlebarHeight + topbarHeight,
-      `the rail's band ends at ${expanded.wingsBand.box.bottom}px, not ${titlebarHeight + topbarHeight}px down`,
+      expanded.wingsBand.box.height,
+      topbarHeight,
+      `the rail's band is ${expanded.wingsBand.box.height}px, not the ${topbarHeight}px band`,
     );
     assert.ok(
       expanded.wingSwitcher.box.top >= expanded.wingsBand.box.top &&
@@ -680,7 +703,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       expanded.wingsBand.borderBottomWidth,
       "0px",
-      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the hairline in that row is the dock's tab strip's rule`,
+      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the rail's band has no rule of its own`,
     );
     // The switcher is a rectangular block, not the shared pill: square corners
     // on the frame and on every tab, the rail's own padding as its only margin —
@@ -976,10 +999,9 @@ describe("shell sidebar (docked rail)", () => {
       0,
       `the rail's topband starts at ${expanded.header?.box.top}px, not the window's top`,
     );
-    assert.equal(
-      expanded.header?.box.bottom,
-      titlebarHeight,
-      `the rail's topband ends at ${expanded.header?.box.bottom}px, not the titlebar's ${titlebarHeight}px`,
+    assert.ok(
+      (expanded.header?.box.bottom ?? 0) > titlebarHeight,
+      `the rail's topband ends at ${expanded.header?.box.bottom}px, not below the titlebar's ${titlebarHeight}px — its content needs the inset above it`,
     );
     assert.equal(
       (expanded.titlebarClass ?? "").includes("window-titlebar--nav-column") ||
@@ -1069,10 +1091,11 @@ describe("shell sidebar (docked rail)", () => {
       `dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
     );
     // The sheet's retired band. The page now starts at the strip's bottom edge,
-    // and the dock's tab strip wears the band the header used to — the same 44px
-    // as the rail's wing switcher, so the chrome rows stay level across the pane
-    // seam. Below it the thread's name row is a chip, not a second band, and the
-    // strip's own bottom rule is the only line across that seam.
+    // and the dock's tab strip wears the band the header used to. It keeps that
+    // 44px on its own: the rail's wing band moved down with the rail's taller
+    // header, so the two chrome rows are no longer claimed to stay level across
+    // the seam. Below the strip the thread's name row is a chip, not a second
+    // band, and the strip's own bottom rule is the only line across that seam.
     assert.ok(expanded.chatStrip, "the dock rendered no tab strip band");
     assert.equal(
       expanded.chatStrip.box.top,
