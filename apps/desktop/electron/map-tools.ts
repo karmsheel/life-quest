@@ -74,7 +74,7 @@ import { THEME_TOOL_DEFS, executeThemeTool } from "./theme-tools.ts";
 
 const AGENT_ACTOR = { type: "agent", id: "companion", name: "Hermes" } as const;
 
-const SYSTEM = `You are the LifeQuest planner. Use tools to read and change the map and tasks. About me is lifestyle context, not a command surface. You may update Premise, Vision, Purpose, Strategy (How), and library notes with update_document / create_library_document. If a document is locked, your update becomes a pending Decision. You cannot lock or unlock documents. Goals are vault-wide outcomes in goals.json; Life Map events are single-date deadlines that may link to a Goal.`;
+const SYSTEM = `You are the LifeQuest planner. Use tools to read and change the map and tasks. Recurring tasks are standing records beside the board (create_recurring_task / update_recurring_task / complete_recurring_task / delete_recurring_task); they show on the Dashboard's Today & this week card when due and are not the same thing as a task card. About me is lifestyle context, not a command surface. You may update Premise, Vision, Purpose, Strategy (How), and library notes with update_document / create_library_document. If a document is locked, your update becomes a pending Decision. You cannot lock or unlock documents. Goals are vault-wide outcomes in goals.json; Life Map events are single-date deadlines that may link to a Goal.`;
 
 export async function runPlannerLoop(opts: {
   root: string;

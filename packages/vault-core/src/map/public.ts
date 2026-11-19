@@ -18,6 +18,9 @@ export type {
   TaskOrigin,
   TaskColumn,
   TaskLinks,
+  Recurrence,
+  RecurringCompletion,
+  RecurringTask,
   ColorId,
   DetachedWeek,
   ResolvedWeek,
@@ -28,9 +31,33 @@ export type {
 } from "./types.ts";
 export { applyCommand as applyMapCommandPure } from "./commands.ts";
 export { TASK_COLUMNS, isTaskColumn } from "./tasks.ts";
+export {
+  RECURRENCE_UNITS,
+  RECURRING_HISTORY_LIMIT,
+  completeRecurring,
+  createRecurring,
+  deleteRecurring,
+  isRecurrence,
+  nextOccurrenceAfter,
+  occurrenceOnOrAfter,
+  recurringState,
+  recurringWeekEnd,
+  updateRecurring,
+} from "./recurring.ts";
+export type { RecurrenceUnit, RecurringState } from "./recurring.ts";
 export { dashboardDays, eventsInMonth, eventsOnDate } from "./queries.ts";
 export { PALETTE, COLOR_IDS } from "./palette.ts";
-export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, addDays, compareIso, weekdayOf } from "./dates.ts";
+export {
+  todayLocalIso,
+  yearOf,
+  mondayOnOrBefore,
+  mondaysInYear,
+  daysInMonth,
+  addDays,
+  compareIso,
+  weekdayOf,
+  isIsoDate,
+} from "./dates.ts";
 export { findYear, liveYears } from "./years.ts";
 export { resolveWeek } from "./weeks.ts";
 export { dayTypeInUse } from "./day-types.ts";

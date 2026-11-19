@@ -14811,3 +14811,222 @@ button.chat-panel__activity-line:hover {
   font-size: 0.65rem;
   color: var(--muted-foreground);
 }
+
+/* —— Recurring tasks —— */
+/* The Dashboard card's schedule block: what comes round, under the board's two
+   horizons. It lives inside the same card and is separated by a rule, because a
+   due occurrence is a different kind of row from a task — one is finished where
+   it stands, the other moves the board. */
+.home-recurring {
+  display: flex;
+  flex-direction: column;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.home-recurring-list {
+  list-style: none;
+  margin: 0 -0.95rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A due row wears the task row's frame; the state word sits at the far edge so
+   a column of labels lines up down the card. */
+.home-recurring-row__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-recurring-row__link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 0.18em;
+}
+
+.home-recurring-row__link:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.home-recurring-row__state {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
+.home-recurring-row__state--overdue {
+  color: var(--destructive);
+}
+
+.home-recurring-row__state--today {
+  color: var(--accent);
+}
+
+/* Inside the block the manage link has no slack to push down, so it sits at the
+   foot of the list like a quiet footer rather than floating. */
+.home-recurring__manage {
+  margin-top: 0;
+}
+
+/* —— The Task Manager's recurring tasks —— */
+.recurring-section__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.recurring-section__count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.recurring-section__empty {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.recurring-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recurring-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.recurring-item[data-paused="true"] {
+  background: var(--bg-subtle);
+}
+
+.recurring-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  flex: 1;
+  min-width: 12rem;
+}
+
+.recurring-item__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.recurring-item__name {
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.recurring-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.recurring-item__notes {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.recurring-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.recurring-item__actions .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+}
+
+/* State badges: the same shape as an automation's Paused mark, so a state word
+   looks the same whichever shelf prints it. */
+.recurring-badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.recurring-badge--overdue {
+  background: color-mix(in srgb, var(--destructive) 12%, var(--bg-panel));
+  color: var(--destructive);
+}
+
+.recurring-badge--today {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* The inline editor: the same row expanded into a form, like an automation's. */
+.recurring-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.recurring-editor__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.recurring-editor__hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.recurring-editor__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.recurring-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}

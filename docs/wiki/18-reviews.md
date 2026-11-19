@@ -104,6 +104,30 @@ opening time, not silently allowed.
 The window follows the vault's **Week starts on** setting: with a Sunday start,
 the weekly review opens on Saturday at 08:00. See [Settings](./28-settings.md).
 
+## Reviews on the Dashboard
+
+A review is also a recurring item. The Dashboard's **Today & this week** card
+draws a **Recurring** block under its task columns, and each cadence that is due
+appears there as one row: **Daily review**, **Weekly review**, **Monthly
+review**, **Quarterly review**, **Yearly review**.
+
+- A cadence is due once its review window has opened for the latest period and
+  that period's overall review is not marked done. The row links to the cadence's
+  page — `/review/weekly` for **Weekly review** — and says where it stands: **Due
+  today** when the window opened today, **Overdue** when it opened earlier.
+- The row has **no tick**. The review file is the record, so the Dashboard cannot
+  mark a review done: you finish the review on its page, and marking the overall
+  review done clears the row. A locked review is one whose overall review is
+  done, so its row is gone too.
+- Nothing is added to the Task Manager's **Recurring tasks** list for a review:
+  the five cadences are built in, and their rows are derived from the vault's
+  review index. See [Task Manager](./14-task-manager.md).
+- A cadence whose overall review is done is silent on the card until its next
+  window opens, and a cadence whose window has not opened yet is silent too — the
+  card shows only what is actually due.
+
+[`LAWS/RECURRING.md`](../../LAWS/RECURRING.md) is the contract for these rows.
+
 ## What it is for
 
 Reviews turn a lived period into something you can read back and something the
@@ -357,12 +381,19 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
   paged.
 - With no areas open, the checklist holds only **Life review** and it is ready
   straight away: the life review is the whole review.
+- The Dashboard's review row is a reminder, not another place to finish the
+  review: it carries no tick, and marking the overall review done on the review
+  page is what clears it.
+- A review appears on the Dashboard card once its window has opened; before
+  that the cadence has no row, because the review is not available yet.
 
 ## Related
 
 - [Daily Journal](./16-daily-journal.md) — the journal a review reads back
 - [Areas](./05-areas.md) — the areas the checklist reviews
 - [Goals](./10-goals.md) — where planning sessions start and where intent lands
+- [Dashboard](./06-dashboard.md) — the Today & this week card's **Recurring**
+  block, where an open review shows as a row
 - [Decisions](./23-decisions.md) — where an edit to a locked review waits
 - [The Companion](./24-companion.md) — the interview, sessions and models
 - [Settings](./28-settings.md) — **Week starts on** lives in the Vault tab, and

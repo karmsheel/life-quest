@@ -147,11 +147,58 @@ export type Task = {
   origin?: TaskOrigin;
 };
 
+/**
+ * How a recurring task comes round.
+ *
+ * The unit IS the shape: a weekly task needs a weekday, a monthly one a day of
+ * the month, a yearly one a month and a day. The UI and the companion tools
+ * show exactly the fields the chosen unit reads, so there is no "every N
+ * weeks" corner to explain — a cadence is one of four plain rhythms.
+ */
+export type Recurrence =
+  | { unit: "day" }
+  | { unit: "week"; weekday: Weekday }
+  | { unit: "month"; dayOfMonth: number }
+  | { unit: "year"; month: number; day: number };
+
+/** One occurrence the operator finished, newest first. */
+export type RecurringCompletion = {
+  /** The occurrence that was due. */
+  due: IsoDate;
+  /** The local day the tick landed. */
+  completedOn: IsoDate;
+};
+
+/**
+ * A standing record that comes round again — not a board card.
+ *
+ * The Act board's columns are horizons of work; a recurrence is a schedule, so
+ * it stays out of them. `dueDate` is the next occurrence and the only schedule
+ * state: completion moves it forward, and whether a row is due is derived from
+ * it and the local day, never materialised as a task or a file.
+ */
+export type RecurringTask = {
+  id: string;
+  title: string;
+  notes: string;
+  recurrence: Recurrence;
+  /** The next occurrence. */
+  dueDate: IsoDate;
+  /** An internal route the row opens, e.g. "/review/weekly". */
+  link?: string;
+  /** A paused record keeps its date and does not surface as due. */
+  paused: boolean;
+  /** The most recent completions, newest first. */
+  history: RecurringCompletion[];
+  origin?: TaskOrigin;
+};
+
 export type StoreState = {
   dayTypes: DayType[];
   defaultWeek: DefaultWeek;
   years: YearRecord[];
   tasks: Task[];
+  recurring: RecurringTask[];
   liveDays: Record<IsoDate, LiveDay>;
   aboutMe: string;
 };
@@ -297,6 +344,33 @@ export type Command =
       beforeId?: string | null;
     }
   | { type: "deleteTask"; id: string }
+  /**
+   * A recurring task is a standing record beside the board, not a card on it.
+   *
+   * `dueDate` defaults to the next occurrence on or after today, so a caller
+   * that knows the rhythm does not have to do the calendar arithmetic itself.
+   */
+  | {
+      type: "createRecurring";
+      title: string;
+      notes?: string;
+      recurrence: Recurrence;
+      dueDate?: IsoDate;
+      link?: string;
+    }
+  | {
+      type: "updateRecurring";
+      id: string;
+      title?: string;
+      notes?: string;
+      recurrence?: Recurrence;
+      dueDate?: IsoDate;
+      link?: string;
+      paused?: boolean;
+    }
+  | { type: "deleteRecurring"; id: string }
+  /** Record the current occurrence done and advance to the next one. */
+  | { type: "completeRecurring"; id: string }
   | { type: "setAboutMe"; text: string }
   | { type: "ensureLiveDay"; date: IsoDate }
   | { type: "setLiveDayType"; date: IsoDate; dayTypeId: string | null }
