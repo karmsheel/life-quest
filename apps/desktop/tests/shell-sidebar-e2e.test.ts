@@ -86,7 +86,7 @@ type State = {
     appRegion: string;
     controls: { tag: string; label: string | null }[];
   } | null;
-  /** The lockup's box: the reference for the header's equal-inset claims. */
+  /** The lockup's box: the reference for the header's centring claim. */
   railBrand: Box | null;
   railToggle: {
     label: string | null;
@@ -98,6 +98,8 @@ type State = {
     /** True when the control wears the studio's pure Q emblem (the thin rail). */
     hasEmblem: boolean;
     appRegion: string;
+    /** True when it is the last visible control in the rail (the foot's end). */
+    isLastControl: boolean;
   } | null;
   titlebarToggle: { label: string | null; box: Box } | null;
   titlebarClass: string | null;
@@ -108,8 +110,9 @@ type State = {
   /** Negative regression claim: the titlebar must render no vault chip. */
   titlebarVault: { box: Box; text: string } | null;
   /**
-   * The rail's foot: the Log row and the vault chip. Wide it is one row of two
-   * equal halves; thin it is a column with the Log's icon above the initials.
+   * The rail's foot: the Log row, the vault chip and the collapse toggle. Wide it
+   * is one row, the Log and the chip splitting the room the toggle leaves; thin it
+   * is a column with the Log's icon, the initials and the expand control.
    */
   foot: {
     box: Box;
@@ -117,6 +120,7 @@ type State = {
     flexDirection: string;
     children: { tag: string; className: string; box: Box }[];
     logRow: Box | null;
+    collapse: Box | null;
   } | null;
   /** The vault chip's home since round 2: the rail's foot, not the titlebar. */
   vaultChip: {
@@ -551,41 +555,61 @@ describe("shell sidebar (docked rail)", () => {
 
     assert.ok(expanded.header, "rail rendered no topband");
     assert.equal(expanded.header.box.top, 0, "topband left the window edge");
-    // The reported complaint: the lockup was cramped against the window's top
-    // while the rail held comfortable air at its leading edge. The header now
-    // spends the rail's leading inset above the mark too, so it runs taller than
-    // the titlebar row instead of being squeezed into it.
+    // The header is still taller than the titlebar row: it carries the rail-content
+    // inset above the mark, so the lockup is not squeezed against the window's top.
     assert.ok(
       expanded.header.box.bottom > titlebarHeight,
       `the rail's header ends at ${expanded.header.box.bottom}px, not below the ${titlebarHeight}px titlebar row`,
     );
-    assert.ok(expanded.railBrand, "the rig did not measure the rail's lockup");
-    const lockupBox = expanded.railBrand!;
-    const leadingInset = lockupBox.left - expanded.rail!.box.left;
-    const topInset = lockupBox.top - expanded.rail!.box.top;
-    const wingInset = (expanded.wingSwitcher?.box.top ?? 0) - lockupBox.bottom;
-    assert.ok(
-      leadingInset >= 12 && Math.abs(topInset - leadingInset) <= 1,
-      `the lockup's top inset (${topInset}px) is not its leading inset (${leadingInset}px)`,
-    );
-    assert.ok(
-      wingInset >= 12 && Math.abs(wingInset - leadingInset) <= 1,
-      `the wing switcher's gap under the lockup (${wingInset}px) is not the lockup's leading inset (${leadingInset}px)`,
-    );
-    assert.ok(
-      Math.abs((expanded.railToggle?.box.top ?? 0) - lockupBox.top) <= 1 &&
-        (expanded.railToggle?.box.top ?? 0) - expanded.rail!.box.top >= 12,
-      `the collapse toggle (${JSON.stringify(expanded.railToggle?.box)}) did not drop with the lockup (${JSON.stringify(lockupBox)})`,
-    );
+    // The collapse toggle left this row for the rail's foot, so the topband is the
+    // lockup's alone. A control here would be a second one.
     assert.equal(
       expanded.header.controls.length,
-      1,
-      `topband holds ${expanded.header.controls.length} controls, expected one`,
+      0,
+      `topband holds ${expanded.header.controls.length} controls, expected none — the toggle lives in the foot now`,
+    );
+    assert.ok(expanded.railBrand, "the rig did not measure the rail's lockup");
+    const lockupBox = expanded.railBrand!;
+    const lockupCentre = (lockupBox.left + lockupBox.right) / 2;
+    const railCentre = (expanded.rail!.box.left + expanded.rail!.box.right) / 2;
+    const topInset = lockupBox.top - expanded.rail!.box.top;
+    const wingInset = (expanded.wingSwitcher?.box.top ?? 0) - lockupBox.bottom;
+    // The request: the mark is centred on the sidebar, not anchored to its leading
+    // edge. Its painted (ink-tight) box must sit on the column's centre line.
+    assert.ok(
+      Math.abs(lockupCentre - railCentre) <= 1 &&
+        lockupBox.left >= expanded.rail!.box.left &&
+        lockupBox.right <= expanded.rail!.box.right,
+      `the lockup's centre is at ${lockupCentre}px, not the rail's ${railCentre}px centre line (lockup ${JSON.stringify(lockupBox)})`,
+    );
+    assert.ok(
+      topInset >= 12 && wingInset >= 12 && Math.abs(wingInset - topInset) <= 1,
+      `the wing switcher's gap under the lockup (${wingInset}px) is not the air above it (${topInset}px)`,
+    );
+    // The toggle sits in the foot, at the sidebar's bottom trailing corner, level
+    // with the Log and the chip — and it is the last control in the column.
+    assert.ok(
+      (expanded.railToggle?.box.top ?? 0) >= (expanded.foot?.box.top ?? 0) - 1 &&
+        (expanded.railToggle?.box.bottom ?? 0) <=
+          (expanded.foot?.box.bottom ?? 0) + 1,
+      `the collapse toggle (${JSON.stringify(expanded.railToggle?.box)}) is not in the rail's foot (${JSON.stringify(expanded.foot?.box)})`,
+    );
+    assert.ok(
+      Math.abs(
+        (expanded.rail!.box.bottom ?? 0) -
+          (expanded.railToggle?.box.bottom ?? 0),
+      ) <= 16,
+      `the collapse toggle (${JSON.stringify(expanded.railToggle?.box)}) is not at the sidebar's bottom`,
+    );
+    assert.equal(
+      expanded.railToggle?.isLastControl,
+      true,
+      "a visible control follows the collapse toggle in the rail",
     );
     assert.equal(
       expanded.railToggle?.label,
       "Collapse sidebar",
-      "the single topband control is not the collapse toggle",
+      "the rail's toggle is not the collapse control",
     );
     assert.equal(
       expanded.railToggle?.ariaExpanded,
@@ -779,6 +803,14 @@ describe("shell sidebar (docked rail)", () => {
         (expanded.railToggle?.box.right ?? 0) <= track,
       `the collapse toggle sits at ${JSON.stringify(expanded.railToggle?.box)} in a ${track}px column, not at its trailing edge`,
     );
+    // The toggle's place is the bottom of the column, not the top: its bottom edge
+    // is the rail's own bottom inset away from the window's bottom.
+    assert.ok(
+      Math.abs(
+        (expanded.rail?.box.bottom ?? 0) - (expanded.railToggle?.box.bottom ?? 0),
+      ) <= 16,
+      `the collapse toggle (${JSON.stringify(expanded.railToggle?.box)}) does not close the rail's column (${JSON.stringify(expanded.rail?.box)})`,
+    );
     assert.equal(
       expanded.corner?.insideRail,
       true,
@@ -804,16 +836,17 @@ describe("shell sidebar (docked rail)", () => {
       "the app mark or wordmark is still in the titlebar",
     );
 
-    // The chip's new home: the rail's foot, on one row with the Log. Wide, the
-    // two split the foot in half and the chip names the whole vault.
+    // The chip's new home: the rail's foot, on one row with the Log and the
+    // collapse toggle. Wide, the Log and the chip split the room the toggle leaves
+    // and the chip names the whole vault.
     assert.ok(expanded.foot, "the rail rendered no footer group");
     assert.ok(expanded.vaultChip, "the rail rendered no vault chip");
     const foot = expanded.foot!;
     const chip = expanded.vaultChip!;
     assert.equal(
       foot.children.length,
-      2,
-      `the foot carries ${foot.children.length} children, expected the Log row and the chip`,
+      3,
+      `the foot carries ${foot.children.length} children, expected the Log row, the chip and the toggle`,
     );
     assert.match(
       foot.children[0].className,
@@ -825,6 +858,11 @@ describe("shell sidebar (docked rail)", () => {
       /nav-rail__vault/,
       "the foot's second control is not the vault chip",
     );
+    assert.match(
+      foot.children[2].className,
+      /nav-rail__collapse/,
+      "the foot's third control is not the collapse toggle",
+    );
     assert.equal(foot.display, "flex", `the wide foot is not flex (${foot.display})`);
     assert.equal(
       foot.flexDirection,
@@ -834,16 +872,24 @@ describe("shell sidebar (docked rail)", () => {
     assert.ok(foot.logRow, "the foot rendered no Log row");
     assert.equal(chip.inRail, true, "the vault chip left the rail");
     assert.equal(chip.inFoot, true, "the vault chip left the rail's foot");
-    // Half the row each: not "a row of two things" but equal halves. A chip that
-    // stayed at its text width, or took the whole row, would fail here.
+    // Equal shares of what the toggle leaves: not "a row of three things" but two
+    // panes and a fixed square. The chip sits one toggle plus one gap left of the
+    // rail's trailing edge, which is the "shifted slightly left" this change makes.
     assert.ok(
       Math.abs(foot.logRow!.width - chip.box.width) <= 1,
-      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal halves of the foot`,
+      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal panes of the foot`,
     );
     assert.ok(
-      foot.logRow!.width >= foot.box.width * 0.4 &&
-        chip.box.width >= foot.box.width * 0.4,
+      foot.logRow!.width >= foot.box.width * 0.33 &&
+        chip.box.width >= foot.box.width * 0.33,
       `the foot's controls (${foot.logRow!.width}px / ${chip.box.width}px) do not split its ${foot.box.width}px width`,
+    );
+    assert.ok(
+      foot.collapse !== null &&
+        chip.box.right < foot.collapse!.left &&
+        foot.collapse!.left - chip.box.right <= 8 &&
+        foot.collapse!.right >= foot.box.right - 1,
+      `the chip (${JSON.stringify(chip.box)}) is not one gap left of the toggle (${JSON.stringify(foot.collapse)}) at the foot's trailing edge (${JSON.stringify(foot.box)})`,
     );
     // Same row: one vertical centre and one height.
     assert.ok(
@@ -922,8 +968,13 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       chip.isLastControl,
+      false,
+      "the vault chip is still the rail's last control — the collapse toggle now closes the foot",
+    );
+    assert.equal(
+      expanded.railToggle?.isLastControl,
       true,
-      "a visible control follows the vault chip in the rail",
+      "a visible control follows the collapse toggle in the rail",
     );
     // The sidebar is one wide column: the chats section sits inside it, between
     // the wing's rows and the icons at the foot. The sheet abuts the column.
@@ -1516,18 +1567,20 @@ describe("shell sidebar (docked rail)", () => {
         collapsed.rail!.borderBottomWidth === "0px",
       `the thin rail's borders t/r/b/l are ${collapsed.rail!.borderTopWidth}/${collapsed.rail!.borderRightWidth}/${collapsed.rail!.borderBottomWidth}/${collapsed.rail!.borderLeftWidth}`,
     );
-    // The toggle stays in the rail's header at both widths; collapsed it is the
-    // studio's pure Q emblem — the studio's mark where the toggle was — centred
-    // in the icon column, and a press reopens the rail.
+    // The collapse toggle left the header for the rail's foot, so the thin rail's
+    // topband holds no control: it stays as the drag band and the column's top air,
+    // keeping the vertical wing tabs where the wide rail's band sits. Collapsed,
+    // the toggle is the studio's pure Q emblem at the foot, and a press reopens the
+    // rail.
     assert.equal(
       collapsed.header?.controls.length,
-      1,
-      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected its one toggle`,
+      0,
+      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected none — the toggle lives in the foot now`,
     );
     assert.equal(
       collapsed.railToggle?.label,
       "Expand sidebar",
-      `the thin rail's one control is not the expand toggle (${JSON.stringify(collapsed.railToggle?.label)})`,
+      `the thin rail's toggle is not the expand control (${JSON.stringify(collapsed.railToggle?.label)})`,
     );
     assert.equal(
       collapsed.railToggle?.ariaExpanded,
@@ -1639,6 +1692,20 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.foot!.logRow!.bottom <= collapsed.vaultChip!.box.top + 1,
       `the Log row (${JSON.stringify(collapsed.foot!.logRow)}) is not above the chip (${JSON.stringify(collapsed.vaultChip!.box)})`,
     );
+    // The expand control closes the stack: the collapse toggle's home is the foot
+    // at both widths, and thin it is the last thing in the column.
+    assert.ok(
+      collapsed.foot!.collapse !== null &&
+        collapsed.vaultChip!.box.bottom <= collapsed.foot!.collapse!.top + 1,
+      `the chip (${JSON.stringify(collapsed.vaultChip!.box)}) is not above the expand control (${JSON.stringify(collapsed.foot!.collapse)})`,
+    );
+    assert.ok(
+      Math.abs(
+        (collapsed.rail!.box.bottom ?? 0) -
+          (collapsed.railToggle?.box.bottom ?? 0),
+      ) <= 16,
+      `the expand control (${JSON.stringify(collapsed.railToggle?.box)}) does not close the ${collapsed.rail!.box.height}px rail`,
+    );
     // A small square mark in the icon column, not the wide row's half-width chip.
     assert.ok(
       collapsed.vaultChip!.box.width > 0 &&
@@ -1712,8 +1779,18 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       collapsed.vaultChip!.isLastControl,
+      false,
+      "the vault chip is still the thin rail's last control — the expand control closes the column",
+    );
+    assert.equal(
+      collapsed.railToggle?.isLastControl,
       true,
-      "a visible control follows the vault chip in the thin rail",
+      "a visible control follows the expand control in the thin rail",
+    );
+    assert.equal(
+      collapsed.railToggle?.hasEmblem,
+      true,
+      "the thin rail's last control does not wear the studio's pure emblem",
     );
     assert.equal(
       collapsed.main?.left,

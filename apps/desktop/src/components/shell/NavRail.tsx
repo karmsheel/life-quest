@@ -155,14 +155,18 @@ export function NavRail() {
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       {/*
-        The top line of the rail, in the window strip: the studio's lockup at the
-        leading edge and the collapse toggle at the trailing one, the way DSH's
-        sidebar header is arranged. The lockup is the operator's pick of the four
+        The top line of the rail, in the window strip: the studio's lockup alone,
+        centred on the column. The lockup is the operator's pick of the four
         shipped logos (Settings → Developer, default Minimal), drawn inline so the
         theme's three inks — LIFE, the Q emblem, UEST — reach it. It is a mark, not
-        a control; the strip stays the window's drag handle. The thin rail cannot
-        hold a word: the lockup leaves and the toggle becomes the pure emblem,
-        which reopens the rail on a press (see "The thin rail").
+        a control; the strip stays the window's drag handle.
+
+        The collapse toggle used to close this row at its trailing edge. It lives
+        at the rail's foot now, so the mark is the row's only content and the row's
+        whole job is to centre it on the sidebar instead of anchoring it to one
+        edge. The thin rail cannot hold a word: the lockup leaves and this row
+        stays only as the window's drag handle and the column's top air (see "The
+        thin rail").
       */}
       <div className="nav-rail__header">
         <LifeQuestLogo
@@ -170,7 +174,6 @@ export function NavRail() {
           className="nav-rail__brand"
           crop
         />
-        <NavCollapseButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the
           header, and the foot's own band. Rail furniture, not commands. */}
@@ -235,11 +238,16 @@ export function NavRail() {
         foot, so the four pages that belong to no wing read as their own cordoned
         section at the foot of the sidebar.
 
-        The foot is the Log and the vault chip on one line: the Log closes the
-        rail's navigation, and the chip that names the open vault sits beside it,
-        taking the row's other half. In the thin rail the two stack — the Log's
-        icon with the vault's initials directly under it — so the vault is still
-        one click away without leaving the icon column.
+        The foot is one row of three: the Log closes the rail's navigation, the
+        chip names the open vault, and the collapse toggle holds the row's
+        trailing end — the sidebar's bottom corner. That is where the collapse
+        control lives now: at the bottom of the column, the last thing in it,
+        rather than closing the lockup's row at the top. The Log and the chip
+        share what the toggle leaves, so the chip sits one toggle and one gap left
+        of the rail's trailing edge instead of flush against it. In the thin rail
+        the three stack — the Log's icon, the vault's initials, then the pure
+        emblem that reopens the rail — so the vault is still one click away
+        without leaving the icon column.
       */}
       <div className="nav-rail__section nav-rail__section--bottom">
         {bottomPinned.length > 0 ? (
@@ -256,6 +264,7 @@ export function NavRail() {
             <div className="nav-rail__foot" data-nav-group="footer">
               {footerPinned.map(renderItem)}
               <VaultChip />
+              <NavCollapseButton className="nav-rail__collapse" />
             </div>
           </>
         ) : null}

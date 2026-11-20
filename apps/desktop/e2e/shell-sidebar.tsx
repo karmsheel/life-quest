@@ -12,14 +12,15 @@
  *  3. Rail painted *under* the titlebar — the rail's box overlaps the titlebar
  *     row, but the titlebar wins paint order, so the rail's topband and its one
  *     control are covered by the titlebar's background.
- *  4. Topband shows more than the collapse toggle (or nothing) — a second
- *     control crept into the header, or the toggle never rendered at one of the
- *     rail's two widths.
+ *  4. Topband showing a control, or an off-centre lockup — the collapse toggle
+ *     left the header for the rail's foot, so a control here is a second one, and
+ *     the lockup must sit on the column's centre line rather than its leading
+ *     edge.
  *  5. Dead toggle — clicking it leaves the shell in the arrangement it was in:
  *     the rail does not narrow to the icon column and the sheet does not move
  *     to meet it.
  *  6. One-way door — collapsed with no control left to expand, or the way back
- *     placed somewhere other than the rail's own header (the titlebar toggle the
+ *     placed somewhere other than the rail's own foot (the titlebar toggle the
  *     reported bug put over the vault chip).
  *  7. Column not narrowed — the shell's first track changes but the sheet or the
  *     chip keeps the wide rail's offset, so the page starts in a column the rail
@@ -46,12 +47,14 @@
  *     an empty drag handle and the titlebar carries no nav-column classes.
  *  7f. The chip outside the rail's foot — a chip floating somewhere else in the
  *     rail, or a `.nav-rail__foot[data-nav-group="footer"]` that is not exactly
- *     the Log row and the chip.
- *  7g. The wide foot not split — the chip hugging its text or taking the whole
- *     row, so the Log is not half the footer, or the two not sharing one height.
+ *     the Log row, the chip and the collapse toggle.
+ *  7g. The wide foot not split right — the Log and the chip not sharing what the
+ *     collapse toggle leaves, the chip not one toggle left of the rail's trailing
+ *     edge, or the three not sharing one row and one height.
  *  7h. The thin chip not reduced — the full name or the chevron still drawn in
  *     the 56px column, no initials mark, the wrong initials (the harness vault
- *     "Harness Vault" must read "HV"), or the chip not the rail's last control.
+ *     "Harness Vault" must read "HV"), or the chip not stacked above the expand
+ *     control that closes the column.
  *  8. Titlebar text still in the strip — the LQ badge, title or a vault chip
  *     still rendered in the window's top row. The strip's open room on either
  *     side of the domain tab is the window's drag handle; the only control in

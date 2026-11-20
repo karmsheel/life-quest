@@ -974,11 +974,12 @@ a {
    the wide column or in the thin icon column: the collapse narrows this box
    instead of unmounting it. */
 .nav-rail {
-  /* The lockup's leading inset: the rail's own thin padding, the row inset the
-     page icons are held at, and the 1.5px optical nudge that lands the L on the
-     icons' strokes. The header below spends the same measure above the mark, and
-     again between it and the wing switcher, so the lockup has one inset on every
-     side it faces instead of a panel edge a couple of pixels from its top. */
+  /* The lockup's air: the rail's own thin padding, the row inset the page icons
+     are held at, and the 1.5px optical nudge. The header spends the same measure
+     above the mark, and again between the mark and the wing switcher, so the
+     lockup keeps one measure of air on its top and bottom instead of a panel edge
+     a couple of pixels from its top. The mark is centred on the column now, so
+     nothing here sets a leading inset any more. */
   --rail-header-inset: calc(
     var(--density-pad-rail-x) + var(--density-pad-row-x) + 1.5px
   );
@@ -1006,27 +1007,27 @@ a {
   z-index: 20;
 }
 
-/* The rail's first row: the lockup at the leading edge and the collapse toggle at
-   the trailing one. It used to be exactly the window strip's 32px, which left the
-   mark two or three pixels off the window's top while the rail's own leading
-   padding held it a full inset in — cramped above, comfortable beside. The row now
-   carries that same rail-content inset above and below the mark, so the lockup is
-   held off every edge by one measure and the toggle drops with it.
+/* The rail's first row: the lockup alone, centred on the column. It used to hold
+   the lockup at the leading edge and the collapse toggle at the trailing one. The
+   toggle has moved down to the rail's foot, so the mark is the row's only content
+   and the row's whole job is to centre it on the sidebar rather than anchor it to
+   an edge.
 
    The box still starts at the window's top edge, so the strip's leading corner
-   stays a window drag handle; it is taller than the titlebar row now, which is
-   free: the strip's own fill ends at the rail's trailing edge and the dock's
-   strip keeps its own geometry on the other side of the seam. The bottom inset
-   gives up the rail's flex gap because the wing switcher's band below already
-   spends it — the pair then meet on the same measure. Collapsed, the band's own
-   rule centres the one control the thin column keeps (see "The thin rail"). It
-   paints the rail's own mat, so the sidebar runs to the window's top and the
-   titlebar's fill begins only at the sheet's leading edge. */
+   stays a window drag handle; it is taller than the titlebar row, which is free:
+   the strip's own fill ends at the rail's trailing edge and the dock's strip keeps
+   its own geometry on the other side of the seam. The row carries the rail-content
+   inset above and below the mark, so the lockup is held off the window's top by
+   one measure. The bottom inset gives up the rail's flex gap because the wing
+   switcher's band below already spends it — the pair then meet on the same
+   measure. Collapsed, the lockup leaves and the row stays as the window's drag
+   handle and the column's top air (see "The thin rail"). It paints the rail's own
+   mat, so the sidebar runs to the window's top and the titlebar's fill begins only
+   at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  justify-content: center;
   flex: 0 0 auto;
   /* One lockup row plus the inset above and below. Box-sizing makes the content
      box exactly the lockup's height, which is what pins the mark's top edge to
@@ -1036,11 +1037,11 @@ a {
       var(--density-gap-rail)
   );
   /* The row spans the rail's box and takes its inset back out of the rail's
-     padding: the inline negative margin is the padding the rail carries, so the
-     lockup's margin below lands on the rail's border edge. */
+     padding: the inline negative margins are the padding the rail carries, so the
+     mark's centring line is the rail's own. */
   margin: 0 calc(-1 * var(--density-pad-rail-x)) 0;
   padding-top: var(--rail-header-inset);
-  padding-right: 0.45rem;
+  padding-right: 0;
   padding-bottom: calc(var(--rail-header-inset) - var(--density-gap-rail));
   -webkit-app-region: drag;
 }
@@ -1085,16 +1086,14 @@ a {
 }
 
 /* The lockup in the rail's header: height-sized to one header row (1.7rem), width
-   taken from the artwork's own aspect, on the rail's content edge. The header
-   draws the art's ink-tight viewBox (`LifeQuestLogo crop`), and the mark is then
-   held one rail-content inset in from that edge — the rail's padding, the row
-   inset the page icons sit on, and the 1.5px optical nudge that lands the L on
-   the wing switcher's H stroke and the icons' strokes. The same
-   `--rail-header-inset` is the header's top padding, so the mark's leading and top
-   air are one number rather than two that drift. The art's three groups are
+   taken from the artwork's own aspect, centred on the rail's column by the header
+   around it. The header draws the art's ink-tight viewBox (`LifeQuestLogo crop`),
+   so the mark's painted box is exactly what the header centres — no padded air on
+   one side skews the middle. The same `--rail-header-inset` is the header's top
+   padding, so the mark's top air is one measure. The art's three groups are
    painted from the theme tokens below; the component never carries a fill of its
-   own. It yields to the toggle rather than pushing it off the row on a narrow
-   theme. */
+   own. On a rail too narrow for the artwork the mark shrinks inside the row: it is
+   never clipped and never pushed out of the column. */
 .nav-rail__brand {
   display: flex;
   align-items: center;
@@ -1102,13 +1101,9 @@ a {
   min-width: 0;
   width: auto;
   height: 1.7rem;
-  /* Never wider than the row leaves between the rail's content edge and the
-     toggle; on a narrow rail the mark scales down inside that box instead of
-     running under the control. */
-  max-width: calc(100% - 1.75rem - 0.5rem);
-  /* The header spans the rail's box, so the mark's leading inset from the rail's
-     edge is this margin alone. */
-  margin-left: var(--rail-header-inset);
+  /* The row is the whole column, so the artwork may use it all; the header's
+     centring is the only position it needs. */
+  max-width: 100%;
 }
 
 .nav-rail__brand svg {
@@ -1212,10 +1207,12 @@ a {
   margin-top: auto;
 }
 
-/* The rail's foot: the Log closes the navigation, and the vault chip that names
-   the workspace takes the row's other half. One row, two equal halves — the Log
-   stays the last page control, and the chip that changes vaults travels with the
-   navigation instead of sitting in the titlebar. */
+/* The rail's foot: the Log closes the navigation, the vault chip names the
+   workspace, and the collapse toggle holds the row's trailing end — the sidebar's
+   bottom corner. One row, three controls: the Log and the chip share the space the
+   toggle leaves, so the chip sits one toggle plus one gap left of the rail's
+   trailing edge instead of flush against it. The toggle is the last thing in the
+   column, which is the point of moving it here. */
 .nav-rail__foot {
   display: flex;
   align-items: stretch;
@@ -1225,6 +1222,16 @@ a {
 .nav-rail__foot > .nav-rail__link {
   flex: 1 1 0;
   min-width: 0;
+}
+
+/* The collapse toggle in the foot: a fixed square outside the Log/chip split, so
+   the row's two panes divide what the control leaves. It is the `.nav-toggle`
+   square at every width; only its place in the foot changes. Centred on the row
+   rather than stretched with it, so the square stays square beside the taller
+   Log and chip. */
+.nav-rail__collapse {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 /* The vault chip in the foot of the rail. A chip rather than the old square
@@ -1246,9 +1253,9 @@ a {
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   color: var(--muted);
-  /* The hairline is a shadow, not a border: the foot's two halves are flex
-     items with a 0 basis, and a 1px border would grow the chip's box by the
-     border while leaving the Log's alone — no longer equal halves. */
+  /* The hairline is a shadow, not a border: the foot's panes are flex items with
+     a 0 basis, and a 1px border would grow the chip's box by the border while
+     leaving the Log's alone — no longer equal shares. */
   box-shadow: inset 0 0 0 1px var(--border-soft);
   font-family: inherit;
   font-size: 0.72rem;
@@ -1392,17 +1399,15 @@ a {
 /* Collapsed, the rail is an icon column, not a hidden sidebar: the same pane at
    --shell-nav-width-collapsed, its rows reduced to the icons and the counts.
    The chats list leaves the column rather than crowding it — it cannot be said
-   in one icon — while the toggle, the five-wing switcher, the page rows, the
-   governed shelf and the foot all stay reachable. */
-.shell--nav-collapsed .nav-rail__header {
-  /* A one-control-wide column centres its one control: the trailing edge is where
-     a wide rail puts the toggle, and at this width it would read as an accident. */
-  justify-content: center;
-  padding-right: 0;
-}
+   in one icon — while the five-wing switcher, the page rows, the governed shelf
+   and the foot all stay reachable, and the collapse toggle keeps its place at the
+   foot.
 
-/* 56px cannot hold a word, and a second mark would compete with the icon column's
-   own rows: the lockup leaves with the labels, the toggle keeps the strip. */
+   The lockup leaves with the labels, but its row stays: it is the window's drag
+   handle above the wing band, and keeping its height keeps the vertical wing tabs
+   where the wide rail's horizontal band sits, so narrowing the rail moves nothing
+   down the column. The row holds no control at this width any more — the toggle
+   that used to close it lives in the foot now. */
 .shell--nav-collapsed .nav-rail__brand {
   display: none;
 }
@@ -1418,10 +1423,11 @@ a {
    the wings here would take the first level away.
 
    The block keeps the rail's own padding as its even margin, and the header's own
-   bottom inset plus the rail gap is the air between the toggle and the first tab,
-   the same measure the wide rail puts between the lockup and the switcher. Each
-   tab is given vertical padding so its rule sits clear of the word: in 56px the
-   words are the tight dimension, so the breathing room is spent there. */
+   bottom inset plus the rail gap is the air between the top of the column and the
+   first tab, the same measure the wide rail puts between the lockup and the
+   switcher. Each tab is given vertical padding so its rule sits clear of the word:
+   in 56px the words are the tight dimension, so the breathing room is spent
+   there. */
 .shell--nav-collapsed .nav-rail__wings-band {
   height: auto;
   margin: 0;
@@ -1456,9 +1462,9 @@ a {
   justify-content: center;
 }
 
-/* The foot stacks in the thin rail: the Log's icon, then the vault's initials
-   directly underneath. Both centred in the column, and the chip no longer takes
-   half a row that does not exist. */
+/* The foot stacks in the thin rail: the Log's icon, the vault's initials and the
+   expand emblem, in that order. All three centred in the column, and the chip no
+   longer takes a row share that does not exist. */
 .shell--nav-collapsed .nav-rail__foot {
   flex-direction: column;
   align-items: stretch;
@@ -1467,6 +1473,13 @@ a {
 
 .shell--nav-collapsed .nav-rail__foot > .nav-rail__link {
   flex: 0 0 auto;
+}
+
+/* The expand control closes the stack: the collapse toggle left the header for the
+   foot, and it stays the last thing in the rail at this width too. */
+.shell--nav-collapsed .nav-rail__collapse {
+  flex: 0 0 auto;
+  margin: 0 auto;
 }
 
 .shell--nav-collapsed .nav-rail__vault {
@@ -1630,10 +1643,10 @@ a {
   }
 }
 
-/* The sidebar toggle, wherever it is docked (rail header, or the titlebar once
-   the rail is gone). `no-drag` is load-bearing: both placements sit inside the
-   window's drag band, and a drag region wins hit-testing over the DOM, so
-   without the carve-out the click never reaches the button. */
+/* The sidebar toggle, at the trailing end of the rail's foot. `no-drag` is kept
+   though the foot sits below the window's drag band: the class belongs to the one
+   sidebar control, and a placement that puts it back inside a drag region must not
+   have the region swallow its click. */
 .nav-toggle {
   --nav-toggle-size: 1.75rem;
   appearance: none;
@@ -14037,10 +14050,9 @@ button.chat-panel__activity-line:hover {
   margin-right: calc(-1 * var(--shell-frame));
 }
 
-:root[data-chrome-nav-place="right"] .shell > .nav-rail .nav-rail__header {
-  justify-content: flex-start;
-  margin: 0 0 0 calc(-1 * var(--density-pad-rail-x));
-}
+/* The header keeps its centring at this placement: the base rule's inline negative
+   margins already span the rail's box, so the lockup sits on the column's centre
+   line here exactly as it does on the leading rail. */
 
 :root[data-chrome-nav-place="right"] .shell > .shell__main {
   grid-column: 1;

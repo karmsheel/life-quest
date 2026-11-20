@@ -361,14 +361,22 @@ async function applyTheme(win, skin, mode) {
   await sleep(300);
 }
 
-/** The picture of the shipped rail header in the current state. */
+/**
+ * The picture of the shipped rail in the current state: the header while the rail
+ * is wide (the centred lockup), and the foot while it is thin — the collapse
+ * toggle's home, where the expand emblem now sits under the vault's initials.
+ * The header holds no control at the thin width, so a crop of it would show the
+ * drag band and nothing else.
+ */
 async function captureHeader(win, state, name) {
   const file = path.join(artifactsDir, name);
+  const thin = state.toggleMode === "brand";
+  const height = Math.min(state.viewport.height, thin ? 180 : 110);
   const shot = await win.webContents.capturePage({
     x: 0,
-    y: 0,
+    y: thin ? Math.max(0, state.viewport.height - height) : 0,
     width: Math.max(1, state.rail?.width ?? WINDOW.width),
-    height: Math.min(state.viewport.height, 110),
+    height,
   });
   fs.writeFileSync(file, shot.toPNG());
   return file;
@@ -505,32 +513,30 @@ async function main() {
       `brand ${JSON.stringify(brand)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup sits on the strip's line, before the collapse toggle",
-      Boolean(brand && expanded.header && expanded.toggle && expanded.rail) &&
+      "the lockup is centred on the rail's column",
+      Boolean(brand && expanded.header && expanded.rail) &&
         brand.box.top >= expanded.header.top - 1 &&
         brand.box.bottom <= expanded.header.bottom + 1 &&
-        brand.box.left >= expanded.rail.left &&
-        brand.box.right <= expanded.toggle.left &&
-        expanded.toggle.top >= expanded.header.top - 1 &&
-        expanded.toggle.bottom <= expanded.header.bottom + 1 &&
+        Math.abs(
+          (brand.box.left + brand.box.right) / 2 -
+            (expanded.rail.left + expanded.rail.right) / 2,
+        ) <= 1 &&
         brand.box.height >= 24 &&
         brand.box.height <= 31,
-      `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
+      `brand ${JSON.stringify(brand?.box)} in rail ${JSON.stringify(expanded.rail)} under header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup's leading rule sits on the line the wing switcher's H and the page icons share",
-      Boolean(brand && expanded.firstLink && expanded.wings && expanded.wingText && expanded.icon) &&
-        expanded.rowPad !== null &&
-        Math.abs(brand.box.left - expanded.wingText.left) <= 1.5 &&
-        brand.box.left - expanded.icon.left >= 0.5 &&
-        brand.box.left - expanded.icon.left <= 3 &&
+      "the lockup's painted box holds equal air on the column's two sides",
+      Boolean(brand && expanded.rail) &&
         Math.abs(
-          brand.box.left - expanded.firstLink.left - (expanded.rowPad + 1.5),
-        ) <= 0.6,
-      `lockup ${brand?.box.left}px, H text ${expanded.wingText?.left}px, icon ${expanded.icon?.left}px, row ${expanded.firstLink?.left}px + ${expanded.rowPad}px + 1.5px`,
+          brand.box.left -
+            expanded.rail.left -
+            (expanded.rail.right - brand.box.right),
+        ) <= 2,
+      `lockup ${JSON.stringify(brand?.box)} in rail ${JSON.stringify(expanded.rail)}`,
     );
     check(
-      "the header keeps the collapse chevron beside the lockup",
+      "the rail keeps its collapse chevron",
       expanded.toggleMode === "chevron",
       `toggle mode ${JSON.stringify(expanded.toggleMode)}`,
     );
@@ -555,12 +561,15 @@ async function main() {
         expanded.tokens.uest.toLowerCase() === "#f8e5c8",
       `tokens ${JSON.stringify(expanded.tokens)}`,
     );
+    // The toggle's home is the rail's foot now, at the sidebar's bottom trailing
+    // corner — not the header row beside the lockup.
     check(
-      "the collapse toggle keeps the strip above the lockup",
-      Boolean(expanded.header && expanded.toggle) &&
-        expanded.toggle.top >= expanded.header.top - 1 &&
-        expanded.toggle.bottom <= expanded.header.bottom + 1,
-      `toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
+      "the collapse chevron lives in the rail's foot",
+      Boolean(expanded.toggle && expanded.header && expanded.rail) &&
+        expanded.toggle.top > expanded.header.bottom &&
+        Math.abs(expanded.rail.bottom - expanded.toggle.bottom) <= 16 &&
+        expanded.toggle.right > expanded.rail.left + (expanded.rail.width ?? 0) * 0.7,
+      `toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)} rail ${JSON.stringify(expanded.rail)}`,
     );
 
     const wideFile = await captureHeader(win, expanded, "brand-logo-wide.png");

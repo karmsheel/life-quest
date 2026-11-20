@@ -175,7 +175,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(exitCode, 0, "the brand rig exited non-zero");
 
     // The default: the supplied Minimal lockup, no stored pick, in the rail's
-    // header on the strip's line, painted from the theme tokens.
+    // header, centred on the column and painted from the theme tokens.
     const expanded = report.expanded;
     const brand = expanded?.brand;
     assert.ok(expanded, "the rig wrote no wide sample");
@@ -190,57 +190,43 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       brand.box.height >= 24 && brand.box.height <= 31,
       `the lockup is ${brand.box.width}x${brand.box.height}px, not sized to the window strip`,
     );
-    // The header row: the lockup and the collapse chevron share the strip's line.
+    // The header row: the lockup alone, centred on the sidebar's column. The
+    // collapse chevron has left this row for the rail's foot.
     assert.ok(expanded?.header && expanded?.toggle && expanded?.rail, "the rail has no header to measure");
     assert.ok(
       brand.box.top >= expanded.header.top - 1 &&
         brand.box.bottom <= expanded.header.bottom + 1 &&
-        brand.box.left >= expanded.rail.left &&
-        brand.box.right <= expanded.toggle.left,
-      `the lockup ${JSON.stringify(brand.box)} is not on the strip's line before the toggle ${JSON.stringify(expanded.toggle)}`,
+        Math.abs(
+          (brand.box.left + brand.box.right) / 2 -
+            (expanded.rail.left + expanded.rail.right) / 2,
+        ) <= 1,
+      `the lockup ${JSON.stringify(brand.box)} is not centred in the rail ${JSON.stringify(expanded.rail)}`,
+    );
+    // The crop is what makes the centring honest: the painted box is the mark, so
+    // its two sides hold the same air rather than one side carrying the canvas's
+    // padding.
+    assert.ok(
+      Math.abs(
+        brand.box.left -
+          expanded.rail.left -
+          (expanded.rail.right - brand.box.right),
+      ) <= 2,
+      `the lockup ${JSON.stringify(brand.box)} does not hold equal air on both sides of the rail ${JSON.stringify(expanded.rail)}`,
     );
     assert.ok(
-      expanded.toggle.top >= expanded.header.top - 1 &&
-        expanded.toggle.bottom <= expanded.header.bottom + 1,
-      `the toggle ${JSON.stringify(expanded.toggle)} is not in the header`,
+      Math.abs(brand.box.width / brand.box.height - 1143 / 161.78) < 0.15,
+      `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's aspect`,
+    );
+    assert.ok(
+      expanded.toggle.top > expanded.header.bottom &&
+        Math.abs(expanded.rail.bottom - expanded.toggle.bottom) <= 16 &&
+        expanded.toggle.right > expanded.rail.left + expanded.rail.width * 0.7,
+      `the toggle ${JSON.stringify(expanded.toggle)} is not at the rail's foot (rail ${JSON.stringify(expanded.rail)})`,
     );
     assert.equal(
       expanded?.toggleMode,
       "chevron",
       "the wide rail's control is not the collapse chevron",
-    );
-    // The lockup is shifted one row-content inset in from the rail's edge (plus
-    // the optical 1.5px), so its leading rule starts on the line the wing
-    // switcher's H and the page icons share: the logo box sits on the H's text box and just inside
-    // the icons' SVG boxes.
-    assert.ok(
-      expanded?.firstLink != null &&
-        expanded?.wings != null &&
-        expanded?.wingText != null &&
-        expanded?.icon != null &&
-        expanded?.rowPad != null,
-      "the rig could not measure the H, the page icon and the row inset",
-    );
-    assert.ok(
-      Math.abs(expanded.brand.box.left - expanded.wingText.left) <= 1.5,
-      `the lockup starts at ${expanded.brand.box.left}px, the H's text box at ${expanded.wingText.left}px`,
-    );
-    assert.ok(
-      expanded.brand.box.left - expanded.icon.left >= 0.5 &&
-        expanded.brand.box.left - expanded.icon.left <= 3,
-      `the lockup starts at ${expanded.brand.box.left}px, the page icon box at ${expanded.icon.left}px`,
-    );
-    assert.ok(
-      Math.abs(
-        expanded.brand.box.left -
-          expanded.firstLink.left -
-          (expanded.rowPad + 1.5),
-      ) <= 0.6,
-      `the lockup's inset is ${expanded.brand.box.left - expanded.firstLink.left}px, not ${expanded.rowPad + 1.5}px`,
-    );
-    assert.ok(
-      Math.abs(brand.box.width / brand.box.height - 1143 / 161.78) < 0.15,
-      `the lockup's box ${brand.box.width}x${brand.box.height} does not keep the artwork's aspect`,
     );
     assert.deepEqual(
       brand.fills,
@@ -377,8 +363,10 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(icon?.builder.masterNamed, true, "electron-builder.yml does not name build/icon.png");
     assert.equal(icon?.builder.windowsNamed, true, "electron-builder.yml does not name build/icon.ico");
 
-    // The screenshots: the shipped rail header in both rails, the Developer bench,
-    // and both splash states. The crops are the rail's own width, not hand-made tiles.
+    // The screenshots: the wide rail's centred header, the thin rail's foot (the
+    // toggle's home now, since the header holds no control at that width), the
+    // Developer bench, and both splash states. The rail crops are the rail's own
+    // width, not hand-made tiles.
     const [wide, shell, thin, developer, splashDefaultShot, splashSelectedShot] =
       report.screenshots;
     for (const file of report.screenshots) {
@@ -394,7 +382,7 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(
       pngSize(thin).width,
       collapsed?.rail?.width,
-      "the thin lockup artifact is not the collapsed rail's width",
+      "the thin rail artifact is not the collapsed rail's width",
     );
     assert.ok(pngSize(shell).width >= 1200, "the shell artifact is not the full window");
     assert.ok(pngSize(developer).width >= 1200, "the Developer artifact is not the full window");

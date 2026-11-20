@@ -13,10 +13,11 @@
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
- * no-drag` carve-outs — on the rail's collapse toggle and on the raised domain
- * lens — are measured as computed style but can only be confirmed by clicking
- * them in the real window. The source-text contract that read the carve-out out
- * of the CSS went with the unit tests.
+ * no-drag` carve-outs — on the raised domain lens and on the sidebar's toggle (the
+ * foot is below the band, but the class keeps the carve-out for any placement that
+ * puts it back inside one) — are measured as computed style but can only be
+ * confirmed by clicking them in the real window. The source-text contract that read
+ * the carve-out out of the CSS went with the unit tests.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -52,8 +53,8 @@ const SAMPLE = `(() => {
   const root = getComputedStyle(document.documentElement);
   const rail = document.querySelector(".nav-rail");
   const header = document.querySelector(".nav-rail__header");
-  // The lockup's own box: the reference the header's equal-inset claim is read
-  // from (space above it, beside it, and down to the wing switcher).
+  // The lockup's own box: the reference for the header's centring claim and for
+  // the air above it down to the wing switcher.
   const railBrand = document.querySelector(".nav-rail__brand");
   const controls = header
     ? Array.from(header.querySelectorAll("button, a, input, select, [role=button]"))
@@ -94,7 +95,7 @@ const SAMPLE = `(() => {
   const foot = document.querySelector('.nav-rail__foot[data-nav-group="footer"]');
   const railToggle = document.querySelector(".nav-rail .nav-toggle");
   // The reported bug's second toggle: queried only to prove that it no longer
-  // exists in EITHER state — the rail keeps its own toggle in its header.
+  // exists in EITHER state — the rail keeps its own toggle in its foot.
   const titlebarToggle = document.querySelector(".window-titlebar__nav-toggle");
   const chats = document.querySelector(".chats-rail");
   // The divider directly above the chats: it belongs to the wide rail's middle
@@ -278,7 +279,19 @@ const SAMPLE = `(() => {
             return svg ? svg.getAttribute("class") || "" : null;
           })(),
           hasEmblem: Boolean(railToggle.querySelector(".lifequest-emblem")),
-          appRegion: getComputedStyle(railToggle).getPropertyValue("-webkit-app-region")
+          appRegion: getComputedStyle(railToggle).getPropertyValue("-webkit-app-region"),
+          // The toggle is the last visible control in the rail now: it closes the
+          // sidebar's foot, so no button or link after it may still be on screen.
+          isLastControl: (() => {
+            if (!rail) return false;
+            const visible = Array.from(
+              rail.querySelectorAll("button, a, [role=button]")
+            ).filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            });
+            return visible.length > 0 && visible[visible.length - 1] === railToggle;
+          })()
         }
       : null,
     titlebarToggle: titlebarToggle
@@ -299,8 +312,8 @@ const SAMPLE = `(() => {
     titlebarVault: titlebarVault
       ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
       : null,
-    // The rail's foot: the Log row and the vault chip on one line when the rail
-    // is wide, stacked when it is thin.
+    // The rail's foot: the Log row, the vault chip and the collapse toggle on one
+    // line when the rail is wide, stacked when it is thin.
     foot: foot
       ? {
           box: box(foot),
@@ -311,7 +324,8 @@ const SAMPLE = `(() => {
             className: typeof el.className === "string" ? el.className : "",
             box: box(el)
           })),
-          logRow: box(foot.querySelector(".nav-rail__link"))
+          logRow: box(foot.querySelector(".nav-rail__link")),
+          collapse: box(foot.querySelector(".nav-rail__collapse"))
         }
       : null,
     // The vault chip's new home. Every claim the titlebar chip used to carry is
@@ -1178,25 +1192,36 @@ async function main() {
       `borders t/r/b/l ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
     );
 
-    // 2 — the topband: the rail's first row, carrying the lockup and exactly one
-    // control. It still starts on the window's top edge, so the leading corner of
-    // the strip stays a drag handle; its content now sits one rail-content inset
-    // down from that edge instead of being squeezed into the titlebar's 32px.
+    // 2 — the topband: the rail's first row, carrying the lockup alone. It still
+    // starts on the window's top edge, so the leading corner of the strip stays a
+    // drag handle; its content sits one rail-content inset down from that edge
+    // instead of being squeezed into the titlebar's 32px. The collapse toggle used
+    // to close this row at its trailing edge; it lives in the rail's foot now, so
+    // the header holds no control at all.
     check(
       "the topband starts on the window edge and runs past the strip",
       expanded.header?.box.top === 0 &&
         expanded.header?.box.bottom > titlebarHeight,
       `band ${JSON.stringify(expanded.header?.box)} vs titlebar height ${titlebarHeight}px`,
     );
-    // The request this claims: the lockup gets the same air above it as the rail
-    // has always held at its leading edge, and the wing switcher sits that same
-    // distance under the mark. All three are forked off the lockup's own box, so
-    // a change to any one of them breaks the equality rather than silently
-    // drifting. The toggle was asked to move down with the mark, so its top
-    // rides beside the lockup's.
+    check(
+      "the topband holds no control",
+      expanded.header?.controls.length === 0,
+      `controls ${JSON.stringify(expanded.header?.controls)}`,
+    );
+    // The request this claims: the lockup is centred on the sidebar, not anchored
+    // to its leading edge. The header's box spans the rail, so its centring line is
+    // the column's; the mark's painted (ink-tight) box must sit on it. The air
+    // above the mark and the gap down to the wing switcher are forked off the
+    // lockup's own box, so a drift in either one breaks the equality.
     const brandBox = expanded.railBrand;
-    const leadInset =
-      brandBox && expanded.rail ? brandBox.left - expanded.rail.box.left : -1;
+    const brandCentre =
+      brandBox && expanded.rail
+        ? (brandBox.left + brandBox.right) / 2
+        : -1;
+    const railCentre = expanded.rail
+      ? (expanded.rail.box.left + expanded.rail.box.right) / 2
+      : -1;
     const topInset =
       brandBox && expanded.rail ? brandBox.top - expanded.rail.box.top : -1;
     const wingInset =
@@ -1204,33 +1229,44 @@ async function main() {
         ? expanded.wingSwitcher.box.top - brandBox.bottom
         : -1;
     check(
-      "the lockup is held off the top and leading edges by one equal inset",
-      brandBox !== null && leadInset >= 12 && Math.abs(topInset - leadInset) <= 1,
-      `top inset ${topInset}px vs leading inset ${leadInset}px, lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
-    );
-    check(
-      "the wing switcher sits one inset below the lockup",
+      "the lockup is centred on the rail's column",
       brandBox !== null &&
+        expanded.rail !== null &&
+        Math.abs(brandCentre - railCentre) <= 1 &&
+        brandBox.left >= expanded.rail.box.left &&
+        brandBox.right <= expanded.rail.box.right,
+      `lockup centre ${brandCentre}px vs rail centre ${railCentre}px, lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the lockup keeps one measure of air above it and under it",
+      brandBox !== null &&
+        topInset >= 12 &&
         wingInset >= 12 &&
-        Math.abs(wingInset - leadInset) <= 1,
-      `wing gap ${wingInset}px vs leading inset ${leadInset}px, switcher ${JSON.stringify(expanded.wingSwitcher?.box)}, lockup ${JSON.stringify(brandBox)}`,
+        Math.abs(wingInset - topInset) <= 1,
+      `top inset ${topInset}px vs wing gap ${wingInset}px, switcher ${JSON.stringify(expanded.wingSwitcher?.box)}, lockup ${JSON.stringify(brandBox)}`,
+    );
+    // 3 — the collapse toggle at the foot: the sidebar's bottom trailing corner,
+    // level with the Log and the vault chip, and the last control in the column.
+    check(
+      "the collapse toggle sits in the rail's foot",
+      Boolean(expanded.railToggle && expanded.foot && expanded.rail) &&
+        expanded.railToggle.box.top >= expanded.foot.box.top - 1 &&
+        expanded.railToggle.box.bottom <= expanded.foot.box.bottom + 1,
+      `toggle ${JSON.stringify(expanded.railToggle?.box)} vs foot ${JSON.stringify(expanded.foot?.box)}`,
     );
     check(
-      "the collapse toggle drops with the lockup",
-      Boolean(expanded.railToggle && brandBox && expanded.rail) &&
-        Math.abs(expanded.railToggle.box.top - brandBox.top) <= 1 &&
-        expanded.railToggle.box.top - expanded.rail.box.top >= 12,
-      `toggle ${JSON.stringify(expanded.railToggle?.box)} vs lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+      "the collapse toggle closes the sidebar's bottom corner",
+      Boolean(expanded.railToggle && expanded.rail) &&
+        expanded.rail.box.bottom - expanded.railToggle.box.bottom <= 16 &&
+        expanded.railToggle.box.bottom <= expanded.rail.box.bottom &&
+        expanded.railToggle.box.right > expanded.rail.box.left + track * 0.7 &&
+        expanded.railToggle.box.right <= expanded.rail.box.right,
+      `toggle ${JSON.stringify(expanded.railToggle?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
     );
     check(
-      "topband holds one control",
-      expanded.header?.controls.length === 1,
-      `controls ${JSON.stringify(expanded.header?.controls)}`,
-    );
-    check(
-      "that control is the collapse toggle",
-      expanded.railToggle?.label === "Collapse sidebar",
-      `label ${JSON.stringify(expanded.railToggle?.label)}`,
+      "the collapse toggle is the last control in the rail",
+      expanded.railToggle?.isLastControl === true,
+      "a visible control follows the collapse toggle in the rail",
     );
     check(
       "the toggle is the rail's own, wearing the collapse state",
@@ -1450,24 +1486,16 @@ async function main() {
     );
     // The reported bug: a second toggle rendered in the titlebar when the rail
     // collapsed, on top of the vault chip. There is no titlebar toggle in either
-    // state any more — the rail keeps its own in its header at both widths.
+    // state any more — the rail keeps its own in its foot at both widths.
     check(
       "no titlebar toggle exists while the rail is open",
       expanded.titlebarToggle === null,
       `titlebar toggle present: ${JSON.stringify(expanded.titlebarToggle)}`,
     );
-    check(
-      "the collapse toggle sits at the sidebar's trailing edge",
-      Boolean(expanded.railToggle) &&
-        expanded.railToggle.box.right > expanded.rail.box.left + track * 0.7 &&
-        expanded.railToggle.box.right <= expanded.rail.box.right,
-      `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
-    );
-
     // The chip's new home: the rail's foot. Wide, the foot is one row — the Log
-    // row and the chip split it in half — and the chip shows the vault's full
-    // name. A chip that stayed behind in the strip, or a chip that did not take
-    // the row's other half, is the feature missing rather than moved.
+    // and the chip split the room the collapse toggle leaves — and the chip shows
+    // the vault's full name. A chip that stayed behind in the strip, or a chip that
+    // did not take a pane of the row, is the feature missing rather than moved.
     check(
       "the rail foot renders the vault chip",
       Boolean(expanded.vaultChip),
@@ -1479,11 +1507,12 @@ async function main() {
       `in rail ${expanded.vaultChip?.inRail}, in foot ${expanded.vaultChip?.inFoot}`,
     );
     check(
-      "the foot's two controls are the Log row and the vault chip",
+      "the foot's three controls are the Log row, the vault chip and the collapse toggle",
       Boolean(expanded.foot) &&
-        expanded.foot.children.length === 2 &&
+        expanded.foot.children.length === 3 &&
         expanded.foot.children[0].className.includes("nav-rail__link") &&
-        expanded.foot.children[1].className.includes("nav-rail__vault"),
+        expanded.foot.children[1].className.includes("nav-rail__vault") &&
+        expanded.foot.children[2].className.includes("nav-rail__collapse"),
       `foot children ${JSON.stringify(expanded.foot?.children)}`,
     );
     check(
@@ -1493,12 +1522,24 @@ async function main() {
       `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}`,
     );
     check(
-      "the Log and the vault chip split the foot in half",
-      Boolean(expanded.foot?.logRow && expanded.vaultChip) &&
+      "the Log and the vault chip split the room the toggle leaves",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip && expanded.railToggle) &&
         expanded.foot.logRow.width > 0 &&
         Math.abs(expanded.foot.logRow.width - expanded.vaultChip.box.width) <= 1 &&
-        expanded.foot.logRow.width >= expanded.foot.box.width * 0.4,
-      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} foot ${JSON.stringify(expanded.foot?.box)}`,
+        expanded.foot.logRow.width >= expanded.foot.box.width * 0.33 &&
+        expanded.railToggle.box.width < expanded.foot.logRow.width * 0.5,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} toggle ${JSON.stringify(expanded.railToggle?.box)} foot ${JSON.stringify(expanded.foot?.box)}`,
+    );
+    // The chip is shifted left to make room for the toggle: it ends one gap before
+    // the toggle's leading edge, and the toggle ends at the rail's trailing edge.
+    check(
+      "the vault chip sits one toggle left of the rail's trailing edge",
+      Boolean(expanded.vaultChip && expanded.railToggle && expanded.foot && expanded.rail) &&
+        expanded.vaultChip.box.right < expanded.railToggle.box.left &&
+        expanded.railToggle.box.left - expanded.vaultChip.box.right <= 8 &&
+        expanded.railToggle.box.right >= expanded.foot.box.right - 1 &&
+        expanded.foot.box.right >= expanded.rail.box.right - 8,
+      `chip ends at ${expanded.vaultChip?.box.right}px, toggle starts at ${expanded.railToggle?.box.left}px, toggle ends at ${expanded.railToggle?.box.right}px, foot ends at ${expanded.foot?.box.right}px, rail ends at ${expanded.rail?.box.right}px`,
     );
     check(
       "the Log and the vault chip share the foot's row",
@@ -1564,9 +1605,10 @@ async function main() {
       `chip ${JSON.stringify(expanded.vaultChip?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
     );
     check(
-      "the chip is the last control in the rail",
-      expanded.vaultChip?.isLastControl === true,
-      "a visible control follows the vault chip in the rail",
+      "the chip is not the rail's last control — the collapse toggle is",
+      expanded.vaultChip?.isLastControl === false &&
+        expanded.railToggle?.isLastControl === true,
+      `chip last ${expanded.vaultChip?.isLastControl}, toggle last ${expanded.railToggle?.isLastControl}`,
     );
 
     check(
@@ -2090,29 +2132,31 @@ async function main() {
       collapsed.rail?.background === rgbOf(collapsed.theme?.canvasBase),
       `rail ${collapsed.rail?.background} vs --canvas-base ${collapsed.theme?.canvasBase}`,
     );
-    // The rail keeps its one control at every width; when it is thin the same
-    // header toggle turns into the expand icon and centres in the 56px column.
+    // The header is the drag band and the column's top air at this width: the
+    // lockup leaves (56px cannot hold a word) and the collapse toggle has left it
+    // for the foot, so it holds no control — but its box still starts on the
+    // window's top edge and runs past the strip.
     check(
-      "the thin rail's topband still holds exactly one control",
-      collapsed.header?.controls.length === 1 &&
+      "the thin rail's topband holds no control",
+      collapsed.header?.controls.length === 0 &&
         collapsed.header?.box.top === 0 &&
         collapsed.header?.box.bottom > titlebarHeight,
       `controls ${JSON.stringify(collapsed.header?.controls)}, band ${JSON.stringify(collapsed.header?.box)}`,
     );
-    // The header's top inset travels with the collapse: the thin rail's one
-    // control (the emblem toggle) drops with the wide rail's lockup, and the
-    // vertical wing tabs follow at the same measure the wide pair keeps.
-    const collapsedWingGap =
-      collapsed.wingsBand && collapsed.railToggle
-        ? collapsed.wingsBand.box.top - collapsed.railToggle.box.bottom
-        : -1;
+    // The wing tabs take the band straight under that top air: narrowing the rail
+    // must not unhook the first level of navigation from the header's measure, and
+    // keeping the header's height is what holds the tabs where the wide rail's
+    // horizontal band sits.
+    const collapsedWingGap = collapsed.wingsBand && collapsed.header
+      ? collapsed.wingsBand.box.top - collapsed.header.box.bottom
+      : -1;
     check(
-      "the thin rail's toggle drops with the header's inset",
-      Boolean(collapsed.railToggle && collapsed.rail && collapsed.wingsBand) &&
-        collapsed.railToggle.box.top - collapsed.rail.box.top >= 12 &&
-        collapsed.wingsBand.box.top >= collapsed.railToggle.box.bottom &&
-        Math.abs(collapsedWingGap - leadInset) <= 2,
-      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}, band ${JSON.stringify(collapsed.wingsBand?.box)}, gap ${collapsedWingGap}px vs leading inset ${leadInset}px`,
+      "the vertical wing tabs follow the header's inset",
+      Boolean(collapsed.wingsBand && collapsed.header) &&
+        collapsed.wingsBand.box.top >= collapsed.header.box.bottom - 1 &&
+        collapsedWingGap >= 0 &&
+        collapsedWingGap <= 8,
+      `band ${JSON.stringify(collapsed.wingsBand?.box)} under header ${JSON.stringify(collapsed.header?.box)}, gap ${collapsedWingGap}px`,
     );
     check(
       "that control is the studio's pure emblem, and it expands the rail",
@@ -2179,20 +2223,33 @@ async function main() {
       `lens ${JSON.stringify(collapsed.lens?.box)} on ${collapsed.lens?.background}, page top ${collapsed.shellContent?.top}px`,
     );
     // The chip travels with the rail: in the thin rail it stacks under the Log's
-    // icon and reduces to the vault's initials. It is still the same button — the
-    // full vault name stays in its accessible name, so nothing is lost but paint.
+    // icon and reduces to the vault's initials, with the expand control under it
+    // closing the column. It is still the same button — the full vault name stays
+    // in its accessible name, so nothing is lost but paint.
     check(
       "the titlebar renders no vault chip when the rail is thin",
       collapsed.titlebarVault === null && collapsed.leadingText === "",
       `titlebar chip ${JSON.stringify(collapsed.titlebarVault)}, leading text ${JSON.stringify(collapsed.leadingText)}`,
     );
     check(
-      "the thin rail's foot stacks the Log above the chip",
-      Boolean(collapsed.foot?.logRow && collapsed.vaultChip) &&
+      "the thin rail's foot stacks the Log, the chip and the toggle",
+      Boolean(collapsed.foot?.logRow && collapsed.vaultChip && collapsed.railToggle) &&
         collapsed.foot.display === "flex" &&
         collapsed.foot.flexDirection === "column" &&
-        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
-      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
+        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1 &&
+        collapsed.vaultChip.box.bottom <= collapsed.railToggle.box.top + 1,
+      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}, toggle ${JSON.stringify(collapsed.railToggle?.box)}`,
+    );
+    // The expand control moved to the foot with the collapse control's new home: it
+    // closes the thin column, and a reopen press is found where the sidebar ends
+    // rather than where it starts.
+    check(
+      "the expand control closes the thin rail's column",
+      Boolean(collapsed.railToggle && collapsed.rail) &&
+        collapsed.rail.box.bottom - collapsed.railToggle.box.bottom <= 16 &&
+        collapsed.railToggle.box.bottom <= collapsed.rail.box.bottom &&
+        (collapsed.foot?.children.length ?? 0) === 3,
+      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}, foot children ${collapsed.foot?.children.length}`,
     );
     check(
       "the thin chip is a small square mark in the icon column",
@@ -2231,9 +2288,10 @@ async function main() {
       `background ${collapsed.vaultChip?.background} vs --bg-subtle ${collapsed.theme?.bgSubtle}, rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
     );
     check(
-      "the chip is the last control in the thin rail",
-      collapsed.vaultChip?.isLastControl === true,
-      "a visible control follows the vault chip in the thin rail",
+      "the collapse toggle is the last control in the thin rail",
+      collapsed.railToggle?.isLastControl === true &&
+        collapsed.vaultChip?.isLastControl === false,
+      `toggle last ${collapsed.railToggle?.isLastControl}, chip last ${collapsed.vaultChip?.isLastControl}`,
     );
     check(
       "the sheet starts at the thin rail, not the window's edge",
@@ -2916,13 +2974,15 @@ async function main() {
     (state) => state && state.tokens,
   );
   const labels = ["expanded", "collapsed", "restored"];
-  // The rail keeps the same single toggle in its own header at both widths, so
-  // the column is always the toggle's box — there is no second, titlebar-placed
+  // The rail keeps the same single toggle in its foot at both widths, so the
+  // column is always the toggle's box — there is no second, titlebar-placed
   // control to fall back to.
-  const railToggleLeft = (state) =>
-    state.railToggle?.box ? String(state.railToggle.box.left) : "—";
+  const railToggleAt = (state) =>
+    state.railToggle?.box
+      ? `${state.railToggle.box.bottom}/${state.railToggle.box.right}`
+      : "—";
   const table = [
-    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "lens L/gaps", "page T", "corner"],
+    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle B/R", "foot dir", "chip L/W", "sheet L", "lens L/gaps", "page T", "corner"],
   ];
   for (let i = 0; i < rows.length; i += 1) {
     const state = rows[i];
@@ -2931,7 +2991,7 @@ async function main() {
       state.rail ? `${state.rail.box.left}/${state.rail.box.top}/${state.rail.box.bottom}` : "none",
       state.rail ? `${state.rail.box.width}x${state.rail.box.height}` : "—",
       state.header ? String(state.header.controls.length) : "—",
-      railToggleLeft(state),
+      railToggleAt(state),
       String(state.foot?.flexDirection ?? "—"),
       state.vaultChip
         ? `${state.vaultChip.box.left}x${state.vaultChip.box.width}`
