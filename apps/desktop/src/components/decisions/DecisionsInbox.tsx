@@ -69,6 +69,18 @@ type Arrival = { ids: string[]; actor: string; at: number };
 /** How long a card that just arrived wears the mark. */
 const ARRIVAL_MS = 6_000;
 
+/**
+ * How long a burst of answers shares one vault-snapshot refresh.
+ *
+ * Answering a queue is a run of writes a few hundred milliseconds apart at the
+ * fastest, and the refresh is the whole vault re-opened behind the same queue
+ * the writes use. Coalescing on this window turns "one snapshot per card" into
+ * "one snapshot per burst" without making a lone answer's editor wait visibly:
+ * by the time the operator's next action needs the new body, the refresh that
+ * carries it has been dispatched.
+ */
+const SNAPSHOT_CATCH_UP_MS = 250;
+
 function formatWhen(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
@@ -216,6 +228,40 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * switcher it changes nothing below it; the control sits at the far trailing
  * edge, in line with the switcher.
  *
+ * THE ANSWER IS THE MOMENT, NOT THE BOOKKEEPING
+ *
+ * The operator reported the second half of the same queue: "when it's approving
+ * the last decision, the user is forced to sit and wait while that last decision
+ * is approved before that decision page gets dismissed", and that answering
+ * several cards felt slow. The page was making the answer wait on work the
+ * answer does not need:
+ *
+ *  - answering one card awaited a full `decisionList()`, then a
+ *    `vaultGetSnapshot`, and then ANOTHER `decisionList()` just to decide
+ *    whether the queue was empty enough to close the sheet. On the operator's
+ *    vault (819 Decision files, one list read measured at 1.1–2.1 s) the last
+ *    press sat on a screen where the write had already landed for seconds,
+ *    waiting on reads that only feed the page behind it;
+ *  - every write also announces a vault revision, and every Decisions reader in
+ *    the app answered that announcement with its own read — the rail's badge,
+ *    the auto-open watcher, the dashboard behind the sheet and this page. Those
+ *    reads are now shared and cached in the main process (`decision-list-cache.ts`),
+ *    and a Decision write patched the cached list rather than throwing it away.
+ *
+ * So the answer path now awaits exactly one thing: the write. The card leaves on
+ * its own write returning (it always did), the page says what happened, the
+ * sheet's animated close is requested from a LOCAL count of the queue
+ * (`pendingIdsRef`, kept from every read and decremented by every answer this
+ * page lands), and only then does the page catch up — the list re-read and the
+ * snapshot refresh still happen, after the operator is no longer waiting on
+ * them (`catchUp`). A card that was answered can never come back: reads merge
+ * against `answeredIdsRef`, so a read that left before a write cannot un-answer
+ * it on its way back.
+ *
+ * The one thing the local count cannot know is a filing that landed after the
+ * last read: in that window the sheet can close with a proposal the operator has
+ * not seen, and `DecisionInboxAutoOpen` re-opens it for exactly that filing.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -338,13 +384,46 @@ export function DecisionsInbox({
    */
   const readSeqRef = useRef(0);
   /**
-   * The one pending silent re-read while several answers land together.
+   * Every Decision the vault last told this page is still pending, by id.
    *
-   * A batch (or two cards answered quickly) writes several times in a row, and
-   * one read is enough to draw the result. Coalescing them keeps a burst of
-   * approvals from racing a list read per card.
+   * THE QUESTION THIS ANSWERS WITHOUT A ROUND TRIP: "has the operator answered
+   * the whole queue?" Settings › Decisions › auto-close needs that fact at the
+   * exact moment an answer's write returns, because the sheet goes away on it.
+   *
+   * It used to be asked with ANOTHER `decisionList()` — on top of the read the
+   * answer path had just done, and on top of the live reads every writer
+   * already starts. On the operator's vault (819 Decision files, one list read
+   * measured at 1.1–2.1 s) the last approve press therefore sat on a screen
+   * that had already applied the write while a third full list read was asked
+   * for, waited out, and thrown away. Reported: "the user is forced to sit and
+   * wait while that last decision is approved before that decision page gets
+   * dismissed."
+   *
+   * So the queue's membership is kept here instead. Every successful read
+   * replaces it (with the ids this page has already answered removed — a read
+   * that was in flight before an answer must not resurrect that card), and
+   * every answer this page lands removes its own id. That is the same evidence
+   * the extra read was gathered for, available synchronously.
+   *
+   * What it deliberately does not know: a filing that landed in the vault after
+   * the last read. In that one window the sheet can close with a proposal the
+   * operator has not seen — and `DecisionInboxAutoOpen` re-opens it for exactly
+   * that filing, which is the same watcher that opened it the first time.
    */
-  const reloadTimerRef = useRef<number | null>(null);
+  const pendingIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * The ids this page has answered, so a re-read that raced the write cannot
+   * put the answered card back into {@link pendingIdsRef}.
+   */
+  const answeredIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * The one snapshot refresh a burst of answers shares, if one is queued.
+   *
+   * A timer rather than a promise: it must survive the page unmounting under it
+   * (the last answer closes the sheet) because the refresh is for the page the
+   * sheet hands back. A burst therefore pays for one snapshot, not one per card.
+   */
+  const snapshotCatchUpRef = useRef<number | null>(null);
 
   /**
    * Read the inbox.
@@ -387,6 +466,16 @@ export function DecisionsInbox({
           : [];
         for (const d of result.value) drawnRef.current.add(d.id);
         seededRef.current = true;
+        // The queue as the vault holds it, minus what this page has already
+        // answered. The answer's own write is the freshest fact this page owns;
+        // a read that left before it must not put that card back in the queue.
+        const pending = new Set(
+          result.value
+            .filter((d) => d.status === "pending")
+            .map((d) => d.id),
+        );
+        for (const id of answeredIdsRef.current) pending.delete(id);
+        pendingIdsRef.current = pending;
 
         let list = result.value.slice();
         if (tab === "pending") {
@@ -473,31 +562,6 @@ export function DecisionsInbox({
     [tab],
   );
 
-  /**
-   * Ask for one silent re-read soon.
-   *
-   * Several answers can land in the same breath — Approve all dispatches a
-   * batch, and two cards can be clicked quickly — so a burst is coalesced into
-   * one read instead of racing a list read per card. `live` mode is deliberate:
-   * a write landed, and what is on screen is added to rather than replaced.
-   */
-  const scheduleReload = useCallback(() => {
-    if (reloadTimerRef.current !== null) return;
-    reloadTimerRef.current = window.setTimeout(() => {
-      reloadTimerRef.current = null;
-      void load("live");
-    }, 60);
-  }, [load]);
-
-  // A queued re-read must not fire after the sheet (and this page) is gone.
-  useEffect(() => {
-    return () => {
-      if (reloadTimerRef.current !== null) {
-        window.clearTimeout(reloadTimerRef.current);
-      }
-    };
-  }, []);
-
   // The operator's own moves: the first paint and a tab. The lens is not one of
   // them — the page reads the same list under every lens.
   useEffect(() => {
@@ -523,6 +587,22 @@ export function DecisionsInbox({
   }, [arrival]);
 
   /**
+   * Note an answer this page just landed, and say whether it emptied the queue.
+   *
+   * Called with the id only after the vault has confirmed the write, so the
+   * removal is a fact rather than an optimism. Returns TRUE when the operator
+   * has nothing left to answer on this shelf — the moment the sheet must hand
+   * the page back.
+   */
+  function noteAnswered(id: string): boolean {
+    answeredIdsRef.current.add(id);
+    pendingIdsRef.current.delete(id);
+    // A page that has never drawn a list cannot know the queue is empty, and
+    // closing on "no evidence" is exactly the guess this must not make.
+    return seededRef.current && pendingIdsRef.current.size === 0;
+  }
+
+  /**
    * Hand the page back when the queue has been answered.
    *
    * Settings › Decisions › auto-close. The check is on the whole store rather
@@ -537,27 +617,53 @@ export function DecisionsInbox({
    * under an operator who was reading History would be the app taking their
    * place rather than handing it back.
    *
-   * The read is its own, rather than the list `load()` just drew: the approve
-   * write announces a vault revision, and the live re-read that announcement
-   * starts can supersede the answer path's read (`readSeqRef`) and hand it back
-   * `null`. Asking the vault once more is a cheap local call, and it makes "is
-   * the queue empty" a fact of the vault rather than a race between two reads.
-   * A read that fails leaves the sheet up: closing on a guess is worse than one
-   * extra click.
+   * NO READ. `pendingIdsRef` is the vault's own queue as of the last read,
+   * minus every answer this page has already written, so this is a synchronous
+   * decision and the sheet's animated close starts the instant the last write
+   * returns. Asking the vault once more here — which is what this used to do,
+   * on top of the read the answer path had just made — is the wait the operator
+   * reported: the exit motion could not start until a third full list read had
+   * answered. The bookkeeping reads still happen, just after the page has been
+   * handed back (see {@link catchUp}).
    */
-  async function closeIfAnswered(): Promise<void> {
+  function closeIfAnswered(): void {
     if (!onClose) return;
     if (!autoClose) return;
-    let remaining: DecisionRecord[];
-    try {
-      const result = await api().decisionList();
-      if (!result.ok) return;
-      remaining = result.value;
-    } catch {
-      return;
-    }
-    if (remaining.some((decision) => decision.status === "pending")) return;
+    if (pendingIdsRef.current.size > 0) return;
     onClose();
+  }
+
+  /**
+   * Let the page catch up with what the answer wrote — after it is no longer
+   * making the operator wait.
+   *
+   * Two reads happen after every answer: the list (so History and the rail draw
+   * what the write did) and the vault snapshot (so a document editor that is
+   * open behind the sheet picks up the approved body). Neither is needed to
+   * show the operator that the card is gone — the card was removed by the write
+   * itself — so neither is awaited on the answer path any more.
+   *
+   * The snapshot refresh is coalesced across a burst. A snapshot is the whole
+   * vault re-opened (measured ~0.5 s on the operator's vault) and it runs behind
+   * the same write queue as the answers, so one refresh per answered card would
+   * have put the answers back to waiting on each other — the second half of the
+   * operator's complaint. An answer that lands within the window of a refresh
+   * already asked for needs no second one: the snapshot it draws is the same
+   * fact. The timer is deliberately NOT cleared on unmount: answering the last
+   * card closes the sheet, and the refresh is for the page it hands back.
+   *
+   * Errors from either are left to their own surfaces: `load` draws its line
+   * where a read of this page fails, and `refresh` reports through the vault
+   * provider's banner. A background read that fails must not overwrite the
+   * operator's answer with a read error they cannot act on.
+   */
+  function catchUp(): void {
+    void load("live");
+    if (snapshotCatchUpRef.current !== null) return;
+    snapshotCatchUpRef.current = window.setTimeout(() => {
+      snapshotCatchUpRef.current = null;
+      void refresh();
+    }, SNAPSHOT_CATCH_UP_MS);
   }
 
   /** Note that one card's answer is in flight, or that it has settled. */
@@ -579,6 +685,12 @@ export function DecisionsInbox({
    * queue exists to prevent). The id is added and removed around the call and
    * never around the whole page, so a second click cannot take the first card's
    * processing state.
+   *
+   * Nothing else is awaited here. The list read and the snapshot refresh that
+   * follow an answer used to be part of this function, and they are the wait the
+   * operator reported: the card left, but the sheet (and the next click) sat
+   * behind a full re-read. The caller schedules them through {@link catchUp}
+   * once the answer is on screen.
    */
   async function resolveOne(
     id: string,
@@ -591,7 +703,6 @@ export function DecisionsInbox({
       // Drop the card now rather than after the list round-trip, so two answers
       // that finish together each disappear on their own arrival.
       setItems((previous) => previous.filter((item) => item.id !== id));
-      scheduleReload();
       return { ok: true };
     } catch (err) {
       return {
@@ -603,6 +714,16 @@ export function DecisionsInbox({
     }
   }
 
+  /**
+   * Answer one card, and hand the page back if that was the last one.
+   *
+   * THE ORDER IS THE FEATURE. The write is awaited (the vault has to accept the
+   * answer before the card may leave), then the page says what happened, then
+   * the sheet closes on {@link noteAnswered}'s local count, and only then does
+   * the page catch up with its reads. Every one of those steps runs in a single
+   * turn once the write returns, so the exit motion starts within a frame of the
+   * operator's click instead of after two or three full list reads.
+   */
   async function resolve(id: string, resolution: "approved" | "rejected") {
     // A second press on an answer already in flight is a duplicate, not a new
     // answer: the vault would refuse it or, worse, the two would race.
@@ -614,21 +735,21 @@ export function DecisionsInbox({
     setArrival(null);
     try {
       const outcome = await resolveOne(id, resolution);
-      // Read BEFORE saying anything: `load()` clears the page's error line, so an
-      // error set first would be wiped by the refresh that keeps the card up.
-      await load();
-      // Refresh vault snapshot so document editors pick up approved body.
-      await refresh();
-      if (outcome.ok) {
-        setActionMessage(
-          resolution === "approved"
-            ? "Decision approved."
-            : "Decision rejected.",
-        );
-      } else {
+      if (!outcome.ok) {
+        // The card stays, so this path keeps the old order: read first, then say
+        // why. `load()` clears the page's error line, and an error set before it
+        // would be wiped by the read that keeps the card on screen.
+        await load("live");
         setError(outcome.error ?? "Failed to resolve decision");
+        return;
       }
-      await closeIfAnswered();
+      setActionMessage(
+        resolution === "approved"
+          ? "Decision approved."
+          : "Decision rejected.",
+      );
+      if (noteAnswered(id)) closeIfAnswered();
+      catchUp();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to resolve decision",
@@ -646,6 +767,10 @@ export function DecisionsInbox({
    * answer the operator should ever have to read here). A batch that partly
    * fails says how many landed and repeats the first refusal, and every failure
    * leaves its card pending — nothing is silently dropped.
+   *
+   * The reads happen once for the whole batch, and they happen AFTER the answer
+   * is on screen: a batch of approvals must not keep the sheet up while the list
+   * and the snapshot catch up, for the same reason a single answer must not.
    */
   async function approveAll() {
     const ids = items
@@ -666,9 +791,12 @@ export function DecisionsInbox({
       );
       const failures = outcomes.filter((outcome) => !outcome.ok);
       const approved = outcomes.length - failures.length;
-      // One read and one snapshot refresh for the whole batch, after every write.
-      await load();
-      await refresh();
+      // The queue's own answer: every write that landed has left it, so the
+      // question "is anything still pending?" is answered locally.
+      let queueAnswered = false;
+      outcomes.forEach((outcome, index) => {
+        if (outcome.ok && noteAnswered(ids[index]!)) queueAnswered = true;
+      });
       if (failures.length === 0) {
         setActionMessage(
           approved === 1
@@ -687,7 +815,8 @@ export function DecisionsInbox({
               }`.trim(),
         );
       }
-      await closeIfAnswered();
+      if (queueAnswered) closeIfAnswered();
+      catchUp();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to approve all decisions",
@@ -698,13 +827,6 @@ export function DecisionsInbox({
   }
 
   function selectTab(next: Tab) {
-    // A queued silent re-read was scheduled against the tab that was showing;
-    // the tab switch reads its own list, so drop the stale one rather than let
-    // it draw the previous tab's rows under the new tab.
-    if (reloadTimerRef.current !== null) {
-      window.clearTimeout(reloadTimerRef.current);
-      reloadTimerRef.current = null;
-    }
     setTab(next);
     setEditingId(null);
     setActionMessage(null);
@@ -785,17 +907,19 @@ export function DecisionsInbox({
         // Reload BEFORE saying why: the read clears the page's error line, so
         // an error set first would be wiped by the refresh that keeps the
         // operator's corrected proposal on screen.
-        await load();
+        await load("live");
         setError(resolveResult.error);
         return;
       }
       setActionMessage("Decision approved with your changes.");
-      await load();
-      // Refresh vault snapshot so document editors pick up approved body.
-      await refresh();
-      await closeIfAnswered();
+      // The resolve was called directly here rather than through `resolveOne`,
+      // because the amend had to land first; the card leaves and the queue is
+      // counted the same way an ordinary answer is.
+      setItems((previous) => previous.filter((item) => item.id !== id));
+      if (noteAnswered(id)) closeIfAnswered();
+      catchUp();
     } catch (err) {
-      if (amended) await load();
+      if (amended) await load("live");
       setError(
         err instanceof Error ? err.message : "Failed to approve the decision",
       );

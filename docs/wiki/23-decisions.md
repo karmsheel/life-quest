@@ -117,7 +117,14 @@ decisions logged yet."
 - **Close after the last decision** — answering the last pending proposal closes
   the inbox and hands the page back where you left it. It fires on a rejection as
   well as an approval; only your own answer closes the sheet, never a change made
-  in another window, and a failed read leaves it up.
+  in another window.
+
+The sheet leaves the instant your answer lands. Nothing is waited on between the
+write and the close: the re-read of the queue and the vault refresh the page needs
+afterwards happen behind the page it just handed back, so answering a card never
+costs you a pause on the screen. The same is true of a card that is not the last
+one — it leaves the queue as its own write returns, however many other cards are
+still waiting.
 
 Both write to the vault's settings, so the preference follows the vault folder
 rather than one window. Turning **Open for a new decision** off does not make the
