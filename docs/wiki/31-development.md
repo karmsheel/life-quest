@@ -224,7 +224,7 @@ Pages on a push to `master`, on `release: published`, and on demand.
 
 Both go through electron-builder on Windows x64, configured by
 `apps/desktop/electron-builder.yml`. The version both read is `version` in
-`apps/desktop/package.json` (currently `0.3.1`).
+`apps/desktop/package.json` (currently `0.3.2`).
 
 ```bash
 npm run package   # a dev build you can run: apps/desktop/release/win-unpacked/LifeQuest.exe
