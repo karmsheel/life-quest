@@ -111,8 +111,8 @@ npm test               # from the repo root → apps/desktop/scripts/test.mjs
 ```
 
 That runs `node --experimental-strip-types --test "tests/**/*.test.ts"` in
-`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 124 test
-wrappers over 100 Electron rig drivers.
+`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 126 test
+wrappers over 101 Electron rig drivers.
 
 The testing discipline in this repository is E2E, and the layout enforces it:
 
