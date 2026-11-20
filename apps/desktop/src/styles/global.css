@@ -14998,15 +14998,16 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Recurring tasks —— */
-/* The Dashboard card's schedule block: what comes round, under the board's two
+/* The Dashboard card's schedule block: what comes round, ABOVE the board's two
    horizons. It lives inside the same card and is separated by a rule, because a
    due occurrence is a different kind of row from a task — one is finished where
-   it stands, the other moves the board. */
+   it stands, the other moves the board. The rule sits under the block now that
+   the block leads the card. */
 .home-recurring {
   display: flex;
   flex-direction: column;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--border);
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .home-recurring-list {
