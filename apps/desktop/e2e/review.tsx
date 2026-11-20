@@ -47,7 +47,15 @@
  *     operator navigates away and back. This is the reported bug; the rig
  *     changes the file the way the agent's tool does and announces it the way
  *     main does, so a window that never listens stays stale here.
- * 11. A bridge call this rig does not model, or a console error, passes
+ * 11. The DOCUMENT is a snapshot too, and a finished review keeps a dead button:
+ *     the companion writes the report and marks it complete in the main process,
+ *     and the open box keeps the skeleton it was opened with until the operator
+ *     navigates away and back; on the now-locked page a **Mark review complete**
+ *     button is still offered, though the file is final and the agent's own tool
+ *     marked it. The rig writes and completes the file the way the tools do and
+ *     announces each change, so a page that does not adopt the body, or that
+ *     leaves the button up on a locked review, fails here.
+ * 12. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
  * The driver waits on `reviewRigReady`, set after the shell, the page and the
@@ -247,6 +255,29 @@ function announceDataChanged(): number {
 }
 
 /**
+ * Write the review body the way the agent's `write_review` tool does: into the
+ * file, outside the page's own bridge call, then announce the change.
+ *
+ * The companion writes the report as the interview goes; the operator is sitting
+ * on the open page. Before the page re-read the body on the change signal, the
+ * box kept the skeleton it was opened with until the operator navigated away and
+ * back — the reported bug. This is that write, and the announcement is the only
+ * thing the page can hear.
+ */
+function agentWritesBody(body: string): { ok: boolean; error?: string } {
+  const key = activeKey;
+  const stored = key ? files.get(key) : undefined;
+  if (!stored) return { ok: false, error: "Review file not found" };
+  // The engine refuses a write to a locked file; the rig mirrors it so a leg
+  // that writes after the lock fails here rather than passing on a state the
+  // real tool would refuse.
+  if (stored.locked) return { ok: false, error: "LOCKED" };
+  stored.body = body;
+  announceDataChanged();
+  return { ok: true };
+}
+
+/**
  * Mark one scope done the way the agent's `mark_review_done` tool does: in the
  * file, outside the page's own bridge call, and then announce the change.
  *
@@ -263,9 +294,10 @@ function agentMarksDone(
   if (!stored) return { ok: false, error: "Review file not found" };
   if (scope === "overall") {
     // The engine's own rule: the life review cannot be finished before the
-    // areas are. The rig mirrors it, so a live leg that asks for it too early
+    // areas are, but the daily review has no areas and is never gated. The rig
+    // mirrors both, so a live leg that asks for a gate the engine does not have
     // fails here rather than passing on a state the real tool refuses.
-    const refusal = overallRefusal(stored);
+    const refusal = stored.cadence === "daily" ? null : overallRefusal(stored);
     if (refusal) return { ok: false, error: refusal };
     stored.scopes.overall = {
       status: "done",
@@ -468,6 +500,8 @@ type HarnessWindow = Window & {
   reviewRigDataListenerCount?: () => number;
   /** Fire main's data-change announcement, as it does after a tool call settles. */
   reviewRigAnnounceDataChange?: () => number;
+  /** The agent's `write_review`, in the file and outside the page's bridge. */
+  reviewRigAgentWritesBody?: (body: string) => { ok: boolean; error?: string };
   /** The agent's `mark_review_done`, in the file and outside the page's bridge. */
   reviewRigAgentMarksDone?: (
     scope: string,
@@ -497,6 +531,7 @@ harness.reviewRigScopes = () => {
 harness.reviewRigLocked = () => Boolean(activeKey && files.get(activeKey)?.locked);
 harness.reviewRigDataListenerCount = () => dataChangeListeners.size;
 harness.reviewRigAnnounceDataChange = () => announceDataChanged();
+harness.reviewRigAgentWritesBody = (body: string) => agentWritesBody(body);
 harness.reviewRigAgentMarksDone = (scope: string) => agentMarksDone(scope);
 
 /**

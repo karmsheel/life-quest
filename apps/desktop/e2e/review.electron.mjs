@@ -1,6 +1,6 @@
 /**
  * Drives the review harness in a real Electron window and turns what the Review
- * page actually renders into `e2e/artifacts/review.json` plus seven pictures.
+ * page actually renders into `e2e/artifacts/review.json` plus eleven pictures.
  *
  * Run with the dev server up (`npm run dev`, or the repository's e2e runner):
  *
@@ -28,6 +28,9 @@
  *                         page+checklist pair is centred with room on both sides
  *   review-live-checklist.png  a scope the AGENT marked done, on a page that was
  *                         already open: the row flipped without a navigation
+ *   review-daily-complete.png  the daily review the AGENT wrote and completed on
+ *                         the open page: the report is in the box, the badge is
+ *                         Locked, and the Mark-review-complete button is gone
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -94,6 +97,13 @@
  *     before the announcement survives, which a reload or a page navigation
  *     would destroy. The bridge's own `reviewGet` count is what proves the page
  *     re-read the vault instead of being handed the new state.
+ * 15. The BOX follows a report the AGENT wrote, and a COMPLETED review keeps no
+ *     dead Mark-done button. The companion writes the daily report and marks it
+ *     complete with its own tool calls in main; the operator is on the page. The
+ *     report must appear in the open box without a navigation (a background read
+ *     counted through `reviewGet`, and no write back), and when the file locks
+ *     the page must drop the Mark-review-complete button, show the Locked badge,
+ *     and keep the agent's report in its now read-only box.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -1683,6 +1693,119 @@ async function main() {
   await foldDock(win);
   await shot(win, "review-daily.png");
 
+  // ── 9b. the agent fills the open daily review, then marks it complete ──────
+  // The reported bug: the companion writes the report as the interview goes and
+  // marks the daily review complete with its own tool calls in the main process.
+  // The operator is sitting on the page. Before this leg's fix the box kept the
+  // skeleton it was opened with until they left the page and came back, and the
+  // locked page still offered a Mark-review-complete button although the agent
+  // had already marked it. The rig writes and completes that week's file outside
+  // the page's bridge and fires main's announcement, the only way a tool call in
+  // main reaches the renderer.
+  await waitFor(
+    win,
+    "Boolean(window.reviewRigDataListenerCount && window.reviewRigDataListenerCount() > 0)",
+    "the daily page to subscribe to the vault's change signal",
+  );
+  // A probe on the editor's own DOM node: an update that remounts the page (or a
+  // navigation) would lose it, and "the box filled" would then be a story about a
+  // rebuilt page rather than about the page that was already open.
+  await setHarness(
+    win,
+    `(() => {
+      const box = document.querySelector(".note-live");
+      if (!box) return false;
+      box.dataset.liveProbe = "kept";
+      return true;
+    })()`,
+  );
+  const dailyGetsBefore = await reviewGetCount(win);
+  const dailyWritesBefore = (await setHarness(win, "window.reviewRigWrites")).length;
+  const filledDaily = `${dailyBody}\n\nA morning walk, a hard afternoon, and an early night.`;
+  const dailyWrite = await setHarness(
+    win,
+    `window.reviewRigAgentWritesBody(${JSON.stringify(filledDaily)})`,
+  );
+  checks.dailyAgentWrite = dailyWrite;
+  if (!dailyWrite || dailyWrite.ok !== true) {
+    failure(`the agent's daily report was refused by the rig: ${JSON.stringify(dailyWrite)}`);
+  }
+  await waitFor(
+    win,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes("A morning walk")`,
+    "the agent's daily report to appear in the open box",
+  );
+  await frames(win);
+  const dailyFilled = await sample(win);
+  checks.dailyFilled = dailyFilled;
+  checks.dailyFillReReads = (await reviewGetCount(win)) - dailyGetsBefore;
+  checks.dailyFillWrites =
+    (await setHarness(win, "window.reviewRigWrites")).length - dailyWritesBefore;
+  if (!String(dailyFilled.boxText).includes("A morning walk, a hard afternoon")) {
+    failure("the agent's daily report never appeared in the open box");
+  }
+  if (!(checks.dailyFillReReads > 0)) {
+    failure("the daily box filled without the page re-reading the review from the vault");
+  }
+  if (checks.dailyFillWrites !== 0) {
+    failure(
+      `adopting the agent's report wrote it back to the vault ${checks.dailyFillWrites} time(s)`,
+    );
+  }
+  if (dailyFilled.lockedBadge !== null) {
+    failure(
+      `the daily review is locked before the agent marked it complete: ${JSON.stringify(dailyFilled.lockedBadge)}`,
+    );
+  }
+
+  // Now the completion: the file locks, and the page must adopt the final body
+  // AND drop the Mark-review-complete button the agent has made redundant.
+  const dailyComplete = await setHarness(win, 'window.reviewRigAgentMarksDone("overall")');
+  checks.dailyAgentComplete = dailyComplete;
+  if (!dailyComplete || dailyComplete.ok !== true) {
+    failure(`the agent's daily completion was refused by the rig: ${JSON.stringify(dailyComplete)}`);
+  }
+  await waitFor(
+    win,
+    `(document.querySelector(".review-page__lock-badge")?.textContent ?? "").trim() === "Locked"`,
+    "the daily review's locked badge",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="review-mark-done"]')`,
+    "the mark-done button to leave the locked daily review",
+  );
+  await frames(win);
+  const dailyLocked = await sample(win);
+  checks.dailyLocked = dailyLocked;
+  checks.dailyLockedBody = await fileBody(win);
+  checks.dailyProbe = await setHarness(
+    win,
+    `document.querySelector(".note-live")?.dataset.liveProbe ?? null`,
+  );
+  if (dailyLocked.lockedBadge !== "Locked") {
+    failure(`the locked daily review shows ${JSON.stringify(dailyLocked.lockedBadge)} instead of Locked`);
+  }
+  if (dailyLocked.markDoneLabel !== null) {
+    failure(
+      `the locked daily review still offers a mark-done button: ${JSON.stringify(dailyLocked.markDoneLabel)}`,
+    );
+  }
+  if (!dailyLocked.unlockPresent) failure("the locked daily review offers no way to unlock it");
+  if (dailyLocked.readOnly !== true) failure("the locked daily review's box is not read-only");
+  if (!String(dailyLocked.boxText).includes("A morning walk, a hard afternoon")) {
+    failure(
+      `the locked daily review's box lost the report the agent wrote: ${JSON.stringify(String(dailyLocked.boxText).slice(0, 200))}`,
+    );
+  }
+  if (checks.dailyProbe !== "kept") {
+    failure("the locked daily review was remounted: the open page's own box is gone");
+  }
+  if (!(await fileLocked(win))) {
+    failure("the daily review's file is not locked after the agent finished it");
+  }
+  await shot(win, "review-daily-complete.png");
+
   // ── 10. back on the weekly review: no second view, and the rules work ────
   // The daily review ignored the lens but did not consume it: the weekly page is
   // still on the area that was pressed last, which is the whole point of the
@@ -1859,6 +1982,11 @@ async function main() {
     }
   }
   if (!locked.unlockPresent) failure("the locked review offers no way to unlock it");
+  // The page's own Mark-done call is what locked this file; the button must not
+  // survive it, or it offers to re-mark a review that is already final.
+  if (locked.markDoneLabel !== null) {
+    failure(`the locked review still offers a mark-done button: ${JSON.stringify(locked.markDoneLabel)}`);
+  }
   if (locked.status !== "Locked") failure(`the page's status line reads ${JSON.stringify(locked.status)}`);
   if (!(await fileLocked(win))) failure("the file is not locked after the life review was marked complete");
   const lockedScopes = await fileScopes(win);

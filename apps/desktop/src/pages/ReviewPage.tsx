@@ -212,6 +212,17 @@ export default function ReviewPage() {
   useEffect(() => {
     recordRef.current = record;
   }, [record]);
+  // The box as last rendered. A background read lands asynchronously, so the
+  // decision about the operator's text has to be made against what the box holds
+  // when the answer arrives, not against what it held when the read started.
+  const draftRef = useRef(draft);
+  const savedBodyRef = useRef(savedBody);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    savedBodyRef.current = savedBody;
+  }, [savedBody]);
   // Writes go through here one at a time, in the order the page asked for them, so
   // a period is never read before the write that belongs to it has landed.
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -265,21 +276,27 @@ export default function ReviewPage() {
   /**
    * Re-read the review this page is on, for a change it did not make itself.
    *
-   * The reported case is the companion finishing an interview: it marks an area
-   * — or the life review — done with its own tool call in the main process, so
-   * this page made no IPC call the answer could re-render it from. The vault's
-   * change signal is the only announcement that reaches the renderer, and this
-   * background read is what turns it into "Done" on the checklist while the
-   * page is already open. Before this, the row only flipped after the operator
-   * navigated away and back.
+   * The reported case is the companion finishing an interview: it writes the
+   * report and marks an area — or the life review — done with its own tool calls
+   * in the main process, so this page made no IPC call the answer could re-render
+   * it from. The vault's change signal is the only announcement that reaches the
+   * renderer, and this background read is what turns it into "Done" on the
+   * checklist, and into the filled report in the box, while the page is already
+   * open. Before this, the row only flipped — and the box only showed the filled
+   * review — after the operator navigated away and back.
    *
    * It is deliberately NOT `loadRecord`. This is a background read: it never
-   * shows a spinner, never puts an error banner over a page that is still
-   * readable, and never touches the box — the operator's draft is theirs until
-   * they save it, and a refresh that ate a sentence would be worse than the
-   * stale checklist it fixes. The one thing it does adopt whole is a file that
-   * appeared where the period had none: there is no editor and no draft in that
-   * empty state, so the page can simply show the review the agent created.
+   * shows a spinner and never puts an error banner over a page that is still
+   * readable. It takes the box's body out of the file when there is nothing in
+   * the box to lose — a page that had no file at all, or a box the operator has
+   * not changed since its last save — because the agent's report has to appear
+   * where the operator is looking, not one navigation later.
+   *
+   * The one case that overrides an unsaved draft is a finished file: once the
+   * review is locked the box is read-only and a write is refused, so there is no
+   * longer any saving the operator's text. Keeping a draft that can never reach
+   * the vault on screen, while the file holds the final report, is exactly the
+   * stale document this page is supposed to stop showing.
    */
   const refreshRecord = useCallback(
     async (targetPeriod: string) => {
@@ -295,13 +312,20 @@ export default function ReviewPage() {
         if (!result.ok) return;
         const next = result.value;
         const wasEmpty = recordRef.current === null;
+        // Read after the await: the operator may have typed while the read was
+        // in flight, and their unsaved sentence outranks the agent's body.
+        const boxIsClean = sameNote(draftRef.current, savedBodyRef.current);
         recordRef.current = next;
         setRecord(next);
-        if (wasEmpty) {
+        if (wasEmpty || next.locked === true || boxIsClean) {
           const body = asHeld(next.bodyMarkdown);
+          draftRef.current = body;
+          savedBodyRef.current = body;
           setDraft(body);
           setSavedBody(body);
           setLoadedPeriod(targetPeriod);
+          // The file is what the box holds now; nothing is left to autosave.
+          unsaved.current = null;
         }
       } catch {
         // A background read that fails changes nothing: the page keeps the
@@ -1072,15 +1096,21 @@ export default function ReviewPage() {
               >
                 Plan next period
               </Button>
-              <Button
-                variant="outline"
-                data-testid="review-mark-done"
-                onClick={onMarkDone}
-                disabled={busy || !record || lifeReviewGated}
-                title={lifeReviewGated ? lifeReviewGateHint : undefined}
-              >
-                {markDoneLabel}
-              </Button>
+              {/* Only while the review is open. The companion marks the scope
+                  complete itself once the interview is answered, and on a locked
+                  review the button can only re-mark a file that is already final;
+                  the row keeps Unlock as the one way back in. */}
+              {locked ? null : (
+                <Button
+                  variant="outline"
+                  data-testid="review-mark-done"
+                  onClick={onMarkDone}
+                  disabled={busy || !record || lifeReviewGated}
+                  title={lifeReviewGated ? lifeReviewGateHint : undefined}
+                >
+                  {markDoneLabel}
+                </Button>
+              )}
               {locked ? (
                 <Button
                   variant="outline"
