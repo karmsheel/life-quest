@@ -10,7 +10,7 @@
 .projects-page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-board-gap);
   max-width: 56rem;
   min-width: 0;
 }
