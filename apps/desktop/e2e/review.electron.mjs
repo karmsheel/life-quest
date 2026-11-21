@@ -104,6 +104,13 @@
  *     counted through `reviewGet`, and no write back), and when the file locks
  *     the page must drop the Mark-review-complete button, show the Locked badge,
  *     and keep the agent's report in its now read-only box.
+ * 16. Every review READ names a period of the cadence it asked for. A cadence
+ *     switch is a different page: a Daily date carried into a Weekly read asks
+ *     the vault for a review that cannot exist (a Friday weekly, say) and draws
+ *     a heading-less skeleton while the real period loads — the transient the
+ *     "back on the weekly review" leg used to fail on. The driver checks every
+ *     `reviewGet` call's cadence/period pair, so the stale-period read is named
+ *     even if a sample happens to miss the wrong paint.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -505,6 +512,26 @@ function weekStartOnOrBefore(iso) {
   const dayOfWeek = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Whether that period is one the cadence can own.
+ *
+ * A review page is one cadence, and a period key is the cadence's own fold of a
+ * date: a weekly period is a week start, a monthly one is `YYYY-MM`, and so on.
+ * Asking for `weekly/2026-11-20` (a Friday) means the page carried another
+ * cadence's period across a route change — the transient that used to draw a
+ * heading-less skeleton on the way back from Daily.
+ */
+function periodBelongsToCadence(cadence, period) {
+  if (cadence === "daily") return /^\d{4}-\d{2}-\d{2}$/.test(period);
+  if (cadence === "weekly") {
+    return /^\d{4}-\d{2}-\d{2}$/.test(period) && weekStartOnOrBefore(period) === period;
+  }
+  if (cadence === "monthly") return /^\d{4}-\d{2}$/.test(period);
+  if (cadence === "quarterly") return /^\d{4}-Q[1-4]$/.test(period);
+  if (cadence === "yearly") return /^\d{4}$/.test(period);
+  return false;
 }
 
 /** Open a paragraph the way a person does — a click on the prose. */
@@ -1816,6 +1843,15 @@ async function main() {
     `Boolean(document.querySelector('[data-testid="review-area-rail"]'))`,
     "back on the weekly review",
   );
+  // The rail is drawn outside the loaded-record branch, so its presence only says
+  // the weekly route rendered. The box is drawn once the period's review has been
+  // read; wait for it, or a sample can catch the loading paint and read a
+  // heading-less skeleton — the transient this leg used to fail on.
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="review-editor"]'))`,
+    "the weekly review's box to load",
+  );
   await frames(win);
   const back = await sample(win);
   checks.back = back;
@@ -2197,6 +2233,20 @@ async function main() {
   // one; the successful Finance press is the only finance start.
   const calls = await setHarness(win, "window.reviewRigCalls");
   checks.calls = calls;
+  // Every read must name a period of the cadence it asked for. A page that keeps
+  // the previous cadence's period for a render reads a review that cannot exist
+  // (and here, seeds one), so the bogus read is named rather than left to a
+  // timing-dependent sample further up.
+  const crossCadenceReads = calls
+    .filter((call) => call.startsWith("reviewGet:"))
+    .map((call) => call.split(":"))
+    .filter(([, cadence, period]) => !periodBelongsToCadence(cadence, period));
+  checks.crossCadenceReads = crossCadenceReads;
+  if (crossCadenceReads.length > 0) {
+    failure(
+      `the page read a review for a period its cadence does not have: ${JSON.stringify(crossCadenceReads)}`,
+    );
+  }
   const failedFinanceStarts = calls.filter(
     (call) => call === "reviewStartOrResume:weekly:" + period + ":financial",
   ).length;

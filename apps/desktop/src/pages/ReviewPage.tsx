@@ -85,6 +85,20 @@ function resolveCadence(param: string | undefined): ReviewCadence | null {
  */
 export default function ReviewPage() {
   const { cadence: rawCadence } = useParams<{ cadence: string }>();
+  const cadence = resolveCadence(rawCadence) ?? "weekly";
+  // A review page is ONE cadence. Daily and Weekly are two documents, not one
+  // page whose period comes from the other: before the body was keyed by cadence,
+  // switching cadence kept the old period for a render and the page loaded (and,
+  // against a vault that had no such file, briefly drew) a review for a date this
+  // cadence does not have. Keying remounts the body, so the period, the record and
+  // the box all reset together and the new cadence only ever asks for its own
+  // periods. The title-bar lens and the chat dock live outside this page and are
+  // not reset.
+  return <ReviewPageFor key={cadence} />;
+}
+
+function ReviewPageFor() {
+  const { cadence: rawCadence } = useParams<{ cadence: string }>();
   const cadenceParam = resolveCadence(rawCadence);
   const cadence: ReviewCadence = cadenceParam ?? "weekly";
   const navigate = useNavigate();
@@ -226,6 +240,11 @@ export default function ReviewPage() {
   // Writes go through here one at a time, in the order the page asked for them, so
   // a period is never read before the write that belongs to it has landed.
   const queue = useRef<Promise<void>>(Promise.resolve());
+  // Bumped by every mutation this page starts. A background read that began
+  // before the bump must not adopt its answer: the file it read is older than
+  // what the page itself just wrote, and adopting it would put a stale body back
+  // in the box over the operator's own edit.
+  const fileEpoch = useRef(0);
   // The newest draft that still has to reach the vault, tagged with its period.
   // Held in a ref rather than in state because a blur or an unmount flushes it
   // outside any render.
@@ -235,6 +254,9 @@ export default function ReviewPage() {
   const loadRecord = useCallback(
     async (targetPeriod: string) => {
       const token = ++loadToken.current;
+      // A load replaces the whole page state; a background read that began
+      // before it must not land on top of it afterwards.
+      fileEpoch.current += 1;
       setLoading(true);
       setError(null);
       try {
@@ -303,12 +325,19 @@ export default function ReviewPage() {
       // The write the operator's own autosave queued has to land first, or the
       // read answers with the file as it stood before their last keystroke.
       await queue.current;
+      // Captured after the queue has drained, so only a write that starts while
+      // this read is in flight can invalidate it.
+      const epoch = fileEpoch.current;
       const token = ++refreshToken.current;
       try {
         const result = await api().reviewGet(cadence, targetPeriod);
         if (token !== refreshToken.current) return;
         // A read for a period the operator has already left must not land.
         if (periodRef.current !== targetPeriod) return;
+        // A write the page started after this read began means the answer is
+        // older than the file. Keeping the page's own newer state is the point;
+        // the write that bumped the epoch updated the box from its own answer.
+        if (fileEpoch.current !== epoch) return;
         if (!result.ok) return;
         const next = result.value;
         const wasEmpty = recordRef.current === null;
@@ -360,6 +389,9 @@ export default function ReviewPage() {
   const writeReview = useCallback(
     async (targetPeriod: string, body: string): Promise<"saved" | "refused" | "failed"> => {
       const run = async (): Promise<"saved" | "refused" | "failed"> => {
+        // This write is about to change the file: a background read already in
+        // flight is now older than the page's own state.
+        fileEpoch.current += 1;
         setSaving(true);
         try {
           const result = await api().reviewWrite(cadence, targetPeriod, body);
@@ -526,6 +558,7 @@ export default function ReviewPage() {
    */
   const onOpenDocument = useCallback(async () => {
     if (!snapshot) return;
+    fileEpoch.current += 1;
     setBusy(true);
     setError(null);
     try {
@@ -565,6 +598,7 @@ export default function ReviewPage() {
         if ((await flush()) === "failed") return;
 
         // 1. The document exists. Everything else is optional next to this.
+        fileEpoch.current += 1;
         const ensure = await api().reviewEnsure(cadence, period, scope);
         if (!ensure.ok) {
           setError(ensure.error);
@@ -577,6 +611,7 @@ export default function ReviewPage() {
 
         // 2. The figures the cadence's rules ask for, filled by the app rather
         //    than the model, so they are there whether or not an agent is.
+        fileEpoch.current += 1;
         const filled = await api().reviewPrepopulate(cadence, period, scope);
         let filledLine: string | null = null;
         if (filled.ok) {
@@ -691,6 +726,7 @@ export default function ReviewPage() {
     setError(null);
     const scope = activeScope;
     try {
+      fileEpoch.current += 1;
       const result = await api().reviewMarkDone(cadence, period, scope);
       if (!result.ok) {
         setError(result.error);
@@ -741,6 +777,7 @@ export default function ReviewPage() {
     setBusy(true);
     setError(null);
     try {
+      fileEpoch.current += 1;
       const result = await api().reviewUnlock(cadence, period);
       if (!result.ok) {
         setError(result.error);

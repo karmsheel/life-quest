@@ -366,6 +366,8 @@ type Report = {
     scopeSequence: string[];
     kickoffsMatched: number;
     calls: string[];
+    /** Reads that named a period of another cadence: [channel, cadence, period]. */
+    crossCadenceReads: string[][];
     failedFinanceStarts: number;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
@@ -1322,6 +1324,11 @@ describe("review ui e2e", () => {
       report.checks.failedFinanceStarts,
       2,
       "the agent-down finance press and its retry are not both in the bridge calls",
+    );
+    assert.deepEqual(
+      report.checks.crossCadenceReads,
+      [],
+      "the page read a review for a period its cadence does not have — a cadence switch carried the old period across",
     );
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);

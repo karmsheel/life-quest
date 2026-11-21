@@ -55,7 +55,12 @@
  *     marked it. The rig writes and completes the file the way the tools do and
  *     announces each change, so a page that does not adopt the body, or that
  *     leaves the button up on a locked review, fails here.
- * 12. A bridge call this rig does not model, or a console error, passes
+ * 12. A cadence switch carries the previous cadence's period. The page reads a
+ *     review for a period the new cadence cannot have (a Friday weekly, say),
+ *     which the rig seeds, so the page draws a heading-less skeleton of the
+ *     wrong period for a paint. The rig keys the page by cadence; the driver
+ *     refuses any read whose cadence and period do not belong together.
+ * 13. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
  * The driver waits on `reviewRigReady`, set after the shell, the page and the
