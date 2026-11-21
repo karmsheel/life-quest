@@ -8409,6 +8409,91 @@ a.home-mini-list__link:hover {
   background: transparent;
 }
 
+/* A reply that proposes a change ends in a `lifequest-decision` fence, which is
+   a wire format main parses rather than something to read. Each fence is a
+   one-line card instead: DECISION: and what it changes, opened on demand. The
+   reply's own prose keeps the bubble's `pre-wrap`; the cards reset it, because
+   they are laid out as rows, not as text. */
+.chat-panel__decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  white-space: normal;
+}
+
+.chat-panel__decision {
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  overflow: hidden;
+}
+
+.chat-panel__decision-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__decision-line:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.chat-panel__decision-line:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chat-panel__decision-caret {
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__decision-caret--open {
+  transform: rotate(90deg);
+}
+
+.chat-panel__decision-kicker {
+  flex: none;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--accent) 75%, var(--fg));
+}
+
+.chat-panel__decision-summary {
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__decision-body {
+  max-height: 12rem;
+  margin: 0;
+  padding: 0.45rem 0.5rem 0.5rem;
+  overflow: auto;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* The stamp and its copy control, under its message. Both are quiet: the copy
    icon is always present so the shortcut is discoverable, and it comes up to
    full ink on hover or focus rather than appearing from nowhere. */
@@ -14913,15 +14998,16 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Recurring tasks —— */
-/* The Dashboard card's schedule block: what comes round, under the board's two
+/* The Dashboard card's schedule block: what comes round, ABOVE the board's two
    horizons. It lives inside the same card and is separated by a rule, because a
    due occurrence is a different kind of row from a task — one is finished where
-   it stands, the other moves the board. */
+   it stands, the other moves the board. The rule sits under the block now that
+   the block leads the card. */
 .home-recurring {
   display: flex;
   flex-direction: column;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--border);
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .home-recurring-list {
