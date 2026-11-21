@@ -41,6 +41,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { DecisionInboxAutoOpen } from "@/components/decisions/DecisionInboxAutoOpen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
+import { PageCoverProvider } from "@/components/shell/PageCoverHold";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { AgentsProvider } from "@/state/AgentsProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
@@ -98,7 +99,7 @@ function AppRoutes() {
   }
 
   return (
-    <>
+    <PageCoverProvider covered={sheetOverBackground}>
       <Routes location={background}>
         <Route path="/welcome" element={<WelcomePage />} />
         <Route
@@ -166,7 +167,7 @@ function AppRoutes() {
           able to open the inbox from wherever the operator happens to be, and
           the sheet it opens must sit over the page they were already reading. */}
       <DecisionInboxAutoOpen />
-    </>
+    </PageCoverProvider>
   );
 }
 

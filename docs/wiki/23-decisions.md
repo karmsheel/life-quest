@@ -19,7 +19,10 @@ them in the chat. See [What files a Decision](#what-files-a-decision) and
   route is `/decisions`.
 - It is a sheet, not a page: it opens over whatever you were reading, dims the
   window, and closing returns you to that page with its route, scroll position
-  and state intact. Same frame as [Settings](./28-settings.md).
+  and state intact. Same frame as [Settings](./28-settings.md). The page behind
+  the sheet is held still while the sheet is open and catches up in one pass when
+  it leaves, so answering a queue of decisions is not paid for again by the board
+  underneath.
 - The rail row carries a badge with the count of **every** pending proposal in
   the vault. Its accessible label reads "Decisions, 3 pending"; at three digits it
   caps at `99+`.
@@ -68,6 +71,10 @@ path can never read.
    proposal, `You` for one you filed yourself, `Manual` for a logged decision —
    and a `Logged` pill where a proposal would say approved or rejected. A proposal
    you corrected before approving reads `approved · edited`.
+7. History opens on the newest 50 resolved decisions. A line under the list says
+   "Showing 50 of 819 decisions." and **Load older decisions** adds the
+   next 50 in place, so a long record is read in pages instead of drawn all at
+   once. Switching tab or source filter starts again at the newest page.
 
 Empty states: **Pending** says "No pending proposals." History says "No
 decisions yet. Log one yourself on the Manual tab, or wait for a proposal."
@@ -117,7 +124,14 @@ decisions logged yet."
 - **Close after the last decision** — answering the last pending proposal closes
   the inbox and hands the page back where you left it. It fires on a rejection as
   well as an approval; only your own answer closes the sheet, never a change made
-  in another window, and a failed read leaves it up.
+  in another window.
+
+The sheet leaves the instant your answer lands. Nothing is waited on between the
+write and the close: the re-read of the queue and the vault refresh the page needs
+afterwards happen behind the page it just handed back, so answering a card never
+costs you a pause on the screen. The same is true of a card that is not the last
+one — it leaves the queue as its own write returns, however many other cards are
+still waiting.
 
 Both write to the vault's settings, so the preference follows the vault folder
 rather than one window. Turning **Open for a new decision** off does not make the
@@ -132,6 +146,7 @@ already known.
 | Tabs | **Pending**, **History**, **Manual**. |
 | Bar | The tab switcher, the page's own notice line (approval, refusal, "saved changes"), and **Approve all** at the trailing edge. |
 | History filters | **All**, **Manual**, **AI** — which store the list is drawn from. |
+| History pager | Under the list: "Showing 50 of N decisions." — the noun follows the source filter (**resolved** for AI, **logged** for Manual) — and **Load older decisions**, which appends the next 50 in place. |
 | Arrival line | One quiet line above the list: "New decision filed by <name>." or "N new decisions filed." |
 | Card kicker | Target kind, a `New` chip for a fresh arrival, `Edited by you` when corrected, the area badges, and the status pill: `pending`, `approved`, `rejected`, `approved · edited` — or `Could not apply`. |
 | Card body | The diff or prose comparison, the area-change row when there is one, plus a collapsible **Exact proposal**. |

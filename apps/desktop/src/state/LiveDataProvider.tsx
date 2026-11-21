@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -97,4 +98,43 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
  */
 export function useLiveData(): number {
   return useContext(LiveDataContext);
+}
+
+/**
+ * A subtree whose live-data revision stands still while it is covered.
+ *
+ * A sheet (Decisions, Settings) is drawn OVER the page, not instead of it: the
+ * page stays mounted, and `.shell__content` behind the scrim is dimmed, blurred
+ * and unreachable. Every write that arrives while the operator is in the sheet
+ * still reaches this subtree through the live revision, and every reader in it
+ * used to answer with its own query — the dashboard re-ran its pins, its log,
+ * its views and the decisions list on every approve, for a board nobody could
+ * see. On the operator's vault that was the bulk of what made answering a queue
+ * of decisions feel slow: the write itself takes milliseconds, and the reads it
+ * triggered raced the next answer for the vault's one queue.
+ *
+ * `held` freezes the revision at its last visible value. When the sheet leaves,
+ * the subtree is handed the current revision in one step, so everything it
+ * missed is caught up in a single pass — not one pass per write it slept
+ * through. This is the same contract the app already has for a card's own
+ * numbers: a surface that is not on screen is not asked to redraw it.
+ */
+export function LiveDataHold({
+  held,
+  children,
+}: {
+  held: boolean;
+  children: ReactNode;
+}) {
+  const live = useLiveData();
+  /** The revision the subtree was last handed while it was visible. */
+  const visibleRef = useRef(live);
+  useEffect(() => {
+    if (!held) visibleRef.current = live;
+  }, [held, live]);
+  return (
+    <LiveDataContext.Provider value={held ? visibleRef.current : live}>
+      {children}
+    </LiveDataContext.Provider>
+  );
 }

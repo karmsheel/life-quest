@@ -69,6 +69,7 @@ import {
   type Actor as VaultActor,
 } from "@lifequest/vault-core";
 import { noteDataChanged, toolMayChangeData } from "./data-revision.ts";
+import { invalidateDecisionList } from "./decision-list-cache.ts";
 import { hermesChatWithTools } from "./hermes-proxy.ts";
 import { THEME_TOOL_DEFS, executeThemeTool } from "./theme-tools.ts";
 
@@ -164,7 +165,15 @@ export async function executeTool(
   grant?: ConnectedGrant,
 ): Promise<unknown> {
   const result = await executeToolInner(root, activeSlug, name, args, actor, grant);
-  if (toolMayChangeData(name)) noteDataChanged();
+  if (toolMayChangeData(name)) {
+    // The tool door writes rows, documents and Decisions without passing the
+    // IPC registrar, so its writes invalidate the inbox's cached list here.
+    // Coarse on purpose: a tool this classification does not name may have
+    // written anything, and one wasted re-read is cheaper than a card that
+    // never appears.
+    invalidateDecisionList();
+    noteDataChanged();
+  }
   return result;
 }
 

@@ -23,6 +23,46 @@ import { cellDisplayLabels, getDatabase, getRow, rowDisplayLabel } from "./domai
 type LabelCache = Map<string, string | null>;
 type MetaCache = Map<string, DatabaseMeta | null>;
 
+/**
+ * How many Decisions are labelled at once.
+ *
+ * The inbox labels every Decision it lists, not just the pending ones, and a
+ * real vault holds ~800 of them: resolving them one at a time made the display
+ * pass cost about a second on the operator's vault. The reads behind a label
+ * (a registry file, a row in SQLite) are independent per Decision, so a bounded
+ * batch overlaps their I/O. It stays bounded because each database-row decision
+ * can open SQLite, and the pass runs in the same process as the app's IPC.
+ */
+const LABEL_CONCURRENCY = 8;
+
+/**
+ * Run `run` over `items` with at most `limit` in flight, preserving order.
+ *
+ * Local to this file for the same reason `listDecisions` has its own copy: it is
+ * a dozen lines, the repo takes no dependency for it, and the two files are read
+ * together. The result lands at the item's index, so the labelled array is in
+ * exactly the order the inbox was handed.
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      out[index] = await run(items[index]!, index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return out;
+}
+
 /** A block's id field paired with the name field this module adds for it. */
 const BLOCK_COLUMN_FIELDS = [
   ["columnId", "columnName"],
@@ -45,12 +85,18 @@ export async function withDecisionDisplayLabels(
 ): Promise<DecisionRecord[]> {
   // Databases are re-read per reference: a page's blocks and a batch of row
   // writes touch the same database over and over, and the registry is a file.
+  // Both maps are shared by every decision in the batch, which is what makes
+  // the concurrency below a win rather than the same reads repeated in parallel:
+  // a vault's hundreds of Decisions name a handful of databases, and the first
+  // one to resolve a key fills the map for the rest. Two workers can still miss
+  // the same key at the same moment and read it twice; that is a wasted read,
+  // never a different answer, because both reads ask the same file for the same
+  // name. Guarding the in-flight key would mean caching promises, which is more
+  // machinery than a duplicate registry read is worth.
   const metas: MetaCache = new Map();
-  const out: DecisionRecord[] = [];
-  for (const decision of decisions) {
-    out.push(await withLabels(root, decision, cache, metas));
-  }
-  return out;
+  return mapLimit(decisions, LABEL_CONCURRENCY, (decision) =>
+    withLabels(root, decision, cache, metas),
+  );
 }
 
 async function withLabels(
@@ -61,7 +107,7 @@ async function withLabels(
 ): Promise<DecisionRecord> {
   const { target } = decision;
   if (target.type === "database-row" || target.type === "database") {
-    return withDatabaseLabels(root, decision, cache);
+    return withDatabaseLabels(root, decision, cache, metas);
   }
   if (target.type === "database-batch") {
     return withBatchLabels(root, decision, target.domainSlug, target.databaseId, cache);
@@ -82,6 +128,7 @@ async function withDatabaseLabels(
   root: string,
   decision: DecisionRecord,
   cache: LabelCache,
+  metas: MetaCache,
 ): Promise<DecisionRecord> {
   const { target } = decision;
   if (target.type !== "database-row" && target.type !== "database") return decision;
@@ -89,22 +136,25 @@ async function withDatabaseLabels(
   const body = parseBody(decision.proposedBodyMarkdown);
   if (!body) return decision;
 
-  const db = await getDatabase(root, target.domainSlug, target.databaseId);
-  if (!db.ok) return decision;
+  // Through the shared MetaCache rather than `getDatabase` directly: the
+  // registry is a file and an inbox of hundreds of Decisions names the same few
+  // databases, so this is the read that was repeated most.
+  const meta = await databaseMeta(root, target.domainSlug, target.databaseId, metas);
+  if (!meta) return decision;
 
   const added: Record<string, unknown> = {};
   if (body.op === "upsert" || body.op === "delete") {
     const cells = await cellDisplayLabels(
       root,
       target.domainSlug,
-      db.value,
+      meta,
       asCellMap(body.cells),
       cache,
     );
     const previous = await cellDisplayLabels(
       root,
       target.domainSlug,
-      db.value,
+      meta,
       asCellMap(body.previousCells),
       cache,
     );
@@ -113,11 +163,16 @@ async function withDatabaseLabels(
     // The table's "Field" column is the cell map's KEY, i.e. the column id.
     // An id minted by add_column is a uuid, so the body carries the names
     // beside the ids exactly as it carries relation labels beside cell values.
-    const names = columnNamesFor(db.value, [asCellMap(body.cells), asCellMap(body.previousCells)]);
+    const names = columnNamesFor(meta, [asCellMap(body.cells), asCellMap(body.previousCells)]);
     if (Object.keys(names).length > 0) added.columnNames = names;
   } else if (body.op === "add-column" && typeof body.relationDatabaseId === "string") {
-    const relation = await getDatabase(root, target.domainSlug, body.relationDatabaseId);
-    if (relation.ok) added.relationDatabaseName = relation.value.name;
+    const relation = await databaseMeta(
+      root,
+      target.domainSlug,
+      body.relationDatabaseId,
+      metas,
+    );
+    if (relation) added.relationDatabaseName = relation.name;
   } else if (body.op === "delete-database" || body.op === "merge-databases") {
     // A lifecycle card names the doomed database (a delete) or the surviving
     // target (a merge) as prose, and a merge also names every source it removes.
@@ -126,8 +181,8 @@ async function withDatabaseLabels(
     // stored, because the apply path writes from them. A name that no longer
     // resolves keeps the one the proposal recorded: a source that is already
     // gone is history, not a name to invent.
-    if (typeof body.databaseName !== "string" || body.databaseName !== db.value.name) {
-      added.databaseName = db.value.name;
+    if (typeof body.databaseName !== "string" || body.databaseName !== meta.name) {
+      added.databaseName = meta.name;
     }
     if (body.op === "merge-databases" && Array.isArray(body.sources)) {
       const refreshed: unknown[] = [];
@@ -137,12 +192,17 @@ async function withDatabaseLabels(
           refreshed.push(source);
           continue;
         }
-        const meta = await getDatabase(root, target.domainSlug, source.databaseId);
-        if (!meta.ok || meta.value.name === source.name) {
+        const sourceMeta = await databaseMeta(
+          root,
+          target.domainSlug,
+          source.databaseId,
+          metas,
+        );
+        if (!sourceMeta || sourceMeta.name === source.name) {
           refreshed.push(source);
           continue;
         }
-        refreshed.push({ ...source, name: meta.value.name });
+        refreshed.push({ ...source, name: sourceMeta.name });
         renamed = true;
       }
       if (renamed) added.sources = refreshed;

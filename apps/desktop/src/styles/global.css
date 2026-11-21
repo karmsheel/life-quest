@@ -3296,6 +3296,30 @@ a {
   margin: 0.35rem 0 0;
 }
 
+/* The foot of a paged History. The line names how much of the record is on
+   screen; the control fetches the next page in place, so the operator's scroll
+   position and the row they were reading stay where they put them. */
+.decisions-inbox__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.decisions-inbox__more p {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.decisions-inbox__more .btn {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+}
+
 .decision-card {
   position: relative;
   isolation: isolate;
