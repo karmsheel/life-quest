@@ -81,6 +81,24 @@ const ARRIVAL_MS = 6_000;
  */
 const SNAPSHOT_CATCH_UP_MS = 250;
 
+/**
+ * How many resolved cards History draws before offering the rest.
+ *
+ * WHY THIS EXISTS: History is the record of every answer ever given, and on the
+ * operator's vault that is 800+ cards. It used to draw all of them — one <li>,
+ * one diff body and up to three buttons each, in one commit — so opening
+ * History was a long paint and a large live DOM to keep repainting every time a
+ * write arrived. The cards below the fold are not read and were not cheap.
+ *
+ * A page, not virtualisation: a Decision card is a variable-height document with
+ * its own interactive controls, and windowing it would have to re-measure and
+ * re-create those on every scroll — more machinery, and more ways for the
+ * operator's place to move, than drawing fifty and offering the next fifty. The
+ * list is the record, newest first, so the page is the newest slice; the control
+ * that fetches the next one says exactly how many remain.
+ */
+const HISTORY_PAGE_SIZE = 50;
+
 function formatWhen(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
@@ -262,6 +280,27 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * last read: in that window the sheet can close with a proposal the operator has
  * not seen, and `DecisionInboxAutoOpen` re-opens it for exactly that filing.
  *
+ * THE RECORD IS READ IN PAGES
+ *
+ * History is every answer ever given, and on the operator's vault that is 800+
+ * cards. Drawing all of them in one commit made opening History a long paint and
+ * left a very large live DOM behind it; the cards below the fold were not read
+ * and were not cheap. History now draws the newest 50 and offers the next 50 in
+ * place, with a line that says exactly how much of the record is on screen —
+ * "Showing 50 of 819 decisions." is what makes a capped list honest rather than
+ * a shorter one. `HISTORY_PAGE_SIZE` carries the reasoning for a page rather
+ * than windowing. Pending is deliberately not paged: it is a queue the operator
+ * is working through, and hiding cards from it would hide work waiting on them.
+ *
+ * UNDER A SHEET, THE PAGE BEHIND IS HELD STILL
+ *
+ * The inbox is worn over the page the operator was reading, and every answer is
+ * a write — so every answer used to re-run that page's own queries behind the
+ * scrim. The shell now freezes the covered page's live revision and vault
+ * snapshot for as long as a sheet is over it and hands it the current ones once
+ * when the sheet leaves (`PageCoverHold`), so a queue of answers costs the page
+ * one catch-up pass instead of one per card.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -308,6 +347,15 @@ export function DecisionsInbox({
 
   const [tab, setTab] = useState<Tab>("pending");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  /**
+   * How many resolved cards History is currently drawing.
+   *
+   * The page grows by {@link HISTORY_PAGE_SIZE} at a time, and returns to one
+   * page whenever the tab or the source filter moves: the operator asked to see
+   * a different slice of the record, not to carry the previous slice's length
+   * into it.
+   */
+  const [historyShown, setHistoryShown] = useState(HISTORY_PAGE_SIZE);
   const [items, setItems] = useState<DecisionRecord[]>([]);
   /**
    * The other store, kept whole. This page is global, so the lens is not
@@ -831,6 +879,21 @@ export function DecisionsInbox({
     setEditingId(null);
     setActionMessage(null);
     setError(null);
+    // One page of History for the tab the operator is entering. A "Load older"
+    // they had already pressed on the way out was about the filter they left.
+    setHistoryShown(HISTORY_PAGE_SIZE);
+  }
+
+  /**
+   * Move the History source filter, back to the newest page.
+   *
+   * A different source is a different list — the manual decisions interleaved
+   * with the proposals, or one side alone — so the page the operator had grown
+   * to belongs to the list they were leaving.
+   */
+  function selectHistoryFilter(next: HistoryFilter) {
+    setHistoryFilter(next);
+    setHistoryShown(HISTORY_PAGE_SIZE);
   }
 
   function beginEdit(id: string) {
@@ -1023,6 +1086,27 @@ export function DecisionsInbox({
     rows = items.map((decision) => ({ kind: "ai", decision }));
   }
 
+  // The slice History is drawing, and what is left below it. Pending has no page
+  // control: it is a queue the operator is working through, and hiding cards
+  // from it would hide work waiting on them.
+  const visibleRows = tab === "history" ? rows.slice(0, historyShown) : rows;
+  const olderRows =
+    tab === "history" ? Math.max(rows.length - visibleRows.length, 0) : 0;
+  /**
+   * What the page footer calls the rows it is counting.
+   *
+   * History reads two stores, and the filter decides which one the row count is
+   * about: the manual decisions are logged rather than resolved, so a line that
+   * called all of them "resolved" would be telling the operator something false
+   * about their own records.
+   */
+  const pagedRowNoun =
+    historyFilter === "manual"
+      ? "logged decisions"
+      : historyFilter === "ai"
+        ? "resolved decisions"
+        : "decisions";
+
   const emptyText =
     tab === "pending"
       ? "No pending proposals."
@@ -1168,7 +1252,7 @@ export function DecisionsInbox({
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={() => setHistoryFilter(filter.id)}
+              onClick={() => selectHistoryFilter(filter.id)}
             >
               {filter.label}
             </button>
@@ -1208,7 +1292,7 @@ export function DecisionsInbox({
         <p className="muted decisions-inbox__empty">{emptyText}</p>
       ) : (
         <ul className="decisions-inbox__list">
-          {rows.map((row) => {
+          {visibleRows.map((row) => {
             if (row.kind === "manual") {
               return (
                 <ManualDecisionCard
@@ -1406,6 +1490,26 @@ export function DecisionsInbox({
           })}
         </ul>
       )}
+
+      {/* The rest of the record, one page at a time. The line names what the
+          operator is looking at and how much is left, so a capped History never
+          reads as a shorter one — "showing 50 of 819" is the fact that makes the
+          control honest. */}
+      {!loading && olderRows > 0 ? (
+        <div className="decisions-inbox__more">
+          <p className="muted">
+            Showing {visibleRows.length} of {rows.length} {pagedRowNoun}.
+          </p>
+          <button
+            type="button"
+            className="btn"
+            data-testid="btn-decisions-load-older"
+            onClick={() => setHistoryShown((shown) => shown + HISTORY_PAGE_SIZE)}
+          >
+            Load older decisions
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
