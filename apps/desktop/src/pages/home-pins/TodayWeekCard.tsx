@@ -157,24 +157,10 @@ export function TodayWeekCard() {
           {error}
         </p>
       ) : null}
-      <div className="home-task-cols">
-        <div>
-          <h3 className="home-task-cols__head">
-            Today <span className="home-task-cols__count">{todayTasks.length}</span>
-          </h3>
-          {taskList(todayTasks, "No tasks today.")}
-        </div>
-        <div>
-          <h3 className="home-task-cols__head">
-            This week <span className="home-task-cols__count">{weekTasks.length}</span>
-          </h3>
-          {taskList(weekTasks, "Nothing queued this week.")}
-        </div>
-      </div>
-
-      {/* The card's schedule half: what comes round, beside the board's own
-          two horizons. A review row carries no tick — its page is the truth,
-          so the row clears when the review is marked done there. */}
+      {/* The card's schedule half: what comes round, ABOVE the board's own two
+          horizons, because a due or overdue occurrence is the one thing the card
+          can lose by being scrolled past. A review row carries no tick — its
+          page is the truth, so the row clears when the review is done there. */}
       <div className="home-recurring">
         <h3 className="home-task-cols__head">
           Recurring
@@ -234,6 +220,21 @@ export function TodayWeekCard() {
         >
           Manage recurring →
         </Link>
+      </div>
+
+      <div className="home-task-cols">
+        <div>
+          <h3 className="home-task-cols__head">
+            Today <span className="home-task-cols__count">{todayTasks.length}</span>
+          </h3>
+          {taskList(todayTasks, "No tasks today.")}
+        </div>
+        <div>
+          <h3 className="home-task-cols__head">
+            This week <span className="home-task-cols__count">{weekTasks.length}</span>
+          </h3>
+          {taskList(weekTasks, "Nothing queued this week.")}
+        </div>
       </div>
 
       <Link to="/act" className="home-card__more">

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -28,8 +28,6 @@ export function AppShell() {
   } = useChatDock();
   const { chrome } = useTheme();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
-  const { pathname } = useLocation();
-  const chartBleed = pathname === "/chart";
   // The tray itself: the frame the dock's column is solved in, and the element a
   // dragged width is written to.
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -104,12 +102,7 @@ export function AppShell() {
                   above the routed content, and never take the way out. */}
               <CompositionSlot region="page.masthead" />
               <div
-                className={[
-                  "shell__content",
-                  chartBleed ? "shell__content--bleed" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
+                className="shell__content"
                 /*
                   This column is the page. The dock reads it off this attribute
                   when the operator sends a turn, so what the agent is told about

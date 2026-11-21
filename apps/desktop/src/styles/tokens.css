@@ -138,9 +138,17 @@
   /* Density: the material layer's spacing ladder. Shell components consume
      these and nothing else; a theme picks a named step and the stylesheet owns
      what each step means, exactly as it does for radius and elevation. */
-  --density-pad-page-x: 1.5rem;
+  /* The page's own side margin, spent on every routed page so the sheet reads
+     as inset from the rail and the seam. The chat bar's own gutter is 1.35rem
+     at the shipped dock; the operator asked for a roomier 2rem here, so the
+     page is the wider of the two rather than a copy of it. */
+  --density-pad-page-x: 2rem;
   --density-pad-page-y: 1.25rem;
   --density-pad-page-bottom: 1.5rem;
+  /* The space between a board's cards and blocks. A page's stack and its card
+     grids all read this one step, so "more air between the cards" is one
+     number instead of fifteen, and the density ladder still owns it. */
+  --space-board-gap: 1.25rem;
   --density-pad-rail-x: 0.35rem;
   --density-gap-rail: 0.2rem;
   --density-pad-row-x: 0.55rem;

@@ -11,7 +11,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: var(--space-board-gap);
 }
 
 .images-studio__header {
@@ -155,7 +155,7 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
-  gap: 0.6rem;
+  gap: var(--space-board-gap);
 }
 
 .image-card {
@@ -644,7 +644,7 @@
 .vision-board-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-board-gap);
   min-width: 0;
 }
 
