@@ -60,6 +60,12 @@ vertical column to the right of the report:
   navigating away and back. The same is true of the Life review unlocking once
   the last area is finished, and of the **Locked** badge when the life review is
   completed.
+- The **report is live too**. The companion writes the review body as you answer
+  its interview, and the open page fills with what it wrote as it goes; when it
+  marks the review complete, the locked file's final text is what the box shows.
+  You do not have to leave the page and come back to see the review the agent
+  wrote. An unsaved sentence of your own is kept until the file is locked; a
+  finished review shows the file, because the box is read-only from then on.
 - The area lens in the window title bar still selects the active area, and
   pressing a checklist row moves the lens to that area. The checklist is the
   control; the lens shows what is selected.
@@ -186,9 +192,11 @@ cannot be quietly rewritten.
    for the life vision — into the overall **Look-back**, **Keep**, **Change** and
    **Next-period intent**.
 9. **Mark life review complete** finishes the overall scope and locks the file.
-   On a locked review the pager shows a **Locked** badge, the checklist is
-   read-only, and **Unlock** appears in the action row. Unlock, then edit in
-   place.
+   The companion normally marks a review complete itself once you have answered
+   its interview, so on a locked review the mark-complete button is gone — the
+   row keeps **Unlock**. On a locked review the pager shows a **Locked** badge,
+   the checklist is read-only, and **Unlock** appears in the action row. Unlock,
+   then edit in place.
 10. **Plan next period** takes period N to a planning session for N+1, opens that
     session in the chat dock, and navigates to **Goals**.
 11. Open **Review rules** to read or edit the standing rules for this cadence,
@@ -208,7 +216,7 @@ notes in this period.** and offers **Write today's note**.
 | Scope line | **Reviewing Health** (or **Reviewing Life**) above the body, with **Whole-life review** to move the lens back to Life without starting a session. |
 | Status text | **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. |
 | Editor | The Daily Journal's live markdown box at the journal's height, placeholder **Write this review.**, read-only while locked. |
-| Action buttons | **Start interview** (resumes the active scope's session), **Plan next period**, **Mark life review complete** / **Mark Health review complete** / **Mark review complete** on Daily, **Unlock** when locked. **Start interview** and **Mark life review complete** are disabled for Life until every area is done. |
+| Action buttons | **Start interview** (resumes the active scope's session), **Plan next period**, a mark-complete button — **Mark life review complete** / **Mark Health review complete** / **Mark review complete** on Daily — while the review is open, and **Unlock** once it is locked. The mark-complete button is gone on a locked review: the companion marks the review complete itself once you have answered its interview. **Start interview** and **Mark life review complete** are disabled for Life until every area is done. |
 | **Review rules** | A collapsible panel: the cadence's standing rules and its `lifequest-snapshot` directives, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |
 

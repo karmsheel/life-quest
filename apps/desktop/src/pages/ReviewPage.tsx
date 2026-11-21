@@ -85,6 +85,20 @@ function resolveCadence(param: string | undefined): ReviewCadence | null {
  */
 export default function ReviewPage() {
   const { cadence: rawCadence } = useParams<{ cadence: string }>();
+  const cadence = resolveCadence(rawCadence) ?? "weekly";
+  // A review page is ONE cadence. Daily and Weekly are two documents, not one
+  // page whose period comes from the other: before the body was keyed by cadence,
+  // switching cadence kept the old period for a render and the page loaded (and,
+  // against a vault that had no such file, briefly drew) a review for a date this
+  // cadence does not have. Keying remounts the body, so the period, the record and
+  // the box all reset together and the new cadence only ever asks for its own
+  // periods. The title-bar lens and the chat dock live outside this page and are
+  // not reset.
+  return <ReviewPageFor key={cadence} />;
+}
+
+function ReviewPageFor() {
+  const { cadence: rawCadence } = useParams<{ cadence: string }>();
   const cadenceParam = resolveCadence(rawCadence);
   const cadence: ReviewCadence = cadenceParam ?? "weekly";
   const navigate = useNavigate();
@@ -212,9 +226,25 @@ export default function ReviewPage() {
   useEffect(() => {
     recordRef.current = record;
   }, [record]);
+  // The box as last rendered. A background read lands asynchronously, so the
+  // decision about the operator's text has to be made against what the box holds
+  // when the answer arrives, not against what it held when the read started.
+  const draftRef = useRef(draft);
+  const savedBodyRef = useRef(savedBody);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    savedBodyRef.current = savedBody;
+  }, [savedBody]);
   // Writes go through here one at a time, in the order the page asked for them, so
   // a period is never read before the write that belongs to it has landed.
   const queue = useRef<Promise<void>>(Promise.resolve());
+  // Bumped by every mutation this page starts. A background read that began
+  // before the bump must not adopt its answer: the file it read is older than
+  // what the page itself just wrote, and adopting it would put a stale body back
+  // in the box over the operator's own edit.
+  const fileEpoch = useRef(0);
   // The newest draft that still has to reach the vault, tagged with its period.
   // Held in a ref rather than in state because a blur or an unmount flushes it
   // outside any render.
@@ -224,6 +254,9 @@ export default function ReviewPage() {
   const loadRecord = useCallback(
     async (targetPeriod: string) => {
       const token = ++loadToken.current;
+      // A load replaces the whole page state; a background read that began
+      // before it must not land on top of it afterwards.
+      fileEpoch.current += 1;
       setLoading(true);
       setError(null);
       try {
@@ -265,43 +298,63 @@ export default function ReviewPage() {
   /**
    * Re-read the review this page is on, for a change it did not make itself.
    *
-   * The reported case is the companion finishing an interview: it marks an area
-   * — or the life review — done with its own tool call in the main process, so
-   * this page made no IPC call the answer could re-render it from. The vault's
-   * change signal is the only announcement that reaches the renderer, and this
-   * background read is what turns it into "Done" on the checklist while the
-   * page is already open. Before this, the row only flipped after the operator
-   * navigated away and back.
+   * The reported case is the companion finishing an interview: it writes the
+   * report and marks an area — or the life review — done with its own tool calls
+   * in the main process, so this page made no IPC call the answer could re-render
+   * it from. The vault's change signal is the only announcement that reaches the
+   * renderer, and this background read is what turns it into "Done" on the
+   * checklist, and into the filled report in the box, while the page is already
+   * open. Before this, the row only flipped — and the box only showed the filled
+   * review — after the operator navigated away and back.
    *
    * It is deliberately NOT `loadRecord`. This is a background read: it never
-   * shows a spinner, never puts an error banner over a page that is still
-   * readable, and never touches the box — the operator's draft is theirs until
-   * they save it, and a refresh that ate a sentence would be worse than the
-   * stale checklist it fixes. The one thing it does adopt whole is a file that
-   * appeared where the period had none: there is no editor and no draft in that
-   * empty state, so the page can simply show the review the agent created.
+   * shows a spinner and never puts an error banner over a page that is still
+   * readable. It takes the box's body out of the file when there is nothing in
+   * the box to lose — a page that had no file at all, or a box the operator has
+   * not changed since its last save — because the agent's report has to appear
+   * where the operator is looking, not one navigation later.
+   *
+   * The one case that overrides an unsaved draft is a finished file: once the
+   * review is locked the box is read-only and a write is refused, so there is no
+   * longer any saving the operator's text. Keeping a draft that can never reach
+   * the vault on screen, while the file holds the final report, is exactly the
+   * stale document this page is supposed to stop showing.
    */
   const refreshRecord = useCallback(
     async (targetPeriod: string) => {
       // The write the operator's own autosave queued has to land first, or the
       // read answers with the file as it stood before their last keystroke.
       await queue.current;
+      // Captured after the queue has drained, so only a write that starts while
+      // this read is in flight can invalidate it.
+      const epoch = fileEpoch.current;
       const token = ++refreshToken.current;
       try {
         const result = await api().reviewGet(cadence, targetPeriod);
         if (token !== refreshToken.current) return;
         // A read for a period the operator has already left must not land.
         if (periodRef.current !== targetPeriod) return;
+        // A write the page started after this read began means the answer is
+        // older than the file. Keeping the page's own newer state is the point;
+        // the write that bumped the epoch updated the box from its own answer.
+        if (fileEpoch.current !== epoch) return;
         if (!result.ok) return;
         const next = result.value;
         const wasEmpty = recordRef.current === null;
+        // Read after the await: the operator may have typed while the read was
+        // in flight, and their unsaved sentence outranks the agent's body.
+        const boxIsClean = sameNote(draftRef.current, savedBodyRef.current);
         recordRef.current = next;
         setRecord(next);
-        if (wasEmpty) {
+        if (wasEmpty || next.locked === true || boxIsClean) {
           const body = asHeld(next.bodyMarkdown);
+          draftRef.current = body;
+          savedBodyRef.current = body;
           setDraft(body);
           setSavedBody(body);
           setLoadedPeriod(targetPeriod);
+          // The file is what the box holds now; nothing is left to autosave.
+          unsaved.current = null;
         }
       } catch {
         // A background read that fails changes nothing: the page keeps the
@@ -336,6 +389,9 @@ export default function ReviewPage() {
   const writeReview = useCallback(
     async (targetPeriod: string, body: string): Promise<"saved" | "refused" | "failed"> => {
       const run = async (): Promise<"saved" | "refused" | "failed"> => {
+        // This write is about to change the file: a background read already in
+        // flight is now older than the page's own state.
+        fileEpoch.current += 1;
         setSaving(true);
         try {
           const result = await api().reviewWrite(cadence, targetPeriod, body);
@@ -502,6 +558,7 @@ export default function ReviewPage() {
    */
   const onOpenDocument = useCallback(async () => {
     if (!snapshot) return;
+    fileEpoch.current += 1;
     setBusy(true);
     setError(null);
     try {
@@ -541,6 +598,7 @@ export default function ReviewPage() {
         if ((await flush()) === "failed") return;
 
         // 1. The document exists. Everything else is optional next to this.
+        fileEpoch.current += 1;
         const ensure = await api().reviewEnsure(cadence, period, scope);
         if (!ensure.ok) {
           setError(ensure.error);
@@ -553,6 +611,7 @@ export default function ReviewPage() {
 
         // 2. The figures the cadence's rules ask for, filled by the app rather
         //    than the model, so they are there whether or not an agent is.
+        fileEpoch.current += 1;
         const filled = await api().reviewPrepopulate(cadence, period, scope);
         let filledLine: string | null = null;
         if (filled.ok) {
@@ -667,6 +726,7 @@ export default function ReviewPage() {
     setError(null);
     const scope = activeScope;
     try {
+      fileEpoch.current += 1;
       const result = await api().reviewMarkDone(cadence, period, scope);
       if (!result.ok) {
         setError(result.error);
@@ -717,6 +777,7 @@ export default function ReviewPage() {
     setBusy(true);
     setError(null);
     try {
+      fileEpoch.current += 1;
       const result = await api().reviewUnlock(cadence, period);
       if (!result.ok) {
         setError(result.error);
@@ -1072,15 +1133,21 @@ export default function ReviewPage() {
               >
                 Plan next period
               </Button>
-              <Button
-                variant="outline"
-                data-testid="review-mark-done"
-                onClick={onMarkDone}
-                disabled={busy || !record || lifeReviewGated}
-                title={lifeReviewGated ? lifeReviewGateHint : undefined}
-              >
-                {markDoneLabel}
-              </Button>
+              {/* Only while the review is open. The companion marks the scope
+                  complete itself once the interview is answered, and on a locked
+                  review the button can only re-mark a file that is already final;
+                  the row keeps Unlock as the one way back in. */}
+              {locked ? null : (
+                <Button
+                  variant="outline"
+                  data-testid="review-mark-done"
+                  onClick={onMarkDone}
+                  disabled={busy || !record || lifeReviewGated}
+                  title={lifeReviewGated ? lifeReviewGateHint : undefined}
+                >
+                  {markDoneLabel}
+                </Button>
+              )}
               {locked ? (
                 <Button
                   variant="outline"

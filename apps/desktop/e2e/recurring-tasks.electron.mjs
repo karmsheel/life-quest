@@ -14,6 +14,8 @@
  * The claims, in the contract's order, and what makes each falsifiable:
  *
  *  1. `card-recurring`  — the real Today & this week card's Recurring block
+ *                         leads the card: it is drawn ABOVE the Today and This
+ *                         week groups (measured in the card's own box), and it
  *                         lists the overdue, due-today and this-week fixture
  *                         records with their state labels, the later and paused
  *                         fixtures are absent, and the heading count matches the
@@ -224,6 +226,7 @@ async function sample(win, expression, name) {
 // ── What the pages actually render ────────────────────────────────────────────
 const CARD_SAMPLE = `(() => {
   const text = (el) => (el ? (el.textContent || "").trim() : null);
+  const round = (n) => Math.round(n * 10) / 10;
   const rows = [...document.querySelectorAll('[data-testid^="recurring-row-"]')].map((row) => {
     const id = (row.getAttribute("data-testid") || "").slice("recurring-row-".length);
     const checkbox = row.querySelector('input[type="checkbox"]');
@@ -252,6 +255,19 @@ const CARD_SAMPLE = `(() => {
     (headingText ? (headingText.match(/\\d+/) || [null])[0] : null);
   const manage = document.querySelector('[data-testid="today-week-recurring-manage"]');
   const card = document.querySelector(".home-task-card");
+  const cols = card ? card.querySelector(".home-task-cols") : null;
+  let order = null;
+  if (block && card) {
+    const blockRect = block.getBoundingClientRect();
+    const colsRect = cols ? cols.getBoundingClientRect() : null;
+    const cardRect = card.getBoundingClientRect();
+    order = {
+      recurringTop: round(blockRect.top - cardRect.top),
+      colsTop: colsRect ? round(colsRect.top - cardRect.top) : null,
+      recurringFirst:
+        colsRect !== null && blockRect.top + blockRect.height <= colsRect.top + 1,
+    };
+  }
   return {
     rows,
     headingText,
@@ -259,6 +275,7 @@ const CARD_SAMPLE = `(() => {
     count: countText !== null && countText !== "" ? Number(countText) : null,
     manage: manage ? { href: manage.getAttribute("href"), text: text(manage) } : null,
     cardPresent: Boolean(card),
+    order,
     blockText: text(block),
     alert: text(card?.querySelector('.home-form-error, .form-error[role="alert"]')),
     route: {
@@ -489,6 +506,7 @@ async function main() {
     rows: card.rows.map((row) => [row.id, row.title, row.state, row.link]),
     count: card.count,
     manage: card.manage,
+    order: card.order,
   });
   const cardRowsMatch = first.card.rows.every((expected) => {
     const row = rowOf(card.rows, expected.id);
@@ -505,13 +523,15 @@ async function main() {
   check(
     "card-recurring",
     card.cardPresent &&
+      card.order?.recurringFirst === true &&
       card.rows.length === first.card.count &&
       cardRowsMatch &&
       absentMatch &&
       card.count === first.card.count &&
       card.manage?.href === first.card.manage.href &&
       card.manage?.text === first.card.manage.text,
-    `${cardDetail}; expected ${JSON.stringify({
+    `${cardDetail}; expected the Recurring block to sit ABOVE the Today/This week
+      groups and ${JSON.stringify({
       rows: first.card.rows.map((row) => [row.id, row.title, row.label, row.link]),
       count: first.card.count,
       absent: first.card.absentIds,

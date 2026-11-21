@@ -1,6 +1,8 @@
-import { Check, Copy, ImagePlus } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronRight, Copy, ImagePlus } from "lucide-react";
 import { formatMessageWhen } from "../../../../electron/companion-client.ts";
 import { parseChatImages } from "@/lib/chat-images";
+import { splitDecisionFences } from "@/lib/decision-fences";
 import {
   hasWorkLog,
   type TurnImage,
@@ -154,10 +156,16 @@ function TurnBubble({
   const stampedAt = at !== undefined && at > 0 ? at : undefined;
   const when = formatMessageWhen(stampedAt);
   const copy = content || receipt?.name || "";
+  // A reply that proposes a change carries a `lifequest-decision` fence, which
+  // is a wire format main parses and files — not something to read. It is split
+  // off here, never stripped, so the copy control above still hands back the
+  // whole message and a reload still files the same Decision.
+  const { prose, fences } = splitDecisionFences(content);
   // A reply may name its pictures in the prose it streamed. Only the markdown
   // image syntax is taken out; every other character stays where the model put
   // it, so a message with no pictures reads exactly as it always did.
-  const segments = parseChatImages(content);
+  const segments = parseChatImages(prose);
+  const [openFence, setOpenFence] = useState<number | null>(null);
   return (
     <div
       className={`chat-panel__message chat-panel__message--${role}`}
@@ -210,6 +218,52 @@ function TurnBubble({
             />
           ),
         )}
+        {fences.length > 0 ? (
+          <div className="chat-panel__decisions">
+            {fences.map((fence, index) => {
+              const open = openFence === index;
+              return (
+                <div
+                  key={`${index}-${fence.summary}`}
+                  className="chat-panel__decision"
+                  data-testid="chat-decision-fence"
+                >
+                  <button
+                    type="button"
+                    className="chat-panel__decision-line"
+                    aria-expanded={open}
+                    onClick={() => setOpenFence(open ? null : index)}
+                  >
+                    <ChevronRight
+                      size={12}
+                      aria-hidden
+                      className={
+                        open
+                          ? "chat-panel__decision-caret chat-panel__decision-caret--open"
+                          : "chat-panel__decision-caret"
+                      }
+                    />
+                    <span className="chat-panel__decision-kicker">DECISION:</span>
+                    <span
+                      className="chat-panel__decision-summary"
+                      data-testid="chat-decision-summary"
+                    >
+                      {fence.summary}
+                    </span>
+                  </button>
+                  {open ? (
+                    <pre
+                      className="chat-panel__decision-body"
+                      data-testid="chat-decision-body"
+                    >
+                      {fence.body}
+                    </pre>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
       <div className="chat-panel__message-meta">
         {when ? (
