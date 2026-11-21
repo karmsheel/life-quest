@@ -11,6 +11,7 @@ import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
 import { SceneBackdrop } from "./SceneBackdrop";
 import { CompositionSlot } from "@/components/composition/CompositionSlot";
+import { PageCoverHold } from "./PageCoverHold";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -117,7 +118,14 @@ export function AppShell() {
                 */
                 data-page-context-root=""
               >
-                <Outlet />
+                {/* The page's own live view. While a sheet is over this page the
+                    subtree keeps the revision and snapshot it last showed, so a
+                    queue of answers does not re-run every card query behind a
+                    scrim nobody can read through; the sheet leaving hands it the
+                    current ones in a single catch-up pass. See `PageCoverHold`. */}
+                <PageCoverHold>
+                  <Outlet />
+                </PageCoverHold>
               </div>
               <CompositionSlot region="page.footer" />
               {/* The polar/quick-action ring: an overlay above the page, not a
