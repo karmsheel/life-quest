@@ -77,9 +77,13 @@ import type {
   VaultSnapshot,
 } from "@lifequest/vault-core";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
-import { LiveDataProvider } from "@/state/LiveDataProvider";
+import { LiveDataProvider, useLiveData } from "@/state/LiveDataProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 import DecisionsPage from "@/pages/DecisionsPage";
+import {
+  PageCoverHold,
+  PageCoverProvider,
+} from "@/components/shell/PageCoverHold";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
@@ -102,6 +106,13 @@ const snapshotDelayMs = Number(params.get("snapshotDelay") ?? "800");
 const autoClose = params.get("autoClose") !== "off";
 const failResolve = params.get("failResolve") === "1";
 const resolveDelayMs = Number(params.get("resolveDelay") ?? "0");
+/** How many ALREADY ANSWERED Decisions History's paging legs need (default 0). */
+const historyCount = Math.max(
+  0,
+  Number.isFinite(Number(params.get("history")))
+    ? Number(params.get("history") ?? "0")
+    : 0,
+);
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -150,6 +161,28 @@ function makeDecision(index: number): DecisionRecord {
   };
 }
 
+/**
+ * One answered Decision, as History draws it.
+ *
+ * `createdAt` steps back a minute per index so "newest first" is a fact the
+ * driver can name, and the ids are far from the pending ones so a leg can say
+ * which card it means.
+ */
+function makeResolvedDecision(index: number): DecisionRecord {
+  const base = Date.parse("2026-10-19T18:00:00.000Z");
+  const createdAt = new Date(base - index * 60_000).toISOString();
+  const title = `Answered premise ${index + 1}`;
+  return {
+    ...makeDecision(index + 1),
+    id: `decision-h${String(index + 1).padStart(3, "0")}`,
+    status: "approved",
+    title,
+    proposedTitle: title,
+    createdAt,
+    resolvedAt: createdAt,
+  };
+}
+
 /** One bridge call, as the page made it: start and (once answered) end. */
 type Call = { at: number; end: number | null; delayMs: number };
 
@@ -170,7 +203,12 @@ type Vault = {
 };
 
 const vault: Vault = {
-  decisions: Array.from({ length: seedCount }, (_, index) => makeDecision(index + 1)),
+  decisions: [
+    ...Array.from({ length: seedCount }, (_, index) => makeDecision(index + 1)),
+    ...Array.from({ length: historyCount }, (_, index) =>
+      makeResolvedDecision(index),
+    ),
+  ],
   revision: 0,
   listeners: [],
   resolves: [],
@@ -337,6 +375,33 @@ type Probe = {
   bodyOverflowAtSheetGone: string | null;
 };
 
+/** What the covered page's own query saw, accumulated across the run. */
+type PageProbeState = {
+  /** How many times the page's query effect has run. */
+  runs: number;
+  /** How many times the page subtree rendered: evidence the hold also stops redraws. */
+  renders: number;
+  /** The (held) live revision the page last rendered with. */
+  revision: number;
+  /** The (held) snapshot generation the page last rendered with. */
+  generation: number;
+  lastRunAt: number | null;
+};
+
+/** The two live signals as the shell sees them, unheld. */
+type LiveSignals = { revision: number; generation: number };
+
+/** The In-page timing of one History tab press, from click to first painted list. */
+type HistoryPress = {
+  clickAt: number | null;
+  /** When the first History card reached the DOM. */
+  firstCardAt: number | null;
+  /** When a frame carrying it was produced (or the wait timed out). */
+  paintAt: number | null;
+  paintKind: "frame" | "timeout" | null;
+  cards: number;
+};
+
 type HarnessWindow = Window & {
   decisionsLatencyReady?: Promise<void>;
   decisionsLatencySkin?: string;
@@ -362,6 +427,27 @@ type HarnessWindow = Window & {
   };
   decisionsLatencyTab?: (label: string) => boolean;
   decisionsLatencyClose?: () => boolean;
+  /** The covered page's own query: runs, held revision and generation. */
+  decisionsLatencyPageProbe?: () => PageProbeState;
+  /** The unheld signals, so a hold can be told apart from silence. */
+  decisionsLatencyLiveSignals?: () => LiveSignals;
+  /** The stub vault's own revision counter. */
+  decisionsLatencyVaultRevision?: () => number;
+  /** The background page: mount count, scroll, heading and its probe. */
+  decisionsLatencyWorkspace?: () => {
+    mounts: number;
+    scrollTop: number;
+    heading: string | null;
+    probe: PageProbeState;
+  };
+  decisionsLatencyScrollTo?: (top: number) => boolean;
+  /** Press the History tab, timed from the click to the first painted list. */
+  decisionsLatencyHistoryTab?: () => HistoryPress | null;
+  decisionsLatencyHistoryProbe?: () => HistoryPress | null;
+  /** Bring History's pager footer into view, for the artefact picture. */
+  decisionsLatencyHistoryScroll?: () => boolean;
+  /** Press a History source filter by label ("All" / "AI" / "Manual"). */
+  decisionsLatencyHistoryFilter?: (label: string) => boolean;
 };
 
 type CardRow = {
@@ -377,9 +463,18 @@ type Screen = {
     closing: boolean;
     panel: boolean;
   } | null;
+  /** Which inbox tab is selected ("Pending" / "History" / "Manual"). */
+  activeTab: string | null;
+  /** True while the first read is still drawing "Loading decisions…". */
+  loading: boolean;
   title: string | null;
   subtitle: string | null;
   cards: CardRow[];
+  /**
+   * History's page footer, when it is drawing fewer rows than the record holds:
+   * the line the operator reads and whether the control is offered.
+   */
+  historyMore: { text: string; button: boolean } | null;
   /** Any control still reading "…": the stuck-processing defect. */
   ellipsisButtons: string[];
   empty: string | null;
@@ -412,6 +507,10 @@ function screen(): Screen {
           panel: panel !== null,
         }
       : null,
+    activeTab:
+      text(document.querySelector('.decisions-inbox__tab[aria-selected="true"]')) ||
+      null,
+    loading: /Loading decisions/.test(text(document.querySelector(".decisions-inbox"))),
     title: text(document.querySelector(".sheet-overlay__title")) || null,
     subtitle: text(document.querySelector(".sheet-overlay__subtitle")) || null,
     cards: [...document.querySelectorAll(".decision-card")].map((card) => ({
@@ -423,6 +522,16 @@ function screen(): Screen {
     ellipsisButtons: buttons
       .filter((button) => (button.textContent ?? "").trim() === "…")
       .map((button) => button.getAttribute("data-testid") ?? text(button)),
+    historyMore: (() => {
+      const more = document.querySelector(".decisions-inbox__more");
+      if (!more) return null;
+      return {
+        text: text(more.querySelector("p")),
+        button: Boolean(
+          more.querySelector('[data-testid="btn-decisions-load-older"]'),
+        ),
+      };
+    })(),
     empty: text(document.querySelector(".decisions-inbox__empty")) || null,
     error: text(document.querySelector(".decisions-inbox__notices .form-error")) || null,
     actionMessage:
@@ -561,10 +670,147 @@ harness.decisionsLatencyClose = () => {
   return true;
 };
 
+harness.decisionsLatencyPageProbe = () => ({ ...pageProbe });
+harness.decisionsLatencyLiveSignals = () => ({ ...liveSignals });
+harness.decisionsLatencyVaultRevision = () => vault.revision;
+harness.decisionsLatencyWorkspace = () => {
+  const port = document.querySelector<HTMLElement>("[data-work-scroller]");
+  return {
+    mounts,
+    scrollTop: Math.round(port?.scrollTop ?? 0),
+    heading: text(document.querySelector("[data-work-title]")) || null,
+    probe: { ...pageProbe },
+  };
+};
+harness.decisionsLatencyScrollTo = (top) => {
+  const port = document.querySelector<HTMLElement>("[data-work-scroller]");
+  if (!port) return false;
+  port.scrollTop = top;
+  return true;
+};
+
+/**
+ * Press the History tab and time the first painted list, in the page.
+ *
+ * The clock has to run where the work happens: `clickAt` is taken just before
+ * the button's own handler, `firstCardAt` when the first `.decision-card`
+ * reaches the DOM under the selected History tab, and `paintAt` when a frame
+ * carrying it has been produced. A hidden Electron window throttles
+ * requestAnimationFrame, so the driver wakes the compositor from outside after
+ * `firstCardAt`; the timeout is the escape hatch and is recorded as such
+ * instead of being disguised as a frame.
+ */
+let historyPress: HistoryPress | null = null;
+
+harness.decisionsLatencyHistoryTab = () => {
+  const tab = [
+    ...document.querySelectorAll<HTMLElement>(".decisions-inbox__tab"),
+  ].find((candidate) => text(candidate) === "History");
+  if (!tab) return null;
+  const press: HistoryPress = {
+    clickAt: performance.now(),
+    firstCardAt: null,
+    paintAt: null,
+    paintKind: null,
+    cards: 0,
+  };
+  historyPress = press;
+  const cardCount = () => document.querySelectorAll(".decision-card").length;
+  const poll = window.setInterval(() => {
+    const selected = text(
+      document.querySelector('.decisions-inbox__tab[aria-selected="true"]'),
+    );
+    if (selected !== "History" || cardCount() === 0) return;
+    window.clearInterval(poll);
+    press.firstCardAt = performance.now();
+    press.cards = cardCount();
+    const timer = window.setTimeout(() => {
+      press.paintAt = performance.now();
+      press.paintKind = "timeout";
+    }, 1500);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        window.clearTimeout(timer);
+        press.paintAt = performance.now();
+        press.paintKind = "frame";
+      }),
+    );
+  }, 10);
+  tab.click();
+  return press;
+};
+harness.decisionsLatencyHistoryProbe = () =>
+  historyPress ? { ...historyPress } : null;
+harness.decisionsLatencyHistoryScroll = () => {
+  const footer = document.querySelector(".decisions-inbox__more");
+  if (!footer) return false;
+  footer.scrollIntoView({ block: "center" });
+  return true;
+};
+harness.decisionsLatencyHistoryFilter = (label) => {
+  const filter = [
+    ...document.querySelectorAll<HTMLElement>(".decisions-inbox__filter"),
+  ].find((candidate) => text(candidate) === label);
+  if (!filter) return false;
+  filter.click();
+  return true;
+};
+
 // ── the page the sheet is drawn over ────────────────────────────────────────
 
 /** Every mount of the background page: closing must not remount it. */
 let mounts = 0;
+
+/** What the covered page's own query has seen, accumulated across the run. */
+const pageProbe: PageProbeState = {
+  runs: 0,
+  renders: 0,
+  revision: 0,
+  generation: 0,
+  lastRunAt: null,
+};
+
+/** The same two signals, unheld: the shell's view, for comparison. */
+const liveSignals: LiveSignals = { revision: 0, generation: 0 };
+
+/**
+ * The page's own query, as a dashboard card would write it.
+ *
+ * It runs on exactly the two signals `PageCoverHold` freezes while a sheet is
+ * up: the vault snapshot's `reloadGeneration` and the live data revision. The
+ * counters are the contract — a write under the scrim must not tick `runs` —
+ * and the last values are the proof that a frozen page is holding an OLD
+ * revision, not that no signal ever arrived.
+ */
+function PageQueryProbe() {
+  const live = useLiveData();
+  const { reloadGeneration } = useVault();
+  pageProbe.renders += 1;
+  pageProbe.revision = live;
+  pageProbe.generation = reloadGeneration;
+  useEffect(() => {
+    pageProbe.runs += 1;
+    pageProbe.revision = live;
+    pageProbe.generation = reloadGeneration;
+    pageProbe.lastRunAt = performance.now();
+  }, [live, reloadGeneration]);
+  return null;
+}
+
+/**
+ * The shell's own view of the live signals: deliberately OUTSIDE the hold.
+ *
+ * This is what makes leg 7 a proof of a hold instead of a proof of silence: the
+ * driver reads these beside the page's held values and asserts the live pair
+ * really moved while the page's pair did not.
+ */
+function LiveSignalsProbe() {
+  const live = useLiveData();
+  const { reloadGeneration } = useVault();
+  liveSignals.revision = live;
+  liveSignals.generation = reloadGeneration;
+  return null;
+}
 
 function WorkspacePage() {
   useEffect(() => {
@@ -578,6 +824,7 @@ function WorkspacePage() {
       style={{ height: 620, width: 1100, margin: "0 auto", overflowY: "auto" }}
     >
       <div data-work-page="" style={{ padding: "1.5rem", minHeight: 1400 }}>
+        <PageQueryProbe />
         <p className="decisions-inbox__eyebrow">Workspace</p>
         <h1 className="stub-page__title" data-work-title="">
           Quarterly planning
@@ -648,11 +895,27 @@ function Harness() {
         </Link>
       </header>
       <div className="app-root__body">
-        <Routes location={background}>
-          <Route path="/work" element={<WorkspacePage />} />
-          <Route path="/decisions" element={<DecisionsPage />} />
-        </Routes>
-        {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
+        <LiveSignalsProbe />
+        {/*
+          The app's own shape (`AppRoutes`): the covered flag is the page's, and
+          only the routed page is held (`AppShell` wraps its outlet in
+          `PageCoverHold`). The sheet itself, and this shell-side probe, stay
+          live — that is what makes the sheet usable while the page sleeps.
+        */}
+        <PageCoverProvider covered={sheetOverBackground}>
+          <Routes location={background}>
+            <Route
+              path="/work"
+              element={
+                <PageCoverHold>
+                  <WorkspacePage />
+                </PageCoverHold>
+              }
+            />
+            <Route path="/decisions" element={<DecisionsPage />} />
+          </Routes>
+          {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
+        </PageCoverProvider>
       </div>
     </div>
   );

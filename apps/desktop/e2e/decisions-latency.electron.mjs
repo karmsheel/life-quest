@@ -59,6 +59,7 @@ const consoleErrors = [];
 const round = (value) => Math.round(value);
 
 async function main() {
+  console.log("rig: main()");
   nativeTheme.themeSource = "dark";
 
   const win = new BrowserWindow({
@@ -73,7 +74,19 @@ async function main() {
   });
 
   win.webContents.on("console-message", (_event, level, message) => {
-    if (level >= 3) consoleErrors.push(String(message));
+    if (level >= 3) {
+      consoleErrors.push(String(message));
+      console.log(`page console: ${message}`);
+    }
+  });
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.log(`renderer gone: ${JSON.stringify(details)}`);
+  });
+  win.webContents.on("did-fail-load", (_event, code, description, urlValue) => {
+    console.log(`load failed: ${code} ${description} ${urlValue}`);
+  });
+  win.webContents.on("unresponsive", () => {
+    console.log("renderer unresponsive");
   });
 
   const run = (expression) => win.webContents.executeJavaScript(expression, true);
@@ -111,6 +124,9 @@ async function main() {
       await sleep(20);
     }
   };
+
+  /** Where the rig is, on stdout: a hang names its step instead of the timeout. */
+  const logStep = (name) => console.log(`rig: ${name}`);
 
   const click = (selector) =>
     run(`(() => {
@@ -165,21 +181,60 @@ async function main() {
       });
     })`);
 
-  /** The one artefact picture: written exactly as `decisions-latency.png`. */
-  const shot = (bytes) => {
-    const file = path.join(artifactsDir, "decisions-latency.png");
+  /**
+   * Capture the surface until two forced frames are byte-identical, then write
+   * the last one as the named artefact and return the evidence.
+   *
+   * A hidden Electron window's surface is a cached frame: a bare capturePage
+   * after the DOM changed can hand back the previous picture. So the compositor
+   * is woken with a throwaway capture (which also makes the next forced frame
+   * immediate instead of ~a second), frames are forced (invalidate + rAF), a
+   * beat is given for the paint to land, and captures repeat until two agree.
+   * The frame kinds and the stability flag go into the report, so a stale
+   * picture fails the judge instead of passing silently.
+   */
+  const captureStable = async (fileName) => {
+    await captureBytes();
+    const captureFrames = [];
+    let previous = null;
+    let surfaceStable = false;
+    for (let cycle = 0; cycle < 3 && !surfaceStable; cycle += 1) {
+      win.webContents.invalidate();
+      const paint = await waitFrame();
+      await sleep(40);
+      const bytes = await captureBytes();
+      captureFrames.push({ paint, bytes: bytes.length });
+      if (previous !== null && previous.equals(bytes)) surfaceStable = true;
+      previous = bytes;
+    }
+    const at = await now();
+    const file = path.join(artifactsDir, fileName);
     fs.mkdirSync(artifactsDir, { recursive: true });
-    fs.writeFileSync(file, bytes);
-    screenshots.length = 0;
+    fs.writeFileSync(file, previous);
     screenshots.push(path.basename(file));
-    return path.basename(file);
+    return {
+      shot: path.basename(file),
+      at,
+      frames: captureFrames,
+      surfaceStable,
+      bytes: previous.length,
+    };
   };
 
   const openPage = async (query) => {
     const target = query ? `${url}?${query}` : url;
+    logStep(`load ${target}`);
     await win.loadURL(target);
     await waitFor("Boolean(window.decisionsLatencyReady)", 15000, "the harness module");
-    await run("window.decisionsLatencyReady.then(() => true)");
+    // A page whose workspace never painted leaves this promise unsettled, and a
+    // bare await would hang until the harness timeout with no report. Bound it.
+    await Promise.race([
+      run("window.decisionsLatencyReady.then(() => true)"),
+      sleep(15000).then(() => {
+        throw new Error("the harness painted but never became ready");
+      }),
+    ]);
+    logStep("harness ready");
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     // The fixture snapshot has to have landed before the sheet opens: the inbox
     // reads auto-close from it, and a sheet opened early would test the default.
@@ -209,6 +264,11 @@ async function main() {
       10000,
       `the open sheet draws ${expectedCards} pending cards`,
     );
+    await waitFor(
+      "!window.decisionsLatencyScreen().loading",
+      10000,
+      "the inbox's first read settles",
+    );
     await frames(120);
     return sample();
   };
@@ -233,6 +293,7 @@ async function main() {
       listDelayMs: LIST_DELAY_MS,
       snapshotDelayMs: SNAPSHOT_DELAY_MS,
       seed: 2,
+      historySeed: 120,
     },
     states,
     steps,
@@ -248,6 +309,26 @@ async function main() {
     pass: false,
   };
 
+  // A run that hangs must still leave a report. This watchdog dumps the states
+  // gathered so far and exits, so the judge fails with a named state instead of
+  // a 240 s harness timeout with no artifact.
+  const watchdog = setTimeout(() => {
+    failures.push(
+      `watchdog: the rig did not finish within 150s; last steps ${JSON.stringify(steps)}`,
+    );
+    try {
+      fs.mkdirSync(artifactsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(artifactsDir, "decisions-latency.json"),
+        `${JSON.stringify({ url, states, steps, consoleErrors, failures, pass: false }, null, 2)}\n`,
+      );
+    } catch {
+      /* the exit below is what matters */
+    }
+    console.log("rig: watchdog fired");
+    app.exit(1);
+  }, 150_000);
+
   try {
     // ── run 1: the operator's defect, then the bookkeeping ────────────────────
 
@@ -255,6 +336,14 @@ async function main() {
       `seed=2&listDelay=${LIST_DELAY_MS}&snapshotDelay=${SNAPSHOT_DELAY_MS}`,
     );
     record("landing", await sample());
+
+    // LEG 7 (baseline) — park the workspace down its own page, so "the page was
+    // held still" is a claim about where it was as well as what it queried.
+    step("workspaceScrollTo", await run("window.decisionsLatencyScrollTo(300)"));
+    await frames(80);
+    record("probeBeforeOpen", await run("window.decisionsLatencyPageProbe()"));
+    record("liveBeforeOpen", await run("window.decisionsLatencyLiveSignals()"));
+    record("workspaceBeforeOpen", await run("window.decisionsLatencyWorkspace()"));
 
     const opened = record("opened", await openDecisions(2));
     step("openClick", true);
@@ -284,6 +373,14 @@ async function main() {
     );
     record("leg1Settled", await settle(120));
 
+    // LEG 7 (covered) — the first answer's write announced a revision and its
+    // catch-up refresh bumped the snapshot generation, both while the sheet was
+    // over the page. The page's own query must not have run for either.
+    record("probeCovered", await run("window.decisionsLatencyPageProbe()"));
+    record("liveDuringCover", await run("window.decisionsLatencyLiveSignals()"));
+    record("vaultRevisionDuringCover", await run("window.decisionsLatencyVaultRevision()"));
+    record("workspaceDuringCover", await run("window.decisionsLatencyWorkspace()"));
+
     // LEG 2 — the LAST card: the sheet must leave on the write, not on the reads.
     const beforeLast = await sample();
     const lastId = beforeLast.cards[0]?.id;
@@ -296,43 +393,34 @@ async function main() {
     );
     const sheetGone = record("leg2Probe", await probe());
 
+    // LEG 7 (close wave) — sample the very moment the sheet is gone, before the
+    // one in-flight snapshot refresh (scheduled 250 ms after the answer, stubbed
+    // at 800 ms) can land: the page gets one catch-up run carrying the revision
+    // and generation of that instant.
+    const baselineRuns = states.probeBeforeOpen?.runs ?? 0;
+    await waitFor(
+      `Boolean(window.decisionsLatencyPageProbe()) && window.decisionsLatencyPageProbe().runs === ${baselineRuns + 1}`,
+      3000,
+      "the covered page's single catch-up run when the sheet leaves",
+    );
+    record("probeAfterClose", await run("window.decisionsLatencyPageProbe()"));
+    record("liveAfterClose", await run("window.decisionsLatencyLiveSignals()"));
+    record("vaultRevisionAfterClose", await run("window.decisionsLatencyVaultRevision()"));
+    record("workspaceAfterClose", await run("window.decisionsLatencyWorkspace()"));
+
     // The picture is taken at the moment just after the frame left.
-    //
-    // Two things make this more than "call capturePage": a hidden window's
-    // surface is a cached frame, and a capture started right after the DOM
-    // changed can still hand back the old one. So the compositor is woken with a
-    // throwaway capture (which also makes the first forced frame immediate
-    // instead of ~a second), then frames are forced (invalidate + rAF), a beat
-    // is given for the paint to land, and the surface is captured until two
-    // consecutive frames are byte-identical. The last of those is the artefact,
-    // and the report says how many frames it took and whether the surface had
-    // settled — a stale picture cannot pass silently.
-    await captureBytes();
-    const captureFrames = [];
-    let previous = null;
-    let surfaceStable = false;
-    for (let cycle = 0; cycle < 3 && !surfaceStable; cycle += 1) {
-      win.webContents.invalidate();
-      const paint = await waitFrame();
-      await sleep(40);
-      const bytes = await captureBytes();
-      captureFrames.push({ paint, bytes: bytes.length });
-      if (previous !== null && previous.equals(bytes)) surfaceStable = true;
-      previous = bytes;
-    }
-    const captureAt = await now();
-    const capturedShot = shot(previous);
+    const captured = await captureStable("decisions-latency.png");
     const afterSheetGone = record("afterSheetGone", await sample());
     record("capture", {
-      shot: capturedShot,
-      clickToCaptureMs: round(captureAt - (sheetGone?.clickAt ?? captureAt)),
+      shot: captured.shot,
+      clickToCaptureMs: round(captured.at - (sheetGone?.clickAt ?? captured.at)),
       path: afterSheetGone.path,
       overlay: afterSheetGone.overlay,
       workspace: afterSheetGone.workspace,
       bodyOverflow: afterSheetGone.bodyOverflow,
-      frames: captureFrames,
-      surfaceStable,
-      bytes: previous.length,
+      frames: captured.frames,
+      surfaceStable: captured.surfaceStable,
+      bytes: captured.bytes,
     });
     report.capture = states.capture;
 
@@ -344,6 +432,14 @@ async function main() {
       "the background bookkeeping after the last answer",
     );
     const afterCalls = record("callsAfterAnswer", await bridgeCalls());
+
+    // LEG 7 (follow-up wave) — the last answer's refresh was still in flight
+    // when the sheet left, so it lands on a page that is live again and must
+    // produce exactly one more run (not one per missed write).
+    record("probeAfterSettle", await run("window.decisionsLatencyPageProbe()"));
+    record("liveAfterSettle", await run("window.decisionsLatencyLiveSignals()"));
+    record("vaultRevisionAfterSettle", await run("window.decisionsLatencyVaultRevision()"));
+    record("workspaceAfterSettle", await run("window.decisionsLatencyWorkspace()"));
 
     const reopenClick = await click("[data-open-decisions]");
     step("reopenClick", reopenClick);
@@ -464,6 +560,7 @@ async function main() {
       unexpected: afterCalls.unexpected,
     };
 
+    logStep("run 1 done");
     // ── run 2: auto-close OFF leaves the sheet up ─────────────────────────────
 
     await openPage(
@@ -496,6 +593,7 @@ async function main() {
       "the auto-close-off sheet closes for the next run",
     );
 
+    logStep("run 2 done");
     // ── run 3: a refused write keeps the card and says why ────────────────────
 
     await openPage(`seed=1&failResolve=1&listDelay=${LIST_DELAY_MS}`);
@@ -518,6 +616,106 @@ async function main() {
       6000,
       "the refused-write sheet closes",
     );
+
+    logStep("run 3 done");
+    // ── run 4: History is one page of fifty, and offers the rest ──────────────
+    //
+    // 120 already-answered Decisions in the vault and nothing pending: opening
+    // History must draw 50, say "Showing 50 of 120 decisions.", and offer the
+    // next page. The old code drew all 120 in one commit — the regression.
+
+    await openPage(
+      `seed=0&history=120&listDelay=${LIST_DELAY_MS}&snapshotDelay=${SNAPSHOT_DELAY_MS}`,
+    );
+    record("historyLanding", await sample());
+    record("historyOpened", await openDecisions(0));
+
+    // LEG 8 (first page, timed) — the press and the first painted History list.
+    step("historyClick", await run("window.decisionsLatencyHistoryTab()"));
+    await waitFor(
+      "Boolean(window.decisionsLatencyHistoryProbe()) && window.decisionsLatencyHistoryProbe().firstCardAt !== null",
+      12000,
+      "History draws its first page",
+    );
+    // Wake the hidden window's compositor so the page's own rAF produces the
+    // frame the press is timed against.
+    await captureBytes();
+    await waitFor(
+      "window.decisionsLatencyHistoryProbe().paintAt !== null",
+      6000,
+      "the first History frame",
+    );
+    record("historyPress", await run("window.decisionsLatencyHistoryProbe()"));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 50",
+      8000,
+      "History's first page draws exactly 50 cards",
+    );
+    record("historyFirstPage", await settle(120));
+    step("historyFooterScroll", await run("window.decisionsLatencyHistoryScroll()"));
+    await frames(80);
+    const historyArtifact = await captureStable("decisions-latency-history.png");
+    record("historyCapture", {
+      shot: historyArtifact.shot,
+      frames: historyArtifact.frames,
+      surfaceStable: historyArtifact.surfaceStable,
+      bytes: historyArtifact.bytes,
+      screen: await sample(),
+    });
+
+    step("loadOlder1", await click('[data-testid="btn-decisions-load-older"]'));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 100",
+      5000,
+      "the second History page draws 100 cards",
+    );
+    record("historySecondPage", await settle(80));
+
+    step("loadOlder2", await click('[data-testid="btn-decisions-load-older"]'));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 120",
+      5000,
+      "the third History page draws all 120 cards",
+    );
+    record("historyThirdPage", await settle(80));
+
+    // A tab round trip is a new slice, not the old page length carried over.
+    step("resetPending", await run("window.decisionsLatencyTab('Pending')"));
+    await waitFor(
+      "window.decisionsLatencyScreen().activeTab === 'Pending'",
+      5000,
+      "the Pending tab",
+    );
+    step("resetHistory", await run("window.decisionsLatencyTab('History')"));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 50",
+      10000,
+      "History returns to one page after the tab round trip",
+    );
+    record("historyTabReset", await settle(80));
+
+    // ... and so is a move between sources: grow History, then switch to AI.
+    step("loadOlder3", await click('[data-testid="btn-decisions-load-older"]'));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 100",
+      5000,
+      "a second page before the source filter moves",
+    );
+    step("filterAi", await run("window.decisionsLatencyHistoryFilter('AI')"));
+    await waitFor(
+      "window.decisionsLatencyScreen().cards.length === 50",
+      5000,
+      "the AI filter resets History to one page",
+    );
+    record("historyFilterReset", await settle(80));
+
+    logStep("run 4 done");
+    step("historyClose", await run("window.decisionsLatencyClose()"));
+    await waitFor(
+      "!window.decisionsLatencyScreen().overlay",
+      6000,
+      "the History sheet closes",
+    );
   } catch (error) {
     failures.push(
       `threw: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
@@ -537,6 +735,109 @@ async function main() {
   const history = states.reopenedHistory;
   const answeredIds = [steps.leg1CardId, steps.leg2CardId].filter(Boolean);
   const autoCloseOff = states.autoCloseOff;
+
+  // ── the hold, summarised ───────────────────────────────────────────────────
+  //
+  // The claim is a shape of four numbers: no run while covered, one at the close
+  // wave, one when the single in-flight refresh lands — two runs for two answers,
+  // not one per write per signal.
+  const probeBefore = states.probeBeforeOpen;
+  const probeCovered = states.probeCovered;
+  const probeAfterClose = states.probeAfterClose;
+  const probeAfterSettle = states.probeAfterSettle;
+  const valuePair = (probe) => ({
+    revision: probe?.revision ?? null,
+    generation: probe?.generation ?? null,
+  });
+  const runsDelta = (a, b) =>
+    a && b && typeof a.runs === "number" && typeof b.runs === "number"
+      ? a.runs - b.runs
+      : null;
+
+  report.hold = {
+    runs: {
+      before: probeBefore?.runs ?? null,
+      covered: probeCovered?.runs ?? null,
+      afterClose: probeAfterClose?.runs ?? null,
+      afterSettle: probeAfterSettle?.runs ?? null,
+      coveredDelta: runsDelta(probeCovered, probeBefore),
+      closeWave: runsDelta(probeAfterClose, probeBefore),
+      followUp: runsDelta(probeAfterSettle, probeAfterClose),
+      total: runsDelta(probeAfterSettle, probeBefore),
+    },
+    values: {
+      before: valuePair(probeBefore),
+      covered: valuePair(probeCovered),
+      afterClose: valuePair(probeAfterClose),
+      afterSettle: valuePair(probeAfterSettle),
+    },
+    live: {
+      before: states.liveBeforeOpen ?? null,
+      whileCovered: states.liveDuringCover ?? null,
+      afterClose: states.liveAfterClose ?? null,
+      afterSettle: states.liveAfterSettle ?? null,
+    },
+    vaultRevision: {
+      whileCovered: states.vaultRevisionDuringCover ?? null,
+      afterClose: states.vaultRevisionAfterClose ?? null,
+      afterSettle: states.vaultRevisionAfterSettle ?? null,
+    },
+    workspace: {
+      before: states.workspaceBeforeOpen ?? null,
+      whileCovered: states.workspaceDuringCover ?? null,
+      afterClose: states.workspaceAfterClose ?? null,
+      afterSettle: states.workspaceAfterSettle ?? null,
+    },
+  };
+
+  // ── History paging, summarised ─────────────────────────────────────────────
+  const historyFooter = (sample) => sample?.historyMore?.text ?? null;
+  const historyCards = (sample) => sample?.cards?.length ?? null;
+  const historyPress = states.historyPress;
+
+  report.history = {
+    seed: 120,
+    pageSize: 50,
+    press: {
+      clickAt: historyPress?.clickAt ?? null,
+      firstCardAt: historyPress?.firstCardAt ?? null,
+      paintAt: historyPress?.paintAt ?? null,
+      paintKind: historyPress?.paintKind ?? null,
+      clickToCardMs:
+        historyPress?.clickAt != null && historyPress?.firstCardAt != null
+          ? round(historyPress.firstCardAt - historyPress.clickAt)
+          : null,
+      clickToPaintMs:
+        historyPress?.clickAt != null && historyPress?.paintAt != null
+          ? round(historyPress.paintAt - historyPress.clickAt)
+          : null,
+      cardsAtPaint: historyPress?.cards ?? null,
+    },
+    firstPage: {
+      cards: historyCards(states.historyFirstPage),
+      footer: historyFooter(states.historyFirstPage),
+      activeTab: states.historyFirstPage?.activeTab ?? null,
+    },
+    secondPage: {
+      cards: historyCards(states.historySecondPage),
+      footer: historyFooter(states.historySecondPage),
+    },
+    thirdPage: {
+      cards: historyCards(states.historyThirdPage),
+      footer: historyFooter(states.historyThirdPage),
+      footerPresent: states.historyThirdPage?.historyMore != null,
+    },
+    tabReset: {
+      cards: historyCards(states.historyTabReset),
+      footer: historyFooter(states.historyTabReset),
+    },
+    filterReset: {
+      cards: historyCards(states.historyFilterReset),
+      footer: historyFooter(states.historyFilterReset),
+      activeTab: states.historyFilterReset?.activeTab ?? null,
+    },
+    capture: states.historyCapture?.shot ?? null,
+  };
 
   report.legs = {
     leg1: {
@@ -611,8 +912,61 @@ async function main() {
         error: states.failedResolve?.error ?? null,
       },
     },
+    leg7: {
+      pass:
+        report.hold.runs.coveredDelta === 0 &&
+        report.hold.values.covered.revision === report.hold.values.before.revision &&
+        report.hold.values.covered.generation === report.hold.values.before.generation &&
+        (report.hold.live.whileCovered?.revision ?? -1) >
+          report.hold.values.covered.revision &&
+        (report.hold.live.whileCovered?.generation ?? -1) >
+          report.hold.values.covered.generation &&
+        report.hold.runs.closeWave === 1 &&
+        report.hold.values.afterClose.revision === report.hold.live.afterClose?.revision &&
+        report.hold.values.afterClose.generation ===
+          report.hold.live.afterClose?.generation &&
+        report.hold.runs.followUp === 1 &&
+        report.hold.values.afterSettle.revision ===
+          report.hold.live.afterSettle?.revision &&
+        report.hold.values.afterSettle.generation ===
+          report.hold.live.afterSettle?.generation &&
+        report.hold.runs.total !== null &&
+        report.hold.runs.total <= 2 &&
+        report.hold.workspace.before?.mounts === report.hold.workspace.afterSettle?.mounts &&
+        report.hold.workspace.before?.mounts === report.hold.workspace.afterClose?.mounts &&
+        report.hold.workspace.before?.heading === report.hold.workspace.afterSettle?.heading &&
+        report.hold.workspace.before?.scrollTop === report.hold.workspace.afterClose?.scrollTop &&
+        report.hold.workspace.before?.scrollTop === report.hold.workspace.afterSettle?.scrollTop,
+      detail: {
+        runs: report.hold.runs,
+        heldValues: report.hold.values,
+        liveSignals: report.hold.live,
+        vaultRevision: report.hold.vaultRevision,
+        workspace: report.hold.workspace,
+      },
+    },
+    leg8: {
+      pass:
+        report.history.firstPage.cards === 50 &&
+        report.history.firstPage.activeTab === "History" &&
+        report.history.firstPage.footer === "Showing 50 of 120 decisions." &&
+        report.history.secondPage.cards === 100 &&
+        report.history.secondPage.footer === "Showing 100 of 120 decisions." &&
+        report.history.thirdPage.cards === 120 &&
+        report.history.thirdPage.footerPresent === false &&
+        report.history.tabReset.cards === 50 &&
+        report.history.tabReset.footer === "Showing 50 of 120 decisions." &&
+        report.history.filterReset.cards === 50 &&
+        report.history.filterReset.footer ===
+          "Showing 50 of 120 resolved decisions." &&
+        report.history.press.paintAt != null &&
+        report.history.press.firstCardAt != null &&
+        report.history.capture != null,
+      detail: report.history,
+    },
   };
 
+  clearTimeout(watchdog);
   report.pass = failures.length === 0;
 
   const reportFile = path.join(artifactsDir, "decisions-latency.json");
@@ -638,6 +992,17 @@ async function main() {
       `decision:list calls inside the answer window: ${report.answerWindow.decisionListCalls}`,
     );
   }
+  console.log(
+    `covered page query runs: before=${report.hold.runs.before} covered=${report.hold.runs.covered} ` +
+      `afterClose=${report.hold.runs.afterClose} afterSettle=${report.hold.runs.afterSettle} ` +
+      `(covered delta ${report.hold.runs.coveredDelta}, close wave ${report.hold.runs.closeWave}, ` +
+      `follow-up ${report.hold.runs.followUp}, total ${report.hold.runs.total})`,
+  );
+  console.log(
+    `history paging: ${report.history.firstPage.cards}/${report.history.secondPage.cards}/` +
+      `${report.history.thirdPage.cards} cards; first paint ${report.history.press.clickToPaintMs} ms; ` +
+      `first footer "${report.history.firstPage.footer}"`,
+  );
 
   console.log(`report: ${reportFile}`);
   for (const failure of failures) console.log(`FAIL ${failure}`);

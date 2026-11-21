@@ -18,6 +18,8 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/decisions-latency.json");
 const ARTIFACT_SCREENSHOT = "decisions-latency.png";
 const ARTIFACT_PNG = path.join(desktopRoot, "e2e/artifacts", ARTIFACT_SCREENSHOT);
+const HISTORY_SCREENSHOT = "decisions-latency-history.png";
+const HISTORY_PNG = path.join(desktopRoot, "e2e/artifacts", HISTORY_SCREENSHOT);
 
 /**
  * How much faster than the old order the final answer has to be.
@@ -40,9 +42,12 @@ type CardRow = {
 type Screen = {
   path: string | null;
   overlay: { closing: boolean; panel: boolean } | null;
+  activeTab: string | null;
+  loading: boolean;
   title: string | null;
   subtitle: string | null;
   cards: CardRow[];
+  historyMore: { text: string; button: boolean } | null;
   ellipsisButtons: string[];
   empty: string | null;
   error: string | null;
@@ -72,11 +77,29 @@ type Leg = {
   detail: Record<string, unknown>;
 };
 
+type WorkspaceSample = {
+  mounts: number;
+  scrollTop: number;
+  heading: string | null;
+  probe: {
+    runs: number;
+    renders: number;
+    revision: number;
+    generation: number;
+    lastRunAt: number | null;
+  };
+};
+
 type Report = {
   url: string;
   ranAt: string;
   window: { width: number; height: number };
-  fixture: { listDelayMs: number; snapshotDelayMs: number; seed: number };
+  fixture: {
+    listDelayMs: number;
+    snapshotDelayMs: number;
+    seed: number;
+    historySeed: number;
+  };
   states: Record<string, Screen>;
   steps: Record<string, unknown>;
   latency: {
@@ -133,6 +156,60 @@ type Report = {
     frames?: Array<{ paint: { kind: string; ms: number }; bytes: number }>;
     surfaceStable?: boolean;
     bytes?: number;
+  };
+  hold: {
+    runs: {
+      before: number | null;
+      covered: number | null;
+      afterClose: number | null;
+      afterSettle: number | null;
+      coveredDelta: number | null;
+      closeWave: number | null;
+      followUp: number | null;
+      total: number | null;
+    };
+    values: {
+      before: { revision: number | null; generation: number | null };
+      covered: { revision: number | null; generation: number | null };
+      afterClose: { revision: number | null; generation: number | null };
+      afterSettle: { revision: number | null; generation: number | null };
+    };
+    live: {
+      before: { revision: number; generation: number } | null;
+      whileCovered: { revision: number; generation: number } | null;
+      afterClose: { revision: number; generation: number } | null;
+      afterSettle: { revision: number; generation: number } | null;
+    };
+    vaultRevision: {
+      whileCovered: number | null;
+      afterClose: number | null;
+      afterSettle: number | null;
+    };
+    workspace: {
+      before: WorkspaceSample | null;
+      whileCovered: WorkspaceSample | null;
+      afterClose: WorkspaceSample | null;
+      afterSettle: WorkspaceSample | null;
+    };
+  };
+  history: {
+    seed: number;
+    pageSize: number;
+    press: {
+      clickAt: number | null;
+      firstCardAt: number | null;
+      paintAt: number | null;
+      paintKind: string | null;
+      clickToCardMs: number | null;
+      clickToPaintMs: number | null;
+      cardsAtPaint: number | null;
+    };
+    firstPage: { cards: number | null; footer: string | null; activeTab: string | null };
+    secondPage: { cards: number | null; footer: string | null };
+    thirdPage: { cards: number | null; footer: string | null; footerPresent: boolean };
+    tabReset: { cards: number | null; footer: string | null };
+    filterReset: { cards: number | null; footer: string | null; activeTab: string | null };
+    capture: string | null;
   };
   legs: Record<string, Leg>;
   screenshots: string[];
@@ -424,11 +501,196 @@ describe("answering the last pending Decision hands the page back immediately", 
     );
     assert.equal(report.legs.leg6?.pass, true, "leg 6 is not satisfied");
 
-    // ── the repeatable artifact: a JSON report and the frame it measured ─────
+    // ── leg 7 — the page behind the sheet is held still ──────────────────────
+    //
+    // The shape is the contract: zero query runs while covered even though the
+    // stub's revision AND the vault's reloadGeneration both advanced under the
+    // hold; one catch-up run when the sheet leaves; one follow-up when the
+    // single in-flight snapshot refresh lands — two runs for two answers, not
+    // one per write per signal (the old code was an order of magnitude worse).
+    const hold = report.hold;
+    const workspaceBefore = hold.workspace.before;
+    const workspaceAfterClose = hold.workspace.afterClose;
+    const workspaceAfterSettle = hold.workspace.afterSettle;
+    assert.equal(
+      hold.runs.coveredDelta,
+      0,
+      `the covered page's query ran ${hold.runs.coveredDelta} time(s) while the sheet was over it ` +
+        `(runs ${hold.runs.before} -> ${hold.runs.covered})`,
+    );
+    assert.deepEqual(
+      hold.values.covered,
+      hold.values.before,
+      "the held revision/generation moved while the sheet covered the page",
+    );
+    assert.ok(
+      (hold.live.whileCovered?.revision ?? -1) > hold.values.covered.revision!,
+      `the live revision did not advance under the cover (live ${hold.live.whileCovered?.revision}, ` +
+        `held ${hold.values.covered.revision}) — the freeze would prove nothing`,
+    );
+    assert.ok(
+      (hold.live.whileCovered?.generation ?? -1) >
+        hold.values.covered.generation!,
+      `the live reloadGeneration did not advance under the cover ` +
+        `(live ${hold.live.whileCovered?.generation}, held ${hold.values.covered.generation}) — ` +
+        `the freeze would prove nothing`,
+    );
+    assert.equal(
+      hold.vaultRevision.whileCovered,
+      hold.live.whileCovered?.revision,
+      "the stub's revision and the live revision disagree while the page is covered",
+    );
+    assert.equal(
+      hold.runs.closeWave,
+      1,
+      `leaving the sheet produced ${hold.runs.closeWave} query run(s), not exactly one catch-up wave`,
+    );
+    assert.deepEqual(
+      hold.values.afterClose,
+      {
+        revision: hold.live.afterClose?.revision ?? null,
+        generation: hold.live.afterClose?.generation ?? null,
+      },
+      "the close wave did not hand the page the live revision/generation of that instant",
+    );
+    assert.equal(
+      hold.runs.followUp,
+      1,
+      `the single in-flight refresh after the close produced ${hold.runs.followUp} extra run(s), not one`,
+    );
+    assert.deepEqual(
+      hold.values.afterSettle,
+      {
+        revision: hold.live.afterSettle?.revision ?? null,
+        generation: hold.live.afterSettle?.generation ?? null,
+      },
+      "the page never caught up with the deferred refresh",
+    );
+    assert.equal(
+      hold.vaultRevision.afterSettle,
+      hold.live.afterSettle?.revision,
+      "the page's caught-up revision is not the stub vault's revision",
+    );
+    assert.ok(
+      hold.runs.total !== null && hold.runs.total <= 2,
+      `two answers produced ${hold.runs.total} page query runs; the fixed page budgets <= 2`,
+    );
+    assert.ok(workspaceBefore, "no baseline workspace sample was recorded");
+    assert.equal(
+      workspaceAfterClose?.mounts,
+      workspaceBefore!.mounts,
+      "closing the sheet remounted the page behind it",
+    );
+    assert.equal(
+      workspaceAfterSettle?.mounts,
+      workspaceBefore!.mounts,
+      "the page behind the sheet was remounted after the sheet left",
+    );
+    assert.equal(
+      workspaceAfterClose?.heading,
+      workspaceBefore!.heading,
+      "the workspace heading changed while the sheet was up",
+    );
+    assert.ok(
+      workspaceBefore!.scrollTop > 0,
+      "the workspace was not parked down its page before the sheet opened",
+    );
+    assert.equal(
+      workspaceAfterClose?.scrollTop,
+      workspaceBefore!.scrollTop,
+      "the covered page's scroll position moved while the sheet was up",
+    );
+    assert.equal(
+      workspaceAfterSettle?.scrollTop,
+      workspaceBefore!.scrollTop,
+      "the page's scroll position moved after the sheet left",
+    );
+    assert.equal(report.legs.leg7?.pass, true, "leg 7 is not satisfied");
+
+    // ── leg 8 — History is one page of fifty, and offers the rest ────────────
+    const history = report.history;
+    assert.equal(
+      history.firstPage.cards,
+      50,
+      `the first History page drew ${history.firstPage.cards} cards; it must draw exactly 50 of 120`,
+    );
+    assert.equal(history.firstPage.activeTab, "History", "the first page was not History");
+    assert.equal(
+      history.firstPage.footer,
+      "Showing 50 of 120 decisions.",
+      `the first page's pager line is "${history.firstPage.footer}"`,
+    );
+    assert.equal(
+      history.secondPage.cards,
+      100,
+      `one Load older press drew ${history.secondPage.cards} cards, not 100`,
+    );
+    assert.equal(
+      history.secondPage.footer,
+      "Showing 100 of 120 decisions.",
+      `the second page's pager line is "${history.secondPage.footer}"`,
+    );
+    assert.equal(
+      history.thirdPage.cards,
+      120,
+      `two Load older presses drew ${history.thirdPage.cards} cards, not 120`,
+    );
+    assert.equal(
+      history.thirdPage.footerPresent,
+      false,
+      `the pager is still offered at 120 of 120: "${history.thirdPage.footer}"`,
+    );
+    assert.equal(
+      history.tabReset.cards,
+      50,
+      `History -> Pending -> History drew ${history.tabReset.cards} cards, not one page`,
+    );
+    assert.equal(
+      history.tabReset.footer,
+      "Showing 50 of 120 decisions.",
+      `the tab round trip's pager line is "${history.tabReset.footer}"`,
+    );
+    assert.equal(
+      history.filterReset.cards,
+      50,
+      `the AI source filter drew ${history.filterReset.cards} cards, not one page`,
+    );
+    assert.equal(
+      history.filterReset.footer,
+      "Showing 50 of 120 resolved decisions.",
+      `the AI filter's pager line is "${history.filterReset.footer}"`,
+    );
+    assert.equal(
+      history.press.paintKind,
+      "frame",
+      `History's first frame never fired (${history.press.paintKind})`,
+    );
+    assert.ok(
+      history.press.clickToPaintMs !== null,
+      "History's first paint was never timed",
+    );
+    assert.ok(
+      history.press.clickToPaintMs! < 5000,
+      `History's first page took ${history.press.clickToPaintMs} ms to paint`,
+    );
+    assert.ok(
+      history.press.clickToCardMs !== null &&
+        history.press.clickToPaintMs !== null &&
+        history.press.clickToCardMs <= history.press.clickToPaintMs,
+      "History's first card reached the DOM after its first frame",
+    );
+    assert.equal(
+      history.capture,
+      HISTORY_SCREENSHOT,
+      "the History artefact was not written",
+    );
+    assert.equal(report.legs.leg8?.pass, true, "leg 8 is not satisfied");
+
+    // ── the repeatable artifact: a JSON report and the frames it measured ────
     assert.deepEqual(
       report.screenshots,
-      [ARTIFACT_SCREENSHOT],
-      "the run did not record exactly the one artefact picture",
+      [ARTIFACT_SCREENSHOT, HISTORY_SCREENSHOT],
+      "the run did not record exactly the two artefact pictures",
     );
     assert.equal(fs.existsSync(ARTIFACT_PNG), true, `${ARTIFACT_SCREENSHOT} was not written`);
     const png = fs.statSync(ARTIFACT_PNG);
@@ -440,6 +702,11 @@ describe("answering the last pending Decision hands the page back immediately", 
       report.capture.workspace.present,
       true,
       "the artefact shows no workspace page behind the sheet",
+    );
+    assert.equal(
+      report.capture.workspace.heading,
+      "Quarterly planning",
+      "the artefact does not show the workspace page the operator was reading",
     );
     const captureFrames = report.capture.frames ?? [];
     assert.ok(
@@ -466,5 +733,47 @@ describe("answering the last pending Decision hands the page back immediately", 
       report.capture.clickToCaptureMs < 1500,
       `the artefact was captured ${report.capture.clickToCaptureMs} ms after the click, not just after the sheet left`,
     );
+
+    // The second picture: History's first page with its pager line, captured the
+    // same forced-frame way.
+    assert.equal(fs.existsSync(HISTORY_PNG), true, `${HISTORY_SCREENSHOT} was not written`);
+    const historyPng = fs.statSync(HISTORY_PNG);
+    assert.ok(
+      historyPng.size > 10_000,
+      `the History artefact picture is only ${historyPng.size} bytes`,
+    );
+    const historyCapture = report.states.historyCapture as unknown as {
+      shot: string;
+      frames: Array<{ paint: { kind: string; ms: number }; bytes: number }>;
+      surfaceStable: boolean;
+      screen: Screen;
+    };
+    assert.ok(
+      historyCapture.frames.length >= 2,
+      `the History artefact was captured from ${historyCapture.frames.length} forced frame(s), so freshness is unproven`,
+    );
+    for (const [index, frame] of historyCapture.frames.entries()) {
+      assert.equal(
+        frame.paint.kind,
+        "frame",
+        `History forced frame ${index + 1} never fired (${frame.paint.kind}); the picture could be a cached surface`,
+      );
+    }
+    assert.equal(
+      historyCapture.surfaceStable,
+      true,
+      "the History surface was still changing between captures",
+    );
+    assert.equal(
+      historyCapture.screen.cards.length,
+      50,
+      "the History artefact does not show the first page of 50",
+    );
+    assert.equal(
+      historyCapture.screen.historyMore?.text,
+      "Showing 50 of 120 decisions.",
+      "the History artefact does not show the pager line",
+    );
+    assert.equal(historyCapture.screen.activeTab, "History");
   });
 });
