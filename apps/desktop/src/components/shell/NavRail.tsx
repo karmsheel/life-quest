@@ -9,6 +9,7 @@ import { NavBrandButton, NavCollapseButton } from "./NavCollapseButton";
 import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
+import { useNavDock } from "@/state/NavDockProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -33,6 +34,7 @@ function countPending(decisions: readonly DecisionRecord[]): number {
 
 export function NavRail() {
   const { active } = useWing();
+  const { collapsed } = useNavDock();
   const { chrome } = useTheme();
   const { snapshot } = useVault();
   /**
@@ -169,6 +171,13 @@ export function NavRail() {
       */}
       <div className="nav-rail__header">
         <NavBrandButton />
+        {/*
+          The square control lives at the foot while the rail is wide, but the
+          thin column is too short to bury the way back under a stack of rows:
+          collapsed, the same button moves up here and centres in the topband as
+          the pure Q emblem (see `NavCollapseButton`). One control, two places.
+        */}
+        {collapsed ? <NavCollapseButton /> : null}
       </div>
       {/* The theme's composition widgets for the rail: a count under the
           header, and the foot's own band. Rail furniture, not commands. */}
@@ -259,7 +268,9 @@ export function NavRail() {
             <div className="nav-rail__foot" data-nav-group="footer">
               {footerPinned.map(renderItem)}
               <VaultChip />
-              <NavCollapseButton className="nav-rail__collapse" />
+              {collapsed ? null : (
+                <NavCollapseButton className="nav-rail__collapse" />
+              )}
             </div>
           </>
         ) : null}

@@ -402,8 +402,8 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     assert.equal(icon?.builder.masterNamed, true, "electron-builder.yml does not name build/icon.png");
     assert.equal(icon?.builder.windowsNamed, true, "electron-builder.yml does not name build/icon.ico");
 
-    // The screenshots: the wide rail's centred header, the thin rail's foot (the
-    // toggle's home now, since the header holds no control at that width), the
+    // The screenshots: the wide rail's centred header, the thin rail's topband
+    // (where the expand emblem replaces the lockup and the square control), the
     // Developer bench, and both splash states. The rail crops are the rail's own
     // width, not hand-made tiles.
     const [wide, shell, thin, developer, splashDefaultShot, splashSelectedShot] =

@@ -22,24 +22,24 @@ function useCollapseControl() {
 }
 
 /**
- * The sidebar's foot control, at the trailing end of the rail's foot at either
- * width.
+ * The sidebar's square collapse control. The same button sits in two places, one
+ * per width, and both are the way in and the way back.
  *
- * It used to close the header row at the rail's top, opposite the lockup. It now
- * sits level with the Log and the vault chip — the last control in the column,
- * where the sidebar ends. Collapsing narrows the rail to its icon column but never
- * removes it, so this control stays where the operator left it: wide, it is the
- * collapse chevron at the foot's trailing edge; thin, the foot stacks it under the
- * vault's initials and it becomes the brand's Q emblem — the pure mark, no
- * wordmark — and a press reopens the rail.
+ * Wide, it holds the trailing end of the rail's foot, level with the Log and the
+ * vault chip — the last control in the column, where the sidebar ends. Thin, the
+ * icon column is too short to hide the way back under the rows: the button moves
+ * up to the centre of the topband and becomes the brand's Q emblem — the pure
+ * mark, no wordmark — so reopening the rail is the first thing in the column,
+ * where the operator left the way in. `NavRail` owns the move; this component is
+ * the same button in either home.
  *
  * There is no second copy in the titlebar — the old one landed on top of the
  * vault chip once the column went away.
  *
- * The shared `.nav-toggle` rule keeps its `no-drag` carve-out though the foot is
- * outside the window's drag band: the class is the sidebar control's, and a
- * placement that puts it back inside a drag region must not inherit the region's
- * hit-testing.
+ * The shared `.nav-toggle` rule carries the `no-drag` carve-out: thin, the button
+ * sits inside the header's window drag band, and a drag region wins hit-testing
+ * over the DOM, so without the carve-out the reopen press would start a window
+ * drag.
  */
 export function NavCollapseButton({ className }: { className?: string }) {
   const { collapsed, toggle, label } = useCollapseControl();
@@ -81,8 +81,13 @@ export function NavCollapseButton({ className }: { className?: string }) {
  * would start a window drag and the button would never fire. The air around the
  * mark is still the band's — the mark is the only carved-out control in it.
  *
+ * The pointer is the only hover affordance: no fill behind the mark and no
+ * `title` tooltip. The mark is the brand; a shadow under it or a label popping
+ * beside it competes with that, and the pointer already says "this is pressable".
+ *
  * Collapsed, the lockup leaves the column (56px cannot hold a word), so this
- * control is hidden with it and the foot's emblem is the way back.
+ * control is hidden with it; the square control moves to the topband and its Q
+ * emblem is the way back.
  */
 export function NavBrandButton({ className }: { className?: string }) {
   const { collapsed, toggle, label } = useCollapseControl();
@@ -92,7 +97,6 @@ export function NavBrandButton({ className }: { className?: string }) {
     <button
       type="button"
       className={["nav-rail__brand-button", className].filter(Boolean).join(" ")}
-      title={label}
       aria-label={label}
       aria-expanded={!collapsed}
       aria-controls="nav-rail"

@@ -12,16 +12,18 @@
  *  3. Rail painted *under* the titlebar — the rail's box overlaps the titlebar
  *     row, but the titlebar wins paint order, so the rail's topband and its one
  *     control are covered by the titlebar's background.
- *  4. Topband showing the wrong control, or an off-centre lockup — the header's
- *     one control is the lockup's own collapse button (the mark is the target,
- *     carved out of the drag band); a control beside it, a mark that is not on the
- *     column's centre line, or a button that does not wrap the mark all fail.
+ *  4. Topband showing the wrong control, or an off-centre lockup — wide, the
+ *     header's one control is the lockup's own collapse button (the mark is the
+ *     target, carved out of the drag band); thin, it is the square expand emblem.
+ *     A second control, a mark that is not on the column's centre line, or a
+ *     button that does not wrap the mark all fail.
  *  5. Dead toggle — clicking either collapse control (the lockup or the foot's
  *     square) leaves the shell in the arrangement it was in: the rail does not
  *     narrow to the icon column and the sheet does not move to meet it. The two
  *     controls drive one state pair, so the lockup's press must be the same door.
  *  6. One-way door — collapsed with no control left to expand, or the way back
- *     placed somewhere other than the rail's own foot (the titlebar toggle the
+ *     placed somewhere other than the rail's own control (the foot's square while
+ *     wide, the topband's emblem while thin — never the titlebar toggle the
  *     reported bug put over the vault chip).
  *  7. Column not narrowed — the shell's first track changes but the sheet or the
  *     chip keeps the wide rail's offset, so the page starts in a column the rail

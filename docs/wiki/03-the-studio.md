@@ -73,10 +73,11 @@ settings sheet instead of a smaller menu.
    (**Collapse sidebar** / **Expand sidebar**), at the bottom trailing corner
    beside the vault chip — or press the centred **LifeQuest lockup** in the
    header, which is the same control. Collapsed, the rail narrows in place to a
-   56px icon column (`3.5rem`) and the page widens; the foot's toggle stays where
-   it is and turns around. The five wings stack vertically, the pages keep their
-   icons and accessible names, and the chats list and the vault chip's label
-   leave the column.
+   56px icon column (`3.5rem`) and the page widens; the panel icon moves up to
+   the top of the thin column and turns around as the pure Q emblem, so the way
+   back is the first thing in it. The five wings stack vertically, the pages keep
+   their icons and accessible names, and the chats list and the vault chip's
+   label leave the column.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
    the dock's bottom action bar (**Collapse chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark at the page's trailing corner, and
@@ -145,15 +146,18 @@ The rail:
   lockup follows the active theme and the day/night palette instead of carrying
   one fixed picture. The mark is a control as well: a press on it collapses the
   rail, exactly as the foot's panel icon does (**Collapse sidebar** / **Expand
-  sidebar**). The air around the mark — and the rest of the strip beside it —
-  stays the window's drag handle.
-- A collapse toggle at the foot of the rail (**Collapse sidebar** / **Expand
-  sidebar**), at the sidebar's bottom trailing corner beside the vault chip and
-  the Log, with `aria-expanded` and `aria-controls="nav-rail"`. It and the centred
+  sidebar**). The pointer is its only hover cue — no fill behind it and no
+  tooltip. The air around the mark — and the rest of the strip beside it — stays
+  the window's drag handle.
+- A collapse toggle (**Collapse sidebar** / **Expand sidebar**), with
+  `aria-expanded` and `aria-controls="nav-rail"`. Wide, it is the reachable
+  square at the sidebar's bottom trailing corner beside the vault chip and the
+  Log; collapsed, it moves to the top of the 56px column, because the way back
+  belongs where the column starts rather than under its rows. It and the centred
   lockup share one collapsed state, so the two doors can never disagree.
-  Collapsed, the 56px column has no room for a word: the lockup leaves with its
-  button and the foot control becomes the pure Q emblem (**Expand sidebar**),
-  which reopens the rail on a press.
+  Collapsed, the column has no room for a word: the lockup leaves with its button
+  and the control becomes the pure Q emblem (**Expand sidebar**), which reopens
+  the rail on a press.
 - The five-wing band, a square block under the header row. It keeps its 44px but
   follows the lockup's inset down the rail, so it is no longer level with the
   title bar; its frame is the block's one outline, and the selected wing is
@@ -329,8 +333,9 @@ catalogued in [Settings](./28-settings.md).
 ## Tips and edge cases
 
 - Collapsing the rail never takes it away: it narrows to its icon column, so the
-  foot's collapse control stays at the sidebar's bottom trailing corner at either
-  width, and while the rail is wide the centred lockup collapses it too. The lens
+  collapse control moves from the sidebar's bottom trailing corner up to the top
+  of the column as the Q emblem — the way back is the first thing in the thin
+  rail — and while the rail is wide the centred lockup collapses it too. The lens
   tab
   holds the strip's centre line, so the room beside it grows rather than the tab
   sliding along with the rail.

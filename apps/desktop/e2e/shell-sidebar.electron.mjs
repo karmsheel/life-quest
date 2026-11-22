@@ -283,6 +283,8 @@ const SAMPLE = `(() => {
           title: brandToggle.getAttribute("title"),
           // The mark really is inside the button, not beside it.
           hasLogo: Boolean(brandToggle.querySelector(".lifequest-logo")),
+          // Resting fill: transparent. The pointer is the mark's only hover cue.
+          background: getComputedStyle(brandToggle).backgroundColor,
           appRegion: getComputedStyle(brandToggle).getPropertyValue("-webkit-app-region")
         }
       : null,
@@ -1235,7 +1237,9 @@ async function main() {
       expanded.header?.controls.length === 1 &&
         expanded.brandToggle?.hasLogo === true &&
         expanded.brandToggle?.label === "Collapse sidebar" &&
-        expanded.brandToggle?.title === "Collapse sidebar" &&
+        // No `title`: the mark carries no tooltip. The pointer and the accessible
+        // name are the control's whole affordance.
+        expanded.brandToggle?.title === null &&
         expanded.brandToggle?.ariaExpanded === "true" &&
         expanded.brandToggle?.ariaControls === "nav-rail",
       `controls ${JSON.stringify(expanded.header?.controls)}, lockup button ${JSON.stringify(expanded.brandToggle)}`,
@@ -1244,6 +1248,7 @@ async function main() {
       "the lockup's control keeps the mark inside it, carved out of the drag band",
       Boolean(expanded.brandToggle && expanded.railBrand) &&
         expanded.brandToggle.hasLogo === true &&
+        expanded.brandToggle.background === "rgba(0, 0, 0, 0)" &&
         expanded.brandToggle.appRegion === "no-drag" &&
         expanded.header?.appRegion === "drag" &&
         expanded.brandToggle.box.left <= expanded.railBrand.left &&
@@ -2173,17 +2178,19 @@ async function main() {
       collapsed.rail?.background === rgbOf(collapsed.theme?.canvasBase),
       `rail ${collapsed.rail?.background} vs --canvas-base ${collapsed.theme?.canvasBase}`,
     );
-    // The header is the drag band and the column's top air at this width: the
-    // lockup leaves (56px cannot hold a word) and the collapse toggle has left it
-    // for the foot, so it holds no control — but its box still starts on the
-    // window's top edge and runs past the strip.
+    // The header is the drag band, the column's top air and the way back at this
+    // width: the lockup leaves (56px cannot hold a word), so the square collapse
+    // control moves up here and centres as the pure Q emblem. The band still
+    // starts on the window's top edge and runs past the strip.
     check(
-      "the thin rail's topband holds no control",
-      collapsed.header?.controls.length === 0 &&
+      "the thin rail's topband holds the expand control",
+      collapsed.header?.controls.length === 1 &&
+        collapsed.railToggle?.label === "Expand sidebar" &&
+        collapsed.railToggle?.hasEmblem === true &&
         collapsed.brandToggle?.display === "none" &&
         collapsed.header?.box.top === 0 &&
         collapsed.header?.box.bottom > titlebarHeight,
-      `controls ${JSON.stringify(collapsed.header?.controls)}, lockup button display ${JSON.stringify(collapsed.brandToggle?.display)}, band ${JSON.stringify(collapsed.header?.box)}`,
+      `controls ${JSON.stringify(collapsed.header?.controls)}, toggle ${JSON.stringify(collapsed.railToggle?.label)} emblem ${JSON.stringify(collapsed.railToggle?.hasEmblem)}, lockup display ${JSON.stringify(collapsed.brandToggle?.display)}, band ${JSON.stringify(collapsed.header?.box)}`,
     );
     // The wing tabs take the band straight under that top air: narrowing the rail
     // must not unhook the first level of navigation from the header's measure, and
@@ -2265,33 +2272,32 @@ async function main() {
       `lens ${JSON.stringify(collapsed.lens?.box)} on ${collapsed.lens?.background}, page top ${collapsed.shellContent?.top}px`,
     );
     // The chip travels with the rail: in the thin rail it stacks under the Log's
-    // icon and reduces to the vault's initials, with the expand control under it
-    // closing the column. It is still the same button — the full vault name stays
-    // in its accessible name, so nothing is lost but paint.
+    // icon and reduces to the vault's initials. The expand control is not here —
+    // the way back moved up into the header. It is still the same button — the
+    // full vault name stays in its accessible name, so nothing is lost but paint.
     check(
       "the titlebar renders no vault chip when the rail is thin",
       collapsed.titlebarVault === null && collapsed.leadingText === "",
       `titlebar chip ${JSON.stringify(collapsed.titlebarVault)}, leading text ${JSON.stringify(collapsed.leadingText)}`,
     );
     check(
-      "the thin rail's foot stacks the Log, the chip and the toggle",
-      Boolean(collapsed.foot?.logRow && collapsed.vaultChip && collapsed.railToggle) &&
+      "the thin rail's foot stacks the Log above the chip",
+      Boolean(collapsed.foot?.logRow && collapsed.vaultChip) &&
         collapsed.foot.display === "flex" &&
         collapsed.foot.flexDirection === "column" &&
-        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1 &&
-        collapsed.vaultChip.box.bottom <= collapsed.railToggle.box.top + 1,
-      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}, toggle ${JSON.stringify(collapsed.railToggle?.box)}`,
+        collapsed.foot.children.length === 2 &&
+        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
+      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, children ${collapsed.foot?.children.length}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
     );
-    // The expand control moved to the foot with the collapse control's new home: it
-    // closes the thin column, and a reopen press is found where the sidebar ends
-    // rather than where it starts.
+    // The way back belongs at the top of the thin column: the square control sits
+    // in the header, above the wing tabs, not buried under the rows at the foot.
     check(
-      "the expand control closes the thin rail's column",
-      Boolean(collapsed.railToggle && collapsed.rail) &&
-        collapsed.rail.box.bottom - collapsed.railToggle.box.bottom <= 16 &&
-        collapsed.railToggle.box.bottom <= collapsed.rail.box.bottom &&
-        (collapsed.foot?.children.length ?? 0) === 3,
-      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}, foot children ${collapsed.foot?.children.length}`,
+      "the expand control leads the thin rail from the topband",
+      Boolean(collapsed.railToggle && collapsed.header && collapsed.wingsBand) &&
+        collapsed.railToggle.box.top >= collapsed.header.box.top &&
+        collapsed.railToggle.box.bottom <= collapsed.header.box.bottom + 1 &&
+        collapsed.wingsBand.box.top >= collapsed.header.box.bottom - 1,
+      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in header ${JSON.stringify(collapsed.header?.box)}, band ${JSON.stringify(collapsed.wingsBand?.box)}`,
     );
     check(
       "the thin chip is a small square mark in the icon column",
@@ -2330,9 +2336,9 @@ async function main() {
       `background ${collapsed.vaultChip?.background} vs --bg-subtle ${collapsed.theme?.bgSubtle}, rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
     );
     check(
-      "the collapse toggle is the last control in the thin rail",
-      collapsed.railToggle?.isLastControl === true &&
-        collapsed.vaultChip?.isLastControl === false,
+      "the thin rail's expand control is its first control, not its last",
+      collapsed.railToggle?.isLastControl === false &&
+        collapsed.vaultChip?.isLastControl === true,
       `toggle last ${collapsed.railToggle?.isLastControl}, chip last ${collapsed.vaultChip?.isLastControl}`,
     );
     check(
@@ -2558,8 +2564,8 @@ async function main() {
     );
 
     // The lockup is a second door to the same collapse: a press on the mark folds
-    // the rail exactly as the foot's square control does, and the foot's emblem —
-    // the only control the thin column keeps — brings it back.
+    // the rail exactly as the foot's square control does, and the square control
+    // comes back at the top of the thin column to reopen it.
     step = "collapse from the lockup";
     const clickedBrand = await clickToggle(".nav-rail__brand-button");
     check(
@@ -2572,16 +2578,17 @@ async function main() {
       "the lockup's press collapses the rail to the icon column",
       brandCollapse.shellNavCollapsed === true &&
         brandCollapse.rail?.box.width === collapsedTrack &&
-        brandCollapse.header?.controls.length === 0 &&
+        brandCollapse.header?.controls.length === 1 &&
+        brandCollapse.railToggle?.label === "Expand sidebar" &&
         brandCollapse.brandToggle?.display === "none",
-      `shell class ${JSON.stringify(brandCollapse.shellClass)}, rail ${JSON.stringify(brandCollapse.rail?.box)}, band controls ${JSON.stringify(brandCollapse.header?.controls)}, lockup display ${JSON.stringify(brandCollapse.brandToggle?.display)}`,
+      `shell class ${JSON.stringify(brandCollapse.shellClass)}, rail ${JSON.stringify(brandCollapse.rail?.box)}, band controls ${JSON.stringify(brandCollapse.header?.controls)}, toggle ${JSON.stringify(brandCollapse.railToggle?.label)}, lockup display ${JSON.stringify(brandCollapse.brandToggle?.display)}`,
     );
-    step = "reopen from the foot after a lockup collapse";
+    step = "reopen from the top of the thin rail after a lockup collapse";
     const clickedFootAgain = await clickToggle(".nav-rail .nav-toggle");
     check(
-      "the foot's emblem reopened the lockup-collapsed rail",
+      "the topband's emblem reopened the lockup-collapsed rail",
       clickedFootAgain,
-      "no foot toggle to click",
+      "no expand toggle to click",
     );
     const brandRestored = await settled();
     check(
@@ -3055,9 +3062,9 @@ async function main() {
     (state) => state && state.tokens,
   );
   const labels = ["expanded", "collapsed", "restored"];
-  // The rail keeps the same single toggle in its foot at both widths, so the
-  // column is always the toggle's box — there is no second, titlebar-placed
-  // control to fall back to.
+  // The rail has one square toggle: at the foot while it is wide, in the topband
+  // while it is thin. The column is always that control's box — there is no
+  // second, titlebar-placed control to fall back to.
   const railToggleAt = (state) =>
     state.railToggle?.box
       ? `${state.railToggle.box.bottom}/${state.railToggle.box.right}`

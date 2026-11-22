@@ -100,6 +100,8 @@ type State = {
     ariaControls: string | null;
     title: string | null;
     hasLogo: boolean;
+    /** Resting fill: transparent — the pointer is the mark's only hover cue. */
+    background: string;
     appRegion: string;
   } | null;
   railToggle: {
@@ -591,10 +593,12 @@ describe("shell sidebar (docked rail)", () => {
       "Collapse sidebar",
       `the lockup's control is named ${JSON.stringify(expanded.brandToggle!.label)}`,
     );
+    // No `title`: the mark carries no tooltip. The pointer and the accessible
+    // name are the control's whole affordance.
     assert.equal(
       expanded.brandToggle!.title,
-      "Collapse sidebar",
-      `the lockup's control title is ${JSON.stringify(expanded.brandToggle!.title)}`,
+      null,
+      `the lockup's control carries a tooltip title (${JSON.stringify(expanded.brandToggle!.title)})`,
     );
     assert.equal(
       expanded.brandToggle!.ariaExpanded,
@@ -610,6 +614,11 @@ describe("shell sidebar (docked rail)", () => {
       expanded.brandToggle!.hasLogo,
       true,
       "the lockup's control does not contain the mark",
+    );
+    assert.equal(
+      expanded.brandToggle!.background,
+      "rgba(0, 0, 0, 0)",
+      `the lockup's control draws a hover fill at rest (${expanded.brandToggle!.background})`,
     );
     // The mark is the hit target, so the button's box must hold the painted logo,
     // and the carve-out must be on the button: the header around it is the window's
@@ -1628,15 +1637,13 @@ describe("shell sidebar (docked rail)", () => {
         collapsed.rail!.borderBottomWidth === "0px",
       `the thin rail's borders t/r/b/l are ${collapsed.rail!.borderTopWidth}/${collapsed.rail!.borderRightWidth}/${collapsed.rail!.borderBottomWidth}/${collapsed.rail!.borderLeftWidth}`,
     );
-    // The collapse toggle left the header for the rail's foot, so the thin rail's
-    // topband holds no control: it stays as the drag band and the column's top air,
-    // keeping the vertical wing tabs where the wide rail's band sits. Collapsed,
-    // the toggle is the studio's pure Q emblem at the foot, and a press reopens the
-    // rail.
+    // The way back belongs at the top of the thin column: the square collapse
+    // control moves into the header and centres as the pure Q emblem, while the
+    // lockup's button leaves with the wordmark.
     assert.equal(
       collapsed.header?.controls.length,
-      0,
-      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected none — the lockup left with its button`,
+      1,
+      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected the expand control`,
     );
     assert.equal(
       collapsed.brandToggle?.display,
@@ -1758,19 +1765,20 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.foot!.logRow!.bottom <= collapsed.vaultChip!.box.top + 1,
       `the Log row (${JSON.stringify(collapsed.foot!.logRow)}) is not above the chip (${JSON.stringify(collapsed.vaultChip!.box)})`,
     );
-    // The expand control closes the stack: the collapse toggle's home is the foot
-    // at both widths, and thin it is the last thing in the column.
-    assert.ok(
-      collapsed.foot!.collapse !== null &&
-        collapsed.vaultChip!.box.bottom <= collapsed.foot!.collapse!.top + 1,
-      `the chip (${JSON.stringify(collapsed.vaultChip!.box)}) is not above the expand control (${JSON.stringify(collapsed.foot!.collapse)})`,
+    // The way back is not in the foot at this width: the square control left it,
+    // so the thin foot is the Log's icon and the vault's initials alone.
+    assert.equal(
+      collapsed.foot!.collapse,
+      null,
+      `an expand control is still in the thin foot (${JSON.stringify(collapsed.foot!.collapse)})`,
     );
+    // ... and it leads the column from the topband instead, above the wing tabs.
     assert.ok(
-      Math.abs(
-        (collapsed.rail!.box.bottom ?? 0) -
-          (collapsed.railToggle?.box.bottom ?? 0),
-      ) <= 16,
-      `the expand control (${JSON.stringify(collapsed.railToggle?.box)}) does not close the ${collapsed.rail!.box.height}px rail`,
+      Boolean(collapsed.header && collapsed.railToggle && collapsed.wingsBand) &&
+        collapsed.railToggle!.box.top >= collapsed.header!.box.top &&
+        collapsed.railToggle!.box.bottom <= collapsed.header!.box.bottom + 1 &&
+        collapsed.wingsBand!.box.top >= collapsed.header!.box.bottom - 1,
+      `the expand control (${JSON.stringify(collapsed.railToggle?.box)}) is not in the topband (${JSON.stringify(collapsed.header?.box)}) above the band (${JSON.stringify(collapsed.wingsBand?.box)})`,
     );
     // A small square mark in the icon column, not the wide row's half-width chip.
     assert.ok(
@@ -1845,18 +1853,18 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       collapsed.vaultChip!.isLastControl,
-      false,
-      "the vault chip is still the thin rail's last control — the expand control closes the column",
+      true,
+      "the vault chip is not the thin rail's last control any more",
     );
     assert.equal(
       collapsed.railToggle?.isLastControl,
-      true,
-      "a visible control follows the expand control in the thin rail",
+      false,
+      "the expand control is still counted as the thin rail's last control",
     );
     assert.equal(
       collapsed.railToggle?.hasEmblem,
       true,
-      "the thin rail's last control does not wear the studio's pure emblem",
+      "the thin rail's expand control does not wear the studio's pure emblem",
     );
     assert.equal(
       collapsed.main?.left,
@@ -2139,8 +2147,13 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       brandCollapse.header?.controls.length,
-      0,
-      `the lockup's button stayed in the thin rail's topband (${brandCollapse.header?.controls.length} controls)`,
+      1,
+      `the lockup's press left the topband with ${brandCollapse.header?.controls.length} controls, expected the expand control`,
+    );
+    assert.equal(
+      brandCollapse.railToggle?.label,
+      "Expand sidebar",
+      `the thin rail's topband holds ${JSON.stringify(brandCollapse.railToggle?.label)}, not the expand control`,
     );
     assert.equal(
       brandCollapse.brandToggle?.display,
