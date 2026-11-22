@@ -113,7 +113,7 @@ the weekly review opens on Saturday at 08:00. See [Settings](./28-settings.md).
 ## Reviews on the Dashboard
 
 A review is also a recurring item. The Dashboard's **Today & this week** card
-draws a **Recurring** block under its task columns, and each cadence that is due
+leads with its **Recurring** block, above the task columns, and each cadence that is due
 appears there as one row: **Daily review**, **Weekly review**, **Monthly
 review**, **Quarterly review**, **Yearly review**.
 

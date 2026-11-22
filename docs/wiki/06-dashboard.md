@@ -89,8 +89,8 @@ to keep something the companion says, put it in a page or a note.
 
 ### Work the recurring block
 
-The **Today & this week** card carries its two task columns and, under them, a
-**Recurring** block. Its rows are the things that come round: what is due today,
+The **Today & this week** card leads with a **Recurring** block and draws its two
+task columns beneath it. Its rows are the things that come round: what is due today,
 what you did not do, and what falls due later this week.
 
 1. Read the rows top to bottom. They are in urgency order — the oldest
@@ -228,7 +228,7 @@ same menu.
 | Companion brief (`companion-brief`) | The companion's typed items — watch, prompt, ahead, commitment, pattern — in priority order with the reason beneath; items expire and you dismiss them. Seeded first on the board; an empty brief says so |
 | Goals (`goal-progress`) | A count of open goals in the lens. Each goal names the area it is filed under (or **No area**) and, for a metric goal, its current value, pace and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | A **Deadline pressure** banner when an open goal in the lens is due within seven days or already overdue: the first goal's name (or that name and "N others") and **Dismiss**, which hides it until tomorrow |
-| Today & this week (`today-week`) | Two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done. Under them, the card's **Recurring** block: the recurring tasks that are overdue, due today or due later this week, each with a tick, and the built-in review rows, which link to the review's page and carry no tick — then **Manage recurring →** |
+| Today & this week (`today-week`) | The card's **Recurring** block leads: the recurring tasks that are overdue, due today or due later this week, each with a tick, and the built-in review rows, which link to the review's page and carry no tick — then **Manage recurring →**. Beneath it, two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done. |
 | Pending decisions (`pending-decisions`) | A count, then up to four pending Decisions visible in this lens, linked to the inbox |
 | Recent activity (`recent-log`) | The five newest Life log entries in the lens, one line each: the summary, then the event type and its time |
 
