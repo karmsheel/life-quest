@@ -79,6 +79,12 @@ const ARROWS_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/daily-note-arrows.png",
 );
+/** The journal index's own picture: the folder panel with one older week opened,
+ *  so the artifact shows both shapes of the tree — a folder row and its files. */
+const HISTORY_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-history.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -123,6 +129,30 @@ type Link = { label: string; href: string | null; icon: boolean; active: boolean
 /** A write to the vault, with the day the page was showing when it made it. */
 type Write = { date: string; body: string; shown: string | null };
 type Corners = { radius: number; height: number; background: string };
+/** The earlier-notes index as the page draws it: one framed panel, and the two
+ *  shapes of its file tree — a folder for every week, a file for every day. */
+type HistoryPanel = {
+  borderWidth: number;
+  borderStyle: string;
+  background: string;
+  radius: number;
+  bar: boolean;
+  head: boolean;
+  rowsInside: boolean;
+  fileIcons: number;
+  folderIcons: number;
+  groups: { name: string | null; label: string; count: string; rows: number }[];
+  weekFolderIcons: boolean[];
+  dayFileIcons: boolean[];
+  /** Each folder and the first day under it, as x-offsets in the panel. */
+  tree: {
+    name: string | null;
+    folderIconLeft: number | null;
+    firstFileIconLeft: number | null;
+    rows: number;
+  }[];
+  rowHeight: number | null;
+};
 type Chrome = {
   saveControls: number;
   statusLine: boolean;
@@ -134,6 +164,8 @@ type Chrome = {
   historyHead: string[];
   historyHeadingSize: number | null;
   historyRowSize: number | null;
+  /** The index's own panel, or null when the page drew no panel at all. */
+  historyPanel: HistoryPanel | null;
 };
 type Box = {
   left: number;
@@ -450,6 +482,7 @@ describe("daily note ui e2e", () => {
     fs.rmSync(GRAPHITE_SHOT, { force: true });
     fs.rmSync(GRAPHITE_FOCUS_SHOT, { force: true });
     fs.rmSync(ARROWS_SHOT, { force: true });
+    fs.rmSync(HISTORY_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
@@ -473,6 +506,11 @@ describe("daily note ui e2e", () => {
       true,
       "driver captured no picture of the calendar",
     );
+    assert.equal(
+      fs.existsSync(HISTORY_SHOT),
+      true,
+      "driver captured no picture of the earlier-notes folder panel",
+    );
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
     assert.deepEqual(report.failures, []);
@@ -485,8 +523,8 @@ describe("daily note ui e2e", () => {
     // icon, and it is the active link on /notes.
     assert.deepEqual(
       report.checks.rail.map((entry) => entry.label),
-      ["Quick Notes", "Decisions", "Daily Journal", "Automations"],
-      "the governed shelf is not Quick Notes, Decisions, Daily Journal, Automations",
+      ["Quick Notes", "Decisions", "Daily Journal", "Automations", "Extensions"],
+      "the governed shelf is not Quick Notes, Decisions, Daily Journal, Automations, Extensions",
     );
     const note = report.checks.rail[2]!;
     assert.ok(
@@ -500,6 +538,11 @@ describe("daily note ui e2e", () => {
       report.checks.rail[3]!.label,
       "Automations",
       "Automations is not directly under Daily Journal",
+    );
+    assert.equal(
+      report.checks.rail[4]!.label,
+      "Extensions",
+      "Extensions is not directly under Automations",
     );
 
     // ── the heading: the DAY is the heading, the page's name is a label ─────
@@ -705,6 +748,107 @@ describe("daily note ui e2e", () => {
         `the row for ${row.isoDate} names the wrong weekday`,
       );
     }
+
+    // ── the index is one framed folder panel, a type step below the page ────
+    // The operator asked for the earlier notes to stop floating in the margin:
+    // one rectangular block in the page's own card vocabulary, at a smaller type
+    // step, with the journal's weeks and days shaped as folders and files.
+    const index = chrome.historyPanel;
+    assert.ok(index, "the earlier-notes index drew no panel to measure");
+    if (!index) return;
+    assert.ok(
+      index.borderWidth >= 1,
+      `the index panel wears a ${index.borderWidth}px frame, not a rectangle`,
+    );
+    assert.equal(
+      index.borderStyle,
+      "solid",
+      `the index panel's frame is ${index.borderStyle}, not a hairline`,
+    );
+    assert.notEqual(
+      index.background,
+      "rgba(0, 0, 0, 0)",
+      "the index panel paints no surface of its own",
+    );
+    assert.ok(
+      index.radius > 0 && index.radius <= 18,
+      `the index panel is rounded to ${index.radius}px — not a card corner`,
+    );
+    assert.equal(index.bar, true, "the index has no name band");
+    assert.equal(index.head, true, "the index has no column header");
+    assert.equal(index.rowsInside, true, "a journal row escapes the index panel's frame");
+    assert.equal(
+      index.fileIcons,
+      strip.length,
+      `the index drew ${index.fileIcons} file glyph(s) over ${strip.length} row(s)`,
+    );
+    assert.ok(
+      index.dayFileIcons.length > 0 && index.dayFileIcons.every(Boolean),
+      "a day row is not drawn as a file in the index tree",
+    );
+    assert.ok(
+      index.weekFolderIcons.length > 0 && index.weekFolderIcons.every(Boolean),
+      "a folded week is not drawn as a folder in the index tree",
+    );
+    assert.ok(index.groups.length > 0, "the index drew no folder group");
+    for (const group of index.groups) {
+      assert.ok(group.label, "an index folder group has no label");
+      assert.ok(group.rows > 0, `the ${group.name} folder group drew no day`);
+      assert.match(
+        group.count,
+        /^\d+ (note|notes|file|files)$/,
+        `the ${group.name} folder group counts ${JSON.stringify(group.count)}`,
+      );
+    }
+    const currentGroup = index.groups.find((group) => group.name === "current");
+    if (currentGroup) {
+      assert.equal(
+        currentGroup.label,
+        "This week",
+        "the current week's folder is not labelled This week",
+      );
+    }
+    const unreadableGroup = index.groups.find((group) => group.name === "unreadable");
+    if (unreadableGroup) {
+      assert.equal(
+        unreadableGroup.label,
+        "Unreadable files",
+        "the unreadable folder is not labelled Unreadable files",
+      );
+    }
+    // A day is a file UNDER its week's folder: every day's file glyph has to sit
+    // deeper into the panel than the folder glyph it belongs to, or the index is
+    // just a table with two icons in it.
+    const nested = index.tree.filter((node) => node.rows > 0);
+    assert.ok(nested.length > 0, "the index drew no folder with a day under it");
+    for (const node of nested) {
+      assert.ok(
+        node.folderIconLeft !== null,
+        `the ${node.name} folder drew no folder glyph to nest under`,
+      );
+      assert.ok(
+        node.firstFileIconLeft !== null,
+        `the ${node.name} folder drew no day glyph to measure`,
+      );
+      assert.ok(
+        (node.firstFileIconLeft ?? 0) > (node.folderIconLeft ?? 0) + 2,
+        `the day under ${node.name} sits at ${node.firstFileIconLeft}px, not indented under its folder glyph at ${node.folderIconLeft}px`,
+      );
+    }
+    // The panel is a type step below the page, not at the page's prose scale:
+    // the index is skimmed, and its heading still stands over its rows.
+    assert.ok(
+      (chrome.historyHeadingSize ?? 99) <= 14,
+      `the index heading stands ${chrome.historyHeadingSize}px — not the panel's small step`,
+    );
+    assert.ok(
+      (chrome.historyRowSize ?? 99) <= 12.5 && (chrome.historyRowSize ?? 0) >= 10.5,
+      `the index rows stand ${chrome.historyRowSize}px — not the panel's small step`,
+    );
+    assert.ok(
+      (index.rowHeight ?? 99) <= 30 && (index.rowHeight ?? 0) >= 20,
+      `an index row is ${index.rowHeight}px tall — not the compact file row`,
+    );
     // ── previous weeks fold under a weekly label ────────────────────────────
     // The far day was seeded ten weeks back, so it is a claim about a folded
     // week rather than about this week's own list: the label names the ISO week
