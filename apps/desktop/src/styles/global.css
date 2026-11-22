@@ -10603,38 +10603,78 @@ button.chat-panel__activity-line:hover {
   margin-bottom: 0.15rem;
 }
 
+/* The capture box: the field and its control row in one card. It is the page's
+   one input, so it stays compact — three rows that grow on request — and the
+   commit sits inside the card at the trailing edge rather than under it. */
 .signal-chain__composer {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.85rem 0.9rem;
+  gap: 0.5rem;
+  padding: 0.7rem 0.75rem;
   background: var(--composer-bg);
   border: 1px solid var(--composer-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+/* The box follows the caret, the way the chat composer does: the accent ring
+   moves to the input the operator is in rather than every field looking idle. */
+.signal-chain__composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent-tint);
 }
 
 .signal-chain__composer-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
 }
 
-.signal-chain__hint {
-  margin: 0;
-  font-size: 0.6875rem;
+.signal-chain__composer-commit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.signal-chain__area {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
   color: var(--muted);
+  white-space: nowrap;
 }
 
-.signal-chain__hint kbd {
-  display: inline-block;
-  padding: 0.05rem 0.3rem;
+.signal-chain__area select {
+  width: auto;
+  max-width: 10rem;
+  padding: 0.3rem 0.45rem;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
-  font-size: 0.625rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* The page's act: the app's primary button, sized to read as the point of the
+   box rather than a caption beside it. */
+.signal-chain__log {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 5rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .signal-chain .field select,
@@ -10655,8 +10695,9 @@ button.chat-panel__activity-line:hover {
   line-height: 1.45;
 }
 
+/* Three rows on a fresh box; the operator drags the corner for more. */
 .signal-chain__composer > textarea {
-  min-height: 8rem;
+  min-height: 4.6rem;
 }
 
 /* A picture dropped on the box lights the box rather than a page-wide overlay:
@@ -10763,14 +10804,17 @@ button.chat-panel__activity-line:hover {
 .signal-chain__composer-tools {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
+/* The attach controls are the box's secondary arms: pill-ghost, smaller than
+   the commit beside them so the row has one obvious primary. */
 .signal-chain__tool {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.8rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 .signal-chain__empty {
@@ -10788,7 +10832,7 @@ button.chat-panel__activity-line:hover {
   gap: 0.35rem;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
 

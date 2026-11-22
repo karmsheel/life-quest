@@ -51,8 +51,8 @@ before the capture is logged.
 
 1. Choose **Quick Notes** in the rail. The cursor is already in the capture box, whose
    placeholder is **What's on your mind?**.
-2. Type the description. **Enter** logs it; **Shift+Enter** inserts a new line. The hint
-   under the box says: `Enter to log · Shift+Enter for a new line · drop or paste a picture`.
+2. Type the description. **Enter** logs it; **Shift+Enter** inserts a new line. The box is
+   three rows tall and the operator drags its corner when a thought needs more room.
 3. To log a picture, choose **Image**, drag a file onto the composer, or paste a picture into
    the box. The picture previews above the box with its file name and the line "It will be
    kept in the vault with this capture."; the X button (**Remove the attached image**) takes
@@ -61,10 +61,11 @@ before the capture is logged.
    `http` or `https` address and choose **Add link** — **Enter** in the field does the same.
    The address previews as a chip with its host and the full address; the X button
    (**Remove the attached link**) takes it off. The description may be left empty.
-5. Optionally choose an **Area** before logging. The picker's first option is
-   **- unassigned -**; leaving it there files the signal with no area.
-6. Press **Enter** or choose **Log**. The box clears, the area picker resets to
-   **- unassigned -**, the preview drops, and the new signal appears at the top of the list
+5. Optionally choose an **Area** before logging. The picker sits in the box's foot, beside
+   the **Log** button; its first option is **- unassigned -**, and leaving it there files the
+   signal with no area.
+6. Press **Enter** or choose the primary **Log** button. The box clears, the area picker resets
+   to **- unassigned -**, the preview drops, and the new signal appears at the top of the list
    with status **Inbox**.
 7. Narrow the list with the filter chips above it: by **status**, by **area**, or by
    **project**. Filters combine with the area lens; a filter with no matches says
@@ -88,13 +89,13 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Part | What it does |
 |---|---|
 | **Quick Notes** heading | The title and the line "A database of what you notice. Log now; assign later." |
-| Capture box | A six-row text area labelled **Log a signal**, placeholder **What's on your mind?**, autofocused. It is the description: a text capture needs text, and a picture or link may be logged without it. |
+| Capture box | A three-row text area labelled **Log a signal**, placeholder **What's on your mind?**, autofocused; its corner can be dragged for more room. It is the description: a text capture needs text, and a picture or link may be logged without it. The box takes the accent ring when the caret is in it. |
 | **Image** control | A control labelled **Image** (accessible name **Attach an image**, title "Attach an image — or drop or paste one"). Opens a file picker for PNG, JPEG, GIF or WebP up to 8 MB; dragging a file onto the composer and pasting a picture into the box do the same. Disabled while a link is attached. |
 | Picture preview | Above the box until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
 | **Link** control | A control labelled **Link** (accessible name **Attach a link**, title "Keep a link with a description"). Opens a one-line URL field labelled **Link URL**, placeholder `https://…`, with **Add link** and **Cancel**; **Enter** in the field adds the address too. Disabled while a link or picture is attached. |
 | Link chip | Under the box until the signal is logged: the link's host and the full address, with the X button **Remove the attached link**. |
-| **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits under the box with the **Log** button, which is disabled until there is a description or an attachment. |
-| Key hint | `Enter to log · Shift+Enter for a new line · drop or paste a picture`. |
+| **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits in the box's foot beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
+| **Log** button | The primary button in the box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |

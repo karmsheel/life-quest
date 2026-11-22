@@ -18,7 +18,7 @@ import type {
   SignalStatus,
   SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
-import { ImagePlus, Link2, Pencil, Trash2, X } from "lucide-react";
+import { ArrowUp, ImagePlus, Link2, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -590,7 +590,7 @@ export function SignalChainFeed() {
           onKeyDown={onComposerKeyDown}
           onPaste={onPaste}
           placeholder="What's on your mind?"
-          rows={6}
+          rows={3}
           autoFocus
         />
 
@@ -652,73 +652,77 @@ export function SignalChainFeed() {
           </div>
         ) : null}
 
-        <div className="signal-chain__composer-tools">
-          <Button
-            type="button"
-            variant="ghost"
-            className="signal-chain__tool"
-            data-testid="chain-attach-image"
-            aria-label="Attach an image"
-            title="Attach an image — or drop or paste one"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || link !== null}
-          >
-            <ImagePlus size={16} aria-hidden />
-            <span>Image</span>
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={IMAGE_ACCEPT}
-            hidden
-            data-testid="chain-file-input"
-            onChange={(e) => {
-              onPickFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            className="signal-chain__tool"
-            data-testid="chain-attach-link"
-            aria-label="Attach a link"
-            title="Keep a link with a description"
-            onClick={openLinkField}
-            disabled={busy || link !== null || pendingImage !== null}
-          >
-            <Link2 size={16} aria-hidden />
-            <span>Link</span>
-          </Button>
-        </div>
-
+        {/* The composer's one control row: what a capture can carry on the
+            leading edge, where it files and the commit on the trailing one.
+            The commit is the page's primary action and wears the app's
+            primary button, so it reads as the point of the box rather than a
+            caption beside it. */}
         <div className="signal-chain__composer-footer">
-          <label className="field">
-            Area
-            <select
-              value={domainSlug}
-              onChange={(e) => setDomainSlug(e.target.value)}
+          <div className="signal-chain__composer-tools">
+            <Button
+              type="button"
+              variant="ghost"
+              className="signal-chain__tool"
+              data-testid="chain-attach-image"
+              aria-label="Attach an image"
+              title="Attach an image — or drop or paste one"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || link !== null}
             >
-              <option value="">- unassigned -</option>
-              {liveDomains.map((d) => (
-                <option key={d.slug} value={d.slug}>
-                  {d.meta.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button
-            type="submit"
-            variant="ghost"
-            disabled={busy || !composerHasSomething}
-          >
-            Log
-          </Button>
+              <ImagePlus size={16} aria-hidden />
+              <span>Image</span>
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={IMAGE_ACCEPT}
+              hidden
+              data-testid="chain-file-input"
+              onChange={(e) => {
+                onPickFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              className="signal-chain__tool"
+              data-testid="chain-attach-link"
+              aria-label="Attach a link"
+              title="Keep a link with a description"
+              onClick={openLinkField}
+              disabled={busy || link !== null || pendingImage !== null}
+            >
+              <Link2 size={16} aria-hidden />
+              <span>Link</span>
+            </Button>
+          </div>
+          <div className="signal-chain__composer-commit">
+            <label className="signal-chain__area">
+              Area
+              <select
+                value={domainSlug}
+                onChange={(e) => setDomainSlug(e.target.value)}
+              >
+                <option value="">- unassigned -</option>
+                {liveDomains.map((d) => (
+                  <option key={d.slug} value={d.slug}>
+                    {d.meta.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="submit"
+              variant="primary"
+              className="signal-chain__log"
+              disabled={busy || !composerHasSomething}
+            >
+              <ArrowUp size={15} aria-hidden />
+              <span>Log</span>
+            </Button>
+          </div>
         </div>
-        <p className="signal-chain__hint">
-          <kbd>Enter</kbd> to log · <kbd>Shift+Enter</kbd> for a new line · drop
-          or paste a picture
-        </p>
       </form>
 
       {skipped > 0 ? (
