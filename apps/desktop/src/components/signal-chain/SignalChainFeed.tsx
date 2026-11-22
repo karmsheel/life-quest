@@ -13,12 +13,22 @@ import {
 import type {
   Project,
   SignalCreateInput,
+  SignalFileAttachment,
   SignalPriority,
   SignalRecord,
   SignalStatus,
   SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
-import { ArrowUp, ImagePlus, Link2, Pencil, Trash2, X } from "lucide-react";
+import {
+  ArrowUp,
+  Download,
+  FileText,
+  Link2,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -28,7 +38,6 @@ import {
   unlockedAreas,
 } from "@lifequest/vault-core/pure";
 import {
-  IMAGE_ACCEPT,
   looksLikeImage,
   prepareImageFile,
 } from "@/components/images/image-files";
@@ -36,6 +45,7 @@ import { api } from "@/lib/ipc";
 import {
   SIGNAL_PRIORITY_LABELS,
   SIGNAL_STATUS_LABELS,
+  formatSignalFileSize,
   formatSignalWhen,
   linkHost,
   projectDisplayLabel,
@@ -72,14 +82,24 @@ type PendingImage = {
   previewUrl: string;
 };
 
+/** Any other file chosen but not yet logged; the bytes are read on Log. */
+type PendingFile = {
+  file: File;
+  name: string;
+  size: number;
+};
+
 /**
- * Turn the text the operator pasted into a link, or say why it is not one. The
- * vault validates again on write, but a refused URL must not wait for a round
- * trip to say so.
+ * Turn text the operator pasted into a link, or say why it is not one. A paste
+ * that carries a sentence is not this: a URL glued to other words stays text,
+ * and only a single whitespace-free absolute http(s) URL becomes the chip.
  */
 function parseLink(raw: string): { url: string } | { error: string } {
   const trimmed = raw.trim();
   if (!trimmed) return { error: "Paste the link you want to keep." };
+  if (/\s/.test(trimmed)) {
+    return { error: "Links must be an absolute http or https URL." };
+  }
   if (trimmed.length > 2048) return { error: "That link is too long to keep." };
   let parsed: URL;
   try {
@@ -94,10 +114,14 @@ function parseLink(raw: string): { url: string } | { error: string } {
 }
 
 /**
- * Life-Chain is the general capture surface: a thought, a picture with a
- * description, or a link with one. All three are one box — the words are the
- * body, and an attachment is what the words may be short about. A capture with
- * an attachment may have no body; a plain text capture still needs words.
+ * Notebox is the general capture surface: a thought, a picture, any file, or a
+ * link — all in one box. The words are the body, and an attachment is what the
+ * words may be short about. A capture with an attachment may have no body; a
+ * plain text capture still needs words.
+ *
+ * The composer follows the chat composer's pattern: one plus control at the
+ * bottom left takes any file, and a link is attached by pasting a URL into the
+ * field rather than by a form of its own. Only one attachment rides a capture.
  */
 export function SignalChainFeed() {
   const { snapshot, refresh } = useVault();
@@ -131,10 +155,8 @@ export function SignalChainFeed() {
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
+  const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
   const [link, setLink] = useState<string | null>(null);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [linkDraft, setLinkDraft] = useState("");
-  const [linkError, setLinkError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
@@ -235,24 +257,26 @@ export function SignalChainFeed() {
     setPendingImage(null);
   }
 
-  function attachFile(file: File) {
-    if (!looksLikeImage(file)) {
-      setError("Images must be PNG, JPEG, GIF or WebP.");
-      return;
-    }
+  function clearPendingFile() {
+    setPendingFile(null);
+  }
+
+  function clearLink() {
+    setLink(null);
+  }
+
+  /**
+   * One attachment per capture: whatever arrives replaces what was waiting, and
+   * the preview URL the old picture held is released rather than leaked.
+   */
+  function attachImage(file: File) {
     if (file.size > IMAGE_MAX_BYTES) {
       setError("That image is larger than 8 MB.");
       return;
     }
     setError(null);
-    // One attachment per capture: a picture replaces whatever was attached, and
-    // the preview URL the old picture held is released rather than leaked.
-    if (link) {
-      setLink(null);
-      setLinkOpen(false);
-      setLinkDraft("");
-      setLinkError(null);
-    }
+    setPendingFile(null);
+    setLink(null);
     if (pendingImageRef.current) {
       URL.revokeObjectURL(pendingImageRef.current.previewUrl);
     }
@@ -265,21 +289,59 @@ export function SignalChainFeed() {
     setPendingImage(next);
   }
 
+  /**
+   * The single plus control takes any file. A picture keeps its preview; every
+   * other file becomes a name-and-size chip, and the vault decides on Log
+   * whether the type may be kept.
+   */
+  function attachAnyFile(file: File) {
+    if (looksLikeImage(file)) {
+      attachImage(file);
+      return;
+    }
+    setError(null);
+    clearPendingImage();
+    setLink(null);
+    setPendingFile({
+      file,
+      name: file.name || "File",
+      size: file.size,
+    });
+  }
+
+  /** A pasted URL is a link capture — it never enters the body as text. */
+  function attachLink(url: string) {
+    setError(null);
+    clearPendingImage();
+    setPendingFile(null);
+    setLink(url);
+  }
+
   function onPickFiles(files: FileList | null) {
-    const file = files ? Array.from(files).find(looksLikeImage) : undefined;
-    if (file) attachFile(file);
+    const file = files ? files[0] : undefined;
+    if (file) attachAnyFile(file);
   }
 
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    // A file on the clipboard is the paste: a screenshot or a copied document
+    // rides the capture rather than being dropped.
     const files = Array.from(e.clipboardData?.files ?? []);
-    const image = files.find(looksLikeImage);
-    if (!image) return;
-    // The image is the paste; the field keeps whatever text the operator typed.
-    e.preventDefault();
-    attachFile(image);
+    if (files.length > 0) {
+      e.preventDefault();
+      attachAnyFile(files[0]);
+      return;
+    }
+    // A URL pasted on its own becomes the link chip; a URL inside a sentence is
+    // just text and pastes normally.
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    const parsed = parseLink(text);
+    if ("url" in parsed) {
+      e.preventDefault();
+      attachLink(parsed.url);
+    }
   }
 
-  // ── dropping a picture on the composer ───────────────────────────────────
+  // ── dropping any file on the composer ────────────────────────────────────
   function onDragEnter(e: DragEvent<HTMLFormElement>) {
     if (!e.dataTransfer?.types.includes("Files")) return;
     dragDepth.current += 1;
@@ -298,57 +360,15 @@ export function SignalChainFeed() {
     setDragging(false);
     if (files.length === 0) return;
     // A file dropped on the window must never become a navigation, whatever it
-    // is: the composer owns the gesture and says what it will take.
+    // is: the composer owns the gesture and takes anything.
     e.preventDefault();
-    const image = files.find(looksLikeImage);
-    if (!image) {
-      setError("Only PNG, JPEG, GIF or WebP pictures can be dropped here.");
-      return;
-    }
-    attachFile(image);
-  }
-
-  // ── the link ─────────────────────────────────────────────────────────────
-  function openLinkField() {
-    setLinkOpen(true);
-    setLinkError(null);
-    setLinkDraft(link ?? "");
-  }
-
-  function addLink() {
-    const parsed = parseLink(linkDraft);
-    if ("error" in parsed) {
-      setLinkError(parsed.error);
-      return;
-    }
-    if (pendingImageRef.current) clearPendingImage();
-    setLink(parsed.url);
-    setLinkOpen(false);
-    setLinkDraft("");
-    setLinkError(null);
-    setError(null);
-  }
-
-  function removeLink() {
-    setLink(null);
-    setLinkOpen(false);
-    setLinkDraft("");
-    setLinkError(null);
-  }
-
-  function onLinkFieldKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    // Enter here adds the link; it must not log the capture half-filled.
-    e.preventDefault();
-    addLink();
+    attachAnyFile(files[0]);
   }
 
   function clearComposer() {
     clearPendingImage();
+    setPendingFile(null);
     setLink(null);
-    setLinkOpen(false);
-    setLinkDraft("");
-    setLinkError(null);
     setBody("");
     setDomainSlug("");
     setEditingId(null);
@@ -356,7 +376,8 @@ export function SignalChainFeed() {
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
-    const hasAttachment = pendingImage !== null || link !== null;
+    const hasAttachment =
+      pendingImage !== null || pendingFile !== null || link !== null;
     if ((!body.trim() && !hasAttachment) || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -371,6 +392,15 @@ export function SignalChainFeed() {
           name: prepared.name,
           width: prepared.width,
           height: prepared.height,
+        };
+      } else if (pendingFile) {
+        // Any other file is handed over as bytes; the type is a claim from the
+        // picker, and the vault sanitises and refuses active content itself.
+        attachment = {
+          kind: "file",
+          bytes: new Uint8Array(await pendingFile.file.arrayBuffer()),
+          name: pendingFile.name,
+          mime: pendingFile.file.type || "",
         };
       } else if (link) {
         attachment = { kind: "link", url: link };
@@ -529,12 +559,15 @@ export function SignalChainFeed() {
   }
 
   const composerHasSomething =
-    body.trim().length > 0 || pendingImage !== null || link !== null;
+    body.trim().length > 0 ||
+    pendingImage !== null ||
+    pendingFile !== null ||
+    link !== null;
 
   return (
     <div className="signal-chain">
       <header className="signal-chain__header">
-        <h1 className="stub-page__title">Quick Notes</h1>
+        <h1 className="stub-page__title">Notebox</h1>
         <p className="stub-page__desc muted">
           A database of what you notice. Log now; assign later.
         </p>
@@ -583,6 +616,34 @@ export function SignalChainFeed() {
           </div>
         ) : null}
 
+        {pendingFile ? (
+          <div
+            className="signal-chain__pending-file"
+            data-testid="chain-pending-file"
+          >
+            <span className="signal-chain__pending-file-icon" aria-hidden>
+              <FileText size={15} />
+            </span>
+            <span className="signal-chain__pending-file-name">
+              {pendingFile.name}
+            </span>
+            <span className="signal-chain__pending-file-size muted">
+              {formatSignalFileSize(pendingFile.size)}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              className="signal-chain__attachment-remove"
+              aria-label="Remove the attached file"
+              title="Remove the attached file"
+              onClick={clearPendingFile}
+              disabled={busy}
+            >
+              <X size={14} aria-hidden />
+            </Button>
+          </div>
+        ) : null}
+
         <textarea
           aria-label="Log a signal"
           value={body}
@@ -594,43 +655,6 @@ export function SignalChainFeed() {
           autoFocus
         />
 
-        {linkOpen ? (
-          <div className="signal-chain__link-form">
-            <input
-              className="signal-chain__link-input"
-              aria-label="Link URL"
-              placeholder="https://…"
-              value={linkDraft}
-              onChange={(e) => {
-                setLinkDraft(e.target.value);
-                if (linkError) setLinkError(null);
-              }}
-              onKeyDown={onLinkFieldKeyDown}
-              autoFocus
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              data-testid="chain-link-add"
-              onClick={addLink}
-            >
-              Add link
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Cancel the link"
-              onClick={removeLink}
-            >
-              Cancel
-            </Button>
-          </div>
-        ) : null}
-        {linkError ? (
-          <p className="form-error" role="alert" data-testid="chain-link-error">
-            {linkError}
-          </p>
-        ) : null}
         {link ? (
           <div className="signal-chain__link-chip" data-testid="chain-link-chip">
             <Link2 size={14} aria-hidden />
@@ -644,7 +668,7 @@ export function SignalChainFeed() {
               className="signal-chain__attachment-remove"
               aria-label="Remove the attached link"
               title="Remove the attached link"
-              onClick={removeLink}
+              onClick={clearLink}
               disabled={busy}
             >
               <X size={14} aria-hidden />
@@ -659,43 +683,32 @@ export function SignalChainFeed() {
             caption beside it. */}
         <div className="signal-chain__composer-footer">
           <div className="signal-chain__composer-tools">
+            {/* The one attachment control, at the row's leading edge: a plus
+                that takes any file — a picture keeps its preview, anything
+                else becomes a chip — and a link arrives by pasting a URL. */}
             <Button
               type="button"
               variant="ghost"
-              className="signal-chain__tool"
-              data-testid="chain-attach-image"
-              aria-label="Attach an image"
-              title="Attach an image — or drop or paste one"
+              className="signal-chain__attach-plus"
+              data-testid="chain-attach-file"
+              aria-label="Attach a file"
+              title="Attach a file"
               onClick={() => fileInputRef.current?.click()}
-              disabled={busy || link !== null}
+              disabled={busy}
             >
-              <ImagePlus size={16} aria-hidden />
-              <span>Image</span>
+              <Plus size={16} aria-hidden />
             </Button>
             <input
               ref={fileInputRef}
               type="file"
-              accept={IMAGE_ACCEPT}
               hidden
               data-testid="chain-file-input"
               onChange={(e) => {
                 onPickFiles(e.target.files);
+                // Clear the picker so choosing the same file twice still fires.
                 e.target.value = "";
               }}
             />
-            <Button
-              type="button"
-              variant="ghost"
-              className="signal-chain__tool"
-              data-testid="chain-attach-link"
-              aria-label="Attach a link"
-              title="Keep a link with a description"
-              onClick={openLinkField}
-              disabled={busy || link !== null || pendingImage !== null}
-            >
-              <Link2 size={16} aria-hidden />
-              <span>Link</span>
-            </Button>
           </div>
           <div className="signal-chain__composer-commit">
             <label className="signal-chain__area">
@@ -1099,6 +1112,9 @@ function SignalRow(props: {
             </span>
           </a>
         ) : null}
+        {s.attachment?.kind === "file" ? (
+          <SignalFileCard attachment={s.attachment} />
+        ) : null}
         {s.title ? <h3 className="signal-row__title">{s.title}</h3> : null}
         {s.body ? <p className="signal-row__body">{s.body}</p> : null}
       </div>
@@ -1226,6 +1242,85 @@ function SignalRow(props: {
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * A captured non-image file is a card, not a line of text: the stored name is
+ * the label, its size is the evidence, and Save hands the operator a copy. The
+ * bytes live in the vault under a guarded path, so a save is one bridge read
+ * turned into a download — the renderer never touches the filesystem directly.
+ */
+function SignalFileCard({ attachment }: { attachment: SignalFileAttachment }) {
+  const [state, setState] = useState<"idle" | "loading" | "missing">("idle");
+
+  async function onSave() {
+    if (state === "loading") return;
+    setState("loading");
+    try {
+      const result = await api().signalChainReadFile(attachment.relPath);
+      if (!result.ok) {
+        setState("missing");
+        return;
+      }
+      const { bytes, mime } = result.value;
+      const blob = new Blob([bytes as BlobPart], {
+        type: mime || attachment.mime || "application/octet-stream",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.name;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      // The download is handed to the browser on the next task, so the blob URL
+      // outlives this handler by a moment rather than being revoked under it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setState("idle");
+    } catch {
+      setState("missing");
+    }
+  }
+
+  return (
+    <div className="signal-row__file" data-testid="signal-file">
+      <span className="signal-row__file-icon" aria-hidden>
+        <FileText size={16} />
+      </span>
+      <div className="signal-row__file-meta">
+        <span className="signal-row__file-name" data-testid="signal-file-name">
+          {attachment.name}
+        </span>
+        <span className="signal-row__file-size muted">
+          {formatSignalFileSize(attachment.size)}
+        </span>
+        {state === "loading" ? (
+          <span className="signal-row__file-status muted" role="status">
+            Loading file…
+          </span>
+        ) : null}
+        {state === "missing" ? (
+          <span className="signal-row__file-status form-error" role="alert">
+            That file is missing from the vault.
+          </span>
+        ) : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        className="signal-row__file-save"
+        data-testid="signal-file-save"
+        aria-label="Save the attached file"
+        title="Save the attached file"
+        onClick={() => void onSave()}
+        disabled={state === "loading"}
+      >
+        <Download size={14} aria-hidden />
+        <span>Save</span>
+      </Button>
+    </div>
   );
 }
 

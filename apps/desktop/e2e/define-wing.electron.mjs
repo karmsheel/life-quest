@@ -272,7 +272,7 @@ async function main() {
     check(
       "the governed shelf and the Log are untouched",
       same(home.pinned.map((l) => l.label), [
-        "Quick Notes",
+        "Notebox",
         "Decisions",
         "Daily Journal",
         "Automations",

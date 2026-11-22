@@ -1,21 +1,22 @@
-# Quick Notes
+# Notebox
 
-**Quick Notes** is quick-fire capture *and* the vault's single Inbox. One box, one key, and
-the thing is off your mind: it is a chain of signals — a thought, a picture, a link — kept as
-small JSON records in the vault. Then the chain is where you triage them: file a capture under
-an area and a project, give it a status and a priority, and turn it into board work.
+**Notebox** is quick-fire capture *and* the vault's single Inbox. One box, one key, and
+the thing is off your mind: it is a chain of signals — a thought, a picture, a file, a link —
+kept as small JSON records in the vault. Then the chain is where you triage them: file a
+capture under an area and a project, give it a status and a priority, and turn it into board
+work.
 
-Quick Notes is the one entry point for external information into the vault. A browser tab, a
+Notebox is the one entry point for external information into the vault. A browser tab, a
 line from Notion, a thought in the shower: it lands here as a signal, and nothing else has to
 own it until you decide it is work.
 
 ## Where it lives
 
-- Wing: none. Quick Notes sits on the bottom shelf of the rail, above **Decisions**.
-- Rail: icon **Radio**, label **Quick Notes**.
+- Wing: none. Notebox sits on the bottom shelf of the rail, above **Decisions**.
+- Rail: icon **Radio**, label **Notebox**.
 - Route: `/chain`. The route and file names did not change when the page was renamed from
-  Life-Chain.
-- Surface: a full page in the centre pane. The chat dock also has a **Quick Notes** surface
+  Quick Notes (earlier from Life-Chain).
+- Surface: a full page in the centre pane. The chat dock also has a **Notebox** surface
   of the same chain (see below).
 
 This page is part of the [Wiki home](./index.md).
@@ -23,9 +24,11 @@ This page is part of the [Wiki home](./index.md).
 ## What it is for
 
 Capture dies when it takes more than a keystroke, so the composer deliberately asks for little:
-a description, an optional **Image** or **Link**, and an optional **Area**. Type, title,
-project, status and priority are not composer fields — a capture is a capture, and the inbox is
-worked afterwards, on the row.
+a description, one optional attachment, and an optional **Area**. An attachment arrives in one
+of two gestures: the **plus** at the box's bottom left takes any file (a picture previews, any
+other file becomes a name-and-size chip), and **pasting a URL** into the box turns it into a
+link chip. Type, title, project, status and priority are not composer fields — a capture is a
+capture, and the inbox is worked afterwards, on the row.
 
 Each signal carries:
 
@@ -36,31 +39,35 @@ Each signal carries:
 - **Captured from** — free text naming where it came in from (`Chrome — AI tab group`,
   `Notion — Action Items`), when the capture came from outside the app.
 
-The one box takes three kinds of capture:
+The one box takes four kinds of capture:
 
 - **Text** — the description is the capture, and logging it is one keystroke.
-- **A picture** — picked, dragged or pasted, previewed before it is logged, with an optional
-  description.
-- **A link** — an absolute web address with an optional description.
+- **A picture** — picked with the plus, dragged or pasted, previewed before it is logged, with
+  an optional description.
+- **Any other file** — picked with the same plus (or dragged or pasted); a PDF, a document, a
+  clip. It rides the capture and can be saved from its row.
+- **A link** — an absolute web address pasted into the box, with an optional description.
 
-A capture carries at most one attachment: choosing a link while a picture is attached
-replaces the picture, and choosing a picture while a link is attached replaces the link,
-before the capture is logged.
+A capture carries at most one attachment. Picking or pasting anything else replaces whatever
+was attached, before the capture is logged.
 
 ## How to use it
 
-1. Choose **Quick Notes** in the rail. The cursor is already in the capture box, whose
+1. Choose **Notebox** in the rail. The cursor is already in the capture box, whose
    placeholder is **What's on your mind?**.
 2. Type the description. **Enter** logs it; **Shift+Enter** inserts a new line. The box is
    three rows tall and the operator drags its corner when a thought needs more room.
-3. To log a picture, choose **Image**, drag a file onto the composer, or paste a picture into
-   the box. The picture previews above the box with its file name and the line "It will be
-   kept in the vault with this capture."; the X button (**Remove the attached image**) takes
-   it off. The description may be left empty.
-4. To log a link, choose **Link**; a URL field opens under the box. Type or paste an absolute
-   `http` or `https` address and choose **Add link** — **Enter** in the field does the same.
-   The address previews as a chip with its host and the full address; the X button
-   (**Remove the attached link**) takes it off. The description may be left empty.
+3. To attach something, choose the **plus** (**Attach a file**) at the box's bottom left, drag
+   a file onto the composer, or paste a file into the box. A picture previews above the box
+   with its file name and the line "It will be kept in the vault with this capture."; any
+   other file shows a chip with its name and size. The X button takes the attachment off
+   (**Remove the attached image** / **Remove the attached file**). The description may be
+   left empty.
+4. To capture a link, paste an absolute `http` or `https` address into the box on its own. It
+   turns into a chip with its host and the full address and does not enter the description;
+   the X button (**Remove the attached link**) takes it off. A URL pasted inside a sentence
+   stays part of the description (text, not a link capture). The description may be left
+   empty.
 5. Optionally choose an **Area** before logging. The picker sits in the box's foot, beside
    the **Log** button; its first option is **- unassigned -**, and leaving it there files the
    signal with no area.
@@ -88,27 +95,27 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 
 | Part | What it does |
 |---|---|
-| **Quick Notes** heading | The title and the line "A database of what you notice. Log now; assign later." |
-| Capture box | A three-row text area labelled **Log a signal**, placeholder **What's on your mind?**, autofocused; its corner can be dragged for more room. It is the description: a text capture needs text, and a picture or link may be logged without it. The box takes the accent ring when the caret is in it. |
-| **Image** control | A control labelled **Image** (accessible name **Attach an image**, title "Attach an image — or drop or paste one"). Opens a file picker for PNG, JPEG, GIF or WebP up to 8 MB; dragging a file onto the composer and pasting a picture into the box do the same. Disabled while a link is attached. |
+| **Notebox** heading | The title and the line "A database of what you notice. Log now; assign later." |
+| Capture box | A three-row text area labelled **Log a signal**, placeholder **What's on your mind?**, autofocused; its corner can be dragged for more room. It is the description: a text capture needs text, and an attachment may be logged without it. The box takes the accent ring when the caret is in it. |
+| **Plus** control | The single attachment control at the box's bottom left (test name **Attach a file**, plus glyph). Opens a file picker with no type restriction — any picture or file — and dragging a file onto the composer or pasting a file into the box does the same. |
 | Picture preview | Above the box until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
-| **Link** control | A control labelled **Link** (accessible name **Attach a link**, title "Keep a link with a description"). Opens a one-line URL field labelled **Link URL**, placeholder `https://…`, with **Add link** and **Cancel**; **Enter** in the field adds the address too. Disabled while a link or picture is attached. |
-| Link chip | Under the box until the signal is logged: the link's host and the full address, with the X button **Remove the attached link**. |
+| File chip | Above the box until the signal is logged: a non-picture attachment's name and human size, with the X button **Remove the attached file**. |
+| Link chip | Above the box until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
 | **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits in the box's foot beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button in the box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
-| Attachment | An image draws at the top of the row with its file name beneath it; a link draws a card at the top of the row with its host and address. The link card opens `https` addresses in the browser. |
+| Attachment | An image draws at the top of the row with its file name beneath it; a link draws a card at the top of the row with its host and address. The link card opens `https` addresses in the browser. Any other file draws a card with its name and size and a **Save** control (accessible name **Save the attached file**) that writes a copy of the vault's bytes to disk. |
 | Timestamp | "Today, 14:32" / "Yesterday, 09:05" for recent days; an older signal shows a medium date and time. |
 | Row actions | **Make task** (or **Open task**), pencil **Edit**, bin **Delete**, plus the inline **Area** select. |
-| Edit form | **Description** textarea, **Area** select, **Save**, **Cancel**. Editing changes the description and area only; a picture or link stays as captured. |
+| Edit form | **Description** textarea, **Area** select, **Save**, **Cancel**. Editing changes the description and area only; a picture, file or link stays as captured. |
 | Confirm dialog | Deleting asks first: title **Delete signal**, message "The signal is hidden from the chain. Its record and messages stay in the vault.", confirm **Delete signal**. |
 | Empty chain | "Nothing on the chain yet. Write something above." |
 | Empty filter | "No signals match these filters." |
 | Unreadable files | If any signal file cannot be parsed: "N signal file(s) could not be read." |
-| Missing picture | A picture whose file has gone still holds its row: "That picture is missing from the vault." |
+| Missing file | A picture or file whose bytes have gone still holds its row: "That picture is missing from the vault." / "That file is missing from the vault." |
 
 The lens filters the *view*, not the capture: **Life** shows every signal, and an area lens
 shows the signals tagged to that area plus every unassigned one, because an unassigned
@@ -128,8 +135,8 @@ Enter submits only when it is not composing text and not a held-down repeat:
   signal.
 - A key repeat from holding Enter down is ignored, so one thought cannot fire several writes.
 
-The page's own composer is the Quick Notes gesture, and it is not the chat composer: Quick
-Notes keeps **Enter** to log and **Shift+Enter** for a new line, whatever the chat is set
+The page's own composer is the Notebox gesture, and it is not the chat composer: Notebox
+keeps **Enter** to log and **Shift+Enter** for a new line, whatever the chat is set
 to. The chat box defaults to **Enter** breaking the line and **Ctrl/Cmd+Enter** sending,
 though Settings → **Composer** can hand that send to plain Enter.
 
@@ -160,10 +167,11 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
 - `attachment` is `null` for a text capture. A picture stores
   `{ "kind": "image", "relPath": ".lifequest/signal-chain/files/<uuid>.<ext>", "name": "desk-lamp.png", "mime": "image/png", "width": 640, "height": 480 }`
   (width and height may be `null` when the machine could not decode the canvas); a link
-  stores `{ "kind": "link", "url": "https://…" }`.
-- The description is the body. A text-only capture needs a non-empty body; a picture or
-  link capture may store an empty one, because the attachment says what was captured. The
-  vault's refusal for neither is "A capture needs text, an image or a link".
+  stores `{ "kind": "link", "url": "https://…" }`; any other file stores
+  `{ "kind": "file", "relPath": ".lifequest/signal-chain/files/<uuid>[.<ext>]", "name": "brief.pdf", "mime": "application/pdf", "size": 20480 }`.
+- The description is the body. A text-only capture needs a non-empty body; a capture with a
+  picture, file or link may store an empty one, because the attachment says what was
+  captured. The vault's refusal for neither is "A capture needs text, a file, an image or a link".
 - The area is stored as `domainSlug` (the field kept its old name); `null` is unassigned.
 - `projectId` is a live project id from `projects/`; a write naming an id no project file
   backs is refused with "Unknown project: <id>" and nothing is written. `null` is unfiled.
@@ -202,7 +210,7 @@ Triage is a direct write, like capture: no Decision, no approval queue.
 
 ### A picture
 
-- Pick it with **Image**, drag a file onto the composer, or paste a picture into the box.
+- Pick it with the **plus**, drag a file onto the composer, or paste a picture into the box.
   PNG, JPEG, GIF and WebP are accepted up to 8 MB. The bytes decide the format and the
   extension, while the uploaded name stays a label; a file that is not one of those types,
   an empty file, or one over 8 MB is refused with a message before anything is written.
@@ -218,16 +226,36 @@ Triage is a direct write, like capture: no Decision, no approval queue.
   stays in the vault. A row whose file has gone says "That picture is missing from the
   vault."; a row still loading its bytes says "Loading picture…".
 
+### Any other file
+
+- The same **plus** takes anything else — a PDF, a document, a clip, an archive: the picker
+  has no type restriction, and dragging or pasting a file does the same. One file rides a
+  capture.
+- The file is capped at 25 MB and its bytes are written atomically to
+  `.lifequest/signal-chain/files/<uuid>[.<ext>]`; the extension comes from the uploaded name
+  when it is a short safe one, and is omitted otherwise. The record stores the name, the
+  mime type (sanitized; unknown becomes `application/octet-stream`), the byte size and the
+  vault-relative path. If the record write fails the stored file is removed again.
+- ACTIVE content is refused by name before anything is written — HTML, SVG, scripts,
+  executables and the like — because a vault is synced and shared and those formats render
+  or run. The refusal is "That file type cannot be kept in the vault: <type>".
+- The row draws a file card: an icon, the stored name, the human size, and a **Save** control
+  that reads the bytes back through the vault and writes a copy to disk. A missing file says
+  "That file is missing from the vault."; a row fetching it says "Loading file…".
+- **Edit** changes the description and the area only; the file stays as captured. Delete is a
+  soft delete and leaves the bytes in the vault, like a picture.
+
 ### A link
 
-- **Link** opens a one-line URL field with **Add link**; **Enter** in the field adds the
-  address too, and **Cancel** closes the field. Only an absolute `http` or `https` address up
-  to 2048 characters is accepted; a relative path, a `file:` address or plain prose is
-  refused under the field with "Links must be an absolute http or https URL." and an address
-  over 2048 characters with "That link is too long to keep." — and no signal is written.
-- A valid address previews as a chip under the box: the host (a leading `www.` is dropped)
-  and the full address, with the X button (**Remove the attached link**). The address is
-  stored normalized to what the browser would open.
+- A link is made by **pasting** an absolute `http` or `https` address into the box on its
+  own. It becomes a chip with the host (a leading `www.` is dropped) and the full address,
+  with the X button (**Remove the attached link**), and the address is stored normalized to
+  what the browser would open. The field is not filled with the URL — the chip is the
+  attachment, and the box stays free for the description.
+- Only an address up to 2048 characters is accepted; a relative path, a `file:` address or
+  plain prose pasted on its own is not a link and pastes as text. A URL pasted inside a
+  sentence stays part of the description; a URL typed by hand is description text too. Paste
+  the address on its own to keep it as a link card.
 - The row draws it as a card at the top of the row, with the host and the address. Following
   the card hands the address to the operator's browser, not to a page inside the app. The
   app only opens `https` addresses externally, so an `http` card is kept but does nothing —
@@ -246,10 +274,11 @@ Triage is a direct write, like capture: no Decision, no approval queue.
   for it. That status write is the same direct write the row's **Status** select makes.
 - For a text capture the title is the first non-empty line of the body, trimmed, and cut to
   80 characters plus `...` when longer. The notes are the full body.
-- When the body is empty — a picture or link capture logged without a description — the
+- When the body is empty — a picture, file or link capture logged without a description — the
   title comes from the attachment: `Link: <host>` for a link, `Image: <file name>` for a
-  picture, under the same 80-character cap plus `...` when longer. The notes are the URL or
-  the file name, so the task still says what was captured.
+  picture, `File: <file name>` for any other file, under the same 80-character cap plus `...`
+  when longer. The notes are the URL or the file name, so the task still says what was
+  captured.
 - A signal has at most one live task: the row looks for a task anywhere on the board with its
   `signalId` (including **Done**), so a second click cannot create a duplicate. Deleting the
   task restores **Make task**.
@@ -278,14 +307,15 @@ The companion has the chain on its own tool surface, as the single Inbox door:
 - The signal types `thought`, `idea`, `notice` and `other` exist in the data model; the
   composer only creates `thought`, while the companion may choose another type.
 - The companion writes text signals only: `create_signal` takes a body and no attachment, so
-  a picture or link is captured on the page, not by the agent.
+  a picture, file or link is captured on the page, not by the agent.
 
-The chat dock's own **Quick Notes** surface reads and writes the same chain: it shows the
+The chat dock's own **Notebox** surface reads and writes the same chain: it shows the
 signals oldest-first above its composer, and its composer's placeholder is **Log a signal…**
-with a **Log signal** button. It draws the same records, a picture and a link card included,
-but its composer is text-only: a picture or link is captured on this page, not in the dock.
-Its delete asks the same question. It is a convenience mirror of this page, not a second
-store.
+with a **Log signal** button. It draws the same records, including the picture and link
+cards, but its composer is text-only: a picture, file or link is captured on this page, not
+in the dock, and a non-picture file attachment is drawn on the page's row rather than in the
+dock. Its delete asks the same question. It is a convenience mirror of this page, not a
+second store.
 
 ### The lens
 
@@ -308,18 +338,21 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 - Editing a signal does not touch a task made from it: the task copied the text at the time
   it was made. Changing the signal's project later does not move the task.
 - Deleting a signal does not delete its tasks. They keep the dangling `signalId`. Nor does it
-  delete the picture file: a soft-deleted signal leaves its bytes under
+  delete the picture or file: a soft-deleted signal leaves its bytes under
   `.lifequest/signal-chain/files/`.
 - **Open task** follows the first task on the board with that signal id; if a task was
   deleted and the row shows **Make task** again, that is the expected state.
 - A text capture is a single body, so a multi-line thought is fine — the first line only
-  becomes a title when you make it a task. A picture or link capture may carry no
+  becomes a title when you make it a task. A capture with an attachment may carry no
   description; **Make task** then names itself from the attachment.
 - The composer lights up while a file is dragged over it; the whole composer is the drop
   target, not only the box.
-- A dropped file that is not PNG, JPEG, GIF or WebP, an empty file, or one over 8 MB is
-  refused with a message, and the composer keeps what it had.
-- Pasting a picture into the box attaches it; pasting text still goes into the description.
+- The **plus** takes any file, but the vault keeps only some of them: pictures up to 8 MB
+  (PNG, JPEG, GIF, WebP), any other file up to 25 MB, and never active content (HTML, SVG,
+  scripts, executables). A refusal leaves the composer exactly as it was.
+- Pasting a file or a picture into the box attaches it; pasting text still goes into the
+  description; pasting one URL on its own turns it into a link chip, while a URL inside a
+  sentence stays text.
 - A signal written before pictures and links existed still reads as a plain text capture: a
   missing `attachment` key means the same as `null`. A signal written before the inbox
   existed still reads as `status: "inbox"` with no project, priority or origin.

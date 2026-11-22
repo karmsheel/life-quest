@@ -135,7 +135,7 @@ the vault layout, and it owns:
   liveness hinge rather than by each caller remembering.
 - **Documents, records and databases.** Doctrine and library Markdown with
   frontmatter and atomic writes; goals, map, projects, reviews, daily notes, Ideal
-  State, Quick Notes, pages, pins, boards, automations, Decisions, the companion
+  State, Notebox, pages, pins, boards, automations, Decisions, the companion
   brief; area SQLite, saved views, the Finance kit, books export/restore, ingest.
 - **Onboarding and images.** `onboarding.ts` owns the record, validator, confirm
   batch and log event; `images.ts` owns `images/files/`, the library index and the
@@ -317,7 +317,7 @@ regaining focus (edits by another program, a sync client, or a second copy).
 |---|---|
 | `/welcome` | Welcome (no vault open) |
 | `/home`, `/data`, `/pages`, `/images` | Dashboard, Data, Pages, Images |
-| `/chain`, `/notes`, `/automations` | Quick Notes, Daily Journal, Automations |
+| `/chain`, `/notes`, `/automations` | Notebox, Daily Journal, Automations |
 | `/dream`, `/vision`, `/ideal-state` | Define pages and their editors |
 | `/goals`, `/projects`, `/chart` | Goals, Projects, Life Map |
 | `/track`, `/act`, `/daily` | Architecture, Task Manager, Daily Schedule |

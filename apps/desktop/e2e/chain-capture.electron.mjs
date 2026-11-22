@@ -1,8 +1,8 @@
 /**
- * Drives the Life-Chain page's general capture surface — text, image and link —
- * and its inbox triage, in a real Electron window and writes
- * `e2e/artifacts/chain-capture.json` plus the `chain-capture-*.png` captures
- * and the inbox's `chain-inbox-triage.png`.
+ * Drives the Notebox page's general capture surface — text, image, any file and
+ * a pasted link — and its inbox triage, in a real Electron window and writes
+ * `e2e/artifacts/chain-capture.json` plus the `chain-capture-*.png` captures,
+ * the file card's `chain-inbox-file.png` and the inbox's `chain-inbox-triage.png`.
  *
  * Run with this checkout's dev server up:
  *
@@ -11,14 +11,16 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same claims, no eyeballing the app required. The
  * pictures are the operator-facing half: they show the shipped page with a real
- * uploaded image, a real link row, and a triaged inbox row.
+ * uploaded image, a real file card, a pasted link row, and a triaged inbox row.
  *
  * What this rig claims:
  *
- *  1. `/chain` is the shipped shell page: the rail marks Quick Notes, the page
- *     carries the capture box, the composer textarea and the image/link
- *     controls. Shift+Enter leaves the draft alone, Enter logs a text capture,
- *     and the row carries `data-attachment="text"` with the typed body.
+ *  1. `/chain` is the shipped shell page renamed Notebox: the rail marks
+ *     Notebox, the page heading says Notebox, and the composer carries one plus
+ *     attachment control (`chain-attach-file`, aria "Attach a file") over a
+ *     hidden file input with no accept restriction — the old Image and Link
+ *     arms and the Link URL form are gone. Shift+Enter leaves the draft alone,
+ *     Enter logs a text capture, and the row carries `data-attachment="text"`.
  *  2. A real PNG dropped on the composer becomes a pending thumbnail that
  *     decodes (`naturalWidth > 0`). Typing a description and pressing Log hands
  *     the bridge `attachment.kind === "image"` with the actual bytes, the vault
@@ -27,17 +29,23 @@
  *  3. An image-only capture (empty description) is allowed: the bridge receives
  *     `body: ""` with the image attachment, and the row paints the picture with
  *     no body line.
- *  4. The link control opens a URL field. Text that is not an absolute http(s)
- *     URL leaves an error and no chip; a valid URL becomes a chip that shows the
- *     host. A described link capture hands the bridge `attachment.kind ===
- *     "link"` with the URL unchanged, and the row paints an anchor with that
- *     href and `target="_blank"`.
- *  5. The seeded fixture rows — text, image and link — render on the shipped
+ *  4. Any other file becomes a pending file chip naming it and its size. Log
+ *     hands the bridge real `attachment.kind === "file"` bytes, name and mime;
+ *     the vault mints a path with the file's extension; the row carries
+ *     `data-attachment="file"` and paints a `signal-file` card with the stored
+ *     name and a human size, plus a Save control that reads the stored bytes
+ *     back through `signalChainReadFile`.
+ *  5. A link is attached by PASTING one absolute http(s) URL into the textarea:
+ *     the chip shows the host and the URL is not left in the field. A described
+ *     link capture hands the bridge `attachment.kind === "link"` with the URL
+ *     unchanged, and the row paints an anchor with that href and `_blank`.
+ *  6. One attachment at a time: a picked picture, a picked file and a pasted
+ *     link each replace whatever was pending before, and the remove controls
+ *     clear them; the composer clears after each capture.
+ *  7. The seeded fixture rows — text, image and link — render on the shipped
  *     page, the seeded picture loading from bytes the bridge serves, the seeded
  *     link anchoring its URL.
- *  6. The composer clears after each capture; no unmodelled bridge call, no
- *     console error, and nothing spills horizontally past the window.
- *  7. The inbox half: every seeded row carries the stored status/priority/
+ *  8. The inbox half: every seeded row carries the stored status/priority/
  *     project on the row AND paints the contract's label beside it — including
  *     exactly "Unassigned" and "No project", never a blank cell. Changing a
  *     row's status select hands the bridge exactly `{status: "acting"}`, and the
@@ -45,6 +53,10 @@
  *     change is the vault's answer, not the page's echo. The status filter
  *     chips narrow to the triaged row, say "No signals match these filters."
  *     when nothing matches, and All restores the chain.
+ *  9. The dock's mirrored surface is the same Notebox: its control is labelled
+ *     Notebox, it lists the same chain, and its heading says Notebox.
+ * 10. No unmodelled bridge call, no console error, nothing spills horizontally
+ *     past the window, and every capture is a real picture of the shipped page.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
@@ -52,16 +64,17 @@
  *     that this rig does not model is named in `chainCaptureUnexpectedCalls` and
  *     fails the run — a page that silently renders an empty sheet is the failure
  *     this rig exists to catch.
- *  b. A dropped file is not bytes. The drop carries a real `File` decoded from
- *     the fixture's base64 PNG; a page that paints a filename or a placeholder
- *     never reaches `naturalWidth > 0` and fails.
+ *  b. A dropped or picked file is not bytes. The drop carries a real `File`
+ *     decoded from the fixture's base64 PNG and the file path a real `File` of
+ *     UTF-8 bytes; a page that paints a filename or a placeholder never reaches
+ *     `naturalWidth > 0` or a byte count and fails.
  *  c. The write mutates only the harness's echo: `signalChainCreate` stores the
  *     record the next `signalChainList` answers with, so "the row is on the
  *     chain" is read back through the bridge, not off the page's own state.
  *  d. The vault lies about storing bytes: the row's picture can only decode if
  *     `signalChainReadImage` served the bytes this bridge kept under the path it
- *     minted. The report carries both the path and the byte count, and the test
- *     checks the row decoded at the fixture's real width.
+ *     minted, and Save can only read if `signalChainReadFile` was asked for the
+ *     path the file record carries. The report carries both and the byte counts.
  *  e. A wait resolves against state that was already true. Every wait is a
  *     predicate chosen to become true only after its action, and it names the
  *     last state it saw when it times out.
@@ -72,6 +85,9 @@
  *  h. Screenshots that are not the shipped page: every capture is taken from
  *     this window's `capturePage` after the page has painted, and the test
  *     refuses a capture under 20 KB (an empty sheet compresses to nothing).
+ *  i. The link stays paste-only: a driver that clicked a URL field would be
+ *     exercising a composer that no longer exists, so the paste dispatches a
+ *     real `ClipboardEvent` and the field is asserted to stay free of the URL.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -94,6 +110,22 @@ app.setPath("userData", path.join(artifactsDir, "userdata", "chain-capture"));
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chain-capture.html";
 const WIDE = { width: 1600, height: 950 };
+
+/** The captures this rig drives; every row/dock count is seeded + this. */
+const CAPTURES_DRIVEN = 5;
+
+/** The non-image attachment the one plus control is handed, bytes and all. */
+const ATTACHMENT_FILE_TEXT =
+  "%PDF-1.4\n% LifeQuest e2e attachment\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n";
+const ATTACHMENT_FILE = {
+  name: "brief.pdf",
+  mime: "application/pdf",
+  text: ATTACHMENT_FILE_TEXT,
+  bytes: Buffer.byteLength(ATTACHMENT_FILE_TEXT, "utf8"),
+};
+
+/** A human file size as the row and the pending chip paint it ("12 KB"). */
+const SIZE_PATTERN = /(\d+(?:\.\d+)?)\s*(B|KB|MB)/;
 
 const failures = [];
 function fail(message) {
@@ -159,6 +191,19 @@ const SAMPLE = `(() => {
             text: text(linkEl),
           }
         : { present: false },
+      // A non-image capture paints a file card: the stored name, a human size,
+      // and the operator's Save control. A row that names the file but offers
+      // no way to read it back is a card the operator cannot use.
+      file: (() => {
+        const card = row.querySelector('[data-testid="signal-file"]');
+        if (!card) return { present: false };
+        return {
+          present: true,
+          text: text(card),
+          name: text(card.querySelector('[data-testid="signal-file-name"]')),
+          save: Boolean(row.querySelector('[aria-label="Save the attached file"]')),
+        };
+      })(),
       // The triage contract: the stored values on the row, and the chip text
       // the operator reads, read side by side so a disagreement is visible.
       dataStatus: row.getAttribute("data-status"),
@@ -196,6 +241,7 @@ const SAMPLE = `(() => {
   };
   const composer = q('[data-testid="chain-composer"]');
   const pending = q('[data-testid="chain-pending-image"]');
+  const pendingFile = q('[data-testid="chain-pending-file"]');
   const chip = q('[data-testid="chain-link-chip"]');
   const logButton = all("button").find((button) => text(button) === "Log") || null;
   const fileInput = q('[data-testid="chain-file-input"]');
@@ -226,16 +272,30 @@ const SAMPLE = `(() => {
     ready: window.chainCaptureReady === true,
     rail,
     activeRail: text(activeLink && activeLink.querySelector(".nav-rail__label")),
+    heading: text(q(".signal-chain h1")),
     presence: {
       rail: Boolean(q(".nav-rail")),
       page: Boolean(q(".signal-chain")),
       composer: Boolean(composer),
       composerBox: box(composer),
       textarea: Boolean(textarea),
-      attachImage: Boolean(q('[data-testid="chain-attach-image"]')),
+      attachFile: Boolean(q('[data-testid="chain-attach-file"]')),
+      attachLabel: (() => {
+        const el = q('[data-testid="chain-attach-file"]');
+        return el ? el.getAttribute("aria-label") : null;
+      })(),
+      attachBox: box(q('[data-testid="chain-attach-file"]')),
       fileInput: Boolean(fileInput),
-      attachLink: Boolean(q('[data-testid="chain-attach-link"]')),
       log: Boolean(logButton),
+    },
+    // The controls the redesign removes must not linger beside the plus: one
+    // attachment control is the contract, and a leftover Image/Link arm (or the
+    // old URL field) is exactly the collision this rig exists to catch.
+    legacyComposer: {
+      attachImage: Boolean(q('[data-testid="chain-attach-image"]')),
+      attachLink: Boolean(q('[data-testid="chain-attach-link"]')),
+      linkUrlField: Boolean(q('[aria-label="Link URL"]')),
+      addLink: Boolean(q('[data-testid="chain-link-add"]')),
     },
     fileInput: fileInput
       ? {
@@ -255,20 +315,18 @@ const SAMPLE = `(() => {
       : null,
     log: logButton ? { label: text(logButton), disabled: logButton.disabled === true } : null,
     pending: {
+      // The image arm keeps its count/thumbnail reads; the file arm is a chip
+      // whose text carries the name and a human size.
       count: all('[data-testid="chain-pending-image"]').length,
+      imageWrap: Boolean(q('[data-testid="chain-pending-image-wrap"]')),
       image: imageOf(pending),
-      remove: Boolean(q('[aria-label="Remove the attached image"]')),
+      file: pendingFile
+        ? { present: true, text: text(pendingFile) }
+        : { present: false },
+      removeImage: Boolean(q('[aria-label="Remove the attached image"]')),
+      removeFile: Boolean(q('[aria-label="Remove the attached file"]')),
     },
     link: {
-      input: Boolean(q('[aria-label="Link URL"]')),
-      // The contract names [data-testid="chain-link-add"]; the shipped button
-      // also says "Add link", which the rig falls back to and reports, so a
-      // missing testid is a contract failure rather than a hidden behaviour.
-      add: Boolean(q('[data-testid="chain-link-add"]')),
-      addTestId: Boolean(q('[data-testid="chain-link-add"]')),
-      addByLabel: Boolean(
-        all("button").find((button) => text(button) === "Add link"),
-      ),
       remove: Boolean(q('[aria-label="Remove the attached link"]')),
       chip: chip
         ? {
@@ -292,38 +350,14 @@ const SAMPLE = `(() => {
     emptyLine: text(q('[data-testid="signal-empty"]')),
     projects: window.chainCaptureProjects ?? [],
     inbox: window.chainCaptureInbox ?? null,
-    // The shipped composer keeps one attachment per capture: each control is
-    // disabled by the other attachment being present, so the rig reads both.
-    attach: {
-      image: (() => {
-        const button = q('[data-testid="chain-attach-image"]');
-        return button
-          ? {
-              present: true,
-              disabled:
-                button.disabled === true ||
-                button.getAttribute("aria-disabled") === "true",
-            }
-          : { present: false, disabled: false };
-      })(),
-      link: (() => {
-        const button = q('[data-testid="chain-attach-link"]');
-        return button
-          ? {
-              present: true,
-              disabled:
-                button.disabled === true ||
-                button.getAttribute("aria-disabled") === "true",
-            }
-          : { present: false, disabled: false };
-      })(),
-    },
-    // The dock's own Life-Chain surface, which renders the same records.
+    // The dock's own Life-Chain surface, which renders the same records and
+    // carries the same Notebox name.
     dock: {
       surface: q(".chat-panel")
         ? q(".chat-panel").getAttribute("data-chat-surface")
         : null,
-      action: Boolean(q('.chat-panel [aria-label="Quick Notes"]')),
+      heading: text(q(".chat-panel__heading")),
+      action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
       items: all(".chat-panel__chain-item").map((item) => {
         const linkEl = item.querySelector(".chat-panel__chain-link");
         return {
@@ -341,6 +375,7 @@ const SAMPLE = `(() => {
     },
     creates: window.chainCaptureCreates ?? [],
     reads: window.chainCaptureReads ?? [],
+    fileReads: (window.chainCaptureFileReads ?? []).slice(),
     updates: window.chainCaptureUpdates ?? [],
     deletes: window.chainCaptureDeletes ?? [],
     calls: (window.chainCaptureCalls ?? []).slice(),
@@ -387,7 +422,7 @@ const setValue = (selector, value) => `(() => {
  * bar; clicking the rail row would only stay on the page.
  */
 const clickDockChain = `(() => {
-  const el = document.querySelector('.chat-panel [aria-label="Quick Notes"]');
+  const el = document.querySelector('.chat-panel [aria-label="Notebox"]');
   if (!el) return false;
   el.click();
   return true;
@@ -418,27 +453,6 @@ const clickText = (label) => `(() => {
   if (!el) return false;
   el.click();
   return true;
-})()`;
-
-/**
- * Add the typed link. The selector contract names
- * `[data-testid="chain-link-add"]`; the shipped button also carries the visible
- * label "Add link". The rig prefers the contract selector and falls back to the
- * label, reporting which one it used, so a missing testid fails the contract
- * check without making the behaviour unprovable.
- */
-const clickLinkAdd = `(() => {
-  const byTestId = document.querySelector('[data-testid="chain-link-add"]');
-  if (byTestId) {
-    byTestId.click();
-    return "testid";
-  }
-  const byLabel = Array.from(document.querySelectorAll("button")).find(
-    (button) => (button.textContent || "").trim() === "Add link",
-  );
-  if (!byLabel) return false;
-  byLabel.click();
-  return "label";
 })()`;
 
 const pressEnter = (selector, shift = false) => `(() => {
@@ -505,8 +519,8 @@ const dropPng = (targetSelector) => `(async () => {
 
 /**
  * Pick a real PNG the way the OS file dialog does: put a `File` on the hidden
- * input and fire the event React listens for. This is the path the Image control
- * opens; no dialog is ever shown to a hidden window.
+ * any-file input and fire the event React listens for. This is the path the one
+ * plus control opens; no dialog is ever shown to a hidden window.
  */
 const pickPng = `(() => {
   const input = document.querySelector('[data-testid="chain-file-input"]');
@@ -522,6 +536,43 @@ const pickPng = `(() => {
   data.items.add(file);
   input.files = data.files;
   input.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+})()`;
+
+/**
+ * Pick a generic file the way the OS dialog does: a real `File` with real bytes
+ * on the hidden any-file input. The composer must take it without an accept
+ * gate and hand the bytes to the bridge on Log.
+ */
+const pickFile = (name, mime, text) => `(() => {
+  const input = document.querySelector('[data-testid="chain-file-input"]');
+  if (!input) return "no file input";
+  const bytes = new TextEncoder().encode(${JSON.stringify(text)});
+  const file = new File([bytes], ${JSON.stringify(name)}, { type: ${JSON.stringify(mime)} });
+  const data = new DataTransfer();
+  data.items.add(file);
+  input.files = data.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+})()`;
+
+/**
+ * Paste text into the composer the way the clipboard does. The link arm is
+ * paste-only now, so this is the operator's gesture that attaches a URL — and
+ * the URL must become a chip, not text in the field.
+ */
+const pasteText = (text) => `(() => {
+  const el = document.querySelector('[aria-label="Log a signal"]');
+  if (!el) return false;
+  el.focus();
+  const data = new DataTransfer();
+  data.setData("text/plain", ${JSON.stringify(text)});
+  const event = new ClipboardEvent("paste", {
+    clipboardData: data,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
   return true;
 })()`;
 
@@ -541,6 +592,13 @@ async function main() {
     },
   });
   win.setContentSize(WIDE.width, WIDE.height);
+
+  // The file row's Save builds a Blob and clicks an `<a download>`; in Electron
+  // that raises the native download UI, which can stall the hidden window or
+  // leave a stray dialog on the display. The evidence this rig needs is the
+  // `signalChainReadFile` call that happens before the click, so the download
+  // itself is cancelled.
+  win.webContents.session.on("will-download", (_event, item) => item.cancel());
 
   // Console errors are the failure mode a broken selector cannot report: React 19
   // unmounts the tree on a throw, and the page would then be an empty sheet that
@@ -659,21 +717,28 @@ async function main() {
     checks.page = {
       route: landing.route,
       skin: landing.skin,
+      heading: landing.heading,
       activeRail: landing.activeRail,
       rail: landing.rail,
       presence: landing.presence,
+      legacyComposer: landing.legacyComposer,
       fileInput: landing.fileInput,
     };
     check("chain route", landing.route === "/chain", `route is ${JSON.stringify(landing.route)}`);
     check(
-      "the rail marks Quick Notes",
-      landing.activeRail === "Quick Notes",
+      "the rail marks Notebox",
+      landing.activeRail === "Notebox",
       `active rail row is ${JSON.stringify(landing.activeRail)}`,
     );
     check(
       "the rail carries the chain row",
-      landing.rail.some((item) => item.label === "Quick Notes" && item.href === "/chain"),
+      landing.rail.some((item) => item.label === "Notebox" && item.href === "/chain"),
       `rail is ${JSON.stringify(landing.rail)}`,
+    );
+    check(
+      "the page heading is Notebox",
+      landing.heading === "Notebox",
+      `page heading is ${JSON.stringify(landing.heading)}`,
     );
     check("the chain page is up", landing.presence.page, "no .signal-chain on the page");
     check("the composer is the shipped one", landing.presence.composer, "no [data-testid=chain-composer]");
@@ -682,13 +747,39 @@ async function main() {
       landing.presence.textarea && landing.textarea !== null,
       `textarea ${JSON.stringify(landing.textarea)}`,
     );
-    check("the image control is up", landing.presence.attachImage, "no [data-testid=chain-attach-image]");
-    check("the link control is up", landing.presence.attachLink, "no [data-testid=chain-attach-link]");
+    check(
+      "the composer has one plus attachment control",
+      landing.presence.attachFile && landing.presence.attachLabel === "Attach a file",
+      `attach ${JSON.stringify({ present: landing.presence.attachFile, label: landing.presence.attachLabel })}`,
+    );
+    // The contract puts the plus at the composer's bottom-left. A control that
+    // floats elsewhere is the wrong composer shape even when its testid matches.
+    check(
+      "the plus sits at the composer's bottom-left",
+      Boolean(landing.presence.attachBox && landing.presence.composerBox) &&
+        landing.presence.attachBox.left <=
+          landing.presence.composerBox.left +
+            Math.max(120, landing.presence.composerBox.width * 0.25) &&
+        landing.presence.attachBox.top >=
+          landing.presence.composerBox.top + landing.presence.composerBox.height / 2,
+      `attach ${JSON.stringify(landing.presence.attachBox)} composer ${JSON.stringify(landing.presence.composerBox)}`,
+    );
     check("the Log control is up", landing.presence.log, "no button labelled Log");
     check(
-      "the file input is a hidden image picker",
-      landing.fileInput.present && landing.fileInput.type === "file",
+      "the file input is a hidden any-file picker",
+      landing.fileInput.present &&
+        landing.fileInput.type === "file" &&
+        landing.fileInput.accept === null &&
+        landing.fileInput.hidden === true,
       `file input ${JSON.stringify(landing.fileInput)}`,
+    );
+    check(
+      "the old Image and Link arms are gone",
+      landing.legacyComposer.attachImage === false &&
+        landing.legacyComposer.attachLink === false &&
+        landing.legacyComposer.linkUrlField === false &&
+        landing.legacyComposer.addLink === false,
+      `legacy controls ${JSON.stringify(landing.legacyComposer)}`,
     );
     check(
       "the seeded chain is the fixture",
@@ -795,7 +886,7 @@ async function main() {
     checks.pending = {
       count: pending.pending.count,
       image: pending.pending.image,
-      remove: pending.pending.remove,
+      removeImage: pending.pending.removeImage,
     };
     check(
       "the dropped picture becomes a pending thumbnail",
@@ -810,16 +901,13 @@ async function main() {
     );
     check(
       "the pending image has its remove control",
-      pending.pending.remove,
+      pending.pending.removeImage,
       "no [aria-label=Remove the attached image]",
     );
-    checks.exclusivity = {
-      linkDisabledWithPicture: pending.attach.link.disabled === true,
-    };
     check(
-      "the Link control is disabled while a picture is pending",
-      pending.attach.link.disabled === true,
-      `link control ${JSON.stringify(pending.attach.link)}`,
+      "one attachment at a time: a dropped picture clears any file chip",
+      pending.pending.file.present === false,
+      `pending ${JSON.stringify(pending.pending)}`,
     );
 
     // The remove control clears the picture, and a fresh drop puts it back: the
@@ -1006,117 +1094,219 @@ async function main() {
     await sleep(250);
     await capture("image-only");
 
-    // ── 5. the link control: refusal, chip, and a link capture ─────────────
+    // ── 5. a non-image file through the one plus control ───────────────────
+    // The composer takes any file: the pending chip names it and says its size,
+    // the bridge gets real bytes and mime, and the row paints a file card whose
+    // Save control asks the bridge for the stored bytes.
+    const fileDescription = "The brief for the desk rebuild.";
+    const pickedFile = await js(
+      pickFile(ATTACHMENT_FILE.name, ATTACHMENT_FILE.mime, ATTACHMENT_FILE.text),
+    );
+    check(
+      "the plus control handed the page a file",
+      pickedFile === true,
+      `picker returned ${JSON.stringify(pickedFile)}`,
+    );
+    const filePending = await waitState(
+      (state) => state.pending.file.present === true,
+      "the pending file chip",
+    );
+    const pendingFileText = filePending.pending.file.text ?? "";
+    checks.pendingFile = {
+      text: pendingFileText,
+      remove: filePending.pending.removeFile,
+      imageCount: filePending.pending.count,
+    };
+    check(
+      "a non-image file becomes a pending file chip",
+      filePending.pending.file.present === true &&
+        pendingFileText.includes(ATTACHMENT_FILE.name),
+      `pending file ${JSON.stringify(filePending.pending.file)}`,
+    );
+    check(
+      "the pending file chip says its size",
+      SIZE_PATTERN.test(pendingFileText),
+      `chip ${JSON.stringify(pendingFileText)}`,
+    );
+    check(
+      "the pending file has its remove control",
+      filePending.pending.removeFile,
+      "no [aria-label=Remove the attached file]",
+    );
+    check(
+      "one attachment at a time: no pending picture beside the file",
+      filePending.pending.count === 0 && filePending.pending.imageWrap === false,
+      `pending ${JSON.stringify(filePending.pending)}`,
+    );
+    await js(setValue('[aria-label="Log a signal"]', fileDescription));
+    await waitState(
+      (state) => state.log !== null && state.log.disabled === false,
+      "Log to arm with a described file attached",
+    );
+    await sleep(250);
+    await capture("pending-file");
+    await js(clickText("Log"));
+    await waitState(
+      (state) =>
+        state.creates.length === 4 &&
+        state.counts.rows === expected.seeded.count + 4,
+      "the file capture to land on the chain",
+    );
+    const fileLogged = await waitState(
+      (state) => {
+        const row = rowWithBody(state, fileDescription);
+        return Boolean(row && row.attachment === "file" && row.file?.present);
+      },
+      "the file row to paint its card",
+    );
+    const fileCreate = fileLogged.creates[3];
+    const fileRow = rowWithBody(fileLogged, fileDescription);
+    const fileRelPath = fileCreate?.attachment?.relPath;
+    checks.fileCapture = {
+      create: fileCreate,
+      row: fileRow,
+      expectedBytes: ATTACHMENT_FILE.bytes,
+      pendingText: pendingFileText,
+      reads: fileLogged.fileReads,
+      bytes: fileLogged.store?.bytes,
+    };
+    check(
+      "the bridge received a file attachment",
+      fileCreate?.attachment?.kind === "file",
+      `attachment ${JSON.stringify(fileCreate?.attachment)}`,
+    );
+    check(
+      "the file kept its name",
+      fileCreate?.attachment?.name === ATTACHMENT_FILE.name,
+      `name ${JSON.stringify(fileCreate?.attachment?.name)}`,
+    );
+    check(
+      "the file kept its mime",
+      fileCreate?.attachment?.mime === ATTACHMENT_FILE.mime,
+      `mime ${JSON.stringify(fileCreate?.attachment?.mime)}`,
+    );
+    check(
+      "the bridge received the file bytes",
+      fileCreate?.attachment?.byteLength === ATTACHMENT_FILE.bytes,
+      `byte length ${JSON.stringify(fileCreate?.attachment?.byteLength)} vs ${ATTACHMENT_FILE.bytes}`,
+    );
+    check(
+      "the vault minted a signal-chain path with the file's extension",
+      typeof fileRelPath === "string" &&
+        /^\.lifequest\/signal-chain\/files\/[0-9a-f-]+\.pdf$/.test(fileRelPath),
+      `path ${JSON.stringify(fileRelPath)}`,
+    );
+    check(
+      "the vault stored the file bytes under the path it minted",
+      Boolean(fileRelPath) &&
+        fileLogged.store?.bytes?.[fileRelPath] === ATTACHMENT_FILE.bytes,
+      `stored ${JSON.stringify(fileLogged.store?.bytes)} for ${JSON.stringify(fileRelPath)}`,
+    );
+    check(
+      "the row is marked file",
+      fileRow?.attachment === "file",
+      `row attachment ${JSON.stringify(fileRow?.attachment)}`,
+    );
+    check(
+      "the file row paints the stored name",
+      fileRow?.file?.name === ATTACHMENT_FILE.name,
+      `card ${JSON.stringify(fileRow?.file)}`,
+    );
+    check(
+      "the file row paints a human size",
+      SIZE_PATTERN.test(fileRow?.file?.text ?? ""),
+      `card text ${JSON.stringify(fileRow?.file?.text)}`,
+    );
+    check(
+      "the file row offers Save",
+      fileRow?.file?.save === true,
+      `card ${JSON.stringify(fileRow?.file)}`,
+    );
+    check(
+      "the file row paints the description",
+      (fileRow?.body ?? "").includes(fileDescription),
+      `row body ${JSON.stringify(fileRow?.body)}`,
+    );
+    // Save asks the bridge for the stored bytes; the download itself belongs to
+    // the window, so the evidence is the read by the relPath the bridge minted.
+    const saveClicked = await js(clickAria("Save the attached file"));
+    check(
+      "the Save control is clickable",
+      saveClicked === true,
+      `Save click ${JSON.stringify(saveClicked)}`,
+    );
+    const fileSaved = await waitState(
+      (state) =>
+        Boolean(fileRelPath) && (state.fileReads ?? []).includes(fileRelPath),
+      "Save to read the file back through the bridge",
+    );
+    const savedRow = rowWithBody(fileSaved, fileDescription);
+    checks.fileCapture.save = {
+      clicked: saveClicked === true,
+      reads: fileSaved.fileReads,
+      error: (savedRow?.file?.text ?? "").includes("missing")
+        ? savedRow?.file?.text ?? null
+        : null,
+    };
+    check(
+      "Save read the file back by its minted path",
+      (fileSaved.fileReads ?? []).includes(fileRelPath),
+      `reads ${JSON.stringify(fileSaved.fileReads)}`,
+    );
+    check(
+      "the file row does not report the file missing",
+      !(savedRow?.file?.text ?? "").includes("missing"),
+      `card text ${JSON.stringify(savedRow?.file?.text)}`,
+    );
+    await sleep(250);
+    const fileShot = await captureFile("chain-inbox-file.png");
+    const fileShotBytes = fs.statSync(fileShot).size;
+    checks.fileCapture.screenshot = {
+      name: path.basename(fileShot),
+      bytes: fileShotBytes,
+    };
+    check(
+      "capture chain-inbox-file.png is a real picture",
+      fileShotBytes > 20_000,
+      `${fileShotBytes} bytes`,
+    );
+
+    // ── 6. a link, by pasting a URL into the textarea ──────────────────────
+    // The link arm is paste-only now: the URL becomes a chip and must not be
+    // left in the field, and the capture still hands the bridge a link.
     const linkUrl = "https://www.are.na/editorial/attention";
     const linkDescription = "What attention costs, and what it buys.";
-    await js(click('[data-testid="chain-attach-link"]'));
-    const linkOpen = await waitState(
-      (state) => state.link.input === true && state.link.add === true,
-      "the link URL field to open",
-    );
-    checks.linkField = {
-      input: linkOpen.link.input,
-      add: linkOpen.link.add,
-      addTestId: linkOpen.link.addTestId,
-    };
+    const pasted = await js(pasteText(linkUrl));
     check(
-      "the link control opens a URL field and an Add control",
-      linkOpen.link.input && linkOpen.link.add,
-      `link ${JSON.stringify(linkOpen.link)}`,
+      "the paste reached the composer",
+      pasted === true,
+      `paste returned ${JSON.stringify(pasted)}`,
     );
-
-    await js(setValue('[aria-label="Link URL"]', "ftp://example.com/file"));
-    const refusedAdd = await js(clickLinkAdd);
-    const linkRefused = await waitState(
-      (state) => (state.link.error ?? "") !== "" && state.link.chip.present === false,
-      "the invalid URL error",
-    );
-    checks.linkRefused = {
-      error: linkRefused.link.error,
-      chip: linkRefused.link.chip,
-      creates: linkRefused.creates.length,
-    };
-    check(
-      "an invalid URL leaves an error",
-      (linkRefused.link.error ?? "").length > 0,
-      `error ${JSON.stringify(linkRefused.link.error)}`,
-    );
-    check(
-      "an invalid URL leaves no chip",
-      linkRefused.link.chip.present === false,
-      `chip ${JSON.stringify(linkRefused.link.chip)}`,
-    );
-    check(
-      "an invalid URL writes nothing",
-      linkRefused.creates.length === 3,
-      `the bridge saw ${linkRefused.creates.length} create(s)`,
-    );
-
-    await js(setValue('[aria-label="Link URL"]', linkUrl));
-    const chippedAdd = await js(clickLinkAdd);
-    const linkChipped = await waitState(
+    const linkPasted = await waitState(
       (state) => state.link.chip.present === true,
-      "the link chip",
+      "the pasted URL to become a link chip",
     );
-    checks.linkChip = {
-      chip: linkChipped.link.chip,
-      error: linkChipped.link.error,
-      // Which control actually added the link: the contracted testid, or the
-      // visible-label fallback. A contract-exact run says "testid" for all three.
-      addControl: chippedAdd === "testid" ? "testid" : String(chippedAdd),
-      addClicks: [refusedAdd, chippedAdd],
+    checks.linkPaste = {
+      text: linkUrl,
+      chip: linkPasted.link.chip,
+      textarea: linkPasted.textarea?.value ?? null,
+      error: linkPasted.link.error,
     };
     check(
-      "the Add control is the contracted [data-testid=chain-link-add]",
-      linkOpen.link.addTestId === true &&
-        refusedAdd === "testid" &&
-        chippedAdd === "testid",
-      `addTestId ${JSON.stringify(linkOpen.link.addTestId)}, clicks ${JSON.stringify([refusedAdd, chippedAdd])}`,
+      "a pasted URL becomes a chip that shows the host",
+      (linkPasted.link.chip?.text ?? "").includes("are.na"),
+      `chip ${JSON.stringify(linkPasted.link.chip)}`,
     );
     check(
-      "a valid URL becomes a chip that shows the host",
-      (linkChipped.link.chip?.text ?? "").includes("are.na"),
-      `chip ${JSON.stringify(linkChipped.link.chip)}`,
+      "the pasted URL is not left in the textarea",
+      !(linkPasted.textarea?.value ?? "").includes(linkUrl),
+      `field holds ${JSON.stringify(linkPasted.textarea?.value)}`,
     );
     check(
-      "a valid URL is not an error",
-      (linkChipped.link.error ?? "") === "",
-      `error ${JSON.stringify(linkChipped.link.error)}`,
+      "the paste is not an error",
+      (linkPasted.link.error ?? "") === "",
+      `error ${JSON.stringify(linkPasted.link.error)}`,
     );
-    checks.exclusivity.imageDisabledWithLink =
-      linkChipped.attach.image.disabled === true;
-    check(
-      "the Image control is disabled while a link chip is attached",
-      linkChipped.attach.image.disabled === true,
-      `image control ${JSON.stringify(linkChipped.attach.image)}`,
-    );
-
-    // Remove and re-add through the operator's own controls, so the remove arm of
-    // the contract is exercised before the capture that follows.
-    await js(clickAria("Remove the attached link"));
-    const linkRemoved = await waitState(
-      (state) => state.link.chip.present === false,
-      "the link chip to be removed",
-    );
-    check(
-      "the remove control detaches the link",
-      linkRemoved.link.chip.present === false,
-      `chip ${JSON.stringify(linkRemoved.link.chip)}`,
-    );
-    if (!linkRemoved.link.input) {
-      await js(click('[data-testid="chain-attach-link"]'));
-      await waitState((state) => state.link.input === true, "the URL field to reopen");
-    }
-    await js(setValue('[aria-label="Link URL"]', linkUrl));
-    const readdedAdd = await js(clickLinkAdd);
-    checks.linkReadd = { addControl: String(readdedAdd) };
-    check(
-      "the Add control is the testid on the re-add too",
-      readdedAdd === "testid",
-      `re-add clicked by ${JSON.stringify(readdedAdd)}`,
-    );
-    await waitState((state) => state.link.chip.present === true, "the link chip to come back");
-
     await js(setValue('[aria-label="Log a signal"]', linkDescription));
     await waitState(
       (state) => state.log !== null && state.log.disabled === false,
@@ -1125,10 +1315,11 @@ async function main() {
     await js(clickText("Log"));
     const linkLogged = await waitState(
       (state) =>
-        state.creates.length === 4 && state.counts.rows === expected.seeded.count + 4,
+        state.creates.length === 5 &&
+        state.counts.rows === expected.seeded.count + 5,
       "the link capture to land on the chain",
     );
-    const linkCreate = linkLogged.creates[3];
+    const linkCreate = linkLogged.creates[4];
     const linkRow = rowWithBody(linkLogged, linkDescription);
     checks.linkCapture = {
       create: linkCreate,
@@ -1172,13 +1363,73 @@ async function main() {
     check(
       "the link capture cleared the composer",
       linkLogged.link.chip.present === false &&
-        linkLogged.link.input === false &&
         linkLogged.textarea?.value === "" &&
         linkLogged.log?.disabled === true,
       `link ${JSON.stringify(linkLogged.link)}, field ${JSON.stringify(linkLogged.textarea)}`,
     );
     await sleep(250);
     await capture("link");
+
+    // ── 7. one attachment at a time: a second kind replaces the pending one ──
+    const exclusivity = {};
+    await js(pickPng);
+    const imagePendingAgain = await waitState(
+      (state) => state.pending.count === 1 && state.pending.file.present === false,
+      "the picked image to become the pending attachment",
+    );
+    exclusivity.imagePending = {
+      imageCount: imagePendingAgain.pending.count,
+      file: imagePendingAgain.pending.file.present,
+    };
+    await js(pickFile(ATTACHMENT_FILE.name, ATTACHMENT_FILE.mime, ATTACHMENT_FILE.text));
+    const fileReplaced = await waitState(
+      (state) => state.pending.file.present === true && state.pending.count === 0,
+      "the file to replace the pending image",
+    );
+    exclusivity.fileReplacesImage = {
+      imageCount: fileReplaced.pending.count,
+      file: fileReplaced.pending.file,
+    };
+    check(
+      "a file replaces the pending picture",
+      fileReplaced.pending.file.present === true && fileReplaced.pending.count === 0,
+      `pending ${JSON.stringify(fileReplaced.pending)}`,
+    );
+    const pastedAgain = await js(pasteText(linkUrl));
+    const linkReplaced = await waitState(
+      (state) => state.link.chip.present === true && state.pending.file.present === false,
+      "the pasted link to replace the pending file",
+    );
+    exclusivity.linkReplacesFile = {
+      chip: linkReplaced.link.chip,
+      pendingFile: linkReplaced.pending.file.present,
+      imageCount: linkReplaced.pending.count,
+    };
+    check(
+      "a pasted link replaces the pending file",
+      linkReplaced.link.chip.present === true &&
+        linkReplaced.pending.file.present === false,
+      `link ${JSON.stringify(linkReplaced.link.chip)}, pending ${JSON.stringify(linkReplaced.pending)}`,
+    );
+    check(
+      "the exclusivity paste reached the composer",
+      pastedAgain === true,
+      `paste returned ${JSON.stringify(pastedAgain)}`,
+    );
+    await js(clickAria("Remove the attached link"));
+    const linkCleared = await waitState(
+      (state) =>
+        state.link.chip.present === false &&
+        state.counts.rows === expected.seeded.count + 5,
+      "the remove control to leave the composer empty",
+    );
+    exclusivity.linkRemoved = linkCleared.link.chip.present === false;
+    check(
+      "the remove control clears the pasted link",
+      linkCleared.link.chip.present === false,
+      `chip ${JSON.stringify(linkCleared.link.chip)}`,
+    );
+    checks.exclusivity = exclusivity;
 
     // ── 6. the seeded fixture rows, and the run's hygiene ──────────────────
     const final = await sample();
@@ -1234,8 +1485,8 @@ async function main() {
     };
     check(
       "every capture is on the chain",
-      final.counts.rows === expected.seeded.count + 4,
-      `${final.counts.rows} rows vs ${expected.seeded.count + 4}`,
+      final.counts.rows === expected.seeded.count + CAPTURES_DRIVEN,
+      `${final.counts.rows} rows vs ${expected.seeded.count + CAPTURES_DRIVEN}`,
     );
     check(
       "the page is still the shipped chain page",
@@ -1570,13 +1821,13 @@ async function main() {
 
     await js(click('[data-testid="signal-filter-status-all"]'));
     const allFilter = await waitState(
-      (state) => state.rows.length === expected.seeded.count + 4,
+      (state) => state.rows.length === expected.seeded.count + CAPTURES_DRIVEN,
       "the all filter to restore the chain",
     );
     check(
       "the all filter restores every row",
-      allFilter.rows.length === expected.seeded.count + 4,
-      `${allFilter.rows.length} rows vs ${expected.seeded.count + 4}`,
+      allFilter.rows.length === expected.seeded.count + CAPTURES_DRIVEN,
+      `${allFilter.rows.length} rows vs ${expected.seeded.count + CAPTURES_DRIVEN}`,
     );
     check(
       "the all chip reads as pressed again",
@@ -1638,15 +1889,16 @@ async function main() {
       screenshot: { name: path.basename(inboxShot), bytes: inboxShotBytes },
     };
 
-    // ── 7. the dock's Life-Chain view paints the same attachments ──────────
+    // ── 7. the dock's Notebox view paints the same attachments ─────────────
     // The page is the capture surface; the dock is the second surface the same
     // records appear on, so a picture or a link written here has to draw there
-    // too. The dock's own chain read happens when the surface opens.
+    // too. The dock's own chain read happens when the surface opens, and the
+    // surface and its control carry the renamed page's name.
     const dockClicked = await js(clickDockChain);
     const dockChain = await waitState(
       (state) =>
         state.dock.surface === "chain" &&
-        state.dock.items.length === expected.seeded.count + 4,
+        state.dock.items.length === expected.seeded.count + CAPTURES_DRIVEN,
       "the dock's chain surface to list the chain",
     );
     check(
@@ -1656,8 +1908,18 @@ async function main() {
     );
     check(
       "the dock lists the same chain",
-      dockChain.dock.items.length === expected.seeded.count + 4,
-      `${dockChain.dock.items.length} rows vs ${expected.seeded.count + 4}`,
+      dockChain.dock.items.length === expected.seeded.count + CAPTURES_DRIVEN,
+      `${dockChain.dock.items.length} rows vs ${expected.seeded.count + CAPTURES_DRIVEN}`,
+    );
+    check(
+      "the dock's chain surface is named Notebox",
+      dockChain.dock.heading === "Notebox",
+      `heading ${JSON.stringify(dockChain.dock.heading)}`,
+    );
+    check(
+      "the dock control is labelled Notebox",
+      dockChain.dock.action === true,
+      `action ${JSON.stringify(dockChain.dock.action)}`,
     );
     // The seeded picture is the oldest attachment, so scroll the dock's chain
     // list back to its top before waiting: a lazy `<img>` below the fold is not
@@ -1693,6 +1955,7 @@ async function main() {
     checks.dock = {
       clicked: dockClicked === true,
       surface: dockPainted.dock.surface,
+      heading: dockPainted.dock.heading,
       action: dockPainted.dock.action,
       items: dockPainted.dock.items.length,
       seededImage: dockImageItem?.image ?? null,

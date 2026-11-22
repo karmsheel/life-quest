@@ -16,12 +16,15 @@ import {
   updateSignal,
   vaultPaths,
 } from "@lifequest/vault-core";
+import * as vaultCore from "@lifequest/vault-core";
 
 /**
- * Quick Notes becomes the vault's Inbox: the signal store gains triage fields
+ * The Notebox is the vault's Inbox: the signal store gains triage fields
  * (`projectId`, `status`, `priority`, `capturedFrom`) and the MCP door gains
  * `update_signal` (a direct write, not Decision-gated) plus status/project
- * filters on `list_signals`.
+ * filters on `list_signals`. A capture may also carry one general FILE
+ * attachment — any file, not only a picture — stored as bytes under
+ * `.lifequest/signal-chain/files/` and named by the record.
  *
  * WRITTEN BEFORE THE BACKEND, ON PURPOSE (AGENTS.md: "Never write unit tests
  * after you write code"). The model fields exist in `types.ts`; the writer
@@ -52,6 +55,17 @@ import {
  *     that was written.
  *  6. The door's refusal is satisfied by any string. The message must name the
  *     offending value or the allowed set, and the word for the field.
+ *  7. A file attachment "works" because the bytes were written somewhere. The
+ *     cases read the bytes back at the record's own `relPath`, compare them to
+ *     the uploaded bytes, and fetch them again through `readSignalFile`, so a
+ *     record naming an unwritten path cannot pass.
+ *  8. A refused file (empty, over the ceiling, active content) leaves an orphan
+ *     in `signal-chain/files/`. Every refusal counts BOTH the records and the
+ *     expected-to-be-written files directory, not just the record list.
+ *  9. The extensionless case passes because the store secretly appended a type.
+ *     The `relPath` regex for it requires the bare uuid with no dot suffix.
+ * 10. A file attachment is lost by `listSignals` or by an unrelated update. Both
+ *     are asserted to keep the same attachment object.
  *
  * Deterministic and offline: each case builds a throwaway vault with
  * `fs.mkdtempSync` + `createVault`, talks only to the store on local disk, and
@@ -60,7 +74,10 @@ import {
  *   cd apps/desktop && node --experimental-strip-types --test tests/signal-inbox-unit.test.ts
  */
 
-/** Where a refused write must not have left anything: count both views. */
+/**
+ * Where a refused write must not have left anything: count BOTH the records the
+ * chain lists and the JSON files on disk. Used by the triage refusals.
+ */
 async function chainCounts(root: string) {
   const listed = await listSignals(root);
   assert.equal(listed.ok, true, `listSignals failed: ${listed.ok ? "" : listed.error}`);
@@ -69,6 +86,83 @@ async function chainCounts(root: string) {
     ? fs.readdirSync(dir).filter((name) => name.endsWith(".json")).length
     : 0;
   return { records: listed.ok ? listed.value.records.length : -1, files };
+}
+
+/**
+ * Where a refused attachment must not have left anything: the records the chain
+ * lists plus the ATTACHMENT files directory, so an orphan byte file is caught
+ * even when no record was written.
+ */
+async function storeCounts(root: string) {
+  const listed = await listSignals(root);
+  assert.equal(listed.ok, true, `listSignals failed: ${listed.ok ? "" : listed.error}`);
+  return {
+    records: listed.ok ? listed.value.records.length : -1,
+    files: attachmentFiles(root).length,
+  };
+}
+
+/** The bytes the store keeps: `.lifequest/signal-chain/files/`. */
+function attachmentFiles(root: string): string[] {
+  const dir = vaultPaths(root).signalChainFilesDir;
+  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+}
+
+/** Typed-array identity is a prototype question; the bytes are what matters. */
+function assertBytesEqual(actual: Uint8Array, expected: Uint8Array, message: string): void {
+  assert.equal(
+    Buffer.from(actual).equals(Buffer.from(expected)),
+    true,
+    message,
+  );
+}
+
+/**
+ * The generic-file surface (`readSignalFile`, `SIGNAL_FILE_MAX_BYTES`, the
+ * `file` attachment kind) lands separately from the triage surface, in parallel
+ * on this shared tree. It is read off the namespace import so that while it is
+ * still landing, cases A-E keep running and the FILE cases fail BY NAME with
+ * "vault-core does not export ...", instead of a missing named import failing
+ * the whole module before any case runs.
+ */
+function vaultExport(name: string): unknown {
+  return (vaultCore as unknown as Record<string, unknown>)[name];
+}
+
+type FileReadResult =
+  | { ok: true; value: { bytes: Uint8Array; mime: string } }
+  | { ok: false; error: string };
+
+function requireFileRead(): (root: string, relPath: string) => Promise<FileReadResult> {
+  const read = vaultExport("readSignalFile");
+  assert.equal(
+    typeof read,
+    "function",
+    "vault-core does not export readSignalFile — the generic-file writer has not landed",
+  );
+  return read as (root: string, relPath: string) => Promise<FileReadResult>;
+}
+
+function requireFileMax(): number {
+  const max = vaultExport("SIGNAL_FILE_MAX_BYTES");
+  assert.equal(
+    typeof max,
+    "number",
+    "vault-core does not export SIGNAL_FILE_MAX_BYTES — the generic-file writer has not landed",
+  );
+  return max as number;
+}
+
+/** `readSignalFile` that must succeed, with the bytes it returned. */
+async function readFileOk(root: string, relPath: string) {
+  const result = await requireFileRead()(root, relPath);
+  assert.equal(
+    result.ok,
+    true,
+    `readSignalFile refused ${relPath}: ${result.ok ? "" : result.error}`,
+  );
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
 }
 
 function chainFiles(root: string): string[] {
@@ -104,13 +198,13 @@ function closeRig(rig: { dir: string }): void {
 }
 
 /**
- * The five throwaway vaults are built once, concurrently, before the first
- * case: `createVault` seeds areas and documents and is the only costly part of
- * this file, and building them in parallel keeps the whole run a few seconds
- * even on a loaded machine. Each case still gets its own vault — nothing one
- * case writes can reach another — and closes it when done.
+ * The throwaway vaults are built once, concurrently, before the first case:
+ * `createVault` seeds areas and documents and is the only costly part of this
+ * file, and building them in parallel keeps the whole run a few seconds even on
+ * a loaded machine. Each case still gets its own vault — nothing one case writes
+ * can reach another — and closes it when done.
  */
-const RIG_LABELS = ["A", "B", "C", "D", "E"];
+const RIG_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 const rigPool: Record<string, { dir: string; root: string }> = {};
 
 before(async () => {
@@ -222,7 +316,7 @@ function assertNamesRefusal(
   );
 }
 
-describe("Quick Notes inbox: the signal store's triage fields and the MCP door", () => {
+describe("Notebox inbox: the signal store's triage fields, the MCP door, and generic file attachments", () => {
   it("A. creates with project/status/priority/capturedFrom, updates them, and persists them in the store file", async () => {
     const rig = rigFor("A");
     try {
@@ -639,6 +733,256 @@ describe("Quick Notes inbox: the signal store's triage fields and the MCP door",
       const afterRecord = recordOf((await listedRecords(rig.root)).records, created.id);
       assert.deepEqual(afterRecord, beforeRecord, "a refused update changed the stored record");
       assert.deepEqual(await chainCounts(rig.root), beforeCounts, "a refused update changed the chain");
+    } finally {
+      closeRig(rig);
+    }
+  });
+
+  it("F. keeps a generic file attachment: bytes on disk, list and update keep it, readSignalFile returns it", async () => {
+    const rig = rigFor("F");
+    try {
+      // Fail by name (not at module load) while the generic-file writer lands.
+      requireFileRead();
+      const bytes = new Uint8Array(
+        Buffer.from(
+          "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n",
+          "utf8",
+        ),
+      );
+
+      // body is empty: a file attachment is the whole capture, like an image.
+      const created = await createOk(rig.root, {
+        type: "idea",
+        body: "",
+        attachment: { kind: "file", bytes, name: "brief.pdf", mime: "application/pdf" },
+      });
+      const attachment = created.attachment as {
+        kind: string;
+        relPath: string;
+        name: string;
+        mime: string;
+        size: number;
+      };
+      assert.ok(attachment, "the file attachment was dropped from the returned record");
+      assert.equal(attachment.kind, "file", "the attachment came back as the wrong kind");
+      assert.equal(attachment.name, "brief.pdf", "the stored name is not the uploaded name");
+      assert.equal(attachment.mime, "application/pdf", "the stored mime is not the uploaded mime");
+      assert.equal(attachment.size, bytes.byteLength, "the stored size is not the uploaded byte length");
+      assert.match(
+        attachment.relPath,
+        /^\.lifequest\/signal-chain\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/,
+        `the stored path is not the minted signal-chain file path: ${attachment.relPath}`,
+      );
+
+      // The bytes are really in the vault, at the path the record names.
+      const diskPath = path.join(rig.root, ...attachment.relPath.split("/"));
+      assert.equal(fs.existsSync(diskPath), true, `no bytes were stored at ${attachment.relPath}`);
+      assertBytesEqual(fs.readFileSync(diskPath), bytes, "the bytes on disk differ from the uploaded file");
+
+      // The record FILE itself carries the attachment, not only the return value.
+      const onDiskAttachment = readRecordFile(rig.root, created.id).attachment as Record<string, unknown>;
+      assert.equal(onDiskAttachment.kind, "file", "the record file does not carry a file attachment");
+      assert.equal(onDiskAttachment.size, bytes.byteLength, "the record file's size is not the byte length");
+      assert.equal(onDiskAttachment.mime, "application/pdf", "the record file's mime is not the uploaded mime");
+
+      // A fresh parse of the store keeps the same attachment.
+      assert.deepEqual(
+        recordOf((await listedRecords(rig.root)).records, created.id).attachment,
+        created.attachment,
+        "listSignals lost or changed the file attachment",
+      );
+
+      // An update that does not mention the attachment keeps it.
+      const updated = await updateOk(rig.root, created.id, { title: "Brief for the desk rebuild" });
+      assert.deepEqual(updated.attachment, created.attachment, "a title update dropped the file attachment");
+      assert.deepEqual(
+        recordOf((await listedRecords(rig.root)).records, created.id).attachment,
+        created.attachment,
+        "the store lost the file attachment after an update",
+      );
+
+      // The guarded read path returns the same bytes for the minted relPath.
+      const readBack = await readFileOk(rig.root, attachment.relPath);
+      assertBytesEqual(readBack.bytes, bytes, "readSignalFile returned different bytes");
+      assert.equal(typeof readBack.mime, "string", "readSignalFile returned no mime");
+      assert.ok(readBack.mime.length > 0, "readSignalFile returned an empty mime");
+
+      // A path the store did not mint is refused by name, never reparsed.
+      const foreign = await requireFileRead()(rig.root, "../../../etc/passwd");
+      assert.equal(foreign.ok, false, "readSignalFile read a path outside the signal-chain files dir");
+      if (!foreign.ok) {
+        assert.match(
+          foreign.error,
+          /invalid|path|file/i,
+          `the foreign-path refusal does not name the path: ${JSON.stringify(foreign.error)}`,
+        );
+      }
+
+      // A minted-SHAPE path with no file behind it reports the file is missing,
+      // not an empty read.
+      const missing = await requireFileRead()(
+        rig.root,
+        ".lifequest/signal-chain/files/00000000-0000-4000-8000-0000000000ff.pdf",
+      );
+      assert.equal(missing.ok, false, "readSignalFile invented bytes for a missing file");
+      if (!missing.ok) {
+        assert.match(
+          missing.error,
+          /missing/i,
+          `the missing-file refusal does not say the file is missing: ${JSON.stringify(missing.error)}`,
+        );
+      }
+    } finally {
+      closeRig(rig);
+    }
+  });
+
+  it("G. a name with no extension stores with no extension in relPath and reads back", async () => {
+    const rig = rigFor("G");
+    try {
+      requireFileRead();
+      const bytes = new Uint8Array(Buffer.from("notes with no extension", "utf8"));
+
+      // The renderer sends `mime: file.type || ""`, so an empty mime is normal
+      // for an unknown type; the store must fall back, not write "".
+      const created = await createOk(rig.root, {
+        type: "other",
+        body: "",
+        attachment: { kind: "file", bytes, name: "notes", mime: "" },
+      });
+      const attachment = created.attachment as {
+        kind: string;
+        relPath: string;
+        name: string;
+        mime: string;
+        size: number;
+      };
+      assert.ok(attachment, "the extensionless file attachment was dropped");
+      assert.equal(attachment.kind, "file");
+      assert.equal(attachment.name, "notes");
+      assert.equal(
+        attachment.mime,
+        "application/octet-stream",
+        "an empty mime did not fall back to application/octet-stream",
+      );
+      assert.match(
+        attachment.relPath,
+        /^\.lifequest\/signal-chain\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        `an extensionless name did not store as the bare uuid: ${attachment.relPath}`,
+      );
+
+      const diskPath = path.join(rig.root, ...attachment.relPath.split("/"));
+      assert.equal(fs.existsSync(diskPath), true, `no extensionless bytes were stored at ${attachment.relPath}`);
+      assertBytesEqual(fs.readFileSync(diskPath), bytes, "the extensionless bytes on disk differ");
+      const readBack = await readFileOk(rig.root, attachment.relPath);
+      assertBytesEqual(readBack.bytes, bytes, "readSignalFile did not read the extensionless file back");
+    } finally {
+      closeRig(rig);
+    }
+  });
+
+  it("H. refuses an empty file and a file over the 25 MB ceiling, writing nothing", async () => {
+    const rig = rigFor("H");
+    try {
+      const max = requireFileMax();
+      assert.equal(
+        max,
+        25 * 1024 * 1024,
+        "SIGNAL_FILE_MAX_BYTES is not the 25 MB ceiling in the contract",
+      );
+
+      // A stored file first, so "unchanged" is a non-zero count.
+      await createOk(rig.root, {
+        type: "idea",
+        body: "",
+        attachment: {
+          kind: "file",
+          bytes: new Uint8Array([1, 2, 3]),
+          name: "keep.bin",
+          mime: "application/octet-stream",
+        },
+      });
+      const before = await storeCounts(rig.root);
+      assert.equal(before.records, 1, "the baseline capture is not listed");
+      assert.equal(before.files, 1, "the baseline file is not in the files directory");
+
+      const empty = await createSignal(rig.root, {
+        type: "idea",
+        body: "",
+        attachment: { kind: "file", bytes: new Uint8Array(0), name: "empty.pdf", mime: "application/pdf" },
+      });
+      assert.equal(empty.ok, false, "an empty file was stored");
+      if (!empty.ok) {
+        assert.match(empty.error, /empty/i, `the refusal does not name an empty file: ${JSON.stringify(empty.error)}`);
+      }
+      assert.deepEqual(await storeCounts(rig.root), before, "a refused empty file wrote a record or a stored file");
+
+      // 25 MB + 1 byte. The size check runs before the bytes are copied, so the
+      // zero-filled array is never touched; one 25 MB allocation stays cheap.
+      const oversized = await createSignal(rig.root, {
+        type: "idea",
+        body: "",
+        attachment: {
+          kind: "file",
+          bytes: new Uint8Array(max + 1),
+          name: "huge.bin",
+          mime: "application/octet-stream",
+        },
+      });
+      assert.equal(oversized.ok, false, "a file over the 25 MB ceiling was stored");
+      if (!oversized.ok) {
+        assert.match(
+          oversized.error,
+          /larger|too (big|large)|exceed|25/i,
+          `the refusal does not name the ceiling: ${JSON.stringify(oversized.error)}`,
+        );
+      }
+      assert.deepEqual(await storeCounts(rig.root), before, "a refused oversized file wrote a record or a stored file");
+    } finally {
+      closeRig(rig);
+    }
+  });
+
+  it("I. refuses active content by name, writing nothing", async () => {
+    const rig = rigFor("I");
+    try {
+      // Baseline: one stored file, so the counts below can only be unchanged if
+      // the refusals wrote nothing at all.
+      await createOk(rig.root, {
+        type: "idea",
+        body: "",
+        attachment: { kind: "file", bytes: new Uint8Array([7, 7, 7]), name: "keep.txt", mime: "text/plain" },
+      });
+      const before = await storeCounts(rig.root);
+
+      // Both triggers matter independently: a forbidden extension under an
+      // innocent mime, and a forbidden mime behind an innocent name.
+      const active = [
+        { name: "page.html", mime: "text/plain", why: "forbidden extension with an innocent mime" },
+        { name: "icon.svg", mime: "image/svg+xml", why: "the active SVG type" },
+        { name: "harmless.txt", mime: "text/html", why: "forbidden mime behind an innocent name" },
+      ];
+      for (const candidate of active) {
+        const refused = await createSignal(rig.root, {
+          type: "idea",
+          body: "",
+          attachment: {
+            kind: "file",
+            bytes: new Uint8Array(Buffer.from("<script>alert(1)</script>", "utf8")),
+            name: candidate.name,
+            mime: candidate.mime,
+          },
+        });
+        assert.equal(refused.ok, false, `active content was stored: ${candidate.name} (${candidate.why})`);
+        if (!refused.ok) {
+          assert.match(
+            refused.error,
+            /file type|cannot be kept|not allowed|refus|unsupported/i,
+            `the refusal does not say the file type is refused: ${JSON.stringify(refused.error)}`,
+          );
+        }
+        assert.deepEqual(await storeCounts(rig.root), before, `a refused active file wrote something: ${candidate.name}`);
+      }
     } finally {
       closeRig(rig);
     }

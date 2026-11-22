@@ -89,7 +89,7 @@ The collated sections show exactly four kinds of material:
 
 - **Tasks** — board tasks whose `links.projectId` is this project, with their column label.
   Empty text: "No tasks on the board point at this project yet. Link one from Act."
-- **Signals** — the Quick Notes captures reached through those tasks' `links.signalId`.
+- **Signals** — the Notebox captures reached through those tasks' `links.signalId`.
   Empty text: "No signals are linked through this project's tasks yet."
 - **Decisions** — Decisions whose target is this project, newest first, each linking to the
   Decisions sheet. Empty text: "No Decisions have been filed for this project."
@@ -181,7 +181,7 @@ tabs only switch the rail and never filter page data
 ## Related
 
 - [Task Manager](./14-task-manager.md) — the task board whose cards can point at a project.
-- [Quick Notes](./15-quick-notes.md) — the captures that reach a project through its tasks.
+- [Notebox](./15-quick-notes.md) — the captures that reach a project through its tasks.
 - [Goals](./10-goals.md) — the goal a project can be filed under.
 - [Areas](./05-areas.md) — the area lens that filters the register.
 - [Decisions](./23-decisions.md) — where the companion's project proposals wait.

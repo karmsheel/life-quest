@@ -85,7 +85,7 @@ wants to know what is on disk and what runs where.
 
 | Page | What it covers |
 |---|---|
-| [15 · Quick Notes](./15-quick-notes.md) | Quick-fire capture of text, pictures and links; edit/delete, make a task |
+| [15 · Notebox](./15-quick-notes.md) | Quick-fire capture of text, pictures, files and links; triage, edit/delete, make a task |
 | [16 · Daily Journal](./16-daily-journal.md) | One journal note per local date, the day's acts, calendar, focus mode |
 | [17 · Automations](./17-automations.md) | One-click jobs that read a page and open a chat with the agent |
 | [23 · Decisions](./23-decisions.md) | The approval inbox, approve all, manual decisions, the Decision editor |

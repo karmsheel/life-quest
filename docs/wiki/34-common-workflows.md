@@ -78,7 +78,7 @@ Full detail: [Doctrine](./07-doctrine.md).
    when it has any. **Around this project** collates its tasks, signals, Decisions
    and activity.
 6. Break the project into tasks on **Task Manager** (set a task's **Project**
-   field), or capture a thought in **Quick Notes** and choose **Make task**.
+   field), or capture a thought in **Notebox** and choose **Make task**.
 
 Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
 [Task Manager](./14-task-manager.md).
@@ -125,7 +125,7 @@ Full detail: [Reviews](./18-reviews.md), [Daily Journal](./16-daily-journal.md).
 
 ## Capture a thought, a picture or a link
 
-1. **Quick Notes** on the governance shelf. The box has focus; its placeholder is
+1. **Notebox** on the governance shelf. The box has focus; its placeholder is
    **What's on your mind?**.
 2. Type a capture. **Enter** logs; **Shift+Enter** starts a new line. Or choose
    **Image** to attach one picture (or drag or paste one onto the box), or
@@ -138,10 +138,10 @@ Full detail: [Reviews](./18-reviews.md), [Daily Journal](./16-daily-journal.md).
    to hide it. **Make task** creates a backlog task from it — an attachment-only
    capture is named from its picture or link — and the button then reads **Open
    task** and opens **Task Manager**.
-5. The dock's Quick Notes surface is text-only: its field says **Log a signal…**
+5. The dock's Notebox surface is text-only: its field says **Log a signal…**
    and has no attachment controls.
 
-Full detail: [Quick Notes](./15-quick-notes.md).
+Full detail: [Notebox](./15-quick-notes.md).
 
 ## Write the day in focus mode
 

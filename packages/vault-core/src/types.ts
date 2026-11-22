@@ -683,7 +683,26 @@ export type SignalLinkAttachment = {
   url: string;
 };
 
-export type SignalAttachment = SignalImageAttachment | SignalLinkAttachment;
+/**
+ * Any other file a signal carries, stored beside the pictures under
+ * `signal-chain/files/` and named by its vault-relative path. Unlike a picture,
+ * the extension comes from the name the operator attached; active content
+ * (a page, a script, an app) is refused at write time, because the vault must
+ * never hand the renderer something a click could run.
+ */
+export type SignalFileAttachment = {
+  kind: "file";
+  /** Vault-relative, `.lifequest/signal-chain/files/<uuid>[.<ext>]`; never absolute. */
+  relPath: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
+export type SignalAttachment =
+  | SignalImageAttachment
+  | SignalLinkAttachment
+  | SignalFileAttachment;
 
 export type SignalRecord = {
   id: string;
@@ -712,13 +731,14 @@ export type SignalRecord = {
   priority?: SignalPriority | null;
   /** Where it came in from, free text, e.g. "Chrome — AI tab group". */
   capturedFrom?: string | null;
-  /** A picture or a link, or null for a plain text capture. */
+  /** A picture, a link or a file, or null for a plain text capture. */
   attachment: SignalAttachment | null;
 };
 
 /**
- * An attachment on its way in. The renderer hands over bytes for a picture — it
- * never names a vault path — and the URL for a link; the vault mints the path.
+ * An attachment on its way in. The renderer hands over bytes for a picture or a
+ * file — it never names a vault path — and the URL for a link; the vault mints
+ * the path.
  */
 export type SignalImageInput = {
   kind: "image";
@@ -731,6 +751,18 @@ export type SignalImageInput = {
 export type SignalLinkInput = {
   kind: "link";
   url: string;
+};
+
+/**
+ * A file on its way in. The renderer hands over the bytes and the name it saw;
+ * the vault mints the stored path and derives a safe extension from the name.
+ * `mime` is a hint: an unrecognised one is stored as `application/octet-stream`.
+ */
+export type SignalFileInput = {
+  kind: "file";
+  bytes: Uint8Array;
+  name: string;
+  mime?: string;
 };
 
 export type SignalCreateInput = {
@@ -747,7 +779,7 @@ export type SignalCreateInput = {
   priority?: SignalPriority | null;
   /** Where it came in from, free text; omitted or null is unknown. */
   capturedFrom?: string | null;
-  attachment?: SignalImageInput | SignalLinkInput | null;
+  attachment?: SignalImageInput | SignalLinkInput | SignalFileInput | null;
 };
 
 export type SignalUpdatePatch = {

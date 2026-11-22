@@ -208,7 +208,7 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
  * events, script blocks on a page, the capture thread, and — since the
  * 2026-10-28 policy — adding database data (`create_database`,
  * `insert_rows`). `create_signal` and `update_signal` are here for the same
- * reason as those: a Quick Notes capture is adding data and a triage edit is
+ * reason as those: a Notebox capture is adding data and a triage edit is
  * working the operator's inbox, the companion writes both at once and logs
  * them under the agent's name, and a Decision per captured thought or status
  * click would turn the inbox into an approval queue. A new row through

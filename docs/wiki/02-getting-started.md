@@ -243,7 +243,7 @@ under the buttons. Nothing is modified.
    **Architecture**; see [Doctrine](./07-doctrine.md).
 4. **Put one thing on the board.** Choose the **Act** wing and open **Task
    Manager** (`/act`), then add a card under **Today** — or capture a thought,
-   picture or link on **Quick Notes** (`/chain`).
+   picture or link on **Notebox** (`/chain`).
 5. **Say hello.** In the chat dock, type in the composer (*Message Pi…* when Pi
    answers) and press **Ctrl+Enter** to send. Enter breaks the line; the modified
    key sends, and the **Steer** and **Queue** controls work while a turn runs.

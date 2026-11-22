@@ -46,6 +46,26 @@ export function formatSignalTime(iso: string): string {
   }
 }
 
+/**
+ * Bytes in the operator's units, for a capture's file chip and card. Exact
+ * bytes below a kilobyte, one decimal below ten in the unit ("1.4 MB"), whole
+ * numbers above it ("12 KB") — deterministic, so the same size always reads the
+ * same in both places.
+ */
+export function formatSignalFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const text = value < 10 ? value.toFixed(1) : String(Math.round(value));
+  return `${text} ${units[unit]}`;
+}
+
 export function signalDomainLabel(
   slug: string | null,
   domains: { slug: string; name: string }[],
@@ -184,7 +204,7 @@ export function filterSignals(
     const attachmentText =
       r.attachment?.kind === "link"
         ? r.attachment.url.toLowerCase()
-        : r.attachment?.kind === "image"
+        : r.attachment?.kind === "image" || r.attachment?.kind === "file"
           ? r.attachment.name.toLowerCase()
           : "";
     return (
@@ -262,6 +282,9 @@ export function taskFromSignal(signal: SignalRecord): {
   }
   if (attachment?.kind === "image") {
     return { title: capTaskTitle(`Image: ${attachment.name}`), notes: attachment.name };
+  }
+  if (attachment?.kind === "file") {
+    return { title: capTaskTitle(`File: ${attachment.name}`), notes: attachment.name };
   }
   return { title: "", notes: "" };
 }

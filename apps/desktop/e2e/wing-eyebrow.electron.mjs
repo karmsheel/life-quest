@@ -102,7 +102,7 @@ const SAMPLE = `(() => {
   const eyebrow = eyebrows[0] ?? null;
   const style = eyebrow ? getComputedStyle(eyebrow) : null;
   // The WING's own rows, not the whole rail: the rail also carries the
-  // governed shelf (Quick Notes, Decisions, Daily Journal, Automations) and the
+  // governed shelf (Notebox, Decisions, Daily Journal, Automations) and the
   // Log, and reading "the rail" without scoping would claim those belong to
   // the wing.
   const links = Array.from(

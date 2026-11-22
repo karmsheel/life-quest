@@ -70,6 +70,7 @@ import {
   projectUpdate,
   readDocumentMedia,
   readImage,
+  readSignalFile,
   readSignalImage,
   readOnboardingRecord,
   readLog,
@@ -1545,6 +1546,13 @@ export async function signalChainReadImage(
   relPath: string,
 ): Promise<Result<{ bytes: Uint8Array; mime: import("@lifequest/vault-core").ImageMimeType }>> {
   return withVault((root) => readSignalImage(root, relPath));
+}
+
+/** A capture's non-image file, read back so the renderer can save a copy. */
+export async function signalChainReadFile(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  return withVault((root) => readSignalFile(root, relPath));
 }
 
 export async function libraryListCall(): Promise<Result<LibraryListResult>> {

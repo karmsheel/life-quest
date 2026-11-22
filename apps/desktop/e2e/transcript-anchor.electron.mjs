@@ -38,12 +38,12 @@
  *  6. Reading scrollback is yanked to the live turn. An operator who scrolled up
  *     and then types must keep the words they were reading exactly where they
  *     are: the correction belongs to transcripts that were already at their end.
- *  7. Only the thread is covered. Quick Notes is the dock's second surface with
+ *  7. Only the thread is covered. Notebox is the dock's second surface with
  *     the same composer idiom and the same flex column: its newest signal has to
  *     keep sitting just above its composer, through the same growth and the same
  *     cap. A watch wired to one ref and not the other would keep cutting the
  *     chain off and this is where that shows.
- *  8. The watch dies across a surface swap. Leaving Quick Notes for the thread
+ *  8. The watch dies across a surface swap. Leaving Notebox for the thread
  *     remounts nothing (both bodies stay mounted) but rebinds the visible one;
  *     the end has to be kept again immediately.
  *  9. The watch dies across collapse and reopen. Collapsing unmounts the whole
@@ -403,8 +403,8 @@ async function main() {
       `${back.distanceFromBottom}px from the end after the composer shrank`,
     );
 
-    // ── Quick Notes: the dock's second transcript, same composer idiom ────────
-    await click('button[aria-label="Quick Notes"]', "Quick Notes");
+    // ── Notebox: the dock's second transcript, same composer idiom ────────
+    await click('button[aria-label="Notebox"]', "Notebox");
     await waitForEndOfTranscript("chain", "the long chain to load at its end");
     const chainRest = await setDraft("", "rest the chain composer");
     check(
@@ -458,7 +458,7 @@ async function main() {
     check(
       "the thread keeps its end after a surface swap",
       recovered.surface === "thread" && recovered.atEnd,
-      `${recovered.distanceFromBottom}px from the end after returning from Quick Notes`,
+      `${recovered.distanceFromBottom}px from the end after returning from Notebox`,
     );
     await setDraft("", "clear after the surface swap");
 

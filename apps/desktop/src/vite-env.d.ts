@@ -575,6 +575,10 @@ type LifequestApi = {
   signalChainReadImage: (
     relPath: string,
   ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
+  /** A capture's non-image file, read back so the renderer can save a copy. */
+  signalChainReadFile: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
   libraryList: () => Promise<Result<LibraryListResult>>;
   libraryCreate: (input: LibraryCreateInput) => Promise<Result<LibraryDocument>>;
   libraryGet: (id: string) => Promise<Result<LibraryDocument>>;

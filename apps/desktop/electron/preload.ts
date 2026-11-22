@@ -325,6 +325,10 @@ const lifequest = {
     ipcRenderer.invoke("signalChain:readImage", relPath) as Promise<
       Result<unknown>
     >,
+  signalChainReadFile: (relPath: string) =>
+    ipcRenderer.invoke("signalChain:readFile", relPath) as Promise<
+      Result<unknown>
+    >,
 
   libraryList: () => ipcRenderer.invoke("library:list"),
   libraryCreate: (input: Record<string, unknown>) =>

@@ -10758,24 +10758,45 @@ button.chat-panel__activity-line:hover {
   justify-content: center;
 }
 
-/* The link's own line: the input only appears while the operator is adding a
-   link, and the chip replaces it once the URL is real. */
-.signal-chain__link-form {
-  display: flex;
+/* A waiting non-image file: one chip with the stored name and its size, and
+   the X that takes it off. A picture keeps the preview above; every other file
+   takes this shape so the box reads as one attachment however it arrived. */
+.signal-chain__pending-file {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-}
-
-.signal-chain__link-input {
-  flex: 1;
+  gap: 0.4rem;
   min-width: 0;
+  max-width: 100%;
+  padding: 0.35rem 0.4rem 0.35rem 0.55rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.45rem 0.55rem;
-  background: var(--bg);
-  font: inherit;
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
 }
 
+.signal-chain__pending-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--muted);
+}
+
+.signal-chain__pending-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.signal-chain__pending-file-size {
+  flex: none;
+  font-size: 0.72rem;
+}
+
+/* A link arrives by pasting a URL rather than through a form of its own, so
+   this chip is the whole of the link UI: host, address, and the X. */
 .signal-chain__link-chip {
   display: flex;
   align-items: center;
@@ -10807,14 +10828,39 @@ button.chat-panel__activity-line:hover {
   gap: 0.25rem;
 }
 
-/* The attach controls are the box's secondary arms: pill-ghost, smaller than
-   the commit beside them so the row has one obvious primary. */
-.signal-chain__tool {
+/* The one attach control, at the composer row's leading edge: the plus wears a
+   circular background of the muted surface, the one control-shaped spot the eye
+   lands on in an otherwise type-only row. It takes any file; a pasted URL is the
+   other gesture, and it lands as a chip rather than a form. */
+.signal-chain__attach-plus {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.55rem;
-  font-size: 0.78rem;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: var(--muted-surface);
+  color: var(--muted);
+  line-height: 0;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.signal-chain__attach-plus:not(:disabled):hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--muted-surface));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.signal-chain__attach-plus:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .signal-chain__empty {
@@ -11039,6 +11085,65 @@ button.chat-panel__activity-line:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+/* A captured file is a card beside the body: an icon, the stored name with its
+   size, and a quiet Save that hands the operator a copy. It stays inside the
+   content column (min-width: 0 lets the name ellipsize) so a long file name
+   never widens the row. */
+.signal-row__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 0.35rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--selected) 45%, transparent);
+}
+
+.signal-row__file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--muted);
+}
+
+.signal-row__file-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.signal-row__file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.signal-row__file-size {
+  font-size: 0.72rem;
+}
+
+.signal-row__file-status {
+  font-size: 0.72rem;
+}
+
+.signal-row__file-save {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
 }
 

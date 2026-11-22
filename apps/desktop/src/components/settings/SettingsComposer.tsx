@@ -18,7 +18,7 @@ import { useComposerSendKey } from "@/lib/composer-send";
  * pressed and is remembered on this machine (see `composer-send.ts`), so there
  * is no Save button and nothing to restart.
  *
- * The page names its boundary as well as its setting: Quick Notes and the signal
+ * The page names its boundary as well as its setting: Notebox and the signal
  * chain are capture boxes that log with plain Enter, and this preference is not
  * about them.
  */
@@ -38,7 +38,7 @@ export function SettingsComposer() {
       >
         <SettingsRow
           label="Send with"
-          description="Choose whether plain Enter sends the message or breaks the line. Ctrl/Cmd+Enter always sends, so the default keeps Enter for writing a prompt as a paragraph. The choice applies immediately, is remembered on this machine, and — while a turn is running — the send key steers that turn instead of starting a second one. Quick Notes and the signal chain keep their own Enter-to-log."
+          description="Choose whether plain Enter sends the message or breaks the line. Ctrl/Cmd+Enter always sends, so the default keeps Enter for writing a prompt as a paragraph. The choice applies immediately, is remembered on this machine, and — while a turn is running — the send key steers that turn instead of starting a second one. Notebox and the signal chain keep their own Enter-to-log."
           action={
             <SegmentedControl
               value={sendKey}

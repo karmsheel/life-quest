@@ -9,7 +9,7 @@
  * reading slid below the new bottom edge and the composer looked like it had
  * grown over the chat.
  *
- * Both of the dock's transcripts are covered — the thread and Quick Notes — and
+ * Both of the dock's transcripts are covered — the thread and Notebox — and
  * so are the two ways the watch can lose its surface: swapping to the other
  * transcript and back, and collapsing the dock and reopening it.
  *
@@ -218,12 +218,12 @@ describe("transcript anchor", () => {
       `the transcript lost its end after the composer shrank again (${report.back.distanceFromBottom}px below it)`,
     );
 
-    // Quick Notes is the dock's second transcript with the same composer idiom:
+    // Notebox is the dock's second transcript with the same composer idiom:
     // the same end-keeping applies there, from its own scroller.
     assert.equal(
       report.chainRest.surface,
       "chain",
-      "the rig did not land on the Quick Notes surface",
+      "the rig did not land on the Notebox surface",
     );
     assert.ok(
       report.chainRest.bodyScrollHeight > report.chainRest.bodyClientHeight + 200,
@@ -260,7 +260,7 @@ describe("transcript anchor", () => {
     assert.equal(
       report.recovered.atEnd,
       true,
-      `the thread lost its end after returning from Quick Notes (${report.recovered.distanceFromBottom}px below it)`,
+      `the thread lost its end after returning from Notebox (${report.recovered.distanceFromBottom}px below it)`,
     );
 
     // The dock can be collapsed and reopened; the watch has to follow the fresh

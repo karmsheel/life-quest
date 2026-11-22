@@ -19,7 +19,7 @@ home](./index.md) has the full page index.
   `/settings?tab=domains`. The legacy path `/domains` redirects there.
 - **Area content**: each area's folder is `domains/<slug>/`; doctrine is read and
   written through **Dream**, **Vision** and **Architecture**; Data, Pages, the
-  Dashboard and Quick Notes are filtered by the lens.
+  Dashboard and Notebox are filtered by the lens.
 - **The Life lens** is the union: Data and Pages span every live area, and the
   Dashboard shows the Life board. New databases and pages created while the lens
   is on Life land in the base `life` area with no selector.
@@ -205,7 +205,7 @@ Choosing an area narrows the area-scoped screens to that area:
 | **Data** | Lists that area's databases; the area selector disappears |
 | **Pages** | Lists that area's pages; the area selector disappears |
 | **Dream**, **Vision**, **Architecture** | Show only that area's documents |
-| **Quick Notes** | Shows unassigned signals plus signals tagged to that area |
+| **Notebox** | Shows unassigned signals plus signals tagged to that area |
 | **Decisions** (rail badge) | Counts every pending Decision in the vault — the badge is global, not lens-filtered; the Dashboard's Pending card is the lens-scoped view |
 | **Goals**, **Projects**, **Documents** | Lists narrow to that area; new records default to it |
 | **Task Manager** | The task board narrows to that area |
@@ -213,7 +213,7 @@ Choosing an area narrows the area-scoped screens to that area:
 
 Wings are not a filter: switching wings changes the rail, never the data
 ([LAWS/WINGS.md](../../LAWS/WINGS.md)). The area lens is the data filter for
-area-scoped lists, and the Quick Notes rule is exact: an area lens includes the
+area-scoped lists, and the Notebox rule is exact: an area lens includes the
 unassigned captures as well as the ones tagged to that area
 ([LAWS/DOMAIN-FILTER.md](../../LAWS/DOMAIN-FILTER.md)).
 

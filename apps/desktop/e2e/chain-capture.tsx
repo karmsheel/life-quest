@@ -54,6 +54,12 @@
  *     subscription answers with a refusal Promise, StrictMode's cleanup calls
  *     it as `unsubscribe()`, and the thrown "not a function" unmounts the whole
  *     React tree — a blank page every later check would still "read".
+ * 11. The composer's one plus control takes any file, and a non-image file is a
+ *     first-class capture: `signalChainCreate` stores its bytes under the path
+ *     it mints and answers the row with name/mime/size, and the row's Save reads
+ *     them back through `signalChainReadFile`. Both directions are modelled
+ *     here; a file arm the bridge cannot round-trip is the failure this rig
+ *     would otherwise paint as a passing card.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -93,7 +99,17 @@ type ImageAttachment = {
 };
 
 type LinkAttachment = { kind: "link"; url: string };
-type Attachment = ImageAttachment | LinkAttachment;
+
+/** A non-image capture: stored bytes under the vault's file path, plus a name. */
+type FileAttachment = {
+  kind: "file";
+  relPath: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
+type Attachment = ImageAttachment | LinkAttachment | FileAttachment;
 
 /** A chain record, in the shape the vault answers with. */
 type SignalRow = {
@@ -127,13 +143,15 @@ type CreateSummary = {
   priority?: SignalPriority | null;
   capturedFrom?: string | null;
   attachment: {
-    kind: "image" | "link";
+    kind: "image" | "link" | "file";
     name?: string;
     url?: string;
     mime?: string;
     width?: number | null;
     height?: number | null;
     byteLength?: number;
+    /** The size the record carries (file attachments). */
+    size?: number;
     /** The path this harness minted for the bytes it stored. */
     relPath?: string;
   } | null;
@@ -163,6 +181,8 @@ type HarnessWindow = Window & {
   chainCaptureUnexpectedCalls?: string[];
   chainCaptureCreates?: CreateSummary[];
   chainCaptureReads?: string[];
+  /** Every `signalChainReadFile` call, so Save's read-back is evidence. */
+  chainCaptureFileReads?: string[];
   chainCaptureUpdates?: { id: string; patch: Record<string, unknown> }[];
   chainCaptureDeletes?: string[];
   /** The picture the driver drops or picks, so it never retypes the bytes. */
@@ -196,6 +216,7 @@ type HarnessWindow = Window & {
     projects: FixtureProject[];
     bytes: Record<string, number>;
     reads: string[];
+    fileReads: string[];
     creates: CreateSummary[];
     updates: { id: string; patch: Record<string, unknown> }[];
     deletes: string[];
@@ -207,6 +228,7 @@ harness.chainCaptureCalls = [];
 harness.chainCaptureUnexpectedCalls = [];
 harness.chainCaptureCreates = [];
 harness.chainCaptureReads = [];
+harness.chainCaptureFileReads = [];
 harness.chainCaptureUpdates = [];
 harness.chainCaptureDeletes = [];
 
@@ -292,6 +314,7 @@ function snapshot() {
     projects: projects.map((project) => ({ ...project })),
     bytes: Object.fromEntries([...bytesByRelPath].map(([relPath, bytes]) => [relPath, bytes.byteLength])),
     reads: [...(harness.chainCaptureReads ?? [])],
+    fileReads: [...(harness.chainCaptureFileReads ?? [])],
     creates: (harness.chainCaptureCreates ?? []).map((create) => ({ ...create })),
     updates: (harness.chainCaptureUpdates ?? []).map((update) => ({ ...update })),
     deletes: [...(harness.chainCaptureDeletes ?? [])],
@@ -365,6 +388,15 @@ function sniffMime(bytes: Uint8Array): { mime: string; ext: string } {
   return { mime: "image/png", ext: "png" };
 }
 
+/** The safe extension the vault derives from a file's display name. */
+function fileExtension(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "";
+  const ext = base.slice(dot + 1).toLowerCase();
+  return /^[a-z0-9]{1,8}$/.test(ext) ? ext : "";
+}
+
 const SESSION = {
   id: "harness-session",
   title: "Harness",
@@ -429,6 +461,12 @@ type SignalCreateInput = {
         height?: number | null;
       }
     | { kind: "link"; url: string }
+    | {
+        kind: "file";
+        bytes: Uint8Array | ArrayBuffer;
+        name: string;
+        mime?: string;
+      }
     | null;
 };
 
@@ -482,16 +520,7 @@ const rawBridge: Record<string, unknown> = {
     const id = mintId();
     const now = new Date().toISOString();
     let attachment: Attachment | null = null;
-    const summary: CreateSummary["attachment"] = input.attachment
-      ? input.attachment.kind === "image"
-        ? {
-            kind: "image",
-            name: input.attachment.name,
-            width: input.attachment.width ?? null,
-            height: input.attachment.height ?? null,
-          }
-        : { kind: "link", url: input.attachment.url }
-      : null;
+    let summary: CreateSummary["attachment"] = null;
     if (input.attachment?.kind === "image") {
       const bytes =
         input.attachment.bytes instanceof Uint8Array
@@ -514,14 +543,48 @@ const rawBridge: Record<string, unknown> = {
       // The summary keeps what the page actually handed over — the minted path
       // is the vault's answer, and the bytes are proven by their length, never
       // by copying the picture into the report.
-      Object.assign(summary as Record<string, unknown>, {
+      summary = {
+        kind: "image",
+        name: input.attachment.name,
+        width: input.attachment.width ?? null,
+        height: input.attachment.height ?? null,
         mime,
         byteLength: bytes.byteLength,
         relPath,
-      });
+      };
     } else if (input.attachment?.kind === "link") {
       attachment = { kind: "link", url: input.attachment.url };
-      Object.assign(summary as Record<string, unknown>, { url: input.attachment.url });
+      summary = { kind: "link", url: input.attachment.url };
+    } else if (input.attachment?.kind === "file") {
+      const bytes =
+        input.attachment.bytes instanceof Uint8Array
+          ? input.attachment.bytes
+          : new Uint8Array(input.attachment.bytes);
+      // The name decides the stored extension, the way the vault's own store
+      // does; a name with no usable extension stores a bare uuid.
+      const ext = fileExtension(input.attachment.name);
+      const relPath = `.lifequest/signal-chain/files/${id}${ext ? `.${ext}` : ""}`;
+      const mime =
+        input.attachment.mime && input.attachment.mime.length > 0
+          ? input.attachment.mime
+          : "application/octet-stream";
+      bytesByRelPath.set(relPath, bytes);
+      mimeByRelPath.set(relPath, mime);
+      attachment = {
+        kind: "file",
+        relPath,
+        name: input.attachment.name,
+        mime,
+        size: bytes.byteLength,
+      };
+      summary = {
+        kind: "file",
+        name: input.attachment.name,
+        mime,
+        byteLength: bytes.byteLength,
+        size: bytes.byteLength,
+        relPath,
+      };
     }
     const status = input.status ?? "inbox";
     const record: SignalRow = {
@@ -579,6 +642,16 @@ const rawBridge: Record<string, unknown> = {
     const bytes = bytesByRelPath.get(relPath);
     if (!bytes) return Promise.resolve(fail("That image is missing from the vault."));
     return ok({ bytes, mime: mimeByRelPath.get(relPath) ?? "image/png" });
+  },
+
+  // The file row's Save control reads the stored bytes back through this call;
+  // the harness serves what `signalChainCreate` kept under the minted path, so
+  // a row that reports a save it never asked for fails.
+  signalChainReadFile: (relPath: string) => {
+    harness.chainCaptureFileReads?.push(relPath);
+    const bytes = bytesByRelPath.get(relPath);
+    if (!bytes) return Promise.resolve(fail("That file is missing from the vault."));
+    return ok({ bytes, mime: mimeByRelPath.get(relPath) ?? "application/octet-stream" });
   },
 };
 

@@ -404,7 +404,7 @@ describe("chat dock side switch", () => {
       right.actions?.controls.map((control) => control.label),
       [
         "New chat",
-        "Quick Notes",
+        "Notebox",
         "Keyboard shortcuts",
         "Move chat to the left of the page",
         "Collapse chat",
@@ -597,7 +597,7 @@ describe("chat dock side switch", () => {
       left.actions?.controls.map((control) => control.label),
       [
         "New chat",
-        "Quick Notes",
+        "Notebox",
         "Keyboard shortcuts",
         "Move chat to the right of the page",
         "Collapse chat",
@@ -895,7 +895,7 @@ describe("chat dock side switch", () => {
       restored.actions?.controls.map((control) => control.label),
       [
         "New chat",
-        "Quick Notes",
+        "Notebox",
         "Keyboard shortcuts",
         "Move chat to the left of the page",
         "Collapse chat",

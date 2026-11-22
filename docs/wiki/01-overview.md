@@ -81,7 +81,7 @@ just start talking — and an existing vault never sees a first-run card. See
    **Architecture** designs the day templates you want to live by.
 5. **Projects** break goals into real work, and record what the idea is, where it
    came from, and any repositories it lives in.
-6. **Daily Schedule**, **Task Manager** and **Quick Notes** turn the plan into a
+6. **Daily Schedule**, **Task Manager** and **Notebox** turn the plan into a
    day: today's blocks, the task board, and a place to catch a thought, a picture
    or a link before it evaporates.
 7. **Reviews** (Daily, Weekly, Monthly, Quarterly, Yearly) read the period back,
@@ -137,7 +137,7 @@ question scopes stay `execute`, so saved links and prompts keep working.
 **Personnel** is renamed **Agents**, the Act page is renamed **Task Manager**, and
 **Images** moved from Define to Home (route `/images`).
 
-**Quick Notes**, **Decisions**, **Daily Journal** and **Automations** are pinned
+**Notebox**, **Decisions**, **Daily Journal** and **Automations** are pinned
 above the **Log** because they are governance, not a wing: they belong to no area
 and are reachable from everywhere. The version badge lives in the chat dock's
 bottom bar, not at the foot of the rail.

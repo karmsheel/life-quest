@@ -270,7 +270,7 @@ async function executeToolInner(
     return executePageTool(root, actor, name, rec);
   }
 
-  // list_signals, get_signal, create_signal, update_signal — Quick Notes. A
+  // list_signals, get_signal, create_signal, update_signal — Notebox. A
   // capture or a triage change applies at once, exactly like a task write: a
   // signal is a note, not a document change, and the chain is where the
   // companion files what it noticed and works the inbox.
@@ -976,7 +976,7 @@ async function connectedWriteRefusal(
     return allow([rec.domainSlug === undefined ? undefined : (rec.domainSlug as string | null)]);
   }
 
-  // ── Quick Notes ──────────────────────────────────────────────────────────
+  // ── Notebox ──────────────────────────────────────────────────────────
   if (name === "create_signal") {
     // A capture is a write, and a write names the domain it lands in. An
     // unassigned capture reads as `[undefined]`, which `allow` refuses: a

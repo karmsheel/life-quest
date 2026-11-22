@@ -14,7 +14,7 @@ import {
 } from "./types.ts";
 
 /**
- * The companion's Quick Notes surface: the operator's captured thoughts, ideas,
+ * The companion's Notebox surface: the operator's captured thoughts, ideas,
  * and notices — the single Inbox of external information.
  *
  * Reads are direct. `create_signal` applies immediately, like a task write: a

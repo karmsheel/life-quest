@@ -39,7 +39,7 @@ export type NavItem = {
   /**
    * Where the row sits on the rail.
    *
-   * `bottom` is the governed shelf: Quick Notes, Decisions, Daily Journal and
+   * `bottom` is the governed shelf: Notebox, Decisions, Daily Journal and
    * Automations, cordoned above the Log. `footer` is the Log itself — the one
    * row that closes the rail — so the shelf can carry a divider above it without
    * counting the Log as one of its entries.
@@ -47,12 +47,12 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Quick Notes, Decisions, Daily Journal, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Notebox, Decisions, Daily Journal, Automations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
     href: "/chain",
-    label: "Quick Notes",
+    label: "Notebox",
     icon: Radio,
     section: "main",
     pin: "bottom",
