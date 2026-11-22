@@ -5,7 +5,7 @@ import { api } from "@/lib/ipc";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
 import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
-import { NavCollapseButton } from "./NavCollapseButton";
+import { NavBrandButton, NavCollapseButton } from "./NavCollapseButton";
 import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
@@ -13,8 +13,6 @@ import { DomainSwitcher } from "./DomainSwitcher";
 import { WingTabs } from "./WingTabs";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { CompositionSlot } from "@/components/composition/CompositionSlot";
-import { LifeQuestLogo } from "@/components/brand/LifeQuestLogo";
-import { useLogoVariant } from "@/components/brand/useLogoVariant";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -35,7 +33,6 @@ function countPending(decisions: readonly DecisionRecord[]): number {
 
 export function NavRail() {
   const { active } = useWing();
-  const logoVariant = useLogoVariant();
   const { chrome } = useTheme();
   const { snapshot } = useVault();
   /**
@@ -156,24 +153,22 @@ export function NavRail() {
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       {/*
         The top line of the rail, in the window strip: the studio's lockup alone,
-        centred on the column. The lockup is the operator's pick of the four
-        shipped logos (Settings → Developer, default Minimal), drawn inline so the
-        theme's three inks — LIFE, the Q emblem, UEST — reach it. It is a mark, not
-        a control; the strip stays the window's drag handle.
+        centred on the column, and it is a control now as well as a mark — a press
+        on it collapses the rail, the same way the foot's square control does (see
+        `NavBrandButton`). The lockup is the operator's pick of the four shipped
+        logos (Settings → Developer, default Minimal), drawn inline so the theme's
+        three inks — LIFE, the Q emblem, UEST — reach it. The air around the mark
+        is still the window's drag handle.
 
-        The collapse toggle used to close this row at its trailing edge. It lives
-        at the rail's foot now, so the mark is the row's only content and the row's
-        whole job is to centre it on the sidebar instead of anchoring it to one
-        edge. The thin rail cannot hold a word: the lockup leaves and this row
+        The square collapse toggle used to close this row at its trailing edge. It
+        lives at the rail's foot now, so the mark is the row's only content and the
+        row's whole job is to centre it on the sidebar instead of anchoring it to
+        one edge. The thin rail cannot hold a word: the lockup leaves and this row
         stays only as the window's drag handle and the column's top air (see "The
         thin rail").
       */}
       <div className="nav-rail__header">
-        <LifeQuestLogo
-          variant={logoVariant}
-          className="nav-rail__brand"
-          crop
-        />
+        <NavBrandButton />
       </div>
       {/* The theme's composition widgets for the rail: a count under the
           header, and the foot's own band. Rail furniture, not commands. */}

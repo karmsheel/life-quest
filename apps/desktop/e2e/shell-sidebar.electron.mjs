@@ -56,8 +56,18 @@ const SAMPLE = `(() => {
   // The lockup's own box: the reference for the header's centring claim and for
   // the air above it down to the wing switcher.
   const railBrand = document.querySelector(".nav-rail__brand");
+  // The lockup is the rail's second collapse control: the mark itself is the
+  // button, so the header's one control is measured through it.
+  const brandToggle = document.querySelector(".nav-rail__brand-button");
+  // Only controls that are actually drawn: the thin rail keeps the lockup's
+  // button in the DOM but hides it, and a hidden button is not a row's control.
   const controls = header
-    ? Array.from(header.querySelectorAll("button, a, input, select, [role=button]"))
+    ? Array.from(
+        header.querySelectorAll("button, a, input, select, [role=button]"),
+      ).filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      })
     : [];
   const titlebar = document.querySelector(".window-titlebar");
   const leading = document.querySelector(".window-titlebar__leading");
@@ -263,6 +273,19 @@ const SAMPLE = `(() => {
     // switcher are all read off this box, not off a token, so the three numbers
     // answer to each other.
     railBrand: box(railBrand),
+    brandToggle: brandToggle
+      ? {
+          label: brandToggle.getAttribute("aria-label"),
+          box: box(brandToggle),
+          display: getComputedStyle(brandToggle).display,
+          ariaExpanded: brandToggle.getAttribute("aria-expanded"),
+          ariaControls: brandToggle.getAttribute("aria-controls"),
+          title: brandToggle.getAttribute("title"),
+          // The mark really is inside the button, not beside it.
+          hasLogo: Boolean(brandToggle.querySelector(".lifequest-logo")),
+          appRegion: getComputedStyle(brandToggle).getPropertyValue("-webkit-app-region")
+        }
+      : null,
     railToggle: railToggle
       ? {
           label: railToggle.getAttribute("aria-label"),
@@ -1192,22 +1215,40 @@ async function main() {
       `borders t/r/b/l ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
     );
 
-    // 2 — the topband: the rail's first row, carrying the lockup alone. It still
-    // starts on the window's top edge, so the leading corner of the strip stays a
-    // drag handle; its content sits one rail-content inset down from that edge
-    // instead of being squeezed into the titlebar's 32px. The collapse toggle used
-    // to close this row at its trailing edge; it lives in the rail's foot now, so
-    // the header holds no control at all.
+    // 2 — the topband: the rail's first row, carrying the lockup and nothing else.
+    // It still starts on the window's top edge, so the leading corner of the strip
+    // stays a drag handle; its content sits one rail-content inset down from that
+    // edge instead of being squeezed into the titlebar's 32px. The mark is itself
+    // the row's one control — a second collapse door — and the square control that
+    // used to close this row now lives in the rail's foot.
     check(
       "the topband starts on the window edge and runs past the strip",
       expanded.header?.box.top === 0 &&
         expanded.header?.box.bottom > titlebarHeight,
       `band ${JSON.stringify(expanded.header?.box)} vs titlebar height ${titlebarHeight}px`,
     );
+    // The header's one control is the mark itself: the lockup is a second door to
+    // the same collapse the foot's square control works, so the row's control count
+    // is one rather than none, and that one wears the lockup.
     check(
-      "the topband holds no control",
-      expanded.header?.controls.length === 0,
-      `controls ${JSON.stringify(expanded.header?.controls)}`,
+      "the topband holds one control — the lockup",
+      expanded.header?.controls.length === 1 &&
+        expanded.brandToggle?.hasLogo === true &&
+        expanded.brandToggle?.label === "Collapse sidebar" &&
+        expanded.brandToggle?.title === "Collapse sidebar" &&
+        expanded.brandToggle?.ariaExpanded === "true" &&
+        expanded.brandToggle?.ariaControls === "nav-rail",
+      `controls ${JSON.stringify(expanded.header?.controls)}, lockup button ${JSON.stringify(expanded.brandToggle)}`,
+    );
+    check(
+      "the lockup's control keeps the mark inside it, carved out of the drag band",
+      Boolean(expanded.brandToggle && expanded.railBrand) &&
+        expanded.brandToggle.hasLogo === true &&
+        expanded.brandToggle.appRegion === "no-drag" &&
+        expanded.header?.appRegion === "drag" &&
+        expanded.brandToggle.box.left <= expanded.railBrand.left &&
+        expanded.brandToggle.box.right >= expanded.railBrand.right,
+      `button ${JSON.stringify(expanded.brandToggle?.box)} around lockup ${JSON.stringify(expanded.railBrand)} in band ${JSON.stringify(expanded.header?.appRegion)}`,
     );
     // The request this claims: the lockup is centred on the sidebar, not anchored
     // to its leading edge. The header's box spans the rail, so its centring line is
@@ -2139,9 +2180,10 @@ async function main() {
     check(
       "the thin rail's topband holds no control",
       collapsed.header?.controls.length === 0 &&
+        collapsed.brandToggle?.display === "none" &&
         collapsed.header?.box.top === 0 &&
         collapsed.header?.box.bottom > titlebarHeight,
-      `controls ${JSON.stringify(collapsed.header?.controls)}, band ${JSON.stringify(collapsed.header?.box)}`,
+      `controls ${JSON.stringify(collapsed.header?.controls)}, lockup button display ${JSON.stringify(collapsed.brandToggle?.display)}, band ${JSON.stringify(collapsed.header?.box)}`,
     );
     // The wing tabs take the band straight under that top air: narrowing the rail
     // must not unhook the first level of navigation from the header's measure, and
@@ -2513,6 +2555,43 @@ async function main() {
       "reopen restores the horizontal wing switcher",
       restored.wingSwitcher?.flexDirection === "row",
       `wings flex-direction ${JSON.stringify(restored.wingSwitcher?.flexDirection)}`,
+    );
+
+    // The lockup is a second door to the same collapse: a press on the mark folds
+    // the rail exactly as the foot's square control does, and the foot's emblem —
+    // the only control the thin column keeps — brings it back.
+    step = "collapse from the lockup";
+    const clickedBrand = await clickToggle(".nav-rail__brand-button");
+    check(
+      "the lockup clicked as a collapse control",
+      clickedBrand,
+      "no .nav-rail__brand-button to click",
+    );
+    const brandCollapse = await settled();
+    check(
+      "the lockup's press collapses the rail to the icon column",
+      brandCollapse.shellNavCollapsed === true &&
+        brandCollapse.rail?.box.width === collapsedTrack &&
+        brandCollapse.header?.controls.length === 0 &&
+        brandCollapse.brandToggle?.display === "none",
+      `shell class ${JSON.stringify(brandCollapse.shellClass)}, rail ${JSON.stringify(brandCollapse.rail?.box)}, band controls ${JSON.stringify(brandCollapse.header?.controls)}, lockup display ${JSON.stringify(brandCollapse.brandToggle?.display)}`,
+    );
+    step = "reopen from the foot after a lockup collapse";
+    const clickedFootAgain = await clickToggle(".nav-rail .nav-toggle");
+    check(
+      "the foot's emblem reopened the lockup-collapsed rail",
+      clickedFootAgain,
+      "no foot toggle to click",
+    );
+    const brandRestored = await settled();
+    check(
+      "reopening brings the lockup's control back",
+      brandRestored.shellNavCollapsed === false &&
+        brandRestored.rail?.box.width === track &&
+        brandRestored.header?.controls.length === 1 &&
+        brandRestored.brandToggle?.label === "Collapse sidebar" &&
+        brandRestored.brandToggle?.box.width > 0,
+      `rail ${JSON.stringify(brandRestored.rail?.box)}, band controls ${JSON.stringify(brandRestored.header?.controls)}, lockup button ${JSON.stringify(brandRestored.brandToggle)}`,
     );
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
@@ -2906,6 +2985,8 @@ async function main() {
       expanded,
       collapsed,
       restored,
+      brandCollapse,
+      brandRestored,
       // The rail switcher's own trip: the Define sample and the Home sample it
       // came back to. The tests read the rail rows off these, so the claim that
       // the control navigates is made on the shipping switcher.

@@ -88,6 +88,20 @@ type State = {
   } | null;
   /** The lockup's box: the reference for the header's centring claim. */
   railBrand: Box | null;
+  /**
+   * The lockup's own button: the rail's second collapse control. Wide it is the
+   * header's one control; thin the button is hidden with the wordmark it wraps.
+   */
+  brandToggle: {
+    label: string | null;
+    box: Box;
+    display: string;
+    ariaExpanded: string | null;
+    ariaControls: string | null;
+    title: string | null;
+    hasLogo: boolean;
+    appRegion: string;
+  } | null;
   railToggle: {
     label: string | null;
     box: Box;
@@ -388,6 +402,9 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
+  /** Collapsed from the lockup, then reopened from the foot. */
+  brandCollapse: State;
+  brandRestored: State;
   /** The quiet `Life` lens at 0 and 1 unlocked areas. */
   quiet: { none: State; one: State };
   /** The rail switcher's own trip: Define, then back to Home. */
@@ -561,12 +578,56 @@ describe("shell sidebar (docked rail)", () => {
       expanded.header.box.bottom > titlebarHeight,
       `the rail's header ends at ${expanded.header.box.bottom}px, not below the ${titlebarHeight}px titlebar row`,
     );
-    // The collapse toggle left this row for the rail's foot, so the topband is the
-    // lockup's alone. A control here would be a second one.
+    // The topband is the lockup's, and the lockup is a control now: one button,
+    // wrapping the mark, doing the same collapse the foot's square control does.
     assert.equal(
       expanded.header.controls.length,
-      0,
-      `topband holds ${expanded.header.controls.length} controls, expected none — the toggle lives in the foot now`,
+      1,
+      `topband holds ${expanded.header.controls.length} controls, expected the lockup's`,
+    );
+    assert.ok(expanded.brandToggle, "the lockup is not wrapped in a collapse control");
+    assert.equal(
+      expanded.brandToggle!.label,
+      "Collapse sidebar",
+      `the lockup's control is named ${JSON.stringify(expanded.brandToggle!.label)}`,
+    );
+    assert.equal(
+      expanded.brandToggle!.title,
+      "Collapse sidebar",
+      `the lockup's control title is ${JSON.stringify(expanded.brandToggle!.title)}`,
+    );
+    assert.equal(
+      expanded.brandToggle!.ariaExpanded,
+      "true",
+      `the lockup's control reports aria-expanded=${JSON.stringify(expanded.brandToggle!.ariaExpanded)}`,
+    );
+    assert.equal(
+      expanded.brandToggle!.ariaControls,
+      "nav-rail",
+      "the lockup's control does not name the rail it controls",
+    );
+    assert.equal(
+      expanded.brandToggle!.hasLogo,
+      true,
+      "the lockup's control does not contain the mark",
+    );
+    // The mark is the hit target, so the button's box must hold the painted logo,
+    // and the carve-out must be on the button: the header around it is the window's
+    // drag band, and a drag region wins hit-testing over the DOM.
+    assert.ok(
+      expanded.brandToggle!.box.left <= expanded.railBrand!.left &&
+        expanded.brandToggle!.box.right >= expanded.railBrand!.right,
+      `the lockup button (${JSON.stringify(expanded.brandToggle!.box)}) does not hold the mark (${JSON.stringify(expanded.railBrand)})`,
+    );
+    assert.equal(
+      expanded.brandToggle!.appRegion,
+      "no-drag",
+      `the lockup's control is ${expanded.brandToggle!.appRegion}; a press would start a window drag`,
+    );
+    assert.equal(
+      expanded.header.appRegion,
+      "drag",
+      `the header is ${expanded.header.appRegion}, not the window's drag band`,
     );
     assert.ok(expanded.railBrand, "the rig did not measure the rail's lockup");
     const lockupBox = expanded.railBrand!;
@@ -1575,7 +1636,12 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       collapsed.header?.controls.length,
       0,
-      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected none — the toggle lives in the foot now`,
+      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected none — the lockup left with its button`,
+    );
+    assert.equal(
+      collapsed.brandToggle?.display,
+      "none",
+      `the thin rail still shows the lockup's button (${JSON.stringify(collapsed.brandToggle?.display)})`,
     );
     assert.equal(
       collapsed.railToggle?.label,
@@ -2053,6 +2119,49 @@ describe("shell sidebar (docked rail)", () => {
       restored.railLabels.display,
       "none",
       "reopening did not bring the rail's labels back",
+    );
+
+    // The lockup is a second door to the same collapse: a press on the mark folds
+    // the rail, and the foot's emblem brings it back. The two controls drive one
+    // state pair, so neither can drift into its own idea of what collapsed is.
+    const brandCollapse = report.brandCollapse;
+    const brandRestored = report.brandRestored;
+    assert.ok(brandCollapse, "the rig wrote no lockup-collapsed sample");
+    assert.equal(
+      brandCollapse.shellNavCollapsed,
+      true,
+      "a press on the lockup did not collapse the rail",
+    );
+    assert.equal(
+      brandCollapse.rail?.box.width,
+      collapsedTrack,
+      `the lockup-collapsed rail is ${brandCollapse.rail?.box.width}px, not the ${collapsedTrack}px icon column`,
+    );
+    assert.equal(
+      brandCollapse.header?.controls.length,
+      0,
+      `the lockup's button stayed in the thin rail's topband (${brandCollapse.header?.controls.length} controls)`,
+    );
+    assert.equal(
+      brandCollapse.brandToggle?.display,
+      "none",
+      "the lockup's button is still drawn in the thin rail",
+    );
+    assert.ok(brandRestored, "the rig wrote no lockup-restored sample");
+    assert.equal(
+      brandRestored.shellNavCollapsed,
+      false,
+      "the foot did not reopen the lockup-collapsed rail",
+    );
+    assert.equal(
+      brandRestored.header?.controls.length,
+      1,
+      `reopening from the foot left the topband with ${brandRestored.header?.controls.length} controls`,
+    );
+    assert.equal(
+      brandRestored.brandToggle?.label,
+      "Collapse sidebar",
+      "reopening did not bring the lockup's control back in its collapse state",
     );
 
     // The dock's own contract: square, flush right and bottom, on the sheet's

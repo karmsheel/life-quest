@@ -26,6 +26,9 @@ type Box = {
   height: number;
 };
 
+/** One rule element as the rig read it: still in the markup, painted or not. */
+type RuleInk = { display: string | null; fill: string | null };
+
 type BrandSample = {
   box: Box;
   variant: string;
@@ -35,6 +38,8 @@ type BrandSample = {
   inHeader: boolean;
   display: string;
   fills: { life: string | null; icon: string | null; uest: string | null };
+  /** The art's two flanking rules: present in the markup, not drawn. */
+  rules: { life: RuleInk | null; uest: RuleInk | null };
 };
 
 type Tokens = { life: string; icon: string; uest: string };
@@ -51,6 +56,8 @@ type State = {
   rowPad: number | null;
   lifeLeft: number | null;
   brand: BrandSample | null;
+  /** The lockup's collapse button, the control the thin rail hides with it. */
+  brandButtonDisplay: string | null;
   toggleMode: string | null;
   toggleEmblem: boolean;
   tokens: Tokens;
@@ -73,6 +80,7 @@ type SplashState = {
   role: string | null;
   label: string | null;
   fills: { life: string | null; icon: string | null; uest: string | null };
+  rules: { life: RuleInk | null; uest: RuleInk | null };
   tokens: Tokens;
   hidden: boolean;
 };
@@ -237,6 +245,18 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       },
       "the lockup's three groups are not painted from --life-color/--icon-color/--uest-color",
     );
+    // The supplied art's flanking dashes stay in the bundled markup but are not
+    // painted on any surface: the mark is the words and the Q alone.
+    assert.equal(
+      brand.rules?.life?.display,
+      "none",
+      "the lockup still draws its LIFE flanking rule",
+    );
+    assert.equal(
+      brand.rules?.uest?.display,
+      "none",
+      "the lockup still draws its UEST flanking rule",
+    );
     assert.deepEqual(
       {
         life: expanded.tokens.life.toLowerCase(),
@@ -287,7 +307,16 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
     const collapsed = report.collapsed;
     assert.ok(collapsed, "the rig wrote no collapsed sample");
     assert.equal(collapsed?.rail?.width, 56, "the collapsed rail is not the 56px icon column");
-    assert.equal(collapsed?.brand?.display, "none", "the thin rail still draws the lockup");
+    assert.equal(
+      collapsed?.brand?.box.width,
+      0,
+      "the thin rail still draws the lockup",
+    );
+    assert.equal(
+      collapsed?.brandButtonDisplay,
+      "none",
+      "the thin rail still shows the lockup's collapse button",
+    );
     assert.equal(
       collapsed?.toggleMode,
       "brand",
@@ -338,6 +367,16 @@ describe("brand logo (rail lockup, Developer pick, splash, app icon)", () => {
       splashDefault?.fills,
       { life: "rgb(248, 229, 200)", icon: "rgb(198, 106, 61)", uest: "rgb(248, 229, 200)" },
       "the splash's lockup is not the brand trio on the dark boot",
+    );
+    assert.equal(
+      splashDefault?.rules?.life?.display,
+      "none",
+      "the splash's lockup still draws its LIFE flanking rule",
+    );
+    assert.equal(
+      splashDefault?.rules?.uest?.display,
+      "none",
+      "the splash's lockup still draws its UEST flanking rule",
     );
     const splashSelected = report.splashSelected;
     assert.equal(splashSelected?.dataLogo, "classic", "the picked splash is not Classic");

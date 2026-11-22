@@ -1074,15 +1074,15 @@ a {
   fill: var(--uest-color);
 }
 
-/* The lockup's flanking rules are part of the art and take the word inks: the
-   left rule the LIFE ink, the right rule the UEST ink, so a theme that splits
-   the words splits the rules with them. */
-.lifequest-logo .life-rule {
-  fill: var(--life-color);
-}
-
+/* The lockup's flanking rules are part of the art (the supplied files carry a
+   rule each side of the words, at the emblem's centre line). They are not drawn:
+   the mark is the two words and the Q alone. Hiding them instead of deleting them
+   from the bundled art keeps the shipped files the shipped files — the elements
+   are still in the markup, so the art still answers to its own source, and the
+   rules' ink model is one property away if the flank should come back. */
+.lifequest-logo .life-rule,
 .lifequest-logo .uest-rule {
-  fill: var(--uest-color);
+  display: none;
 }
 
 /* The lockup in the rail's header: height-sized to one header row (1.7rem), width
@@ -1111,6 +1111,36 @@ a {
   width: auto;
   height: 100%;
   max-width: 100%;
+}
+
+/* The lockup is also the rail's collapse control (see `NavBrandButton`): the mark
+   is the target. The row around it stays the window's drag band, so the button
+   alone is carved out of it; the quiet hover fill is the whole affordance — it
+   says "pressable" without turning the header into a chip. */
+.nav-rail__brand-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  height: 1.7rem;
+  margin: 0;
+  padding: 0 0.45rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.nav-rail__brand-button:hover {
+  background: var(--selected-soft);
+}
+
+.nav-rail__brand-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 /* The lockups' Q emblem alone: the pure mark the thin rail's expand control
@@ -1408,7 +1438,7 @@ a {
    where the wide rail's horizontal band sits, so narrowing the rail moves nothing
    down the column. The row holds no control at this width any more — the toggle
    that used to close it lives in the foot now. */
-.shell--nav-collapsed .nav-rail__brand {
+.shell--nav-collapsed .nav-rail__brand-button {
   display: none;
 }
 

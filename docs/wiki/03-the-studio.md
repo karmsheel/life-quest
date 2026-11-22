@@ -71,11 +71,12 @@ settings sheet instead of a smaller menu.
    a control — see [Areas](./05-areas.md).
 4. **Collapse and restore the rail.** Press the panel icon at the foot of the rail
    (**Collapse sidebar** / **Expand sidebar**), at the bottom trailing corner
-   beside the vault chip. Collapsed, the rail narrows in place to a 56px icon
-   column (`3.5rem`) and the page widens; the same toggle stays at the foot of the
-   thin rail and turns around. The five wings stack vertically, the pages keep
-   their icons and accessible names, and the chats list and the vault chip's
-   label leave the column.
+   beside the vault chip — or press the centred **LifeQuest lockup** in the
+   header, which is the same control. Collapsed, the rail narrows in place to a
+   56px icon column (`3.5rem`) and the page widens; the foot's toggle stays where
+   it is and turns around. The five wings stack vertically, the pages keep their
+   icons and accessible names, and the chats list and the vault chip's label
+   leave the column.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
    the dock's bottom action bar (**Collapse chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark at the page's trailing corner, and
@@ -138,20 +139,21 @@ The rail:
   rail-content inset below the window's top edge, with the same measure again
   between it and the wing band below. The active logo is **Minimal** by default,
   and any of **Modern**, **Athletic**, **Classic** or **Minimal** from
-  Settings → Developer. The mark
-  carries short rules on either side of the words, like the supplied lockup, and
-  is drawn from the shipped art; its three inks (LIFE, the Q emblem, UEST)
-  are theme colours, so the lockup follows the active theme and the day/night
-  palette instead of carrying one fixed picture. It is a mark, not a control:
-  the header row (and the rest of the strip beside it) is the window's drag
-  handle.
+  Settings → Developer. It is drawn from the shipped art, with the art's two
+  short flanking rules left unpainted — the lockup reads LIFE · Q · UEST, no
+  dashes; its three inks (LIFE, the Q emblem, UEST) are theme colours, so the
+  lockup follows the active theme and the day/night palette instead of carrying
+  one fixed picture. The mark is a control as well: a press on it collapses the
+  rail, exactly as the foot's panel icon does (**Collapse sidebar** / **Expand
+  sidebar**). The air around the mark — and the rest of the strip beside it —
+  stays the window's drag handle.
 - A collapse toggle at the foot of the rail (**Collapse sidebar** / **Expand
   sidebar**), at the sidebar's bottom trailing corner beside the vault chip and
-  the Log, with `aria-expanded` and `aria-controls="nav-rail"`. Collapsed, the
-  56px column has no room for a word: the lockup leaves and the control becomes
-  the pure Q emblem (**Expand sidebar**), which reopens the rail on a press. The
-  toggle no longer sits beside the lockup, so the mark is free to hold the
-  column's centre line.
+  the Log, with `aria-expanded` and `aria-controls="nav-rail"`. It and the centred
+  lockup share one collapsed state, so the two doors can never disagree.
+  Collapsed, the 56px column has no room for a word: the lockup leaves with its
+  button and the foot control becomes the pure Q emblem (**Expand sidebar**),
+  which reopens the rail on a press.
 - The five-wing band, a square block under the header row. It keeps its 44px but
   follows the lockup's inset down the rail, so it is no longer level with the
   title bar; its frame is the block's one outline, and the selected wing is
@@ -327,8 +329,9 @@ catalogued in [Settings](./28-settings.md).
 ## Tips and edge cases
 
 - Collapsing the rail never takes it away: it narrows to its icon column, so the
-  one collapse toggle stays at the foot of the rail at either width, closing the
-  sidebar's bottom trailing corner. The lens tab
+  foot's collapse control stays at the sidebar's bottom trailing corner at either
+  width, and while the rail is wide the centred lockup collapses it too. The lens
+  tab
   holds the strip's centre line, so the room beside it grows rather than the tab
   sliding along with the rail.
 - The chat's collapsed state keeps the component mounted: a streaming turn keeps
