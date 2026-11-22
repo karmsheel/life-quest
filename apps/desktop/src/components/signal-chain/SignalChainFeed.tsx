@@ -754,6 +754,15 @@ export function SignalChainFeed() {
         </p>
       ) : null}
 
+      {/* The box and the filters are separate jobs: space and a hairline keep
+          the capture surface from reading as the first row of chips. */}
+      <hr
+        className="signal-chain__rule"
+        role="separator"
+        aria-orientation="horizontal"
+        data-testid="chain-rule"
+      />
+
       {/* The triage band above the list. The area lens above the page still
           applies; these chips narrow what is left and never widen it. */}
       <div

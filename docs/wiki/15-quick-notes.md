@@ -103,6 +103,7 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Link chip | Inside the box, under the field, until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
 | **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
+| Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
 | Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |

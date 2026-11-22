@@ -10638,7 +10638,7 @@ button.chat-panel__activity-line:hover {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
-  padding: 0.35rem 0.45rem 0.5rem 0.5rem;
+  padding: 0.35rem 0.7rem 0.55rem 0.7rem;
 }
 
 .signal-chain__composer-commit {
@@ -10706,7 +10706,9 @@ button.chat-panel__activity-line:hover {
   width: 100%;
   border: 0;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  padding: 0.7rem 0.85rem 0.45rem;
+  /* Extra padding on either side: the caret and the placeholder sit a breath
+     in from the box's edge rather than on it. */
+  padding: 0.75rem 1.1rem 0.5rem;
   background: transparent;
   resize: vertical;
   font: inherit;
@@ -10724,7 +10726,16 @@ button.chat-panel__activity-line:hover {
 .signal-chain__composer > .signal-chain__attachment,
 .signal-chain__composer > .signal-chain__pending-file,
 .signal-chain__composer > .signal-chain__link-chip {
-  margin: 0.55rem 0.55rem 0;
+  margin: 0.6rem 0.7rem 0;
+}
+
+/* The capture box and the filters are different jobs, so a hairline and a
+   breath of space sit between them: the box is not the first filter row. */
+.signal-chain__rule {
+  height: 1px;
+  margin: 0.15rem 0;
+  border: 0;
+  background: var(--border);
 }
 
 /* A picture dropped on the box lights the box rather than a page-wide overlay:
