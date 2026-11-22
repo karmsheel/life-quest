@@ -501,7 +501,7 @@
 .daily-note__history-day,
 .daily-note__history-unreadable {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.6fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.6fr) minmax(0, 1.1fr);
   align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0.7rem;
@@ -564,11 +564,17 @@
   color: var(--text-soft);
 }
 
+/* A day is a file under its week's folder, so its date cell — the index's name
+   column — is indented one tree step: the file glyph starts to the right of the
+   folder glyph, and the date itself to the right of the week's label. The other
+   two columns stay where the header puts them, the way a file list indents a
+   nested name without moving the dates beside it. */
 .daily-note__history-date {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  padding-left: 1.75rem;
   font-weight: 550;
 }
 
@@ -596,10 +602,11 @@
   font-size: 0.66rem;
 }
 
-/* A week, as a folder: the same leading edge as a day's row, a caret, the folder
-   glyph and the week's own label. The current week is drawn as an open folder
-   with no toggle — it is the one week the operator is living in, so it cannot be
-   folded away — and every older week folds under its own toggle. */
+/* A week, as a folder: a caret, the folder glyph and the week's own label at the
+   panel's leading edge, with its days indented under it. The current week is
+   drawn as an open folder with no toggle — it is the one week the operator is
+   living in, so it cannot be folded away — and every older week folds under its
+   own toggle. */
 .daily-note__week {
   display: flex;
   flex-direction: column;
@@ -710,7 +717,7 @@
   .daily-note__layout {
     display: grid;
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 26rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr) minmax(0, 28rem) minmax(0, 1fr) minmax(0, 46rem)
       minmax(0, 1fr);
     align-items: start;
     /* The three equal tracks are the whole spacing; the base's one-rem gap would
@@ -734,7 +741,7 @@
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 26rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr) minmax(0, 28rem) minmax(0, 1fr) minmax(0, 46rem)
       minmax(0, 1fr);
     align-items: start;
     column-gap: 0;
@@ -768,7 +775,7 @@
   .shell--chat-left .daily-note__layout,
   .shell--chat-left .daily-note__workspace {
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 46rem) minmax(0, 1fr) minmax(0, 26rem)
+      minmax(0, 1fr) minmax(0, 46rem) minmax(0, 1fr) minmax(0, 28rem)
       minmax(0, 1fr);
   }
 

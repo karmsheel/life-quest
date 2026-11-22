@@ -136,9 +136,11 @@
  *     a rectangular card with a name band, a three-column header and the file
  *     tree's two shapes — a folder row for every week (the current week drawn as
  *     an open `This week` folder, older weeks as toggles) and a file row for
- *     every day, unreadable files in their own group. The panel's heading and
+ *     every day, each indented under its week's folder glyph, unreadable files in
+ *     their own group. The panel's heading and
  *     rows are read from their computed type sizes, the frame from its computed
- *     border and surface, and every row's box must sit inside the panel's own, so
+ *     border and surface, each day's glyph must sit to the right of the folder it
+ *     belongs to, and every row's box must sit inside the panel's own, so
  *     a loose table floating in the margin, a panel at the page's prose scale, or
  *     a row that escapes its frame all fail here. The artifact is the panel's own
  *     picture, cropped to its frame with a week opened.
@@ -364,6 +366,29 @@ const SAMPLE = `(() => {
             const rowBoxes = Array.from(
               history.querySelectorAll(".daily-note__history-row"),
             ).map(rect);
+            // The tree's nesting, read from the rendered boxes rather than from
+            // the stylesheet: each folder glyph and the glyph of the first day
+            // under it, both as offsets from the panel's own leading edge.
+            const tree = Array.from(
+              history.querySelectorAll("[data-group], .daily-note__week"),
+            ).map((container) => {
+              const folderIcon = container.querySelector(
+                ".daily-note__history-folder-icon",
+              );
+              const fileIcon = container.querySelector(".daily-note__history-file");
+              return {
+                name:
+                  container.getAttribute("data-group") ??
+                  container.getAttribute("data-week"),
+                folderIconLeft: folderIcon
+                  ? Math.round(folderIcon.getBoundingClientRect().left - panelBox.left)
+                  : null,
+                firstFileIconLeft: fileIcon
+                  ? Math.round(fileIcon.getBoundingClientRect().left - panelBox.left)
+                  : null,
+                rows: container.querySelectorAll(".daily-note__history-row").length,
+              };
+            });
             return {
               borderWidth: px(style.borderTopWidth),
               borderStyle: style.borderTopStyle,
@@ -389,6 +414,7 @@ const SAMPLE = `(() => {
               dayFileIcons: Array.from(
                 history.querySelectorAll(".daily-note__history-day"),
               ).map((el) => Boolean(el.querySelector(".daily-note__history-file"))),
+              tree,
               rowHeight: historyDay
                 ? Math.round(historyDay.getBoundingClientRect().height)
                 : null,

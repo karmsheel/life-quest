@@ -144,6 +144,13 @@ type HistoryPanel = {
   groups: { name: string | null; label: string; count: string; rows: number }[];
   weekFolderIcons: boolean[];
   dayFileIcons: boolean[];
+  /** Each folder and the first day under it, as x-offsets in the panel. */
+  tree: {
+    name: string | null;
+    folderIconLeft: number | null;
+    firstFileIconLeft: number | null;
+    rows: number;
+  }[];
   rowHeight: number | null;
 };
 type Chrome = {
@@ -807,6 +814,25 @@ describe("daily note ui e2e", () => {
         unreadableGroup.label,
         "Unreadable files",
         "the unreadable folder is not labelled Unreadable files",
+      );
+    }
+    // A day is a file UNDER its week's folder: every day's file glyph has to sit
+    // deeper into the panel than the folder glyph it belongs to, or the index is
+    // just a table with two icons in it.
+    const nested = index.tree.filter((node) => node.rows > 0);
+    assert.ok(nested.length > 0, "the index drew no folder with a day under it");
+    for (const node of nested) {
+      assert.ok(
+        node.folderIconLeft !== null,
+        `the ${node.name} folder drew no folder glyph to nest under`,
+      );
+      assert.ok(
+        node.firstFileIconLeft !== null,
+        `the ${node.name} folder drew no day glyph to measure`,
+      );
+      assert.ok(
+        (node.firstFileIconLeft ?? 0) > (node.folderIconLeft ?? 0) + 2,
+        `the day under ${node.name} sits at ${node.firstFileIconLeft}px, not indented under its folder glyph at ${node.folderIconLeft}px`,
       );
     }
     // The panel is a type step below the page, not at the page's prose scale:

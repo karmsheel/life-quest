@@ -68,8 +68,9 @@ to remember, because the date is the filename.
    the editor. This week is the open folder (**This week**) with its days listed under it,
    and every earlier week folds under its own folder toggle such as `W36 (31 Aug - 5 Sep)`;
    opening one draws its days and turns its folder glyph from closed to open. A day with a
-   note is a file row and a button; the date, its weekday and the moment it was last edited
-   are its three columns, under the panel's **Date**, **Day** and **Last edited** header.
+   note is a file row and a button, indented under the week folder it belongs to; the date,
+   its weekday and the moment it was last edited are its three columns, under the panel's
+   **Date**, **Day** and **Last edited** header.
    The panel sits at a smaller type step than the page's prose, because it is an index you
    skim to pick a day rather than a page you read.
 
