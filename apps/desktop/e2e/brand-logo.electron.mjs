@@ -89,6 +89,7 @@ const SAMPLE = `(() => {
   const rail = document.querySelector(".nav-rail");
   const header = document.querySelector(".nav-rail__header");
   const brand = document.querySelector(".nav-rail__brand");
+  const brandButton = document.querySelector(".nav-rail__brand-button");
   const svg = brand ? brand.querySelector("svg") : null;
   const lifeText = brand ? brand.querySelector(".life-text") : null;
   const toggle = document.querySelector(".nav-rail .nav-toggle");
@@ -116,6 +117,11 @@ const SAMPLE = `(() => {
   const rootStyle = getComputedStyle(document.documentElement);
   const token = (name) => rootStyle.getPropertyValue(name).trim();
   const fillOf = (el) => (el ? getComputedStyle(el).fill : null);
+  // The supplied art's two flanking rules: still in the markup, not drawn.
+  const ruleOf = (el) =>
+    el
+      ? { display: getComputedStyle(el).display, fill: getComputedStyle(el).fill }
+      : null;
   const picker = document.querySelector(".logo-picker");
   const options = picker
     ? Array.from(picker.querySelectorAll("[data-logo-option]"))
@@ -149,8 +155,16 @@ const SAMPLE = `(() => {
             life: fillOf(brand.querySelector(".life-text")),
             icon: fillOf(brand.querySelector(".quest-icon")),
             uest: fillOf(brand.querySelector(".uest-text"))
+          },
+          rules: {
+            life: ruleOf(brand.querySelector(".life-rule")),
+            uest: ruleOf(brand.querySelector(".uest-rule"))
           }
         }
+      : null,
+    // The lockup's collapse button: the control the thin rail hides with the mark.
+    brandButtonDisplay: brandButton
+      ? getComputedStyle(brandButton).display
       : null,
     toggleMode: toggle ? toggle.getAttribute("data-nav-toggle") : null,
     toggleEmblem: Boolean(toggle && toggle.querySelector(".lifequest-emblem")),
@@ -195,6 +209,12 @@ const SPLASH_SAMPLE = `(() => {
     const el = visible ? visible.querySelector(selector) : null;
     return el ? getComputedStyle(el).fill : null;
   };
+  const ruleOf = (selector) => {
+    const el = visible ? visible.querySelector(selector) : null;
+    return el
+      ? { display: getComputedStyle(el).display, fill: getComputedStyle(el).fill }
+      : null;
+  };
   const token = (name) => (style ? style.getPropertyValue(name).trim() : null);
   return {
     hasSplash: Boolean(splash),
@@ -208,6 +228,10 @@ const SPLASH_SAMPLE = `(() => {
       life: fillOf(".life-text"),
       icon: fillOf(".quest-icon"),
       uest: fillOf(".uest-text")
+    },
+    rules: {
+      life: ruleOf(".life-rule"),
+      uest: ruleOf(".uest-rule")
     },
     tokens: {
       life: token("--life-color"),
@@ -361,14 +385,22 @@ async function applyTheme(win, skin, mode) {
   await sleep(300);
 }
 
-/** The picture of the shipped rail header in the current state. */
+/**
+ * The picture of the shipped rail in the current state: the header while the rail
+ * is wide (the centred lockup), and the foot while it is thin — the collapse
+ * toggle's home, where the expand emblem now sits under the vault's initials.
+ * The header holds no control at the thin width, so a crop of it would show the
+ * drag band and nothing else.
+ */
 async function captureHeader(win, state, name) {
   const file = path.join(artifactsDir, name);
+  const thin = state.toggleMode === "brand";
+  const height = Math.min(state.viewport.height, thin ? 180 : 110);
   const shot = await win.webContents.capturePage({
     x: 0,
-    y: 0,
+    y: thin ? Math.max(0, state.viewport.height - height) : 0,
     width: Math.max(1, state.rail?.width ?? WINDOW.width),
-    height: Math.min(state.viewport.height, 110),
+    height,
   });
   fs.writeFileSync(file, shot.toPNG());
   return file;
@@ -505,32 +537,30 @@ async function main() {
       `brand ${JSON.stringify(brand)} header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup sits on the strip's line, before the collapse toggle",
-      Boolean(brand && expanded.header && expanded.toggle && expanded.rail) &&
+      "the lockup is centred on the rail's column",
+      Boolean(brand && expanded.header && expanded.rail) &&
         brand.box.top >= expanded.header.top - 1 &&
         brand.box.bottom <= expanded.header.bottom + 1 &&
-        brand.box.left >= expanded.rail.left &&
-        brand.box.right <= expanded.toggle.left &&
-        expanded.toggle.top >= expanded.header.top - 1 &&
-        expanded.toggle.bottom <= expanded.header.bottom + 1 &&
+        Math.abs(
+          (brand.box.left + brand.box.right) / 2 -
+            (expanded.rail.left + expanded.rail.right) / 2,
+        ) <= 1 &&
         brand.box.height >= 24 &&
         brand.box.height <= 31,
-      `brand ${JSON.stringify(brand?.box)} toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
+      `brand ${JSON.stringify(brand?.box)} in rail ${JSON.stringify(expanded.rail)} under header ${JSON.stringify(expanded.header)}`,
     );
     check(
-      "the lockup's leading rule sits on the line the wing switcher's H and the page icons share",
-      Boolean(brand && expanded.firstLink && expanded.wings && expanded.wingText && expanded.icon) &&
-        expanded.rowPad !== null &&
-        Math.abs(brand.box.left - expanded.wingText.left) <= 1.5 &&
-        brand.box.left - expanded.icon.left >= 0.5 &&
-        brand.box.left - expanded.icon.left <= 3 &&
+      "the lockup's painted box holds equal air on the column's two sides",
+      Boolean(brand && expanded.rail) &&
         Math.abs(
-          brand.box.left - expanded.firstLink.left - (expanded.rowPad + 1.5),
-        ) <= 0.6,
-      `lockup ${brand?.box.left}px, H text ${expanded.wingText?.left}px, icon ${expanded.icon?.left}px, row ${expanded.firstLink?.left}px + ${expanded.rowPad}px + 1.5px`,
+          brand.box.left -
+            expanded.rail.left -
+            (expanded.rail.right - brand.box.right),
+        ) <= 2,
+      `lockup ${JSON.stringify(brand?.box)} in rail ${JSON.stringify(expanded.rail)}`,
     );
     check(
-      "the header keeps the collapse chevron beside the lockup",
+      "the rail keeps its collapse chevron",
       expanded.toggleMode === "chevron",
       `toggle mode ${JSON.stringify(expanded.toggleMode)}`,
     );
@@ -549,18 +579,28 @@ async function main() {
       `fills ${JSON.stringify(brand?.fills)} tokens ${JSON.stringify(expanded.tokens)}`,
     );
     check(
+      "the lockup's flanking rules are present but not drawn",
+      Boolean(brand?.rules?.life && brand?.rules?.uest) &&
+        brand.rules.life.display === "none" &&
+        brand.rules.uest.display === "none",
+      `rules ${JSON.stringify(brand?.rules)}`,
+    );
+    check(
       "the forge night palette draws both words cream and the emblem ember",
       expanded.tokens.life.toLowerCase() === "#f8e5c8" &&
         expanded.tokens.icon.toLowerCase() === "#c66a3d" &&
         expanded.tokens.uest.toLowerCase() === "#f8e5c8",
       `tokens ${JSON.stringify(expanded.tokens)}`,
     );
+    // The toggle's home is the rail's foot now, at the sidebar's bottom trailing
+    // corner — not the header row beside the lockup.
     check(
-      "the collapse toggle keeps the strip above the lockup",
-      Boolean(expanded.header && expanded.toggle) &&
-        expanded.toggle.top >= expanded.header.top - 1 &&
-        expanded.toggle.bottom <= expanded.header.bottom + 1,
-      `toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)}`,
+      "the collapse chevron lives in the rail's foot",
+      Boolean(expanded.toggle && expanded.header && expanded.rail) &&
+        expanded.toggle.top > expanded.header.bottom &&
+        Math.abs(expanded.rail.bottom - expanded.toggle.bottom) <= 16 &&
+        expanded.toggle.right > expanded.rail.left + (expanded.rail.width ?? 0) * 0.7,
+      `toggle ${JSON.stringify(expanded.toggle)} header ${JSON.stringify(expanded.header)} rail ${JSON.stringify(expanded.rail)}`,
     );
 
     const wideFile = await captureHeader(win, expanded, "brand-logo-wide.png");
@@ -639,6 +679,12 @@ async function main() {
         splashDefault.tokens.life.toLowerCase() === "#f8e5c8",
       `splash fills ${JSON.stringify(splashDefault.fills)} tokens ${JSON.stringify(splashDefault.tokens)}`,
     );
+    check(
+      "the splash hides the lockup's flanking rules too",
+      splashDefault.rules?.life?.display === "none" &&
+        splashDefault.rules?.uest?.display === "none",
+      `splash rules ${JSON.stringify(splashDefault.rules)}`,
+    );
 
     // The thin rail leaves the lockup out and keeps the toggle.
     step = "collapse the rail";
@@ -651,8 +697,9 @@ async function main() {
       Boolean(collapsed.rail) &&
         collapsed.rail.width === 56 &&
         Boolean(collapsed.brand) &&
-        collapsed.brand.display === "none",
-      `rail ${JSON.stringify(collapsed.rail)} brand display ${JSON.stringify(collapsed.brand?.display)}`,
+        collapsed.brand.box.width === 0 &&
+        collapsed.brandButtonDisplay === "none",
+      `rail ${JSON.stringify(collapsed.rail)} brand ${JSON.stringify(collapsed.brand?.box)}, button display ${JSON.stringify(collapsed.brandButtonDisplay)}`,
     );
     check(
       "the thin rail's expand control is the pure emblem",

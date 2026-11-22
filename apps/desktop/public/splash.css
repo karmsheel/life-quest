@@ -78,12 +78,12 @@
   fill: var(--uest-color);
 }
 
-.splash__logo .life-rule {
-  fill: var(--life-color);
-}
-
+/* The lockup's flanking dashes are not drawn: the mark is the words and the Q
+   alone on every surface, so the rail's `.lifequest-logo` hides the same two
+   elements. They stay in the bundled art, unwritten by the theme. */
+.splash__logo .life-rule,
 .splash__logo .uest-rule {
-  fill: var(--uest-color);
+  display: none;
 }
 
 [data-logo="modern"] .splash__logo-variant[data-splash-logo="modern"],

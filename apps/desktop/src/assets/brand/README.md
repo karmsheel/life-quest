@@ -30,7 +30,7 @@ same classes — `life-text` (the LIFE word), `quest-icon` (the Q emblem) and
 | `--icon-color` | the Q emblem | `#C66A3D` ember |
 | `--uest-color` | the UEST word | `#F8E5C8` cream — the same ink as LIFE |
 
-Each lockup also carries two short rules flanking the words at the emblem's centre line — the left one in the LIFE ink, the right one in the UEST ink — and each rule is set one E-to-Q space away from the word, so the mark reads as `— LIFE · Q · UEST —` on every surface.
+Each lockup also carries two short rules flanking the words at the emblem's centre line — the left one in the LIFE ink, the right one in the UEST ink — each set one E-to-Q space away from its word. The app does not draw them: `.lifequest-logo` (rail, picker) and `.splash__logo` (boot) hide the two elements, so the mark reads `LIFE · Q · UEST` without the dashes on every surface.
 
 The supplied files carried their own `:root` defaults and class fills. Those
 were removed when the art was brought in (`logo/` files have no `<style>` and no
@@ -44,11 +44,10 @@ splash (injected by `vite.config.ts` from these same files) draw from the tokens
 only, so the mark follows the active theme and cannot go invisible on a day
 skin. The picker (Settings → Developer) stores the variant in localStorage under
 `lifequest-logo`; `theme-boot.js` reads the same key for the splash. The rail's header draws the art's
-ink-tight viewBox (`headerViewBox` in `src/lib/brand/logo.ts`) and holds it one
-row-content inset in (`--density-pad-row-x`) plus a 1.5px optical nudge, so the
-leading letter sits on the line the page rows' icons and the wing switcher's H
-stroke share. The splash and picker keep the padded box, which preserves the
-mark's scale there.
+ink-tight viewBox (`headerViewBox` in `src/lib/brand/logo.ts`) and centres that
+painted box on the rail's column, with `--rail-header-inset` above it and again
+between it and the wing switcher. The splash and picker keep the padded box,
+which preserves the mark's scale there.
 
 The emblem/wordmark/lockup SVGs above are the earlier extraction of the single
 supplied PNG, kept as static brand art (app icon, media).

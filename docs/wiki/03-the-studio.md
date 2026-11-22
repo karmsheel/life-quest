@@ -69,12 +69,15 @@ settings sheet instead of a smaller menu.
    options. The tab is centred on the strip and holds that centre when the rail
    collapses. With fewer than two unlocked areas it is a quiet **Life** label, not
    a control — see [Areas](./05-areas.md).
-4. **Collapse and restore the rail.** Press the panel icon at the top of the rail
-   (**Collapse sidebar** / **Expand sidebar**). Collapsed, the rail narrows in
-   place to a 56px icon column (`3.5rem`) and the page widens; the same toggle
-   stays at the top of the thin rail and turns around. The five wings stack
-   vertically, the pages keep their icons and accessible names, and the chats
-   list and the vault chip's label leave the column.
+4. **Collapse and restore the rail.** Press the panel icon at the foot of the rail
+   (**Collapse sidebar** / **Expand sidebar**), at the bottom trailing corner
+   beside the vault chip — or press the centred **LifeQuest lockup** in the
+   header, which is the same control. Collapsed, the rail narrows in place to a
+   56px icon column (`3.5rem`) and the page widens; the panel icon moves up to
+   the top of the thin column and turns around as the pure Q emblem, so the way
+   back is the first thing in it. The five wings stack vertically, the pages keep
+   their icons and accessible names, and the chats list and the vault chip's
+   label leave the column.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
    the dock's bottom action bar (**Collapse chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark at the page's trailing corner, and
@@ -133,22 +136,28 @@ The window title bar:
 
 The rail:
 
-- The **LifeQuest lockup** in the rail's header row, level with the collapse
-  toggle and held one rail-content inset below the window's top edge — the same
-  air it has beside it, and the same measure again between it and the wing
-  band below. The active logo is **Minimal** by default, and any of **Modern**,
-  **Athletic**, **Classic** or **Minimal** from Settings → Developer. The mark
-  carries short rules on either side of the words, like the supplied lockup, and
-  is drawn from the shipped art; its three inks (LIFE, the Q emblem, UEST)
-  are theme colours, so the lockup follows the active theme and the day/night
-  palette instead of carrying one fixed picture. It is a mark, not a control:
-  the header row (and the rest of the strip beside it) is the window's drag
-  handle.
-- A collapse toggle in that header row (**Collapse sidebar** / **Expand
-  sidebar**), with `aria-expanded` and `aria-controls="nav-rail"`. It drops with
-  the lockup. Collapsed, the 56px column has no room for a word: the lockup
-  leaves and the control becomes the pure Q emblem (**Expand sidebar**), which
-  reopens the rail on a press.
+- The **LifeQuest lockup**, centred in the rail's header row and held one
+  rail-content inset below the window's top edge, with the same measure again
+  between it and the wing band below. The active logo is **Minimal** by default,
+  and any of **Modern**, **Athletic**, **Classic** or **Minimal** from
+  Settings → Developer. It is drawn from the shipped art, with the art's two
+  short flanking rules left unpainted — the lockup reads LIFE · Q · UEST, no
+  dashes; its three inks (LIFE, the Q emblem, UEST) are theme colours, so the
+  lockup follows the active theme and the day/night palette instead of carrying
+  one fixed picture. The mark is a control as well: a press on it collapses the
+  rail, exactly as the foot's panel icon does (**Collapse sidebar** / **Expand
+  sidebar**). The pointer is its only hover cue — no fill behind it and no
+  tooltip. The air around the mark — and the rest of the strip beside it — stays
+  the window's drag handle.
+- A collapse toggle (**Collapse sidebar** / **Expand sidebar**), with
+  `aria-expanded` and `aria-controls="nav-rail"`. Wide, it is the reachable
+  square at the sidebar's bottom trailing corner beside the vault chip and the
+  Log; collapsed, it moves to the top of the 56px column, because the way back
+  belongs where the column starts rather than under its rows. It and the centred
+  lockup share one collapsed state, so the two doors can never disagree.
+  Collapsed, the column has no room for a word: the lockup leaves with its button
+  and the control becomes the pure Q emblem (**Expand sidebar**), which reopens
+  the rail on a press.
 - The five-wing band, a square block under the header row. It keeps its 44px but
   follows the lockup's inset down the rail, so it is no longer level with the
   title bar; its frame is the block's one outline, and the selected wing is
@@ -166,9 +175,13 @@ The rail:
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
   pulses when the count grows.
-- A divider, then the foot: **Log** closes the rail's navigation, and the **vault
-  chip** takes the row's other half. Wide, the chip shows the vault's name and a
-  caret; thin, it becomes the vault's initials under the Log icon. Clicking it
+- A divider, then the foot: **Log** closes the rail's navigation, the **vault
+  chip** names the workspace, and the collapse toggle holds the row's trailing
+  end — the sidebar's bottom corner. The Log and the chip share what the toggle
+  leaves, so the chip sits one toggle left of the rail's trailing edge rather
+  than flush against it. Wide, the chip shows the vault's name and a caret; thin,
+  the three stack — the vault's initials under the Log icon, with the expand
+  emblem closing the column. Clicking the chip
   raises the **Switch vault** dialog: every recent vault with the open one marked
   **Open now**, a note that switching loads that folder's files in place, and
   **Open another folder…** for a folder this computer has never seen. The
@@ -320,7 +333,10 @@ catalogued in [Settings](./28-settings.md).
 ## Tips and edge cases
 
 - Collapsing the rail never takes it away: it narrows to its icon column, so the
-  one collapse toggle stays at the top of the rail at either width. The lens tab
+  collapse control moves from the sidebar's bottom trailing corner up to the top
+  of the column as the Q emblem — the way back is the first thing in the thin
+  rail — and while the rail is wide the centred lockup collapses it too. The lens
+  tab
   holds the strip's centre line, so the room beside it grows rather than the tab
   sliding along with the rail.
 - The chat's collapsed state keeps the component mounted: a streaming turn keeps
