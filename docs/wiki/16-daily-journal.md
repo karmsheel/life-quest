@@ -12,8 +12,8 @@ period it covers.
 - Rail: icon **NotebookPen**, label **Daily Journal**.
 - Route: `/notes`. The route and the files did not change when the page was renamed from
   Daily Note; there is no per-date URL, and the date is page state.
-- Surface: a full page in the centre pane, with the editor and the **Earlier notes** strip
-  beside it (the strip moves to the page's other edge when the chat dock swaps sides).
+- Surface: a full page in the centre pane, with the editor and the **Earlier notes** panel
+  beside it (the panel moves to the page's other edge when the chat dock swaps sides).
 
 This page is part of the [Wiki home](./index.md).
 
@@ -64,10 +64,15 @@ to remember, because the date is the filename.
    hosted on the day — and the sheet closes, hands the page back and opens that act's chat in
    the dock with its first turn already sent. Close with the cross, a click outside the
    sheet, or **Escape**; the day is written on the way out and the page is where you left it.
-8. Jump to any earlier day from the **Earlier notes** list: this week's days are listed
-   directly and every earlier week folds under its own toggle such as
-   `W36 (31 Aug - 5 Sep)`. A day with a note is a button; the date, its weekday and the
-   moment it was last edited are its three columns.
+8. Jump to any earlier day from the **Earlier notes** panel: a framed folder index beside
+   the editor. This week is the open folder (**This week**) with its days listed under it,
+   and every earlier week folds under its own folder toggle such as `W36 (31 Aug - 5 Sep)`;
+   opening one draws its days and turns its folder glyph from closed to open. A day with a
+   note is a file row and a button, indented under the week folder it belongs to; the date,
+   its weekday and the moment it was last edited are its three columns, under the panel's
+   **Date**, **Day** and **Last edited** header.
+   The panel sits at a smaller type step than the page's prose, because it is an index you
+   skim to pick a day rather than a page you read.
 
 With no notes at all, **Earlier notes** shows: "No notes yet. Today's page is the first one."
 An empty day is an empty editor, not an error and not a page of instructions.
@@ -84,7 +89,7 @@ An empty day is an empty editor, not an error and not a page of instructions.
 | **Choose a day** | The calendar key beside the date; opens the month with the future disabled and the next-month arrow stopping at today's month. |
 | Editor | A live markdown box, focused on an empty day. |
 | Status line | **Saving…**, **Saved**, **Not saved**, or **No note for this day yet**; it keeps the box's foot's leading edge, level with the day's act. |
-| **Earlier notes** | The journal index: **Date**, **Day**, **Last edited**; this week open, earlier weeks folded; unreadable files shown in place as "unreadable". |
+| **Earlier notes** | The journal index as a framed folder panel: **Date**, **Day**, **Last edited** columns; **This week** as the open folder, earlier weeks as folder toggles; unreadable files reported in their own group as "unreadable". Drawn one type step below the page's prose. |
 | **Focus mode** | A 56rem page of paper over the blurred page: the date as its one heading, the editor filling the measure, a reserved autosave band and the day's acts at the foot. |
 
 ## Rules and behaviour
@@ -189,7 +194,7 @@ These rules are the Daily Notes law:
   is always writable, so a day that got away can still be written.
 - Erasing every character and pausing does not delete the note: the vault refuses the empty
   body, the file keeps its last written prose, and the status line reads **Not saved**.
-- The **Earlier notes** strip is a convenience; if it cannot be read, the editor still works.
+- The **Earlier notes** panel is a convenience; if it cannot be read, the editor still works.
   Only one day is loaded at a time.
 - A note's date is a *local* calendar date. The filename is the local day, not a UTC day.
 - The calendar's days are the Life Map's weeks: Monday first, the same month grid.

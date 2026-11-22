@@ -206,6 +206,15 @@ function seed(date: string, body: string, updatedAt?: string): void {
   });
 }
 seed(yesterday, "Yesterday: a walk, then the rig.");
+// The weekly review opens on the last completed ISO week, so the review panel's
+// window needs a note inside it whatever weekday the rig runs on: the Wednesday
+// of the week before this one. Without it the panel is empty early in a week and
+// its claim would be about the calendar rather than about the page.
+const reviewWeekDay = shift(
+  today,
+  -(((new Date(`${today}T00:00:00`).getDay() + 6) % 7) + 5),
+);
+seed(reviewWeekDay, "Earlier week: the review panel read this note.");
 // On disk but not a day, and dated in the future: the strip must report the first
 // as unreadable and never offer the second.
 seed(tomorrow, "Tomorrow: written by hand on disk.");
@@ -287,6 +296,16 @@ const bridge: Record<string, unknown> = {
   // signal, so the channel is modelled as a quiet watcher — this rig is about
   // the daily note, and nothing on it writes the review.
   onVaultDataChanged: () => () => {},
+  // The theme folder watcher. ThemeProvider calls whatever this returns as its
+  // effect cleanup, so the harness has to answer with a real unsubscribe: the
+  // proxy below would hand back a Promise (the "unmodelled bridge call" answer),
+  // and StrictMode's first unmount would then crash the page on cleanup.
+  onThemesChanged: () => () => {},
+  // ThemeProvider reads the profile's theme folder and its kept file on mount.
+  // This rig is about the journal, so the folder is empty and the answer is a
+  // real, quiet Result rather than the proxy's "unmodelled call" refusal.
+  themesList: () => Promise.resolve(ok([])),
+  themeGetState: () => Promise.resolve(ok({ keptFile: null })),
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   // Every read answers a copy, as the real IPC hop does: handing the renderer

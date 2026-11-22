@@ -39,8 +39,8 @@ export type NavItem = {
   /**
    * Where the row sits on the rail.
    *
-   * `bottom` is the governed shelf: Notebox, Decisions, Daily Journal and
-   * Automations, cordoned above the Log. `footer` is the Log itself — the one
+   * `bottom` is the governed shelf: Notebox, Decisions, Daily Journal,
+   * Automations and Extensions, cordoned above the Log. `footer` is the Log itself — the one
    * row that closes the rail — so the shelf can carry a divider above it without
    * counting the Log as one of its entries.
    */
