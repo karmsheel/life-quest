@@ -12,11 +12,12 @@
  * (`daily-note.png`), the box with one paragraph open as its own markdown
  * (`daily-note-editing.png`), the writing line a save landed in without touching
  * it (`daily-note-midsentence.png`), the Review panel (`daily-note-panel.png`),
- * the wide page twice — the strip and the box as one centred block with the
- * dock on its shipped side (`daily-note-split-right.png`) and swapped
- * (`daily-note-split-left.png`), and the day's page with a soft-wrapped
- * paragraph open as its writing line, the line the arrow claims walk
- * (`daily-note-arrows.png`).
+ * the journal index's own folder panel with a week opened
+ * (`daily-note-history.png`), the wide page twice — the index and the box as one
+ * centred block with the dock on its shipped side
+ * (`daily-note-split-right.png`) and swapped (`daily-note-split-left.png`), and
+ * the day's page with a soft-wrapped paragraph open as its writing line, the
+ * line the arrow claims walk (`daily-note-arrows.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -90,7 +91,7 @@
  * 20. The days before this week fold under a `W36 (31 Aug - 6 Sep)` label: the
  *     current week stays open, a folded week mounts no rows, and opening a week
  *     draws its days — including the far day's last-edited stamp.
- * 21. A page wide enough for two columns makes one block of the strip and the box
+ * 21. A page wide enough for two columns makes one block of the index and the box
  *     — the Documents page's own arrangement — centred on the page with the strip
  *     on the side away from the dock: as much room before the strip as after the
  *     box, and the gutter between the two as wide as the room between the box and
@@ -130,6 +131,17 @@
  *     W is measured from the rendered box itself
  *     (`round(scrollHeight / lineHeight)`), never from the handler, so the claim
  *     is about the layout the operator sees rather than the page's own maths.
+ *
+ * 25. The journal index is ONE framed folder panel, a type step below the page:
+ *     a rectangular card with a name band, a three-column header and the file
+ *     tree's two shapes — a folder row for every week (the current week drawn as
+ *     an open `This week` folder, older weeks as toggles) and a file row for
+ *     every day, unreadable files in their own group. The panel's heading and
+ *     rows are read from their computed type sizes, the frame from its computed
+ *     border and surface, and every row's box must sit inside the panel's own, so
+ *     a loose table floating in the margin, a panel at the page's prose scale, or
+ *     a row that escapes its frame all fail here. The artifact is the panel's own
+ *     picture, cropped to its frame with a week opened.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -181,7 +193,8 @@ const SAMPLE = `(() => {
       background: style.backgroundColor,
     };
   };
-  // The governed shelf: Life-Chain, Decisions, Daily Note, Automations. It is
+  // The governed shelf: Quick Notes, Decisions, Daily Journal, Automations,
+  // Extensions. It is
   // the group with its own divider above it, at the foot of the rail, not the
   // wing's list above.
   const governed = document.querySelector('[data-nav-group="governance"]');
@@ -264,12 +277,19 @@ const SAMPLE = `(() => {
     document.querySelectorAll(".daily-note__history-row"),
   ).map((el) => {
     const dateEl = el.querySelector(".daily-note__history-date");
+    const dateText = el.querySelector(".daily-note__history-date-text");
     const rowEl = el.querySelector(".daily-note__history-day") || el;
     return {
       isoDate: el.getAttribute("data-date"),
       width: rowEl.clientWidth,
       overflow: rowEl.scrollWidth - rowEl.clientWidth,
-      dateClipped: Boolean(dateEl && dateEl.scrollWidth > dateEl.clientWidth + 1),
+      // The cell's own ellipsis is the last word: a date that shrinks to
+      // "22 Nov 2026 (Tod…" reads as a different day, so the inner text's own
+      // overflow counts as clipped even though the cell reports none.
+      dateClipped: Boolean(
+        (dateEl && dateEl.scrollWidth > dateEl.clientWidth + 1) ||
+          (dateText && dateText.scrollWidth > dateText.clientWidth + 1),
+      ),
     };
   });
   const content = document.querySelector(".shell__content");
@@ -322,6 +342,59 @@ const SAMPLE = `(() => {
         ? px(getComputedStyle(historyHeading).fontSize)
         : null,
       historyRowSize: historyDay ? px(getComputedStyle(historyDay).fontSize) : null,
+      // The index panel itself: one framed block on the card ladder, and the
+      // file tree's two row shapes inside it. A loose table would have no frame
+      // and no folder rows; a panel whose rows escaped it would not be a block.
+      historyPanel: history
+        ? (() => {
+            const style = getComputedStyle(history);
+            const panelBox = rect(history);
+            const groups = Array.from(
+              history.querySelectorAll(".daily-note__history-group"),
+            ).map((group) => ({
+              name: group.getAttribute("data-group"),
+              label: (
+                group.querySelector(".daily-note__history-folder-label")?.textContent || ""
+              ).trim(),
+              count: (
+                group.querySelector(".daily-note__history-folder-count")?.textContent || ""
+              ).trim(),
+              rows: group.querySelectorAll(".daily-note__history-row").length,
+            }));
+            const rowBoxes = Array.from(
+              history.querySelectorAll(".daily-note__history-row"),
+            ).map(rect);
+            return {
+              borderWidth: px(style.borderTopWidth),
+              borderStyle: style.borderTopStyle,
+              background: style.backgroundColor,
+              radius: px(style.borderTopLeftRadius),
+              bar: Boolean(history.querySelector(".daily-note__history-bar")),
+              head: Boolean(history.querySelector(".daily-note__history-head")),
+              rowsInside: rowBoxes.every(
+                (r) =>
+                  r.left >= panelBox.left - 1 &&
+                  r.top >= panelBox.top - 1 &&
+                  r.left + r.width <= panelBox.left + panelBox.width + 1 &&
+                  r.top + r.height <= panelBox.top + panelBox.height + 1,
+              ),
+              fileIcons: history.querySelectorAll(".daily-note__history-file").length,
+              folderIcons: history.querySelectorAll(
+                ".daily-note__history-folder-icon",
+              ).length,
+              groups,
+              weekFolderIcons: Array.from(
+                history.querySelectorAll(".daily-note__week-toggle"),
+              ).map((el) => Boolean(el.querySelector(".daily-note__history-folder-icon"))),
+              dayFileIcons: Array.from(
+                history.querySelectorAll(".daily-note__history-day"),
+              ).map((el) => Boolean(el.querySelector(".daily-note__history-file"))),
+              rowHeight: historyDay
+                ? Math.round(historyDay.getBoundingClientRect().height)
+                : null,
+            };
+          })()
+        : null,
     },
     // The bridge's own ledger, read as a count so a step can prove the page wrote
     // nothing while it sat still.
@@ -1432,13 +1505,16 @@ async function main() {
   const landing = await sample(win);
   checks.rail = landing.links;
   const labels = landing.links.map((entry) => entry.label);
-  if (labels[labels.length - 1] !== "Automations") {
-    failure(`the governed shelf does not end with Automations: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 1] !== "Extensions") {
+    failure(`the governed shelf does not end with Extensions: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 2] !== "Daily Journal") {
+  if (labels[labels.length - 2] !== "Automations") {
+    failure(`Extensions is not directly under Automations: ${JSON.stringify(labels)}`);
+  }
+  if (labels[labels.length - 3] !== "Daily Journal") {
     failure(`Automations is not directly under Daily Journal: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 3] !== "Decisions") {
+  if (labels[labels.length - 4] !== "Decisions") {
     failure(`Daily Journal is not directly under Decisions: ${JSON.stringify(labels)}`);
   }
   const noteLink = landing.links.find((entry) => entry.label === "Daily Journal");
@@ -1466,6 +1542,18 @@ async function main() {
     }
     if (!automationsLink.icon) failure("the Automations entry drew no icon");
     if (automationsLink.active) failure("Automations is marked active on the Daily Journal route");
+  }
+  const extensionsLink = landing.links.find((entry) => entry.label === "Extensions");
+  if (!extensionsLink) {
+    failure("the rail carries no Extensions entry at all");
+  } else {
+    if (!(extensionsLink.href ?? "").endsWith("/extensions")) {
+      failure(
+        `the Extensions entry points at ${JSON.stringify(extensionsLink.href)}, expected the extensions route`,
+      );
+    }
+    if (!extensionsLink.icon) failure("the Extensions entry drew no icon");
+    if (extensionsLink.active) failure("Extensions is marked active on the Daily Journal route");
   }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
@@ -2599,6 +2687,43 @@ async function main() {
     path.join(artifactsDir, "daily-note-split-right.png"),
     wideRightShot.toPNG(),
   );
+
+  // The index's own picture: one older week opened, so the artifact shows both
+  // shapes of the journal's file tree — a folder row and the files beneath it —
+  // rather than only the folded labels. The panel is the subject, so the shot is
+  // cropped to its own frame and a little air.
+  const openedIndexWeek = await win.webContents.executeJavaScript(
+    `(() => {
+      const toggle = document.querySelector(".daily-note__week-toggle");
+      if (!toggle) return false;
+      toggle.click();
+      return true;
+    })()`,
+  );
+  if (!openedIndexWeek) failure("the journal index drew no folder row to open");
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const indexSample = await sample(win);
+  if (!indexSample.chrome.historyPanel) {
+    failure("the journal index drew no panel for its picture");
+  }
+  const indexBox = indexSample.layout.history;
+  if (!indexBox) {
+    failure("the journal index's own box could not be measured for its picture");
+  } else {
+    const air = 10;
+    const historyShot = await win.webContents.capturePage({
+      x: Math.max(0, Math.round(indexBox.left - air)),
+      y: Math.max(0, Math.round(indexBox.top - air)),
+      width: Math.round(indexBox.width + air * 2),
+      height: Math.round(indexBox.height + air * 2),
+    });
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-history.png"),
+      historyShot.toPNG(),
+    );
+  }
 
   // Swap the dock to the leading edge: the strip changes sides with it, so the
   // box stays between the companion and the journal rather than under it. The

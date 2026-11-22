@@ -7,7 +7,15 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
-import { ChevronLeft, ChevronRight, Focus, Sparkles } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Focus,
+  Folder,
+  FolderOpen,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
@@ -586,6 +594,13 @@ export default function DailyNotePage() {
     return { current, previous: [...grouped.values()], unreadable };
   }, [currentWeekStart, newestFirst]);
 
+  // The index's own total: the notes it can actually open, which is what its
+  // folder counts add up to. A file that names no usable day is reported, not
+  // counted as a note.
+  const noteCount =
+    weeks.current.length +
+    weeks.previous.reduce((total, week) => total + week.entries.length, 0);
+
   // Landing on a day outside this week opens the week that day belongs to, so
   // the day on screen is never folded away inside the list below it.
   const selectedWeekStart = useMemo(() => isoWeekOf(date)?.start ?? null, [date]);
@@ -602,7 +617,15 @@ export default function DailyNotePage() {
     );
   }, []);
 
-  /** One day of the journal, in the strip's three columns. */
+  /**
+   * One day of the journal, as one file in the journal's folder tree.
+   *
+   * The three cells are the three the column header names — the day the note is
+   * *for*, its weekday and when it was last written — and the file glyph in
+   * front of the date is what makes the row read as a note rather than as a row
+   * of a table: the folder glyphs above it name the weeks, and the two kinds of
+   * row together read as the journal's own file tree.
+   */
   const historyRow = (entry: DailyNoteIndexEntry) =>
     entry.error ? (
       <li
@@ -610,7 +633,14 @@ export default function DailyNotePage() {
         className="daily-note__history-row daily-note__history-unreadable"
         data-date={entry.date}
       >
-        <span className="daily-note__history-date">{entry.date}</span>
+        <span className="daily-note__history-date">
+          <FileText
+            size={11}
+            className="daily-note__history-file"
+            aria-hidden="true"
+          />
+          <span className="daily-note__history-date-text">{entry.date}</span>
+        </span>
         <span className="daily-note__history-weekday">—</span>
         <span className="daily-note__history-edited">unreadable</span>
       </li>
@@ -623,8 +653,15 @@ export default function DailyNotePage() {
           onClick={() => void goToDay(entry.date)}
         >
           <span className="daily-note__history-date">
-            {formatLocalIsoDate(entry.date)}
-            {entry.date === today ? " (Today)" : ""}
+            <FileText
+              size={11}
+              className="daily-note__history-file"
+              aria-hidden="true"
+            />
+            <span className="daily-note__history-date-text">
+              {formatLocalIsoDate(entry.date)}
+              {entry.date === today ? " (Today)" : ""}
+            </span>
           </span>
           <span className="daily-note__history-weekday">
             {weekdayOf(entry.date) ?? "—"}
@@ -822,19 +859,36 @@ export default function DailyNotePage() {
             </div>
           )}
 
-          <section className="daily-note__history">
-            <h2>Earlier notes</h2>
+          {/* The journal index is one panel, not a loose table: a framed block
+              on the page's edge whose header names it and whose rows are the
+              journal's own file tree — a folder for every week, a file for every
+              day. Encapsulating it is what makes it read as a navigation surface
+              beside the day, rather than as a second paragraph of the page
+              floating in the margin, and a folder tree is the one shape every
+              operator already knows for "the days that came before this one". */}
+          <section
+            className="daily-note__history"
+            aria-labelledby="daily-note-history-title"
+          >
+            <div className="daily-note__history-bar">
+              <h2 id="daily-note-history-title">Earlier notes</h2>
+              {noteCount > 0 ? (
+                <span className="daily-note__history-total">
+                  {noteCount} {noteCount === 1 ? "note" : "notes"}
+                </span>
+              ) : null}
+            </div>
             {newestFirst.length === 0 ? (
-              <p className="muted">
+              <p className="daily-note__history-empty muted">
                 {todayHasNote
                   ? "Nothing yet."
                   : "No notes yet. Today's page is the first one."}
               </p>
             ) : (
               <>
-                {/* The strip is one small table: the day written *about*, its weekday,
-                    and when it was last written. The header is decoration — every row
-                    is a button whose own cells say the same thing — so it is hidden
+                {/* The panel's one table header: the day written *about*, its
+                    weekday, and when it was last written. It is decoration —
+                    every row's own cells say the same thing — so it is hidden
                     from the reading order rather than announced twice. */}
                 <div className="daily-note__history-head" aria-hidden="true">
                   <span>Date</span>
@@ -842,18 +896,39 @@ export default function DailyNotePage() {
                   <span>Last edited</span>
                 </div>
 
-                {/* This week stays open: the days after today are what "Earlier
+                {/* This week is the open folder: its days are what "Earlier
                     notes" means right now, and folding them under a click would
-                    hide the one week the operator is living in. */}
+                    hide the one week the operator is living in. It is drawn as a
+                    folder with no toggle, so the tree still names the week. */}
                 {weeks.current.length > 0 ? (
-                  <ul className="daily-note__history-list" data-week="current">
-                    {weeks.current.map(historyRow)}
-                  </ul>
+                  <div className="daily-note__history-group" data-group="current">
+                    <div className="daily-note__history-folder">
+                      <span
+                        className="daily-note__week-caret"
+                        aria-hidden="true"
+                      />
+                      <FolderOpen
+                        size={12}
+                        className="daily-note__history-folder-icon"
+                        aria-hidden="true"
+                      />
+                      <span className="daily-note__history-folder-label">
+                        This week
+                      </span>
+                      <span className="daily-note__history-folder-count">
+                        {weeks.current.length}{" "}
+                        {weeks.current.length === 1 ? "note" : "notes"}
+                      </span>
+                    </div>
+                    <ul className="daily-note__history-list" data-week="current">
+                      {weeks.current.map(historyRow)}
+                    </ul>
+                  </div>
                 ) : null}
 
-                {/* Every week before this one folds under its own toggle. The list
-                    is mounted only while the week is open, so a year of folded
-                    weeks is a year of labels rather than a year of rows. */}
+                {/* Every week before this one folds under its own folder. The
+                    list is mounted only while the week is open, so a year of
+                    folded weeks is a year of labels rather than a year of rows. */}
                 {weeks.previous.map((week) => {
                   const open = openWeeks.includes(week.start);
                   const daysId = `daily-note-week-${week.start}-days`;
@@ -875,10 +950,23 @@ export default function DailyNotePage() {
                         <span className="daily-note__week-caret" aria-hidden="true">
                           ›
                         </span>
+                        {open ? (
+                          <FolderOpen
+                            size={12}
+                            className="daily-note__history-folder-icon"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Folder
+                            size={12}
+                            className="daily-note__history-folder-icon"
+                            aria-hidden="true"
+                          />
+                        )}
                         <span className="daily-note__week-label">
                           {weekLabel(week, currentYear)}
                         </span>
-                        <span className="daily-note__week-count muted">
+                        <span className="daily-note__week-count">
                           {week.entries.length}{" "}
                           {week.entries.length === 1 ? "note" : "notes"}
                         </span>
@@ -895,9 +983,29 @@ export default function DailyNotePage() {
                 {/* A file that names no usable day belongs to no week, so it is
                     reported where it sits rather than silently dropped. */}
                 {weeks.unreadable.length > 0 ? (
-                  <ul className="daily-note__history-list">
-                    {weeks.unreadable.map(historyRow)}
-                  </ul>
+                  <div className="daily-note__history-group" data-group="unreadable">
+                    <div className="daily-note__history-folder">
+                      <span
+                        className="daily-note__week-caret"
+                        aria-hidden="true"
+                      />
+                      <Folder
+                        size={12}
+                        className="daily-note__history-folder-icon"
+                        aria-hidden="true"
+                      />
+                      <span className="daily-note__history-folder-label">
+                        Unreadable files
+                      </span>
+                      <span className="daily-note__history-folder-count">
+                        {weeks.unreadable.length}{" "}
+                        {weeks.unreadable.length === 1 ? "file" : "files"}
+                      </span>
+                    </div>
+                    <ul className="daily-note__history-list">
+                      {weeks.unreadable.map(historyRow)}
+                    </ul>
+                  </div>
                 ) : null}
               </>
             )}

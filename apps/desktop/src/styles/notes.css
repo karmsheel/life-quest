@@ -422,34 +422,99 @@
   font-size: 0.85rem;
 }
 
-/* The strip of earlier days: one small table. These rows are buttons, and nothing
-   in `global.css` resets the platform's own button fill — without a rule here they
-   paint the engine's grey chip and carry the list's bullets.
+/* —— The journal index: a folder panel beside the day ——
+   The earlier days are a navigation surface, not a second paragraph of the page:
+   one framed block, one small type step, and the file tree's own two shapes — a
+   folder for every week, a file for every day. The frame is what sets the index
+   apart from the prose beside it, and the tree is the shape every operator
+   already reads as "the days that came before this one".
 
-   Three columns, shared by the header, the rows and the file that names no real
-   day: the date the note is for, that date's weekday, and when it was last
-   written. The grid is declared once for all three so the header cannot drift out
-   of line with the cells under it. */
+   The panel stands on the page's own ladder: `--card` is the surface, the
+   `--border` hairline its frame and the Calm Scale's `--radius-sm` step its
+   corner — the step the settings cards and the quick menus already wear, so a
+   panel beside the day belongs to the same family as every other panel in the
+   studio. The rows inside it are square: a file list is one column of rows, not
+   a heap of rounded chips.
+
+   The type is deliberately a step *below* the page's (heading 0.82rem, rows
+   0.72rem, columns 0.6rem): this is an index the eye skims to pick a day, not
+   prose to read, so it sits at the micro scale the column header and the counts
+   share. The rows are buttons and nothing in `global.css` resets the platform's
+   own button fill — without the rule below they paint the engine's grey chip. */
 .daily-note__history {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--border);
-  /* As wide as the box above it, so the strip reads as the note's own footer
+  /* As wide as the box above it, so the panel reads as the note's own index
      rather than as a second, wider table. */
   width: 100%;
   max-width: 48rem;
-  margin-inline: auto;
+  margin: 0.5rem auto 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
-/* A step under the page's own title, and a step over the rows it heads. */
+/* The panel's name band: the index's one heading, and the count that says how
+   much journal there is behind it. The band wears the quiet fill so the reading
+   rows below it start on the panel's own surface. */
+.daily-note__history-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.48rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
 .daily-note__history h2 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+
+.daily-note__history-total {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.daily-note__history-empty {
+  margin: 0;
+  padding: 0.7rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+/* The three columns are declared once for the header, the files and the file
+   that names no real day: the date the note is for, that date's weekday, and
+   when it was last written. Declared in one place so the header cannot drift out
+   of line with the cells under it. */
+.daily-note__history-head,
+.daily-note__history-day,
+.daily-note__history-unreadable {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.6fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid transparent;
+}
+
+.daily-note__history-head {
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
 }
 
 .daily-note__history-list {
@@ -458,35 +523,21 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
 }
 
-.daily-note__history-head,
-.daily-note__history-day,
-.daily-note__history-unreadable {
-  display: grid;
-  /* Three shares of one row rather than one wide column and two huddled after it:
-     no cell is longer than its share, and the rhythm holds as the values change. */
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr);
-  align-items: baseline;
-  gap: 0.75rem;
-  /* The header and the unreadable row wear the same box as the buttons, so their
-     columns sit on the same x as the cells they name. */
-  padding: 0.35rem 0.5rem;
-  border: 1px solid transparent;
+/* One file per line, with the hairline the file lists elsewhere in the studio
+   give a column of rows. */
+.daily-note__history-row {
+  border-top: 1px solid var(--border-soft);
 }
 
-.daily-note__history-head {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
+.daily-note__history-row:first-child {
+  border-top: 0;
 }
 
 .daily-note__history-day {
   width: 100%;
-  border-radius: var(--radius-xs);
+  border-radius: 0;
   background: none;
   color: var(--fg);
   font: inherit;
@@ -498,48 +549,83 @@
   background: var(--muted-surface);
 }
 
-/* The day on screen is marked by its edge rather than by a highlight. */
+/* The day on screen is marked by its edge rather than by a highlight: the index
+   picks days, so every row must stay the same quiet surface until the operator
+   reaches for one. */
 .daily-note__history-day[aria-current="true"] {
-  border-color: var(--border);
-  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--border);
+  background: none;
+}
+
+/* The file glyph, at the same weight as the folder glyphs: the two shapes are
+   what make the panel a tree rather than a table with a heading. */
+.daily-note__history-file {
+  flex: 0 0 auto;
+  color: var(--text-soft);
 }
 
 .daily-note__history-date {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-weight: 550;
+}
+
+.daily-note__history-date-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+}
+
+.daily-note__history-weekday {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
 }
 
 .daily-note__history-edited {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.66rem;
 }
 
-/* A previous week, folded under its own label. The toggle is a row in the same
-   shape as a day's, so the strip keeps one leading edge; only the caret and the
-   count mark it as a group rather than a day. */
+/* A week, as a folder: the same leading edge as a day's row, a caret, the folder
+   glyph and the week's own label. The current week is drawn as an open folder
+   with no toggle — it is the one week the operator is living in, so it cannot be
+   folded away — and every older week folds under its own toggle. */
 .daily-note__week {
   display: flex;
   flex-direction: column;
+  border-top: 1px solid var(--border);
 }
 
-.daily-note__week + .daily-note__week {
-  margin-top: 0.15rem;
+.daily-note__history-folder,
+.daily-note__week-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.34rem 0.7rem;
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.daily-note__history-folder {
+  cursor: default;
 }
 
 .daily-note__week-toggle {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-xs);
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  text-align: left;
+  border: 0;
   cursor: pointer;
 }
 
@@ -552,24 +638,47 @@
   outline-offset: -2px;
 }
 
+.daily-note__history-folder-icon {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+}
+
+.daily-note__history-folder-label,
+.daily-note__week-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.005em;
+}
+
+.daily-note__history-folder-count,
+.daily-note__week-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The file that names no usable day belongs to no week: it is reported as its
+   own group rather than silently dropped. */
+.daily-note__history-group
+  + .daily-note__history-group,
+.daily-note__week + .daily-note__history-group {
+  border-top: 1px solid var(--border);
+}
+
 .daily-note__week-caret {
   flex: 0 0 auto;
+  width: 0.68rem;
   color: var(--muted);
+  text-align: center;
   transition: transform 120ms ease;
 }
 
 .daily-note__week-toggle[aria-expanded="true"] .daily-note__week-caret {
   transform: rotate(90deg);
-}
-
-.daily-note__week-label {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.daily-note__week-count {
-  margin-left: auto;
-  font-size: 0.8rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -601,7 +710,7 @@
   .daily-note__layout {
     display: grid;
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 30rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr) minmax(0, 26rem) minmax(0, 1fr) minmax(0, 46rem)
       minmax(0, 1fr);
     align-items: start;
     /* The three equal tracks are the whole spacing; the base's one-rem gap would
@@ -625,7 +734,7 @@
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 30rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr) minmax(0, 26rem) minmax(0, 1fr) minmax(0, 46rem)
       minmax(0, 1fr);
     align-items: start;
     column-gap: 0;
@@ -644,8 +753,7 @@
     grid-row: 1;
     max-width: none;
     margin: 0;
-    padding-top: 0;
-    border-top: 0;
+    align-self: start;
   }
 
   /* The box's own column, while a day is still on its way in. */
@@ -654,23 +762,13 @@
     grid-row: 1;
   }
 
-  /* The strip is narrower beside the box than it is under it, so the three
-     cells lean on the date and the stamp a little harder: the date is still
-     whole, the weekday is a word, and the stamp keeps its line. */
-  .daily-note__history-head,
-  .daily-note__history-day,
-  .daily-note__history-unreadable {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.7fr) minmax(0, 1.35fr);
-    gap: 0.5rem;
-  }
-
   /* Chat on the left: the strip changes ends with the dock — the box leads and
      the journal trails — and the three spaces stay the same shares of the page.
      Chat on the right is the default above. */
   .shell--chat-left .daily-note__layout,
   .shell--chat-left .daily-note__workspace {
     grid-template-columns:
-      minmax(0, 1fr) minmax(0, 46rem) minmax(0, 1fr) minmax(0, 30rem)
+      minmax(0, 1fr) minmax(0, 46rem) minmax(0, 1fr) minmax(0, 26rem)
       minmax(0, 1fr);
   }
 
