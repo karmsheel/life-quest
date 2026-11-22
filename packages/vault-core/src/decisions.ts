@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { getDocument } from "./domain-documents.ts";
@@ -422,10 +423,57 @@ async function writeDecisionFile(
  */
 const reportedUnreadableDecisions = new Set<string>();
 
+/**
+ * How many Decision files are read at once.
+ *
+ * The inbox is re-read on every write (the rail badge and the page both poll it
+ * on the vault's change signal), and a real vault holds ~800 Decision files
+ * totalling ~40 MB. Read strictly one at a time, `listDecisions` cost over a
+ * second there; reading a bounded batch measured roughly twice as fast, because
+ * the files are small and the disk answers several at once. It stays bounded
+ * rather than `Promise.all`: a larger inbox would otherwise be thousands of
+ * open descriptors in one tick, and the read shares the event loop with the
+ * badge polls it feeds.
+ */
+const DECISION_READ_CONCURRENCY = 8;
+
+/**
+ * Run `run` over `items` with at most `limit` in flight, preserving order.
+ *
+ * Local to this file on purpose — it is a dozen lines and the repo takes no
+ * dependency for it. Each worker claims its index before awaiting, and the
+ * result lands at that index, so callers get an array that matches `items` even
+ * though the reads finish out of order.
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      out[index] = await run(items[index]!, index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return out;
+}
+
 export async function listDecisions(rootPath: string): Promise<Result<DecisionRecord[]>> {
   try {
     const paths = vaultPaths(rootPath);
-    const decisions: DecisionRecord[] = [];
+    // The directory is validated ONCE, not once per file. `assertPhysicalContainment`
+    // walks `.lifequest` and `decisions` with lstat; doing that for every one of
+    // 800 files was three lstats per file and is why the inbox was the slowest
+    // read in the app. The per-file question that is left — is this entry a
+    // symlink? — is already answered by the dirent `readdir` produced.
+    await assertPhysicalContainment(rootPath, paths.decisionsDir, "read");
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(paths.decisionsDir, { withFileTypes: true });
@@ -435,47 +483,64 @@ export async function listDecisions(rootPath: string): Promise<Result<DecisionRe
       }
       throw e;
     }
+
+    const files: Array<{ name: string; filePath: string }> = [];
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      // A symlinked decision file is refused for the same reason a symlinked
+      // ancestor was: reading through the link would take the inbox outside the
+      // vault. `isFile()` already excludes a link, but the refusal is named here
+      // so the guard reads as a ruling rather than as a file-type filter.
+      if (entry.isSymbolicLink()) continue;
       const id = entry.name.replace(/\.json$/, "");
-      let filePath: string;
       try {
-        filePath = paths.decisionJson(id);
-        await assertPhysicalContainment(rootPath, filePath, "read");
+        // The same segment fence the path builder applies, minus the per-file
+        // lstat walk: a hostile NAME (traversal, separators) is skipped like a
+        // symlinked or unparseable one, so it cannot blank the inbox.
+        assertSafeSegment(id, "decision id");
       } catch {
-        // An invalid or symlinked filename is skipped, like an unparseable one:
-        // one hostile file must not blank the inbox.
         continue;
       }
-      try {
-        const decision = await readDecisionFile(filePath);
-        decisions.push(decision);
-      } catch (e) {
-        // ONE bad file must not blank the whole inbox. The old read let a single
-        // unparseable Decision throw out of here, so `decision:list` answered an
-        // error and the page drew "No pending proposals." — every Decision the
-        // operator had, made invisible by one file. The broken file is left on
-        // disk (never deleted or rewritten); it is reported once so it can be
-        // repaired, and the rest of the inbox is read.
-        if (!reportedUnreadableDecisions.has(filePath)) {
-          reportedUnreadableDecisions.add(filePath);
-          try {
-            await appendLog(rootPath, {
-              domainSlug: null,
-              type: "decision.unreadable",
-              summary: `Could not read the Decision file ${entry.name}`,
-              payload: {
-                file: entry.name,
-                error: e instanceof Error ? e.message : String(e),
-              },
-              actor: null,
-            });
-          } catch {
-            // The read path is not a write path; a log failure changes nothing.
-          }
-        }
-      }
+      // Built from the validated directory rather than through
+      // `paths.decisionJson`, which would re-walk `.lifequest/decisions` for
+      // every file. The directory was checked above and the leaf is a regular
+      // file per the dirent.
+      files.push({ name: entry.name, filePath: path.join(paths.decisionsDir, entry.name) });
     }
+
+    const decisions = (
+      await mapLimit(files, DECISION_READ_CONCURRENCY, async ({ name, filePath }) => {
+        try {
+          return await readDecisionFile(filePath);
+        } catch (e) {
+          // ONE bad file must not blank the whole inbox. The old read let a
+          // single unparseable Decision throw out of here, so `decision:list`
+          // answered an error and the page drew "No pending proposals." — every
+          // Decision the operator had, made invisible by one file. The broken
+          // file is left on disk (never deleted or rewritten); it is reported
+          // once so it can be repaired, and the rest of the inbox is read.
+          if (!reportedUnreadableDecisions.has(filePath)) {
+            reportedUnreadableDecisions.add(filePath);
+            try {
+              await appendLog(rootPath, {
+                domainSlug: null,
+                type: "decision.unreadable",
+                summary: `Could not read the Decision file ${name}`,
+                payload: {
+                  file: name,
+                  error: e instanceof Error ? e.message : String(e),
+                },
+                actor: null,
+              });
+            } catch {
+              // The read path is not a write path; a log failure changes nothing.
+            }
+          }
+          return null;
+        }
+      })
+    ).filter((decision): decision is DecisionRecord => decision !== null);
+
     decisions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return { ok: true, value: decisions };
   } catch (e) {

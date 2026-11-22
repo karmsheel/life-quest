@@ -263,6 +263,13 @@ import {
 import { runPlannerLoop } from "./map-tools.js";
 import { noteDataChanged } from "./data-revision.js";
 import {
+  cachedDecisionList,
+  decisionListGeneration,
+  invalidateDecisionList,
+  patchCachedDecision,
+  storeDecisionList,
+} from "./decision-list-cache.js";
+import {
   startMcp,
   stopMcp,
   getMcpDoors,
@@ -324,6 +331,86 @@ function withVault<T>(fn: (root: string) => Promise<Result<T>>): Promise<Result<
     if (!currentRoot) return noVaultError<T>();
     return fn(currentRoot);
   });
+}
+
+/**
+ * The cold decision-list read currently in flight, if any.
+ *
+ * Several surfaces ask for the list in the same breath — the rail's badge, the
+ * auto-open watcher, the inbox, the dashboard behind the sheet — and each one
+ * used to start its own read, which the vault's write queue then serialized:
+ * five readers meant five full scans of the Decisions directory before the next
+ * write could run. One read is enough for all of them, so a caller that arrives
+ * while a read for the same vault and the same generation is open joins it.
+ *
+ * The generation is part of the identity on purpose: a read that started before
+ * a write landed is not the answer a caller who asked after that write should
+ * get, so it is joined only while no write has superseded it.
+ */
+let decisionReadInFlight: {
+  root: string;
+  generation: number;
+  promise: Promise<Result<DecisionRecord[]>>;
+} | null = null;
+
+/**
+ * Read the decisions and resolve their display labels — the cold path.
+ *
+ * The labels are resolved here, at the display boundary, rather than in the
+ * renderer: a database row's relation cells hold row ids and the card has to
+ * draw names. Both halves are what made this expensive, which is why the answer
+ * is kept in `decision-list-cache.ts` and only this cache-miss path pays for it.
+ */
+function readDecisionList(root: string): Promise<Result<DecisionRecord[]>> {
+  const promise = withVault(async (openRoot) => {
+    // Captured where the read actually runs, not where it was asked for: the
+    // vault queue may have run writes (and their patches) in between, and the
+    // generation this read has to survive is the one of the state it is
+    // reading. Any write that lands after this point moves it again.
+    const generation = decisionListGeneration();
+    const listed = await listDecisions(openRoot);
+    if (!listed.ok) return listed;
+    const labeled = await withDecisionDisplayLabels(openRoot, listed.value);
+    storeDecisionList(openRoot, labeled, generation);
+    return { ok: true, value: labeled };
+  });
+  decisionReadInFlight = { root, generation: decisionListGeneration(), promise };
+  // Settle the bookkeeping without ever deriving an unhandled rejection from
+  // the promise the callers already own.
+  promise.then(
+    () => {
+      if (decisionReadInFlight?.promise === promise) decisionReadInFlight = null;
+    },
+    () => {
+      if (decisionReadInFlight?.promise === promise) decisionReadInFlight = null;
+    },
+  );
+  return promise;
+}
+
+/**
+ * Keep the cached list true after one Decision write landed.
+ *
+ * The write returns the record it wrote, so the cached list is patched with it
+ * instead of being thrown away and re-read. Approving a queue of cards is then a
+ * run of writes with no list reads in between, which is the difference between
+ * the operator waiting on the vault and the operator answering cards.
+ *
+ * The one record is labeled on its own: patching a bare record into a list of
+ * labeled ones would leave that card drawing row ids where every other card
+ * draws names. A labeling failure is not worth failing the write over — the
+ * cache is invalidated instead, and the next read resolves the labels again.
+ */
+async function patchDecisionCache(
+  root: string,
+  record: DecisionRecord,
+): Promise<void> {
+  try {
+    const [labeled] = await withDecisionDisplayLabels(root, [record]);
+    patchCachedDecision(root, labeled ?? record);
+  } catch {
+    invalidateDecisionList();
+  }
 }
 
 /**
@@ -413,6 +500,11 @@ export async function detectExternalDoctrineChanges(): Promise<
 }
 
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
+  // Opening a vault (or switching to another one) makes the cached decision
+  // list somebody else's list. A root check would already refuse to serve it,
+  // but a vault close followed by a re-open of the same folder must not carry
+  // the previous open's answer either.
+  invalidateDecisionList();
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
   // The vault is now current, and that includes everything keyed by it: the
@@ -1319,16 +1411,35 @@ export async function financeSaveAssumptionSet(input: {
   return withVault((root) => saveAssumptionSet(root, { ...input, actor: USER_ACTOR }));
 }
 
+/**
+ * The inbox's list.
+ *
+ * A person reads this inbox, so a database row's relation cells are resolved to
+ * row labels here, at the display boundary: the stored Decision keeps the raw
+ * payload the approve path applies, and the agent's own read path
+ * (`list_decisions`) still sees exactly what was filed.
+ *
+ * The answer is cached per open vault (`decision-list-cache.ts`) and patched by
+ * every Decision write, so the many readers of one change — and an operator
+ * answering a queue of cards — do not each pay for a full scan of the Decisions
+ * directory. The cache is invalidated by the app's own change signal, which is
+ * what keeps it a live reader rather than a second source of truth.
+ */
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {
-  return withVault(async (root) => {
-    const listed = await listDecisions(root);
-    if (!listed.ok) return listed;
-    // A person reads this inbox. A database row's relation cells hold row ids,
-    // so they are resolved to row labels here, at the display boundary: the
-    // stored Decision keeps the raw payload the approve path applies, and the
-    // agent's own read path (list_decisions) still sees exactly what was filed.
-    return { ok: true, value: await withDecisionDisplayLabels(root, listed.value) };
-  });
+  const root = currentRoot;
+  if (root === null) return noVaultError<DecisionRecord[]>();
+  const cached = cachedDecisionList(root);
+  // A copy per caller: the array is handed over IPC (which clones it) but a
+  // same-process caller must not be able to edit what the next caller sees.
+  if (cached !== null) return { ok: true, value: cached.slice() };
+  if (
+    decisionReadInFlight !== null &&
+    decisionReadInFlight.root === root &&
+    decisionReadInFlight.generation === decisionListGeneration()
+  ) {
+    return decisionReadInFlight.promise;
+  }
+  return readDecisionList(root);
 }
 
 export async function decisionCreate(input: {
@@ -1339,12 +1450,14 @@ export async function decisionCreate(input: {
   proposedBodyMarkdown: string;
   previousBodyMarkdown?: string | null;
 }): Promise<Result<DecisionRecord>> {
-  return withVault((root) =>
-    createDecision(root, {
+  return withVault(async (root) => {
+    const res = await createDecision(root, {
       ...input,
       actor: USER_ACTOR,
-    }),
-  );
+    });
+    if (res.ok) await patchDecisionCache(root, res.value);
+    return res;
+  });
 }
 
 /**
@@ -1359,7 +1472,11 @@ export async function decisionAmend(
   id: string,
   input: DecisionAmendment,
 ): Promise<Result<DecisionRecord>> {
-  return withVault((root) => amendDecision(root, id, input, USER_ACTOR));
+  return withVault(async (root) => {
+    const res = await amendDecision(root, id, input, USER_ACTOR);
+    if (res.ok) await patchDecisionCache(root, res.value);
+    return res;
+  });
 }
 
 export async function decisionResolve(
@@ -1369,7 +1486,13 @@ export async function decisionResolve(
   return withVault(async (root) => {
     const res = await resolveDecision(root, id, resolution);
     // Approval rewrites a doctrine file — refresh mtimes to avoid false stale.
-    if (res.ok) await captureDoctrineMtimes(root);
+    if (res.ok) {
+      await captureDoctrineMtimes(root);
+      // The card the operator just answered must be answered on the next read,
+      // without a re-read to learn it: patching is what keeps an approve burst
+      // free of list scans.
+      await patchDecisionCache(root, res.value);
+    }
     return res;
   });
 }
@@ -2164,8 +2287,14 @@ export async function companionChatStreamWithPack(
         // log: a log that fails returns not-ok with the Decision already on disk.
         // Announcing a filing that wrote nothing costs one repaint; not
         // announcing one that wrote is the operator watching an inbox that never
-        // hears about the proposal the companion just said it filed.
-        if (verdict.changes.length > 0) noteDataChanged();
+        // hears about the proposal the companion just said it filed. The cached
+        // list is part of what has to hear it: these filings bypass
+        // `decision:create` and the MCP door, so neither of their invalidations
+        // runs for this one.
+        if (verdict.changes.length > 0) {
+          invalidateDecisionList();
+          noteDataChanged();
+        }
 
         // And the operator is told in the chat itself what became of the
         // proposals. The inbox is live, but "it said it filed three and I see

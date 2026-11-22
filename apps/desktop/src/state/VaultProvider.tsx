@@ -409,3 +409,41 @@ export function useVault(): VaultContextValue {
   }
   return ctx;
 }
+
+/**
+ * A subtree whose vault snapshot stands still while it is covered.
+ *
+ * The counterpart of `LiveDataHold`, for the other signal a page's query runs
+ * on. A sheet keeps the page behind it mounted but dims it behind a scrim; that
+ * page is the one the operator is not reading. Answering a queue of decisions
+ * refreshes the snapshot after each answer (editors behind the sheet pick up the
+ * approved body), and every page effect keyed on `reloadGeneration` or on the
+ * snapshot re-ran inside a surface nobody could see.
+ *
+ * Held, the subtree keeps the last snapshot it showed and is handed the current
+ * one the moment the sheet leaves — one catch-up pass, in the same paint as the
+ * page coming back, instead of a wave of queries under the scrim.
+ *
+ * The hold is on the page's subtree only (see `PageCoverHold`), so the rail, the
+ * dock and the shell keep their own live view of the vault: the chat has to keep
+ * streaming, and the inbox is inside the sheet, not under it.
+ */
+export function VaultHold({
+  held,
+  children,
+}: {
+  held: boolean;
+  children: ReactNode;
+}) {
+  const value = useVault();
+  /** The snapshot the subtree last showed while it was visible. */
+  const visibleRef = useRef(value);
+  useEffect(() => {
+    if (!held) visibleRef.current = value;
+  }, [held, value]);
+  return (
+    <VaultContext.Provider value={held ? visibleRef.current : value}>
+      {children}
+    </VaultContext.Provider>
+  );
+}

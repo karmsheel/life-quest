@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -11,6 +11,7 @@ import { ThemePreviewBar } from "./ThemePreviewBar";
 import { NavRail } from "./NavRail";
 import { SceneBackdrop } from "./SceneBackdrop";
 import { CompositionSlot } from "@/components/composition/CompositionSlot";
+import { PageCoverHold } from "./PageCoverHold";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -27,8 +28,6 @@ export function AppShell() {
   } = useChatDock();
   const { chrome } = useTheme();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
-  const { pathname } = useLocation();
-  const chartBleed = pathname === "/chart";
   // The tray itself: the frame the dock's column is solved in, and the element a
   // dragged width is written to.
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -103,12 +102,7 @@ export function AppShell() {
                   above the routed content, and never take the way out. */}
               <CompositionSlot region="page.masthead" />
               <div
-                className={[
-                  "shell__content",
-                  chartBleed ? "shell__content--bleed" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
+                className="shell__content"
                 /*
                   This column is the page. The dock reads it off this attribute
                   when the operator sends a turn, so what the agent is told about
@@ -117,7 +111,14 @@ export function AppShell() {
                 */
                 data-page-context-root=""
               >
-                <Outlet />
+                {/* The page's own live view. While a sheet is over this page the
+                    subtree keeps the revision and snapshot it last showed, so a
+                    queue of answers does not re-run every card query behind a
+                    scrim nobody can read through; the sheet leaving hands it the
+                    current ones in a single catch-up pass. See `PageCoverHold`. */}
+                <PageCoverHold>
+                  <Outlet />
+                </PageCoverHold>
               </div>
               <CompositionSlot region="page.footer" />
               {/* The polar/quick-action ring: an overlay above the page, not a

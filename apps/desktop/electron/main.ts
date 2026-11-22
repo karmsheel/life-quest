@@ -24,6 +24,7 @@ import {
   noteDataChanged,
   onDataChanged,
 } from "./data-revision.js";
+import { invalidateDecisionList } from "./decision-list-cache.js";
 import * as companion from "./companion.js";
 import * as harness from "./harness/facade.js";
 import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted } from "./harness/pi-settings.js";
@@ -541,6 +542,28 @@ function isTrustedIpcSender(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
 }
 
 /**
+ * The Decision writes that keep the inbox's cached list true themselves.
+ *
+ * Every other mutating channel invalidates that cache (see
+ * `decision-list-cache.ts`), because any of them can change what a
+ * `decision:list` would answer — a database row the labels resolve against, a
+ * page a proposal targets. These three are the exception: each one returns the
+ * record it wrote, and the vault service patches that record into the cached
+ * list. Invalidating for them as well would make an approve burst re-read the
+ * whole Decisions directory between every card, which is exactly the wait this
+ * change exists to remove.
+ *
+ * A FAILED decision write is not in this set's way: the patch inside the vault
+ * service only runs when the write returned ok, so a refusal leaves the cached
+ * list exactly as valid as it was.
+ */
+const DECISION_WRITE_CHANNELS: ReadonlySet<string> = new Set([
+  "decision:create",
+  "decision:amend",
+  "decision:resolve",
+]);
+
+/**
  * `ipcMain`, with the live-dashboard notice added and every sender checked.
  *
  * Every channel below is registered through this object rather than through
@@ -548,6 +571,10 @@ function isTrustedIpcSender(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
  * list in `data-revision.ts` instead of a decision taken again at each of the
  * hundred-odd registration sites — and a channel added later is covered by
  * whatever that list says about it rather than by whether its author remembered.
+ *
+ * The same facade is where the decisions inbox's cached list is invalidated: it
+ * is the one place every renderer write passes through, and the cache may only
+ * be trusted for as long as the app's own change signal says nothing moved.
  *
  * The sender check lives here for the same reason: Electron's checklist asks
  * every handler to validate `event.sender`/`senderFrame`, and one facade means a
@@ -583,7 +610,12 @@ const ipcMain = {
       try {
         return await listener(event, ...args);
       } finally {
-        if (channelMayChangeData(channel)) noteDataChanged();
+        if (channelMayChangeData(channel)) {
+          // A Decision write patched the cached list itself; anything else that
+          // can change what the inbox would draw must throw it away.
+          if (!DECISION_WRITE_CHANNELS.has(channel)) invalidateDecisionList();
+          noteDataChanged();
+        }
       }
     });
   },
@@ -2118,7 +2150,13 @@ async function createWindow() {
   // back to the window is the moment to re-read the numbers — the same thing a
   // spreadsheet does when you return to it — and one repaint of the visible
   // cards per focus is a price worth paying for never showing a stale figure.
+  //
+  // The inbox's cached list is a reader of that signal like any other, and
+  // focus is also the moment a Decision file changed by a sync client or a hand
+  // repair becomes visible: it is invalidated here for the same reason, and the
+  // read that follows draws the vault as it is now.
   win.on("focus", () => {
+    invalidateDecisionList();
     noteDataChanged();
     void (async () => {
       try {

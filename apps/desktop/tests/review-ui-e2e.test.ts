@@ -25,7 +25,7 @@ import {
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the ten `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the eleven `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -49,6 +49,7 @@ const SHOTS = [
   "review-life-ready.png",
   "review-daily.png",
   "review-live-checklist.png",
+  "review-daily-complete.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 /** The four-overall-headings order the engine's skeleton uses. */
@@ -316,6 +317,21 @@ type Report = {
     dailyStarted: Page;
     dailyStart: StartCall;
     dailyBody: string;
+    /** The rig's answer to the agent's `write_review` on the daily review. */
+    dailyAgentWrite: { ok: boolean; error?: string } | null;
+    /** The open daily page after the agent's report: the box carries it. */
+    dailyFilled: Page;
+    /** How many review reads the page made across that write (must be ≥1). */
+    dailyFillReReads: number;
+    /** How many writes the page made in response (must be 0: adopting is a read). */
+    dailyFillWrites: number;
+    /** The rig's answer to the agent's `mark_review_done` on the daily review. */
+    dailyAgentComplete: { ok: boolean; error?: string } | null;
+    /** The daily page after the agent completed it: locked, no mark-done button. */
+    dailyLocked: Page;
+    dailyLockedBody: string;
+    /** The DOM probe planted before the agent's write: a remount would lose it. */
+    dailyProbe: string | null;
     back: Page;
     rules: Page;
     skillWrites: string[];
@@ -350,6 +366,8 @@ type Report = {
     scopeSequence: string[];
     kickoffsMatched: number;
     calls: string[];
+    /** Reads that named a period of another cadence: [channel, cadence, period]. */
+    crossCadenceReads: string[][];
     failedFinanceStarts: number;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
@@ -400,11 +418,16 @@ describe("review ui e2e", () => {
     fs.rmSync(REPORT, { force: true });
     for (const shot of SHOTS) fs.rmSync(shot, { force: true });
 
-    // The premise of the live leg below. The rig plays main's announcement, so
-    // it cannot see whether the real process announces an agent's
-    // `mark_review_done`; these two checks are what make the leg's premise
-    // honest: main's tool classification treats the tool as a write (and so
-    // announces it), and the page's own mark-done channel is announced too.
+    // The premise of the live legs below. The rig plays main's announcements, so
+    // it cannot see whether the real process announces the agent's tool calls;
+    // these checks are what make the premise honest: main's tool classification
+    // treats `write_review` and `mark_review_done` as writes (and so announces
+    // them), and the page's own mark-done channel is announced too.
+    assert.equal(
+      toolMayChangeData("write_review"),
+      true,
+      "main would not announce an agent's write_review, so no open page can fill with it",
+    );
     assert.equal(
       toolMayChangeData("mark_review_done"),
       true,
@@ -1010,6 +1033,81 @@ describe("review ui e2e", () => {
       "the daily review grew a checklist after its interview started",
     );
 
+    // ── the agent fills and completes the daily review ON THE OPEN PAGE ─────
+    // The reported bug: the companion writes the report and marks the daily
+    // review complete with its own tool calls in main. The operator is on the
+    // page; the box kept the skeleton until they navigated away and back, and
+    // the locked page still offered a Mark-review-complete button although the
+    // agent had already marked it. The rig made both tool calls outside the
+    // page's bridge and fired main's change announcement; the page made no call
+    // of its own.
+    assert.equal(
+      report.checks.dailyAgentWrite?.ok,
+      true,
+      `the agent's daily report did not land in the vault: ${JSON.stringify(report.checks.dailyAgentWrite)}`,
+    );
+    assert.ok(
+      String(report.checks.dailyFilled.boxText).includes(
+        "A morning walk, a hard afternoon",
+      ),
+      "the agent's report never appeared in the open daily box — the document stayed stale until a navigation",
+    );
+    assert.ok(
+      report.checks.dailyFillReReads >= 1,
+      "the daily box filled without the page re-reading the review from the vault",
+    );
+    assert.equal(
+      report.checks.dailyFillWrites,
+      0,
+      "adopting the agent's report wrote it back to the vault",
+    );
+    assert.equal(
+      report.checks.dailyFilled.lockedBadge,
+      null,
+      "the daily review locked before the agent marked it complete",
+    );
+    assert.equal(
+      report.checks.dailyAgentComplete?.ok,
+      true,
+      `the agent's daily completion did not land in the vault: ${JSON.stringify(report.checks.dailyAgentComplete)}`,
+    );
+    const dailyLocked = report.checks.dailyLocked;
+    assert.equal(
+      dailyLocked.lockedBadge,
+      "Locked",
+      "the agent's completion did not lock the open daily page",
+    );
+    assert.equal(
+      dailyLocked.markDoneLabel,
+      null,
+      "the locked daily review still offers a Mark review complete button the agent has made redundant",
+    );
+    assert.equal(
+      dailyLocked.unlockPresent,
+      true,
+      "the locked daily review offers no way to unlock it",
+    );
+    assert.equal(
+      dailyLocked.readOnly,
+      true,
+      "the locked daily review's box is not read-only",
+    );
+    assert.ok(
+      String(dailyLocked.boxText).includes("A morning walk, a hard afternoon"),
+      "the locked daily review's box lost the report the agent wrote",
+    );
+    assert.equal(
+      report.checks.dailyProbe,
+      "kept",
+      "the live completion replaced or remounted the page instead of updating it",
+    );
+    assert.ok(
+      String(report.checks.dailyLockedBody).includes(
+        "A morning walk, a hard afternoon",
+      ),
+      "the agent's daily report is not in the file it completed",
+    );
+
     // ── back on the weekly review: the lens survived the daily page ─────────
     const back = report.checks.back;
     assert.equal(
@@ -1089,6 +1187,11 @@ describe("review ui e2e", () => {
       );
     }
     assert.equal(locked.unlockPresent, true, "the locked review offers no way to unlock it");
+    assert.equal(
+      locked.markDoneLabel,
+      null,
+      "the locked review still offers a Mark review complete button after its own completion",
+    );
     assert.equal(
       report.checks.lockedScopes.overall?.status,
       "done",
@@ -1221,6 +1324,11 @@ describe("review ui e2e", () => {
       report.checks.failedFinanceStarts,
       2,
       "the agent-down finance press and its retry are not both in the bridge calls",
+    );
+    assert.deepEqual(
+      report.checks.crossCadenceReads,
+      [],
+      "the page read a review for a period its cadence does not have — a cadence switch carried the old period across",
     );
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);

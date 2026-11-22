@@ -193,6 +193,31 @@ const MODEL_CATALOG = {
 const NO_CATALOG = new URLSearchParams(window.location.search).has("nocatalog");
 
 /**
+ * `?decisionfence=1` answers the first chat with a reply that ends in a
+ * `lifequest-decision` fence — the prose the operator reads, then the block main
+ * parses and files. The fence has to stay in the stored content (stripping it
+ * would file nothing), so the panel must hide it at display time: one card
+ * reading DECISION: and what it changes, opening on demand. The body is the
+ * shape the companion emits for a library note, so a driver can compare the
+ * summary line against a real proposal rather than a stub of one.
+ */
+const DECISION_FENCE_REPLY = [
+  "Two things came out of the week, and one change is waiting for you to approve.",
+  "",
+  "```lifequest-decision",
+  JSON.stringify({
+    kind: "library",
+    title: "Project rule — build at level 2 dev by default",
+    domainSlugs: ["intellectual"],
+    body: "Default to level 2 dev: worktrees per workstream, e2e tests, remote build tested locally.",
+  }),
+  "```",
+].join("\n");
+
+const WITH_DECISION_FENCE = new URLSearchParams(window.location.search).has("decisionfence");
+
+
+/**
  * Which capability descriptor this page should announce, chosen by `?caps=`:
  *
  *  - absent / `full` — every capability true, the way the built-in Pi harness
@@ -628,6 +653,9 @@ const bridge: Record<string, unknown> = {
               : [
                   { role: "user", content: "Composer harness", timestamp: 1_700_000_000 },
                   { role: "assistant", content: "Ready.", timestamp: 1_700_000_002 },
+                  ...(WITH_DECISION_FENCE
+                    ? [{ role: "assistant", content: DECISION_FENCE_REPLY, timestamp: 1_700_000_003 }]
+                    : []),
                 ],
         }),
       );
