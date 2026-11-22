@@ -10592,8 +10592,12 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Life Signal Chain —— */
+/* The page is one centred column: capture, filters and the chain read down the
+   middle of the pane rather than hugging the rail. */
 .signal-chain {
+  width: 100%;
   max-width: 48rem;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -10603,15 +10607,16 @@ button.chat-panel__activity-line:hover {
   margin-bottom: 0.15rem;
 }
 
-/* The capture box: the field and its control row in one card. It is the page's
-   one input, so it stays compact — three rows that grow on request — and the
-   commit sits inside the card at the trailing edge rather than under it. */
+/* The capture box: one bordered surface holds the field AND its control row.
+   The textarea has no frame of its own — the card is the input — so the plus,
+   the area picker and Log sit inside the box the operator types in, not on a
+   bar beneath it. Three rows that grow on request keep the box compact. */
 .signal-chain__composer {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.7rem 0.75rem;
-  background: var(--composer-bg);
+  gap: 0;
+  padding: 0;
+  background: var(--bg);
   border: 1px solid var(--composer-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
@@ -10633,6 +10638,7 @@ button.chat-panel__activity-line:hover {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
+  padding: 0.35rem 0.45rem 0.5rem 0.5rem;
 }
 
 .signal-chain__composer-commit {
@@ -10679,8 +10685,7 @@ button.chat-panel__activity-line:hover {
 
 .signal-chain .field select,
 .signal-chain .field input,
-.signal-chain .field textarea,
-.signal-chain__composer > textarea {
+.signal-chain .field textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.55rem;
@@ -10688,16 +10693,38 @@ button.chat-panel__activity-line:hover {
   width: 100%;
 }
 
-.signal-chain .field textarea,
-.signal-chain__composer > textarea {
+.signal-chain .field textarea {
   resize: vertical;
   font: inherit;
   line-height: 1.45;
 }
 
-/* Three rows on a fresh box; the operator drags the corner for more. */
+/* The field inside the capture box wears no frame: the box is the input, so the
+   plus, the area picker and Log are visibly part of the surface that was typed
+   into. The caret's ring is the composer's own `:focus-within`. */
 .signal-chain__composer > textarea {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 0.7rem 0.85rem 0.45rem;
+  background: transparent;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+  /* Three rows on a fresh box; the corner drags for more. */
   min-height: 4.6rem;
+}
+
+.signal-chain__composer > textarea:focus {
+  outline: none;
+}
+
+/* An attachment waiting in the box keeps the card's own edges: a small inset
+   rather than the old gap between a field and a footer. */
+.signal-chain__composer > .signal-chain__attachment,
+.signal-chain__composer > .signal-chain__pending-file,
+.signal-chain__composer > .signal-chain__link-chip {
+  margin: 0.55rem 0.55rem 0;
 }
 
 /* A picture dropped on the box lights the box rather than a page-wide overlay:

@@ -95,14 +95,14 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 
 | Part | What it does |
 |---|---|
-| **Notebox** heading | The title and the line "A database of what you notice. Log now; assign later." |
-| Capture box | A three-row text area labelled **Log a signal**, placeholder **What's on your mind?**, autofocused; its corner can be dragged for more room. It is the description: a text capture needs text, and an attachment may be logged without it. The box takes the accent ring when the caret is in it. |
+| **Notebox** heading | The title and the line "A database of what you notice. Log now; assign later." The page reads as one centred column — capture, filters and chain down the middle of the pane. |
+| Capture box | One bordered surface, the page's one input: a three-row text area labelled **Log a signal** (placeholder **What's on your mind?**, autofocused, corner draggable for more room) and, inside the same box's foot, the **Plus** control, the **Area** picker and the **Log** button. The text field has no frame of its own — the box is the field — and the whole box takes the accent ring when the caret or any of its controls is in it. It is the description: a text capture needs text, and an attachment may be logged without it. |
 | **Plus** control | The single attachment control at the box's bottom left (test name **Attach a file**, plus glyph). Opens a file picker with no type restriction — any picture or file — and dragging a file onto the composer or pasting a file into the box does the same. |
-| Picture preview | Above the box until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
-| File chip | Above the box until the signal is logged: a non-picture attachment's name and human size, with the X button **Remove the attached file**. |
-| Link chip | Above the box until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
-| **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits in the box's foot beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
-| **Log** button | The primary button in the box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
+| Picture preview | Inside the box, above the field, until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
+| File chip | Inside the box, above the field, until the signal is logged: a non-picture attachment's name and human size, with the X button **Remove the attached file**. |
+| Link chip | Inside the box, under the field, until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
+| **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
+| **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
