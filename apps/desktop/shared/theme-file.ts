@@ -77,23 +77,55 @@ export type ThemeChromeOverride = {
   titlebar?: Partial<ThemeChrome["titlebar"]>;
 };
 
-export type SceneBackdropPreset = "plain" | "starfield" | "orbit" | "aurora";
+export type SceneBackdropPreset =
+  | "plain"
+  | "starfield"
+  | "orbit"
+  | "aurora"
+  | "horizon"
+  | "mesh";
 export type SceneIntensity = "calm" | "default" | "lively";
 export type SceneCanvasFrame = "none" | "hairline" | "double" | "halo";
 export type SceneCardFrame = "theme" | "outline" | "raised";
+
+export type BackgroundImageFit = "cover" | "contain" | "tile";
+export type BackgroundImagePosition = "center" | "top" | "bottom";
+export type BackgroundImageDim = "none" | "soft" | "strong";
+export type BackgroundImageBlur = "none" | "soft" | "deep";
+
+/**
+ * A picture behind the page, named by its file in the app profile.
+ *
+ * The theme carries the *choices* — which stored picture and how it sits — not
+ * the bytes. Main copies the operator's pick into `<app profile>/backgrounds/`
+ * under a content-hashed name, so `file` is a name in that directory, never a
+ * path or a URL: a theme can travel between profiles without carrying an image,
+ * and a picture that is gone falls back to the drawn preset at paint time.
+ */
+export type ThemeBackgroundImage = {
+  /** A file name inside `<app profile>/backgrounds/`, never a path or a URL. */
+  file: string;
+  fit: BackgroundImageFit;
+  position: BackgroundImagePosition;
+  dim: BackgroundImageDim;
+  blur: BackgroundImageBlur;
+};
 
 /**
  * The scene layer: decoration, never structure.
  *
  * A theme names one of the bundled procedural backgrounds and how lively it
- * runs. It cannot ship an image, a canvas, or a shader — the vocabulary is
- * closed and the renderer is the app's, which is what keeps the page legible,
- * the CSP narrow and the frame budget honest.
+ * runs, and may name a picture already stored in the profile's `backgrounds/`.
+ * It cannot ship an image, a canvas, or a shader — the vocabulary is closed and
+ * the renderer is the app's, which is what keeps the page legible, the CSP
+ * narrow and the frame budget honest.
  */
 export type ThemeScene = {
   background: {
     preset: SceneBackdropPreset;
     intensity: SceneIntensity;
+    /** null = drawn preset only. */
+    image: ThemeBackgroundImage | null;
   };
   /**
    * The frame layer: how the page's edge and its cards are drawn. Still a closed
@@ -106,9 +138,17 @@ export type ThemeScene = {
   };
 };
 
+/** What a theme file may say about one scene background. */
+export type ThemeBackgroundFile = {
+  preset?: SceneBackdropPreset;
+  intensity?: SceneIntensity;
+  /** null means "no picture" and, in an override, hides the theme's picture. */
+  image?: ThemeBackgroundImage | null;
+};
+
 /** What a theme file may say about the scene: any field left out is defaulted. */
 export type ThemeSceneFile = {
-  background?: Partial<ThemeScene["background"]>;
+  background?: ThemeBackgroundFile;
   frames?: Partial<ThemeScene["frames"]>;
 };
 
@@ -153,8 +193,16 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
   titlebar: { size: "default" },
 };
 
+/** A picture's sitting defaults: fit the whole page, softened so text reads. */
+export const DEFAULT_BACKGROUND_IMAGE: Omit<ThemeBackgroundImage, "file"> = {
+  fit: "cover",
+  position: "center",
+  dim: "soft",
+  blur: "none",
+};
+
 export const DEFAULT_THEME_SCENE: ThemeScene = {
-  background: { preset: "plain", intensity: "calm" },
+  background: { preset: "plain", intensity: "calm", image: null },
   frames: { canvas: "none", cards: "theme" },
 };
 
@@ -163,6 +211,8 @@ export const SCENE_BACKDROPS: readonly SceneBackdropPreset[] = [
   "starfield",
   "orbit",
   "aurora",
+  "horizon",
+  "mesh",
 ];
 export const SCENE_INTENSITIES: readonly SceneIntensity[] = [
   "calm",
@@ -180,6 +230,33 @@ export const SCENE_CARD_FRAMES: readonly SceneCardFrame[] = [
   "outline",
   "raised",
 ];
+
+export const BACKGROUND_IMAGE_FITS: readonly BackgroundImageFit[] = [
+  "cover",
+  "contain",
+  "tile",
+];
+export const BACKGROUND_IMAGE_POSITIONS: readonly BackgroundImagePosition[] = [
+  "center",
+  "top",
+  "bottom",
+];
+export const BACKGROUND_IMAGE_DIMS: readonly BackgroundImageDim[] = [
+  "none",
+  "soft",
+  "strong",
+];
+export const BACKGROUND_IMAGE_BLURS: readonly BackgroundImageBlur[] = [
+  "none",
+  "soft",
+  "deep",
+];
+
+/** The file-name rule shared by main's store, the parser and the rigs. */
+export const BACKGROUND_IMAGE_FILE =
+  /^[a-z0-9][a-z0-9-]{0,79}\.(png|jpe?g|webp|gif)$/;
+/** Main refuses a source picture larger than this. */
+export const MAX_BACKGROUND_IMAGE_BYTES = 16 * 1024 * 1024;
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
   radius: "soft",
@@ -297,6 +374,52 @@ function oneOf<T extends string>(
     return `${field} must be one of ${allowed.join(", ")}`;
   }
   return value as T;
+}
+
+/**
+ * One `scene.background.image` object.
+ *
+ * `file` is required and must be a name main could have stored; the four axes
+ * default from `DEFAULT_BACKGROUND_IMAGE` and a declared one must be in its
+ * allow-list. Existence is deliberately not checked: the picture lives in this
+ * profile, and a theme can be imported on a machine before its picture is, so a
+ * missing file is a paint-time fallback rather than a parse error.
+ */
+function parseBackgroundImage(
+  raw: unknown,
+): { ok: true; image: ThemeBackgroundImage } | { ok: false; error: string } {
+  if (!isRecord(raw)) {
+    return { ok: false, error: "scene.background.image must be an object or null" };
+  }
+  const file = raw.file;
+  if (typeof file !== "string" || !BACKGROUND_IMAGE_FILE.test(file)) {
+    return {
+      ok: false,
+      error:
+        "scene.background.image.file must be a lowercase picture name ending in .png, .jpg, .jpeg, .webp or .gif",
+    };
+  }
+  const image: ThemeBackgroundImage = { file, ...DEFAULT_BACKGROUND_IMAGE };
+  for (const [key, allowed] of [
+    ["fit", BACKGROUND_IMAGE_FITS],
+    ["position", BACKGROUND_IMAGE_POSITIONS],
+    ["dim", BACKGROUND_IMAGE_DIMS],
+    ["blur", BACKGROUND_IMAGE_BLURS],
+  ] as const) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (
+      typeof value !== "string" ||
+      !(allowed as readonly string[]).includes(value)
+    ) {
+      return {
+        ok: false,
+        error: `scene.background.image.${key} must be one of ${allowed.join(", ")}`,
+      };
+    }
+    (image as unknown as Record<string, string>)[key] = value;
+  }
+  return { ok: true, image };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,9 +752,19 @@ export function parseThemeFile(raw: unknown): ParseResult {
           error: `scene.background.intensity must be one of ${SCENE_INTENSITIES.join(", ")}`,
         };
       }
+      // A null picture and an absent one are the same file: no image key at all.
+      // The distinction only matters in the operator's override, which the
+      // renderer parses on its own (see `layerScene`).
+      let image: ThemeBackgroundImage | null = null;
+      if (background.image !== undefined && background.image !== null) {
+        const parsedImage = parseBackgroundImage(background.image);
+        if (!parsedImage.ok) return parsedImage;
+        image = parsedImage.image;
+      }
       scene.background = {
         ...(preset ? { preset: preset as SceneBackdropPreset } : {}),
         ...(intensity ? { intensity: intensity as SceneIntensity } : {}),
+        ...(image ? { image } : {}),
       };
     }
     const frames = raw.scene.frames;
@@ -766,6 +899,7 @@ export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
       preset: scene?.background?.preset ?? DEFAULT_THEME_SCENE.background.preset,
       intensity:
         scene?.background?.intensity ?? DEFAULT_THEME_SCENE.background.intensity,
+      image: scene?.background?.image ?? null,
     },
     frames: {
       canvas: scene?.frames?.canvas ?? DEFAULT_THEME_SCENE.frames.canvas,
@@ -774,13 +908,27 @@ export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
   };
 }
 
-/** Layer the operator's scene picks over the worn theme's scene. */
+/**
+ * Layer the operator's scene picks over the worn theme's scene.
+ *
+ * The picture is the one field where "absent" and "null" differ: omitting
+ * `image` inherits the theme's picture, while an explicit `image: null` is the
+ * operator's "no picture", which also hides the theme's. That is what makes
+ * Reset to theme a plain deletion and Remove a real override.
+ */
 export function layerScene(
   theme?: ThemeSceneFile,
   override?: ThemeSceneOverride,
 ): ThemeScene {
   return resolveScene({
-    background: { ...theme?.background, ...override?.background },
+    background: {
+      ...theme?.background,
+      ...override?.background,
+      image:
+        override?.background?.image !== undefined
+          ? override.background.image
+          : theme?.background?.image ?? null,
+    },
     frames: { ...theme?.frames, ...override?.frames },
   });
 }
@@ -803,7 +951,8 @@ export const THEME_VOCABULARY = [
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
-  "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
+  "scene.background.preset: plain | starfield | orbit | aurora | horizon | mesh (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
+  "scene.background.image: { file, fit, position, dim, blur } — a picture already stored in the app profile's backgrounds/ directory, which the operator picks; a theme names the stored file, never a path or URL. fit: cover | contain | tile; position: center | top | bottom; dim: none | soft | strong; blur: none | soft | deep. It replaces the drawn sky while set, and a missing file falls back to it.",
   "scene.frames.canvas: none | hairline | double | halo (the page's decorative edge); scene.frames.cards: theme | outline | raised (how the page's cards are drawn).",
   COMPOSITION_VOCABULARY,
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",

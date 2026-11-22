@@ -66,12 +66,31 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
  * Two state attributes and nothing else: which preset the renderer should draw
  * and how lively it runs. The pixels belong to the bundled component, so a
  * theme can ask for a starfield but never for a file, a shader or a stylesheet.
+ *
+ * A picture is the exception, and only by reference: the theme names a
+ * file-name the app already holds in its profile, and the layer is the one the
+ * component draws from bytes it reads itself. While a picture is set the
+ * backdrop attribute says `image` rather than the preset — deliberately, since
+ * the stylesheet anchors the layer on anything that is not `plain` — and the
+ * picture axes ride along as data attributes for the stylesheet and the rig.
  */
 export function applyScene(scene: ThemeScene, root: HTMLElement): void {
-  root.dataset.sceneBackdrop = scene.background.preset;
+  const image = scene.background.image;
+  root.dataset.sceneBackdrop = image ? "image" : scene.background.preset;
   root.dataset.sceneIntensity = scene.background.intensity;
   root.dataset.sceneCanvasFrame = scene.frames.canvas;
   root.dataset.sceneCardFrame = scene.frames.cards;
+  if (image) {
+    root.dataset.sceneImageFit = image.fit;
+    root.dataset.sceneImagePosition = image.position;
+    root.dataset.sceneImageDim = image.dim;
+    root.dataset.sceneImageBlur = image.blur;
+  } else {
+    delete root.dataset.sceneImageFit;
+    delete root.dataset.sceneImagePosition;
+    delete root.dataset.sceneImageDim;
+    delete root.dataset.sceneImageBlur;
+  }
 }
 
 /**

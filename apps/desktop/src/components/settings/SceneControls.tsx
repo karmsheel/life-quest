@@ -34,6 +34,8 @@ const PRESET_LABELS: Record<ThemeScene["background"]["preset"], string> = {
   starfield: "Starfield",
   orbit: "Orbit",
   aurora: "Aurora",
+  horizon: "Horizon",
+  mesh: "Mesh",
 };
 const INTENSITY_LABELS: Record<ThemeScene["background"]["intensity"], string> = {
   calm: "Calm",
@@ -63,7 +65,8 @@ export interface SceneControlsProps {
 
 type Group = keyof ThemeScene;
 type AxisValue =
-  | ThemeScene["background"][keyof ThemeScene["background"]]
+  | ThemeScene["background"]["preset"]
+  | ThemeScene["background"]["intensity"]
   | ThemeScene["frames"][keyof ThemeScene["frames"]];
 
 interface SceneAxis {
@@ -80,8 +83,8 @@ const AXES: readonly SceneAxis[] = [
     group: "background",
     axis: "preset",
     testId: "scene-background",
-    label: "Background",
-    hint: "Drawn by the app from a closed vocabulary — never an image or a stylesheet.",
+    label: "Sky",
+    hint: "Drawn by the app from a closed vocabulary: six procedural skies. A picture of your own lives in the Background section below.",
     options: SCENE_BACKDROPS.map((value) => ({
       value,
       label: PRESET_LABELS[value],

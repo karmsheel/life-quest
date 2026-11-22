@@ -67,7 +67,12 @@ function chipsOf(theme: ThemeFile): string[] {
   chips.push(`wings ${chrome.wingSwitcher.place}`);
   chips.push(`domains ${chrome.domainSwitcher.place}`);
   if (theme.material) chips.push("Material");
-  if (theme.scene?.background) chips.push(`sky ${theme.scene.background.preset}`);
+  // A scene may name a sky, a picture, or both; the picture is the operator's
+  // own layer over the drawn preset, so it gets its own chip beside the sky.
+  if (theme.scene?.background?.preset) {
+    chips.push(`sky ${theme.scene.background.preset}`);
+  }
+  if (theme.scene?.background?.image) chips.push("picture");
   if (theme.composition) {
     chips.push(`composition · ${theme.composition.widgets.length} widgets`);
   }

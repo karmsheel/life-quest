@@ -42,7 +42,13 @@ import {
   applyMaterial,
   applyScene,
   BACKDROPS,
+  BACKGROUND_IMAGE_BLURS,
+  BACKGROUND_IMAGE_DIMS,
+  BACKGROUND_IMAGE_FITS,
+  BACKGROUND_IMAGE_POSITIONS,
+  BACKGROUND_IMAGE_FILE,
   CHAT_DOCK_SIDES,
+  DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_THEME_CHROME,
   DEFAULT_THEME_MATERIAL,
   DEFAULT_THEME_SCENE,
@@ -70,6 +76,7 @@ import {
   WING_PLACES,
   WING_VARIANTS,
   type CompositionOverride,
+  type ThemeBackgroundImage,
   type ThemeChrome,
   type ThemeChromeOverride,
   type ThemeComposition,
@@ -236,6 +243,53 @@ function persistMaterialOverride(override: Partial<ThemeMaterial>): void {
 }
 
 
+/**
+ * Read the operator's stored picture override.
+ *
+ * `null` is a real value — the operator removed the theme's picture, which is
+ * how a theme that names one can be hidden without editing its file — so it
+ * must survive the read. A malformed object (a bad file name or an unknown
+ * axis) is dropped entirely rather than half-trusted: the override then says
+ * nothing about the picture, exactly as if the operator never picked one.
+ */
+function readStoredBackgroundImage(
+  value: unknown,
+): ThemeBackgroundImage | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  const file = value.file;
+  if (typeof file !== "string" || !BACKGROUND_IMAGE_FILE.test(file)) {
+    return undefined;
+  }
+  const pick = <T extends string>(
+    candidate: unknown,
+    allowed: readonly T[],
+  ): T | undefined =>
+    typeof candidate === "string" && (allowed as readonly string[]).includes(candidate)
+      ? (candidate as T)
+      : undefined;
+  // A declared axis that is not in its allow-list makes the whole object
+  // untrustworthy; an absent axis falls back to the model's default.
+  const fit =
+    value.fit === undefined
+      ? DEFAULT_BACKGROUND_IMAGE.fit
+      : pick(value.fit, BACKGROUND_IMAGE_FITS);
+  const position =
+    value.position === undefined
+      ? DEFAULT_BACKGROUND_IMAGE.position
+      : pick(value.position, BACKGROUND_IMAGE_POSITIONS);
+  const dim =
+    value.dim === undefined
+      ? DEFAULT_BACKGROUND_IMAGE.dim
+      : pick(value.dim, BACKGROUND_IMAGE_DIMS);
+  const blur =
+    value.blur === undefined
+      ? DEFAULT_BACKGROUND_IMAGE.blur
+      : pick(value.blur, BACKGROUND_IMAGE_BLURS);
+  if (!fit || !position || !dim || !blur) return undefined;
+  return { file, fit, position, dim, blur };
+}
+
 function readStoredSceneOverride(): ThemeSceneOverride {
   try {
     const raw = JSON.parse(
@@ -260,6 +314,7 @@ function readStoredSceneOverride(): ThemeSceneOverride {
     if (isRecord(raw.background)) {
       const preset = raw.background.preset;
       const intensity = raw.background.intensity;
+      const image = readStoredBackgroundImage(raw.background.image);
       override.background = {
         ...(typeof preset === "string" &&
         (SCENE_BACKDROPS as readonly string[]).includes(preset)
@@ -269,6 +324,9 @@ function readStoredSceneOverride(): ThemeSceneOverride {
         (SCENE_INTENSITIES as readonly string[]).includes(intensity)
           ? { intensity: intensity as ThemeScene["background"]["intensity"] }
           : {}),
+        // `undefined` is "the stored pick says nothing about a picture";
+        // `null` is the operator hiding the theme's picture and must survive.
+        ...(image !== undefined ? { image } : {}),
       };
       if (Object.keys(override.background).length === 0) delete override.background;
     }
@@ -382,10 +440,29 @@ interface ThemeContextValue {
   scene: ThemeScene;
   /** The operator's own scene pick, layered over the theme's. */
   sceneOverride: ThemeSceneOverride;
+  /**
+   * An object URL for the picture the window is wearing, from the app profile's
+   * `backgrounds/`; null when there is no picture or its bytes could not be read
+   * (the drawn preset still paints). Revoked when it is replaced.
+   */
+  sceneImageUrl: string | null;
+  /**
+   * Where the worn picture's bytes are. `none` = no picture named, `loading` =
+   * in flight, `ready` = the URL is set, `missing` = the read was refused (a
+   * theme may name a file this profile does not hold). The scene layer uses
+   * this to fall back to the theme's drawn sky instead of leaving a hole.
+   */
+  sceneImageStatus: "none" | "loading" | "ready" | "missing";
   /** Set the background preset or intensity and wear the result at once. */
   setSceneOverride: (patch: ThemeSceneOverride) => void;
   /** Drop the operator's scene pick and hand the backdrop back to the theme. */
   resetSceneOverride: () => void;
+  /**
+   * Drop only the operator's picture pick (fit/position/dim/blur included) and
+   * hand the picture — or the sky, when the theme has none — back to the theme.
+   * The preset and intensity picks stay.
+   */
+  resetBackgroundOverride: () => void;
   /** The composition the window is wearing (theme + operator pick); null = none. */
   composition: ThemeComposition | null;
   /** The operator's own composition pick: wear the theme's widgets, or hide them. */
@@ -560,6 +637,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readStoredSceneOverride,
   );
   const sceneOverrideRef = useRef<ThemeSceneOverride>(sceneOverride);
+  /** The blob URL the picture layer paints, and its source bytes' file name. */
+  const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null);
+  /** Whether that URL is absent, being read, loaded, or refused. */
+  const [sceneImageStatus, setSceneImageStatus] = useState<
+    "none" | "loading" | "ready" | "missing"
+  >("none");
   const [composition, setComposition] = useState<ThemeComposition | null>(null);
   const [compositionOverride, setCompositionOverrideState] =
     useState<CompositionOverride>(readStoredCompositionOverride);
@@ -742,6 +825,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   /**
    * Change the scene layer. Layered over the theme for every paint (including
    * previews) and persisted per window, exactly as material and chrome are.
+   *
+   * The picture patch is a whole object, and `image: null` is a real value: it
+   * is how the operator hides a picture the theme carries, so it must survive
+   * the spread (`{ ...previous, image: null }` keeps the null rather than
+   * treating it as "empty" and dropping the key).
    */
   const setSceneOverride = useCallback(
     (patch: ThemeSceneOverride) => {
@@ -771,6 +859,89 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     persistSceneOverride({});
     paintTheme(paintedTheme.current);
   }, [paintTheme]);
+
+  /**
+   * Drop the operator's picture pick and nothing else.
+   *
+   * A picture is one pick among the scene's axes, so handing it back to the
+   * theme must not also throw away the operator's preset or intensity. The
+   * override keeps every other key; `scene.background` only disappears when it
+   * held nothing but the picture.
+   */
+  const resetBackgroundOverride = useCallback(() => {
+    const current = sceneOverrideRef.current;
+    if (!current.background || !("image" in current.background)) return;
+    const { image: _dropped, ...background } = current.background;
+    const next: ThemeSceneOverride = { ...current };
+    if (Object.keys(background).length === 0) {
+      delete next.background;
+    } else {
+      next.background = background;
+    }
+    sceneOverrideRef.current = next;
+    setSceneOverrideState(next);
+    persistSceneOverride(next);
+    paintTheme(paintedTheme.current);
+  }, [paintTheme]);
+
+  /**
+   * Load the worn picture's bytes from the app profile and hand the layer an
+   * object URL.
+   *
+   * The file is a name, never a path: main resolves it inside its own
+   * `backgrounds/` directory and this effect only turns the returned bytes into
+   * a blob URL the CSS can paint. Keyed on the file name so a changed picture
+   * (or a theme swap naming another one) reloads once; the previous URL is
+   * revoked on change and unmount, and a resolve that lands after the key moved
+   * on is dropped rather than painting a stale picture.
+   *
+   * A refusal (a theme may name a file this profile does not hold) sets
+   * `missing` rather than throwing: the scene layer falls back to the theme's
+   * drawn sky, so a picture that is gone costs the page its wallpaper, never
+   * its shell.
+   */
+  useEffect(() => {
+    const file = scene.background.image?.file ?? null;
+    if (!file) {
+      setSceneImageUrl(null);
+      setSceneImageStatus("none");
+      return;
+    }
+    const bridge = window.lifequest;
+    if (!bridge?.themeReadBackground) {
+      setSceneImageUrl(null);
+      setSceneImageStatus("missing");
+      return;
+    }
+    let cancelled = false;
+    let url: string | null = null;
+    // Clear the previous picture while the new bytes are in flight: its URL is
+    // revoked by the cleanup below, so painting it would be painting a hole.
+    setSceneImageUrl(null);
+    setSceneImageStatus("loading");
+    void (async () => {
+      try {
+        const answer = await bridge.themeReadBackground!(file);
+        if (cancelled) return;
+        if (!answer.ok) {
+          setSceneImageStatus("missing");
+          return;
+        }
+        const blob = new Blob([answer.value.bytes as BlobPart], {
+          type: answer.value.mime,
+        });
+        url = URL.createObjectURL(blob);
+        setSceneImageUrl(url);
+        setSceneImageStatus("ready");
+      } catch {
+        if (!cancelled) setSceneImageStatus("missing");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [scene.background.image?.file]);
 
   /**
    * The operator's one composition axis: wear the theme's widgets, or hide
@@ -1392,8 +1563,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resetMaterialOverride,
       scene,
       sceneOverride,
+      sceneImageUrl,
+      sceneImageStatus,
       setSceneOverride,
       resetSceneOverride,
+      resetBackgroundOverride,
       composition,
       compositionOverride,
       setCompositionOverride,
@@ -1446,12 +1620,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       preference,
       resetMaterialOverride,
       resetSceneOverride,
+      resetBackgroundOverride,
       resetCompositionOverride,
       setMaterialOverride,
       setSceneOverride,
       setCompositionOverride,
       scene,
       sceneOverride,
+      sceneImageUrl,
+      sceneImageStatus,
       composition,
       compositionOverride,
       refreshThemeFiles,
