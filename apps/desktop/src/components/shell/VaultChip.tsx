@@ -11,8 +11,10 @@ import { vaultInitials, vaultTitleName, windowTitleLabel } from "./window-title"
  * in the titlebar, at the top-left of the window; there it was chrome living
  * beside the rail's toggle and, once the rail collapsed, the re-open control
  * landed on top of it. Living in the sidebar's foot instead, it travels with the
- * navigation it belongs to: the wide rail gives it half the bottom row beside the
- * Log, and the thin rail keeps its mark in the column below the Log's icon.
+ * navigation it belongs to: the wide rail gives it the space between the Log and
+ * the collapse toggle — so it sits one control left of the rail's trailing edge,
+ * not flush against it — and the thin rail keeps its mark in the column between
+ * the Log's icon and the expand control.
  *
  * The dialog is a portal on `document.body`; the rail clips at its own edges, so
  * a popup left inside it would be cut off. Focus goes back to the chip when the

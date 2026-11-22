@@ -25,9 +25,10 @@ import {
  *
  * `crop` swaps the artwork's padded viewBox for its ink-tight one (the box is
  * metadata on the variant, measured from the art). The rail's header uses it so
- * the L starts on the rail's content edge, in line with the wing switcher and
- * the page rows; the splash and the picker leave the padding in, which is what
- * keeps the mark's scale on those surfaces unchanged.
+ * the mark's painted box is what the header centres on the column — the padded
+ * canvas would otherwise leave the ink a few pixels off that centre line; the
+ * splash and the picker leave the padding in, which is what keeps the mark's scale
+ * on those surfaces unchanged.
  */
 const ART: Record<LogoVariant, string> = {
   modern: modernArt,
