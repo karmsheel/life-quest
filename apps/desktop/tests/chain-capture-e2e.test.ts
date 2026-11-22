@@ -9,9 +9,10 @@ import { describe, it } from "node:test";
 
 /**
  * The Life-Chain page's general capture surface — text, image and link — as the
- * real shell paints it in a real layout engine. The claims themselves live in
- * `e2e/chain-capture.electron.mjs`, which drives the harness; this file runs
- * that driver and refuses a report that does not hold.
+ * real shell paints it in a real layout engine, plus the inbox triage: a status
+ * select moves a row and the row paints the vault's answer back. The claims
+ * themselves live in `e2e/chain-capture.electron.mjs`, which drives the
+ * harness; this file runs that driver and refuses a report that does not hold.
  *
  * Run it through `lifequest-e2e`, which puts THIS checkout's dev server on 5173:
  *
@@ -22,9 +23,9 @@ import { describe, it } from "node:test";
  * vacuous evidence this test exists to refuse.
  *
  * The artifact is `e2e/artifacts/chain-capture.json` plus the captures the
- * driver takes — the seeded chain, a text capture, an uploaded image row and a
- * link row — each of which must be a real capture of the shipped page, not an
- * empty file.
+ * driver takes — the seeded chain, a text capture, an uploaded image row, a
+ * link row, and the triaged inbox (`chain-inbox-triage.png`) — each of which
+ * must be a real capture of the shipped page, not an empty file.
  */
 
 const desktopRoot = path.resolve(
@@ -45,6 +46,7 @@ const CAPTURES = [
   "chain-capture-image-only.png",
   "chain-capture-link.png",
   "chain-capture-dock.png",
+  "chain-inbox-triage.png",
 ];
 
 type Picture = {
@@ -84,6 +86,96 @@ type Create = {
   body: string;
   domainSlug: string | null;
   attachment: CreateAttachment | null;
+};
+
+type Select = {
+  value: string;
+  options: { value: string; label: string }[];
+};
+
+/** One fixture seed, with the labels the contract says its row must paint. */
+type InboxExpectedSeed = {
+  id: string;
+  body: string;
+  attachment: "text" | "image" | "link";
+  domainSlug: string | null;
+  domainLabel: string;
+  projectId: string | null;
+  projectLabel: string;
+  status: string;
+  statusLabel: string;
+  priority: string | null;
+  priorityLabel: string;
+  capturedFrom: string | null;
+};
+
+type InboxRow = {
+  id: string;
+  body: string;
+  expected: InboxExpectedSeed;
+  attachment: string | null;
+  dataStatus: string | null;
+  dataPriority: string | null;
+  dataProjectId: string | null;
+  dataDomainSlug: string | null;
+  domain: string | null;
+  project: string | null;
+  status: string | null;
+  priority: string | null;
+  capturedFrom: string | null;
+  statusSelect: Select | null;
+  prioritySelect: Select | null;
+  projectSelect: Select | null;
+};
+
+type InboxCheck = {
+  expected: {
+    projects: { id: string; title: string }[];
+    seeded: InboxExpectedSeed[];
+    target: { id: string; body: string };
+  } | null;
+  rows: InboxRow[];
+  controls: {
+    statusOptions: string[];
+    statusLabels: string[];
+    priorityOptions: string[];
+    priorityLabels: string[];
+    projectOptions: string[];
+    projectLabels: string[];
+    filterStatus: string[];
+    filterDomain: string[];
+    filterProject: string[];
+  };
+  triage: {
+    targetId: string | null;
+    targetBody: string | null;
+    before: {
+      dataStatus: string | null;
+      status: string | null;
+      select: string | null;
+    };
+    after: {
+      dataStatus: string | null;
+      status: string | null;
+      select: string | null;
+      storedStatus: string | null;
+    };
+    patch: Record<string, unknown> | null;
+    updates: { id: string; patch: Record<string, unknown> }[];
+    listReadsBefore: number;
+    listReadsAfter: number;
+  };
+  filter: {
+    acting: { rows: number; pressed: string | null };
+    done: {
+      rows: number;
+      empty: string | null;
+      emptyLine: string | null;
+      pressed: string | null;
+    };
+    all: { rows: number; pressed: string | null };
+  };
+  screenshot: { name: string; bytes: number };
 };
 
 type Report = {
@@ -177,6 +269,7 @@ type Report = {
       overflow: { scrollWidth: number; clientWidth: number };
       screenshots: { name: string; bytes: number }[];
     };
+    inbox: InboxCheck;
   };
 };
 
@@ -192,7 +285,9 @@ function devServerUp(): Promise<boolean> {
   });
 }
 
-function runDriver(): Promise<number> {
+type DriverRun = { code: number; stdout: string; stderr: string };
+
+function runDriver(): Promise<DriverRun> {
   return new Promise((resolve, reject) => {
     // Electron hosts (DSH and other Electron apps) export ELECTRON_RUN_AS_NODE,
     // which would make this spawn run as plain node and die without a window.
@@ -202,12 +297,12 @@ function runDriver(): Promise<number> {
       electron,
       [path.join(desktopRoot, "e2e/chain-capture.electron.mjs")],
       { cwd: desktopRoot, timeout: 240_000, env },
-      (error) => {
+      (error, stdout, stderr) => {
         if (error && typeof error.code !== "number") {
           reject(error);
           return;
         }
-        resolve(error ? (error.code as number) : 0);
+        resolve({ code: error ? (error.code as number) : 0, stdout, stderr });
       },
     );
   });
@@ -225,15 +320,25 @@ describe("Life-Chain page — general capture", () => {
     fs.rmSync(REPORT, { force: true });
     for (const name of CAPTURES) fs.rmSync(path.join(ARTIFACTS, name), { force: true });
 
-    const exitCode = await runDriver();
+    const run = await runDriver();
 
-    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    assert.equal(
+      fs.existsSync(REPORT),
+      true,
+      "driver wrote no report artifact\n" +
+        `--- driver stderr ---\n${run.stderr.slice(-4000)}\n` +
+        `--- driver stdout ---\n${run.stdout.slice(-2000)}`,
+    );
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
 
     // A report that does not hold is not evidence, whatever the exit code says.
     assert.deepEqual(report.failures, []);
     assert.equal(report.pass, true);
-    assert.equal(exitCode, 0, "driver exited non-zero");
+    assert.equal(
+      run.code,
+      0,
+      `driver exited non-zero\n${run.stderr.slice(-4000)}`,
+    );
 
     // Every named capture exists and is a real picture, not an empty file. The
     // screenshots are the operator-facing half of the evidence.
@@ -396,5 +501,144 @@ describe("Life-Chain page — general capture", () => {
       `page overflows horizontally: ${checks.final.overflow.scrollWidth}px in ${checks.final.overflow.clientWidth}px`,
     );
     assert.equal(checks.final.route, "/chain");
+
+    // ── the inbox: a triage select changes an item's status on screen ──────
+    // The renderer contract fixes the attributes, chips, selects and filter
+    // chips; the driver read them off the live DOM and made one triage gesture
+    // through the operator's own select. These assertions refuse a report where
+    // the page echoed its own state, mislabelled a row, or never re-read.
+    const inbox = checks.inbox;
+    assert.equal(inbox.rows.length, expected.seeded.count);
+    assert.deepEqual(
+      inbox.expected?.projects.map((project) => project.title),
+      ["Desk rebuild", "Reading list"],
+    );
+    assert.deepEqual(
+      inbox.controls.statusOptions,
+      ["inbox", "triaged", "acting", "done", "dropped"],
+      "the status select does not offer the five stored values",
+    );
+    assert.deepEqual(
+      inbox.controls.statusLabels,
+      ["Inbox", "Triaged", "Acting", "Done", "Dropped"],
+      "the status select labels are not the contract's",
+    );
+    assert.deepEqual(
+      [...inbox.controls.priorityLabels].sort(),
+      ["High", "Low", "None", "Normal"],
+    );
+    assert.ok(
+      inbox.controls.projectLabels.includes("No project") &&
+        inbox.controls.projectLabels.includes("Desk rebuild") &&
+        inbox.controls.projectLabels.includes("Reading list"),
+      `the project select labels are ${JSON.stringify(inbox.controls.projectLabels)}`,
+    );
+    assert.ok(
+      inbox.controls.filterStatus.includes("signal-filter-status-all") &&
+        inbox.controls.filterStatus.includes("signal-filter-status-done"),
+      `the status filter buttons are ${JSON.stringify(inbox.controls.filterStatus)}`,
+    );
+    assert.deepEqual(
+      [...inbox.controls.filterProject].sort(),
+      [
+        "signal-filter-project-a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+        "signal-filter-project-all",
+        "signal-filter-project-b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+      ].sort(),
+      "the project filter is not All plus one chip per live project",
+    );
+    assert.ok(
+      inbox.controls.filterDomain.includes("signal-filter-domain-all") &&
+        inbox.controls.filterDomain.includes("signal-filter-domain-none") &&
+        inbox.controls.filterDomain.includes("signal-filter-domain-health"),
+      `the domain filter buttons are ${JSON.stringify(inbox.controls.filterDomain)}`,
+    );
+
+    // Each seeded row: stored value on the row, contract label beside it.
+    for (const row of inbox.rows) {
+      assert.ok(row.attachment, `seeded row ${row.body} is not on the page`);
+      assert.equal(row.dataStatus, row.expected.status, `${row.body}: data-status`);
+      assert.equal(row.status, row.expected.statusLabel, `${row.body}: status chip`);
+      assert.equal(
+        row.dataDomainSlug,
+        row.expected.domainSlug ?? "",
+        `${row.body}: data-domain-slug`,
+      );
+      assert.equal(row.domain, row.expected.domainLabel, `${row.body}: domain chip`);
+      assert.equal(
+        row.dataProjectId,
+        row.expected.projectId ?? "",
+        `${row.body}: data-project-id`,
+      );
+      assert.equal(row.project, row.expected.projectLabel, `${row.body}: project chip`);
+      assert.equal(
+        row.dataPriority,
+        row.expected.priority ?? "none",
+        `${row.body}: data-priority`,
+      );
+      assert.equal(row.priority, row.expected.priorityLabel, `${row.body}: priority chip`);
+      assert.equal(row.statusSelect?.value, row.expected.status, `${row.body}: status select`);
+      assert.ok(row.prioritySelect, `${row.body}: no priority select`);
+      assert.ok(row.projectSelect, `${row.body}: no project select`);
+      if (row.expected.capturedFrom) {
+        assert.equal(row.capturedFrom, row.expected.capturedFrom, `${row.body}: source chip`);
+      }
+    }
+
+    // A null area is painted with a word, never a blank cell; a null project
+    // says so, and the seeded fixture's source text is on its row.
+    const unassigned = inbox.rows.find((row) => row.dataDomainSlug === "");
+    assert.ok(unassigned, "no unassigned seeded row on the page");
+    assert.equal(unassigned?.domain, "Unassigned");
+    assert.equal(unassigned?.project, "No project");
+    assert.equal(unassigned?.capturedFrom, "Chrome — AI tab group");
+    const filed = inbox.rows.find(
+      (row) => row.dataProjectId === "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+    );
+    assert.ok(filed, "no project-filed seeded row on the page");
+    assert.equal(filed?.project, "Desk rebuild");
+    assert.equal(filed?.priority, "High");
+    assert.equal(filed?.dataPriority, "high");
+    const alreadyTriaged = inbox.rows.find((row) => row.dataStatus === "triaged");
+    assert.ok(alreadyTriaged, "no seeded row already triaged");
+    assert.equal(alreadyTriaged?.status, "Triaged");
+    assert.equal(alreadyTriaged?.project, "Reading list");
+
+    // The triage itself: the select wrote one patch, the store kept it, and the
+    // row only painted Acting after a fresh chain read answered with it.
+    assert.equal(inbox.triage.targetId, filed?.id);
+    assert.equal(inbox.triage.before.dataStatus, "inbox");
+    assert.equal(inbox.triage.before.status, "Inbox");
+    assert.equal(inbox.triage.before.select, "inbox");
+    assert.equal(inbox.triage.after.dataStatus, "acting");
+    assert.equal(inbox.triage.after.status, "Acting");
+    assert.equal(inbox.triage.after.select, "acting");
+    assert.equal(inbox.triage.after.storedStatus, "acting");
+    assert.deepEqual(inbox.triage.patch, { status: "acting" });
+    assert.ok(
+      inbox.triage.updates.some(
+        (update) =>
+          update.id === inbox.triage.targetId && update.patch.status === "acting",
+      ),
+      "the triage update never reached the recording bridge",
+    );
+    assert.ok(
+      inbox.triage.listReadsAfter > inbox.triage.listReadsBefore,
+      `the chain was not re-read after the triage (${inbox.triage.listReadsBefore} reads)`,
+    );
+
+    // The filter chips narrow, say there is no match, and restore the chain.
+    assert.equal(inbox.filter.acting.rows, 1, "the acting filter did not show the triaged row");
+    assert.equal(inbox.filter.acting.pressed, "true");
+    assert.equal(inbox.filter.done.rows, 0, "a status with no rows still painted rows");
+    assert.equal(inbox.filter.done.empty, "No signals match these filters.");
+    assert.equal(inbox.filter.done.emptyLine, null, "the no-match line became the empty-vault line");
+    assert.equal(inbox.filter.done.pressed, "true");
+    assert.equal(inbox.filter.all.rows, expected.seeded.count + 4);
+    assert.equal(inbox.filter.all.pressed, "true");
+    assert.ok(
+      inbox.screenshot.bytes > 20_000,
+      `the triage capture looks empty (${inbox.screenshot.bytes} bytes)`,
+    );
   });
 });

@@ -26,7 +26,9 @@ import {
 } from "./paths.ts";
 import {
   IMAGE_MIME_EXT,
+  SIGNAL_PRIORITIES,
   SIGNAL_SOURCES,
+  SIGNAL_STATUSES,
   SIGNAL_TYPES,
   type ImageMimeType,
   type Result,
@@ -34,8 +36,10 @@ import {
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalImageInput,
+  type SignalPriority,
   type SignalRecord,
   type SignalSource,
+  type SignalStatus,
   type SignalType,
   type SignalUpdatePatch,
 } from "./types.ts";
@@ -100,6 +104,23 @@ function isSignalSource(value: unknown): value is SignalSource {
   return (
     typeof value === "string" &&
     (SIGNAL_SOURCES as readonly string[]).includes(value)
+  );
+}
+
+/** Where a capture stands as work; one of the five the store accepts. */
+export const DEFAULT_SIGNAL_STATUS: SignalStatus = "inbox";
+
+function isSignalStatus(value: unknown): value is SignalStatus {
+  return (
+    typeof value === "string" &&
+    (SIGNAL_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+function isSignalPriority(value: unknown): value is SignalPriority {
+  return (
+    typeof value === "string" &&
+    (SIGNAL_PRIORITIES as readonly string[]).includes(value)
   );
 }
 
@@ -177,6 +198,33 @@ export function parseSignalRecord(raw: unknown): SignalRecord | null {
   if (o.title !== null && typeof o.title !== "string") return null;
   if (typeof o.body !== "string") return null;
   if (o.domainSlug !== null && typeof o.domainSlug !== "string") return null;
+
+  // The inbox fields. A record written before they existed has no keys at all:
+  // absence is the migration, and it reads as the defaults (`inbox`, no
+  // project, no priority, no origin). A key that IS present but holds the wrong
+  // shape fails the record rather than being silently reset, the same rule
+  // every other field here follows.
+  let projectId: string | null = null;
+  if (o.projectId !== undefined && o.projectId !== null) {
+    if (typeof o.projectId !== "string") return null;
+    projectId = o.projectId.trim() || null;
+  }
+  let status: SignalStatus = DEFAULT_SIGNAL_STATUS;
+  if (o.status !== undefined) {
+    if (!isSignalStatus(o.status)) return null;
+    status = o.status;
+  }
+  let priority: SignalPriority | null = null;
+  if (o.priority !== undefined && o.priority !== null) {
+    if (!isSignalPriority(o.priority)) return null;
+    priority = o.priority;
+  }
+  let capturedFrom: string | null = null;
+  if (o.capturedFrom !== undefined && o.capturedFrom !== null) {
+    if (typeof o.capturedFrom !== "string") return null;
+    capturedFrom = o.capturedFrom.trim() || null;
+  }
+
   const attachment = parseSignalAttachment(o.attachment);
   if (!attachment.ok) return null;
   if (!o.body.trim() && attachment.value === null) return null;
@@ -191,6 +239,10 @@ export function parseSignalRecord(raw: unknown): SignalRecord | null {
     title: o.title,
     body: o.body,
     domainSlug: o.domainSlug,
+    projectId,
+    status,
+    priority,
+    capturedFrom,
     attachment: attachment.value,
   };
 }
@@ -202,6 +254,84 @@ async function domainExists(rootPath: string, slug: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A live project is one the projects store would read back: the id is the
+ * project file's name, so the file's presence is the existence test (the same
+ * shape `domainExists` uses for areas). A malformed id fails the `try` rather
+ * than escaping as a path error, so the caller names the value it refused.
+ */
+async function projectExists(rootPath: string, projectId: string): Promise<boolean> {
+  try {
+    await fs.access(vaultPaths(rootPath).projectMd(projectId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A nullable text field: absent and empty both read as null, never "". */
+function readOptionalString(
+  raw: unknown,
+  field: string,
+): Result<string | null> {
+  if (raw === undefined || raw === null) return ok(null);
+  if (typeof raw !== "string") return fail(`${field} must be a string or null`);
+  const trimmed = raw.trim();
+  return ok(trimmed ? trimmed : null);
+}
+
+/** What every signal now carries as work: where it belongs and where it stands. */
+type SignalTriage = {
+  projectId: string | null;
+  status: SignalStatus;
+  priority: SignalPriority | null;
+  capturedFrom: string | null;
+};
+
+/**
+ * Validate the triage half of a write. Status defaults to `inbox` when the
+ * caller did not say; projectId must name a project that exists, because a
+ * dangling id would file a capture under work no board can show. Every field is
+ * refused by the value it was handed.
+ */
+async function validateSignalTriage(
+  rootPath: string,
+  raw: {
+    projectId?: unknown;
+    status?: unknown;
+    priority?: unknown;
+    capturedFrom?: unknown;
+  },
+): Promise<Result<SignalTriage>> {
+  const projectId = readOptionalString(raw.projectId, "projectId");
+  if (!projectId.ok) return projectId;
+  const status = raw.status === undefined || raw.status === null
+    ? DEFAULT_SIGNAL_STATUS
+    : raw.status;
+  if (!isSignalStatus(status)) {
+    return fail(`Invalid signal status: ${String(status)}`);
+  }
+  const priority = readOptionalString(raw.priority, "priority");
+  if (!priority.ok) return priority;
+  if (priority.value !== null && !isSignalPriority(priority.value)) {
+    return fail(`Invalid signal priority: ${priority.value}`);
+  }
+  const capturedFrom = readOptionalString(raw.capturedFrom, "capturedFrom");
+  if (!capturedFrom.ok) return capturedFrom;
+  if (
+    projectId.value !== null &&
+    !(await projectExists(rootPath, projectId.value))
+  ) {
+    return fail(`Unknown project: ${projectId.value}`);
+  }
+  return ok({
+    projectId: projectId.value,
+    status,
+    priority: priority.value as SignalPriority | null,
+    capturedFrom: capturedFrom.value,
+  });
 }
 
 function normalizeTitle(title: string | null | undefined): string | null {
@@ -403,6 +533,14 @@ export async function createSignal(
     );
     if (!checked.ok) return checked;
 
+    const triage = await validateSignalTriage(rootPath, {
+      projectId: input.projectId,
+      status: input.status,
+      priority: input.priority,
+      capturedFrom: input.capturedFrom,
+    });
+    if (!triage.ok) return triage;
+
     const attachment = attachmentInput
       ? await storeAttachment(rootPath, attachmentInput)
       : ok<SignalAttachment | null>(null);
@@ -420,6 +558,10 @@ export async function createSignal(
       title: normalizeTitle(input.title),
       body: checked.value.body,
       domainSlug: checked.value.domainSlug,
+      projectId: triage.value.projectId,
+      status: triage.value.status,
+      priority: triage.value.priority,
+      capturedFrom: triage.value.capturedFrom,
       attachment: attachment.value,
     };
     try {
@@ -456,6 +598,20 @@ export async function updateSignal(
       loaded.value.attachment !== null,
     );
     if (!checked.ok) return checked;
+
+    // The triage fields are patched independently of the body/area write: an
+    // absent key keeps what the record has, an explicit null clears it, and a
+    // legacy record's parsed defaults make the first update safe.
+    const triage = await validateSignalTriage(rootPath, {
+      projectId:
+        patch.projectId === undefined ? loaded.value.projectId : patch.projectId,
+      status: patch.status === undefined ? loaded.value.status : patch.status,
+      priority:
+        patch.priority === undefined ? loaded.value.priority : patch.priority,
+      capturedFrom: loaded.value.capturedFrom,
+    });
+    if (!triage.ok) return triage;
+
     const next: SignalRecord = {
       ...loaded.value,
       type: checked.value.type,
@@ -465,6 +621,10 @@ export async function updateSignal(
         patch.title === undefined
           ? loaded.value.title
           : normalizeTitle(patch.title),
+      projectId: triage.value.projectId,
+      status: triage.value.status,
+      priority: triage.value.priority,
+      capturedFrom: triage.value.capturedFrom,
       updatedAt: new Date().toISOString(),
     };
     await writeSignalFile(rootPath, next);

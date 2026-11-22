@@ -1,6 +1,8 @@
 import type {
   DomainLens,
+  SignalPriority,
   SignalRecord,
+  SignalStatus,
   SignalType,
 } from "@lifequest/vault-core";
 
@@ -50,6 +52,66 @@ export function signalDomainLabel(
 ): string {
   if (!slug) return "- unassigned -";
   return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/**
+ * The inbox's per-row area label. It differs from `signalDomainLabel` on
+ * purpose: the composer's picker and the old table say "- unassigned -", while
+ * a row in the inbox must never paint a blank cell and says "Unassigned" — a
+ * fixed word the inbox rig asserts. Keep both; they answer different surfaces.
+ */
+export function signalRowDomainLabel(
+  slug: string | null | undefined,
+  domains: { slug: string; name: string }[],
+): string {
+  if (!slug) return "Unassigned";
+  return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/** The five triage states, as the operator reads them on a row or a chip. */
+export const SIGNAL_STATUS_LABELS: Record<SignalStatus, string> = {
+  inbox: "Inbox",
+  triaged: "Triaged",
+  acting: "Acting",
+  done: "Done",
+  dropped: "Dropped",
+};
+
+/** The three priorities, as the operator reads them. "None" is unset, not low. */
+export const SIGNAL_PRIORITY_LABELS: Record<SignalPriority, string> = {
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
+
+/**
+ * A row's status word. A record written before the inbox existed carries no
+ * status key; the store reads that as "inbox", and so does this label.
+ */
+export function signalStatusLabel(
+  status: SignalStatus | null | undefined,
+): string {
+  return (status && SIGNAL_STATUS_LABELS[status]) || SIGNAL_STATUS_LABELS.inbox;
+}
+
+/** A row's priority word: one of High/Normal/Low, or "None" when unset. */
+export function signalPriorityLabel(
+  priority: SignalPriority | null | undefined,
+): string {
+  return (priority && SIGNAL_PRIORITY_LABELS[priority]) || "None";
+}
+
+/**
+ * What a row's project cell reads: the live project's title, else the stored id
+ * (a project may have been deleted while the signal kept its link), else
+ * "No project" for an unfiled capture. Never blank.
+ */
+export function projectDisplayLabel(
+  projectId: string | null | undefined,
+  projects: readonly { id: string; title: string }[],
+): string {
+  if (!projectId) return "No project";
+  return projects.find((p) => p.id === projectId)?.title || projectId;
 }
 
 /** Overview: all. A domain tab: unassigned plus that domain. */

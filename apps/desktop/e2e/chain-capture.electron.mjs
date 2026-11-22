@@ -1,7 +1,8 @@
 /**
  * Drives the Life-Chain page's general capture surface — text, image and link —
- * in a real Electron window and writes `e2e/artifacts/chain-capture.json` plus
- * the `chain-capture-*.png` captures.
+ * and its inbox triage, in a real Electron window and writes
+ * `e2e/artifacts/chain-capture.json` plus the `chain-capture-*.png` captures
+ * and the inbox's `chain-inbox-triage.png`.
  *
  * Run with this checkout's dev server up:
  *
@@ -10,7 +11,7 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same claims, no eyeballing the app required. The
  * pictures are the operator-facing half: they show the shipped page with a real
- * uploaded image and a real link row.
+ * uploaded image, a real link row, and a triaged inbox row.
  *
  * What this rig claims:
  *
@@ -36,6 +37,14 @@
  *     link anchoring its URL.
  *  6. The composer clears after each capture; no unmodelled bridge call, no
  *     console error, and nothing spills horizontally past the window.
+ *  7. The inbox half: every seeded row carries the stored status/priority/
+ *     project on the row AND paints the contract's label beside it — including
+ *     exactly "Unassigned" and "No project", never a blank cell. Changing a
+ *     row's status select hands the bridge exactly `{status: "acting"}`, and the
+ *     row paints "Acting" only after the re-read that follows — the screen
+ *     change is the vault's answer, not the page's echo. The status filter
+ *     chips narrow to the triaged row, say "No signals match these filters."
+ *     when nothing matches, and All restores the chain.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
@@ -125,6 +134,17 @@ const SAMPLE = `(() => {
     const bodyEl =
       row.querySelector('[data-testid="signal-body"]') || row.querySelector(".signal-row__body");
     const linkEl = row.querySelector('[data-testid="signal-link"]');
+    const rowText = (testid) => text(row.querySelector('[data-testid="' + testid + '"]'));
+    const selectOf = (select) =>
+      select
+        ? {
+            value: select.value,
+            options: Array.from(select.options).map((option) => ({
+              value: option.value,
+              label: (option.textContent || "").trim(),
+            })),
+          }
+        : null;
     return {
       attachment: row.getAttribute("data-attachment"),
       body: bodyEl ? text(bodyEl) : null,
@@ -139,8 +159,41 @@ const SAMPLE = `(() => {
             text: text(linkEl),
           }
         : { present: false },
+      // The triage contract: the stored values on the row, and the chip text
+      // the operator reads, read side by side so a disagreement is visible.
+      dataStatus: row.getAttribute("data-status"),
+      dataPriority: row.getAttribute("data-priority"),
+      dataProjectId: row.getAttribute("data-project-id"),
+      dataDomainSlug: row.getAttribute("data-domain-slug"),
+      domain: rowText("signal-domain"),
+      project: rowText("signal-project"),
+      status: rowText("signal-status"),
+      priority: rowText("signal-priority"),
+      capturedFrom: rowText("signal-captured-from"),
+      statusSelect: selectOf(
+        row.querySelector('[data-testid="signal-status-select"]'),
+      ),
+      prioritySelect: selectOf(
+        row.querySelector('[data-testid="signal-priority-select"]'),
+      ),
+      projectSelect: selectOf(
+        row.querySelector('[data-testid="signal-project-select"]'),
+      ),
     };
   });
+  const filterOf = (testid) => {
+    const group = q('[data-testid="' + testid + '"]');
+    return {
+      present: Boolean(group),
+      buttons: group
+        ? Array.from(group.querySelectorAll("button")).map((button) => ({
+            testid: button.getAttribute("data-testid"),
+            text: text(button),
+            pressed: button.getAttribute("aria-pressed"),
+          }))
+        : [],
+    };
+  };
   const composer = q('[data-testid="chain-composer"]');
   const pending = q('[data-testid="chain-pending-image"]');
   const chip = q('[data-testid="chain-link-chip"]');
@@ -228,6 +281,17 @@ const SAMPLE = `(() => {
     },
     rows,
     counts,
+    // The inbox's own surface: the filter bar's buttons and their pressed
+    // state, plus the two empty lines (no matches vs no records at all).
+    filters: {
+      status: filterOf("signal-filter-status"),
+      domain: filterOf("signal-filter-domain"),
+      project: filterOf("signal-filter-project"),
+    },
+    filterEmpty: text(q('[data-testid="signal-filter-empty"]')),
+    emptyLine: text(q('[data-testid="signal-empty"]')),
+    projects: window.chainCaptureProjects ?? [],
+    inbox: window.chainCaptureInbox ?? null,
     // The shipped composer keeps one attachment per capture: each control is
     // disabled by the other attachment being present, so the rig reads both.
     attach: {
@@ -394,6 +458,30 @@ const pressEnter = (selector, shift = false) => `(() => {
 })()`;
 
 /**
+ * Move a row's status with the operator's own select. React 19 reads a real
+ * bubbling `change` event, and the native value setter is the one that leaves
+ * React's value tracker seeing an edit rather than swallowing a programmatic
+ * assignment. The row is found by its painted body, so the gesture is the one
+ * an operator makes on that row, not a harness handle.
+ */
+const selectRowStatus = (body, value) => `(() => {
+  const rows = Array.from(document.querySelectorAll('[data-testid="signal-row"]'));
+  const row = rows.find((candidate) => {
+    const el =
+      candidate.querySelector('[data-testid="signal-body"]') ||
+      candidate.querySelector('.signal-row__body');
+    return Boolean(el) && (el.textContent || '').includes(${JSON.stringify(body)});
+  });
+  if (!row) return "no row";
+  const select = row.querySelector('[data-testid="signal-status-select"]');
+  if (!select) return "no status select";
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+  setter.call(select, ${JSON.stringify(value)});
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return "ok";
+})()`;
+
+/**
  * Drop a real PNG on a target: the bytes are decoded from the fixture's base64
  * and wrapped in a genuine `File`, so the page's own file handling runs.
  */
@@ -490,21 +578,77 @@ async function main() {
     return last;
   }
 
-  async function capture(name) {
+  async function captureFile(filename) {
     fs.mkdirSync(artifactsDir, { recursive: true });
-    const file = path.join(artifactsDir, `chain-capture-${name}.png`);
+    const file = path.join(artifactsDir, filename);
     fs.writeFileSync(file, (await win.webContents.capturePage()).toPNG());
     screenshots.push({ name: path.basename(file), file, bytes: fs.statSync(file).size });
     return file;
   }
+  const capture = (name) => captureFile(`chain-capture-${name}.png`);
 
   const rowWithBody = (state, body) =>
     (state.rows || []).find((row) => ((row.body ?? row.text) ?? "").includes(body)) ?? null;
 
+  /** The filter bar's button carrying this testid, or null. */
+  const filterButton = (state, group, testid) =>
+    (state.filters?.[group]?.buttons ?? []).find((button) => button.testid === testid) ?? null;
+
   try {
     await win.loadURL(url);
     win.showInactive();
-    await waitFor(win, "Boolean(window.chainCaptureReady)", "chainCaptureReady", 30_000);
+    const ready = await waitFor(
+      win,
+      "Boolean(window.chainCaptureReady)",
+      "chainCaptureReady",
+      30_000,
+    );
+
+    // A page that never became ready is not measured: name what the window
+    // actually shows — the empty sheet, the Vite overlay, or the unmounted
+    // tree and the console errors that unmounted it — and write the report
+    // now. Grinding through every later phase only burns the test's timeout
+    // and loses the error that says why.
+    if (!ready) {
+      const boot = await js(`(() => {
+        const root = document.getElementById("root");
+        const overlay = document.querySelector("vite-error-overlay");
+        return {
+          title: document.title,
+          href: location.href,
+          readyState: document.readyState,
+          rootChildren: root ? root.children.length : -1,
+          rootHtml: root ? root.innerHTML.slice(0, 400) : null,
+          bodyText: (document.body ? document.body.innerText : "").slice(0, 400),
+          overlay: overlay
+            ? overlay.shadowRoot
+              ? overlay.shadowRoot.textContent.slice(0, 800)
+              : "overlay"
+            : null,
+          hasLifequest: Boolean(window.lifequest),
+          hasExpected: Boolean(window.chainCaptureExpected),
+          calls: (window.chainCaptureCalls ?? []).slice(),
+          unexpected: (window.chainCaptureUnexpectedCalls ?? []).slice(),
+        };
+      })()`).catch((error) => ({ probeError: String(error) }));
+      checks.boot = boot;
+      fail(`the harness page never became ready: ${JSON.stringify(boot).slice(0, 1600)}`);
+      const report = {
+        pass: false,
+        failures,
+        checks,
+        screenshots: screenshots.map(({ name, bytes }) => ({ name, bytes })),
+        consoleErrors,
+        url,
+        window: { ...WIDE },
+        generatedAt: new Date().toISOString(),
+      };
+      writeReport(report);
+      printSummary(report);
+      win.destroy();
+      app.exit(1);
+      return;
+    }
 
     const expected = await js("window.chainCaptureExpected");
     const expectedImage = await js("window.chainCaptureImage");
@@ -1120,6 +1264,379 @@ async function main() {
         `${shot.bytes} bytes`,
       );
     }
+
+    // ── 6b. the inbox: a triage select changes the row on screen ───────────
+    // The fixture's three seeds cover the whole contract: an unassigned row, a
+    // row filed under a live project with High priority, and a row already
+    // triaged in an area. First the chips are compared with the stored values
+    // the harness publishes; then one row is moved through the operator's own
+    // select, and the run waits for BOTH the bridge patch and the re-read it
+    // causes to paint back — a page that only echoed its own state fails here.
+    const inboxExpected = await js("window.chainCaptureInbox");
+    check(
+      "the harness publishes the fixture's inbox",
+      Boolean(inboxExpected?.seeded?.length === expected.seeded.count),
+      `inbox ${JSON.stringify(inboxExpected).slice(0, 300)}`,
+    );
+
+    const baseline = await waitState(
+      (state) =>
+        Array.isArray(inboxExpected?.seeded) &&
+        inboxExpected.seeded.every((seed) => {
+          const row = rowWithBody(state, seed.body);
+          return (
+            row !== null &&
+            row.dataStatus === seed.status &&
+            row.dataDomainSlug === (seed.domainSlug ?? "") &&
+            row.dataProjectId === (seed.projectId ?? "") &&
+            row.dataPriority === (seed.priority ?? "none") &&
+            row.domain === seed.domainLabel &&
+            row.project === seed.projectLabel &&
+            row.status === seed.statusLabel &&
+            row.priority === seed.priorityLabel &&
+            row.statusSelect?.value === seed.status
+          );
+        }),
+      "the seeded inbox rows to paint their chips and triage selects",
+      15_000,
+    );
+
+    const inboxRows = (inboxExpected?.seeded ?? []).map((seed) => {
+      const row = rowWithBody(baseline, seed.body);
+      return {
+        id: seed.id,
+        body: seed.body,
+        expected: seed,
+        attachment: row?.attachment ?? null,
+        dataStatus: row?.dataStatus ?? null,
+        dataPriority: row?.dataPriority ?? null,
+        dataProjectId: row?.dataProjectId ?? null,
+        dataDomainSlug: row?.dataDomainSlug ?? null,
+        domain: row?.domain ?? null,
+        project: row?.project ?? null,
+        status: row?.status ?? null,
+        priority: row?.priority ?? null,
+        capturedFrom: row?.capturedFrom ?? null,
+        statusSelect: row?.statusSelect ?? null,
+        prioritySelect: row?.prioritySelect ?? null,
+        projectSelect: row?.projectSelect ?? null,
+      };
+    });
+    for (const row of inboxRows) {
+      const seed = row.expected;
+      const name = `seeded ${seed.attachment} row`;
+      check(
+        `${name} exists with a status`,
+        row.attachment !== null && row.dataStatus === seed.status && row.status === seed.statusLabel,
+        `painted ${JSON.stringify({ attachment: row.attachment, dataStatus: row.dataStatus, status: row.status })} vs stored ${JSON.stringify({ status: seed.status, label: seed.statusLabel })}`,
+      );
+      check(
+        `${name} paints its domain`,
+        row.dataDomainSlug === (seed.domainSlug ?? "") && row.domain === seed.domainLabel,
+        `painted ${JSON.stringify({ dataDomainSlug: row.dataDomainSlug, domain: row.domain })} vs ${JSON.stringify({ dataDomainSlug: seed.domainSlug ?? "", domain: seed.domainLabel })}`,
+      );
+      check(
+        `${name} paints its project`,
+        row.dataProjectId === (seed.projectId ?? "") && row.project === seed.projectLabel,
+        `painted ${JSON.stringify({ dataProjectId: row.dataProjectId, project: row.project })} vs ${JSON.stringify({ dataProjectId: seed.projectId ?? "", project: seed.projectLabel })}`,
+      );
+      check(
+        `${name} paints its priority`,
+        row.dataPriority === (seed.priority ?? "none") && row.priority === seed.priorityLabel,
+        `painted ${JSON.stringify({ dataPriority: row.dataPriority, priority: row.priority })} vs ${JSON.stringify({ dataPriority: seed.priority ?? "none", priority: seed.priorityLabel })}`,
+      );
+      if (seed.capturedFrom) {
+        check(
+          `${name} paints where it was captured from`,
+          row.capturedFrom === seed.capturedFrom,
+          `painted ${JSON.stringify(row.capturedFrom)} vs ${JSON.stringify(seed.capturedFrom)}`,
+        );
+      }
+    }
+
+    const statusSelect = inboxRows[0]?.statusSelect ?? null;
+    const prioritySelect = inboxRows[0]?.prioritySelect ?? null;
+    const projectSelect = inboxRows[0]?.projectSelect ?? null;
+    check(
+      "every row carries its three triage selects",
+      inboxRows.every((row) => row.statusSelect && row.prioritySelect && row.projectSelect),
+      `selects ${JSON.stringify(inboxRows.map((row) => Boolean(row.statusSelect && row.prioritySelect && row.projectSelect)))}`,
+    );
+    const statusOptionValues = (statusSelect?.options ?? []).map((option) => option.value);
+    const statusOptionLabels = (statusSelect?.options ?? []).map((option) => option.label);
+    check(
+      "the status select offers the five states with the stored values",
+      statusOptionValues.join(",") === "inbox,triaged,acting,done,dropped",
+      `options ${JSON.stringify(statusOptionValues)}`,
+    );
+    check(
+      "the status select labels the states",
+      statusOptionLabels.join(",") === "Inbox,Triaged,Acting,Done,Dropped",
+      `labels ${JSON.stringify(statusOptionLabels)}`,
+    );
+    const priorityOptionLabels = (prioritySelect?.options ?? []).map((option) => option.label);
+    check(
+      "the priority select offers None and the three levels",
+      ["None", "High", "Normal", "Low"].every((label) => priorityOptionLabels.includes(label)),
+      `labels ${JSON.stringify(priorityOptionLabels)}`,
+    );
+    const projectOptionLabels = (projectSelect?.options ?? []).map((option) => option.label);
+    check(
+      "the project select offers No project and every live project",
+      projectOptionLabels.includes("No project") &&
+        (inboxExpected?.projects ?? []).every((project) =>
+          projectOptionLabels.includes(project.title),
+        ),
+      `labels ${JSON.stringify(projectOptionLabels)} vs projects ${JSON.stringify((inboxExpected?.projects ?? []).map((project) => project.title))}`,
+    );
+
+    const statusFilterButtons = (baseline.filters?.status?.buttons ?? []).map(
+      (button) => button.testid,
+    );
+    check(
+      "the status filter offers All and the five states",
+      statusFilterButtons.length === 6 &&
+        ["all", "inbox", "triaged", "acting", "done", "dropped"].every((name) =>
+          statusFilterButtons.includes(`signal-filter-status-${name}`),
+        ),
+      `buttons ${JSON.stringify(statusFilterButtons)}`,
+    );
+    check(
+      "the status filter starts on All",
+      filterButton(baseline, "status", "signal-filter-status-all")?.pressed === "true",
+      `All pressed ${JSON.stringify(filterButton(baseline, "status", "signal-filter-status-all"))}`,
+    );
+    const domainFilterButtons = (baseline.filters?.domain?.buttons ?? []).map(
+      (button) => button.testid,
+    );
+    check(
+      "the domain filter offers All, Unassigned and the areas",
+      (baseline.filters?.domain?.present ?? false) &&
+        domainFilterButtons.includes("signal-filter-domain-all") &&
+        domainFilterButtons.includes("signal-filter-domain-none") &&
+        domainFilterButtons.includes("signal-filter-domain-health"),
+      `buttons ${JSON.stringify(domainFilterButtons)}`,
+    );
+    const projectFilterButtons = (baseline.filters?.project?.buttons ?? []).map(
+      (button) => button.testid,
+    );
+    check(
+      "the project filter offers All and every live project",
+      projectFilterButtons.length === (inboxExpected?.projects ?? []).length + 1 &&
+        projectFilterButtons.includes("signal-filter-project-all") &&
+        (inboxExpected?.projects ?? []).every((project) =>
+          projectFilterButtons.includes(`signal-filter-project-${project.id}`),
+        ),
+      `buttons ${JSON.stringify(projectFilterButtons)}`,
+    );
+
+    // The triage itself: one operator gesture on the project-filed row.
+    const inboxTarget = inboxExpected?.target ?? null;
+    const targetBefore = inboxTarget ? rowWithBody(baseline, inboxTarget.body) : null;
+    const listReadsBefore = (baseline.calls ?? []).filter(
+      (name) => name === "signalChainList",
+    ).length;
+    check(
+      "the triage target is on screen before the change",
+      Boolean(inboxTarget) && targetBefore !== null && targetBefore?.dataStatus === "inbox",
+      `target ${JSON.stringify(inboxTarget)}, row ${JSON.stringify(targetBefore && { dataStatus: targetBefore.dataStatus, status: targetBefore.status })}`,
+    );
+    const moved = inboxTarget ? await js(selectRowStatus(inboxTarget.body, "acting")) : "no target";
+    check(
+      "the status select accepts the operator's change",
+      moved === "ok",
+      `select returned ${JSON.stringify(moved)}`,
+    );
+    const triaged = await waitState(
+      (state) => {
+        const row = inboxTarget ? rowWithBody(state, inboxTarget.body) : null;
+        const update = (state.updates ?? []).find(
+          (entry) => entry.id === (inboxTarget?.id ?? ""),
+        );
+        return Boolean(
+          row &&
+            row.dataStatus === "acting" &&
+            row.status === "Acting" &&
+            row.statusSelect?.value === "acting" &&
+            update &&
+            update.patch?.status === "acting" &&
+            (state.calls ?? []).filter((name) => name === "signalChainList").length >
+              listReadsBefore,
+        );
+      },
+      "the triage update to paint back as Acting after a re-read",
+      15_000,
+    );
+    const triagedRow = inboxTarget ? rowWithBody(triaged, inboxTarget.body) : null;
+    const triageUpdate = (triaged.updates ?? []).find(
+      (entry) => entry.id === (inboxTarget?.id ?? ""),
+    );
+    const storedTriage = (triaged.store?.records ?? []).find(
+      (record) => record.id === (inboxTarget?.id ?? ""),
+    );
+    check(
+      "the row paints Acting after the triage",
+      triagedRow?.dataStatus === "acting" && triagedRow?.status === "Acting",
+      `painted ${JSON.stringify(triagedRow && { dataStatus: triagedRow.dataStatus, status: triagedRow.status, select: triagedRow.statusSelect?.value })}`,
+    );
+    check(
+      "the triage select wrote the status patch",
+      triageUpdate?.patch?.status === "acting",
+      `patch ${JSON.stringify(triageUpdate?.patch ?? null)}`,
+    );
+    check(
+      "the triage wrote only the status it named",
+      JSON.stringify(triageUpdate?.patch ?? null) === JSON.stringify({ status: "acting" }),
+      `patch ${JSON.stringify(triageUpdate?.patch ?? null)}`,
+    );
+    check(
+      "the chain was re-read after the triage",
+      (triaged.calls ?? []).filter((name) => name === "signalChainList").length >
+        listReadsBefore,
+      `reads ${listReadsBefore} -> ${(triaged.calls ?? []).filter((name) => name === "signalChainList").length}`,
+    );
+    check(
+      "the vault stored the triaged status",
+      storedTriage?.status === "acting",
+      `stored ${JSON.stringify(storedTriage && { status: storedTriage.status })}`,
+    );
+
+    // The filter chips: a match, then no matches, then back to All. The acting
+    // chip is a second read of the status the triage just wrote.
+    await js(click('[data-testid="signal-filter-status-acting"]'));
+    const actingFilter = await waitState(
+      (state) => state.rows.length === 1 && rowWithBody(state, inboxTarget?.body ?? "") !== null,
+      "the acting filter to show just the triaged row",
+    );
+    check(
+      "the acting filter shows the one triaged row",
+      actingFilter.rows.length === 1 &&
+        inboxTarget !== null &&
+        rowWithBody(actingFilter, inboxTarget.body) !== null,
+      `${actingFilter.rows.length} rows, bodies ${JSON.stringify(actingFilter.rows.map((row) => row.body))}`,
+    );
+    check(
+      "the acting chip reads as pressed",
+      filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed === "true",
+      `acting chip ${JSON.stringify(filterButton(actingFilter, "status", "signal-filter-status-acting"))}`,
+    );
+
+    // The operator-facing half of the evidence, taken while the Acting filter
+    // proves the change: the one triaged row, its Acting chip and select, and
+    // the pressed chip that narrowed the list to it.
+    await js(`(() => {
+      const rows = Array.from(document.querySelectorAll('[data-testid="signal-row"]'));
+      const row = rows.find((candidate) => {
+        const el =
+          candidate.querySelector('[data-testid="signal-body"]') ||
+          candidate.querySelector('.signal-row__body');
+        return Boolean(el) && (el.textContent || '').includes(${JSON.stringify(inboxTarget?.body ?? "")});
+      });
+      if (!row) return false;
+      row.scrollIntoView({ block: "center" });
+      return true;
+    })()`);
+    await sleep(300);
+    const inboxShot = await captureFile("chain-inbox-triage.png");
+    const inboxShotBytes = fs.statSync(inboxShot).size;
+    check(
+      "capture chain-inbox-triage.png is a real picture",
+      inboxShotBytes > 20_000,
+      `${inboxShotBytes} bytes`,
+    );
+
+    await js(click('[data-testid="signal-filter-status-done"]'));
+    const doneFilter = await waitState(
+      (state) =>
+        state.rows.length === 0 &&
+        (state.filterEmpty ?? "") === "No signals match these filters.",
+      "the done filter to leave no rows and say why",
+    );
+    check(
+      "a filter with no matches paints the filter-empty line",
+      (doneFilter.filterEmpty ?? "") === "No signals match these filters.",
+      `line ${JSON.stringify(doneFilter.filterEmpty)}`,
+    );
+    check(
+      "a filter with no matches is not the empty-vault line",
+      doneFilter.emptyLine === null,
+      `empty line ${JSON.stringify(doneFilter.emptyLine)}`,
+    );
+    check(
+      "the done chip reads as pressed",
+      filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed === "true",
+      `done chip ${JSON.stringify(filterButton(doneFilter, "status", "signal-filter-status-done"))}`,
+    );
+
+    await js(click('[data-testid="signal-filter-status-all"]'));
+    const allFilter = await waitState(
+      (state) => state.rows.length === expected.seeded.count + 4,
+      "the all filter to restore the chain",
+    );
+    check(
+      "the all filter restores every row",
+      allFilter.rows.length === expected.seeded.count + 4,
+      `${allFilter.rows.length} rows vs ${expected.seeded.count + 4}`,
+    );
+    check(
+      "the all chip reads as pressed again",
+      filterButton(allFilter, "status", "signal-filter-status-all")?.pressed === "true",
+      `All chip ${JSON.stringify(filterButton(allFilter, "status", "signal-filter-status-all"))}`,
+    );
+
+    checks.inbox = {
+      expected: inboxExpected ?? null,
+      rows: inboxRows,
+      controls: {
+        statusOptions: statusOptionValues,
+        statusLabels: statusOptionLabels,
+        priorityOptions: (prioritySelect?.options ?? []).map((option) => option.value),
+        priorityLabels: priorityOptionLabels,
+        projectOptions: (projectSelect?.options ?? []).map((option) => option.value),
+        projectLabels: projectOptionLabels,
+        filterStatus: statusFilterButtons,
+        filterDomain: domainFilterButtons,
+        filterProject: projectFilterButtons,
+      },
+      triage: {
+        targetId: inboxTarget?.id ?? null,
+        targetBody: inboxTarget?.body ?? null,
+        before: {
+          dataStatus: targetBefore?.dataStatus ?? null,
+          status: targetBefore?.status ?? null,
+          select: targetBefore?.statusSelect?.value ?? null,
+        },
+        after: {
+          dataStatus: triagedRow?.dataStatus ?? null,
+          status: triagedRow?.status ?? null,
+          select: triagedRow?.statusSelect?.value ?? null,
+          storedStatus: storedTriage?.status ?? null,
+        },
+        patch: triageUpdate?.patch ?? null,
+        updates: triaged.updates ?? [],
+        listReadsBefore,
+        listReadsAfter: (triaged.calls ?? []).filter(
+          (name) => name === "signalChainList",
+        ).length,
+      },
+      filter: {
+        acting: {
+          rows: actingFilter.rows.length,
+          pressed: filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed ?? null,
+        },
+        done: {
+          rows: doneFilter.rows.length,
+          empty: doneFilter.filterEmpty,
+          emptyLine: doneFilter.emptyLine,
+          pressed: filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed ?? null,
+        },
+        all: {
+          rows: allFilter.rows.length,
+          pressed: filterButton(allFilter, "status", "signal-filter-status-all")?.pressed ?? null,
+        },
+      },
+      screenshot: { name: path.basename(inboxShot), bytes: inboxShotBytes },
+    };
 
     // ── 7. the dock's Life-Chain view paints the same attachments ──────────
     // The page is the capture surface; the dock is the second surface the same

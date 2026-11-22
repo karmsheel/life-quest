@@ -10777,6 +10777,76 @@ button.chat-panel__activity-line:hover {
   margin: 0.25rem 0 0;
 }
 
+/* —— Triage band: the chips above the inbox list ——
+   Three labelled rows, each of which wraps. Nothing here may push the page
+   wider than the window: the rows are flex-wrap and the chips are nowrap only
+   inside their own pill, so a long area or project name wraps the row rather
+   than the document. */
+.signal-chain__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.signal-chain__filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.signal-chain__filter-label {
+  flex: none;
+  min-width: 3.7rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.signal-chain__chip {
+  appearance: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.6rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.signal-chain__chip:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--selected) 12%, transparent);
+}
+
+.signal-chain__chip--active {
+  color: var(--fg);
+  font-weight: 600;
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.signal-chain__chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--selected) 55%, transparent);
+  outline-offset: 1px;
+}
+
 .signal-chain__list {
   list-style: none;
   margin: 0;
@@ -10813,7 +10883,8 @@ button.chat-panel__activity-line:hover {
   gap: 0.35rem;
 }
 
-.signal-row__domain {
+.signal-row__domain,
+.signal-row__triage-select {
   max-width: 11rem;
   font: inherit;
   font-size: 0.78rem;
@@ -10822,6 +10893,14 @@ button.chat-panel__activity-line:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.15rem 0.4rem;
+}
+
+.signal-row__triage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .signal-row__actions {
@@ -10917,6 +10996,80 @@ button.chat-panel__activity-line:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.75rem;
+}
+
+/* —— A row's triage meta ——
+   Area, project, status, priority (and where it was captured, when known) are
+   words on the row, not just the values of the selects beside it: the operator
+   scans the list, and a select that has not been opened shows nothing. The
+   chips wrap, and each pill truncates its own label rather than widening the
+   page. */
+.signal-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  margin-bottom: 0.4rem;
+}
+
+.signal-row__chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.signal-row__chip--area {
+  color: var(--fg);
+}
+
+.signal-row__chip--status-inbox {
+  color: var(--muted);
+}
+
+.signal-row__chip--status-triaged {
+  color: var(--blue);
+  border-color: var(--blue-border);
+  background: var(--blue-bg);
+}
+
+.signal-row__chip--status-acting {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 35%, transparent);
+  background: var(--amber-bg);
+}
+
+.signal-row__chip--status-done {
+  color: var(--green);
+  border-color: var(--green-border);
+  background: var(--green-bg);
+}
+
+.signal-row__chip--status-dropped {
+  color: var(--destructive);
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+
+.signal-row__chip--priority-high {
+  color: var(--destructive);
+  border-color: var(--red-border);
+}
+
+.signal-row__chip--priority-normal {
+  color: var(--fg);
+}
+
+.signal-row__chip--from {
+  font-style: italic;
 }
 
 .signal-row--editing {

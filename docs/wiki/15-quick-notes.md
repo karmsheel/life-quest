@@ -1,9 +1,13 @@
 # Quick Notes
 
-**Quick Notes** is quick-fire capture: one box, one key, and the thing is off your mind. It
-is a chain of signals — a thought, a picture, a link — kept as small JSON records in the
-vault, newest at the top. You assign and edit later; the page is for getting the thing down
-while you still have it.
+**Quick Notes** is quick-fire capture *and* the vault's single Inbox. One box, one key, and
+the thing is off your mind: it is a chain of signals — a thought, a picture, a link — kept as
+small JSON records in the vault. Then the chain is where you triage them: file a capture under
+an area and a project, give it a status and a priority, and turn it into board work.
+
+Quick Notes is the one entry point for external information into the vault. A browser tab, a
+line from Notion, a thought in the shower: it lands here as a signal, and nothing else has to
+own it until you decide it is work.
 
 ## Where it lives
 
@@ -18,11 +22,19 @@ This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 
-Capture dies when it takes more than a keystroke. Quick Notes deliberately asks for little
-more than the capture: a description, an optional **Image** or **Link**, and an optional
-**Area**. There is no type picker, no title, no project, no status. A capture is not an
-inbox and is never "processed"; it stays on the chain, and the one thing you can do with it
-later is make a task from it.
+Capture dies when it takes more than a keystroke, so the composer deliberately asks for little:
+a description, an optional **Image** or **Link**, and an optional **Area**. Type, title,
+project, status and priority are not composer fields — a capture is a capture, and the inbox is
+worked afterwards, on the row.
+
+Each signal carries:
+
+- an **Area** (`domainSlug`) or none;
+- a **Project** or none, which must name a live project from `projects/`;
+- a **Status** — where the capture stands as work;
+- a **Priority** — your own ordering, or none;
+- **Captured from** — free text naming where it came in from (`Chrome — AI tab group`,
+  `Notion — Action Items`), when the capture came from outside the app.
 
 The one box takes three kinds of capture:
 
@@ -52,19 +64,24 @@ before the capture is logged.
 5. Optionally choose an **Area** before logging. The picker's first option is
    **- unassigned -**; leaving it there files the signal with no area.
 6. Press **Enter** or choose **Log**. The box clears, the area picker resets to
-   **- unassigned -**, the preview drops, and the new signal appears at the top of the list.
-7. Work a signal in the list:
-   - Change its **Area** with the select on the row.
+   **- unassigned -**, the preview drops, and the new signal appears at the top of the list
+   with status **Inbox**.
+7. Narrow the list with the filter chips above it: by **status**, by **area**, or by
+   **project**. Filters combine with the area lens; a filter with no matches says
+   "No signals match these filters."
+8. Work a signal in the list:
+   - Change its **Area**, **Project**, **Status** or **Priority** with the selects on the row.
+     These are direct writes; nothing asks for approval.
    - Choose the pencil button (**Edit**) to change its **Description** and **Area** inline;
      **Save** or **Cancel**, and Escape cancels. A picture or link cannot be replaced from
      the edit form.
-   - Choose **Make task** to create a backlog task from it.
+   - Choose **Make task** to create a backlog task from it. When the capture belongs to a
+     project, the task is linked to that project too, and the capture moves to **Acting**.
    - Choose the bin button (**Delete**) to hide it from the chain.
-8. If a signal already has a task, its **Make task** button reads **Open task** and leads to
+9. If a signal already has a task, its **Make task** button reads **Open task** and leads to
    the Task Manager board with that card expanded.
 
-With nothing captured yet, the page shows: "Nothing on the chain yet. Write something
-above."
+With nothing captured yet, the page shows: "Nothing on the chain yet. Write something above."
 
 ## The screen
 
@@ -78,12 +95,17 @@ above."
 | Link chip | Under the box until the signal is logged: the link's host and the full address, with the X button **Remove the attached link**. |
 | **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits under the box with the **Log** button, which is disabled until there is a description or an attachment. |
 | Key hint | `Enter to log · Shift+Enter for a new line · drop or paste a picture`. |
-| Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, when it was captured, an area select, and the row actions. |
+| Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
+| Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
+| Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
+| Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
 | Attachment | An image draws at the top of the row with its file name beneath it; a link draws a card at the top of the row with its host and address. The link card opens `https` addresses in the browser. |
 | Timestamp | "Today, 14:32" / "Yesterday, 09:05" for recent days; an older signal shows a medium date and time. |
 | Row actions | **Make task** (or **Open task**), pencil **Edit**, bin **Delete**, plus the inline **Area** select. |
 | Edit form | **Description** textarea, **Area** select, **Save**, **Cancel**. Editing changes the description and area only; a picture or link stays as captured. |
 | Confirm dialog | Deleting asks first: title **Delete signal**, message "The signal is hidden from the chain. Its record and messages stay in the vault.", confirm **Delete signal**. |
+| Empty chain | "Nothing on the chain yet. Write something above." |
+| Empty filter | "No signals match these filters." |
 | Unreadable files | If any signal file cannot be parsed: "N signal file(s) could not be read." |
 | Missing picture | A picture whose file has gone still holds its row: "That picture is missing from the vault." |
 
@@ -126,6 +148,10 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
   "title": null,
   "body": "the capture",
   "domainSlug": null,
+  "projectId": null,
+  "status": "inbox",
+  "priority": null,
+  "capturedFrom": null,
   "attachment": null
 }
 ```
@@ -138,14 +164,40 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
   link capture may store an empty one, because the attachment says what was captured. The
   vault's refusal for neither is "A capture needs text, an image or a link".
 - The area is stored as `domainSlug` (the field kept its old name); `null` is unassigned.
+- `projectId` is a live project id from `projects/`; a write naming an id no project file
+  backs is refused with "Unknown project: <id>" and nothing is written. `null` is unfiled.
+- `status` is one of `inbox`, `triaged`, `acting`, `done`, `dropped`. A signal is created
+  `inbox`; the five are the only values the store writes, and any other value is refused.
+- `priority` is one of `high`, `normal`, `low`, or `null` for unset. Nothing else is
+  accepted; "normal" is a real choice, not the default.
+- `capturedFrom` is free text naming where the capture came from, trimmed; empty is `null`.
+- A signal written before the inbox existed carries none of these keys. It reads back as
+  `status: "inbox"` with the project, priority and origin unset — no migration step is
+  needed, and the next direct write stores the defaults explicitly.
 - The page files every capture as type `thought`, with no title and no source reference.
 - The list is sorted newest first by `createdAt`, with the id as a tie-breaker.
 - Deleted records are soft-deleted: `deletedAt` is stamped, the file stays, and the chain
   stops listing it. Nothing is erased from disk by the page.
 - A signal whose area is later archived stays writable: its stored slug is shown even when
   the live area list no longer offers it.
+- A signal whose project was deleted keeps the stored id and shows it; the project picker
+  does not offer it, and **No project** unfiles the capture.
 - The textarea is trimmed on write; a whitespace-only capture is refused when there is no
   attachment.
+
+### Triaging a capture
+
+Triage is a direct write, like capture: no Decision, no approval queue.
+
+- The row's **Status**, **Priority** and **Project** selects, the **Area** select and the
+  inline **Edit** form all write the signal file immediately and stamp `updatedAt`.
+- The five statuses mean: **Inbox** (untriaged), **Triaged** (looked at, filed), **Acting**
+  (there is work in flight), **Done** (no longer needing attention), **Dropped** (decided
+  against). The page does not enforce transitions; the status is your statement about the
+  capture.
+- A status outside the five and a priority outside the three are refused by value; an
+  unknown project id is refused by id. Nothing is written by a refusal.
+- Filters are only a view: they do not change a signal, and they reset with the page.
 
 ### A picture
 
@@ -184,18 +236,19 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
 
 ### Make task
 
-**Make task** is the one way off the chain:
+**Make task** is the way a capture becomes board work:
 
 - It creates a task in the Task Manager board's **Backlog** column, with `links.signalId`
-  set to the signal's id.
+  set to the signal's id, and `links.projectId` set from the capture's project when it has
+  one — so a triaged capture lands in the project's collated work as well as the board.
+- On success the signal moves to `status: "acting"`, because there is now work in flight
+  for it. That status write is the same direct write the row's **Status** select makes.
 - For a text capture the title is the first non-empty line of the body, trimmed, and cut to
   80 characters plus `...` when longer. The notes are the full body.
 - When the body is empty — a picture or link capture logged without a description — the
   title comes from the attachment: `Link: <host>` for a link, `Image: <file name>` for a
   picture, under the same 80-character cap plus `...` when longer. The notes are the URL or
   the file name, so the task still says what was captured.
-- The signal file is not written; the task points at the signal, not the other way round.
-  There is no status field on the chain.
 - A signal has at most one live task: the row looks for a task anywhere on the board with its
   `signalId` (including **Done**), so a second click cannot create a duplicate. Deleting the
   task restores **Make task**.
@@ -203,17 +256,24 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
   attachment to name the task from.
 - The new task is not placed on Daily Schedule; that remains the **Today** column's move.
 
-See [Task Manager](./14-task-manager.md) for the board.
+See [Task Manager](./14-task-manager.md) for the board and [Projects](./12-projects.md) for
+the project the task is linked to.
 
 ### The companion and the chain
 
-The companion has the chain on its own tool surface:
+The companion has the chain on its own tool surface, as the single Inbox door:
 
-- **list_signals** (newest first, optional area and type filters) and **get_signal** are
-  direct reads.
+- **list_signals** (newest first, optional area, type, status and project filters) and
+  **get_signal** are direct reads. The status filter is what reads the inbox: `status:
+  "inbox"` is untriaged work.
 - **create_signal** applies immediately, like a task write: a capture stops being a capture
-  if the agent has to queue it for approval. The write is logged as `signal.created` with the
-  actor's name, so what the agent captured is visible in [Log](./26-log.md).
+  if the agent has to queue it for approval. It accepts the same triage fields the page
+  writes — `projectId`, `status`, `priority`, `capturedFrom` — and the write is logged as
+  `signal.created` with the actor's name.
+- **update_signal** is the triage write: the id plus any of `domainSlug`, `projectId`,
+  `status`, `priority`, `title` and `body`. It applies immediately, like `create_signal`,
+  and is logged as `signal.updated` naming the fields changed. `null` clears an area, a
+  project, a priority or a title.
 - The signal types `thought`, `idea`, `notice` and `other` exist in the data model; the
   composer only creates `thought`, while the companion may choose another type.
 - The companion writes text signals only: `create_signal` takes a body and no attachment, so
@@ -235,10 +295,17 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 
 ## Tips and edge cases
 
-- There is no visible type or title field on the page. If you need a type or a title, that is
-  the companion's `create_signal` surface, not the quick-fire box.
+- The composer still has no type, title, project, status or priority field: capture first,
+  triage on the row. A type or a title beyond `thought` is the companion's `create_signal`
+  surface, not the quick-fire box.
+- A signal with no area shows **Unassigned** on its row; that is a label, not a stored area
+  slug — the file keeps `domainSlug: null`.
+- "No project" and "None" are the row labels for an unfiled project and an unset priority;
+  neither is a stored value. `priority: "normal"` is a real choice and shows **Normal**.
+- The filter chips are a view: switching area lens or filter never rewrites a signal. A
+  capture you cannot see under a filter is still on the chain.
 - Editing a signal does not touch a task made from it: the task copied the text at the time
-  it was made.
+  it was made. Changing the signal's project later does not move the task.
 - Deleting a signal does not delete its tasks. They keep the dangling `signalId`. Nor does it
   delete the picture file: a soft-deleted signal leaves its bytes under
   `.lifequest/signal-chain/files/`.
@@ -253,16 +320,20 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
   refused with a message, and the composer keeps what it had.
 - Pasting a picture into the box attaches it; pasting text still goes into the description.
 - A signal written before pictures and links existed still reads as a plain text capture: a
-  missing `attachment` key means the same as `null`.
+  missing `attachment` key means the same as `null`. A signal written before the inbox
+  existed still reads as `status: "inbox"` with no project, priority or origin.
 - The area picker offers unlocked areas only, never the base **Life**; a capture that belongs
   to no narrower area stays unassigned and remains visible under every lens.
+- The project picker offers live projects only; a capture filed under a project that was
+  later deleted keeps its id, is shown by id, and can be unfiled with **No project**.
 - The chain is not area-filtered at the file level: every signal carries one optional area,
   and the lens decides what you see.
 
 ## Related
 
 - [Task Manager](./14-task-manager.md) — the board where **Make task** lands.
+- [Projects](./12-projects.md) — the projects a capture can be filed under.
 - [Areas](./05-areas.md) — area tags and the lens that filters the chain.
-- [Decisions](./23-decisions.md) — why task and signal writes do not appear here.
+- [Decisions](./23-decisions.md) — why task, signal and triage writes do not appear here.
 - [The vault](./04-the-vault.md) — where `.lifequest/signal-chain/` sits on disk.
-- [Log](./26-log.md) — the `signal.created` lines a capture writes.
+- [Log](./26-log.md) — the `signal.created` and `signal.updated` lines a write leaves.

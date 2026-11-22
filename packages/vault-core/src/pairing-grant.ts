@@ -207,15 +207,16 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
  * KAR-70: the writes that apply immediately, as they do for the companion:
  * events, script blocks on a page, the capture thread, and — since the
  * 2026-10-28 policy — adding database data (`create_database`,
- * `insert_rows`). `create_signal` is here for the same reason as those: a
- * Life-Chain capture is adding data, the companion writes it at once and logs
- * it under the agent's name, and a Decision per captured thought would turn the
- * chain into an approval queue. A new row through `upsert_row` is not named
- * here because the same tool also updates existing rows; it is classified with
- * the Decision writes above and the per-call domain check runs either way. Each
- * tool here still needs its domain inside the assignment — which is why a
- * connected agent may not file an unassigned signal: there is no domain to
- * check.
+ * `insert_rows`). `create_signal` and `update_signal` are here for the same
+ * reason as those: a Quick Notes capture is adding data and a triage edit is
+ * working the operator's inbox, the companion writes both at once and logs
+ * them under the agent's name, and a Decision per captured thought or status
+ * click would turn the inbox into an approval queue. A new row through
+ * `upsert_row` is not named here because the same tool also updates existing
+ * rows; it is classified with the Decision writes above and the per-call domain
+ * check runs either way. Each tool here still needs its domain inside the
+ * assignment — which is why a connected agent may not file an unassigned
+ * signal: there is no domain to check.
  *
  * Fort-Knox AGENT-10: `mark_review_done` belongs here — it applies the scope's
  * `done` status at once, with no Decision (`review-tools.ts`), so classifying it
@@ -235,6 +236,7 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "create_database",
   "insert_rows",
   "create_signal",
+  "update_signal",
 ]);
 
 /**

@@ -39,6 +39,7 @@ import {
   projectGet,
   projectToolArgumentError,
   listDecisions,
+  listSignals,
   libraryGet,
   connectedDecisionVisible,
   connectedGoalVisible,
@@ -269,9 +270,10 @@ async function executeToolInner(
     return executePageTool(root, actor, name, rec);
   }
 
-  // list_signals, get_signal, create_signal — the Life-Chain. Creating a signal
-  // applies at once, exactly like a task write: a signal is a note, not a
-  // document change, and the chain is where the companion files what it noticed.
+  // list_signals, get_signal, create_signal, update_signal — Quick Notes. A
+  // capture or a triage change applies at once, exactly like a task write: a
+  // signal is a note, not a document change, and the chain is where the
+  // companion files what it noticed and works the inbox.
   if (SIGNAL_TOOL_DEFS.some((t) => t.name === name)) {
     return executeSignalTool(root, actor, name, rec);
   }
@@ -740,11 +742,11 @@ async function executeConnectedTool(
     return executeCaptureTool(root, actor, name, rec);
   }
 
-  // A Life-Chain capture applies at once, as it does for the companion: the
-  // capture is adding data, and `create_signal` is the only signal write the
-  // gate lets through. Its domain was checked before this point, so a capture
-  // with no domain never arrives.
-  if (name === "create_signal") {
+  // A Life-Chain capture and a triage change apply at once, as they do for the
+  // companion: a capture adds data and a triage edit works the operator's own
+  // inbox, and neither is doctrine. Both signals' domains were checked before
+  // this point, so a write outside the grant never arrives.
+  if (name === "create_signal" || name === "update_signal") {
     return executeSignalTool(root, actor, name, rec);
   }
 
@@ -974,12 +976,30 @@ async function connectedWriteRefusal(
     return allow([rec.domainSlug === undefined ? undefined : (rec.domainSlug as string | null)]);
   }
 
-  // ── the Life-Chain ───────────────────────────────────────────────────────
+  // ── Quick Notes ──────────────────────────────────────────────────────────
   if (name === "create_signal") {
     // A capture is a write, and a write names the domain it lands in. An
     // unassigned capture reads as `[undefined]`, which `allow` refuses: a
     // signal with no domain is the operator's own and stays with the companion.
     return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "update_signal") {
+    // The signal being changed is a write on its current domain even when the
+    // arguments name no area: retitling a health capture is a write to health.
+    // A change of area touches both sides, so the new slug is judged with it;
+    // an explicit null is a move to unassigned and stays FORBIDDEN. A signal
+    // with no domain is the companion's and a miss is the tool's answer, so
+    // neither reaches `allow`.
+    const id = typeof rec.id === "string" ? rec.id : "";
+    if (!id) return null;
+    const listed = await listSignals(root);
+    const existing = listed.ok
+      ? listed.value.records.find((signal) => signal.id === id)
+      : undefined;
+    if (!existing) return null;
+    if (!existing.domainSlug) return grantRefusal("FORBIDDEN");
+    return allow([existing.domainSlug, ...namedDomain()]);
   }
 
   // The capture tools name no domain argument; `toolAllowed` has already

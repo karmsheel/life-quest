@@ -645,6 +645,24 @@ export const SIGNAL_SOURCES = ["manual", "automation", "notion"] as const;
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
 /**
+ * Where a capture stands as work: captured into the `inbox`, then moved on by
+ * the operator's triage. These are the five and only five states the store
+ * writes; a record written before the inbox existed reads as `"inbox"`.
+ */
+export const SIGNAL_STATUSES = [
+  "inbox",
+  "triaged",
+  "acting",
+  "done",
+  "dropped",
+] as const;
+export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
+
+/** The operator's own ordering. `null` is "not set", not "normal". */
+export const SIGNAL_PRIORITIES = ["high", "normal", "low"] as const;
+export type SignalPriority = (typeof SIGNAL_PRIORITIES)[number];
+
+/**
  * A picture a signal carries, stored as a file under `signal-chain/files/` and
  * referenced from the signal's JSON by its vault-relative path. The bytes decide
  * the kind and the extension, never the uploaded name; the name is a label.
@@ -679,6 +697,21 @@ export type SignalRecord = {
   /** The description. Empty is allowed only when an attachment says why. */
   body: string;
   domainSlug: string | null;
+  /**
+   * The project this capture belongs to, a live id from `projects/`. Optional
+   * on disk: a signal written before the inbox existed has no key and reads
+   * back as null.
+   */
+  projectId?: string | null;
+  /**
+   * Where the capture stands as work. Optional on disk for the same reason; an
+   * absent key reads as `"inbox"`, never as undefined.
+   */
+  status?: SignalStatus;
+  /** The operator's own ordering, or null (absent on old records). */
+  priority?: SignalPriority | null;
+  /** Where it came in from, free text, e.g. "Chrome — AI tab group". */
+  capturedFrom?: string | null;
   /** A picture or a link, or null for a plain text capture. */
   attachment: SignalAttachment | null;
 };
@@ -706,6 +739,14 @@ export type SignalCreateInput = {
   body: string;
   title?: string | null;
   domainSlug?: string | null;
+  /** A live project id from `projects/`; omitted or null is unfiled. */
+  projectId?: string | null;
+  /** Where the capture lands as work; omitted reads as `"inbox"`. */
+  status?: SignalStatus;
+  /** The operator's ordering; omitted or null is unset. */
+  priority?: SignalPriority | null;
+  /** Where it came in from, free text; omitted or null is unknown. */
+  capturedFrom?: string | null;
   attachment?: SignalImageInput | SignalLinkInput | null;
 };
 
@@ -714,6 +755,9 @@ export type SignalUpdatePatch = {
   body?: string;
   title?: string | null;
   domainSlug?: string | null;
+  projectId?: string | null;
+  status?: SignalStatus;
+  priority?: SignalPriority | null;
 };
 
 export type SignalChainListResult = {

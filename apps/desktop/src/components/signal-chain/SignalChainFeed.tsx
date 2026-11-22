@@ -8,17 +8,25 @@ import {
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import type {
+  Project,
   SignalCreateInput,
+  SignalPriority,
   SignalRecord,
+  SignalStatus,
   SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
 import { ImagePlus, Link2, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
-import { unlockedAreas } from "@lifequest/vault-core/pure";
+import {
+  SIGNAL_PRIORITIES,
+  SIGNAL_STATUSES,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import {
   IMAGE_ACCEPT,
   looksLikeImage,
@@ -26,8 +34,14 @@ import {
 } from "@/components/images/image-files";
 import { api } from "@/lib/ipc";
 import {
+  SIGNAL_PRIORITY_LABELS,
+  SIGNAL_STATUS_LABELS,
   formatSignalWhen,
   linkHost,
+  projectDisplayLabel,
+  signalPriorityLabel,
+  signalRowDomainLabel,
+  signalStatusLabel,
   signalVisible,
   taskForSignal,
   taskFromSignal,
@@ -98,10 +112,18 @@ export function SignalChainFeed() {
 
   const [records, setRecords] = useState<SignalRecord[]>([]);
   const [skipped, setSkipped] = useState(0);
+  /** The live project register, read once; a row names and offers its project. */
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  /** The triage filters above the list, combined with the area lens. */
+  const [statusFilter, setStatusFilter] = useState<SignalStatus | "all">("all");
+  const [domainFilter, setDomainFilter] = useState<string | "all" | "none">(
+    "all",
+  );
+  const [projectFilter, setProjectFilter] = useState<string | "all">("all");
   /** The row's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
 
@@ -120,9 +142,27 @@ export function SignalChainFeed() {
   const pendingImageRef = useRef<PendingImage | null>(null);
   pendingImageRef.current = pendingImage;
 
+  // The list is the chain narrowed twice: by the area lens the rail carries and
+  // by the triage chips above it. The two combine rather than replace, so an
+  // area tab shows that area's inbox in whatever triage cut the operator picked.
   const visible = useMemo(
-    () => records.filter((r) => signalVisible(lens, r.domainSlug)),
-    [records, lens],
+    () =>
+      records.filter((r) => {
+        if (!signalVisible(lens, r.domainSlug)) return false;
+        if (statusFilter !== "all" && (r.status ?? "inbox") !== statusFilter) {
+          return false;
+        }
+        if (domainFilter === "none") {
+          if (r.domainSlug !== null) return false;
+        } else if (domainFilter !== "all" && r.domainSlug !== domainFilter) {
+          return false;
+        }
+        if (projectFilter !== "all" && r.projectId !== projectFilter) {
+          return false;
+        }
+        return true;
+      }),
+    [records, lens, statusFilter, domainFilter, projectFilter],
   );
   const imagePaths = useMemo(
     () =>
@@ -168,6 +208,24 @@ export function SignalChainFeed() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The inbox files a capture against a live project, so the page reads the
+  // project register once. A vault that cannot answer still triages by status
+  // and area: the project cell falls back to the id the record stores.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api().projectsList();
+        if (!cancelled) setProjects(result.ok ? result.value.records : []);
+      } catch {
+        if (!cancelled) setProjects([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function clearPendingImage() {
     if (pendingImageRef.current) {
@@ -359,17 +417,19 @@ export function SignalChainFeed() {
     }
   }
 
-  async function onAssign(id: string, nextDomain: string | null) {
-    const current = records.find((r) => r.id === id)?.domainSlug ?? null;
-    if (current === nextDomain) return;
+  /**
+   * Triage writes one field and then re-reads the chain quietly: the row's
+   * state and every filter chip downstream are the vault's answer, not an
+   * optimistic echo. Status is always one of the five strings; "No project" is
+   * an empty option in the DOM and must be sent as null, never "".
+   */
+  async function onTriage(id: string, patch: SignalUpdatePatch) {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await api().signalChainUpdate(id, {
-        domainSlug: nextDomain,
-      });
+      const result = await api().signalChainUpdate(id, patch);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -381,6 +441,12 @@ export function SignalChainFeed() {
       busyRef.current = false;
       setBusy(false);
     }
+  }
+
+  async function onAssign(id: string, nextDomain: string | null) {
+    const current = records.find((r) => r.id === id)?.domainSlug ?? null;
+    if (current === nextDomain) return;
+    await onTriage(id, { domainSlug: nextDomain });
   }
 
   /**
@@ -434,13 +500,26 @@ export function SignalChainFeed() {
         title: derived.title,
         notes: derived.notes,
         column: "backlog",
-        links: { signalId: signal.id },
+        // A capture filed to a project hands that link to the task too, so the
+        // project page reaches the same work from both ends.
+        links: {
+          signalId: signal.id,
+          ...(signal.projectId ? { projectId: signal.projectId } : {}),
+        },
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
       await refresh();
+      // A task exists, so the capture has become work: it stands Acting on the
+      // inbox. A refused status write must not hide the task that did land, so
+      // it is reported and the list is re-read either way.
+      const statusResult = await api().signalChainUpdate(signal.id, {
+        status: "acting",
+      });
+      if (!statusResult.ok) setError(statusResult.error);
+      await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to make task");
     } finally {
@@ -658,15 +737,106 @@ export function SignalChainFeed() {
         </p>
       ) : null}
 
+      {/* The triage band above the list. The area lens above the page still
+          applies; these chips narrow what is left and never widen it. */}
+      <div
+        className="signal-chain__filters"
+        role="group"
+        aria-label="Filter the inbox"
+      >
+        <div
+          className="signal-chain__filter-row"
+          role="group"
+          aria-label="Filter by status"
+          data-testid="signal-filter-status"
+        >
+          <span className="signal-chain__filter-label">Status</span>
+          <FilterChip
+            testid="signal-filter-status-all"
+            active={statusFilter === "all"}
+            onClick={() => setStatusFilter("all")}
+          >
+            All
+          </FilterChip>
+          {SIGNAL_STATUSES.map((status) => (
+            <FilterChip
+              key={status}
+              testid={`signal-filter-status-${status}`}
+              active={statusFilter === status}
+              onClick={() => setStatusFilter(status)}
+            >
+              {SIGNAL_STATUS_LABELS[status]}
+            </FilterChip>
+          ))}
+        </div>
+        <div
+          className="signal-chain__filter-row"
+          role="group"
+          aria-label="Filter by area"
+          data-testid="signal-filter-domain"
+        >
+          <span className="signal-chain__filter-label">Area</span>
+          <FilterChip
+            testid="signal-filter-domain-all"
+            active={domainFilter === "all"}
+            onClick={() => setDomainFilter("all")}
+          >
+            All
+          </FilterChip>
+          <FilterChip
+            testid="signal-filter-domain-none"
+            active={domainFilter === "none"}
+            onClick={() => setDomainFilter("none")}
+          >
+            Unassigned
+          </FilterChip>
+          {liveDomains.map((domain) => (
+            <FilterChip
+              key={domain.slug}
+              testid={`signal-filter-domain-${domain.slug}`}
+              active={domainFilter === domain.slug}
+              onClick={() => setDomainFilter(domain.slug)}
+            >
+              {domain.meta.name}
+            </FilterChip>
+          ))}
+        </div>
+        <div
+          className="signal-chain__filter-row"
+          role="group"
+          aria-label="Filter by project"
+          data-testid="signal-filter-project"
+        >
+          <span className="signal-chain__filter-label">Project</span>
+          <FilterChip
+            testid="signal-filter-project-all"
+            active={projectFilter === "all"}
+            onClick={() => setProjectFilter("all")}
+          >
+            All
+          </FilterChip>
+          {projects.map((project) => (
+            <FilterChip
+              key={project.id}
+              testid={`signal-filter-project-${project.id}`}
+              active={projectFilter === project.id}
+              onClick={() => setProjectFilter(project.id)}
+            >
+              {project.title}
+            </FilterChip>
+          ))}
+        </div>
+      </div>
+
       {loading ? (
         <p className="muted">Loading chain…</p>
       ) : records.length === 0 ? (
-        <p className="muted signal-chain__empty">
+        <p className="muted signal-chain__empty" data-testid="signal-empty">
           Nothing on the chain yet. Write something above.
         </p>
       ) : visible.length === 0 ? (
-        <p className="muted signal-chain__empty">
-          No unassigned or matching signals in this area.
+        <p className="muted signal-chain__empty" data-testid="signal-filter-empty">
+          No signals match these filters.
         </p>
       ) : (
         <ul className="signal-chain__list">
@@ -690,6 +860,7 @@ export function SignalChainFeed() {
                   name: d.meta.name,
                 }))}
                 allDomains={allDomains}
+                projects={projects}
                 editing={editingId === item.id}
                 busy={busy}
                 mapReady={Boolean(snapshot?.map)}
@@ -698,6 +869,7 @@ export function SignalChainFeed() {
                 onCancel={() => setEditingId(null)}
                 onSave={onSave}
                 onAssign={(id, slug) => void onAssign(id, slug)}
+                onTriage={onTriage}
                 onDelete={() => void onDelete(item.id)}
                 onMakeTask={() => void onMakeTask(item)}
               />
@@ -716,6 +888,7 @@ function SignalRow(props: {
   imageMissing: boolean;
   liveDomains: { slug: string; name: string }[];
   allDomains: { slug: string; name: string }[];
+  projects: Project[];
   editing: boolean;
   busy: boolean;
   mapReady: boolean;
@@ -724,12 +897,17 @@ function SignalRow(props: {
   onCancel: () => void;
   onSave: (id: string, patch: SignalUpdatePatch) => Promise<void>;
   onAssign: (id: string, domainSlug: string | null) => void;
+  onTriage: (id: string, patch: SignalUpdatePatch) => Promise<void>;
   onDelete: () => void;
   onMakeTask: () => void;
 }) {
   const s = props.signal;
   const [domainSlug, setDomainSlug] = useState(s.domainSlug ?? "");
   const [body, setBody] = useState(s.body);
+
+  /** A record written before the inbox has no status key; it reads Inbox. */
+  const status: SignalStatus = s.status ?? "inbox";
+  const priority: SignalPriority | null = s.priority ?? null;
 
   useEffect(() => {
     if (!props.editing) return;
@@ -744,6 +922,17 @@ function SignalRow(props: {
       slug: s.domainSlug,
       name: archived?.name ?? s.domainSlug,
     });
+  }
+
+  // The project picker offers the live register. A record whose project is gone
+  // keeps its id as an option, so the select shows what is stored rather than
+  // silently falling back to "No project" and misreporting the row.
+  const projectOptions = props.projects.map((p) => ({
+    id: p.id,
+    title: p.title,
+  }));
+  if (s.projectId && !projectOptions.some((p) => p.id === s.projectId)) {
+    projectOptions.push({ id: s.projectId, title: s.projectId });
   }
 
   function onEditKeyDown(e: KeyboardEvent<HTMLFormElement>) {
@@ -822,8 +1011,48 @@ function SignalRow(props: {
       className="signal-row"
       data-testid="signal-row"
       data-attachment={s.attachment?.kind ?? "text"}
+      // The row's triage state, readable without opening a select: the inbox
+      // rig (and a stylesheet) can tell what the record says at a glance.
+      data-status={status}
+      data-priority={priority ?? "none"}
+      data-project-id={s.projectId ?? ""}
+      data-domain-slug={s.domainSlug ?? ""}
     >
       <div className="signal-row__content">
+        {/* The triage facts first: where it came from, what it is filed to and
+            where it stands. Every cell has a word, never an empty span. */}
+        <div className="signal-row__meta">
+          <span
+            className="signal-row__chip signal-row__chip--area"
+            data-testid="signal-domain"
+          >
+            {signalRowDomainLabel(s.domainSlug, props.allDomains)}
+          </span>
+          <span className="signal-row__chip" data-testid="signal-project">
+            {projectDisplayLabel(s.projectId, props.projects)}
+          </span>
+          <span
+            className={`signal-row__chip signal-row__chip--status signal-row__chip--status-${status}`}
+            data-testid="signal-status"
+          >
+            {signalStatusLabel(status)}
+          </span>
+          <span
+            className={`signal-row__chip signal-row__chip--priority signal-row__chip--priority-${priority ?? "none"}`}
+            data-testid="signal-priority"
+          >
+            {signalPriorityLabel(priority)}
+          </span>
+          {s.capturedFrom ? (
+            <span
+              className="signal-row__chip signal-row__chip--from"
+              data-testid="signal-captured-from"
+              title={s.capturedFrom}
+            >
+              {s.capturedFrom}
+            </span>
+          ) : null}
+        </div>
         {s.attachment?.kind === "image" ? (
           <figure className="signal-row__figure">
             {props.imageUrl ? (
@@ -873,6 +1102,69 @@ function SignalRow(props: {
         {formatSignalWhen(s.createdAt)}
       </time>
       <div className="signal-row__side">
+        <div className="signal-row__triage">
+          <select
+            className="signal-row__triage-select"
+            aria-label="Status"
+            title="Status"
+            data-testid="signal-status-select"
+            value={status}
+            disabled={props.busy}
+            onChange={(e) => {
+              const next = e.target.value as SignalStatus;
+              if (next === status) return;
+              void props.onTriage(s.id, { status: next });
+            }}
+          >
+            {SIGNAL_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {SIGNAL_STATUS_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <select
+            className="signal-row__triage-select"
+            aria-label="Priority"
+            title="Priority"
+            data-testid="signal-priority-select"
+            value={priority ?? ""}
+            disabled={props.busy}
+            onChange={(e) => {
+              const raw = e.target.value;
+              const next = raw ? (raw as SignalPriority) : null;
+              if (next === priority) return;
+              void props.onTriage(s.id, { priority: next });
+            }}
+          >
+            <option value="">None</option>
+            {SIGNAL_PRIORITIES.map((value) => (
+              <option key={value} value={value}>
+                {SIGNAL_PRIORITY_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <select
+            className="signal-row__triage-select"
+            aria-label="Project"
+            title="Project"
+            data-testid="signal-project-select"
+            value={s.projectId ?? ""}
+            disabled={props.busy}
+            onChange={(e) => {
+              const raw = e.target.value;
+              const next = raw ? raw : null;
+              if (next === (s.projectId ?? null)) return;
+              void props.onTriage(s.id, { projectId: next });
+            }}
+          >
+            <option value="">No project</option>
+            {projectOptions.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.title}
+              </option>
+            ))}
+          </select>
+        </div>
         <select
           className="signal-row__domain"
           aria-label="Area"
@@ -930,5 +1222,28 @@ function SignalRow(props: {
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * One triage filter. `aria-pressed` is the pressed state, so the chip is a
+ * toggle to a screen reader and the rig reads the same fact the eye does.
+ */
+function FilterChip(props: {
+  testid: string;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`signal-chain__chip${props.active ? " signal-chain__chip--active" : ""}`}
+      data-testid={props.testid}
+      aria-pressed={props.active}
+      onClick={props.onClick}
+    >
+      {props.children}
+    </button>
   );
 }
