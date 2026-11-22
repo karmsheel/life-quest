@@ -13,7 +13,7 @@ own it until you decide it is work.
 ## Where it lives
 
 - Wing: none. Notebox sits on the bottom shelf of the rail, above **Decisions**.
-- Rail: icon **Radio**, label **Notebox**.
+- Rail: icon **Inbox**, label **Notebox**.
 - Route: `/chain`. The route and file names did not change when the page was renamed from
   Quick Notes (earlier from Life-Chain).
 - Surface: a full page in the centre pane. The chat dock also has a **Notebox** surface

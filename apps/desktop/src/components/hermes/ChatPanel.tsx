@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Inbox,
   Keyboard,
   Link2,
   MessageCircleQuestion,
@@ -32,7 +33,6 @@ import {
   Pin,
   PinOff,
   Plus,
-  Radio,
   SquarePen,
   Type,
   X,
@@ -2969,7 +2969,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               aria-pressed={view === "chain"}
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >
-              <Radio size={20} aria-hidden />
+              <Inbox size={20} aria-hidden />
             </button>
             {/*
               The keyboard-shortcuts reference, at the head of the trailing
