@@ -103,7 +103,7 @@ nav:
   - Review:
       - Reviews: 18-reviews.md
   - Shelf:
-      - Quick Notes: 15-quick-notes.md
+      - Notebox: 15-quick-notes.md
       - Daily Journal: 16-daily-journal.md
       - Automations: 17-automations.md
       - Extensions: 37-extensions.md

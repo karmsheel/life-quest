@@ -952,6 +952,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("signalChain:readImage", (_e, relPath: string) =>
     vault.signalChainReadImage(relPath),
   );
+  // A non-image capture file is read back only so the renderer can hand the
+  // operator a copy; the same containment rule as a picture applies.
+  ipcMain.handle("signalChain:readFile", (_e, relPath: string) =>
+    vault.signalChainReadFile(relPath),
+  );
 
   ipcMain.handle("library:list", () => vault.libraryListCall());
   ipcMain.handle(

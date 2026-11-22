@@ -65,7 +65,7 @@ settings sheet instead of a smaller menu.
    Daily, Weekly, Monthly, Quarterly and Yearly.
 3. **Change the lens.** Choose **Life** or an unlocked area in the title bar's
    lens tab. This is the data filter for area-scoped lists (Dashboard boards,
-   Data, Pages, Quick Notes and others). **←** and **→** move between lens
+   Data, Pages, Notebox and others). **←** and **→** move between lens
    options. The tab is centred on the strip and holds that centre when the rail
    collapses. With fewer than two unlocked areas it is a quiet **Life** label, not
    a control — see [Areas](./05-areas.md).
@@ -171,7 +171,7 @@ The rail:
   list, then recent ones. Each row starts with its chat's mark — the quiet status
   mark, or the icon of what started the chat — before the name and time.
   Archiving and pinning are row gestures as well as menu commands.
-- A divider, then the governance shelf: **Quick Notes**, **Decisions**, **Daily
+- A divider, then the governance shelf: **Notebox**, **Decisions**, **Daily
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
   pulses when the count grows.
@@ -233,7 +233,7 @@ The chat dock:
   it collapses the main page and gives the dock the workspace right of the rail;
   **Mod+Shift+F** does the same from anywhere. It is the window's only
   full-screen control, and it is drawn pressed while the mode is on.
-- The thread, a **Quick Notes** view, and the **Keyboard shortcuts** reference.
+- The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
   The history is not a dock surface: the whole chat list lives in the rail's
   **Chats** section.
 - The composer: one bordered box at the foot of the dock, the field
@@ -249,7 +249,7 @@ The chat dock:
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.
 - The dock's bottom action bar under the composer, in order: **New chat**,
-  **Quick Notes**, **Keyboard shortcuts** (opens the reference as a dock
+  **Notebox**, **Keyboard shortcuts** (opens the reference as a dock
   surface), **Chat display settings** (opens Settings → **Chat display**), the
   two-panes side switch, **Collapse chat**, and the version badge (**Check for
   updates**), which glows and gains **Update available** when a release is
@@ -271,7 +271,7 @@ The chat dock:
   moves up rather than the composer covering the chat. A thread read to its newest
   message keeps that message just above the composer as it grows; scrollback you
   have scrolled up to is left where it is, so growing the composer never pulls you
-  away from what you were reading. Quick Notes' composer behaves the same way with
+  away from what you were reading. Notebox' composer behaves the same way with
   the signals above it.
 - The dock's side and width are not preferences. They reset when the app
   launches: it opens right, `22.5rem` wide. The rail starts wide too; collapsing

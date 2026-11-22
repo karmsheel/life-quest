@@ -60,9 +60,9 @@ deadline pressure, a database view, a page, a recent-log card, and so on.
 Clicking a card puts it in the companion chat's context, up to three at once, and
 clicking it again takes that card out. See [Dashboard](./06-dashboard.md).
 
-**Capture** — a thought, a picture or a link logged in **Quick Notes** before it
+**Capture** — a thought, a picture or a link logged in **Notebox** before it
 evaporates. Capture is not the studio; it is a signal that can become a task.
-See [Quick Notes](./15-quick-notes.md).
+See [Notebox](./15-quick-notes.md).
 
 **Chat thread** — one conversation with the companion, listed in the rail's
 **Chats** sidebar and open in the dock's tab strip. Threads can be renamed,
@@ -255,10 +255,10 @@ collated context and companion tools. See [Projects](./12-projects.md).
 
 **Purpose** — the doctrine document holding the reasons an area matters.
 
-**Quick Notes** — the capture surface on the governance shelf (`/chain`). It
+**Notebox** — the capture surface on the governance shelf (`/chain`). It
 takes text, one picture or one absolute `http`/`https` link per capture, and a
 capture may be attachment-only. Formerly **Life-Chain**. See
-[Quick Notes](./15-quick-notes.md).
+[Notebox](./15-quick-notes.md).
 
 **Rail** — the left navigation column of the studio. It collapses to a 56px icon
 column in place.
@@ -286,7 +286,7 @@ vault. See [Security](./29-security.md).
 **Sheet** — an overlay over the app rather than a page: Settings and Decisions
 are sheets, and closing one returns you to the page you were on.
 
-**Signal** — a Quick Notes capture record, stored under
+**Signal** — a Notebox capture record, stored under
 `.lifequest/signal-chain/` with any attachment's bytes under
 `.lifequest/signal-chain/files/`.
 

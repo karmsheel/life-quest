@@ -523,8 +523,8 @@ describe("daily note ui e2e", () => {
     // icon, and it is the active link on /notes.
     assert.deepEqual(
       report.checks.rail.map((entry) => entry.label),
-      ["Quick Notes", "Decisions", "Daily Journal", "Automations", "Extensions"],
-      "the governed shelf is not Quick Notes, Decisions, Daily Journal, Automations, Extensions",
+      ["Notebox", "Decisions", "Daily Journal", "Automations", "Extensions"],
+      "the governed shelf is not Notebox, Decisions, Daily Journal, Automations, Extensions",
     );
     const note = report.checks.rail[2]!;
     assert.ok(

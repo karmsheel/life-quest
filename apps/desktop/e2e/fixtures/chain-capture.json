@@ -25,6 +25,16 @@
       }
     ]
   },
+  "projects": [
+    {
+      "id": "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+      "title": "Desk rebuild"
+    },
+    {
+      "id": "b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+      "title": "Reading list"
+    }
+  ],
   "records": [
     {
       "id": "0192f4a0-7c1e-4e2b-9a51-0000000000a1",
@@ -37,6 +47,10 @@
       "title": null,
       "body": "The essay that named the thing I keep circling.",
       "domainSlug": null,
+      "projectId": null,
+      "status": "inbox",
+      "priority": null,
+      "capturedFrom": "Chrome — AI tab group",
       "attachment": {
         "kind": "link",
         "url": "https://example.com/reading/attention"
@@ -53,6 +67,10 @@
       "title": null,
       "body": "The shelf before the move.",
       "domainSlug": "health",
+      "projectId": "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+      "status": "inbox",
+      "priority": "high",
+      "capturedFrom": null,
       "attachment": {
         "kind": "image",
         "relPath": ".lifequest/signal-chain/files/0192f4a0-7c1e-4e2b-9a51-000000000001.png",
@@ -72,7 +90,11 @@
       "sourceRef": null,
       "title": null,
       "body": "A quiet house, morning light, and work that is mine.",
-      "domainSlug": null,
+      "domainSlug": "work",
+      "projectId": "b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+      "status": "triaged",
+      "priority": "normal",
+      "capturedFrom": null,
       "attachment": null
     }
   ]

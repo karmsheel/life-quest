@@ -585,7 +585,7 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
   // The chain's read, only on request: `?longchain=1` answers with the long
-  // fixture so the anchor rig can grow Quick Notes' composer over a scrolled
+  // fixture so the anchor rig can grow Notebox' composer over a scrolled
   // transcript. Every other rig keeps the stubbed fallback an empty chain.
   ...(LONG_CHAIN
     ? {

@@ -391,9 +391,9 @@ async function main() {
     checks.landing = landing;
     check("the harness landed on /automations", landing.route === "/automations", landing.route);
     check(
-      "the shelf is Quick Notes, Decisions, Daily Journal, Automations",
+      "the shelf is Notebox, Decisions, Daily Journal, Automations",
       JSON.stringify(landing.rail.shelf.map((l) => l.label)) ===
-        JSON.stringify(["Quick Notes", "Decisions", "Daily Journal", "Automations"]),
+        JSON.stringify(["Notebox", "Decisions", "Daily Journal", "Automations"]),
       JSON.stringify(landing.rail.shelf.map((l) => l.label)),
     );
     check(

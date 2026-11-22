@@ -180,7 +180,7 @@ so a drop above a card is a real write and a no-op drop is not a write at all.
 
 A task is `{ id, title, notes, column, links }`, plus a stored `origin`. The links are
 optional and single-valued: `goalId`, `projectId`, `date`, a `weekItem` of year + Monday +
-item id, and `signalId` (the Quick Notes capture a task was made from). Tasks have no area
+item id, and `signalId` (the Notebox capture a task was made from). Tasks have no area
 field, so the board itself is vault-global; the lens names the page title and filters the
 recent-activity strip, not the columns.
 
@@ -230,9 +230,9 @@ a Strategy (How) in Track to enable dispatch." With no active agents, the sectio
 - **Daily Schedule** shows every unplaced task in the **Today** column in its **Leftover**
   list, prefixed **Task ·** and the task's title, and placing one creates a live block.
   Completing it there sets the task to **Done**. See [Daily Schedule](./13-daily-schedule.md).
-- A task made from a Quick Notes capture is created in **Backlog** with its `signalId` set;
+- A task made from a Notebox capture is created in **Backlog** with its `signalId` set;
   the capture then reads **Open task** and links back to `/act?task=<id>`. See
-  [Quick Notes](./15-quick-notes.md).
+  [Notebox](./15-quick-notes.md).
 - Projects collate the tasks that point at them on the project page. See
   [Projects](./12-projects.md).
 - The [Life Map](./11-life-map.md) does not draw task cards in this release. Dates on a task
@@ -306,7 +306,7 @@ one.
 ## Related
 
 - [Daily Schedule](./13-daily-schedule.md) — the day's clock, fed by the **Today** column.
-- [Quick Notes](./15-quick-notes.md) — captures that become backlog tasks.
+- [Notebox](./15-quick-notes.md) — captures that become backlog tasks.
 - [Projects](./12-projects.md) — the project a task can point at.
 - [Goals](./10-goals.md) — the goal a task can point at.
 - [Dashboard](./06-dashboard.md) — where a due recurring task shows.

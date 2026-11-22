@@ -351,7 +351,7 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
-| Dock actions | **New chat**, **Quick Notes**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
+| Dock actions | **New chat**, **Notebox**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour
 
@@ -425,8 +425,8 @@ the arrangement you left; leaving full-screen chat gives back the split.
   Hermes agent yet — **Agents in this vault** is where to add one.
 - **Receipts are for the ledger.** Attach a photo of a purchase only when the
   Finance kit exists and you want a transaction logged.
-- **The dock's Quick Notes surface is text-only.** It hosts the same records as the
-  Quick Notes page, with its own composer; see [Quick Notes](./15-quick-notes.md).
+- **The dock's Notebox surface is text-only.** It hosts the same records as the
+  Notebox page, with its own composer; see [Notebox](./15-quick-notes.md).
 - **A pinned chat leaves the strip only through Unpin.** The square has no close
   control and the row hides archive and delete while pinned.
 - **A strip with more tabs than room scrolls; it never squeezes them into

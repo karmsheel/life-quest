@@ -195,7 +195,7 @@ const SAMPLE = `(() => {
       background: style.backgroundColor,
     };
   };
-  // The governed shelf: Quick Notes, Decisions, Daily Journal, Automations,
+  // The governed shelf: Notebox, Decisions, Daily Journal, Automations,
   // Extensions. It is
   // the group with its own divider above it, at the foot of the rail, not the
   // wing's list above.

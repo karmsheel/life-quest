@@ -235,7 +235,7 @@ describe("automations e2e", () => {
     // ── the shelf is its own cordoned group, above the Log ──────────────────
     assert.deepEqual(
       landing.rail.shelf.map((link) => link.label),
-      ["Quick Notes", "Decisions", "Daily Journal", "Automations"],
+      ["Notebox", "Decisions", "Daily Journal", "Automations"],
       "the governed shelf is not the four icons the operator named",
     );
     assert.deepEqual(

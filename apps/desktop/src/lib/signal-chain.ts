@@ -1,6 +1,8 @@
 import type {
   DomainLens,
+  SignalPriority,
   SignalRecord,
+  SignalStatus,
   SignalType,
 } from "@lifequest/vault-core";
 
@@ -44,12 +46,92 @@ export function formatSignalTime(iso: string): string {
   }
 }
 
+/**
+ * Bytes in the operator's units, for a capture's file chip and card. Exact
+ * bytes below a kilobyte, one decimal below ten in the unit ("1.4 MB"), whole
+ * numbers above it ("12 KB") — deterministic, so the same size always reads the
+ * same in both places.
+ */
+export function formatSignalFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const text = value < 10 ? value.toFixed(1) : String(Math.round(value));
+  return `${text} ${units[unit]}`;
+}
+
 export function signalDomainLabel(
   slug: string | null,
   domains: { slug: string; name: string }[],
 ): string {
   if (!slug) return "- unassigned -";
   return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/**
+ * The inbox's per-row area label. It differs from `signalDomainLabel` on
+ * purpose: the composer's picker and the old table say "- unassigned -", while
+ * a row in the inbox must never paint a blank cell and says "Unassigned" — a
+ * fixed word the inbox rig asserts. Keep both; they answer different surfaces.
+ */
+export function signalRowDomainLabel(
+  slug: string | null | undefined,
+  domains: { slug: string; name: string }[],
+): string {
+  if (!slug) return "Unassigned";
+  return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/** The five triage states, as the operator reads them on a row or a chip. */
+export const SIGNAL_STATUS_LABELS: Record<SignalStatus, string> = {
+  inbox: "Inbox",
+  triaged: "Triaged",
+  acting: "Acting",
+  done: "Done",
+  dropped: "Dropped",
+};
+
+/** The three priorities, as the operator reads them. "None" is unset, not low. */
+export const SIGNAL_PRIORITY_LABELS: Record<SignalPriority, string> = {
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
+
+/**
+ * A row's status word. A record written before the inbox existed carries no
+ * status key; the store reads that as "inbox", and so does this label.
+ */
+export function signalStatusLabel(
+  status: SignalStatus | null | undefined,
+): string {
+  return (status && SIGNAL_STATUS_LABELS[status]) || SIGNAL_STATUS_LABELS.inbox;
+}
+
+/** A row's priority word: one of High/Normal/Low, or "None" when unset. */
+export function signalPriorityLabel(
+  priority: SignalPriority | null | undefined,
+): string {
+  return (priority && SIGNAL_PRIORITY_LABELS[priority]) || "None";
+}
+
+/**
+ * What a row's project cell reads: the live project's title, else the stored id
+ * (a project may have been deleted while the signal kept its link), else
+ * "No project" for an unfiled capture. Never blank.
+ */
+export function projectDisplayLabel(
+  projectId: string | null | undefined,
+  projects: readonly { id: string; title: string }[],
+): string {
+  if (!projectId) return "No project";
+  return projects.find((p) => p.id === projectId)?.title || projectId;
 }
 
 /** Overview: all. A domain tab: unassigned plus that domain. */
@@ -122,7 +204,7 @@ export function filterSignals(
     const attachmentText =
       r.attachment?.kind === "link"
         ? r.attachment.url.toLowerCase()
-        : r.attachment?.kind === "image"
+        : r.attachment?.kind === "image" || r.attachment?.kind === "file"
           ? r.attachment.name.toLowerCase()
           : "";
     return (
@@ -200,6 +282,9 @@ export function taskFromSignal(signal: SignalRecord): {
   }
   if (attachment?.kind === "image") {
     return { title: capTaskTitle(`Image: ${attachment.name}`), notes: attachment.name };
+  }
+  if (attachment?.kind === "file") {
+    return { title: capTaskTitle(`File: ${attachment.name}`), notes: attachment.name };
   }
   return { title: "", notes: "" };
 }

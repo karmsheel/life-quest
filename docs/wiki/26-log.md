@@ -82,7 +82,7 @@ them, and they print in full.
 | `view.*`, `board.*` | `view.created`, `view.updated`, `view.deleted`; `board.pins-updated`, `board.lock_changed`. |
 | `ingest.*`, `mapping.*`, `adapter.*` | `ingest.accepted`, `mapping.accepted`, `adapter.linked`, `adapter.unlinked`. |
 | `books.*`, `kit.*`, `finance.*` | `books.exported`, `books.restored`, `kit.installed`, `finance.fx_source_changed`. |
-| `signal.*` | `signal.created` — a signal the companion created with its `create_signal` tool; the operator's own captures in Quick Notes are not logged. |
+| `signal.*` | `signal.created` — a signal the companion created with its `create_signal` tool; the operator's own captures in Notebox are not logged. |
 | `brief.*` | `brief.written` — the companion replaced the Dashboard brief; `brief.dismissed` — the operator settled one item (done, not-useful, wrong or later). |
 
 Two things deliberately do not write a line: a change that did not change

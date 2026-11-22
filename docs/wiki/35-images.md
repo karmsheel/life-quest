@@ -158,7 +158,7 @@ Images is deliberately separate from the other ways pictures move through the ap
 - Not doctrine media. A picture pasted into a doctrine document is stored
   under that area's `domains/<slug>/media/` and referenced as `media/<name>` in
   the markdown. That path resolves inside the doctrine editor, not here.
-- Not Quick Notes attachments. A picture logged with a Quick Notes capture is
+- Not Notebox attachments. A picture logged with a Notebox capture is
   written under `.lifequest/signal-chain/files/` and belongs to that capture.
 - Not the companion's. There is no MCP tool for the Images library or the
   vision board in this build: the companion can read and change documents, but
@@ -193,6 +193,6 @@ Images is deliberately separate from the other ways pictures move through the ap
 - [Doctrine](./07-doctrine.md) — the Vision page the board sits under
 - [The vault](./04-the-vault.md) — where `images/` sits in the folder layout
 - [Pages](./21-pages.md) — the other block canvas, built from live queries
-- [Quick Notes](./15-quick-notes.md) — picture captures, kept with the capture
+- [Notebox](./15-quick-notes.md) — picture captures, kept with the capture
 - [Finance kit](./20-finance-kit.md) — receipt images, attached to ledger rows
 - [Security](./29-security.md) — the containment and sniffing behind every read

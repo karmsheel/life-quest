@@ -41,6 +41,25 @@
  *     in the fixture too and are handed to the bridge, so a seeded row paints
  *     through `signalChainReadImage` like a captured one — a fixture name that
  *     no reader serves is a missing picture, not a passing one.
+ *  9. Triage paints a label the contract does not name. A row whose stored
+ *     status/priority/project differs from its chip text, or a select that
+ *     writes a patch other than the one it names, is a contract the operator
+ *     cannot act on. The fixture's inbox fields are published in
+ *     `chainCaptureInbox`, and `signalChainUpdate` records every patch, so the
+ *     driver compares what the page painted and wrote against the one contract;
+ *     `projectsList` is modelled here because the renderer reads it on mount and
+ *     an unmodelled call would name itself in `chainCaptureUnexpectedCalls`.
+ * 10. The shell's ThemeProvider reads and subscribes to the profile's theme
+ *     directory on mount. Those bridge calls are modelled too: an unmodelled
+ *     subscription answers with a refusal Promise, StrictMode's cleanup calls
+ *     it as `unsubscribe()`, and the thrown "not a function" unmounts the whole
+ *     React tree — a blank page every later check would still "read".
+ * 11. The composer's one plus control takes any file, and a non-image file is a
+ *     first-class capture: `signalChainCreate` stores its bytes under the path
+ *     it mints and answers the row with name/mime/size, and the row's Save reads
+ *     them back through `signalChainReadFile`. Both directions are modelled
+ *     here; a file arm the bridge cannot round-trip is the failure this rig
+ *     would otherwise paint as a passing card.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -64,6 +83,11 @@ const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: string): Result<never> => ({ ok: false, error });
 
 type FixtureDomain = { slug: string; name: string; archived?: boolean };
+type FixtureProject = { id: string; title: string };
+
+/** The five triage states the store writes; an absent key reads as "inbox". */
+type SignalStatus = "inbox" | "triaged" | "acting" | "done" | "dropped";
+type SignalPriority = "high" | "normal" | "low";
 
 type ImageAttachment = {
   kind: "image";
@@ -75,7 +99,17 @@ type ImageAttachment = {
 };
 
 type LinkAttachment = { kind: "link"; url: string };
-type Attachment = ImageAttachment | LinkAttachment;
+
+/** A non-image capture: stored bytes under the vault's file path, plus a name. */
+type FileAttachment = {
+  kind: "file";
+  relPath: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
+type Attachment = ImageAttachment | LinkAttachment | FileAttachment;
 
 /** A chain record, in the shape the vault answers with. */
 type SignalRow = {
@@ -89,6 +123,11 @@ type SignalRow = {
   title: string | null;
   body: string;
   domainSlug: string | null;
+  /** Triage fields: optional on disk, answered as values by the store. */
+  projectId?: string | null;
+  status?: SignalStatus;
+  priority?: SignalPriority | null;
+  capturedFrom?: string | null;
   attachment: Attachment | null;
 };
 
@@ -98,17 +137,40 @@ type CreateSummary = {
   title: string | null;
   body: string;
   domainSlug: string | null;
+  /** The inbox fields the page handed over, as handed (never invented here). */
+  projectId?: string | null;
+  status?: SignalStatus;
+  priority?: SignalPriority | null;
+  capturedFrom?: string | null;
   attachment: {
-    kind: "image" | "link";
+    kind: "image" | "link" | "file";
     name?: string;
     url?: string;
     mime?: string;
     width?: number | null;
     height?: number | null;
     byteLength?: number;
+    /** The size the record carries (file attachments). */
+    size?: number;
     /** The path this harness minted for the bytes it stored. */
     relPath?: string;
   } | null;
+};
+
+/** One seeded record, with the labels the contract says the row must paint. */
+type InboxSeed = {
+  id: string;
+  body: string;
+  attachment: "text" | "image" | "link";
+  domainSlug: string | null;
+  domainLabel: string;
+  projectId: string | null;
+  projectLabel: string;
+  status: SignalStatus;
+  statusLabel: string;
+  priority: SignalPriority | null;
+  priorityLabel: string;
+  capturedFrom: string | null;
 };
 
 type HarnessWindow = Window & {
@@ -119,6 +181,8 @@ type HarnessWindow = Window & {
   chainCaptureUnexpectedCalls?: string[];
   chainCaptureCreates?: CreateSummary[];
   chainCaptureReads?: string[];
+  /** Every `signalChainReadFile` call, so Save's read-back is evidence. */
+  chainCaptureFileReads?: string[];
   chainCaptureUpdates?: { id: string; patch: Record<string, unknown> }[];
   chainCaptureDeletes?: string[];
   /** The picture the driver drops or picks, so it never retypes the bytes. */
@@ -135,10 +199,24 @@ type HarnessWindow = Window & {
       linkUrl: string;
     };
   };
+  /** The fixture's live projects, the list `projectsList` answers with. */
+  chainCaptureProjects?: FixtureProject[];
+  /**
+   * The fixture's inbox, so the driver compares painted labels and written
+   * patches against the contract's own maps instead of retyping the fixture.
+   */
+  chainCaptureInbox?: {
+    projects: FixtureProject[];
+    seeded: InboxSeed[];
+    /** The row the triage phase moves: the first seed filed under a project. */
+    target: { id: string; body: string };
+  };
   chainCaptureSnapshot?: () => {
     records: SignalRow[];
+    projects: FixtureProject[];
     bytes: Record<string, number>;
     reads: string[];
+    fileReads: string[];
     creates: CreateSummary[];
     updates: { id: string; patch: Record<string, unknown> }[];
     deletes: string[];
@@ -150,11 +228,32 @@ harness.chainCaptureCalls = [];
 harness.chainCaptureUnexpectedCalls = [];
 harness.chainCaptureCreates = [];
 harness.chainCaptureReads = [];
+harness.chainCaptureFileReads = [];
 harness.chainCaptureUpdates = [];
 harness.chainCaptureDeletes = [];
 
 const domains = fixture.snapshot.domains as FixtureDomain[];
+const projects = fixture.projects as FixtureProject[];
 const seededRows = fixture.records as SignalRow[];
+
+/**
+ * The label maps the renderer contract fixes. The driver compares each row's
+ * painted chip against these, so a chip that says something else — or a row
+ * whose stored value and chip disagree — is named rather than eyeballed.
+ */
+const STATUS_LABELS: Record<SignalStatus, string> = {
+  inbox: "Inbox",
+  triaged: "Triaged",
+  acting: "Acting",
+  done: "Done",
+  dropped: "Dropped",
+};
+const PRIORITY_LABELS: Record<SignalPriority | "none", string> = {
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+  none: "None",
+};
 
 /** The bytes the seeded image attachment points at, and the picture the driver drops. */
 function fromBase64(base64: string): Uint8Array {
@@ -212,14 +311,52 @@ const copyRow = (row: SignalRow): SignalRow => ({
 function snapshot() {
   return {
     records: records.map(copyRow),
+    projects: projects.map((project) => ({ ...project })),
     bytes: Object.fromEntries([...bytesByRelPath].map(([relPath, bytes]) => [relPath, bytes.byteLength])),
     reads: [...(harness.chainCaptureReads ?? [])],
+    fileReads: [...(harness.chainCaptureFileReads ?? [])],
     creates: (harness.chainCaptureCreates ?? []).map((create) => ({ ...create })),
     updates: (harness.chainCaptureUpdates ?? []).map((update) => ({ ...update })),
     deletes: [...(harness.chainCaptureDeletes ?? [])],
   };
 }
 harness.chainCaptureSnapshot = snapshot;
+harness.chainCaptureProjects = projects.map((project) => ({ ...project }));
+
+/**
+ * The fixture's inbox in contract terms: every seeded row's stored value beside
+ * the label the row must paint. The driver reads this once and compares the
+ * live DOM against it; the target is the first row filed under a project, so
+ * the triage phase also proves the project link follows the row it moved.
+ */
+const inboxSeeds: InboxSeed[] = seededRows.map((row) => {
+  const status = row.status ?? "inbox";
+  const priority = row.priority ?? null;
+  return {
+    id: row.id,
+    body: row.body,
+    attachment: (row.attachment?.kind ?? "text") as InboxSeed["attachment"],
+    domainSlug: row.domainSlug,
+    domainLabel: row.domainSlug
+      ? (domains.find((domain) => domain.slug === row.domainSlug)?.name ?? row.domainSlug)
+      : "Unassigned",
+    projectId: row.projectId ?? null,
+    projectLabel: row.projectId
+      ? (projects.find((project) => project.id === row.projectId)?.title ?? row.projectId)
+      : "No project",
+    status,
+    statusLabel: STATUS_LABELS[status],
+    priority,
+    priorityLabel: PRIORITY_LABELS[priority ?? "none"],
+    capturedFrom: row.capturedFrom ?? null,
+  };
+});
+const inboxTarget = inboxSeeds.find((seed) => seed.projectId) ?? inboxSeeds[0];
+harness.chainCaptureInbox = {
+  projects: projects.map((project) => ({ ...project })),
+  seeded: inboxSeeds,
+  target: { id: inboxTarget.id, body: inboxTarget.body },
+};
 
 /** Uuid-shaped ids, so the page's keys are the ids the real vault would mint. */
 let nextId = 1;
@@ -249,6 +386,15 @@ function sniffMime(bytes: Uint8Array): { mime: string; ext: string } {
     return { mime: "image/webp", ext: "webp" };
   }
   return { mime: "image/png", ext: "png" };
+}
+
+/** The safe extension the vault derives from a file's display name. */
+function fileExtension(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "";
+  const ext = base.slice(dot + 1).toLowerCase();
+  return /^[a-z0-9]{1,8}$/.test(ext) ? ext : "";
 }
 
 const SESSION = {
@@ -302,6 +448,10 @@ type SignalCreateInput = {
   title?: string | null;
   body: string;
   domainSlug?: string | null;
+  projectId?: string | null;
+  status?: SignalStatus;
+  priority?: SignalPriority | null;
+  capturedFrom?: string | null;
   attachment?:
     | {
         kind: "image";
@@ -311,6 +461,12 @@ type SignalCreateInput = {
         height?: number | null;
       }
     | { kind: "link"; url: string }
+    | {
+        kind: "file";
+        bytes: Uint8Array | ArrayBuffer;
+        name: string;
+        mime?: string;
+      }
     | null;
 };
 
@@ -328,6 +484,16 @@ const rawBridge: Record<string, unknown> = {
   pinsList: () => ok({ pins: [], locked: false }),
   decisionList: () => ok([]),
   onCompanionStream: () => () => {},
+  // The real `ThemeProvider` reads the app profile's theme directory once and
+  // subscribes to its changes; both are modelled because the harness renders
+  // the real provider. The subscription must answer with a function — an
+  // unmodelled name resolves to a refusal Promise, and StrictMode's unmount
+  // cleanup then calls that Promise as `unsubscribe()`, which throws and makes
+  // React 19 unmount the whole tree (a blank page with no visible cause).
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  themeSetKept: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -345,20 +511,16 @@ const rawBridge: Record<string, unknown> = {
     return ok({ records: live.map(copyRow), skipped: 0 });
   },
 
+  // The renderer reads the live projects on mount to paint a row's project
+  // title; an unmodelled call here would be recorded as unexpected and fail.
+  projectsList: () =>
+    ok({ records: projects.map((project) => ({ ...project })), skipped: 0 }),
+
   signalChainCreate: (input: SignalCreateInput) => {
     const id = mintId();
     const now = new Date().toISOString();
     let attachment: Attachment | null = null;
-    const summary: CreateSummary["attachment"] = input.attachment
-      ? input.attachment.kind === "image"
-        ? {
-            kind: "image",
-            name: input.attachment.name,
-            width: input.attachment.width ?? null,
-            height: input.attachment.height ?? null,
-          }
-        : { kind: "link", url: input.attachment.url }
-      : null;
+    let summary: CreateSummary["attachment"] = null;
     if (input.attachment?.kind === "image") {
       const bytes =
         input.attachment.bytes instanceof Uint8Array
@@ -381,15 +543,50 @@ const rawBridge: Record<string, unknown> = {
       // The summary keeps what the page actually handed over — the minted path
       // is the vault's answer, and the bytes are proven by their length, never
       // by copying the picture into the report.
-      Object.assign(summary as Record<string, unknown>, {
+      summary = {
+        kind: "image",
+        name: input.attachment.name,
+        width: input.attachment.width ?? null,
+        height: input.attachment.height ?? null,
         mime,
         byteLength: bytes.byteLength,
         relPath,
-      });
+      };
     } else if (input.attachment?.kind === "link") {
       attachment = { kind: "link", url: input.attachment.url };
-      Object.assign(summary as Record<string, unknown>, { url: input.attachment.url });
+      summary = { kind: "link", url: input.attachment.url };
+    } else if (input.attachment?.kind === "file") {
+      const bytes =
+        input.attachment.bytes instanceof Uint8Array
+          ? input.attachment.bytes
+          : new Uint8Array(input.attachment.bytes);
+      // The name decides the stored extension, the way the vault's own store
+      // does; a name with no usable extension stores a bare uuid.
+      const ext = fileExtension(input.attachment.name);
+      const relPath = `.lifequest/signal-chain/files/${id}${ext ? `.${ext}` : ""}`;
+      const mime =
+        input.attachment.mime && input.attachment.mime.length > 0
+          ? input.attachment.mime
+          : "application/octet-stream";
+      bytesByRelPath.set(relPath, bytes);
+      mimeByRelPath.set(relPath, mime);
+      attachment = {
+        kind: "file",
+        relPath,
+        name: input.attachment.name,
+        mime,
+        size: bytes.byteLength,
+      };
+      summary = {
+        kind: "file",
+        name: input.attachment.name,
+        mime,
+        byteLength: bytes.byteLength,
+        size: bytes.byteLength,
+        relPath,
+      };
     }
+    const status = input.status ?? "inbox";
     const record: SignalRow = {
       id,
       createdAt: now,
@@ -401,6 +598,12 @@ const rawBridge: Record<string, unknown> = {
       title: input.title ?? null,
       body: input.body,
       domainSlug: input.domainSlug ?? null,
+      // The inbox fields the page hands over, defaulted exactly as the store
+      // defaults them: an omitted status is "inbox", omitted others are null.
+      projectId: input.projectId ?? null,
+      status,
+      priority: input.priority ?? null,
+      capturedFrom: input.capturedFrom ?? null,
       attachment,
     };
     records.unshift(record);
@@ -409,6 +612,10 @@ const rawBridge: Record<string, unknown> = {
       title: input.title ?? null,
       body: input.body,
       domainSlug: input.domainSlug ?? null,
+      projectId: input.projectId ?? null,
+      status,
+      priority: input.priority ?? null,
+      capturedFrom: input.capturedFrom ?? null,
       attachment: summary,
     });
     return ok(copyRow(record));
@@ -435,6 +642,16 @@ const rawBridge: Record<string, unknown> = {
     const bytes = bytesByRelPath.get(relPath);
     if (!bytes) return Promise.resolve(fail("That image is missing from the vault."));
     return ok({ bytes, mime: mimeByRelPath.get(relPath) ?? "image/png" });
+  },
+
+  // The file row's Save control reads the stored bytes back through this call;
+  // the harness serves what `signalChainCreate` kept under the minted path, so
+  // a row that reports a save it never asked for fails.
+  signalChainReadFile: (relPath: string) => {
+    harness.chainCaptureFileReads?.push(relPath);
+    const bytes = bytesByRelPath.get(relPath);
+    if (!bytes) return Promise.resolve(fail("That file is missing from the vault."));
+    return ok({ bytes, mime: mimeByRelPath.get(relPath) ?? "application/octet-stream" });
   },
 };
 

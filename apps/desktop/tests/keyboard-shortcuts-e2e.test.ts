@@ -349,7 +349,7 @@ describe("keyboard shortcuts settings and runner", () => {
       (dockThread.dock?.bar ?? []).map((entry) => entry.label),
       [
         "New chat",
-        "Quick Notes",
+        "Notebox",
         "Keyboard shortcuts",
         "Chat display settings",
         "Move chat to the left of the page",

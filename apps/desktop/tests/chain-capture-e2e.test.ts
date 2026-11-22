@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 /**
- * The Life-Chain page's general capture surface — text, image and link — as the
- * real shell paints it in a real layout engine. The claims themselves live in
- * `e2e/chain-capture.electron.mjs`, which drives the harness; this file runs
- * that driver and refuses a report that does not hold.
+ * The Notebox page's general capture surface — text, image, any file and a
+ * pasted link — as the real shell paints it in a real layout engine, plus the
+ * inbox triage: a status select moves a row and the row paints the vault's
+ * answer back. The claims themselves live in `e2e/chain-capture.electron.mjs`,
+ * which drives the harness; this file runs that driver and refuses a report
+ * that does not hold.
  *
  * Run it through `lifequest-e2e`, which puts THIS checkout's dev server on 5173:
  *
@@ -22,9 +24,10 @@ import { describe, it } from "node:test";
  * vacuous evidence this test exists to refuse.
  *
  * The artifact is `e2e/artifacts/chain-capture.json` plus the captures the
- * driver takes — the seeded chain, a text capture, an uploaded image row and a
- * link row — each of which must be a real capture of the shipped page, not an
- * empty file.
+ * driver takes — the seeded chain, a text capture, an uploaded image row, a
+ * non-image file card (`chain-inbox-file.png`), a pasted link row, and the
+ * triaged inbox (`chain-inbox-triage.png`) — each of which must be a real
+ * capture of the shipped page, not an empty file.
  */
 
 const desktopRoot = path.resolve(
@@ -43,8 +46,11 @@ const CAPTURES = [
   "chain-capture-pending.png",
   "chain-capture-image.png",
   "chain-capture-image-only.png",
+  "chain-capture-pending-file.png",
+  "chain-inbox-file.png",
   "chain-capture-link.png",
   "chain-capture-dock.png",
+  "chain-inbox-triage.png",
 ];
 
 type Picture = {
@@ -65,16 +71,20 @@ type Row = {
   link:
     | { present: true; href: string | null; target: string | null; text: string | null }
     | { present: false };
+  file:
+    | { present: true; text: string | null; name: string | null; save: boolean }
+    | { present: false };
 };
 
 type CreateAttachment = {
-  kind: "image" | "link";
+  kind: "image" | "link" | "file";
   name?: string;
   url?: string;
   mime?: string;
   width?: number | null;
   height?: number | null;
   byteLength?: number;
+  size?: number;
   relPath?: string;
 };
 
@@ -84,6 +94,96 @@ type Create = {
   body: string;
   domainSlug: string | null;
   attachment: CreateAttachment | null;
+};
+
+type Select = {
+  value: string;
+  options: { value: string; label: string }[];
+};
+
+/** One fixture seed, with the labels the contract says its row must paint. */
+type InboxExpectedSeed = {
+  id: string;
+  body: string;
+  attachment: "text" | "image" | "link";
+  domainSlug: string | null;
+  domainLabel: string;
+  projectId: string | null;
+  projectLabel: string;
+  status: string;
+  statusLabel: string;
+  priority: string | null;
+  priorityLabel: string;
+  capturedFrom: string | null;
+};
+
+type InboxRow = {
+  id: string;
+  body: string;
+  expected: InboxExpectedSeed;
+  attachment: string | null;
+  dataStatus: string | null;
+  dataPriority: string | null;
+  dataProjectId: string | null;
+  dataDomainSlug: string | null;
+  domain: string | null;
+  project: string | null;
+  status: string | null;
+  priority: string | null;
+  capturedFrom: string | null;
+  statusSelect: Select | null;
+  prioritySelect: Select | null;
+  projectSelect: Select | null;
+};
+
+type InboxCheck = {
+  expected: {
+    projects: { id: string; title: string }[];
+    seeded: InboxExpectedSeed[];
+    target: { id: string; body: string };
+  } | null;
+  rows: InboxRow[];
+  controls: {
+    statusOptions: string[];
+    statusLabels: string[];
+    priorityOptions: string[];
+    priorityLabels: string[];
+    projectOptions: string[];
+    projectLabels: string[];
+    filterStatus: string[];
+    filterDomain: string[];
+    filterProject: string[];
+  };
+  triage: {
+    targetId: string | null;
+    targetBody: string | null;
+    before: {
+      dataStatus: string | null;
+      status: string | null;
+      select: string | null;
+    };
+    after: {
+      dataStatus: string | null;
+      status: string | null;
+      select: string | null;
+      storedStatus: string | null;
+    };
+    patch: Record<string, unknown> | null;
+    updates: { id: string; patch: Record<string, unknown> }[];
+    listReadsBefore: number;
+    listReadsAfter: number;
+  };
+  filter: {
+    acting: { rows: number; pressed: string | null };
+    done: {
+      rows: number;
+      empty: string | null;
+      emptyLine: string | null;
+      pressed: string | null;
+    };
+    all: { rows: number; pressed: string | null };
+  };
+  screenshot: { name: string; bytes: number };
 };
 
 type Report = {
@@ -106,21 +206,30 @@ type Report = {
     page: {
       route: string | null;
       skin: string | null;
+      heading: string | null;
       activeRail: string | null;
       rail: { label: string | null; href: string | null }[];
       presence: {
         page: boolean;
         composer: boolean;
         textarea: boolean;
+        attachFile: boolean;
+        attachLabel: string | null;
+        attachBox: { left: number; top: number; width: number; height: number } | null;
+        composerBox: { left: number; top: number; width: number; height: number } | null;
+        log: boolean;
+      };
+      legacyComposer: {
         attachImage: boolean;
         attachLink: boolean;
-        log: boolean;
+        linkUrlField: boolean;
+        addLink: boolean;
       };
       fileInput: { present: boolean; type: string | null; accept: string | null };
     };
     shiftEnter: { creates: number; value: string | null };
     textCapture: { create: Create; row: Row };
-    pending: { count: number; image: Picture; remove: boolean };
+    pending: { count: number; image: Picture; removeImage: boolean };
     imageCapture: {
       create: Create;
       row: Row;
@@ -132,13 +241,41 @@ type Report = {
       row: Row;
       bytes: Record<string, number>;
     };
+    pendingFile: { text: string; remove: boolean; imageCount: number };
+    fileCapture: {
+      create: Create;
+      row: Row;
+      expectedBytes: number;
+      pendingText: string;
+      reads: string[];
+      bytes: Record<string, number>;
+      save: { clicked: boolean; reads: string[]; error: string | null };
+      screenshot: { name: string; bytes: number };
+    };
+    linkPaste: {
+      text: string;
+      chip: { present: boolean; text: string | null; title: string | null };
+      textarea: string | null;
+      error: string | null;
+    };
+    linkCapture: { create: Create; row: Row };
     exclusivity: {
-      linkDisabledWithPicture: boolean;
-      imageDisabledWithLink: boolean;
+      imagePending: { imageCount: number; file: boolean };
+      fileReplacesImage: {
+        imageCount: number;
+        file: { present: boolean; text?: string };
+      };
+      linkReplacesFile: {
+        chip: { present: boolean; text: string | null };
+        pendingFile: boolean;
+        imageCount: number;
+      };
+      linkRemoved: boolean;
     };
     dock: {
       clicked: boolean;
       surface: string | null;
+      heading: string | null;
       action: boolean;
       items: number;
       seededImage: Picture | null;
@@ -147,19 +284,6 @@ type Report = {
         | null;
       bodies: (string | null)[];
     };
-    linkRefused: { error: string | null; chip: { present: boolean }; creates: number };
-    linkChip: {
-      chip: { present: boolean; text: string | null; title: string | null };
-      error: string | null;
-      addControl: string;
-      addClicks: string[];
-    };
-    linkField: {
-      input: boolean;
-      add: boolean;
-      addTestId: boolean;
-    };
-    linkCapture: { create: Create; row: Row };
     seeded: {
       imageRow: Row | null;
       linkRow: Row | null;
@@ -177,6 +301,7 @@ type Report = {
       overflow: { scrollWidth: number; clientWidth: number };
       screenshots: { name: string; bytes: number }[];
     };
+    inbox: InboxCheck;
   };
 };
 
@@ -192,7 +317,9 @@ function devServerUp(): Promise<boolean> {
   });
 }
 
-function runDriver(): Promise<number> {
+type DriverRun = { code: number; stdout: string; stderr: string };
+
+function runDriver(): Promise<DriverRun> {
   return new Promise((resolve, reject) => {
     // Electron hosts (DSH and other Electron apps) export ELECTRON_RUN_AS_NODE,
     // which would make this spawn run as plain node and die without a window.
@@ -202,19 +329,19 @@ function runDriver(): Promise<number> {
       electron,
       [path.join(desktopRoot, "e2e/chain-capture.electron.mjs")],
       { cwd: desktopRoot, timeout: 240_000, env },
-      (error) => {
+      (error, stdout, stderr) => {
         if (error && typeof error.code !== "number") {
           reject(error);
           return;
         }
-        resolve(error ? (error.code as number) : 0);
+        resolve({ code: error ? (error.code as number) : 0, stdout, stderr });
       },
     );
   });
 }
 
-describe("Life-Chain page — general capture", () => {
-  it("captures text, a dropped image and a link, and paints them back from the vault", async () => {
+describe("Notebox page — general capture", () => {
+  it("captures text, an image, a file and a pasted link, and paints them back from the vault", async () => {
     if (!(await devServerUp())) {
       assert.fail(
         `no dev server on ${DEV_PORT} — a skipped rig is not evidence; ` +
@@ -225,15 +352,25 @@ describe("Life-Chain page — general capture", () => {
     fs.rmSync(REPORT, { force: true });
     for (const name of CAPTURES) fs.rmSync(path.join(ARTIFACTS, name), { force: true });
 
-    const exitCode = await runDriver();
+    const run = await runDriver();
 
-    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    assert.equal(
+      fs.existsSync(REPORT),
+      true,
+      "driver wrote no report artifact\n" +
+        `--- driver stderr ---\n${run.stderr.slice(-4000)}\n` +
+        `--- driver stdout ---\n${run.stdout.slice(-2000)}`,
+    );
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
 
     // A report that does not hold is not evidence, whatever the exit code says.
     assert.deepEqual(report.failures, []);
     assert.equal(report.pass, true);
-    assert.equal(exitCode, 0, "driver exited non-zero");
+    assert.equal(
+      run.code,
+      0,
+      `driver exited non-zero\n${run.stderr.slice(-4000)}`,
+    );
 
     // Every named capture exists and is a real picture, not an empty file. The
     // screenshots are the operator-facing half of the evidence.
@@ -250,21 +387,36 @@ describe("Life-Chain page — general capture", () => {
 
     const { checks, expected, consoleErrors } = report;
 
-    // The shipped shell page: Life-Chain active, composer and its three arms.
+    // The shipped shell page, renamed Notebox: one plus attachment arm over an
+    // unrestricted hidden picker, and the old Image/Link arms gone.
     assert.equal(checks.page.route, "/chain");
-    assert.equal(checks.page.activeRail, "Quick Notes");
+    assert.equal(checks.page.activeRail, "Notebox");
+    assert.equal(checks.page.heading, "Notebox", "the page heading is not Notebox");
     assert.ok(
-      checks.page.rail.some((item) => item.label === "Quick Notes" && item.href === "/chain"),
-      "no Quick Notes row on the rail",
+      checks.page.rail.some((item) => item.label === "Notebox" && item.href === "/chain"),
+      "no Notebox row on the rail",
     );
     assert.equal(checks.page.presence.page, true);
     assert.equal(checks.page.presence.composer, true);
     assert.equal(checks.page.presence.textarea, true);
-    assert.equal(checks.page.presence.attachImage, true);
-    assert.equal(checks.page.presence.attachLink, true);
+    assert.equal(checks.page.presence.attachFile, true, "no plus attachment control");
+    assert.equal(checks.page.presence.attachLabel, "Attach a file");
+    assert.ok(
+      checks.page.presence.attachBox !== null &&
+        checks.page.presence.composerBox !== null &&
+        checks.page.presence.attachBox.top >=
+          checks.page.presence.composerBox.top +
+            checks.page.presence.composerBox.height / 2,
+      "the plus is not in the composer's lower half",
+    );
     assert.equal(checks.page.presence.log, true);
+    assert.equal(checks.page.legacyComposer.attachImage, false, "the Image arm is still there");
+    assert.equal(checks.page.legacyComposer.attachLink, false, "the Link arm is still there");
+    assert.equal(checks.page.legacyComposer.linkUrlField, false, "the Link URL field is still there");
+    assert.equal(checks.page.legacyComposer.addLink, false, "the Add link control is still there");
     assert.equal(checks.page.fileInput.present, true);
     assert.equal(checks.page.fileInput.type, "file");
+    assert.equal(checks.page.fileInput.accept, null, "the any-file picker still has an accept gate");
     assert.equal(typeof checks.page.skin, "string");
 
     // Enter logs a text-only capture; Shift+Enter did not submit.
@@ -278,7 +430,7 @@ describe("Life-Chain page — general capture", () => {
     // The drop became a decoded pending thumbnail, and the capture carried bytes.
     assert.equal(checks.pending.count, 1);
     assert.ok((checks.pending.image.width ?? 0) > 0, "the pending thumbnail never decoded");
-    assert.equal(checks.pending.remove, true);
+    assert.equal(checks.pending.removeImage, true);
     assert.equal(checks.imageCapture.create.attachment?.kind, "image");
     assert.equal(checks.imageCapture.create.attachment?.name, expected.seeded.imageName);
     assert.ok(
@@ -316,22 +468,59 @@ describe("Life-Chain page — general capture", () => {
     assert.ok((checks.imageOnly.row.image.width ?? 0) > 0);
     assert.equal(checks.imageOnly.row.body ?? "", "");
 
-    // One attachment per capture: each control is disabled by the other being
-    // present, so the composer cannot end up with a picture and a link at once.
-    assert.equal(checks.exclusivity.imageDisabledWithLink, true);
-    assert.equal(checks.exclusivity.linkDisabledWithPicture, true);
+    // A non-image file is a first-class capture: a pending chip naming it and
+    // its size, the bytes on the bridge, a card painting the stored name and a
+    // human size, and a Save that reads the bytes back by the minted path.
+    assert.match(checks.pendingFile.text, /brief\.pdf/);
+    assert.match(checks.pendingFile.text, /\d+(\.\d+)?\s*(B|KB|MB)/, "the pending chip has no size");
+    assert.equal(checks.pendingFile.remove, true, "no Remove the attached file control");
+    assert.equal(checks.pendingFile.imageCount, 0);
+    const fileCreate = checks.fileCapture.create;
+    assert.equal(fileCreate.attachment?.kind, "file");
+    assert.equal(fileCreate.attachment?.name, "brief.pdf");
+    assert.equal(fileCreate.attachment?.mime, "application/pdf");
+    assert.equal(
+      fileCreate.attachment?.byteLength,
+      checks.fileCapture.expectedBytes,
+      "the bridge did not receive the file's real bytes",
+    );
+    assert.ok((fileCreate.attachment?.byteLength ?? 0) > 0);
+    const fileRelPath = fileCreate.attachment?.relPath ?? "";
+    assert.match(
+      fileRelPath,
+      /^\.lifequest\/signal-chain\/files\/[0-9a-f-]+\.pdf$/,
+      "the vault minted no pdf path for the file bytes",
+    );
+    assert.equal(
+      checks.fileCapture.bytes[fileRelPath],
+      checks.fileCapture.expectedBytes,
+      "the vault did not keep the file bytes under the path it minted",
+    );
+    assert.equal(checks.fileCapture.row.attachment, "file");
+    assert.equal(checks.fileCapture.row.file.present, true, "the file row paints no card");
+    assert.equal(checks.fileCapture.row.file.name, "brief.pdf");
+    assert.match(
+      checks.fileCapture.row.file.text ?? "",
+      /\d+(\.\d+)?\s*(B|KB|MB)/,
+      "the file card paints no human size",
+    );
+    assert.equal(checks.fileCapture.row.file.save, true, "the file row offers no Save");
+    assert.match(checks.fileCapture.row.body ?? "", /brief for the desk rebuild/);
+    assert.equal(checks.fileCapture.save.clicked, true);
+    assert.ok(
+      checks.fileCapture.save.reads.includes(fileRelPath),
+      "Save never asked the bridge to read the stored file",
+    );
+    assert.equal(checks.fileCapture.save.error, null, "the file row reported its file missing");
+    assert.ok(checks.fileCapture.screenshot.bytes > 20_000);
+    assert.equal(checks.fileCapture.screenshot.name, "chain-inbox-file.png");
 
-    // The link control refuses a non-http URL, shows the host once valid, and
-    // logs an anchor that opens externally.
-    assert.ok((checks.linkRefused.error ?? "").length > 0, "invalid URL left no error");
-    assert.equal(checks.linkRefused.chip.present, false);
-    assert.equal(checks.linkRefused.creates, 3);
-    assert.match(checks.linkChip.chip.text ?? "", /are\.na/);
-    assert.equal(checks.linkChip.error ?? "", "");
-    // The selector contract is exact: the Add control is the testid, not a label.
-    assert.equal(checks.linkField.addTestId, true);
-    assert.equal(checks.linkChip.addControl, "testid");
-    assert.deepEqual(checks.linkChip.addClicks, ["testid", "testid"]);
+    // The link arm is paste-only: the pasted URL becomes a chip, does not stay
+    // in the textarea, and logs an anchor that opens externally.
+    assert.equal(checks.linkPaste.chip.present, true, "the pasted URL left no link chip");
+    assert.match(checks.linkPaste.chip.text ?? "", /are\.na/);
+    assert.equal(checks.linkPaste.textarea, "", "the pasted URL was left in the textarea");
+    assert.equal(checks.linkPaste.error ?? "", "");
     assert.equal(checks.linkCapture.create.attachment?.kind, "link");
     assert.equal(
       checks.linkCapture.create.attachment?.url,
@@ -347,6 +536,16 @@ describe("Life-Chain page — general capture", () => {
       "_blank",
     );
     assert.match(checks.linkCapture.row.body ?? "", /attention costs/);
+
+    // One attachment at a time: each new pick or paste replaces the last.
+    assert.equal(checks.exclusivity.imagePending.imageCount, 1);
+    assert.equal(checks.exclusivity.imagePending.file, false);
+    assert.equal(checks.exclusivity.fileReplacesImage.imageCount, 0);
+    assert.equal(checks.exclusivity.fileReplacesImage.file.present, true);
+    assert.equal(checks.exclusivity.linkReplacesFile.pendingFile, false);
+    assert.equal(checks.exclusivity.linkReplacesFile.imageCount, 0);
+    assert.equal(checks.exclusivity.linkReplacesFile.chip.present, true);
+    assert.equal(checks.exclusivity.linkRemoved, true);
 
     // The seeded fixture rows render on the shipped page.
     assert.ok(checks.seeded.textRow, "the seeded text row is gone");
@@ -372,12 +571,13 @@ describe("Life-Chain page — general capture", () => {
       "the seeded picture was never served by the bridge",
     );
 
-    // The dock's Life-Chain surface renders the same records and draws their
-    // attachments: the seeded picture decodes and the seeded link anchors.
+    // The dock's mirrored Notebox surface renders the same records and draws
+    // their attachments: the seeded picture decodes and the seeded link anchors.
     assert.equal(checks.dock.clicked, true);
     assert.equal(checks.dock.surface, "chain");
+    assert.equal(checks.dock.heading, "Notebox", "the dock heading is not Notebox");
     assert.equal(checks.dock.action, true);
-    assert.equal(checks.dock.items, expected.seeded.count + 4);
+    assert.equal(checks.dock.items, expected.seeded.count + 5);
     assert.equal(
       checks.dock.seededImage?.width,
       checks.seeded.imageRow?.image.width,
@@ -387,8 +587,8 @@ describe("Life-Chain page — general capture", () => {
     assert.equal(checks.dock.seededLink?.target, "_blank");
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
-    assert.equal(checks.final.rows, expected.seeded.count + 4);
-    assert.equal(checks.final.creates, 4);
+    assert.equal(checks.final.rows, expected.seeded.count + 5);
+    assert.equal(checks.final.creates, 5);
     assert.deepEqual(checks.final.unexpected, []);
     assert.deepEqual(consoleErrors, []);
     assert.ok(
@@ -396,5 +596,144 @@ describe("Life-Chain page — general capture", () => {
       `page overflows horizontally: ${checks.final.overflow.scrollWidth}px in ${checks.final.overflow.clientWidth}px`,
     );
     assert.equal(checks.final.route, "/chain");
+
+    // ── the inbox: a triage select changes an item's status on screen ──────
+    // The renderer contract fixes the attributes, chips, selects and filter
+    // chips; the driver read them off the live DOM and made one triage gesture
+    // through the operator's own select. These assertions refuse a report where
+    // the page echoed its own state, mislabelled a row, or never re-read.
+    const inbox = checks.inbox;
+    assert.equal(inbox.rows.length, expected.seeded.count);
+    assert.deepEqual(
+      inbox.expected?.projects.map((project) => project.title),
+      ["Desk rebuild", "Reading list"],
+    );
+    assert.deepEqual(
+      inbox.controls.statusOptions,
+      ["inbox", "triaged", "acting", "done", "dropped"],
+      "the status select does not offer the five stored values",
+    );
+    assert.deepEqual(
+      inbox.controls.statusLabels,
+      ["Inbox", "Triaged", "Acting", "Done", "Dropped"],
+      "the status select labels are not the contract's",
+    );
+    assert.deepEqual(
+      [...inbox.controls.priorityLabels].sort(),
+      ["High", "Low", "None", "Normal"],
+    );
+    assert.ok(
+      inbox.controls.projectLabels.includes("No project") &&
+        inbox.controls.projectLabels.includes("Desk rebuild") &&
+        inbox.controls.projectLabels.includes("Reading list"),
+      `the project select labels are ${JSON.stringify(inbox.controls.projectLabels)}`,
+    );
+    assert.ok(
+      inbox.controls.filterStatus.includes("signal-filter-status-all") &&
+        inbox.controls.filterStatus.includes("signal-filter-status-done"),
+      `the status filter buttons are ${JSON.stringify(inbox.controls.filterStatus)}`,
+    );
+    assert.deepEqual(
+      [...inbox.controls.filterProject].sort(),
+      [
+        "signal-filter-project-a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+        "signal-filter-project-all",
+        "signal-filter-project-b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+      ].sort(),
+      "the project filter is not All plus one chip per live project",
+    );
+    assert.ok(
+      inbox.controls.filterDomain.includes("signal-filter-domain-all") &&
+        inbox.controls.filterDomain.includes("signal-filter-domain-none") &&
+        inbox.controls.filterDomain.includes("signal-filter-domain-health"),
+      `the domain filter buttons are ${JSON.stringify(inbox.controls.filterDomain)}`,
+    );
+
+    // Each seeded row: stored value on the row, contract label beside it.
+    for (const row of inbox.rows) {
+      assert.ok(row.attachment, `seeded row ${row.body} is not on the page`);
+      assert.equal(row.dataStatus, row.expected.status, `${row.body}: data-status`);
+      assert.equal(row.status, row.expected.statusLabel, `${row.body}: status chip`);
+      assert.equal(
+        row.dataDomainSlug,
+        row.expected.domainSlug ?? "",
+        `${row.body}: data-domain-slug`,
+      );
+      assert.equal(row.domain, row.expected.domainLabel, `${row.body}: domain chip`);
+      assert.equal(
+        row.dataProjectId,
+        row.expected.projectId ?? "",
+        `${row.body}: data-project-id`,
+      );
+      assert.equal(row.project, row.expected.projectLabel, `${row.body}: project chip`);
+      assert.equal(
+        row.dataPriority,
+        row.expected.priority ?? "none",
+        `${row.body}: data-priority`,
+      );
+      assert.equal(row.priority, row.expected.priorityLabel, `${row.body}: priority chip`);
+      assert.equal(row.statusSelect?.value, row.expected.status, `${row.body}: status select`);
+      assert.ok(row.prioritySelect, `${row.body}: no priority select`);
+      assert.ok(row.projectSelect, `${row.body}: no project select`);
+      if (row.expected.capturedFrom) {
+        assert.equal(row.capturedFrom, row.expected.capturedFrom, `${row.body}: source chip`);
+      }
+    }
+
+    // A null area is painted with a word, never a blank cell; a null project
+    // says so, and the seeded fixture's source text is on its row.
+    const unassigned = inbox.rows.find((row) => row.dataDomainSlug === "");
+    assert.ok(unassigned, "no unassigned seeded row on the page");
+    assert.equal(unassigned?.domain, "Unassigned");
+    assert.equal(unassigned?.project, "No project");
+    assert.equal(unassigned?.capturedFrom, "Chrome — AI tab group");
+    const filed = inbox.rows.find(
+      (row) => row.dataProjectId === "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+    );
+    assert.ok(filed, "no project-filed seeded row on the page");
+    assert.equal(filed?.project, "Desk rebuild");
+    assert.equal(filed?.priority, "High");
+    assert.equal(filed?.dataPriority, "high");
+    const alreadyTriaged = inbox.rows.find((row) => row.dataStatus === "triaged");
+    assert.ok(alreadyTriaged, "no seeded row already triaged");
+    assert.equal(alreadyTriaged?.status, "Triaged");
+    assert.equal(alreadyTriaged?.project, "Reading list");
+
+    // The triage itself: the select wrote one patch, the store kept it, and the
+    // row only painted Acting after a fresh chain read answered with it.
+    assert.equal(inbox.triage.targetId, filed?.id);
+    assert.equal(inbox.triage.before.dataStatus, "inbox");
+    assert.equal(inbox.triage.before.status, "Inbox");
+    assert.equal(inbox.triage.before.select, "inbox");
+    assert.equal(inbox.triage.after.dataStatus, "acting");
+    assert.equal(inbox.triage.after.status, "Acting");
+    assert.equal(inbox.triage.after.select, "acting");
+    assert.equal(inbox.triage.after.storedStatus, "acting");
+    assert.deepEqual(inbox.triage.patch, { status: "acting" });
+    assert.ok(
+      inbox.triage.updates.some(
+        (update) =>
+          update.id === inbox.triage.targetId && update.patch.status === "acting",
+      ),
+      "the triage update never reached the recording bridge",
+    );
+    assert.ok(
+      inbox.triage.listReadsAfter > inbox.triage.listReadsBefore,
+      `the chain was not re-read after the triage (${inbox.triage.listReadsBefore} reads)`,
+    );
+
+    // The filter chips narrow, say there is no match, and restore the chain.
+    assert.equal(inbox.filter.acting.rows, 1, "the acting filter did not show the triaged row");
+    assert.equal(inbox.filter.acting.pressed, "true");
+    assert.equal(inbox.filter.done.rows, 0, "a status with no rows still painted rows");
+    assert.equal(inbox.filter.done.empty, "No signals match these filters.");
+    assert.equal(inbox.filter.done.emptyLine, null, "the no-match line became the empty-vault line");
+    assert.equal(inbox.filter.done.pressed, "true");
+    assert.equal(inbox.filter.all.rows, expected.seeded.count + 5);
+    assert.equal(inbox.filter.all.pressed, "true");
+    assert.ok(
+      inbox.screenshot.bytes > 20_000,
+      `the triage capture looks empty (${inbox.screenshot.bytes} bytes)`,
+    );
   });
 });

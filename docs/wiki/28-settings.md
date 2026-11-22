@@ -210,9 +210,9 @@ setting is window storage — `localStorage` under `lifequest-composer-send-key`
 so it survives a restart on this machine and does not travel with the vault
 folder.
 
-The choice reaches the chat message box only. Quick Notes and the signal/chain
+The choice reaches the chat message box only. Notebox and the signal/chain
 capture keep logging with plain Enter and breaking the line with Shift+Enter
-whatever is chosen here; see [Quick Notes](./15-quick-notes.md) and
+whatever is chosen here; see [Notebox](./15-quick-notes.md) and
 [Companion](./24-companion.md).
 
 ## Areas

@@ -771,7 +771,7 @@ async function main() {
           : []),
         [
           "New chat",
-          "Quick Notes",
+          "Notebox",
           "Keyboard shortcuts",
           "Chat display settings",
           "Move chat to the left of the page",

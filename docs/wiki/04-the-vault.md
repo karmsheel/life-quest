@@ -74,8 +74,8 @@ vault `name` (a new vault is named `Personal`), and `createdAt`. A vault whose
 | `.lifequest/log.jsonl` | The Life log, one JSON record per line |
 | `.lifequest/decisions/<id>.json` | Pending and decided proposals — the Decisions inbox |
 | `.lifequest/manual-decisions/<id>.json` | Decisions the operator records by hand, kept apart from the approval path |
-| `.lifequest/signal-chain/<id>.json` | Quick Notes captures, one JSON signal per file |
-| `.lifequest/signal-chain/files/<uuid>.<ext>` | Pictures attached to Quick Notes captures (PNG, JPEG, GIF or WebP, up to 8 MB each) |
+| `.lifequest/signal-chain/<id>.json` | Notebox captures, one JSON signal per file |
+| `.lifequest/signal-chain/files/<uuid>.<ext>` | Pictures attached to Notebox captures (PNG, JPEG, GIF or WebP, up to 8 MB each) |
 | `.lifequest/map.json` | The Life Map: years, months, events, tasks and recorded days |
 | `.lifequest/goals.json` | Goal records |
 | `.lifequest/automations.json` | The Automation shelf |
@@ -147,10 +147,10 @@ are written as the features that own them are used.
 | `notes/ideal-state/<id>.md` | Ideal State documents; the id is the filename and the title lives in frontmatter |
 
 **Renamed notes and journals.** The page called Daily Note is now the **Daily Journal** and
-Life-Chain is now **Quick Notes**, but the routes (`/notes`, `/chain`) and the files
+Life-Chain is now **Notebox**, but the routes (`/notes`, `/chain`) and the files
 (`notes/daily/`, `.lifequest/signal-chain/`) did not move. Only the names the operator reads
 changed, so a bookmark, a saved question or an automation still lands where it did. [The
-Daily Journal](./16-daily-journal.md) and [Quick Notes](./15-quick-notes.md) have their own
+Daily Journal](./16-daily-journal.md) and [Notebox](./15-quick-notes.md) have their own
 pages.
 
 ## Prescribed files versus SQLite
@@ -158,8 +158,8 @@ pages.
 Most of the vault is prescribed files — Markdown, JSON and JSONL whose names and locations
 are the product's contract. Doctrine, library documents, reviews, Daily Journal entries,
 pages, decisions, goals, the map, the companion brief, the onboarding record, the Images
-index and board, and the Quick Notes captures' JSON records are all files you can read in a
-text editor. Uploaded pictures, Quick Notes images and chat attachments are real files
+index and board, and the Notebox captures' JSON records are all files you can read in a
+text editor. Uploaded pictures, Notebox images and chat attachments are real files
 beside their records — the bytes are never base64 inside JSON, because the vault must hold
 what you gave it.
 
@@ -185,7 +185,7 @@ LifeQuest also keeps state of its own, outside every vault. On Windows this is
 | Area databases, pages, pins, views | The Pi endpoint, model and provider name (`pi-endpoint.json`) and the Pi API key (`pi-endpoint.key`, sealed by the OS) |
 | Your pictures and chat attachments | Pi's transcripts, grouped by vault (`pi-sessions/<vault id>/`) |
 | `about.md` | Connected-agent pairing secrets (`pairing-secrets/`) |
-| The Life log, decisions, Quick Notes captures, the companion brief, the onboarding record | The OS-encrypted vault secret store (`secrets.json`) and the unsolicited-filing preference (`companion-filing.json`) |
+| The Life log, decisions, Notebox captures, the companion brief, the onboarding record | The OS-encrypted vault secret store (`secrets.json`) and the unsolicited-filing preference (`companion-filing.json`) |
 | | The theme and skin, keyboard bindings and the dock's open tabs, per vault and agent (window local storage) |
 
 That split has consequences worth knowing:
@@ -358,7 +358,7 @@ all; they live in the OS-encrypted secret store, or for Pi in
 - [Getting started](./02-getting-started.md)
 - [The studio](./03-the-studio.md)
 - [Areas](./05-areas.md)
-- [Quick Notes](./15-quick-notes.md)
+- [Notebox](./15-quick-notes.md)
 - [The Daily Journal](./16-daily-journal.md)
 - [Data and databases](./19-data-and-databases.md)
 - [Decisions](./23-decisions.md)

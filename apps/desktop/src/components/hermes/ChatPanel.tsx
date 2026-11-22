@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Inbox,
   Keyboard,
   Link2,
   MessageCircleQuestion,
@@ -32,7 +33,6 @@ import {
   Pin,
   PinOff,
   Plus,
-  Radio,
   SquarePen,
   Type,
   X,
@@ -2069,7 +2069,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
           ) : null}
           {view === "chain" ? (
             <div className="chat-panel__header">
-              <p className="chat-panel__heading">Quick Notes</p>
+              <p className="chat-panel__heading">Notebox</p>
               <div className="chat-panel__header-actions">
                 {focusToggle("chat-panel__icon-btn")}
               </div>
@@ -2421,7 +2421,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             ) : (
               <ul
                 className="chat-panel__chain-list"
-                aria-label="Quick Notes signals"
+                aria-label="Notebox signals"
               >
                 {chainItems.map(signalRow)}
               </ul>
@@ -2964,12 +2964,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Quick Notes"
-              title="Quick Notes"
+              aria-label="Notebox"
+              title="Notebox"
               aria-pressed={view === "chain"}
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >
-              <Radio size={20} aria-hidden />
+              <Inbox size={20} aria-hidden />
             </button>
             {/*
               The keyboard-shortcuts reference, at the head of the trailing

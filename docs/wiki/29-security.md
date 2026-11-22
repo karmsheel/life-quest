@@ -142,7 +142,7 @@ taken: the welcome screen for an open, the editor's error line for a save.
 | General chat attachments | `attachments/files/<uuid>/<name>` | 25 MB; one safe segment; active content (HTML, XHTML, SVG, JS, shell scripts, executables, portables) refused; containment and symlink checks |
 | Images library | `images/files/<uuid>.<ext>`, indexed by `images/library.json` | PNG, JPEG, GIF or WebP sniffed from the bytes; 8 MB; the display name is a label, never a path |
 | Vision board | `images/board.json` | Typed blocks; 1,000 blocks, 2 MB document cap |
-| Quick Notes attachments | `.lifequest/signal-chain/files/<uuid>.<ext>` | One image per capture, same sniff-and-bound rules |
+| Notebox attachments | `.lifequest/signal-chain/files/<uuid>.<ext>` | One image per capture, same sniff-and-bound rules |
 | Finance receipts | the finance area's `data/files/<uuid>/<name>` | Format sniff, 25 MB original, dimension cap, re-encoded model copy |
 
 The attachment store is deliberately vault-level, not an area's: a voice memo
