@@ -165,7 +165,7 @@ const SAMPLE = `(() => {
           shortcutsInStrip: Boolean(document.querySelector(".window-titlebar__shortcuts")),
           themeInTrailing: Boolean(trailing.querySelector(".theme-mode-toggle")),
           // The strip is the day/night control and the gear, nothing else. The
-          // full-screen door rides the dock's own top row now, so a
+          // full-screen door rides the dock's bottom action bar now, so a
           // chat-focus-toggle in this band — or the old main-page toggle
           // anywhere in the strip — is a regression, not an arrangement.
           fullScreenInTrailing: Boolean(trailing.querySelector(".chat-focus-toggle")),

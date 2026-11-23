@@ -743,12 +743,14 @@ async function main() {
       `chip ${JSON.stringify(resting.chip.box)} vs bar ${JSON.stringify(barBox)} padding ${JSON.stringify(barPadding)}`,
     );
     check(
-      "the bar ends at the window's bottom-right corner",
+      "the bar floats inside the dock's bottom-right, not on the window's corner",
       Boolean(barBox) &&
-        barBox.right >= resting.viewport.width - 2 &&
-        barBox.bottom >= resting.viewport.height - 2 &&
-        resting.chip.box.right >= resting.viewport.width - 48 &&
-        resting.chip.box.bottom >= resting.viewport.height - 48,
+        barBox.right <= resting.viewport.width - 4 &&
+        barBox.bottom <= resting.viewport.height - 4 &&
+        resting.viewport.width - barBox.right <= 80 &&
+        resting.viewport.height - barBox.bottom <= 20 &&
+        resting.chip.box.right <= barBox.right - barPadding.right + 1 &&
+        resting.chip.box.bottom <= barBox.bottom - barPadding.bottom + 1,
       `bar ${JSON.stringify(barBox)}, chip ${JSON.stringify(resting.chip.box)}, window ${JSON.stringify(resting.viewport)}`,
     );
     check(
@@ -797,9 +799,13 @@ async function main() {
 
     // ── the words beside the pill ───────────────────────────────────────────
     // A glowing `v0.1.4` is a state without a sentence. The words have to say
-    // what it means, sit inline on the same bar row immediately left of the
-    // pill, and stay a paragraph — a second focus stop in a bar of action
-    // controls with nothing to do would be worse than the glow alone.
+    // what it means, and stay a paragraph — a second focus stop in a bar of
+    // action controls with nothing to do would be worse than the glow alone.
+    //
+    // The bar is the composer box's measure and carries the full-screen door now:
+    // at the shipped dock the card is narrower than the caption's seat, so the
+    // words retire here and the glow is the state. The widened-dock probe below
+    // is where their row is measured; this sample is the shipped width.
     const labelInk = resting.chip.tokens.resolved.accent;
     check(
       "the glow is explained in words",
@@ -807,30 +813,11 @@ async function main() {
       `caption ${JSON.stringify(resting.label?.text)} as <${resting.label?.tag}>`,
     );
     check(
-      "the caption is inline in the same bar row, immediately left of the chip",
-      Boolean(resting.label?.box && resting.chip.box) &&
-        resting.label.inBar === true &&
-        resting.label.nextToChip === true &&
-        resting.label.box.right <= resting.chip.box.left &&
-        resting.chip.box.left - resting.label.box.right <= 24 &&
-        resting.label.box.top < resting.chip.box.bottom &&
-        resting.label.box.bottom > resting.chip.box.top,
-      `caption ${JSON.stringify(resting.label?.box)} vs chip ${JSON.stringify(resting.chip.box)}, in bar ${resting.label?.inBar}, next to chip ${resting.label?.nextToChip}`,
-    );
-    check(
-      "the caption's centre rides the chip's own row",
-      Boolean(resting.label?.box && resting.chip.box) &&
-        Math.abs(
-          (resting.label.box.top + resting.label.box.bottom) / 2 -
-            (resting.chip.box.top + resting.chip.box.bottom) / 2,
-        ) <= 2,
-      `caption centre ${(
-        ((resting.label?.box?.top ?? 0) + (resting.label?.box?.bottom ?? 0)) /
-        2
-      ).toFixed(1)} vs chip centre ${(
-        ((resting.chip?.box?.top ?? 0) + (resting.chip?.box?.bottom ?? 0)) /
-        2
-      ).toFixed(1)}`,
+      "the shipped dock retires the caption rather than squeezing the row",
+      resting.label?.inBar === true &&
+        resting.label?.nextToChip === true &&
+        resting.label?.display === "none",
+      `caption display ${JSON.stringify(resting.label?.display)}, in bar ${resting.label?.inBar}, next to chip ${resting.label?.nextToChip}`,
     );
     check(
       "the caption is text, not a second control",
@@ -844,15 +831,6 @@ async function main() {
       "the caption wears the state ink",
       resting.label?.color === parseColor(labelInk)?.rgb,
       `color ${resting.label?.color} vs --accent ${labelInk}`,
-    );
-    check(
-      "the caption fits inside the bar",
-      (resting.label?.overflow?.scrollWidth ?? 0) <=
-        (resting.label?.overflow?.clientWidth ?? 0) &&
-        Boolean(resting.label?.box && barBox && barPadding) &&
-        resting.label.box.left >= barBox.left + barPadding.left &&
-        resting.label.box.right <= barBox.right - barPadding.right,
-      `scrollWidth ${resting.label?.overflow?.scrollWidth} vs clientWidth ${resting.label?.overflow?.clientWidth}, caption ${JSON.stringify(resting.label?.box)} vs bar ${JSON.stringify(barBox)}`,
     );
 
     // ── the glow ────────────────────────────────────────────────────────────
@@ -892,12 +870,12 @@ async function main() {
         ),
       `layers ${JSON.stringify(layers)}`,
     );
-    // The halo has to fit the room the dock's action bar gives it. The bar runs
-    // to the window's corner and its pane clips at that edge, so a bloom wider
-    // than the slack between the pill and the bar's own edge is sliced off flat,
-    // which reads as a box rather than as light. Measured from the bar's box —
-    // where the bar's trailing padding and the chip's margin are the room — not
-    // from the rail, which no longer contains the chip.
+    // The halo has to fit the room the dock's action bar gives it. The bar is a
+    // card now, floating off the window's corner, and a bloom wider than the
+    // slack between the pill and the card's own edge would still be sliced off
+    // flat, which reads as a box rather than as light. Measured from the bar's
+    // box — where the bar's trailing padding and the chip's margin are the room
+    // — not from the rail, which no longer contains the chip.
     const reach = Math.max(...layers.map((layer) => layer.blur + layer.spread));
     const room =
       barBox && resting.chip.box
@@ -1041,13 +1019,65 @@ async function main() {
     })()`);
     const narrowRestored = await settle(360);
     check(
-      "the dock comes back wide with its caption and chip unchanged",
-      narrowRestored.label?.display !== "none" &&
-        narrowRestored.label?.text === "Update available" &&
-        sameBox(narrowRestored.bar?.box, resting.bar?.box) &&
+      "the dock comes back to the shipped width with its chip unchanged",
+      sameBox(narrowRestored.bar?.box, resting.bar?.box) &&
         sameBox(narrowRestored.chip?.box, resting.chip?.box),
-      `caption ${JSON.stringify(narrowRestored.label)}, bar ${JSON.stringify(narrowRestored.bar?.box)} vs ${JSON.stringify(resting.bar?.box)}, chip ${JSON.stringify(narrowRestored.chip?.box)} vs ${JSON.stringify(resting.chip?.box)}`,
+      `bar ${JSON.stringify(narrowRestored.bar?.box)} vs ${JSON.stringify(resting.bar?.box)}, chip ${JSON.stringify(narrowRestored.chip?.box)} vs ${JSON.stringify(resting.chip?.box)}`,
     );
+    // The shipped dock is narrower than the caption's own seat now that the bar
+    // carries the full-screen door and keeps the composer box's measure: at this
+    // width the caption retreats and the glow is the state. The words still have
+    // to exist for the dock the operator drags wider — the row is a container,
+    // and the caption comes back when the card can hold it.
+    check(
+      "the shipped width retires the caption rather than spilling the row",
+      narrowRestored.captionCount === 1 &&
+        narrowRestored.label?.display === "none" &&
+        narrowRestored.label?.inBar === true,
+      `caption ${JSON.stringify(narrowRestored.label)}, count ${narrowRestored.captionCount}`,
+    );
+    await run(`(() => {
+      document.querySelector(".shell")?.style.setProperty("--chatbar-width", "36rem");
+      return true;
+    })()`);
+    const wideDock = await settle(360);
+    check(
+      "a dock dragged wide brings the caption back on the bar's row",
+      wideDock.captionCount === 1 &&
+        wideDock.label?.display !== "none" &&
+        wideDock.label?.text === "Update available" &&
+        wideDock.label?.inBar === true &&
+        wideDock.label?.nextToChip === true &&
+        Boolean(wideDock.label?.box && wideDock.chip?.box) &&
+        wideDock.label.box.right <= wideDock.chip.box.left &&
+        wideDock.chip.box.left - wideDock.label.box.right <= 24 &&
+        wideDock.label.box.top < wideDock.chip.box.bottom &&
+        wideDock.label.box.bottom > wideDock.chip.box.top &&
+        Math.abs(
+          (wideDock.label.box.top + wideDock.label.box.bottom) / 2 -
+            (wideDock.chip.box.top + wideDock.chip.box.bottom) / 2,
+        ) <= 2,
+      `caption ${JSON.stringify(wideDock.label?.box)} vs chip ${JSON.stringify(wideDock.chip?.box)}`,
+    );
+    check(
+      "the wide bar holds the caption inside its own padding",
+      (wideDock.label?.overflow?.scrollWidth ?? 0) <=
+        (wideDock.label?.overflow?.clientWidth ?? 0) &&
+        Boolean(
+          wideDock.label?.box &&
+            wideDock.bar?.box &&
+            wideDock.bar?.padding &&
+            wideDock.label.box.left >= wideDock.bar.box.left + wideDock.bar.padding.left &&
+            wideDock.label.box.right <=
+              wideDock.bar.box.right - wideDock.bar.padding.right + 0.5,
+        ),
+      `scrollWidth ${wideDock.label?.overflow?.scrollWidth} vs clientWidth ${wideDock.label?.overflow?.clientWidth}, caption ${JSON.stringify(wideDock.label?.box)} vs bar ${JSON.stringify(wideDock.bar?.box)}`,
+    );
+    await run(`(() => {
+      document.querySelector(".shell")?.style.removeProperty("--chatbar-width");
+      return true;
+    })()`);
+    await settle(360);
 
     // ── 2 — the popup ───────────────────────────────────────────────────────
     const clicked = await click(".update-badge");
@@ -1602,11 +1632,8 @@ async function main() {
       previewBar.label?.text === "Update available" &&
         previewBar.label?.dataLabel === "preview" &&
         previewBar.label?.inBar === true &&
-        Boolean(previewBar.label?.box && previewBar.chip?.box) &&
-        previewBar.label.box.right <= previewBar.chip.box.left &&
-        previewBar.label.box.top < previewBar.chip.box.bottom &&
-        previewBar.label.box.bottom > previewBar.chip.box.top,
-      `caption ${JSON.stringify(previewBar.label?.text)} (${previewBar.label?.dataLabel}), box ${JSON.stringify(previewBar.label?.box)}, chip ${JSON.stringify(previewBar.chip?.box)}`,
+        previewBar.label?.nextToChip === true,
+      `caption ${JSON.stringify(previewBar.label?.text)} (${previewBar.label?.dataLabel}), in bar ${previewBar.label?.inBar}, next to chip ${previewBar.label?.nextToChip}`,
     );
     check(
       "the preview glow keeps the feed's answer quiet",
@@ -1746,6 +1773,7 @@ async function main() {
         available: resting,
         narrow,
         narrowRestored,
+        wideDock,
         opened,
         notesOpen,
         installing,

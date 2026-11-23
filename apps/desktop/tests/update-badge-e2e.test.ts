@@ -326,8 +326,9 @@ describe("auto-update badge", () => {
     } = report.states;
 
     // The badge's home is the dock's bottom action bar, not the rail. It is the
-    // bar's last control — after the collapse button — inside the bar's padding
-    // and at the window's bottom-right corner, and it never resizes that bar.
+    // bar's last control — after the collapse button — inside the bar's padding,
+    // and it never resizes that bar. The bar itself is a card floating inside the
+    // dock's bottom-right corner now, keeping the composer box's measure.
     const bar = available.bar;
     assert.ok(bar, "the dock's action bar rendered nothing");
     assert.equal(available.chip?.inBar, true, "the chip left the dock's action bar");
@@ -369,16 +370,16 @@ describe("auto-update badge", () => {
         available.chip.box.bottom <= bar.box.bottom - bar.padding.bottom,
       `the chip spills past the bar's padding: chip ${JSON.stringify(available.chip?.box)}, bar ${JSON.stringify(bar?.box)}, padding ${JSON.stringify(bar?.padding)}`,
     );
-    // The bar reaches the window's bottom-right corner, and the chip holds that
-    // end of it.
+    // The bar floats inside the dock's bottom-right corner — the card keeps the
+    // composer box's width now — and the chip holds the card's trailing end.
     assert.ok(
       bar &&
-        bar.box.right >= available.viewport.width - 2 &&
-        bar.box.bottom >= available.viewport.height - 2 &&
-        (available.chip?.box.right ?? -Infinity) >= available.viewport.width - 48 &&
-        (available.chip?.box.bottom ?? -Infinity) >=
-          available.viewport.height - 48,
-      `the bar or the chip is not at the window's bottom-right corner: bar ${JSON.stringify(bar?.box)}, chip ${JSON.stringify(available.chip?.box)}, window ${JSON.stringify(available.viewport)}`,
+        bar.box.right <= available.viewport.width - 4 &&
+        bar.box.bottom <= available.viewport.height - 4 &&
+        available.viewport.width - bar.box.right <= 80 &&
+        available.viewport.height - bar.box.bottom <= 20 &&
+        (available.chip?.box.right ?? -Infinity) <= bar.box.right - bar.padding.right + 1,
+      `the bar or the chip left the dock's bottom-right card: bar ${JSON.stringify(bar?.box)}, chip ${JSON.stringify(available.chip?.box)}, window ${JSON.stringify(available.viewport)}`,
     );
     // And the chip is shorter than the row it lives in: the bar's height is
     // decided by its action buttons and its padding, never by the badge.
@@ -546,9 +547,11 @@ describe("auto-update badge", () => {
     );
 
     // The caption: a glowing pill is a state without a sentence, so the bar says
-    // what it means — inline on the same row, immediately left of the pill, only
-    // while it is true, and never as a second focus stop in a bar of action
-    // controls.
+    // what it means — the words exist while the offer does, immediately left of
+    // the pill, and never as a second focus stop in a bar of action controls.
+    // The card keeps the composer box's width now, and at the shipped dock that
+    // is narrower than the caption's seat: the words retire here, and the widened
+    // dock below is where they are measured on the row.
     assert.equal(
       available.label?.text,
       "Update available",
@@ -576,36 +579,55 @@ describe("auto-update badge", () => {
       true,
       "the caption is not immediately before the chip in DOM order",
     );
-    // Same row, immediately left: its box overlaps the chip vertically, its right
-    // edge ends at or before the chip's left edge, and the gap between them is
-    // the row's own spacing rather than a second column.
-    assert.ok(
-      available.label?.box &&
-        available.chip?.box &&
-        available.label.box.right <= available.chip.box.left &&
-        available.chip.box.left - available.label.box.right <= 24 &&
-        available.label.box.top < available.chip.box.bottom &&
-        available.label.box.bottom > available.chip.box.top,
-      `the caption is not inline to the chip's left: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
-    );
-    assert.ok(
-      available.label?.box &&
-        available.chip?.box &&
-        Math.abs(
-          (available.label.box.top + available.label.box.bottom) / 2 -
-            (available.chip.box.top + available.chip.box.bottom) / 2,
-        ) <= 2,
-      `the caption does not ride the chip's row: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
-    );
-    assert.ok(
-      (available.label?.overflow.scrollWidth ?? Infinity) <=
-        (available.label?.overflow.clientWidth ?? 0),
-      `the caption bleeds out of the bar: ${JSON.stringify(available.label?.overflow)}`,
+    assert.equal(
+      available.label?.display,
+      "none",
+      `the shipped dock did not retire the caption (display: ${JSON.stringify(available.label?.display)})`,
     );
     assert.equal(
       rgbKey(available.label?.color ?? ""),
       rgbKey(report.glow.resolved.accent),
       `the caption is not wearing the state ink: ${available.label?.color}`,
+    );
+
+    // The caption's row, measured on the dock wide enough to hold it: same row,
+    // immediately left of the chip, its right edge ending before the chip's left
+    // edge, and the gap the row's own spacing rather than a second column.
+    const wide = report.states.wideDock;
+    assert.ok(wide, "the rig never sampled the widened dock");
+    assert.notEqual(
+      wide.label?.display,
+      "none",
+      "the caption did not come back on a wide dock",
+    );
+    assert.equal(
+      wide.label?.text,
+      "Update available",
+      `the wide caption does not read 'Update available' (${JSON.stringify(wide.label?.text)})`,
+    );
+    assert.equal(wide.label?.inBar, true, "the wide caption left the action bar");
+    assert.ok(
+      wide.label?.box &&
+        wide.chip?.box &&
+        wide.label.box.right <= wide.chip.box.left &&
+        wide.chip.box.left - wide.label.box.right <= 24 &&
+        wide.label.box.top < wide.chip.box.bottom &&
+        wide.label.box.bottom > wide.chip.box.top,
+      `the caption is not inline to the chip's left: caption ${JSON.stringify(wide.label?.box)} vs chip ${JSON.stringify(wide.chip?.box)}`,
+    );
+    assert.ok(
+      wide.label?.box &&
+        wide.chip?.box &&
+        Math.abs(
+          (wide.label.box.top + wide.label.box.bottom) / 2 -
+            (wide.chip.box.top + wide.chip.box.bottom) / 2,
+        ) <= 2,
+      `the caption does not ride the chip's row: caption ${JSON.stringify(wide.label?.box)} vs chip ${JSON.stringify(wide.chip?.box)}`,
+    );
+    assert.ok(
+      (wide.label?.overflow.scrollWidth ?? Infinity) <=
+        (wide.label?.overflow.clientWidth ?? 0),
+      `the caption bleeds out of the wide bar: ${JSON.stringify(wide.label?.overflow)}`,
     );
     assert.equal(
       available.chip?.boxShadow,
@@ -734,13 +756,15 @@ describe("auto-update badge", () => {
       "none",
       `the narrow caption's display is ${JSON.stringify(report.narrowGlow.captionDisplay)}`,
     );
-    // ...and the restore leaves the shipped window's states untouched.
+    // ...and the restore leaves the shipped window's states untouched: the card
+    // comes back to its box, and the caption stays retired at the shipped width
+    // (the widened-dock probe above is where its row is measured).
     const narrowRestored = report.states.narrowRestored;
     assert.ok(narrowRestored, "the rig never restored the dock's width");
-    assert.notEqual(
+    assert.equal(
       narrowRestored.label?.display,
       "none",
-      "the caption stayed retired after the dock came back wide",
+      "the shipped dock showed a caption it has no room for",
     );
     assert.equal(
       narrowRestored.label?.text,
@@ -1088,13 +1112,18 @@ describe("auto-update badge", () => {
       "Update available",
       `the preview dropped the caption: ${JSON.stringify(previewBar.label?.text)}`,
     );
-    assert.ok(
-      previewBar.label?.inBar === true &&
-        Boolean(previewBar.label?.box && previewBar.chip?.box) &&
-        previewBar.label.box.right <= previewBar.chip.box.left &&
-        previewBar.label.box.top < previewBar.chip.box.bottom &&
-        previewBar.label.box.bottom > previewBar.chip.box.top,
-      `the preview's caption is not inline to the chip's left: ${JSON.stringify(previewBar.label?.box)} vs ${JSON.stringify(previewBar.chip?.box)}`,
+    // The caption element is the same one the release draws — and at the shipped
+    // dock width the card retires it, exactly as the real offer's does (the
+    // widened-dock probe above is where its row is measured).
+    assert.equal(
+      previewBar.label?.inBar,
+      true,
+      "the preview's caption left the dock's action bar",
+    );
+    assert.equal(
+      previewBar.label?.display,
+      "none",
+      "the preview's shipped-width dock displayed a caption it has no room for",
     );
     assert.equal(
       report.glow.layers.length,

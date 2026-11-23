@@ -16,11 +16,13 @@ vault, the tools that read and write it, the locks, and the
 - The **chat dock** is the right-hand pane of the three-pane studio; the side
   switch in its bottom bar swaps it to the left. It is present on every page,
   collapses to a launcher mark, and its width is dragged with the divider between
-  it and the page. **Full screen chat** at the trailing end of its top row
-  collapses the main page and gives the dock the workspace right of the rail —
-  the rail and its **Chats** list stay — and **Mod+Shift+F** does the same from
-  anywhere. The title bar carries no full-screen control; the dock's top row is
-  the door.
+  it and the page. **Full screen chat** in its bottom action bar, immediately
+  after the **Notebox**, collapses the main page and gives the dock the workspace
+  right of the rail — the rail and its **Chats** list stay — and **Mod+Shift+F**
+  does the same from anywhere. The title bar carries no full-screen control; the
+  dock's bottom action bar is the door. That bar is a card at the composer box's
+  width, inset with a margin on every side and softly rounded, so it never runs
+  wider than the field it belongs to.
 - A vertical **agent switcher** strip stands in the composer's trailing margin: in
   the empty gutter beside the composer when the dock is wide, and just above the
   composer box when the dock is too narrow to hold it. One block per agent this
@@ -169,13 +171,13 @@ vault's own binding.
 9. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable flags on
    that companion, so its other surfaces see them too.
-10. **Give the chat the workspace.** Choose **Full screen chat** at the trailing
-   end of the dock's top row — the tab strip when a tab is drawn, the header row
-   when it is not. The main page collapses, the chat takes the workspace right of
-   the rail, and the rail with its chats list stays; the control now reads **Exit
-   full screen chat**. **Mod+Shift+F** is the shortcut from anywhere; the title
-   bar carries no second door. The mode is session-only — it resets on relaunch,
-   and collapsing the dock leaves it and brings the page back.
+10. **Give the chat the workspace.** Choose **Full screen chat** in the dock's
+   bottom action bar, immediately after the **Notebox**. The main page collapses,
+   the chat takes the workspace right of the rail, and the rail with its chats
+   list stays; the control now reads **Exit full screen chat**. **Mod+Shift+F** is
+   the shortcut from anywhere; the title bar carries no second door. The mode is
+   session-only — it resets on relaunch, and collapsing the dock leaves it and
+   brings the page back.
 
 ### Search and the archive
 
@@ -346,12 +348,12 @@ the arrangement you left; leaving full-screen chat gives back the split.
 |---|---|
 | Agent switcher (composer's trailing margin) | A vertical strip of the agents this vault has, offered in this area; the active one is ringed, a switch in flight is marked pending. It stands in the composer's right-hand gutter on a wide dock, and rides just above the composer box on a narrow one. |
 | Chats list (rail) | **New chat**; search; **View options**; one list with pinned chats first and archived rows under **Show archived**/ **Only archived**; each row leads with its chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon, then the chat's name and time; hover archive and pin; **Chat actions** menu. |
-| Tab strip | One tab per open chat, pinned chats as fixed squares at the head (no close control on a square), each chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon at the start of its name, and a close **×**. The tabs shrink to about three characters of the name and then an ellipsis, after which the strip scrolls sideways (the wheel or its thin scrollbar), with **+** immediately after the last tab and **Full screen chat** at its trailing end. |
-| Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
+| Tab strip | One tab per open chat, pinned chats as fixed squares at the head (no close control on a square), each chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon at the start of its name, and a close **×**. The tabs shrink to about three characters of the name and then an ellipsis, after which the strip scrolls sideways (the wheel or its thin scrollbar), with **+** immediately after the last tab; the strip itself carries no controls of its own. |
+| Bottom-bar toggle | **Full screen chat** / **Exit full screen chat** in the dock's bottom action bar, immediately after the **Notebox**: collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
-| Dock actions | **New chat**, **Notebox**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
+| Dock actions | A card at the composer box's width — floating just inside the dock with a margin on every side and softly rounded, in the split dock and in full screen alike — holding **New chat**, **Notebox**, **Full screen chat** / **Exit full screen chat**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour
 

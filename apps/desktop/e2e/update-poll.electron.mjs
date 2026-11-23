@@ -47,9 +47,11 @@
  *  4. The watch's news never reaches the renderer, so a release published while
  *     the app runs is invisible.
  *  5. The news arrives but the badge does not turn state: no
- *     `.update-badge--available`, the wrong `data-update-version`, or no caption.
+ *     `.update-badge--available`, the wrong `data-update-version`, or no caption
+ *     (in the bar, even if the shipped dock's card retires the words).
  *  6. The caption is not the bar's own element immediately before the badge, or
- *     the badge stops being the bar's trailing control.
+ *     the badge stops being the bar's trailing control, or a widened dock does
+ *     not bring the words back.
  *  7. The same release on later ticks raises a second surface — an alert, a
  *     dialog, a notice, or a second caption — instead of the badge simply
  *     staying on.
@@ -686,13 +688,18 @@ async function main() {
     arrived.dialog === null && arrived.alertCount === 0,
     `dialog ${JSON.stringify(arrived.dialog)}, alerts ${arrived.alertCount}`,
   );
+  // The action bar is the composer box's measure now, and it carries the
+  // full-screen door as well: at the shipped dock width the card retires the
+  // caption and the glow is the state. The words still have to exist, in the
+  // bar, immediately before the chip — and the widened-dock probe below proves
+  // they still come back when the card has room for them.
   check(
     "the offer puts a caption immediately before the build number",
     arrived.captionCount === 1 &&
       arrived.caption?.text === CAPTION_TEXT &&
       arrived.caption?.inBar === true &&
       arrived.caption?.immediatelyBeforeBadge === true &&
-      arrived.caption?.visible === true,
+      arrived.caption?.display === "none",
     `caption ${JSON.stringify(arrived.caption)} (count ${arrived.captionCount})`,
   );
   check(
@@ -703,7 +710,7 @@ async function main() {
     `badge ${JSON.stringify(arrived.badge?.box)}, bar controls ${JSON.stringify(arrived.bar?.controls)}`,
   );
   // The shipped screen, as the handover points at it: the glowing build number
-  // in the dock's own action bar, caption beside it.
+  // in the dock's own action bar.
   states.badgeScreenshot = await shoot("update-poll-badge.png");
   check(
     "the badge's picture is a real capture",
@@ -712,6 +719,30 @@ async function main() {
       states.badgeScreenshot.height > 0,
     `screenshot ${JSON.stringify(states.badgeScreenshot)}`,
   );
+
+  // The caption's own seat: a dock dragged wider is what brings the words back.
+  // The operator's seam drag is the same inline width the probe writes; the
+  // probe restores it so every later state is the shipped window again.
+  stage = "a wider dock shows the caption";
+  await run(`(() => {
+    document.querySelector(".shell")?.style.setProperty("--chatbar-width", "36rem");
+    return true;
+  })()`);
+  const arrivedWide = await sample();
+  states.arrivedWide = arrivedWide;
+  check(
+    "a wider dock brings the caption back beside the chip",
+    arrivedWide.captionCount === 1 &&
+      arrivedWide.caption?.display !== "none" &&
+      arrivedWide.caption?.text === CAPTION_TEXT &&
+      arrivedWide.caption?.inBar === true &&
+      arrivedWide.caption?.immediatelyBeforeBadge === true,
+    `caption ${JSON.stringify(arrivedWide.caption)}, bar ${JSON.stringify(arrivedWide.bar?.box)}`,
+  );
+  await run(`(() => {
+    document.querySelector(".shell")?.style.removeProperty("--chatbar-width");
+    return true;
+  })()`);
 
   stage = "wait for later ticks";
   // ── 4 — the same release on later ticks raises nothing new ────────────────

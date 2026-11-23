@@ -38,7 +38,8 @@
  *     is a reflow, not a state.
  * 16. The pill is not the bar's trailing control — it is not the last control in
  *     `.chat-panel__actions`, or it sits left of the collapse button instead of
- *     holding the window's bottom-right corner.
+ *     holding the card's own trailing end. The bar is a rounded card floating in
+ *     the dock's bottom-right, not a band on the window's corner.
  * 17. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
  *     else leaves the operator to guess. The words must sit inline in the same
  *     bar row, immediately left of the pill, stay a paragraph rather than a

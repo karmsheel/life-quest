@@ -129,7 +129,7 @@ const SAMPLE = `(() => {
   const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
   // The titlebar carries no chat control at all now: the side switch and the
   // collapse left for the dock's bottom bar, and the full-screen door it once
-  // kept as its one exception is the dock's own top-row control. The SAMPLE
+  // kept as its one exception is in that bar too, beside the Notebox. The SAMPLE
   // keeps every one of those facts so the assertions can say "here" and "not
   // there" rather than only one.
   const staleTitlebar = {
@@ -538,10 +538,9 @@ function checkArrangement(label, state, side) {
 /**
  * Where the controls live. The titlebar's trailing cluster is the day/night
  * control and the settings menu, and nothing else: no chat side switch,
- * collapse or full-screen door rides the drag band any more — the door is the
- * dock's own top-row control now — and the dock's bottom action bar carries the
- * side switch immediately before the collapse it belongs with, in the order the
- * bar ships.
+ * collapse or full-screen door rides the drag band any more — the door is in the
+ * dock's bottom action bar now — and that bar carries the side switch
+ * immediately before the collapse it belongs with, in the order the bar ships.
  */
 function checkControls(label, state, side) {
   const controls = state.trailing?.controls ?? [];
@@ -554,8 +553,8 @@ function checkControls(label, state, side) {
   // The titlebar's trailing cluster is the day/night control and the settings
   // menu. The keyboard-shortcuts control, like the chat controls that left
   // before it — the side switch, the collapse and the full-screen door — now
-  // lives in the dock's own bar or top row; a stale copy anywhere in the strip
-  // is the regression this guards, because a "contained" control is not a
+  // lives in the dock's own bottom action bar; a stale copy anywhere in the
+  // strip is the regression this guards, because a "contained" control is not a
   // correctly placed one.
   const expectedTrailing = [
     "theme-mode-toggle",
@@ -628,29 +627,31 @@ function checkControls(label, state, side) {
   );
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
-  // slot, the chain, then the trailing trio — the shortcuts reference, the side
+  // slot, the chain and the full-screen door in the leading group, then the
+  // trailing group — the shortcuts reference, the reading settings, the side
   // switch and the way out. "Chat history" left the bar with the list surface,
   // so its return is a stale slot rather than a shipped one.
   const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
   check(
-    `${label}: the bar carries its five actions in order`,
+    `${label}: the bar carries its seven actions in order`,
     same(barLabels, [
       "New chat",
       "Notebox",
+      "Full screen chat",
       "Keyboard shortcuts",
+      "Chat display settings",
       expectedSwitchLabel,
       "Collapse chat",
     ]),
     `bar ${JSON.stringify(barLabels)}`,
   );
   check(
-    `${label}: the shortcuts control sits immediately before the switch`,
+    `${label}: the shortcuts control leads the bar's trailing group`,
     state.shortcutsAction?.found === true &&
       state.shortcutsAction?.label === "Keyboard shortcuts" &&
       state.shortcutsAction?.icon === "lucide-keyboard" &&
       Boolean(state.shortcutsAction?.box && state.sideSwitch?.box) &&
       state.shortcutsAction.box.right < state.sideSwitch.box.left &&
-      state.sideSwitch.box.left - state.shortcutsAction.box.right <= 8 &&
       Boolean(state.actions?.box) &&
       state.shortcutsAction.box.top >= state.actions.box.top &&
       state.shortcutsAction.box.bottom <= state.actions.box.bottom,

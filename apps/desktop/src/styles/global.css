@@ -795,14 +795,24 @@ a {
 
 /* A conversation is read, not stretched: with the page gone the dock can be most
    of a wide window, so the transcript and the composer sit in a centred measure
-   instead of running the full width of the glass. The tab strip, the name row
-   and the bottom action bar stay full width — they are chrome, and they are where
-   the doors are. */
+   instead of running the full width of the glass. The tab strip and the name row
+   stay full width — they are the chats, and they lead the dock. The bottom action
+   bar is not chrome across the glass: it keeps the composer box's own measure,
+   which is what this rule gives it below, so a door never floats off on its own
+   wider than the field it belongs to. */
 .shell--chat-focus .chat-panel__body,
 .shell--chat-focus .chat-panel__footer {
   width: 100%;
   max-width: 56rem;
   margin-inline: auto;
+}
+
+/* The action bar follows the composer box into the readable measure: the footer
+   is the 56rem band, and the box inside it sits one composer gutter in from each
+   edge. The bar takes the same two gutters off that band's width, which lines its
+   border up with the composer box's border rather than with the window. */
+.shell--chat-focus .chat-panel__actions {
+  max-width: calc(56rem - 2 * var(--composer-gutter));
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
@@ -9097,21 +9107,32 @@ button.chat-panel__activity-line:hover {
   container-name: composer-band;
 }
 
-/* Bottom chrome of the bar: the dock's own actions, shared by both views. A
-   sibling band of the composer footer, with the hairline and the fill that
-   separate them, so the two read as stacked rows of one column rather than a
-   single mixed strip. It wears `--titlebar-bg`, the same fill as the window
-   strip above the dock, so the bar is capped top and bottom by one material. */
+/* The dock's bottom chrome: the action bar, shared by every surface. It is a
+   card inside the column rather than a full-width band under it: its width is
+   the composer box's width, its fill is the window strip's `--titlebar-bg`, and a
+   margin on every side lifts it off the dock's edges so it reads as one rounded
+   piece of chrome instead of a second floor. The hairline is on all four sides
+   for the same reason — a card needs its whole outline; the band it replaced only
+   needed the line that divided it from the composer.
+
+   The measure is the composer's, not the dock's: the footer reserves
+   `--composer-gutter` on each side for the field, and the bar takes exactly that
+   much off its own width and centres itself. Dragging the dock wide therefore
+   widens the composer and the bar together, and the bar never reaches past the
+   field's edge — while the dock's floor keeps the padding's own 12px. */
 .chat-panel__actions {
   display: flex;
   align-items: center;
   /* One step tighter than the dock's other gaps on purpose: the bar is the one
-     row that has to hold five navigation controls, the update caption and the
+     row that has to hold six navigation controls, the update caption and the
      build number inside the dock's narrowest practical width. */
   gap: 0.2rem;
   flex-shrink: 0;
+  width: calc(100% - 2 * var(--composer-gutter));
+  margin: 0.3rem auto 0.6rem;
   padding: 0.35rem 0.5rem;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
   /* Deliberately NOT the composer's accent. The composer's accent is its own
      field's border, two elements up; this is neutral chrome below it. */
   background: var(--titlebar-bg);
@@ -9122,8 +9143,13 @@ button.chat-panel__activity-line:hover {
 }
 
 /* Larger than the thread header's utilities (1.75rem/16px): the bar is primary
-   navigation and carries one action per slot, the header holds per-chat trivia. */
+   navigation and carries one action per slot, the header holds per-chat trivia.
+   The slots may give up width down to an icon-sized target — the dock's floor
+   squeezes the bar's row, and a control that spilled out of the card would be
+   worse than one a few pixels narrower. */
 .chat-panel__action {
+  flex: 0 1 auto;
+  min-width: 1.75rem;
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.45rem;
@@ -13300,25 +13326,6 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's trailing corner: the full-screen door, and nothing else. It sticks
- * to the band's trailing edge, so a strip with more tabs than the dock is wide
- * still ends with the way to the whole workspace; the dock's canvas behind it
- * keeps a tab sliding under it from showing through. The plus is not in here: it
- * travels with the tabs, directly after the last one.
- */
-.chat-panel__tabs-trailing {
-  position: sticky;
-  right: 0;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding-left: 0.3rem;
-  background: var(--background);
-}
-
-/*
  * The strip's own door to a new chat: the browser's plus, set directly after the
  * last tab in the strip's flow — where the next tab will appear — rather than on
  * the band's trailing edge. It opens a conversation, it does not represent one,
@@ -13344,14 +13351,6 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-new:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
-}
-
-/* The strip's full-screen door, sized to the band rather than to the header's
-   utility row: 1.6rem, the same mark as the plus beside the tabs. */
-.chat-panel__tab-focus {
-  width: 1.6rem;
-  height: 1.6rem;
-  color: var(--muted);
 }
 
 /*

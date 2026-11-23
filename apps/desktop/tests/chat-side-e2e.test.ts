@@ -405,7 +405,9 @@ describe("chat dock side switch", () => {
       [
         "New chat",
         "Notebox",
+        "Full screen chat",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ],
@@ -442,13 +444,15 @@ describe("chat dock side switch", () => {
     );
     const shortcutsBox = right.shortcutsAction?.box;
     assert.ok(switchBox && shortcutsBox, "the shortcuts action or the switch was not found");
+    // The reading-settings link sits between the shortcuts reference and the
+    // side switch in the shipped order; the shortcuts control still leads the
+    // bar's trailing group, before the switch.
     assert.equal(
       shortcutsBox.right < switchBox.left &&
-        switchBox.left - shortcutsBox.right <= 8 &&
         shortcutsBox.top >= (right.actions?.box.top ?? 0) &&
         shortcutsBox.bottom <= (right.actions?.box.bottom ?? 0),
       true,
-      `the shortcuts action does not sit immediately before the switch (${JSON.stringify(shortcutsBox)} vs ${JSON.stringify(switchBox)})`,
+      `the shortcuts action does not lead the trailing group before the switch (${JSON.stringify(shortcutsBox)} vs ${JSON.stringify(switchBox)})`,
     );
     assert.equal(
       right.collapseAction?.icon,
@@ -598,7 +602,9 @@ describe("chat dock side switch", () => {
       [
         "New chat",
         "Notebox",
+        "Full screen chat",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the right of the page",
         "Collapse chat",
       ],
@@ -896,7 +902,9 @@ describe("chat dock side switch", () => {
       [
         "New chat",
         "Notebox",
+        "Full screen chat",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ],

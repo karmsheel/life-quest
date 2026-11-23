@@ -20,16 +20,16 @@ routes:
   centred on the strip, between the rail's column and the trailing controls; on
   the welcome and companion screens the tab is absent. The trailing cluster is
   the day/night control and the **Settings** gear; full-screen chat's door is
-  the dock's own top row, not the strip.
+  the dock's bottom action bar, beside the Notebox, not the strip.
 - The **rail** is the leading column of the shell grid. Its wing band and the
   active wing's pages sit under the title bar, and its foot holds the **Log** and
   the **vault chip**.
 - The **main pane** begins directly under the title bar. It has no band of its
   own; the page is the column.
 - The **chat dock** is the trailing column, or the middle column when you swap
-  sides. **Full screen chat** at the trailing end of its top row collapses the
-  main page and gives the dock the workspace to the right of the rail; the rail
-  and its chats list stay.
+  sides. **Full screen chat** in its bottom action bar, immediately after the
+  **Notebox**, collapses the main page and gives the dock the workspace to the
+  right of the rail; the rail and its chats list stay.
 - **Settings** (`/settings?tab=<id>`) and **Decisions** (`/decisions`) are sheets
   over the page, not pages of their own.
 
@@ -92,9 +92,9 @@ settings sheet instead of a smaller menu.
    page* / *Move chat to the right of the page*). The rail never moves; the dock
    and the page trade columns. The switch carries no pressed state — it names the
    move, not a mode.
-8. **Go full screen with the chat.** Press **Full screen chat** at the trailing
-   end of the dock's top row — the tab strip when one is drawn, the header row
-   otherwise. The main page collapses, the chat takes the workspace right of the
+8. **Go full screen with the chat.** Press **Full screen chat** in the dock's
+   bottom action bar, next to the **Notebox** icon. The main page collapses, the
+   chat takes the workspace right of the
    rail, and the rail with its **Chats** list stays; the control now reads **Exit
    full screen chat**. **Mod+Shift+F** toggles the same mode from anywhere. The
    mode is session state, not a preference:
@@ -129,7 +129,7 @@ The window title bar:
   **Settings** gear, which is a plain link to the settings sheet. The gear has no
   popover and no expanded state — one press opens the whole sheet over the page
   you were on. There is no full-screen chat control in the strip: that door is
-  the dock's own top row, with **Mod+Shift+F** as the shortcut.
+  the dock's bottom action bar, with **Mod+Shift+F** as the shortcut.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -228,11 +228,14 @@ The chat dock:
   live rows; **Only archived** shows the archive alone. An archived row is
   restorable from its own menu but never openable, and the dock's own tab strip
   stays live-only.
-- The dock's **top row** — the tab strip when one is drawn, the header row
-  otherwise — ends in **Full screen chat** / **Exit full screen chat**. Choosing
-  it collapses the main page and gives the dock the workspace right of the rail;
+- The dock's **bottom action bar** leads with **New chat**, the **Notebox** and
+  **Full screen chat** / **Exit full screen chat**. Choosing the last collapses
+  the main page and gives the dock the workspace right of the rail;
   **Mod+Shift+F** does the same from anywhere. It is the window's only
-  full-screen control, and it is drawn pressed while the mode is on.
+  full-screen control, and it is drawn pressed while the mode is on. The bar is a
+  card that keeps the composer box's width — it never reaches past the field it
+  belongs to — floating with a margin on every side and softly rounded, in the
+  split dock and in full screen alike.
 - The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
   The history is not a dock surface: the whole chat list lives in the rail's
   **Chats** section.
@@ -248,12 +251,15 @@ The chat dock:
   The message text keeps the same margins: the transcript's content box is the
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.
-- The dock's bottom action bar under the composer, in order: **New chat**,
-  **Notebox**, **Keyboard shortcuts** (opens the reference as a dock
-  surface), **Chat display settings** (opens Settings → **Chat display**), the
-  two-panes side switch, **Collapse chat**, and the version badge (**Check for
-  updates**), which glows and gains **Update available** when a release is
-  offered.
+- The dock's bottom action bar under the composer: a card at the composer box's
+  width, floating with a margin on every side and softly rounded, so it never runs
+  wider than the field it belongs to — in the split dock and in full screen alike.
+  In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
+  chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
+  display settings** (opens Settings → **Chat display**), the two-panes side
+  switch, **Collapse chat**, and the version badge (**Check for updates**), which
+  glows when a release is offered and gains **Update available** when the dock is
+  wide enough for the words.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 

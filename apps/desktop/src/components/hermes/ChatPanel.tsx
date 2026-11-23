@@ -786,8 +786,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * `.chat-panel__tabs`). A tab that opened off the right edge would be in front
    * but invisible — the operator would have a chat on screen and no tab to find
    * it by — so every change of the front tab or the strip walks it back into the
-   * visible band, and no further. The trailing full-screen control sticks to
-   * that edge, so the band ends where the control begins.
+   * visible band, and no further. Nothing rides the band's trailing edge any
+   * more: the plus travels with the tabs, so the whole band is tabs.
    */
   useEffect(() => {
     const strip = tabsRef.current;
@@ -797,17 +797,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       `[data-tab-id="${CSS.escape(sessionId)}"]`,
     );
     if (!tab) return;
-    const trailing = strip.querySelector<HTMLElement>(
-      ".chat-panel__tabs-trailing",
-    );
-    const rightInset = trailing ? trailing.getBoundingClientRect().width : 0;
     const port = strip.getBoundingClientRect();
     const box = tab.getBoundingClientRect();
     const gap = 8;
     if (box.left < port.left) {
       strip.scrollLeft -= port.left - box.left + gap;
-    } else if (box.right > port.right - rightInset) {
-      strip.scrollLeft += box.right - (port.right - rightInset) + gap;
+    } else if (box.right > port.right) {
+      strip.scrollLeft += box.right - port.right + gap;
     }
   }, [sessionId, orderedTabIds, view, open]);
 
@@ -1875,22 +1871,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     ),
   } as CSSProperties;
 
-  /*
-    The dock's own full-screen door. It is drawn at the trailing end of the top
-    row — the tab strip when the thread has one, the header row on the chain and
-    shortcuts surfaces and on a thread with no tab yet — so the control is always
-    one click away whichever surface of the dock is in front. The class differs
-    only in size: the strip's band is tighter than a header row.
-  */
-  const focusToggle = (className: string) => (
-    <ChatFocusToggle
-      className={className}
-      testId="chat-fullscreen"
-      offLabel="Full screen chat"
-      onLabel="Exit full screen chat"
-    />
-  );
-
   return (
     <aside
       ref={panelRef}
@@ -2044,8 +2024,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 in miniature — the same store action, the same one-blank-at-a-
                 time rule — and it sits in the tab flow directly after the last
                 tab, where the next tab will appear, rather than parked on the
-                band's trailing edge. The strip's slack falls after the plus;
-                the full-screen door keeps the corner.
+                band's trailing edge. The strip's slack falls after the plus: the
+                strip is the chats, and the full-screen door lives in the bottom
+                action bar, where the dock keeps its other chrome.
               */}
               <button
                 type="button"
@@ -2056,23 +2037,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               >
                 <Plus size={13} aria-hidden />
               </button>
-              {/*
-                The strip's trailing corner: the way to the whole workspace. It
-                sticks to the band's trailing edge while the strip scrolls — a
-                full strip must not hide that door — and it is the only mark in
-                the strip that does so now that the plus travels with the tabs.
-              */}
-              <div className="chat-panel__tabs-trailing">
-                {focusToggle("chat-panel__icon-btn chat-panel__tab-focus")}
-              </div>
             </div>
           ) : null}
           {view === "chain" ? (
             <div className="chat-panel__header">
               <p className="chat-panel__heading">Notebox</p>
-              <div className="chat-panel__header-actions">
-                {focusToggle("chat-panel__icon-btn")}
-              </div>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -2104,7 +2073,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 >
                   <Pencil size={16} aria-hidden />
                 </Link>
-                {focusToggle("chat-panel__icon-btn")}
               </div>
             </div>
           ) : (
@@ -2167,15 +2135,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </span>
                 </button>
               )}
-              {/*
-                A thread with no tab draws no strip, so the full-screen door
-                moves down into the name row rather than disappearing; a thread
-                with a tab keeps it in the strip above, where the operator's
-                pointer already is for the tabs themselves.
-              */}
-              <div className="chat-panel__header-actions">
-                {tabIds.length === 0 ? focusToggle("chat-panel__icon-btn") : null}
-              </div>
             </div>
           )}
           {/*
@@ -2947,9 +2906,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             The dock's own actions, pinned to the bottom of the bar and shared by
             every surface. The bar leads with the new-chat slot: the whole
             history lives in the sidebar, so this bar does not carry a second
-            entry point to it. The chain is the dock's second way into the
-            Life-Chain, alongside the rail's, and the side-switch and collapse
-            controls trail the group at the bar's far right.
+            entry point to it. The full-screen door follows it, beside the chain
+            (the Notebox): the mode is a way of reading the chat, and the bar is
+            the dock's one piece of chrome every surface shares, so this is where
+            the control can always be found — whichever surface is in front. The
+            side-switch and collapse controls trail the group at the bar's far
+            right.
           */}
           <nav className="chat-panel__actions" aria-label="Dock actions">
             <button
@@ -2971,6 +2933,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             >
               <Inbox size={20} aria-hidden />
             </button>
+            {/*
+              The full-screen door sits with the chain in the bar's leading
+              group: both are ways of changing what the dock shows, and the bar
+              is shared by every surface — so a thread with no tab, the chain and
+              the shortcuts reference all keep the same door in the same place.
+              The component carries its own words and its own arrow-pair, and it
+              is the window's one door to the mode (Mod+Shift+F is the shortcut).
+            */}
+            <ChatFocusToggle
+              className="chat-panel__icon-btn chat-panel__action"
+              testId="chat-fullscreen"
+              offLabel="Full screen chat"
+              onLabel="Exit full screen chat"
+              iconSize={20}
+            />
             {/*
               The keyboard-shortcuts reference, at the head of the trailing
               group and beside the switch it now shares the corner with: it is a

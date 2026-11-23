@@ -240,9 +240,9 @@ const SAMPLE = `(() => {
   // instead of assumed. The strip's scroll geometry is reported with it: a
   // browser-like band keeps a tab floor and overflows sideways, so whether the
   // tabs fit, how far the band travels and where it is currently scrolled are
-  // the facts the claims are about. The sticky trailing corner (the full-screen
-  // door) covers the band's trailing edge, so it is measured too: a tab "in
-  // view" ends before it.
+  // the facts the claims are about. Nothing rides the band's trailing edge now
+  // that the full-screen door moved to the bottom action bar: the whole band is
+  // tabs, and the plus travels with them.
   const tabStrip = document.querySelector(".chat-panel__tabs");
   const tabNew = document.querySelector(".chat-panel__tab-new");
   const tabMenu = document.querySelector(".chat-panel__tab-menu");
@@ -371,17 +371,7 @@ const SAMPLE = `(() => {
           scrollLeft: Math.round(tabStrip.scrollLeft),
           scrollWidth: Math.round(tabStrip.scrollWidth),
           clientWidth: Math.round(tabStrip.clientWidth),
-          overflow: tabStrip.scrollWidth > tabStrip.clientWidth + 1,
-          // The sticky trailing corner: the visible band ends where it begins,
-          // so "in view" is a box that ends before this control's width.
-          trailing: (() => {
-            const el = tabStrip.querySelector(".chat-panel__tabs-trailing");
-            if (!el) return null;
-            return {
-              box: box(el),
-              width: Math.round(el.getBoundingClientRect().width * 10) / 10
-            };
-          })()
+          overflow: tabStrip.scrollWidth > tabStrip.clientWidth + 1
         }
       : null,
     // The thread's name row: the strip leads the dock, so its bottom edge is
@@ -2960,7 +2950,7 @@ async function main() {
     mark("tab-strip-wheel");
 
     // 28 — the tab in front is always in the band: a chat appended at the far end
-    // is scrolled into view, ending before the sticky full-screen corner. Without
+    // is scrolled into view, ending inside the strip's own visible band. Without
     // the scroll, the operator has a conversation on screen and no tab to find it
     // by.
     const resetStrip = await scrollStripTo(0);
@@ -2986,19 +2976,16 @@ async function main() {
         tabs: revealed.tabs.map((tab) => [tab.label, tab.active]),
       }),
     );
-    const revealInset = revealed.strip?.trailing?.width ?? 0;
     check(
       "the tab in front is scrolled into the strip's visible band",
       Boolean(revealed.strip && revealedFront?.box) &&
-        revealInset > 0 &&
         revealed.strip.scrollLeft > 0 &&
         revealedFront.box.left >= revealed.strip.box.left - 1 &&
-        revealedFront.box.right <= revealed.strip.box.right - revealInset + 1,
+        revealedFront.box.right <= revealed.strip.box.right + 1,
       JSON.stringify({
         front: revealedFront?.box,
         strip: revealed.strip?.box,
         scrollLeft: revealed.strip?.scrollLeft,
-        trailing: revealed.strip?.trailing,
       }),
     );
     screenshots.push(await shot("tab-scrolled-into-view"));

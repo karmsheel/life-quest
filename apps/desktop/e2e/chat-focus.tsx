@@ -5,12 +5,13 @@
  * This is a system-in-isolation rig, so the ways it can fail are written down
  * before the assertions:
  *
- *  1. **No door.** The dock's top row carries no full-screen control, so the
- *     operator has no way in from the conversation.
- *  2. **A door in the wrong place.** The dock control is not the trailing item
- *     of the top row after the new-chat plus — a control that merely exists is
- *     not a control an operator finds. The window strip must not grow a second
- *     door either: its trailing cluster is the day/night control and the gear,
+ *  1. **No door.** The dock's bottom action bar carries no full-screen control,
+ *     so the operator has no way in from the conversation.
+ *  2. **A door in the wrong place.** The dock control is not the slot
+ *     immediately after the Notebox in the bar's leading group — a control that
+ *     merely exists is not a control an operator finds. The top row (tab strip
+ *     and header) must carry no copy either, and the window strip must not grow
+ *     a second door: its trailing cluster is the day/night control and the gear,
  *     and nothing in it opens the mode.
  *  3. **A dead click.** Pressing the dock's door changes nothing on screen.
  *  4. **The main pane is still painted.** The shell class flips but the page is
@@ -24,7 +25,9 @@
  *     tray: it holds the window's leading edge in the mode.
  *  8. **The dock's own content is stretched edge to edge.** The transcript and
  *     the composer band have to keep a readable measure — `max-width: 56rem`,
- *     centred — while the tab strip, header and bottom bar stay full width.
+ *     centred — while the tab strip and header stay full width. The bottom
+ *     action bar is a card at the composer box's measure, inset with a margin on
+ *     every side and softly rounded; a bar wider than the field is the defect.
  *  9. **The way out is not exact.** Closing the mode has to put the shell, the
  *     page and the dock back on the very boxes the run started from.
  * 10. **Collapsing the dock while in the mode leaves the mode stuck.** The
@@ -48,10 +51,10 @@
  * — is shipping code.
  *
  * The dock seeds one **pinned** stub chat. A pinned chat is a tab on every
- * launch, so the strip is drawn without opening anything and the dock's
- * top-row control has a row to live in. The shortcut table is read off clean
- * localStorage: a binding left behind by a neighbouring rig would decide which
- * key the mode answers to.
+ * launch, so the strip is drawn without opening anything and the strip's
+ * "no door here" claim has a row to be measured against. The shortcut table is
+ * read off clean localStorage: a binding left behind by a neighbouring rig would
+ * decide which key the mode answers to.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";

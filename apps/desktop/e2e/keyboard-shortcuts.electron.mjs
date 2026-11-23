@@ -345,7 +345,7 @@ const SAMPLE = `(() => {
     titlebar: {
       trailing: trailingChildren,
       // The strip's trailing cluster is the day/night control and the gear. The
-      // full-screen door rides the dock's own top row now, so a
+      // full-screen door rides the dock's bottom action bar now, so a
       // chat-focus-toggle in this band — or the retired main-page toggle
       // anywhere in the strip — is a regression, not an arrangement.
       fullScreenInTrailing: Boolean(
@@ -772,6 +772,7 @@ async function main() {
         [
           "New chat",
           "Notebox",
+          "Full screen chat",
           "Keyboard shortcuts",
           "Chat display settings",
           "Move chat to the left of the page",

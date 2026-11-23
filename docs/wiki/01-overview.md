@@ -144,9 +144,10 @@ bottom bar, not at the foot of the rail.
 
 The chat dock holds the companion. Its strip carries the open chats as tabs,
 pinned chats as squares, and a **+** for a new tab; a vertical agent switcher
-names which companion answers; the bottom bar leads with **New chat**, **Quick
-Notes**, the **Keyboard shortcuts** reference, the side switch, **Collapse chat**
-and the version badge. See [Companion](./24-companion.md).
+names which companion answers; the bottom bar is a card at the composer box's
+width that leads with **New chat**, **Notebox**, **Full screen chat**, the
+**Keyboard shortcuts** reference, the side switch, **Collapse chat** and the
+version badge. See [Companion](./24-companion.md).
 
 ## Rules and behaviour
 

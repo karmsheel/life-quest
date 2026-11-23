@@ -95,6 +95,7 @@ type Report = {
     launch: Sample & { feedRequests: number };
     subscribed: string;
     arrived: Sample;
+    arrivedWide: Sample;
     repeated: Sample;
     failedReads: Sample;
     afterFailures: { ok: boolean; decision?: { state: string; latest?: string } };
@@ -265,8 +266,11 @@ describe("update watch", () => {
       OFFERED,
       `the glowing build number names ${states.arrived.badge?.dataVersion}, not ${OFFERED}`,
     );
-    // The caption is the element immediately before the badge, in the bar, and
-    // on screen: the glow's sentence is the replacement for the removed card.
+    // The caption is the element immediately before the badge, in the bar: the
+    // glow's sentence is the replacement for the removed card. The card keeps the
+    // composer box's width now, and at the shipped dock that is narrower than the
+    // caption's seat — the words retire there, and the widened-dock sample below
+    // is where they are measured on screen.
     assert.equal(states.arrived.captionCount, 1, "the offer drew no caption");
     assert.ok(states.arrived.caption, "the offer drew no caption beside the badge");
     assert.equal(
@@ -285,9 +289,35 @@ describe("update watch", () => {
       "the caption is not immediately before the build number",
     );
     assert.equal(
-      states.arrived.caption?.visible,
+      states.arrived.caption?.display,
+      "none",
+      "the shipped dock displayed a caption it has no room for",
+    );
+    assert.equal(
+      states.arrivedWide.captionCount,
+      1,
+      "the widened dock drew no caption",
+    );
+    assert.ok(states.arrivedWide.caption, "the widened dock drew no caption beside the badge");
+    assert.equal(
+      states.arrivedWide.caption?.text,
+      CAPTION_TEXT,
+      `the wide caption reads ${JSON.stringify(states.arrivedWide.caption?.text)}`,
+    );
+    assert.notEqual(
+      states.arrivedWide.caption?.display,
+      "none",
+      "the widened dock kept the caption retired",
+    );
+    assert.equal(
+      states.arrivedWide.caption?.inBar,
       true,
-      "the caption was rendered but not visible at the shipped window width",
+      "the wide caption left the dock's action bar",
+    );
+    assert.equal(
+      states.arrivedWide.caption?.immediatelyBeforeBadge,
+      true,
+      "the wide caption is not immediately before the build number",
     );
     assert.equal(
       states.arrived.badge?.lastControlInBar,

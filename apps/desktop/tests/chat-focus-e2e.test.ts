@@ -46,6 +46,42 @@ type ControlState = {
   visibility?: string;
 };
 
+/** The dock's bottom action bar: the card the mode's door lives in. */
+type BarState = {
+  className: string;
+  box: Box;
+  width: string;
+  maxWidth: string;
+  marginTop: number;
+  marginRight: number;
+  marginBottom: number;
+  marginLeft: number;
+  borderRadius: string;
+  border: { top: number; right: number; bottom: number; left: number };
+  paddingLeft: number;
+  paddingRight: number;
+  paddingTop: number;
+  paddingBottom: number;
+  background: string;
+  overflow: { scrollWidth: number; clientWidth: number };
+  containsControl: boolean;
+  controlIndex: number;
+  noteboxIndex: number;
+  noteboxBox: Box | null;
+  newChatBox: Box | null;
+  shortcutsBox: Box | null;
+  labels: (string | null)[];
+  children: {
+    classes: string;
+    label: string | null;
+    box: Box;
+    inside: boolean;
+  }[];
+};
+
+/** The composer box: the measure the action bar has to keep. */
+type ComposerBoxState = { box: Box; maxWidth: string; width: string } | null;
+
 /** The window strip: the shipped pair, and the duplicate that must not return. */
 type StripState = {
   present: boolean;
@@ -106,19 +142,16 @@ type FocusState = {
   divider: { present: boolean; box: Box | null };
   dockControl: ControlState;
   strip: StripState;
+  bar: BarState;
+  composerBox: ComposerBoxState;
+  topRowCopy: { tabs: number; header: number };
   topRow: {
     className: string;
     isTabs: boolean;
     isHeader: boolean;
     box: Box;
-    controlIsTrailing: boolean;
-    trailingGap: number | null;
-    lastTabBox: Box | null;
-    plusBox: Box | null;
-    plusInTrailingGroup: boolean;
-    plusAfterLastTab: boolean;
-    plusGap: number | null;
-    afterPlus: boolean;
+    holdsControl: boolean;
+    fullScreenControls: number;
     children: { classes: string; box: Box; holdsControl: boolean }[];
   } | null;
   cluster: {
@@ -171,6 +204,8 @@ type Report = {
   sideLeftFocused: FocusState;
   sideLeftRestored: FocusState;
   finalRestored: FocusState;
+  narrowDock: FocusState;
+  narrowRestored: FocusState;
   scenarios: Scenario[];
   screenshots: string[];
 };
@@ -280,8 +315,10 @@ function assertStrip(label: string, state: FocusState) {
 }
 
 /**
- * The mode's one door: the dock's top-row control. The strip is checked for the
- * duplicate that used to sit there.
+ * The mode's one door: the dock's bottom action bar. Placement is asserted (the
+ * slot immediately after the Notebox), the card's measure against the composer
+ * box, and the top row's negative — neither the strip nor the header carries a
+ * copy any more.
  */
 function assertDoors(label: string, state: FocusState, focused: boolean) {
   const expectedLabel = focused ? "Exit full screen chat" : "Full screen chat";
@@ -289,11 +326,19 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
   const expectedPressed = focused ? "true" : "false";
 
   const dock = state.dockControl;
-  assert.equal(dock.found, true, `${label}: the dock's top row has no full-screen control`);
+  const bar = state.bar;
+  const chat = state.chat?.box;
+  const composerBox = state.composerBox?.box;
+  assert.equal(dock.found, true, `${label}: the dock's bottom bar has no full-screen control`);
   assert.match(
     String(dock.classes ?? ""),
     /chat-focus-toggle/,
     `${label}: the dock control is not marked chat-focus-toggle (${dock.classes})`,
+  );
+  assert.match(
+    String(dock.classes ?? ""),
+    /chat-panel__action/,
+    `${label}: the dock control is not one of the bar's action slots (${dock.classes})`,
   );
   assert.equal(
     dock.label,
@@ -316,43 +361,109 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     `${label}: the dock control wears the wrong icon (${dock.icon})`,
   );
 
-  // The top row is the tab strip here (the harness seeds a pinned chat): the plus
-  // follows the last tab in the strip's flow, and the full-screen control holds
-  // the band's trailing corner after it.
-  const topRow = state.topRow;
-  assert.ok(topRow, `${label}: the dock has no top row`);
+  // The bar's leading group, in DOM order and on screen: New chat, the Notebox,
+  // then the door. "Next to the Notebox" is the slot immediately after it.
+  assert.ok(bar, `${label}: the dock has no bottom action bar`);
   assert.equal(
-    topRow.isTabs,
+    bar.containsControl,
     true,
-    `${label}: the dock's top row is not the tab strip (${topRow.className})`,
+    `${label}: the door is not inside the bottom action bar`,
   );
   assert.equal(
-    topRow.controlIsTrailing,
-    true,
-    `${label}: the dock control is not the trailing item of the top row (${JSON.stringify(topRow.children)})`,
+    bar.controlIndex,
+    bar.noteboxIndex + 1,
+    `${label}: the door is not the slot immediately after the Notebox (control ${bar.controlIndex}, Notebox ${bar.noteboxIndex}; slots ${JSON.stringify(bar.labels)})`,
   );
   assert.ok(
-    topRow.lastTabBox !== null && topRow.plusBox !== null,
-    `${label}: the strip did not report a last tab and the plus (${JSON.stringify({ lastTab: topRow.lastTabBox, plus: topRow.plusBox })})`,
-  );
-  assert.equal(
-    topRow.plusAfterLastTab,
-    true,
-    `${label}: the new-chat plus is not after the last tab (${JSON.stringify({ lastTab: topRow.lastTabBox, plus: topRow.plusBox })})`,
+    bar.noteboxBox !== null && dock.box,
+    `${label}: the door or the Notebox was not measured`,
   );
   assert.ok(
-    topRow.plusGap !== null && topRow.plusGap >= 0 && topRow.plusGap <= 12,
-    `${label}: the new-chat plus is not immediately after the last tab (${topRow.plusGap}px)`,
+    bar.noteboxBox.right <= dock.box.left &&
+      dock.box.left - bar.noteboxBox.right <= 8,
+    `${label}: the door does not sit next to the Notebox (${bar.noteboxBox.right}px vs ${dock.box.left}px)`,
+  );
+  assert.ok(
+    bar.newChatBox !== null &&
+      bar.shortcutsBox !== null &&
+      bar.newChatBox.left < bar.noteboxBox.left &&
+      dock.box.right < bar.shortcutsBox.left,
+    `${label}: the door left the bar's leading group (${JSON.stringify({ newChat: bar.newChatBox, door: dock.box, shortcuts: bar.shortcutsBox })})`,
+  );
+
+  // The top row is not a door any more.
+  assert.equal(
+    state.topRowCopy.tabs,
+    0,
+    `${label}: the tab strip carries a full-screen control again`,
   );
   assert.equal(
-    topRow.plusInTrailingGroup,
+    state.topRowCopy.header,
+    0,
+    `${label}: a header row carries a full-screen control again`,
+  );
+  assert.equal(
+    state.topRow?.holdsControl,
     false,
-    `${label}: the new-chat plus is parked in the strip's trailing corner again`,
+    `${label}: the top row still contains the full-screen control`,
   );
   assert.equal(
-    topRow.afterPlus,
+    state.topRow?.isTabs,
     true,
-    `${label}: the dock control does not stand after the new-chat plus (${JSON.stringify({ plus: topRow.plusBox, control: state.dockControl.box })})`,
+    `${label}: the dock's top row is not the tab strip (${state.topRow?.className})`,
+  );
+
+  // The card: the composer box's own measure, floating inside the dock with a
+  // margin on every side and the composer's soft corner.
+  assert.ok(chat, `${label}: the dock has no box to measure the bar against`);
+  assert.ok(composerBox, `${label}: the composer box was not found`);
+  assert.ok(
+    near(bar.box.width, composerBox.width) &&
+      near(bar.box.left, composerBox.left) &&
+      near(bar.box.right, composerBox.right),
+    `${label}: the bar does not keep the composer box's measure (${JSON.stringify(bar.box)} vs ${JSON.stringify(composerBox)})`,
+  );
+  assert.ok(
+    bar.box.left >= chat.left + 4 && bar.box.right <= chat.right - 4,
+    `${label}: the bar reaches past the dock's edges (${JSON.stringify(bar.box)} in ${JSON.stringify(chat)})`,
+  );
+  assert.ok(
+    bar.box.top > (state.measure.footer?.box.bottom ?? bar.box.top) &&
+      bar.box.bottom < chat.bottom &&
+      chat.bottom - bar.box.bottom >= 4,
+    `${label}: the bar does not float with a margin on every side (${JSON.stringify(bar.box)}, composer band ${JSON.stringify(state.measure.footer?.box)})`,
+  );
+  assert.equal(
+    bar.border.top,
+    1,
+    `${label}: the bar has no top hairline (${bar.border.top})`,
+  );
+  assert.equal(
+    bar.border.right,
+    1,
+    `${label}: the bar has no right hairline (${bar.border.right})`,
+  );
+  assert.equal(
+    bar.border.bottom,
+    1,
+    `${label}: the bar has no bottom hairline (${bar.border.bottom})`,
+  );
+  assert.equal(
+    bar.border.left,
+    1,
+    `${label}: the bar has no left hairline (${bar.border.left})`,
+  );
+  assert.ok(
+    parseFloat(bar.borderRadius) > 2,
+    `${label}: the bar's corners are not rounded (${bar.borderRadius})`,
+  );
+  assert.ok(
+    bar.overflow.scrollWidth <= bar.overflow.clientWidth + 1,
+    `${label}: the bar's row overflows its card (${JSON.stringify(bar.overflow)})`,
+  );
+  assert.ok(
+    bar.children.every((child) => child.inside),
+    `${label}: a control spills out of the bar's card (${JSON.stringify(bar.children)})`,
   );
 
   assertStrip(label, state);
@@ -441,7 +552,6 @@ function assertFocused(label: string, state: FocusState, base: FocusState) {
   for (const [name, rect] of [
     ["tab strip", state.content.tabs],
     ["header", state.content.header],
-    ["bottom action bar", state.content.actions],
   ] as const) {
     assert.ok(rect, `${label}: the dock does not draw its ${name}`);
     assert.ok(
@@ -449,6 +559,16 @@ function assertFocused(label: string, state: FocusState, base: FocusState) {
       `${label}: the ${name} is not full width (${rect.box.width}px vs ${chat.box.width}px)`,
     );
   }
+  // The action bar is not chrome across the glass: it follows the composer box
+  // into the readable measure.
+  assert.ok(state.composerBox, `${label}: the composer box was not found in the mode`);
+  assert.ok(
+    near(state.bar.box.width, state.composerBox.box.width) &&
+      near(state.bar.box.left, state.composerBox.box.left) &&
+      near(state.bar.box.right, state.composerBox.box.right) &&
+      state.bar.box.width < chat.box.width - 8,
+    `${label}: the action bar does not follow the composer box's measure (${JSON.stringify(state.bar.box)} vs ${JSON.stringify(state.composerBox.box)} in ${JSON.stringify(chat.box)})`,
+  );
 
   // The readable measure: width 100%, max-width 56rem, centred.
   for (const [name, measure] of [
@@ -529,6 +649,16 @@ function assertRestored(label: string, before: FocusState, after: FocusState) {
     after.owners,
     before.owners,
     `${label}: the panes are not painted where they started`,
+  );
+  assert.deepEqual(
+    after.bar?.box,
+    before.bar?.box,
+    `${label}: the action bar card did not come back`,
+  );
+  assert.deepEqual(
+    after.composerBox?.box,
+    before.composerBox?.box,
+    `${label}: the composer box did not come back`,
   );
   assert.equal(
     after.dockControl.label,
@@ -793,6 +923,15 @@ describe("full-screen chat", () => {
     assertRestored("rail restore", report.initial, report.railRestored);
     assertRestored("final", report.initial, report.finalRestored);
     assertDoors("final", report.finalRestored, false);
+    // The card at the dock's floor: the row still fits inside its own edge, and
+    // the width comes back cleanly when the drag is released.
+    assertDoors("narrow dock", report.narrowDock, false);
+    assert.ok(
+      (report.narrowDock.chat?.box.width ?? Number.POSITIVE_INFINITY) <= 312,
+      `the narrow-dock probe did not reach the 300px floor (${JSON.stringify(report.narrowDock.chat?.box)})`,
+    );
+    assertRestored("narrow restore", report.initial, report.narrowRestored);
+    assertDoors("narrow restore", report.narrowRestored, false);
 
     // —— Collapsing the dock while in the mode clears it. ——
     assertCollapsedExit("collapse while focused", report.collapsedFromFocus);

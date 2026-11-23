@@ -2,9 +2,9 @@
 
 LifeQuest tells you when a newer release exists, without installing anything you
 did not ask for. The build number lives in the chat dock's bottom bar: quiet text
-while you are current, a glowing chip with **Update available** beside it when
-GitHub names something newer — including a release that lands while you are
-working. Clicking the chip opens the one dialog that offers to download the
+while you are current, a glowing chip when GitHub names something newer —
+including a release that lands while you are working — with **Update available**
+beside it when the dock is wide enough for the words. Clicking the chip opens the one dialog that offers to download the
 installer, hand it to Windows, and step aside so it can replace the app. See also
 [Wiki home](./index.md).
 
@@ -13,10 +13,12 @@ installer, hand it to Windows, and step aside so it can replace the app. See als
 - The version badge (`v0.3.3`) sits at the trailing end of the chat dock's bottom
   action bar, after **Collapse chat**. The bar's accessible name is "Dock
   actions".
-- When an update is available, a small **Update available** line appears beside
-  the number and the number gains the accent glow. On a dock too narrow to hold
-  the words the caption gives way and the glow alone is the signal; the shipped
-  dock width keeps both.
+- When an update is available, the number gains the accent glow and, when the
+  action-bar card has room for it, a small **Update available** line appears
+  beside the number. The shipped dock is narrower than the caption's seat now
+  that the bar keeps the composer box's width and carries the full-screen door:
+  at that width the glow alone is the signal, and dragging the dock wider brings
+  the words back.
 - There is no in-window notice, card or toast: the glowing chip is the app's own
   surface for news, and a native notification covers the case where the window is
   not focused.
@@ -54,9 +56,9 @@ byte moves.
 
 1. Main reads the feed on its hourly clock. A release it has not seen before
    turns the dock's build number into the glowing chip: the number gains the
-   accent glow and an **Update available** caption appears beside it — "LifeQuest
-   0.3.4 is available" lives in the chip's own tooltip and dialog. Nothing covers
-   the page and nothing takes the focus.
+   accent glow and, when the dock is wide enough, an **Update available** caption
+   appears beside it — "LifeQuest 0.3.4 is available" lives in the chip's own
+   tooltip and dialog. Nothing covers the page and nothing takes the focus.
 2. Click the glowing number to open the dialog on the offer already in hand.
 3. If the window is not focused, main also raises a native notification —
    **LifeQuest 0.3.4 is available**, "Open LifeQuest to download and install it."
@@ -122,7 +124,7 @@ makes when a release carries no Windows installer.
 
 | Part | What it does |
 |---|---|
-| **Update available** | Quiet label beside the build number, shown only while an offer (or the preview) is up. |
+| **Update available** | Quiet label beside the build number, shown while an offer (or the preview) is up and the action-bar card has room for the words. |
 | Version number | `v0.3.3`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.4 is available". Glows only when there is something to install. |
 | Native notification | Title **LifeQuest 0.3.4 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |

@@ -132,7 +132,7 @@ type Tab = {
   box: Box | null;
 };
 
-/** The dock's tab band: its box, its sideways travel, and its sticky corner. */
+/** The dock's tab band: its box, its sideways travel, and its scroll geometry. */
 type Strip = {
   box: Box | null;
   scrollLeft: number;
@@ -140,8 +140,6 @@ type Strip = {
   clientWidth: number;
   /** The band has more tabs than fit: it must scroll, not squeeze past the floor. */
   overflow: boolean;
-  /** The sticky full-screen control covering the band's trailing edge. */
-  trailing: { box: Box | null; width: number } | null;
 };
 
 /** The wheel over the strip, as the driver's own dispatch measured it. */
@@ -1827,8 +1825,9 @@ describe("chat dock tabs and sidebar chats", () => {
     );
 
     // The tab in front is walked into the band: a chat appended at the far end is
-    // in front, and its tab ends inside the strip's visible edge — before the
-    // sticky full-screen corner, which covers that edge.
+    // in front, and its tab ends inside the strip's visible edge. Nothing rides
+    // that edge any more — the full-screen door is in the bottom action bar — so
+    // the band is tabs all the way to its own trailing edge.
     const revealedFront = revealed.tabs.find((tab) => tab.active) ?? null;
     assert.equal(
       revealed.tabCount,
@@ -1842,11 +1841,6 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.notEqual(revealed.strip, null, "the reveal state drew no tab strip");
     assert.notEqual(revealedFront?.box, null, "the tab in front has no box to measure");
-    const revealInset = revealed.strip?.trailing?.width ?? 0;
-    assert.ok(
-      revealInset > 0,
-      "the strip has no sticky trailing full-screen corner to inset the visible band by",
-    );
     assert.ok(
       (revealed.strip?.scrollLeft ?? 0) > 0,
       `the strip did not scroll to reach the appended tab (scrollLeft ${revealed.strip?.scrollLeft})`,
@@ -1858,8 +1852,8 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.ok(
       (revealedFront?.box?.right ?? Number.POSITIVE_INFINITY) <=
-        (revealed.strip?.box?.right ?? Number.NEGATIVE_INFINITY) - revealInset + 1,
-      `the tab in front runs under the sticky full-screen corner instead of ending inside the visible band: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}, corner ${revealInset}px`,
+        (revealed.strip?.box?.right ?? Number.NEGATIVE_INFINITY) + 1,
+      `the tab in front runs past the strip's visible edge instead of ending inside the band: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}`,
     );
 
     // The write path a page uses to start a task chat: the created chat's tab

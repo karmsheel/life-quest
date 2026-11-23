@@ -157,7 +157,8 @@ Full detail: [Notebox](./15-quick-notes.md).
    the dock when the sheet closes, or close the sheet with its cross, the scrim
    or Escape to come back to the page where you left it.
 5. To read the answer with the page out of the way, choose **Full screen chat**
-   at the trailing end of the dock's top row (or press **Mod+Shift+F**): the main
+   in the dock's bottom action bar, next to the **Notebox** (or press
+   **Mod+Shift+F**): the main
    page collapses and the chat takes the workspace right of the rail.
    **Exit full screen chat** brings the split back.
 
