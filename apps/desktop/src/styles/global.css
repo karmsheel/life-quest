@@ -13975,6 +13975,44 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-md);
 }
 
+/* The bare area lens: no dock pill and no inner `.ui-segmented` frame — the
+   rows are the whole control. Both layers are stripped because the pill is not
+   one frame: `.chrome-dock` draws the filled rounded container and
+   `.domain-switcher__tabs` draws a second hairline and `--bg-subtle` fill inside
+   it, so stripping only the dock still leaves a rounded box on screen. The
+   corner insets (right/bottom 1.25rem) are the placement rules' and stay. */
+.chrome-dock[data-chrome-frame="bare"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* With the container gone each row needs its own surface so the names read as
+   rows rather than as ink on the scene. `:not(.is-active):not(:hover)` is
+   load-bearing: the base hover fill, the `.is-active` fill/border/shadow and
+   the `[aria-checked="true"]` fill must keep winning, so the selected row still
+   reads as selected and hover still answers. */
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs .ui-segmented__option:not(.is-active):not(:hover) {
+  background: var(--bg-elevated);
+}
+
+/* The rail's column is already the surface, so only the inner frame goes. */
+.nav-rail__lens[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
 .window-titlebar__leading--wings {
   display: flex;
   align-items: center;

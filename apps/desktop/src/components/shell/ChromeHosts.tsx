@@ -50,6 +50,7 @@ export function ChromeHosts() {
           className="chrome-dock chrome-dock--bottom"
           data-chrome-slot="domain"
           data-chrome-place="bottom-center"
+          data-chrome-frame={chrome.domainSwitcher.frame}
         >
           <DomainSwitcher variant={chrome.domainSwitcher.variant} />
         </div>
@@ -60,6 +61,7 @@ export function ChromeHosts() {
           className="chrome-dock chrome-dock--floating"
           data-chrome-slot="domain"
           data-chrome-place="floating-bottom-right"
+          data-chrome-frame={chrome.domainSwitcher.frame}
         >
           <DomainSwitcher variant={chrome.domainSwitcher.variant} />
         </div>
