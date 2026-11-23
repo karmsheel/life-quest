@@ -101,6 +101,37 @@ type Select = {
   options: { value: string; label: string }[];
 };
 
+type Box = { left: number; top: number; width: number; height: number };
+
+/** The box's area readout: the lens it files under, and no control of its own. */
+type ComposerArea = {
+  present: boolean;
+  tag?: string;
+  value?: string | null;
+  slug?: string;
+  title?: string | null;
+  controls?: number;
+};
+
+/** The band's area: a readout of the domain picker, holding no control. */
+type AreaReadout = {
+  present: boolean;
+  tag?: string;
+  value?: string | null;
+  slug?: string;
+  title?: string | null;
+  controls?: number;
+  box?: Box;
+};
+
+/** One inbox filter: the picker's options, the applied value, its geometry. */
+type FilterControl = Select & {
+  present: boolean;
+  testid: string;
+  tag: string | null;
+  box: Box;
+};
+
 /** One fixture seed, with the labels the contract says its row must paint. */
 type InboxExpectedSeed = {
   id: string;
@@ -150,9 +181,18 @@ type InboxCheck = {
     priorityLabels: string[];
     projectOptions: string[];
     projectLabels: string[];
-    filterStatus: string[];
-    filterDomain: string[];
-    filterProject: string[];
+    filterStatus: FilterControl;
+    filterProject: FilterControl;
+    filterArea: AreaReadout;
+    filterAreaSelect: boolean;
+    filterLayout: {
+      band: Box;
+      labels: string[];
+      fields: Box[];
+      buttons: number;
+      selects: number;
+      readouts: number;
+    };
   };
   triage: {
     targetId: string | null;
@@ -174,14 +214,14 @@ type InboxCheck = {
     listReadsAfter: number;
   };
   filter: {
-    acting: { rows: number; pressed: string | null };
+    acting: { rows: number; value: string | null };
     done: {
       rows: number;
       empty: string | null;
       emptyLine: string | null;
-      pressed: string | null;
+      value: string | null;
     };
-    all: { rows: number; pressed: string | null };
+    all: { rows: number; value: string | null };
   };
   screenshot: { name: string; bytes: number };
 };
@@ -302,6 +342,19 @@ type Report = {
       screenshots: { name: string; bytes: number }[];
     };
     inbox: InboxCheck;
+    lens: {
+      area: { slug: string; name: string } | null;
+      before: ComposerArea;
+      lensed: ComposerArea;
+      filterBefore: AreaReadout;
+      filterLensed: AreaReadout;
+      create: Create | null;
+      row: Row | null;
+      after: ComposerArea;
+      filterAfter: AreaReadout;
+      lensWrites: (string | null)[];
+      screenshot: { name: string; bytes: number };
+    };
   };
 };
 
@@ -425,6 +478,11 @@ describe("Notebox page — general capture", () => {
     assert.equal(checks.textCapture.create.body, "line one\nline two");
     assert.equal(checks.textCapture.create.attachment, null);
     assert.equal(checks.textCapture.row.attachment, "text");
+    assert.equal(
+      checks.textCapture.create.domainSlug,
+      null,
+      "the Life lens did not file the capture in Life (general)",
+    );
     assert.match(checks.textCapture.row.body ?? "", /line one/);
 
     // The drop became a decoded pending thumbnail, and the capture carried bytes.
@@ -586,6 +644,36 @@ describe("Notebox page — general capture", () => {
     assert.equal(checks.dock.seededLink?.href, expected.seeded.linkUrl);
     assert.equal(checks.dock.seededLink?.target, "_blank");
 
+    // The box files under the area lens at the top, not under a picker of its
+    // own: the Life lens is the general area, and switching the lens moves both
+    // the readout and the area the bridge is handed.
+    const lens = checks.lens;
+    assert.equal(lens.before.present, true);
+    assert.equal(lens.before.value, "Life (general)");
+    assert.equal(lens.before.slug, "");
+    assert.equal(lens.before.controls, 0, "the box still holds its own area control");
+    assert.ok(lens.area, "the fixture offers no area to switch to");
+    assert.equal(lens.lensed.value, lens.area?.name);
+    assert.equal(lens.lensed.slug, lens.area?.slug);
+    assert.ok(
+      lens.lensWrites.includes(lens.area?.slug ?? null),
+      `the lens was never written: ${JSON.stringify(lens.lensWrites)}`,
+    );
+    assert.equal(lens.create?.domainSlug, lens.area?.slug);
+    assert.equal(lens.row?.dataDomainSlug, lens.area?.slug);
+    assert.equal(lens.row?.domain, lens.area?.name);
+    assert.equal(lens.after.value, "Life (general)");
+    assert.equal(lens.after.slug, "");
+    // The band's readout names the same lens, in both directions.
+    assert.equal(lens.filterBefore.value, "Life (general)");
+    assert.equal(lens.filterBefore.slug, "");
+    assert.equal(lens.filterBefore.controls, 0);
+    assert.equal(lens.filterLensed.value, lens.area?.name);
+    assert.equal(lens.filterLensed.slug, lens.area?.slug);
+    assert.equal(lens.filterAfter.value, "Life (general)");
+    assert.equal(lens.filterAfter.slug, "");
+    assert.ok(lens.screenshot.bytes > 20_000, "the area capture looks empty");
+
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
     assert.equal(checks.final.rows, expected.seeded.count + 5);
     assert.equal(checks.final.creates, 5);
@@ -597,11 +685,13 @@ describe("Notebox page — general capture", () => {
     );
     assert.equal(checks.final.route, "/chain");
 
-    // ── the inbox: a triage select changes an item's status on screen ──────
-    // The renderer contract fixes the attributes, chips, selects and filter
-    // chips; the driver read them off the live DOM and made one triage gesture
-    // through the operator's own select. These assertions refuse a report where
-    // the page echoed its own state, mislabelled a row, or never re-read.
+    // ── the inbox: three filter drop-downs on one line ─────────────────────
+    // The renderer contract fixes the attributes, labels, row selects and the
+    // three filter pickers; the driver read them off the live DOM, made one
+    // triage gesture through the operator's own select, then picked values on
+    // the status filter. These assertions refuse a report where the filters
+    // went back to rows of pills, the page echoed its own state, mislabelled a
+    // row, or never re-read.
     const inbox = checks.inbox;
     assert.equal(inbox.rows.length, expected.seeded.count);
     assert.deepEqual(
@@ -628,25 +718,120 @@ describe("Notebox page — general capture", () => {
         inbox.controls.projectLabels.includes("Reading list"),
       `the project select labels are ${JSON.stringify(inbox.controls.projectLabels)}`,
     );
-    assert.ok(
-      inbox.controls.filterStatus.includes("signal-filter-status-all") &&
-        inbox.controls.filterStatus.includes("signal-filter-status-done"),
-      `the status filter buttons are ${JSON.stringify(inbox.controls.filterStatus)}`,
+
+    // The three filters are pickers, not chip rows: All plus the contract's
+    // values, each holding the applied value in its own control.
+    assert.equal(
+      inbox.controls.filterStatus?.tag,
+      "SELECT",
+      "the status filter is not a drop-down",
     );
     assert.deepEqual(
-      [...inbox.controls.filterProject].sort(),
+      inbox.controls.filterStatus.options.map((option) => option.value),
+      ["all", "inbox", "triaged", "acting", "done", "dropped"],
+      "the status filter does not offer All and the five stored values",
+    );
+    assert.deepEqual(
+      inbox.controls.filterStatus.options.map((option) => option.label),
+      ["All", "Inbox", "Triaged", "Acting", "Done", "Dropped"],
+      "the status filter labels are not the contract's",
+    );
+    assert.equal(
+      inbox.controls.filterStatus.value,
+      "all",
+      "the status filter does not start on All",
+    );
+    // The area stopped being a filter: the domain picker at the top is the one
+    // area filter, and the band only names it — no control, no options.
+    assert.equal(
+      inbox.controls.filterArea?.tag,
+      "SPAN",
+      "the band's area is still a control",
+    );
+    assert.equal(inbox.controls.filterArea?.value, "Life (general)");
+    assert.equal(inbox.controls.filterArea?.slug, "");
+    assert.equal(
+      inbox.controls.filterArea?.controls,
+      0,
+      "the band's area readout holds a control",
+    );
+    assert.equal(
+      inbox.controls.filterAreaSelect,
+      false,
+      "the old area filter picker is still on the page",
+    );
+    assert.equal(
+      inbox.controls.filterProject?.tag,
+      "SELECT",
+      "the project filter is not a drop-down",
+    );
+    assert.deepEqual(
+      [...inbox.controls.filterProject.options.map((option) => option.value)].sort(),
       [
-        "signal-filter-project-a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
-        "signal-filter-project-all",
-        "signal-filter-project-b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+        "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+        "all",
+        "b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
       ].sort(),
-      "the project filter is not All plus one chip per live project",
+      "the project filter is not All plus one option per live project",
+    );
+
+    // Measured: the two pickers and the area readout share one line, the band
+    // is one compact row, and no chip buttons or extra pickers are left in it.
+    const filterLayout = inbox.controls.filterLayout;
+    assert.equal(
+      filterLayout.fields.length,
+      3,
+      "the filter band does not hold three fields",
+    );
+    // Mixed heights are fine (two pickers, one readout): the line is proven by
+    // the fields' centres agreeing, not by their top edges.
+    const fieldCentres = filterLayout.fields.map(
+      (field) => field.top + field.height / 2,
+    );
+    for (const centre of fieldCentres) {
+      assert.ok(
+        Math.abs(centre - fieldCentres[0]) <= 1,
+        `a filter field sits on its own line: ${JSON.stringify(filterLayout.fields)}`,
+      );
+    }
+    assert.equal(
+      inbox.controls.filterProject.box.top,
+      inbox.controls.filterStatus.box.top,
+      "the two filter pickers do not share a line",
+    );
+    assert.equal(filterLayout.selects, 2, "the band is not two pickers");
+    assert.equal(filterLayout.readouts, 1, "the band does not hold one readout");
+    assert.ok(
+      filterLayout.band.height <= 56,
+      `the filter band is ${filterLayout.band.height}px tall, not one compact row`,
+    );
+    assert.equal(
+      filterLayout.buttons,
+      0,
+      "the filter band still contains chip buttons",
+    );
+    assert.deepEqual(filterLayout.labels, ["Status", "Project", "Area"]);
+    // The Area readout is the row's right end: the last field in the band, and
+    // to the right of the project picker.
+    assert.equal(
+      inbox.controls.filterArea.box?.left,
+      filterLayout.fields[2]?.left,
+      "the Area readout is not the band's last field",
     );
     assert.ok(
-      inbox.controls.filterDomain.includes("signal-filter-domain-all") &&
-        inbox.controls.filterDomain.includes("signal-filter-domain-none") &&
-        inbox.controls.filterDomain.includes("signal-filter-domain-health"),
-      `the domain filter buttons are ${JSON.stringify(inbox.controls.filterDomain)}`,
+      (inbox.controls.filterArea.box?.left ?? 0) >
+        (inbox.controls.filterProject.box.left ?? 0),
+      "the Area readout is not to the right of the project picker",
+    );
+    // It is pushed against the band's right edge, not just last in a
+    // left-packed row: the gap is the band's own padding, not free space.
+    const areaBox = inbox.controls.filterArea.box;
+    const band = filterLayout.band;
+    assert.ok(areaBox, "the Area readout has no box");
+    const areaRightGap = band.left + band.width - (areaBox.left + areaBox.width);
+    assert.ok(
+      areaRightGap >= 0 && areaRightGap <= 14,
+      `the Area readout is ${areaRightGap}px from the band's right edge`,
     );
 
     // Each seeded row: stored value on the row, contract label beside it.
@@ -684,7 +869,7 @@ describe("Notebox page — general capture", () => {
     // says so, and the seeded fixture's source text is on its row.
     const unassigned = inbox.rows.find((row) => row.dataDomainSlug === "");
     assert.ok(unassigned, "no unassigned seeded row on the page");
-    assert.equal(unassigned?.domain, "Unassigned");
+    assert.equal(unassigned?.domain, "Life (general)");
     assert.equal(unassigned?.project, "No project");
     assert.equal(unassigned?.capturedFrom, "Chrome — AI tab group");
     const filed = inbox.rows.find(
@@ -722,15 +907,15 @@ describe("Notebox page — general capture", () => {
       `the chain was not re-read after the triage (${inbox.triage.listReadsBefore} reads)`,
     );
 
-    // The filter chips narrow, say there is no match, and restore the chain.
+    // The status filter narrows, says there is no match, and restores the chain.
     assert.equal(inbox.filter.acting.rows, 1, "the acting filter did not show the triaged row");
-    assert.equal(inbox.filter.acting.pressed, "true");
+    assert.equal(inbox.filter.acting.value, "acting");
     assert.equal(inbox.filter.done.rows, 0, "a status with no rows still painted rows");
     assert.equal(inbox.filter.done.empty, "No signals match these filters.");
     assert.equal(inbox.filter.done.emptyLine, null, "the no-match line became the empty-vault line");
-    assert.equal(inbox.filter.done.pressed, "true");
+    assert.equal(inbox.filter.done.value, "done");
     assert.equal(inbox.filter.all.rows, expected.seeded.count + 5);
-    assert.equal(inbox.filter.all.pressed, "true");
+    assert.equal(inbox.filter.all.value, "all");
     assert.ok(
       inbox.screenshot.bytes > 20_000,
       `the triage capture looks empty (${inbox.screenshot.bytes} bytes)`,
