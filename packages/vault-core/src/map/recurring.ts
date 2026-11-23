@@ -176,9 +176,10 @@ export type RecurringState = "paused" | "overdue" | "today" | "this-week" | "lat
 /**
  * Which window a record falls in for `today`.
  *
- * The dashboard draws the first three states and the manager draws all five;
- * keeping the answer in one function is what stops those two surfaces
- * disagreeing about whether something is overdue.
+ * The model names five states. The Dashboard's due list keeps only "overdue"
+ * and "today" — what is owed now — while the Task Manager's list draws all
+ * five and the editor names their states; keeping the answer in one function is
+ * what stops those surfaces disagreeing about whether something is overdue.
  */
 export function recurringState(
   item: Pick<RecurringTask, "dueDate" | "paused">,
