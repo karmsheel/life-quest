@@ -214,3 +214,46 @@ export async function readBackground(
     return { ok: false, error: UNREADABLE };
   }
 }
+
+/** One stored picture, as the companion's `get_theme` inventory reports it. */
+export type BackgroundInventoryEntry = {
+  file: string;
+  bytes: number;
+  mime: string;
+};
+
+/**
+ * Every stored picture, sorted by name.
+ *
+ * The companion can only name a picture that is already in the profile, so
+ * `get_theme` reports the inventory instead of leaving it to guess. A missing
+ * directory is an empty inventory, not an error: a profile that has never had a
+ * picture stored has nothing to list, and the first store makes the folder. A
+ * name that vanishes between the read and the stat, or that is not a regular
+ * file, is skipped — the answer is a snapshot, not a promise.
+ */
+export async function listBackgrounds(): Promise<BackgroundInventoryEntry[]> {
+  const dir = BACKGROUNDS_DIR();
+  let names: string[];
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    names = (await fs.readdir(dir))
+      .filter((name) => BACKGROUND_IMAGE_FILE.test(name))
+      .sort();
+  } catch {
+    return [];
+  }
+  const entries: BackgroundInventoryEntry[] = [];
+  for (const file of names) {
+    const mime = MIME_BY_EXTENSION[path.extname(file).toLowerCase()];
+    if (!mime) continue;
+    try {
+      const stat = await fs.stat(path.join(dir, file));
+      if (!stat.isFile()) continue;
+      entries.push({ file, bytes: stat.size, mime });
+    } catch {
+      // Vanished between the read and the stat: not in this snapshot.
+    }
+  }
+  return entries;
+}

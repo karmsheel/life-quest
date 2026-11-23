@@ -526,10 +526,11 @@ inventory of stored pictures), and the agent cannot put a picture into the profi
 
 `apps/desktop/electron/theme-tools.ts`, `get_theme` response gains:
 
-- For the kept theme's `current` and for every `themes[]` summary: a resolved
-  `scene: { preset, intensity, frames, image, panels }` — exactly `resolveScene(theme.scene)`
-  from the shared model (defaults filled in, so the agent reads the real worn values; a theme
-  that names nothing still shows `plain`/`calm`, `image: null`, both panels `solid`).
+- For the kept theme's `current` and for every `themes[]` summary: the resolved
+  `scene` — exactly `resolveScene(theme.scene)` from the shared model, i.e.
+  `{ background: { preset, intensity, image: ThemeBackgroundImage | null, panels: { navRail, chat } },
+  frames: { canvas, cards } }` (defaults filled in, so the agent reads the real worn values; a
+  theme that names nothing still shows `plain`/`calm`, `image: null`, both panels `solid`).
 - Top-level `backgrounds: Array<{ file: string; bytes: number; mime: string }>` — every file in
   `<app profile>/backgrounds/` whose name matches `BACKGROUND_IMAGE_FILE`, sorted by name
   (stat'ed; a file that vanished between read and stat is skipped). The agent can name any of

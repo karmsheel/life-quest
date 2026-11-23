@@ -32,6 +32,7 @@ type Report = {
     settings: string;
     app: string;
     clearPanels: string;
+    agent: string;
     horizon: string;
     studio: string;
   };
@@ -133,6 +134,7 @@ describe("app background", () => {
         report.artifacts.settings,
         report.artifacts.app,
         report.artifacts.clearPanels,
+        report.artifacts.agent,
         report.artifacts.horizon,
         report.artifacts.studio,
       ]) {

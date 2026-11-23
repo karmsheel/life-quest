@@ -66,6 +66,25 @@
  * 20. `an-invalid-panel-is-refused-by-name` — `panels.chat: "translucent"` is
  *     refused with the field named in the studio verdict and the watcher.
  *
+ * Round 3 gives the companion the same layer over its real MCP door: a picture
+ * store tool and a `get_theme` that reports the scene and the profile's
+ * pictures. The rig opens that door exactly as the app does:
+ *
+ * 21. `the-companion-door-offers-the-background-tools` — `listTools` carries
+ *     `get_theme`, `validate_theme`, `write_theme` and `store_background_picture`.
+ * 22. `get-theme-reports-the-background-layer` — the kept theme's resolved scene
+ *     (picture file, panel shades), every listed file's scene, the `backgrounds`
+ *     inventory with the picture the operator stored, and a vocabulary line for
+ *     `scene.background.panels`.
+ * 23. `the-agent-stores-a-vault-picture` — a vault image copied with the tool
+ *     lands in `<profile>/backgrounds/`, byte-identical, and `get_theme` lists it.
+ * 24. `the-agent-wears-the-picture-it-stored` — `validate_theme` then
+ *     `write_theme` with that image and panel shades; the real window previews
+ *     it, Keep keeps it, a reload still wears it (artifact
+ *     `theme-background-agent.png`).
+ * 25. `store-background-refuses-a-path-outside-the-vault` — `"../escape.png"` and
+ *     a non-image vault file are refused, and neither creates a profile file.
+ *
  * The world is throwaway: its own profile, vault, stub Hermes host, stub
  * `hermes` on PATH and its own MCP ports. `bootForE2e` runs the product's main
  * process, preload and renderer, so this is the shipped shell. The picker seam
@@ -78,8 +97,8 @@
  *
  * Exit 0 = every check held. The report is `e2e/artifacts/theme-background.json`
  * and the pictures are `theme-background-settings.png`, `theme-background-app.png`,
- * `theme-background-clear-panels.png`, `theme-background-horizon.png` and
- * `theme-background-studio.png`, all beside it.
+ * `theme-background-clear-panels.png`, `theme-background-horizon.png`,
+ * `theme-background-studio.png` and `theme-background-agent.png`, all beside it.
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -107,6 +126,7 @@ const CLEAR_PANELS_PNG = path.join(
   artifactsDir,
   "theme-background-clear-panels.png",
 );
+const AGENT_PNG = path.join(artifactsDir, "theme-background-agent.png");
 const FIXTURE = path.join(here, "fixtures", "background-ridge.png");
 const FIXTURE_NAME = "background-ridge";
 
@@ -2030,6 +2050,423 @@ async function main() {
     }),
   );
 
+  // ── Round 3: the companion's own background tools, through the real door ─
+  // Everything above wrote theme files with the rig's pen. These checks drive
+  // the shipped MCP door instead: the picture store, the scene `get_theme`
+  // reports, and a theme authored entirely through `write_theme`.
+  //
+  // First the window must be wearing a picture, so `get_theme`'s resolved scene
+  // is the one the operator sees. The rig writes that one theme file (this round
+  // is about the agent's tools, not about setting up the initial state).
+  const r3WornFile = "round3-worn.json";
+  fs.writeFileSync(
+    path.join(themesDir, r3WornFile),
+    `${JSON.stringify(
+      {
+        name: "round3-worn",
+        label: "Round 3 Worn",
+        scene: {
+          background: {
+            preset: "plain",
+            image: {
+              file: storedName,
+              fit: "cover",
+              position: "center",
+              dim: "soft",
+              blur: "none",
+            },
+            panels: { navRail: "light", chat: "medium" },
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const r3WornPreview = await waitFor(
+    (s) => s.preview === true && (s.previewText ?? "").includes(r3WornFile),
+    20_000,
+  );
+  const r3WornKeptByClick = r3WornPreview ? await click("theme-keep") : false;
+  const r3Worn = await waitFor(
+    (s) =>
+      s.keptFile === r3WornFile &&
+      s.layer?.preset === "image" &&
+      s.root.scenePanelSidebar === "light" &&
+      s.root.scenePanelChat === "medium" &&
+      (s.picture?.url ?? "").startsWith("blob:"),
+    25_000,
+  );
+  // The refusal checks left one invalid theme file behind; `themes[]` entries
+  // that do not parse have no resolved scene, so take it out before reading.
+  fs.rmSync(path.join(themesDir, "refused-panels.json"), { force: true });
+  await sleep(250);
+
+  // The picture the agent will copy out of the vault: the rig's own fixture,
+  // placed where the vault keeps images.
+  const vaultImagesDir = path.join(vaultDir, "images", "files");
+  fs.mkdirSync(vaultImagesDir, { recursive: true });
+  fs.writeFileSync(path.join(vaultImagesDir, "agent-background.png"), fixtureBytes);
+
+  const { e2eCompanionDoor } = await import("../dist-electron/main.js");
+  const door = await e2eCompanionDoor();
+  const backgroundDoorChecks = [
+    "the-companion-door-offers-the-background-tools",
+    "get-theme-reports-the-background-layer",
+    "the-agent-stores-a-vault-picture",
+    "the-agent-wears-the-picture-it-stored",
+    "store-background-refuses-a-path-outside-the-vault",
+  ];
+  if (!door?.url || !door.token) {
+    for (const label of backgroundDoorChecks) {
+      check(label, false, "e2eCompanionDoor returned no url/token");
+    }
+  } else {
+    let backgroundClient = null;
+    try {
+      const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+      const { StreamableHTTPClientTransport } = await import(
+        "@modelcontextprotocol/sdk/client/streamableHttp.js"
+      );
+      backgroundClient = new Client({ name: "background-rig", version: "0.1.0" });
+      await backgroundClient.connect(
+        new StreamableHTTPClientTransport(new URL(door.url), {
+          requestInit: { headers: { Authorization: `Bearer ${door.token}` } },
+        }),
+      );
+      const callJson = async (name, args) => {
+        const result = await backgroundClient.callTool({
+          name,
+          arguments: args,
+        });
+        const text =
+          result.content?.find((part) => part.type === "text")?.text ?? "{}";
+        try {
+          return {
+            json: JSON.parse(text),
+            isError: result.isError === true,
+            text,
+          };
+        } catch {
+          return { json: null, isError: true, text };
+        }
+      };
+
+      // 1/5 — the shipped door advertises the background tools.
+      const listed = await backgroundClient.listTools();
+      const doorToolNames = (listed.tools ?? []).map((tool) => tool.name);
+      const wantedBackgroundTools = [
+        "get_theme",
+        "validate_theme",
+        "write_theme",
+        "store_background_picture",
+      ];
+      check(
+        "the-companion-door-offers-the-background-tools",
+        wantedBackgroundTools.every((name) => doorToolNames.includes(name)),
+        JSON.stringify({
+          missing: wantedBackgroundTools.filter(
+            (name) => !doorToolNames.includes(name),
+          ),
+          backgroundTools: doorToolNames.filter((name) =>
+            name.includes("theme") || name.includes("background"),
+          ),
+        }),
+      );
+
+      // 2/5 — `get_theme` reports the worn scene, each file's scene, and the
+      // profile's picture inventory.
+      const getTheme = await callJson("get_theme", {});
+      const reportedThemes = Array.isArray(getTheme.json?.themes)
+        ? getTheme.json.themes
+        : [];
+      const currentScene = getTheme.json?.current?.scene ?? null;
+      // The tool reports `resolveScene(theme.scene)`, whose shape is the resolved
+      // ThemeScene: `{ background: { preset, intensity, image, panels }, frames }`.
+      // Assert that nested shape, not a flattened scene.
+      const sceneShapeBad = (scene) =>
+        !scene ||
+        !scene.background ||
+        typeof scene.background.preset !== "string" ||
+        typeof scene.background.intensity !== "string" ||
+        typeof scene.background.panels?.navRail !== "string" ||
+        typeof scene.background.panels?.chat !== "string" ||
+        !Object.prototype.hasOwnProperty.call(scene.background, "image") ||
+        !scene.frames ||
+        typeof scene.frames.canvas !== "string" ||
+        typeof scene.frames.cards !== "string";
+      const scenesMissing = reportedThemes
+        .filter((entry) => sceneShapeBad(entry?.scene))
+        .map((entry) => entry.file);
+      const backgroundsReported = Array.isArray(getTheme.json?.backgrounds)
+        ? getTheme.json.backgrounds
+        : [];
+      const storedReported =
+        backgroundsReported.find((entry) => entry?.file === storedName) ?? null;
+      const vocabularyText = JSON.stringify(getTheme.json?.vocabulary ?? "");
+      check(
+        "get-theme-reports-the-background-layer",
+        r3Worn?.keptFile === r3WornFile &&
+          getTheme.json?.keptFile === r3WornFile &&
+          currentScene?.background?.preset === "plain" &&
+          currentScene?.background?.image?.file === storedName &&
+          currentScene?.background?.panels?.navRail === "light" &&
+          currentScene?.background?.panels?.chat === "medium" &&
+          typeof currentScene?.background?.intensity === "string" &&
+          !sceneShapeBad(currentScene) &&
+          reportedThemes.length > 0 &&
+          scenesMissing.length === 0 &&
+          storedReported?.bytes === fixtureBytes.length &&
+          storedReported?.mime === "image/png" &&
+          vocabularyText.includes("scene.background.panels"),
+        JSON.stringify({
+          worn: {
+            kept: r3Worn?.keptFile ?? null,
+            panels: r3Worn
+              ? [r3Worn.root.scenePanelSidebar, r3Worn.root.scenePanelChat]
+              : null,
+            previewKept: r3WornKeptByClick,
+          },
+          kept: getTheme.json?.keptFile ?? null,
+          currentScene,
+          themes: reportedThemes.length,
+          scenesMissing,
+          sceneShapes: reportedThemes.map((entry) => ({
+            file: entry?.file ?? null,
+            scene: entry?.scene ?? null,
+          })),
+          backgrounds: backgroundsReported,
+          storedReported,
+          vocabularyHasPanels: vocabularyText.includes("scene.background.panels"),
+        }),
+      );
+
+      // 3/5 — the agent copies a vault picture into the profile's store.
+      const storeCall = await callJson("store_background_picture", {
+        source: "images/files/agent-background.png",
+      });
+      const agentStored =
+        typeof storeCall.json?.stored === "string" ? storeCall.json.stored : null;
+      const agentImageAnswer = storeCall.json?.image ?? null;
+      const agentStoreNote =
+        typeof storeCall.json?.note === "string" ? storeCall.json.note : null;
+      const agentStoredPath = agentStored
+        ? path.join(backgroundsDir, agentStored)
+        : null;
+      const agentStoredBytes =
+        agentStoredPath && fs.existsSync(agentStoredPath)
+          ? fs.readFileSync(agentStoredPath)
+          : null;
+      const themeAfterStore = await callJson("get_theme", {});
+      const agentInventory =
+        (Array.isArray(themeAfterStore.json?.backgrounds)
+          ? themeAfterStore.json.backgrounds
+          : []
+        ).find((entry) => entry?.file === agentStored) ?? null;
+      check(
+        "the-agent-stores-a-vault-picture",
+        agentStored !== null &&
+          FIXTURE_RE.test(agentStored) &&
+          agentStored.includes("agent-background-") &&
+          agentStoredBytes !== null &&
+          agentStoredBytes.equals(fixtureBytes) &&
+          agentImageAnswer?.file === agentStored &&
+          agentImageAnswer?.fit === "cover" &&
+          agentImageAnswer?.position === "center" &&
+          agentImageAnswer?.dim === "soft" &&
+          agentImageAnswer?.blur === "none" &&
+          (agentStoreNote ?? "").includes("write_theme") &&
+          agentInventory?.bytes === fixtureBytes.length &&
+          agentInventory?.mime === "image/png",
+        JSON.stringify({
+          stored: agentStored,
+          error: storeCall.json?.error?.message ?? null,
+          image: agentImageAnswer,
+          note: agentStoreNote,
+          storedBytesEqual: Boolean(
+            agentStoredBytes && agentStoredBytes.equals(fixtureBytes),
+          ),
+          listedInGetTheme: agentInventory,
+          backgrounds: themeAfterStore.json?.backgrounds ?? null,
+        }),
+      );
+
+      // 4/5 — validate then write a theme that wears the agent's picture and
+      // shades both panels; the real window previews it, Keep keeps it, a
+      // reload still wears it.
+      const agentTheme = {
+        name: "agent-background",
+        label: "Agent Background",
+        description: "A vault picture copied by the companion's own tool.",
+        scene: {
+          background: {
+            image: {
+              file: agentStored,
+              fit: "cover",
+              position: "center",
+              dim: "soft",
+              blur: "none",
+            },
+            panels: { navRail: "light", chat: "medium" },
+          },
+        },
+      };
+      const agentValid = agentStored
+        ? await callJson("validate_theme", { theme: agentTheme })
+        : null;
+      const agentWritten = agentStored
+        ? await callJson("write_theme", { theme: agentTheme })
+        : null;
+      const agentWrittenFile =
+        typeof agentWritten?.json?.written === "string"
+          ? agentWritten.json.written
+          : null;
+      const agentPreview = agentWrittenFile
+        ? await waitFor(
+            (s) =>
+              s.preview === true &&
+              (s.previewText ?? "").includes(agentWrittenFile) &&
+              s.layer?.preset === "image" &&
+              (s.picture?.url ?? "").startsWith("blob:") &&
+              s.root.scenePanelSidebar === "light" &&
+              s.root.scenePanelChat === "medium" &&
+              (s.panels.rail?.alpha ?? 1) >= 0.3 &&
+              (s.panels.rail?.alpha ?? 0) <= 0.38 &&
+              (s.panels.chatPanel?.alpha ?? 1) >= 0.5 &&
+              (s.panels.chatPanel?.alpha ?? 0) <= 0.66,
+            25_000,
+          )
+        : null;
+      const agentKeepPressed = agentPreview
+        ? await click("theme-keep")
+        : false;
+      const agentKept = agentKeepPressed
+        ? await waitFor(
+            (s) =>
+              s.keptFile === agentWrittenFile &&
+              s.preview === false &&
+              s.layer?.preset === "image",
+            15_000,
+          )
+        : null;
+      let agentReloaded = null;
+      if (agentKept) {
+        await reload();
+        agentReloaded = await waitFor(
+          (s) =>
+            s.keptFile === agentWrittenFile &&
+            s.layer?.preset === "image" &&
+            (s.picture?.url ?? "").startsWith("blob:") &&
+            s.root.scenePanelSidebar === "light" &&
+            s.root.scenePanelChat === "medium",
+          30_000,
+        );
+        await evaluate(`(() => { location.hash = "#/home"; return location.hash; })()`);
+        await sleep(900);
+        const agentShot = await win.webContents.capturePage();
+        fs.writeFileSync(AGENT_PNG, agentShot.toPNG());
+      }
+      check(
+        "the-agent-wears-the-picture-it-stored",
+        agentValid?.json?.ok === true &&
+          agentValid.json.theme?.scene?.background?.image?.file ===
+            agentStored &&
+          agentWrittenFile === "agent-background.json" &&
+          agentPreview?.preview === true &&
+          agentPreview.layer?.preset === "image" &&
+          agentPreview.root.scenePanelSidebar === "light" &&
+          agentPreview.root.scenePanelChat === "medium" &&
+          (agentPreview.picture?.url ?? "").startsWith("blob:") &&
+          agentKeepPressed === true &&
+          agentKept?.keptFile === agentWrittenFile &&
+          agentReloaded?.keptFile === agentWrittenFile &&
+          agentReloaded.layer?.preset === "image" &&
+          (agentReloaded.picture?.url ?? "").startsWith("blob:") &&
+          agentReloaded.root.scenePanelSidebar === "light" &&
+          agentReloaded.root.scenePanelChat === "medium",
+        JSON.stringify({
+          validation: agentValid?.json?.ok ?? null,
+          validationError: agentValid?.json?.error?.message ?? null,
+          written: agentWrittenFile,
+          preview: agentPreview?.previewText ?? null,
+          previewPanels: agentPreview
+            ? {
+                sidebar: agentPreview.root.scenePanelSidebar,
+                chat: agentPreview.root.scenePanelChat,
+                rail: agentPreview.panels.rail,
+                chatPanel: agentPreview.panels.chatPanel,
+              }
+            : null,
+          kept: agentKept?.keptFile ?? null,
+          reloaded: agentReloaded?.keptFile ?? null,
+          reloadedPanels: agentReloaded
+            ? {
+                sidebar: agentReloaded.root.scenePanelSidebar,
+                chat: agentReloaded.root.scenePanelChat,
+              }
+            : null,
+        }),
+      );
+
+      // 5/5 — the store tool refuses what is not a picture inside the vault,
+      // and neither refusal writes a profile file.
+      const backgroundsBeforeRefusals = fs.existsSync(backgroundsDir)
+        ? fs.readdirSync(backgroundsDir).sort()
+        : [];
+      const escapeStore = await callJson("store_background_picture", {
+        source: "../escape.png",
+      });
+      const escapeStoreMessage = String(
+        escapeStore.json?.error?.message ??
+          escapeStore.json?.error ??
+          "no error returned",
+      );
+      fs.writeFileSync(
+        path.join(vaultImagesDir, "not-a-picture.txt"),
+        "this is not an image\n",
+      );
+      const textStore = await callJson("store_background_picture", {
+        source: "images/files/not-a-picture.txt",
+      });
+      const textStoreMessage = String(
+        textStore.json?.error?.message ??
+          textStore.json?.error ??
+          "no error returned",
+      );
+      await sleep(200);
+      const backgroundsAfterRefusals = fs.existsSync(backgroundsDir)
+        ? fs.readdirSync(backgroundsDir).sort()
+        : [];
+      check(
+        "store-background-refuses-a-path-outside-the-vault",
+        escapeStoreMessage.includes("picture inside the vault") &&
+          (textStoreMessage.includes("only PNG") ||
+            textStoreMessage.includes("not a picture")) &&
+          JSON.stringify(backgroundsBeforeRefusals) ===
+            JSON.stringify(backgroundsAfterRefusals),
+        JSON.stringify({
+          escape: escapeStoreMessage,
+          text: textStoreMessage,
+          before: backgroundsBeforeRefusals,
+          after: backgroundsAfterRefusals,
+        }),
+      );
+    } catch (error) {
+      // A door failure must not swallow the report: record the failure and let
+      // any checks that never ran show up as failed too.
+      const message = String(error);
+      failures.push(`background tools: ${message}`);
+      const recorded = new Set(checks.map((entry) => entry.label));
+      for (const label of backgroundDoorChecks) {
+        if (!recorded.has(label)) check(label, false, message);
+      }
+    } finally {
+      if (backgroundClient) {
+        await backgroundClient.close().catch(() => {});
+      }
+    }
+  }
+
   // ── The report ───────────────────────────────────────────────────────────
   const report = {
     ranAt: new Date().toISOString(),
@@ -2045,6 +2482,7 @@ async function main() {
       horizon: path.relative(desktopRoot, HORIZON_PNG),
       studio: path.relative(desktopRoot, STUDIO_PNG),
       clearPanels: path.relative(desktopRoot, CLEAR_PANELS_PNG),
+      agent: path.relative(desktopRoot, AGENT_PNG),
     },
     themeFiles: {
       picture: pictureThemeFile,

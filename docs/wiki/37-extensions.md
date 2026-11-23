@@ -12,7 +12,10 @@ deliberately refuses (no package code, a strict content policy, one privileged w
 unsigned installer). **Extensions** is the umbrella for the things that extend the
 experience — today themes, later the same page grows a second kind without changing what the
 first one is. A single theme file is still a *theme* everywhere it matters: the companion
-tools are `get_theme`, `validate_theme` and `write_theme`, and the folder is `themes/`.
+tools are `get_theme` (the files, the kept theme, each theme's resolved scene and the pictures
+stored in the profile's `backgrounds/`), `validate_theme`, `write_theme` and
+`store_background_picture` (a vault image copied into that folder so a theme can name it), and
+the folder is `themes/`.
 
 ## Where it lives
 
@@ -252,8 +255,16 @@ move between profiles without anyone finding a folder.
   the picker without choosing a file does nothing.
 - Like everything else on this page, an import is **data, not code**, and it lands in the app
   profile — never in the vault.
-- Import and History are page gestures, not companion tools. The companion keeps
-  `get_theme`, `validate_theme` and `write_theme`; these two are not exposed to it.
+- Import and History are page gestures, not companion tools; the companion's four are
+  `get_theme`, `validate_theme`, `write_theme` and `store_background_picture`. `get_theme`
+  reports the kept theme, each theme's resolved scene — sky, intensity, frames, picture and
+  panel shades — and the pictures stored in the profile's `backgrounds/`; `validate_theme` and
+  `write_theme` take `scene.background.image` and `scene.background.panels` like any other
+  field, so the agent can author them in the same closed vocabulary; `store_background_picture`
+  copies a picture from the open vault into that folder and returns the file name, reading the
+  vault and writing only the profile. A stored picture changes nothing until `write_theme`
+  names it, and even then the window previews it for ten seconds with **Keep** and **Revert** —
+  Keep is the consent. The operator's Settings override still outranks a theme.
 
 ## What it cannot do
 
