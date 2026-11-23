@@ -1797,17 +1797,28 @@ async function main() {
           "Status,Project,Area",
       `band ${JSON.stringify(baseline.filterLayout?.band)}, selects ${baseline.filterLayout?.selects}, readouts ${baseline.filterLayout?.readouts}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
     );
-    // The Area readout is the row's right end: the last field in the band, and
-    // to the right of the project picker.
+    // The Area readout is the row's right end: the last field in the band, to
+    // the right of the project picker, and pushed against the band's edge — not
+    // merely last in a left-packed row.
     const filterFieldBoxes = baseline.filterLayout?.fields ?? [];
+    const filterBand = baseline.filterLayout?.band ?? null;
+    const filterAreaBox = baseline.filterArea?.box ?? null;
+    const areaRightGap =
+      filterBand && filterAreaBox
+        ? filterBand.left + filterBand.width - (filterAreaBox.left + filterAreaBox.width)
+        : null;
     check(
       "the Area readout sits at the right end of the band",
       filterFieldBoxes.length === 3 &&
-        (baseline.filterArea?.box?.left ?? -1) ===
-          (filterFieldBoxes[2]?.left ?? -2) &&
-        (baseline.filterArea?.box?.left ?? -1) >
+        (filterAreaBox?.left ?? -1) === (filterFieldBoxes[2]?.left ?? -2) &&
+        (filterAreaBox?.left ?? -1) >
           (baseline.filters?.project?.box?.left ?? Infinity),
-      `area ${JSON.stringify(baseline.filterArea?.box)}, project ${JSON.stringify(baseline.filters?.project?.box)}, fields ${JSON.stringify(filterFieldBoxes)}`,
+      `area ${JSON.stringify(filterAreaBox)}, project ${JSON.stringify(baseline.filters?.project?.box)}, fields ${JSON.stringify(filterFieldBoxes)}`,
+    );
+    check(
+      "the Area readout is right-aligned against the band's edge",
+      areaRightGap !== null && areaRightGap >= 0 && areaRightGap <= 14,
+      `right gap ${JSON.stringify(areaRightGap)}px, band ${JSON.stringify(filterBand)}, area ${JSON.stringify(filterAreaBox)}`,
     );
 
     // The triage itself: one operator gesture on the project-filed row.

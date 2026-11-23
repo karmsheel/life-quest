@@ -76,8 +76,9 @@ was attached, before the capture is logged.
 6. Press **Enter** or choose the primary **Log** button. The box clears, the preview drops, and
    the new signal appears at the top of the list with status **Inbox** and the area read.
 7. Narrow the list with the filters in the row above it: **Status** and **Project** are
-   compact drop-downs, and at the right end the **Area** readout names the domain picker at
-   the top, which is Notebox's one area filter — to see another area, switch it there. The
+   compact drop-downs, and against the row's right edge the **Area** readout names the
+   domain picker at the top, which is Notebox's one area filter — to see another area,
+   switch it there. The
    two pickers combine with that lens; a filter with no matches says
    "No signals match these filters."
 8. Work a signal in the list:
@@ -107,7 +108,7 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | **Area** readout | Names the area the capture will file under: **Life (general)** on the Life lens, the area's name on an area lens. It follows the switcher at the top and is a readout, not a picker — filing elsewhere means switching areas there. Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
-| Filter row | One line above the list: the **Status** and **Project** drop-downs — **Status** (All, Inbox, Triaged, Acting, Done, Dropped) and **Project** (All, each live project) — with an **Area** readout at the right end naming the domain picker at the top (**Life (general)** on the Life lens, the area's name on an area lens). The lens is the area filter; the two pickers narrow what it leaves and each shows the value applied. |
+| Filter row | One line above the list: the **Status** and **Project** drop-downs — **Status** (All, Inbox, Triaged, Acting, Done, Dropped) and **Project** (All, each live project) — with an **Area** readout right-aligned against the row's edge naming the domain picker at the top (**Life (general)** on the Life lens, the area's name on an area lens). The lens is the area filter; the two pickers narrow what it leaves and each shows the value applied. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Life (general)** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |

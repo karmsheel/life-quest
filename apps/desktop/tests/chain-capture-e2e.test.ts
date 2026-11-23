@@ -823,6 +823,16 @@ describe("Notebox page — general capture", () => {
         (inbox.controls.filterProject.box.left ?? 0),
       "the Area readout is not to the right of the project picker",
     );
+    // It is pushed against the band's right edge, not just last in a
+    // left-packed row: the gap is the band's own padding, not free space.
+    const areaBox = inbox.controls.filterArea.box;
+    const band = filterLayout.band;
+    assert.ok(areaBox, "the Area readout has no box");
+    const areaRightGap = band.left + band.width - (areaBox.left + areaBox.width);
+    assert.ok(
+      areaRightGap >= 0 && areaRightGap <= 14,
+      `the Area readout is ${areaRightGap}px from the band's right edge`,
+    );
 
     // Each seeded row: stored value on the row, contract label beside it.
     for (const row of inbox.rows) {

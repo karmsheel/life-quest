@@ -819,7 +819,7 @@ export function SignalChainFeed() {
           </select>
         </label>
         <span
-          className="signal-chain__filter"
+          className="signal-chain__filter signal-chain__filter--area"
           data-testid="signal-filter-domain-readout"
           data-area-slug={captureArea?.slug ?? ""}
           title="The domain picker at the top is Notebox's area filter."

@@ -10939,6 +10939,12 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
+/* The area readout ends the band against its right edge: the lens is the
+   page's scope rather than one of the picks, so it sits apart from them. */
+.signal-chain__filter--area {
+  margin-left: auto;
+}
+
 /* The area readout names the lens the band's list is scoped to; it is text,
    not a control, so it reads with the value's weight rather than a field's. */
 .signal-chain__filter-value {
