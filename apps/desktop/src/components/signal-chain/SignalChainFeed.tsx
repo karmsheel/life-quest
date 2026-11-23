@@ -132,6 +132,17 @@ export function SignalChainFeed() {
     slug: d.slug,
     name: d.meta.name,
   }));
+  /**
+   * What a capture files under: the area lens at the top, never a second choice
+   * in the box. Filing somewhere else is the switcher's job, so the box cannot
+   * disagree with the page the operator is looking at. The Life lens is the
+   * general area, so a capture there is unassigned and reads "Life (general)".
+   */
+  const captureArea =
+    lens.kind === "domain"
+      ? (liveDomains.find((d) => d.slug === lens.slug) ?? null)
+      : null;
+  const captureAreaName = captureArea?.meta.name ?? "Life (general)";
 
   const [records, setRecords] = useState<SignalRecord[]>([]);
   const [skipped, setSkipped] = useState(0);
@@ -150,7 +161,6 @@ export function SignalChainFeed() {
   /** The row's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
 
-  const [domainSlug, setDomainSlug] = useState("");
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
@@ -369,7 +379,6 @@ export function SignalChainFeed() {
     setPendingFile(null);
     setLink(null);
     setBody("");
-    setDomainSlug("");
     setEditingId(null);
   }
 
@@ -408,7 +417,7 @@ export function SignalChainFeed() {
         type: "thought",
         title: null,
         body,
-        domainSlug: domainSlug.trim() ? domainSlug : null,
+        domainSlug: captureArea?.slug ?? null,
         attachment,
       });
       if (!result.ok) {
@@ -710,20 +719,23 @@ export function SignalChainFeed() {
             />
           </div>
           <div className="signal-chain__composer-commit">
-            <label className="signal-chain__area">
-              Area
-              <select
-                value={domainSlug}
-                onChange={(e) => setDomainSlug(e.target.value)}
+            {/* The capture's area, following the lens at the top rather than a
+                picker of its own. A readout, not a select: filing elsewhere is
+                the switcher's job, so there is no second place to disagree. */}
+            <span
+              className="signal-chain__area"
+              data-testid="chain-area-readout"
+              data-area-slug={captureArea?.slug ?? ""}
+              title="A capture files under the area picked at the top. Switch areas there to file somewhere else."
+            >
+              <span className="signal-chain__area-label">Area</span>
+              <span
+                className="signal-chain__area-value"
+                data-testid="chain-area-value"
               >
-                <option value="">- unassigned -</option>
-                {liveDomains.map((d) => (
-                  <option key={d.slug} value={d.slug}>
-                    {d.meta.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {captureAreaName}
+              </span>
+            </span>
             <Button
               type="submit"
               variant="primary"
@@ -803,7 +815,7 @@ export function SignalChainFeed() {
             }
           >
             <option value="all">All</option>
-            <option value="none">Unassigned</option>
+            <option value="none">Life (general)</option>
             {liveDomains.map((domain) => (
               <option key={domain.slug} value={domain.slug}>
                 {domain.meta.name}
@@ -978,7 +990,7 @@ function SignalRow(props: {
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
             >
-              <option value="">- unassigned -</option>
+              <option value="">Life (general)</option>
               {domainOptions.map((d) => (
                 <option key={d.slug} value={d.slug}>
                   {d.name}
@@ -1182,7 +1194,7 @@ function SignalRow(props: {
             props.onAssign(s.id, next);
           }}
         >
-          <option value="">- unassigned -</option>
+          <option value="">Life (general)</option>
           {domainOptions.map((d) => (
             <option key={d.slug} value={d.slug}>
               {d.name}

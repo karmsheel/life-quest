@@ -56,7 +56,11 @@
  *     match these filters." when nothing matches, and All restores the chain.
  *  9. The dock's mirrored surface is the same Notebox: its control is labelled
  *     Notebox, it lists the same chain, and its heading says Notebox.
- * 10. No unmodelled bridge call, no console error, nothing spills horizontally
+ * 10. The box files under the area lens, not under a picker of its own: the
+ *     Life lens reads "Life (general)" and writes an unassigned capture, an
+ *     area lens puts its name in the readout and that slug on the wire, and the
+ *     readout holds no control — the switcher at the top is the one picker.
+ * 11. No unmodelled bridge call, no console error, nothing spills horizontally
  *     past the window, and every capture is a real picture of the shipped page.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
@@ -344,6 +348,22 @@ const SAMPLE = `(() => {
         : { present: false },
       error: text(q('[data-testid="chain-link-error"]')),
     },
+    // The box's area readout: the lens it will file under, and whether that
+    // readout is a control (it must not be — the switcher is the one picker).
+    composerArea: (() => {
+      const readout = q('[data-testid="chain-area-readout"]');
+      const value = q('[data-testid="chain-area-value"]');
+      return readout
+        ? {
+            present: true,
+            tag: readout.tagName,
+            value: text(value),
+            slug: readout.getAttribute("data-area-slug") ?? "",
+            title: readout.getAttribute("title"),
+            controls: readout.querySelectorAll("select, input, button").length,
+          }
+        : { present: false };
+    })(),
     rows,
     counts,
     // The inbox's own surface: the three filter pickers, their values and their
@@ -362,6 +382,8 @@ const SAMPLE = `(() => {
     filterEmpty: text(q('[data-testid="signal-filter-empty"]')),
     emptyLine: text(q('[data-testid="signal-empty"]')),
     projects: window.chainCaptureProjects ?? [],
+    areas: window.chainCaptureAreas ?? [],
+    lensWrites: (window.chainCaptureLens ?? []).slice(),
     inbox: window.chainCaptureInbox ?? null,
     // The dock's own Life-Chain surface, which renders the same records and
     // carries the same Notebox name.
@@ -521,6 +543,22 @@ const selectFilter = (testid, value) => `(() => {
   setter.call(select, ${JSON.stringify(value)});
   select.dispatchEvent(new Event("change", { bubbles: true }));
   return "ok";
+})()`;
+
+/**
+ * Choose an area on the window's switcher, the one picker that decides where a
+ * capture files. The switcher is a radiogroup of tabs; the operator's gesture
+ * is a click on the tab whose name matches.
+ */
+const clickLens = (name) => `(() => {
+  const group = document.querySelector('[role="radiogroup"][aria-label="Area lens"]');
+  if (!group) return "no switcher";
+  const tab = Array.from(group.querySelectorAll("button")).find(
+    (button) => (button.textContent || "").trim() === ${JSON.stringify(name)},
+  );
+  if (!tab) return "no tab";
+  tab.click();
+  return true;
 })()`;
 
 /**
@@ -879,6 +917,11 @@ async function main() {
       "the text capture carried no attachment",
       textCreate?.attachment === null,
       `attachment ${JSON.stringify(textCreate?.attachment)}`,
+    );
+    check(
+      "the text capture filed in Life (general)",
+      textCreate?.domainSlug === null,
+      `domain ${JSON.stringify(textCreate?.domainSlug)}`,
     );
     check(
       "the text row is marked text",
@@ -2044,6 +2087,131 @@ async function main() {
       fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size > 20_000,
       `${fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size} bytes`,
     );
+
+    // ── 8. the box's area is the lens at the top ─────────────────────────────
+    // The box has no area picker of its own: a capture files under the area the
+    // switcher has open, and the Life lens (the general area) files it
+    // unassigned under the readout "Life (general)". Switching the lens is the
+    // one way to file somewhere else, so the readout is checked to be a readout
+    // and the write is checked to carry the lens it showed.
+    const lensArea = (dockPainted.areas ?? [])[0] ?? null;
+    const beforeLens = await sample();
+    check(
+      "the box files in Life (general) on the Life lens",
+      beforeLens.composerArea?.present === true &&
+        beforeLens.composerArea?.value === "Life (general)" &&
+        beforeLens.composerArea?.slug === "" &&
+        (beforeLens.composerArea?.controls ?? -1) === 0,
+      `readout ${JSON.stringify(beforeLens.composerArea)}`,
+    );
+    const lensClicked = await js(clickLens(lensArea?.name ?? ""));
+    check(
+      "the area switcher accepts the operator's choice",
+      lensClicked === true && lensArea !== null,
+      `click returned ${JSON.stringify(lensClicked)}, area ${JSON.stringify(lensArea)}`,
+    );
+    const lensed = await waitState(
+      (state) =>
+        state.composerArea?.slug === (lensArea?.slug ?? "") &&
+        state.composerArea?.value === (lensArea?.name ?? ""),
+      "the box's area to follow the switcher",
+    );
+    check(
+      "the box's area follows the switcher",
+      lensed.composerArea?.value === lensArea?.name &&
+        lensed.composerArea?.slug === lensArea?.slug,
+      `readout ${JSON.stringify(lensed.composerArea)} vs area ${JSON.stringify(lensArea)}`,
+    );
+    check(
+      "the switcher wrote the new lens",
+      (lensed.lensWrites ?? []).includes(lensArea?.slug ?? ""),
+      `lens writes ${JSON.stringify(lensed.lensWrites)}`,
+    );
+
+    // Log under the chosen area: the bridge is handed that area, and the row
+    // paints it — the readout is not a label dressing a null write.
+    const lensBody = "Filed under the open area.";
+    await js(setValue(".signal-chain textarea", lensBody));
+    await js(pressEnter(".signal-chain textarea"));
+    const lensLogged = await waitState(
+      (state) =>
+        (state.creates ?? []).length === CAPTURES_DRIVEN + 1 &&
+        rowWithBody(state, lensBody) !== null,
+      "the capture under the open area to land",
+    );
+    const lensCreate = lensLogged.creates[lensLogged.creates.length - 1];
+    const lensRow = rowWithBody(lensLogged, lensBody);
+    check(
+      "a capture under an area lens carries that area",
+      lensCreate?.domainSlug === (lensArea?.slug ?? null),
+      `create ${JSON.stringify(lensCreate)} vs area ${JSON.stringify(lensArea)}`,
+    );
+    check(
+      "the captured row paints the area it filed under",
+      lensRow?.dataDomainSlug === (lensArea?.slug ?? "") &&
+        lensRow?.domain === lensArea?.name,
+      `row ${JSON.stringify(lensRow && { dataDomainSlug: lensRow.dataDomainSlug, domain: lensRow.domain })}`,
+    );
+
+    // The operator-facing half: the switcher on the area, the readout naming it
+    // and the new row filed under it, in one picture, framed from the page's top
+    // so the heading and the filter band sit above the filed row.
+    await js(`(() => {
+      const page = document.querySelector(".signal-chain");
+      let node = page ? page.parentElement : null;
+      while (node) {
+        const style = getComputedStyle(node);
+        if (
+          /auto|scroll/.test(style.overflowY) &&
+          node.scrollHeight > node.clientHeight
+        ) {
+          node.scrollTop = 0;
+          return "scrolled";
+        }
+        node = node.parentElement;
+      }
+      window.scrollTo(0, 0);
+      return "window";
+    })()`);
+    await sleep(300);
+    const lensShot = await captureFile("chain-capture-area.png");
+    const lensShotBytes = fs.statSync(lensShot).size;
+    check(
+      "capture chain-capture-area.png is a real picture",
+      lensShotBytes > 20_000,
+      `${lensShotBytes} bytes`,
+    );
+
+    // Back to Life: the readout returns to the general area.
+    const lifeClicked = await js(clickLens("Life"));
+    check(
+      "the Life tab is on the switcher",
+      lifeClicked === true,
+      `click returned ${JSON.stringify(lifeClicked)}`,
+    );
+    const backToLife = await waitState(
+      (state) =>
+        state.composerArea?.value === "Life (general)" &&
+        state.composerArea?.slug === "",
+      "the box's area to return to Life (general)",
+    );
+    check(
+      "the box returns to Life (general) on the Life lens",
+      backToLife.composerArea?.value === "Life (general)" &&
+        backToLife.composerArea?.slug === "",
+      `readout ${JSON.stringify(backToLife.composerArea)}`,
+    );
+
+    checks.lens = {
+      area: lensArea,
+      before: beforeLens.composerArea,
+      lensed: lensed.composerArea,
+      create: lensCreate ?? null,
+      row: lensRow,
+      after: backToLife.composerArea,
+      lensWrites: backToLife.lensWrites ?? [],
+      screenshot: { name: path.basename(lensShot), bytes: lensShotBytes },
+    };
 
     // ── report ─────────────────────────────────────────────────────────────
     const report = {

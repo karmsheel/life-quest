@@ -66,25 +66,16 @@ export function formatSignalFileSize(bytes: number): string {
   return `${text} ${units[unit]}`;
 }
 
-export function signalDomainLabel(
-  slug: string | null,
-  domains: { slug: string; name: string }[],
-): string {
-  if (!slug) return "- unassigned -";
-  return domains.find((d) => d.slug === slug)?.name ?? slug;
-}
-
 /**
- * The inbox's per-row area label. It differs from `signalDomainLabel` on
- * purpose: the composer's picker and the old table say "- unassigned -", while
- * a row in the inbox must never paint a blank cell and says "Unassigned" — a
- * fixed word the inbox rig asserts. Keep both; they answer different surfaces.
+ * The inbox's per-row area label. A row in the inbox must never paint a blank
+ * cell, and the general (unassigned) area reads "Life (general)" — the same
+ * wording the box and the area filter use, so the one state has one name.
  */
 export function signalRowDomainLabel(
   slug: string | null | undefined,
   domains: { slug: string; name: string }[],
 ): string {
-  if (!slug) return "Unassigned";
+  if (!slug) return "Life (general)";
   return domains.find((d) => d.slug === slug)?.name ?? slug;
 }
 

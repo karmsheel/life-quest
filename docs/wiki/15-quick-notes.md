@@ -24,7 +24,8 @@ This page is part of the [Wiki home](./index.md).
 ## What it is for
 
 Capture dies when it takes more than a keystroke, so the composer deliberately asks for little:
-a description, one optional attachment, and an optional **Area**. An attachment arrives in one
+a description, one optional attachment, and the **Area** the switcher at the top has open. An
+attachment arrives in one
 of two gestures: the **plus** at the box's bottom left takes any file (a picture previews, any
 other file becomes a name-and-size chip), and **pasting a URL** into the box turns it into a
 link chip. Type, title, project, status and priority are not composer fields — a capture is a
@@ -32,7 +33,7 @@ capture, and the inbox is worked afterwards, on the row.
 
 Each signal carries:
 
-- an **Area** (`domainSlug`) or none;
+- an **Area** (`domainSlug`) or none — none is **Life (general)**, the general area;
 - a **Project** or none, which must name a live project from `projects/`;
 - a **Status** — where the capture stands as work;
 - a **Priority** — your own ordering, or none;
@@ -68,12 +69,12 @@ was attached, before the capture is logged.
    the X button (**Remove the attached link**) takes it off. A URL pasted inside a sentence
    stays part of the description (text, not a link capture). The description may be left
    empty.
-5. Optionally choose an **Area** before logging. The picker sits in the box's foot, beside
-   the **Log** button; its first option is **- unassigned -**, and leaving it there files the
-   signal with no area.
-6. Press **Enter** or choose the primary **Log** button. The box clears, the area picker resets
-   to **- unassigned -**, the preview drops, and the new signal appears at the top of the list
-   with status **Inbox**.
+5. The box files under the **Area** the switcher at the top has open. The readout in the
+   box's foot, beside the **Log** button, says **Area Life (general)** on the Life lens and
+   **Area Health** on the Health lens. There is no second area picker in the box: to file a
+   capture into another area, choose it at the top first.
+6. Press **Enter** or choose the primary **Log** button. The box clears, the preview drops, and
+   the new signal appears at the top of the list with status **Inbox** and the area read.
 7. Narrow the list with the three filters in the row above it — **Status**, **Area** and
    **Project** — each a compact drop-down on the same line, not a row of pills: pick a value
    and the list narrows to it. Filters combine with the area lens; a filter with no matches
@@ -97,17 +98,17 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Part | What it does |
 |---|---|
 | **Notebox** heading | The title and the line "A database of what you notice. Log now; assign later." The page reads as one centred column — capture, filters and chain down the middle of the pane. |
-| Capture box | One bordered surface, the page's one input: a three-row text area labelled **Log a signal** (placeholder **What's on your mind?**, autofocused, corner draggable for more room) and, inside the same box's foot, the **Plus** control, the **Area** picker and the **Log** button. The text field has no frame of its own — the box is the field — and the whole box takes the accent ring when the caret or any of its controls is in it. It is the description: a text capture needs text, and an attachment may be logged without it. |
+| Capture box | One bordered surface, the page's one input: a three-row text area labelled **Log a signal** (placeholder **What's on your mind?**, autofocused, corner draggable for more room) and, inside the same box's foot, the **Plus** control, the **Area** readout and the **Log** button. The text field has no frame of its own — the box is the field — and the whole box takes the accent ring when the caret or any of its controls is in it. It is the description: a text capture needs text, and an attachment may be logged without it. |
 | **Plus** control | The single attachment control at the box's bottom left (test name **Attach a file**, plus glyph). Opens a file picker with no type restriction — any picture or file — and dragging a file onto the composer or pasting a file into the box does the same. |
 | Picture preview | Inside the box, above the field, until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
 | File chip | Inside the box, above the field, until the signal is logged: a non-picture attachment's name and human size, with the X button **Remove the attached file**. |
 | Link chip | Inside the box, under the field, until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
-| **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
+| **Area** readout | Names the area the capture will file under: **Life (general)** on the Life lens, the area's name on an area lens. It follows the switcher at the top and is a readout, not a picker — filing elsewhere means switching areas there. Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
-| Filter row | Three compact drop-downs on one line above the list: **Status** (All, Inbox, Triaged, Acting, Done, Dropped), **Area** (All, Unassigned, each live area) and **Project** (All, each live project). Each picker shows the value applied; filters combine. |
+| Filter row | Three compact drop-downs on one line above the list: **Status** (All, Inbox, Triaged, Acting, Done, Dropped), **Area** (All, Life (general), each live area) and **Project** (All, each live project). Each picker shows the value applied; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
-| Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
+| Row meta | The area cell says **Life (general)** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
 | Attachment | An image draws at the top of the row with its file name beneath it; a link draws a card at the top of the row with its host and address. The link card opens `https` addresses in the browser. Any other file draws a card with its name and size and a **Save** control (accessible name **Save the attached file**) that writes a copy of the vault's bytes to disk. |
 | Timestamp | "Today, 14:32" / "Yesterday, 09:05" for recent days; an older signal shows a medium date and time. |
@@ -119,10 +120,10 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Unreadable files | If any signal file cannot be parsed: "N signal file(s) could not be read." |
 | Missing file | A picture or file whose bytes have gone still holds its row: "That picture is missing from the vault." / "That file is missing from the vault." |
 
-The lens filters the *view*, not the capture: **Life** shows every signal, and an area lens
-shows the signals tagged to that area plus every unassigned one, because an unassigned
-capture has not been filed anywhere yet and must not disappear. The page has no search field
-and no paging; the whole chain is the list.
+The lens filters the *view* and sets the capture's area: **Life** shows every signal and
+files a capture as **Life (general)**, and an area lens shows the signals tagged to that area
+plus every **Life (general)** one, because a capture with no narrower area must not disappear.
+The page has no search field and no paging; the whole chain is the list.
 
 ## Rules and behaviour
 
@@ -174,7 +175,8 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
 - The description is the body. A text-only capture needs a non-empty body; a capture with a
   picture, file or link may store an empty one, because the attachment says what was
   captured. The vault's refusal for neither is "A capture needs text, a file, an image or a link".
-- The area is stored as `domainSlug` (the field kept its old name); `null` is unassigned.
+- The area is stored as `domainSlug` (the field kept its old name); `null` is
+  **Life (general)**, the general area.
 - `projectId` is a live project id from `projects/`; a write naming an id no project file
   backs is refused with "Unknown project: <id>" and nothing is written. `null` is unfiled.
 - `status` is one of `inbox`, `triaged`, `acting`, `done`, `dropped`. A signal is created
@@ -322,7 +324,7 @@ second store.
 ### The lens
 
 The area lens carves the chain up without hiding unfiled captures: **Life** shows all, an
-area shows unassigned + that area. This is the data-filter law — see
+area shows Life (general) + that area. This is the data-filter law — see
 [`LAWS/DOMAIN-FILTER.md`](../../LAWS/DOMAIN-FILTER.md) and [Areas](./05-areas.md). Wing tabs
 never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 
@@ -331,8 +333,8 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 - The composer still has no type, title, project, status or priority field: capture first,
   triage on the row. A type or a title beyond `thought` is the companion's `create_signal`
   surface, not the quick-fire box.
-- A signal with no area shows **Unassigned** on its row; that is a label, not a stored area
-  slug — the file keeps `domainSlug: null`.
+- A signal with no area shows **Life (general)** on its row; that is a label, not a stored
+  area slug — the file keeps `domainSlug: null`.
 - "No project" and "None" are the row labels for an unfiled project and an unset priority;
   neither is a stored value. `priority: "normal"` is a real choice and shows **Normal**.
 - The filters are a view: switching area lens or filter never rewrites a signal. A
@@ -358,8 +360,8 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 - A signal written before pictures and links existed still reads as a plain text capture: a
   missing `attachment` key means the same as `null`. A signal written before the inbox
   existed still reads as `status: "inbox"` with no project, priority or origin.
-- The area picker offers unlocked areas only, never the base **Life**; a capture that belongs
-  to no narrower area stays unassigned and remains visible under every lens.
+- The area switcher offers unlocked areas only, never the base **Life**; a capture made on
+  the Life lens is filed as **Life (general)** and remains visible under every lens.
 - The project picker offers live projects only; a capture filed under a project that was
   later deleted keeps its id, is shown by id, and can be unfiled with **No project**.
 - The chain is not area-filtered at the file level: every signal carries one optional area,

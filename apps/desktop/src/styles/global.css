@@ -10648,6 +10648,9 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
+/* The capture's area: a readout of the lens at the top, not a picker. It keeps
+   the same quiet weight as the rest of the box's foot, with the value in the
+   text colour so the one fact worth reading stands out. */
 .signal-chain__area {
   display: inline-flex;
   align-items: center;
@@ -10657,17 +10660,9 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
-.signal-chain__area select {
-  width: auto;
-  max-width: 10rem;
-  padding: 0.3rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+.signal-chain__area-value {
   color: var(--fg);
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
+  font-weight: 600;
 }
 
 /* The page's act: the app's primary button, sized to read as the point of the

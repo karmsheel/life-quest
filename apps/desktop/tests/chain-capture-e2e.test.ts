@@ -103,6 +103,16 @@ type Select = {
 
 type Box = { left: number; top: number; width: number; height: number };
 
+/** The box's area readout: the lens it files under, and no control of its own. */
+type ComposerArea = {
+  present: boolean;
+  tag?: string;
+  value?: string | null;
+  slug?: string;
+  title?: string | null;
+  controls?: number;
+};
+
 /** One inbox filter: the picker's options, the applied value, its geometry. */
 type FilterControl = Select & {
   present: boolean;
@@ -318,6 +328,16 @@ type Report = {
       screenshots: { name: string; bytes: number }[];
     };
     inbox: InboxCheck;
+    lens: {
+      area: { slug: string; name: string } | null;
+      before: ComposerArea;
+      lensed: ComposerArea;
+      create: Create | null;
+      row: Row | null;
+      after: ComposerArea;
+      lensWrites: (string | null)[];
+      screenshot: { name: string; bytes: number };
+    };
   };
 };
 
@@ -441,6 +461,11 @@ describe("Notebox page — general capture", () => {
     assert.equal(checks.textCapture.create.body, "line one\nline two");
     assert.equal(checks.textCapture.create.attachment, null);
     assert.equal(checks.textCapture.row.attachment, "text");
+    assert.equal(
+      checks.textCapture.create.domainSlug,
+      null,
+      "the Life lens did not file the capture in Life (general)",
+    );
     assert.match(checks.textCapture.row.body ?? "", /line one/);
 
     // The drop became a decoded pending thumbnail, and the capture carried bytes.
@@ -601,6 +626,28 @@ describe("Notebox page — general capture", () => {
     assert.ok((checks.dock.seededImage?.width ?? 0) > 0);
     assert.equal(checks.dock.seededLink?.href, expected.seeded.linkUrl);
     assert.equal(checks.dock.seededLink?.target, "_blank");
+
+    // The box files under the area lens at the top, not under a picker of its
+    // own: the Life lens is the general area, and switching the lens moves both
+    // the readout and the area the bridge is handed.
+    const lens = checks.lens;
+    assert.equal(lens.before.present, true);
+    assert.equal(lens.before.value, "Life (general)");
+    assert.equal(lens.before.slug, "");
+    assert.equal(lens.before.controls, 0, "the box still holds its own area control");
+    assert.ok(lens.area, "the fixture offers no area to switch to");
+    assert.equal(lens.lensed.value, lens.area?.name);
+    assert.equal(lens.lensed.slug, lens.area?.slug);
+    assert.ok(
+      lens.lensWrites.includes(lens.area?.slug ?? null),
+      `the lens was never written: ${JSON.stringify(lens.lensWrites)}`,
+    );
+    assert.equal(lens.create?.domainSlug, lens.area?.slug);
+    assert.equal(lens.row?.dataDomainSlug, lens.area?.slug);
+    assert.equal(lens.row?.domain, lens.area?.name);
+    assert.equal(lens.after.value, "Life (general)");
+    assert.equal(lens.after.slug, "");
+    assert.ok(lens.screenshot.bytes > 20_000, "the area capture looks empty");
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
     assert.equal(checks.final.rows, expected.seeded.count + 5);
@@ -766,7 +813,7 @@ describe("Notebox page — general capture", () => {
     // says so, and the seeded fixture's source text is on its row.
     const unassigned = inbox.rows.find((row) => row.dataDomainSlug === "");
     assert.ok(unassigned, "no unassigned seeded row on the page");
-    assert.equal(unassigned?.domain, "Unassigned");
+    assert.equal(unassigned?.domain, "Life (general)");
     assert.equal(unassigned?.project, "No project");
     assert.equal(unassigned?.capturedFrom, "Chrome — AI tab group");
     const filed = inbox.rows.find(

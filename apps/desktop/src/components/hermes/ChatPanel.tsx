@@ -549,9 +549,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const reading = useOptionalChatDisplay();
 
   /**
-   * The chain, lensed the way the Life-Chain page lenses it: everything in
-   * Life, and unassigned plus the open area in an area tab. Logging here
-   * files a signal unassigned, so what the panel writes is never hidden from it.
+   * The chain, lensed the way the Notebox page lenses it: everything in Life,
+   * and Life (general) plus the open area in an area tab. Logging here files a
+   * signal in Life (general), so what the panel writes is never hidden from it.
    */
   const visibleSignals = useMemo(
     () => signals.filter((s) => signalVisible(lens, s.domainSlug)),
@@ -1145,9 +1145,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * Log one signal through the same call the page makes. It files `thought` with
-   * no title and no domain — the chain is for capture, and the type/title/domain
-   * calls belong on the page, where there is room to make them. Unassigned also
-   * means the record stays visible in every lens, including this one.
+   * no title and in Life (general) — the chain is for capture, and the
+   * type/title/domain calls belong on the page, where there is room to make
+   * them. Life (general) also means the record stays visible in every lens,
+   * including this one.
    */
   async function onChainSubmit(e: FormEvent) {
     e.preventDefault();
@@ -1773,7 +1774,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
           disabled={busy || editing}
           onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
         >
-          <option value="">- unassigned -</option>
+          <option value="">Life (general)</option>
           {assignOptions(s).map((d) => (
             <option key={d.slug} value={d.slug}>
               {d.name}
@@ -2416,7 +2417,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               <p className="chat-panel__chain-empty muted">
                 {signals.length === 0
                   ? "Nothing on the chain yet. Write something below."
-                  : "No unassigned or matching signals in this area."}
+                  : "No Life (general) or matching signals in this area."}
               </p>
             ) : (
               <ul
