@@ -10648,6 +10648,9 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
+/* The capture's area: a readout of the lens at the top, not a picker. It keeps
+   the same quiet weight as the rest of the box's foot, with the value in the
+   text colour so the one fact worth reading stands out. */
 .signal-chain__area {
   display: inline-flex;
   align-items: center;
@@ -10657,17 +10660,9 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
-.signal-chain__area select {
-  width: auto;
-  max-width: 10rem;
-  padding: 0.3rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+.signal-chain__area-value {
   color: var(--fg);
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
+  font-weight: 600;
 }
 
 /* The page's act: the app's primary button, sized to read as the point of the
@@ -10905,32 +10900,38 @@ button.chat-panel__activity-line:hover {
   margin: 0.25rem 0 0;
 }
 
-/* —— Triage band: the chips above the inbox list ——
-   Three labelled rows, each of which wraps. Nothing here may push the page
-   wider than the window: the rows are flex-wrap and the chips are nowrap only
-   inside their own pill, so a long area or project name wraps the row rather
-   than the document. */
+/* —— Triage band: the filters on one line ——
+   Status and project are selects; the area is a readout of the domain picker
+   above, which is Notebox's one area filter. One line at the page's width,
+   each picker sized to its value and ellipsising a long one. The row wraps
+   only when the window is too narrow to hold it, so the band never pushes the
+   document wider than the window. */
 .signal-chain__filters {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.55rem 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  padding: 0.4rem 0.65rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
 
-.signal-chain__filter-row {
-  display: flex;
-  flex-wrap: wrap;
+.signal-chain__filter {
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.35rem;
+  /* Tall enough for a picker, so the area readout — which is text, not a field
+     — keeps the same box as the two selects beside it and the row reads even. */
+  min-height: 1.6rem;
   min-width: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .signal-chain__filter-label {
   flex: none;
-  min-width: 3.7rem;
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -10938,39 +10939,35 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
-.signal-chain__chip {
-  appearance: none;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  padding: 0.15rem 0.6rem;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out);
+/* The area readout ends the band against its right edge: the lens is the
+   page's scope rather than one of the picks, so it sits apart from them. */
+.signal-chain__filter--area {
+  margin-left: auto;
 }
 
-.signal-chain__chip:hover {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--selected) 12%, transparent);
-}
-
-.signal-chain__chip--active {
+/* The area readout names the lens the band's list is scoped to; it is text,
+   not a control, so it reads with the value's weight rather than a field's. */
+.signal-chain__filter-value {
   color: var(--fg);
   font-weight: 600;
-  background: var(--card);
-  border-color: var(--border);
-  box-shadow: var(--shadow-xs);
+  font-size: 0.78rem;
 }
 
-.signal-chain__chip:focus-visible {
+.signal-chain__filter-select {
+  min-width: 0;
+  max-width: 11rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.signal-chain__filter-select:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--selected) 55%, transparent);
   outline-offset: 1px;
 }
