@@ -25,6 +25,20 @@ const MONTH_SHORT = [
   "Nov",
   "Dec",
 ] as const;
+const MONTH_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
 
 export function isReviewCadence(value: string): value is ReviewCadence {
   return (REVIEW_CADENCES as readonly string[]).includes(value);
@@ -82,6 +96,35 @@ function formatDay(date: string): string {
   const day = dt.getUTCDate();
   const month = MONTH_SHORT[dt.getUTCMonth()];
   return `${day} ${month} ${dt.getUTCFullYear()}`;
+}
+
+/** A day of the month with its ordinal suffix: `1st`, `2nd`, `11th`, `23rd`. */
+function formatOrdinal(day: number): string {
+  const teens = day % 100;
+  if (teens >= 11 && teens <= 13) return `${day}th`;
+  if (day % 10 === 1) return `${day}st`;
+  if (day % 10 === 2) return `${day}nd`;
+  if (day % 10 === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+/**
+ * A week's span in the operator's words: `9th to 15th November 2026`, or
+ * `30th November to 6th December 2026` across a month, or `29th December 2025
+ * to 4th January 2026` across a year.
+ */
+function formatWeekSpan(start: Date, end: Date): string {
+  const startDay = `${formatOrdinal(start.getUTCDate())} ${MONTH_LONG[start.getUTCMonth()]}`;
+  const endDay = `${formatOrdinal(end.getUTCDate())} ${MONTH_LONG[end.getUTCMonth()]}`;
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  if (startYear !== endYear) {
+    return `${startDay} ${startYear} to ${endDay} ${endYear}`;
+  }
+  if (start.getUTCMonth() === end.getUTCMonth()) {
+    return `${formatOrdinal(start.getUTCDate())} to ${endDay} ${endYear}`;
+  }
+  return `${startDay} to ${endDay} ${endYear}`;
 }
 
 /**
@@ -317,12 +360,16 @@ export function isFuturePeriod(
 
 /**
  * The period's own name, without the cadence's: `14 Nov 2026` for a day,
- * `Week of 9 Nov 2026` for a week, `Nov 2026` for a month, `2026 Q4` for a
- * quarter, `2026` for a year.
+ * `9th to 15th November 2026 (Week 46)` for a week, `Nov 2026` for a month,
+ * `2026 Q4` for a quarter, `2026` for a year.
  *
  * This is the review page's heading. The cadence is the page's eyebrow, so
- * repeating it in the title (`Weekly review · Week of …`) says the same thing
- * twice; the period alone is what the operator is looking at.
+ * repeating it in the title would say the same thing twice; the period alone
+ * is what the operator is looking at.
+ *
+ * A week is named by its two ends and its calendar-week number, not by its
+ * first day alone: `Week of 9 Nov 2026` leaves the reader counting days to know
+ * which span they are reflecting on.
  */
 export function periodLabel(
   cadence: ReviewCadence,
@@ -331,7 +378,21 @@ export function periodLabel(
 ): string {
   if (cadence === "daily") return formatDay(period);
   if (cadence === "weekly") {
-    void weekStartDay;
+    const bounds = periodBounds("weekly", period, weekStartDay);
+    if (bounds.ok) {
+      const start = utc(bounds.value.start);
+      const end = utc(bounds.value.end);
+      if (start && end) {
+        // The week number is the ISO week of the span's last day. A
+        // Monday-start week ends on Sunday, the ISO week's own last day; a
+        // Sunday-start week ends on Saturday, whose ISO week is the
+        // Monday-first one the Sunday mostly opened. Both starts number 1–53
+        // the same way.
+        const week = isoWeekOf(bounds.value.end);
+        const span = formatWeekSpan(start, end);
+        return week ? `${span} (Week ${week.week})` : span;
+      }
+    }
     return `Week of ${formatDay(period)}`;
   }
   if (cadence === "monthly") {

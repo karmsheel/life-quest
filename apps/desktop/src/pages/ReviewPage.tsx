@@ -875,10 +875,10 @@ function ReviewPageFor() {
   );
 
   /**
-   * The eyebrow names the cadence's own page: "Daily" for the daily review,
-   * "Weekly" for the weekly one, and so on. The cadence is
-   * already one of the review page names, so the label is its capitalised
-   * form.
+   * The eyebrow names the wing and the cadence's own page: "Review / Daily"
+   * for the daily review, "Review / Weekly" for the weekly one, and so on.
+   * The cadence is already one of the review page names, so the label is its
+   * capitalised form.
    */
   const cadenceLabel =
     cadence.charAt(0).toUpperCase() + cadence.slice(1);
@@ -953,10 +953,11 @@ function ReviewPageFor() {
         <header className="review-page__header">
           {/* The page's name is the eyebrow, as on the Daily Journal: the period
               below is the page's one heading, so the cadence is not repeated as a
-              second title. The lock, while it is on, is the page's one badge and
-              rides the title row's trailing edge. */}
+              second title. Review names the wing before the cadence so the page
+              reads "Review / Weekly", not a bare "Weekly". The lock, while it is
+              on, is the page's one badge and rides the title row's trailing edge. */}
           <div className="review-page__title-row">
-            <WingEyebrow page={cadenceLabel as EyebrowPage} />
+            <WingEyebrow page={cadenceLabel as EyebrowPage} wing="Review" />
             {locked ? (
               <div className="review-page__header-actions">
                 <span className="review-page__lock-badge">Locked</span>

@@ -453,16 +453,22 @@ describe("review ui e2e", () => {
     assert.equal(opened.blockCount, 35, "the review did not render its own file");
     assert.equal(opened.editing, false, "the review opened a writing line on arrival");
     assert.equal(opened.blanks, 1, "the blank line the operator typed is not drawn");
-    // The header is the Daily Journal's shape: the cadence is the page's name in
-    // the eyebrow, the period is its one heading, and the calendar key beside
+    // The header is the Daily Journal's shape: the wing and cadence are the
+    // page's eyebrow, the period is its one heading, and the calendar key beside
     // the heading walks to another period. The old `Weekly review` title would
     // say the cadence twice and the period in a second, subordinate line.
-    assert.equal(opened.eyebrow, "Weekly", "the review page's eyebrow is not its cadence");
+    assert.equal(
+      opened.eyebrow,
+      "Review / Weekly",
+      "the review page's eyebrow is not the wing and cadence",
+    );
     // The page opens on the CURRENT week, which is whatever week the suite runs
-    // in: the claim is the shape of its own label, not a pinned date.
+    // in: the claim is the shape of its own label, not a pinned date — the two
+    // ends of the week and its ISO week number, e.g.
+    // `9th to 15th November 2026 (Week 46)`.
     assert.match(
       String(opened.title),
-      /^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/,
+      /^\d{1,2}(?:st|nd|rd|th)(?: [A-Z][a-z]+(?: \d{4})?)? to \d{1,2}(?:st|nd|rd|th) [A-Z][a-z]+ \d{4} \(Week \d{1,2}\)$/,
       "the review page's heading is not its period",
     );
     assert.equal(
@@ -841,7 +847,7 @@ describe("review ui e2e", () => {
     );
     assert.match(
       String(picker.moved?.title),
-      /^Week of /,
+      /^\d{1,2}(?:st|nd|rd|th)\b.*\(Week \d{1,2}\)$/,
       "the moved page's heading is not its week",
     );
     assert.equal(

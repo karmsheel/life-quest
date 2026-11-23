@@ -175,6 +175,16 @@ const LOCKED_ROW = "review-area-spirit";
 const TOTAL_AREAS = AREA_ROWS.length;
 
 /** Read the review page and the box straight off the rendered DOM. */
+/**
+ * A weekly review's period label: `9th to 15th November 2026 (Week 46)`, with
+ * the start's month (and year) omitted when the span shares them with the end,
+ * as in `9th to 15th November 2026`. A span that crosses a month reads
+ * `30th November to 6th December 2026`; one that crosses a year,
+ * `28th December 2026 to 3rd January 2027`.
+ */
+const WEEK_TITLE =
+  /^\d{1,2}(?:st|nd|rd|th)(?: [A-Z][a-z]+(?: \d{4})?)? to \d{1,2}(?:st|nd|rd|th) [A-Z][a-z]+ \d{4} \(Week \d{1,2}\)$/;
+
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const box = document.querySelector(".note-live");
@@ -1012,14 +1022,19 @@ async function main() {
   checks.opened = opened;
   checks.openedRail = railState(opened);
   assertDocument(opened, "on arrival", { blocks: 35 });
-  // The header is the Daily Journal's shape: the cadence is the page's eyebrow
-  // (the name is not repeated as the title), the period is the page's one
+  // The header is the Daily Journal's shape: the wing and cadence are the
+  // page's eyebrow (the name is not repeated as the title), the period is the
+  // page's one
   // heading over the prose with a calendar key beside it, and the two step keys
   // sit on the column's own edges as arrows with no label and no frame.
-  if (opened.eyebrow !== "Weekly") {
-    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Weekly"`);
+  if (opened.eyebrow !== "Review / Weekly") {
+    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Review / Weekly"`);
   }
-  if (!/^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.title))) {
+  // A week is named by its two ends and its calendar-week number, e.g.
+  // "9th to 15th November 2026 (Week 46)". The span can cross a month or a
+  // year, so the start's date part is optional; the end and the week number
+  // are always there.
+  if (!WEEK_TITLE.test(String(opened.title))) {
     failure(`the page's heading is not its period: ${JSON.stringify(opened.title)}`);
   }
   if (opened.title !== opened.period) {
@@ -1469,7 +1484,7 @@ async function main() {
         `the calendar opened week ${JSON.stringify(moved.periodData)}, expected ${JSON.stringify(expectedWeek)}`,
       );
     }
-    if (!/^Week of /.test(String(moved.title))) {
+    if (!WEEK_TITLE.test(String(moved.title))) {
       failure(`the moved page's heading is not a week: ${JSON.stringify(moved.title)}`);
     }
     if (moved.nextDisabled !== false) {
@@ -1640,7 +1655,7 @@ async function main() {
     win,
     `(() => {
       const eyebrow = document.querySelector('[data-testid="wing-eyebrow"]');
-      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Daily";
+      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Review / Daily";
     })()`,
     "the daily review page",
   );

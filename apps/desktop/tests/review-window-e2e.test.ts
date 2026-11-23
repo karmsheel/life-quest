@@ -36,6 +36,7 @@ const SHOTS = [
   "review-window-daily-before.png",
   "review-window-daily-open.png",
   "review-window-weekly-before.png",
+  "review-window-weekly-open.png",
   "review-window-monthly-open.png",
   "review-window-yearly-before.png",
   "review-window-settings.png",
@@ -113,7 +114,7 @@ const REVIEW_SCENARIOS: {
 }[] = [
   {
     name: "dailyBefore",
-    eyebrow: "Daily",
+    eyebrow: "Review / Daily",
     title: "14 Nov 2026",
     periodLabel: "14 Nov 2026",
     note: "The daily review for the current period opens 15 Nov 2026 at 18:00.",
@@ -121,7 +122,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "dailyOpen",
-    eyebrow: "Daily",
+    eyebrow: "Review / Daily",
     title: "15 Nov 2026",
     periodLabel: "15 Nov 2026",
     note: null,
@@ -129,23 +130,53 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "weeklyBefore",
-    eyebrow: "Weekly",
-    title: "Week of 2 Nov 2026",
-    periodLabel: "Week of 2 Nov 2026",
+    eyebrow: "Review / Weekly",
+    title: "2nd to 8th November 2026 (Week 45)",
+    periodLabel: "2nd to 8th November 2026 (Week 45)",
     note: "The weekly review for the current period opens 15 Nov 2026 at 08:00.",
     now: "2026-11-10T09:00:00",
   },
   {
     name: "weeklyOpen",
-    eyebrow: "Weekly",
-    title: "Week of 9 Nov 2026",
-    periodLabel: "Week of 9 Nov 2026",
+    eyebrow: "Review / Weekly",
+    title: "9th to 15th November 2026 (Week 46)",
+    periodLabel: "9th to 15th November 2026 (Week 46)",
     note: null,
     now: "2026-11-15T08:00:00",
   },
   {
+    // A week that crosses a month is named by BOTH ends, not by its start's
+    // month alone: 30 Nov – 6 Dec 2026 is week 49.
+    name: "weeklyCrossMonth",
+    eyebrow: "Review / Weekly",
+    title: "30th November to 6th December 2026 (Week 49)",
+    periodLabel: "30th November to 6th December 2026 (Week 49)",
+    note: null,
+    now: "2026-12-06T09:00:00",
+  },
+  {
+    // And one that crosses a year: the year belongs to each end.
+    name: "weeklyCrossYear",
+    eyebrow: "Review / Weekly",
+    title: "28th December 2026 to 3rd January 2027 (Week 53)",
+    periodLabel: "28th December 2026 to 3rd January 2027 (Week 53)",
+    note: null,
+    now: "2027-01-03T09:00:00",
+  },
+  {
+    // A Sunday-start vault numbers a week by the ISO week its Monday–Saturday
+    // span mostly sits in: Sun 8 – Sat 14 Nov 2026 is week 46, the same number
+    // a Monday-start week of the same days carries.
+    name: "weeklySundayStart",
+    eyebrow: "Review / Weekly",
+    title: "8th to 14th November 2026 (Week 46)",
+    periodLabel: "8th to 14th November 2026 (Week 46)",
+    note: "The weekly review for the current period opens 21 Nov 2026 at 08:00.",
+    now: "2026-11-15T09:00:00",
+  },
+  {
     name: "monthlyBefore",
-    eyebrow: "Monthly",
+    eyebrow: "Review / Monthly",
     title: "Oct 2026",
     periodLabel: "Oct 2026",
     note: "The monthly review for the current period opens 29 Nov 2026 at 00:00.",
@@ -153,7 +184,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "monthlyOpen",
-    eyebrow: "Monthly",
+    eyebrow: "Review / Monthly",
     title: "Nov 2026",
     periodLabel: "Nov 2026",
     note: null,
@@ -161,7 +192,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "quarterlyBefore",
-    eyebrow: "Quarterly",
+    eyebrow: "Review / Quarterly",
     title: "2026 Q3",
     periodLabel: "2026 Q3",
     note: "The quarterly review for the current period opens 29 Dec 2026 at 00:00.",
@@ -169,7 +200,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "quarterlyOpen",
-    eyebrow: "Quarterly",
+    eyebrow: "Review / Quarterly",
     title: "2026 Q4",
     periodLabel: "2026 Q4",
     note: null,
@@ -177,7 +208,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "yearlyBefore",
-    eyebrow: "Yearly",
+    eyebrow: "Review / Yearly",
     title: "2025",
     periodLabel: "2025",
     note: "The yearly review for the current period opens 25 Dec 2026 at 00:00.",
@@ -185,7 +216,7 @@ const REVIEW_SCENARIOS: {
   },
   {
     name: "yearlyOpen",
-    eyebrow: "Yearly",
+    eyebrow: "Review / Yearly",
     title: "2026",
     periodLabel: "2026",
     note: null,

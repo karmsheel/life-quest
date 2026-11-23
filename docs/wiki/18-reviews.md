@@ -33,12 +33,14 @@ rail has five rows, each a page at its own route:
 
 Each opens in the centre pane as a page, not a sheet. Any other cadence segment
 under `/review/` redirects to `/review/weekly`. The header is the Daily
-Journal's, at a period's scale: the grey cadence eyebrow — **Daily**,
-**Weekly**, **Monthly**, **Quarterly** or **Yearly** — names the page, and the
-period itself is the page's one heading, centred over the prose. A calendar key
-beside the heading jumps to another period, and wordless arrow keys on the
-column's edges step one period at a time. The cadence is never repeated as a
-second title.
+Journal's, at a period's scale: the grey eyebrow names the wing and the cadence
+— **Review / Daily**, **Review / Weekly**, **Review / Monthly**,
+**Review / Quarterly** or **Review / Yearly** — and the period itself is the
+page's one heading, centred over the prose. A week's heading names both of its
+ends and its calendar-week number, for example
+`21st to 27th September 2026 (Week 39)`. A calendar key beside the heading
+jumps to another period, and wordless arrow keys on the column's edges step one
+period at a time. The cadence is never repeated as a second title.
 
 **Daily is one general review of the day.** It has no checklist and no area
 sections, and the area lens does not narrow it: a day is reviewed as a day,
@@ -157,10 +159,11 @@ cannot be quietly rewritten.
    ([When a review opens](#when-a-review-opens)).
 2. Move the period with the two arrow keys on either side of the header, or
    jump with the **calendar** key beside the centred period. The heading reads
-   the period, for example `Week of 21 Sep 2026`. **Next** is disabled on the
-   open period: reviews are past and present only, and a review that has not
-   opened yet cannot be paged to. The calendar offers only periods whose window
-   has opened, and choosing any day inside a week takes you to that week.
+   the period, for example `21st to 27th September 2026 (Week 39)` on Weekly.
+   **Next** is disabled on the open period: reviews are past and present only,
+   and a review that has not opened yet cannot be paged to. The calendar offers
+   only periods whose window has opened, and choosing any day inside a week
+   takes you to that week.
 3. On **Daily**, a period with no file says **No review for this period yet.**
    and offers **Start the interview** (create the file, fill the figures the
    cadence's rules ask for, open the companion chat) or **Write it myself**
@@ -211,7 +214,7 @@ notes in this period.** and offers **Write today's note**.
 
 | Part | What it does |
 |---|---|
-| Cadence eyebrow, period heading and pager | The grey cadence eyebrow; the period as the page's one heading (for example `Week of 21 Sep 2026`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
+| Eyebrow, period heading and pager | The grey eyebrow naming the wing and cadence (for example **Review / Weekly**); the period as the page's one heading (for example `21st to 27th September 2026 (Week 39)`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
 | **Review checklist** | Weekly and longer only; a vertical column to the right of the report, inside the page's right padding. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
 | Scope line | **Reviewing Health** (or **Reviewing Life**) above the body, with **Whole-life review** to move the lens back to Life without starting a session. |
 | Status text | **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. |

@@ -2,8 +2,9 @@
  * E2E harness for the wing eyebrow — driven by `wing-eyebrow.electron.mjs`.
  *
  * The claim under test is the chrome every wing page opens with: a small
- * uppercase eyebrow naming the wing it sits under, a dot, then the page's own
- * name — "Dashboard", "Dream", "Task Manager".
+ * uppercase eyebrow carrying the page's own name — "Dashboard", "Dream",
+ * "Task Manager" — and, under Review, the wing's name in front of it:
+ * "Review / Daily", "Review / Weekly".
  *
  * This rig mounts the SHIPPING shell and the SHIPPING pages, because the
  * eyebrow is a property of the real page, not of a description of it. The
@@ -13,10 +14,10 @@
  *     then read the same as "the eyebrow says the wrong thing". So every page
  *     must ALSO show its own `<h1>` — the eyebrow is read only where the page
  *     proved it rendered.
- *  2. The eyebrow's text is CSS-uppercased, so `textContent` reads "Home ·
- *     Dashboard" while the operator sees "HOME · DASHBOARD". The rig asserts
- *     the DOM text AND the computed `text-transform`, so the capitals are
- *     checked where they actually happen.
+ *  2. The eyebrow's text is CSS-uppercased, so `textContent` reads "Review /
+ *     Daily" while the operator sees "REVIEW / DAILY". The rig asserts the DOM
+ *     text AND the computed `text-transform`, so the capitals are checked
+ *     where they actually happen.
  *  3. Two `h1`s can be on screen (the page's own and the shell's). Every read
  *     is scoped to `[data-page-context-root]`, the one column the shell
  *     declares to be the page.

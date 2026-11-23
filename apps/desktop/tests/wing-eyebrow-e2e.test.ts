@@ -41,7 +41,8 @@ type Expectation = {
   route: string;
   eyebrow: string;
   wing: string;
-  heading: string;
+  /** The page's h1, or null where it is a period that moves with the clock. */
+  heading: string | null;
 };
 
 type Report = {
