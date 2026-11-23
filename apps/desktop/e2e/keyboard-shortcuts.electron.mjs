@@ -781,9 +781,9 @@ async function main() {
       `bar ${JSON.stringify(dockThread.dock && dockThread.dock.bar)}`,
     );
     check(
-      "the titlebar's trailing cluster is the theme control and the settings menu",
-      trailingClasses.length === 2 &&
-        ["theme-mode-toggle", "settings-menu"].every(
+      "the titlebar's trailing cluster is layouts, the theme control and the settings menu",
+      trailingClasses.length === 3 &&
+        ["layouts-menu__trigger", "theme-mode-toggle", "settings-menu"].every(
           (needle, index) =>
             String(trailingClasses[index] ?? "").includes(needle),
         ),

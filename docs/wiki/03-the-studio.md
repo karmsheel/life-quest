@@ -19,8 +19,9 @@ routes:
   welcome and companion screens. Inside the shell it carries the **area lens tab**
   centred on the strip, between the rail's column and the trailing controls; on
   the welcome and companion screens the tab is absent. The trailing cluster is
-  the day/night control and the **Settings** gear; full-screen chat's door is
-  the dock's own top row, not the strip.
+  the **layouts** control, the day/night control and the **Settings** gear;
+  full-screen chat's door is the dock's own top row, and the layouts picker
+  offers the same mode as its **Full agent** card.
 - The **rail** is the leading column of the shell grid. Its wing band and the
   active wing's pages sit under the title bar, and its foot holds the **Log** and
   the **vault chip**.
@@ -29,7 +30,8 @@ routes:
 - The **chat dock** is the trailing column, or the middle column when you swap
   sides. **Full screen chat** at the trailing end of its top row collapses the
   main page and gives the dock the workspace to the right of the rail; the rail
-  and its chats list stay.
+  and its chats list stay. The layouts picker can also give the page and the dock
+  **half the window each**, in either order, without moving the rail.
 - **Settings** (`/settings?tab=<id>`) and **Decisions** (`/decisions`) are sheets
   over the page, not pages of their own.
 
@@ -97,10 +99,33 @@ settings sheet instead of a smaller menu.
    otherwise. The main page collapses, the chat takes the workspace right of the
    rail, and the rail with its **Chats** list stays; the control now reads **Exit
    full screen chat**. **Mod+Shift+F** toggles the same mode from anywhere. The
-   mode is session state, not a preference:
-   relaunching brings the split back, and collapsing the dock leaves the mode and
-   returns the page and launcher.
-9. **Open a sheet and leave it.** Press the gear in the title bar (a link to
+   mode is session state, not a preference: relaunching brings the two-pane
+   window back, and collapsing the dock leaves the mode and returns the page and
+   launcher. It also lies over whichever layout the window is wearing rather
+   than replacing it: leaving the mode puts back the split, or the studio, you
+   were in, on the same boxes.
+9. **Arrange the window.** Press the **layouts** control in the title bar, just
+   before the day/night control: a small picker opens over the workspace with
+   four thumbnails, and the one in force is ticked.
+   - **Studio** — the shipped studio, with the dock back at its own width.
+   - **Page · Agent** — an even split: the page on the left, the agent on the
+     right, half the window each.
+   - **Agent · Page** — the same even split with the panes swapped.
+   - **Full agent** — the agent alone, exactly as **Full screen chat** does; the
+     card and the dock's own control are one state, so pressing either moves the
+     tick in the picker.
+
+   Picking a card applies it and closes the picker. The split is real geometry,
+   not a remembered width: it stays a half each when the window is resized or the
+   rail collapsed, and the seam's drag handle is withdrawn while it is on (the
+   **Studio** card brings it back, with the width you had). While split, the
+   dock's own swap control trades the two split cards; collapsing the dock
+   returns the studio arrangement. **Full agent** is the dock's own full-screen
+   mode, not a lookalike: picked from a split it lies over the split, and leaving
+   the mode (the dock's control or **Mod+Shift+F**) returns you to the split on
+   the same boxes. The picker closes on a press outside it, on **Escape**, and on
+   a second press of the control.
+10. **Open a sheet and leave it.** Press the gear in the title bar (a link to
    `/settings`), or open **Decisions** from the rail. Close with the cross
    (**Close settings** / **Close decisions**), a click on the dimmed background,
    or **Escape**. You return to the page, scroll position and state you left.
@@ -123,13 +148,17 @@ The window title bar:
   screens there is none. There the strip is the window's drag area, with its
   window controls when the overlay is unavailable, and with no vault the window
   title is `LifeQuest`.
-- The trailing controls, for a vault window: the day/night control (*Switch to
+- The trailing controls, for a vault window: the **layouts** control
+  (*Layouts*), which opens the four-arrangement picker — **Studio**,
+  **Page · Agent**, **Agent · Page** and **Full agent** — with a thumbnail of
+  each and a tick on the one in force; then the day/night control (*Switch to
   day mode* / *Switch to night mode*), which switches the palette on a click and
   opens the starred-theme quick menu on hover or keyboard focus; then the
   **Settings** gear, which is a plain link to the settings sheet. The gear has no
   popover and no expanded state — one press opens the whole sheet over the page
-  you were on. There is no full-screen chat control in the strip: that door is
-  the dock's own top row, with **Mod+Shift+F** as the shortcut.
+  you were on. The strip's layouts picker and the dock's own **Full screen chat**
+  control are one state, not two: either door moves the picker's tick and the
+  other control's pressed state, and **Mod+Shift+F** toggles it from anywhere.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -352,6 +381,13 @@ catalogued in [Settings](./28-settings.md).
 - Clicking the day/night control switches the palette immediately; hovering or
   focusing it opens the quick menu. The menu's starred grid is the same list the
   Appearance page curates, and the gear beside it only opens the sheet.
+- The layouts picker is session state, not a stored preference: relaunching
+  returns the studio arrangement, exactly as full-screen chat does. The split
+  halves follow the window, the rail's collapse and a theme's rail placement, so
+  they stay halves rather than a width remembered from the press; a theme that
+  floats the rail splits the window itself, with the rail's card riding over the
+  page. Pressing the layouts control again, **Escape**, or a press anywhere
+  outside the picker closes it without changing the arrangement.
 - A pinned chat cannot be archived or deleted until it is unpinned: while pinned,
   its sidebar row hides the hover archive control and its row menu loses
   **Archive** and **Delete**. The tab's own menu offers **Unpin**.

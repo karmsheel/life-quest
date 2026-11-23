@@ -6,6 +6,7 @@ import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
+import { LayoutsMenu } from "./LayoutsMenu";
 import { ThemeQuickMenu } from "./ThemeQuickMenu";
 import { windowTitleLabel } from "./window-title";
 
@@ -87,16 +88,20 @@ export function WindowTitleBar() {
                 bar, where the surfaces it switches between live: the strip no
                 longer carries a second way to change what the dock shows.
 
-                Full-screen chat has one door, not two: the dock's own top row
-                (Full screen chat -> Exit full screen chat), with Mod+Shift+F as
-                its shortcut. The strip's cluster is the day/night control and
-                the gear, so the pair sits on the window's corner and nothing
-                pushes the gear off it.
+                The layouts picker leads the cluster: the window's own shape
+                first, then how it looks (the palette), then where its settings
+                live (the gear). It changes the window's arrangement — the
+                studio, the even split either way round, or the agent alone.
+                Full-screen chat still has its own door in the dock's top row
+                and its Mod+Shift+F shortcut; the picker's "Full agent" card
+                writes that same state rather than opening a second mode, so the
+                two cannot disagree.
 
                 The gear is a plain link to the settings sheet now: the palette
                 and theme quick menu that once opened under it hangs off the
                 day/night control instead, so the strip offers one way into each.
               */}
+              <LayoutsMenu className="window-titlebar__btn" />
               <ThemeQuickMenu className="window-titlebar__btn" />
               <SettingsMenu className="window-titlebar__settings" />
             </>
