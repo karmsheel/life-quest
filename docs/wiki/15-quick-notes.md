@@ -75,10 +75,11 @@ was attached, before the capture is logged.
    capture into another area, choose it at the top first.
 6. Press **Enter** or choose the primary **Log** button. The box clears, the preview drops, and
    the new signal appears at the top of the list with status **Inbox** and the area read.
-7. Narrow the list with the three filters in the row above it — **Status**, **Area** and
-   **Project** — each a compact drop-down on the same line, not a row of pills: pick a value
-   and the list narrows to it. Filters combine with the area lens; a filter with no matches
-   says "No signals match these filters."
+7. Narrow the list with the filters in the row above it: **Status** and **Project** are
+   compact drop-downs on the same line, and the row's **Area** readout names the domain
+   picker at the top, which is Notebox's one area filter — to see another area, switch it
+   there. The two pickers combine with that lens; a filter with no matches says
+   "No signals match these filters."
 8. Work a signal in the list:
    - Change its **Area**, **Project**, **Status** or **Priority** with the selects on the row.
      These are direct writes; nothing asks for approval.
@@ -106,7 +107,7 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | **Area** readout | Names the area the capture will file under: **Life (general)** on the Life lens, the area's name on an area lens. It follows the switcher at the top and is a readout, not a picker — filing elsewhere means switching areas there. Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
-| Filter row | Three compact drop-downs on one line above the list: **Status** (All, Inbox, Triaged, Acting, Done, Dropped), **Area** (All, Life (general), each live area) and **Project** (All, each live project). Each picker shows the value applied; filters combine. |
+| Filter row | One line above the list: the **Status** and **Project** drop-downs — **Status** (All, Inbox, Triaged, Acting, Done, Dropped) and **Project** (All, each live project) — plus an **Area** readout naming the domain picker at the top (**Life (general)** on the Life lens, the area's name on an area lens). The lens is the area filter; the two pickers narrow what it leaves and each shows the value applied. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Life (general)** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
@@ -120,10 +121,12 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Unreadable files | If any signal file cannot be parsed: "N signal file(s) could not be read." |
 | Missing file | A picture or file whose bytes have gone still holds its row: "That picture is missing from the vault." / "That file is missing from the vault." |
 
-The lens filters the *view* and sets the capture's area: **Life** shows every signal and
-files a capture as **Life (general)**, and an area lens shows the signals tagged to that area
-plus every **Life (general)** one, because a capture with no narrower area must not disappear.
-The page has no search field and no paging; the whole chain is the list.
+The lens filters the *view*, sets the capture's area and is the chain's one area filter:
+**Life** shows every signal and files a capture as **Life (general)**, and an area lens shows
+the signals tagged to that area plus every **Life (general)** one, because a capture with no
+narrower area must not disappear. The filter row has no area picker of its own; its **Area**
+readout only names the lens. The page has no search field and no paging; the whole chain is
+the list.
 
 ## Rules and behaviour
 
@@ -337,8 +340,8 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
   area slug — the file keeps `domainSlug: null`.
 - "No project" and "None" are the row labels for an unfiled project and an unset priority;
   neither is a stored value. `priority: "normal"` is a real choice and shows **Normal**.
-- The filters are a view: switching area lens or filter never rewrites a signal. A
-  capture you cannot see under a filter is still on the chain.
+- The filters are a view: switching the area lens or the status/project pickers never
+  rewrites a signal. A capture you cannot see under a filter is still on the chain.
 - Editing a signal does not touch a task made from it: the task copied the text at the time
   it was made. Changing the signal's project later does not move the task.
 - Deleting a signal does not delete its tasks. They keep the dangling `signalId`. Nor does it

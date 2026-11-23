@@ -152,11 +152,11 @@ export function SignalChainFeed() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  /** The triage filters above the list, combined with the area lens. */
+  /**
+   * The triage filters above the list: status and project. The area is not one
+   * of them — the domain picker at the top is the one area filter for Notebox.
+   */
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "all">("all");
-  const [domainFilter, setDomainFilter] = useState<string | "all" | "none">(
-    "all",
-  );
   const [projectFilter, setProjectFilter] = useState<string | "all">("all");
   /** The row's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
@@ -173,9 +173,10 @@ export function SignalChainFeed() {
   const pendingImageRef = useRef<PendingImage | null>(null);
   pendingImageRef.current = pendingImage;
 
-  // The list is the chain narrowed twice: by the area lens the rail carries and
-  // by the triage chips above it. The two combine rather than replace, so an
-  // area tab shows that area's inbox in whatever triage cut the operator picked.
+  // The list is the chain narrowed twice: by the area lens at the top, which is
+  // the one area filter, and by the status and project filters below it. The
+  // two combine rather than replace, so an area tab shows that area's inbox in
+  // whatever triage cut the operator picked.
   const visible = useMemo(
     () =>
       records.filter((r) => {
@@ -183,17 +184,12 @@ export function SignalChainFeed() {
         if (statusFilter !== "all" && (r.status ?? "inbox") !== statusFilter) {
           return false;
         }
-        if (domainFilter === "none") {
-          if (r.domainSlug !== null) return false;
-        } else if (domainFilter !== "all" && r.domainSlug !== domainFilter) {
-          return false;
-        }
         if (projectFilter !== "all" && r.projectId !== projectFilter) {
           return false;
         }
         return true;
       }),
-    [records, lens, statusFilter, domainFilter, projectFilter],
+    [records, lens, statusFilter, projectFilter],
   );
   const imagePaths = useMemo(
     () =>
@@ -774,11 +770,12 @@ export function SignalChainFeed() {
         data-testid="chain-rule"
       />
 
-      {/* The triage band above the list: three compact selects on one line.
-          The area lens above the page still applies; these narrow what is
-          left and never widen it. Selects rather than rows of chips keep the
-          band from pushing the chain down the page, and the picker's own
-          value is the applied filter. */}
+      {/* The triage band above the list, on one line. The area is not a
+          filter here: the domain picker at the top is Notebox's one area
+          filter, so the band names it in a readout and offers the two cuts
+          that are the page's own — status and project. Selects rather than
+          rows of chips keep the band from pushing the chain down the page,
+          and each picker's own value is the filter it applies. */}
       <div
         className="signal-chain__filters"
         role="group"
@@ -803,26 +800,17 @@ export function SignalChainFeed() {
             ))}
           </select>
         </label>
-        <label className="signal-chain__filter">
+        <span
+          className="signal-chain__filter"
+          data-testid="signal-filter-domain-readout"
+          data-area-slug={captureArea?.slug ?? ""}
+          title="The domain picker at the top is Notebox's area filter."
+        >
           <span className="signal-chain__filter-label">Area</span>
-          <select
-            className="signal-chain__filter-select"
-            aria-label="Filter by area"
-            data-testid="signal-filter-domain"
-            value={domainFilter}
-            onChange={(e) =>
-              setDomainFilter(e.target.value as string | "all" | "none")
-            }
-          >
-            <option value="all">All</option>
-            <option value="none">Life (general)</option>
-            {liveDomains.map((domain) => (
-              <option key={domain.slug} value={domain.slug}>
-                {domain.meta.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <span className="signal-chain__filter-value">
+            {captureAreaName}
+          </span>
+        </span>
         <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Project</span>
           <select

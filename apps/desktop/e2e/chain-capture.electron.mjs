@@ -50,10 +50,12 @@
  *     exactly "Unassigned" and "No project", never a blank cell. Changing a
  *     row's status select hands the bridge exactly `{status: "acting"}`, and the
  *     row paints "Acting" only after the re-read that follows — the screen
- *     change is the vault's answer, not the page's echo. The three filters are
- *     drop-downs sharing one line — status, area and project — not rows of
- *     pills; the status picker narrows to the triaged row, says "No signals
- *     match these filters." when nothing matches, and All restores the chain.
+ *     change is the vault's answer, not the page's echo. The filter band is one
+ *     line: status and project drop-downs plus an Area readout of the domain
+ *     picker, which is the page's only area filter — not rows of pills, and no
+ *     second area picker; the status picker narrows to the triaged row, says
+ *     "No signals match these filters." when nothing matches, and All restores
+ *     the chain.
  *  9. The dock's mirrored surface is the same Notebox: its control is labelled
  *     Notebox, it lists the same chain, and its heading says Notebox.
  * 10. The box files under the area lens, not under a picker of its own: the
@@ -366,18 +368,40 @@ const SAMPLE = `(() => {
     })(),
     rows,
     counts,
-    // The inbox's own surface: the three filter pickers, their values and their
-    // geometry, plus the two empty lines (no matches vs no records at all).
+    // The inbox's own surface: the two filter pickers, the area readout that
+    // names the domain picker's lens, and their geometry, plus the two empty
+    // lines (no matches vs no records at all).
     filters: {
       status: filterOf("signal-filter-status"),
-      domain: filterOf("signal-filter-domain"),
       project: filterOf("signal-filter-project"),
     },
+    // The area is not a filter of its own any more: the domain picker at the
+    // top is the one area filter, so the band only names it.
+    filterArea: (() => {
+      const readout = q('[data-testid="signal-filter-domain-readout"]');
+      const value = readout
+        ? text(readout.querySelector(".signal-chain__filter-value"))
+        : null;
+      return readout
+        ? {
+            present: true,
+            tag: readout.tagName,
+            value,
+            slug: readout.getAttribute("data-area-slug") ?? "",
+            title: readout.getAttribute("title"),
+            controls: readout.querySelectorAll("select, input, button").length,
+          }
+        : { present: false };
+    })(),
+    // A separate area picker must be gone: the band is two selects and a readout.
+    filterAreaSelect: Boolean(q('[data-testid="signal-filter-domain"]')),
     filterLayout: {
       band: box(q(".signal-chain__filters")),
       labels: all(".signal-chain__filter-label").map(text),
       fields: all(".signal-chain__filter").map(box),
       buttons: all(".signal-chain__filters button").length,
+      selects: all(".signal-chain__filters select").length,
+      readouts: all(".signal-chain__filter-value").length,
     },
     filterEmpty: text(q('[data-testid="signal-filter-empty"]')),
     emptyLine: text(q('[data-testid="signal-empty"]')),
@@ -1708,9 +1732,9 @@ async function main() {
       `labels ${JSON.stringify(projectOptionLabels)} vs projects ${JSON.stringify((inboxExpected?.projects ?? []).map((project) => project.title))}`,
     );
 
-    // The band is three drop-downs on one line now, not three rows of pills:
-    // every picker's options and the geometry that proves the one line are
-    // measured off the shipped page.
+    // The band is two drop-downs and the area readout on one line, not three
+    // rows of pills: every option list and the geometry that proves the one
+    // line are measured off the shipped page.
     const statusValues = (baseline.filters?.status?.options ?? []).map(
       (option) => option.value,
     );
@@ -1725,17 +1749,15 @@ async function main() {
       baseline.filters?.status?.value === "all",
       `value ${JSON.stringify(baseline.filters?.status?.value)}`,
     );
-    const domainValues = (baseline.filters?.domain?.options ?? []).map(
-      (option) => option.value,
-    );
     check(
-      "the area filter is a drop-down offering All, Unassigned and the areas",
-      (baseline.filters?.domain?.present ?? false) &&
-        baseline.filters?.domain?.tag === "SELECT" &&
-        domainValues.includes("all") &&
-        domainValues.includes("none") &&
-        domainValues.includes("health"),
-      `tag ${JSON.stringify(baseline.filters?.domain?.tag)}, options ${JSON.stringify(domainValues)}`,
+      "the area is a readout of the domain picker, not a filter of its own",
+      (baseline.filterArea?.present ?? false) &&
+        baseline.filterArea?.tag === "SPAN" &&
+        baseline.filterArea?.value === "Life (general)" &&
+        baseline.filterArea?.slug === "" &&
+        (baseline.filterArea?.controls ?? -1) === 0 &&
+        baseline.filterAreaSelect === false,
+      `readout ${JSON.stringify(baseline.filterArea)}, old picker ${JSON.stringify(baseline.filterAreaSelect)}`,
     );
     const projectValues = (baseline.filters?.project?.options ?? []).map(
       (option) => option.value,
@@ -1750,30 +1772,29 @@ async function main() {
         ),
       `options ${JSON.stringify(projectValues)}`,
     );
-    const filterFieldTops = (baseline.filterLayout?.fields ?? []).map(
-      (field) => field?.top ?? null,
-    );
-    const filterPickerTops = ["status", "domain", "project"].map(
-      (group) => baseline.filters?.[group]?.box?.top ?? null,
+    // Mixed heights are fine (two pickers, one readout): the line is proven by
+    // the fields' centres agreeing, not by their top edges.
+    const filterFieldCenters = (baseline.filterLayout?.fields ?? []).map(
+      (field) => (field ? field.top + field.height / 2 : null),
     );
     check(
-      "the three filters share one line",
-      filterFieldTops.length === 3 &&
-        filterFieldTops.every(
-          (top) => top !== null && top === filterFieldTops[0],
-        ) &&
-        filterPickerTops.every(
-          (top) => top !== null && top === filterPickerTops[0],
+      "the two filters and the area readout share one line",
+      filterFieldCenters.length === 3 &&
+        filterFieldCenters.every(
+          (center) =>
+            center !== null && Math.abs(center - filterFieldCenters[0]) <= 1,
         ),
-      `field tops ${JSON.stringify(filterFieldTops)}, picker tops ${JSON.stringify(filterPickerTops)}`,
+      `field centres ${JSON.stringify(filterFieldCenters)}`,
     );
     check(
-      "the filter band is one compact row, not three pill rows",
+      "the filter band is one compact row of two pickers and a readout",
       (baseline.filterLayout?.band?.height ?? 0) <= 56 &&
         (baseline.filterLayout?.buttons ?? -1) === 0 &&
+        (baseline.filterLayout?.selects ?? -1) === 2 &&
+        (baseline.filterLayout?.readouts ?? -1) === 1 &&
         (baseline.filterLayout?.labels ?? []).join(",") ===
           "Status,Area,Project",
-      `band ${JSON.stringify(baseline.filterLayout?.band)}, buttons ${baseline.filterLayout?.buttons}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
+      `band ${JSON.stringify(baseline.filterLayout?.band)}, selects ${baseline.filterLayout?.selects}, readouts ${baseline.filterLayout?.readouts}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
     );
 
     // The triage itself: one operator gesture on the project-filed row.
@@ -1952,8 +1973,9 @@ async function main() {
         projectOptions: (projectSelect?.options ?? []).map((option) => option.value),
         projectLabels: projectOptionLabels,
         filterStatus: baseline.filters?.status ?? null,
-        filterDomain: baseline.filters?.domain ?? null,
         filterProject: baseline.filters?.project ?? null,
+        filterArea: baseline.filterArea ?? null,
+        filterAreaSelect: baseline.filterAreaSelect === true,
         filterLayout: baseline.filterLayout ?? null,
       },
       triage: {
@@ -2153,7 +2175,14 @@ async function main() {
       `row ${JSON.stringify(lensRow && { dataDomainSlug: lensRow.dataDomainSlug, domain: lensRow.domain })}`,
     );
 
-    // The operator-facing half: the switcher on the area, the readout naming it
+    check(
+      "the band's area readout follows the switcher too",
+      lensed.filterArea?.value === lensArea?.name &&
+        lensed.filterArea?.slug === lensArea?.slug,
+      `filter area ${JSON.stringify(lensed.filterArea)} vs area ${JSON.stringify(lensArea)}`,
+    );
+
+    // The operator-facing half: the switcher on the area, the readouts naming it
     // and the new row filed under it, in one picture, framed from the page's top
     // so the heading and the filter band sit above the filed row.
     await js(`(() => {
@@ -2206,9 +2235,12 @@ async function main() {
       area: lensArea,
       before: beforeLens.composerArea,
       lensed: lensed.composerArea,
+      filterBefore: beforeLens.filterArea,
+      filterLensed: lensed.filterArea,
       create: lensCreate ?? null,
       row: lensRow,
       after: backToLife.composerArea,
+      filterAfter: backToLife.filterArea,
       lensWrites: backToLife.lensWrites ?? [],
       screenshot: { name: path.basename(lensShot), bytes: lensShotBytes },
     };

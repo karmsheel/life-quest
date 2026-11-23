@@ -10900,11 +10900,12 @@ button.chat-panel__activity-line:hover {
   margin: 0.25rem 0 0;
 }
 
-/* —— Triage band: the three filters on one line ——
-   Status, area and project are selects, not chip rows: one line at the page's
-   width, each picker sized to its value and ellipsising a long one. The row
-   wraps only when the window is too narrow to hold it, so the band never
-   pushes the document wider than the window. */
+/* —— Triage band: the filters on one line ——
+   Status and project are selects; the area is a readout of the domain picker
+   above, which is Notebox's one area filter. One line at the page's width,
+   each picker sized to its value and ellipsising a long one. The row wraps
+   only when the window is too narrow to hold it, so the band never pushes the
+   document wider than the window. */
 .signal-chain__filters {
   display: flex;
   flex-wrap: wrap;
@@ -10920,6 +10921,9 @@ button.chat-panel__activity-line:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  /* Tall enough for a picker, so the area readout — which is text, not a field
+     — keeps the same box as the two selects beside it and the row reads even. */
+  min-height: 1.6rem;
   min-width: 0;
   font-size: 0.75rem;
   color: var(--muted);
@@ -10933,6 +10937,14 @@ button.chat-panel__activity-line:hover {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* The area readout names the lens the band's list is scoped to; it is text,
+   not a control, so it reads with the value's weight rather than a field's. */
+.signal-chain__filter-value {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.78rem;
 }
 
 .signal-chain__filter-select {

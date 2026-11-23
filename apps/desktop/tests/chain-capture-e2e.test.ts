@@ -113,6 +113,16 @@ type ComposerArea = {
   controls?: number;
 };
 
+/** The band's area: a readout of the domain picker, holding no control. */
+type AreaReadout = {
+  present: boolean;
+  tag?: string;
+  value?: string | null;
+  slug?: string;
+  title?: string | null;
+  controls?: number;
+};
+
 /** One inbox filter: the picker's options, the applied value, its geometry. */
 type FilterControl = Select & {
   present: boolean;
@@ -171,13 +181,16 @@ type InboxCheck = {
     projectOptions: string[];
     projectLabels: string[];
     filterStatus: FilterControl;
-    filterDomain: FilterControl;
     filterProject: FilterControl;
+    filterArea: AreaReadout;
+    filterAreaSelect: boolean;
     filterLayout: {
       band: Box;
       labels: string[];
       fields: Box[];
       buttons: number;
+      selects: number;
+      readouts: number;
     };
   };
   triage: {
@@ -332,9 +345,12 @@ type Report = {
       area: { slug: string; name: string } | null;
       before: ComposerArea;
       lensed: ComposerArea;
+      filterBefore: AreaReadout;
+      filterLensed: AreaReadout;
       create: Create | null;
       row: Row | null;
       after: ComposerArea;
+      filterAfter: AreaReadout;
       lensWrites: (string | null)[];
       screenshot: { name: string; bytes: number };
     };
@@ -647,6 +663,14 @@ describe("Notebox page — general capture", () => {
     assert.equal(lens.row?.domain, lens.area?.name);
     assert.equal(lens.after.value, "Life (general)");
     assert.equal(lens.after.slug, "");
+    // The band's readout names the same lens, in both directions.
+    assert.equal(lens.filterBefore.value, "Life (general)");
+    assert.equal(lens.filterBefore.slug, "");
+    assert.equal(lens.filterBefore.controls, 0);
+    assert.equal(lens.filterLensed.value, lens.area?.name);
+    assert.equal(lens.filterLensed.slug, lens.area?.slug);
+    assert.equal(lens.filterAfter.value, "Life (general)");
+    assert.equal(lens.filterAfter.slug, "");
     assert.ok(lens.screenshot.bytes > 20_000, "the area capture looks empty");
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
@@ -716,19 +740,24 @@ describe("Notebox page — general capture", () => {
       "all",
       "the status filter does not start on All",
     );
+    // The area stopped being a filter: the domain picker at the top is the one
+    // area filter, and the band only names it — no control, no options.
     assert.equal(
-      inbox.controls.filterDomain?.tag,
-      "SELECT",
-      "the area filter is not a drop-down",
+      inbox.controls.filterArea?.tag,
+      "SPAN",
+      "the band's area is still a control",
     );
-    const domainFilterValues = inbox.controls.filterDomain.options.map(
-      (option) => option.value,
+    assert.equal(inbox.controls.filterArea?.value, "Life (general)");
+    assert.equal(inbox.controls.filterArea?.slug, "");
+    assert.equal(
+      inbox.controls.filterArea?.controls,
+      0,
+      "the band's area readout holds a control",
     );
-    assert.ok(
-      domainFilterValues.includes("all") &&
-        domainFilterValues.includes("none") &&
-        domainFilterValues.includes("health"),
-      `the area filter options are ${JSON.stringify(domainFilterValues)}`,
+    assert.equal(
+      inbox.controls.filterAreaSelect,
+      false,
+      "the old area filter picker is still on the page",
     );
     assert.equal(
       inbox.controls.filterProject?.tag,
@@ -745,28 +774,32 @@ describe("Notebox page — general capture", () => {
       "the project filter is not All plus one option per live project",
     );
 
-    // The requested change, measured: the three pickers share one line, the
-    // band is one compact row, and no chip buttons are left in it.
+    // Measured: the two pickers and the area readout share one line, the band
+    // is one compact row, and no chip buttons or extra pickers are left in it.
     const filterLayout = inbox.controls.filterLayout;
     assert.equal(
       filterLayout.fields.length,
       3,
       "the filter band does not hold three fields",
     );
-    for (const field of filterLayout.fields) {
-      assert.equal(
-        field.top,
-        filterLayout.fields[0].top,
+    // Mixed heights are fine (two pickers, one readout): the line is proven by
+    // the fields' centres agreeing, not by their top edges.
+    const fieldCentres = filterLayout.fields.map(
+      (field) => field.top + field.height / 2,
+    );
+    for (const centre of fieldCentres) {
+      assert.ok(
+        Math.abs(centre - fieldCentres[0]) <= 1,
         `a filter field sits on its own line: ${JSON.stringify(filterLayout.fields)}`,
       );
     }
-    for (const group of ["filterStatus", "filterDomain", "filterProject"]) {
-      assert.equal(
-        inbox.controls[group].box.top,
-        inbox.controls.filterStatus.box.top,
-        `${group} is not on the status filter's line`,
-      );
-    }
+    assert.equal(
+      inbox.controls.filterProject.box.top,
+      inbox.controls.filterStatus.box.top,
+      "the two filter pickers do not share a line",
+    );
+    assert.equal(filterLayout.selects, 2, "the band is not two pickers");
+    assert.equal(filterLayout.readouts, 1, "the band does not hold one readout");
     assert.ok(
       filterLayout.band.height <= 56,
       `the filter band is ${filterLayout.band.height}px tall, not one compact row`,
