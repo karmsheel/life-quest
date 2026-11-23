@@ -64,6 +64,14 @@ clicking it again takes that card out. See [Dashboard](./06-dashboard.md).
 evaporates. Capture is not the studio; it is a signal that can become a task.
 See [Notebox](./15-quick-notes.md).
 
+**Chat from another surface** — a conversation on the Hermes profile that started
+somewhere other than this app's dock: a Telegram or Discord bot, Hermes Desktop,
+the Hermes CLI, an automation. It is listed in the rail's **Chats** sidebar like
+any other chat and continued in place in the dock over the Hermes gateway's own
+connection: the reply lands in that same transcript, and the composer's model,
+thinking, attachment, page-context and steering controls are disabled because
+that connection does not carry them. See [Companion](./24-companion.md).
+
 **Chat thread** — one conversation with the companion, listed in the rail's
 **Chats** sidebar and open in the dock's tab strip. Threads can be renamed,
 pinned, archived, restored and deleted. See [Companion](./24-companion.md).

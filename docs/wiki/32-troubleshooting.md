@@ -192,6 +192,27 @@ expected until an area is opened.
   still missing after that, send again — the companion may have lost the turn
   entirely. A running mark that stops pulsing by itself five to forty-five seconds
   after the reply stops is this bound doing its job, not a new fault.
+- **A chat from Telegram or Discord sends, and it stays the same chat.** A
+  conversation another surface owns is continued over the Hermes gateway's own
+  connection, so the reply lands in that same transcript and the dock names the
+  surface beside the chat's name. Its composer is narrower by design: the model
+  and thinking pills, both attachment controls, the page pill and **Steer** are
+  disabled with the reason, because that connection carries the prompt, the
+  answer, tools, approvals and **Stop** but none of those. Sending in such a chat
+  used to fail with **Chat stream failed (500)**; if you see that on this build,
+  update Hermes.
+- **The turn says the Hermes build cannot continue a chat from another surface.**
+  "This Hermes build can't continue a chat from another surface. Update Hermes,
+  then try again." The installed Hermes is older than the connection that
+  continues a chat; update Hermes, then send the message again.
+- **A continued chat refuses an attachment.** "A chat started on another surface
+  can't carry an attachment yet. Send it in a new chat." The two attach controls,
+  a drop and a paste all refuse; the connection that continues the chat carries
+  text only.
+- **A continued turn ends with a dropped connection.** "The connection to the
+  Hermes gateway closed before the turn finished. The chat is unchanged; try
+  again." The transcript is re-read and the conversation is untouched, so send the
+  message again.
 
 ## Vaults
 

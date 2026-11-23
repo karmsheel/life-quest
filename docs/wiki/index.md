@@ -95,7 +95,7 @@ wants to know what is on disk and what runs where.
 
 | Page | What it covers |
 |---|---|
-| [24 · Companion](./24-companion.md) | Pi and Hermes, chat tabs, composer, attachments, context, questions |
+| [24 · Companion](./24-companion.md) | Pi and Hermes, continuing a chat from another surface, chat tabs, composer, attachments, context, questions |
 
 ### System
 

@@ -7884,6 +7884,38 @@ a.home-mini-list__link:hover {
   letter-spacing: 0.01em;
 }
 
+/* The surface a continued chat came from, worn beside the name: one small chip,
+   wearing the composer's own pill language so provenance reads as chrome rather
+   than as a warning. It is a label, not a control — nothing happens on click —
+   and it never shrinks: the name to its left ellipsizes first, because the
+   surface name is short and the chat title can be long. Only a chat another
+   surface owns wears one; this app's own api_server chats have no surface to
+   name. */
+.chat-panel__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  max-width: 9rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.chat-panel__source-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Renaming happens in the name's own place: the field replaces it, so the row
    does not jump when the name is clicked. This soft box is the only outline the
    row draws, and only while the field is open — the resting name has none. */
@@ -9449,6 +9481,28 @@ button.chat-panel__activity-line:hover {
   padding-inline: calc(var(--composer-gutter) - 0.75rem);
 }
 
+/* A continued chat's one quiet line above the composer box: the conversation is
+   shared with the surface it began on, replies land in that same transcript, and
+   the two kinds of context card this composer usually carries do not ride this
+   door. It is a sentence, not a warning band — muted, small, and beside the
+   field it describes rather than across the transcript. It stays one line of
+   text with an icon that names the subject (a shared conversation); a narrow
+   dock wraps it rather than clipping it. */
+.chat-panel__composer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  margin: 0 0.1rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+.chat-panel__composer-note svg {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
 /* The composer's surface: the field the operator writes in and the control row
    that belongs to it, inside one accent ring. The ring used to be the field's
    own border with the row one gap under it; now the box owns the ring, so the
@@ -9622,6 +9676,15 @@ button.chat-panel__activity-line:hover {
 .chat-panel__page:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
+}
+
+/* A continued chat never carries the screen, so its page pill is drawn disabled:
+   the same drained shape as "off", with the reason in its title. It stays on the
+   line — a control that vanished could not explain why the next turn has no
+   page — but it must not look pressable. */
+.chat-panel__page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chat-panel__page-label {

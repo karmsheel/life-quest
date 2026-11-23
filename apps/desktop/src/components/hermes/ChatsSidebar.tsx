@@ -29,6 +29,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 import { Link } from "react-router-dom";
 import {
   formatSessionWhen,
+  isContinuableSession,
   sessionLabel,
 } from "../../../electron/companion-client.ts";
 import type { HermesSession } from "@/vite-env";
@@ -390,6 +391,11 @@ export function ChatsSidebar() {
     const archived = s.archived === true;
     const menuOpen = menuId === s.id;
     const renaming = renamingId === s.id;
+    // A chat another surface owns is continued over the gateway WebSocket
+    // rather than written through the API transport. The row carries the fact
+    // for the dock's source chip and for the E2E rig; it is not a badge on the
+    // row itself, because the list is about where a chat is, not where it began.
+    const continuable = isContinuableSession(s);
     // The same origin mark the dock's tab wears: a chat the app started as a
     // task, a review, a plan or an automation run leads its name with that
     // feature's icon; a chat the operator opened keeps the quiet status dot.
@@ -399,6 +405,8 @@ export function ChatsSidebar() {
       <li
         key={s.id}
         className="chats-rail__row"
+        data-continuable={continuable ? "true" : undefined}
+        data-source={continuable ? s.source : undefined}
         data-active={active || undefined}
         data-archived={archived || undefined}
         data-pinned={s.pinned || undefined}

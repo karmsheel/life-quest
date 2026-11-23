@@ -281,6 +281,7 @@ import * as companion from "./companion.js";
 import * as harness from "./harness/facade.js";
 import type {
   ChatStreamEvent,
+  ChatStreamOutcome,
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
   TurnAttachment,
@@ -2157,7 +2158,7 @@ export async function companionChatStreamWithPack(
   runtime?: CompanionRuntimeOverride | null,
   receiptRelPath?: string | null,
   attachmentRequests?: TurnAttachmentRequest[] | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<ChatStreamOutcome> {
   // The slot is the only source of the image, so a turn that names a receipt
   // main is not holding is refused rather than sent as a text-only turn the
   // operator would read as "the agent ignored my photo".

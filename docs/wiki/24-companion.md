@@ -199,12 +199,15 @@ vault's own binding.
    keeps sending in either mode.
 2. While a turn runs the send control becomes **Stop this run** and the transcript
    shows a live status line such as **Working… 6s · reading the note**. The field's
-   placeholder becomes **Steer the turn that is running…**.
+   placeholder becomes **Steer the turn that is running…** — or **Queue a message
+   for the next turn…** on a chat continued from another surface.
 3. To add to a live turn, type and choose **Steer** — the words go into the run that
    is already working. To line a message up behind it, choose **Queue**; queued
    rows appear under the composer labelled **Queued**, each with **Remove queued
    message**. Ctrl/Cmd+Enter steers while a turn is running (plain Enter does too
-   once Settings → **Composer** makes it the send key).
+   once Settings → **Composer** makes it the send key); on a chat continued from
+   another surface **Steer** is disabled and the follow-up is queued instead — see
+   [Continue a chat that started on another surface](#continue-a-chat-that-started-on-another-surface).
 4. Read the turn as a work log. Your message sits on the right as a bubble in the
    accent tint, labelled **You**. The companion's answer is not a bubble: it rests
    on the panel as plain prose, left aligned and full width, labelled **Pi** or
@@ -266,6 +269,54 @@ vault's own binding.
    to recover it (an older Hermes, no CLI), the chat says it is paused and suggests
    a new chat, as before.
 
+### Continue a chat that started on another surface
+
+The **Chats** list already lists every conversation on the companion's profile,
+whichever surface started it — a Telegram or Discord bot, Hermes Desktop, the
+Hermes CLI. With Hermes as the companion, those chats open and read here as they
+always did, but they belong to the surface that started them, and Hermes will not
+let one client write a conversation another surface is still writing: sending in
+one used to fail with **Chat stream failed (500)**.
+
+The dock continues that same conversation instead, over the gateway's own
+connection:
+
+1. Open the chat from **Chats**. Beside the chat's name the thread header names
+   where it came from — **Telegram**, **Discord**, **Hermes Desktop**, **Hermes
+   CLI**, or the surface's own name — and the composer carries one quiet line
+   above the box: "Shared with Telegram — replies land in the same transcript;
+   page and vault context cards are not attached." A chat this app started wears
+   no such chip.
+2. Type and send. The reply is written into that same conversation, so the bot's
+   next message on the platform and the next turn here are one transcript.
+   Nothing is forked, copied or ended, and there is no new chat to start.
+3. The turn itself behaves as it does anywhere: the answer streams in with its
+   work log, approval cards can be answered, and **Stop this run** stops it.
+   Rename, pin and archive still write that chat's Hermes-side flags, so its other
+   surfaces see them too. The profile's own memory, skills and tools still
+   answer, so the companion still reads the vault.
+4. That connection carries the prompt and not the rest of the composer, so the
+   controls that need more are drawn disabled with the reason on hover:
+   - the **model** and **thinking** pills — the chat keeps running on the model it
+     was started with;
+   - **Attach a file** and **Attach a receipt** — a file dropped or pasted onto a
+     continued chat is refused with "A chat started on another surface can't
+     carry an attachment yet. Send it in a new chat.";
+   - the page pill, which reads **not sent**, and the dashboard-card pills, which
+     are not drawn — neither rides a continued turn;
+   - **Steer** while a turn runs — a follow-up is queued instead, and the field
+     reads **Queue a message for the next turn…**.
+5. An older Hermes that cannot offer this does not produce a 500: the turn reads
+   **Failed** with "This Hermes build can't continue a chat from another surface.
+   Update Hermes, then try again." Update Hermes, then send the message again. If
+   the connection drops mid-turn, the turn reads **Ended before finishing** with
+   "The connection to the Hermes gateway closed before the turn finished. The
+   chat is unchanged; try again." — the conversation is untouched, so send
+   again.
+
+If the **Chats** list is empty there is nothing to continue, and nothing here
+changes.
+
 ### Pictures in the chat
 
 The thread draws pictures in both directions.
@@ -302,6 +353,12 @@ The thread draws pictures in both directions.
 | Page pill (**in context** / **off**) | Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
 | Card pills (**in context**) | One pill per dashboard card in context, in the order added, up to three. The `x` is **Remove "<card name>" from context**. |
 | Model pill / thinking pill | The chat's model and how hard it thinks. Choosing a model saves it on the chat's Hermes session, so it governs every later turn; with no pick the pill names the model the chat already runs on. Hermes serves a catalog; Pi's menu follows its endpoint. Absent when the companion offers no catalog. |
+
+The model and thinking pills, **Attach a file**, **Attach a receipt**, the page
+pill and **Steer** are disabled on a chat continued from another surface, with the
+reason in their tooltip: the connection that carries that turn carries the prompt
+only. The one-line note above the box says so — see
+[Continue a chat that started on another surface](#continue-a-chat-that-started-on-another-surface).
 
 The page context is quoted as the operator's own data, fenced as untrusted, with a
 budget of 4,000 characters and table/list caps. The card context is made on the
@@ -349,8 +406,9 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Tab strip | One tab per open chat, pinned chats as fixed squares at the head (no close control on a square), each chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon at the start of its name, and a close **×**. The tabs shrink to about three characters of the name and then an ellipsis, after which the strip scrolls sideways (the wheel or its thin scrollbar), with **+** immediately after the last tab and **Full screen chat** at its trailing end. |
 | Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
+| Source chip | Beside the chat's name when the conversation started on another surface: the share mark and the surface's name — **Telegram**, **Discord**, **Hermes Desktop**, **Hermes CLI**, or **another surface** — with a tooltip saying this is the same conversation, continued here, not copied. Absent on a chat the app started. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
-| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. |
+| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. A chat continued from another surface draws a one-line note above the box in place of the card pills, and the controls that connection cannot carry are disabled with the reason. |
 | Dock actions | **New chat**, **Notebox**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |
 
 ## Rules and behaviour
@@ -394,6 +452,14 @@ the arrangement you left; leaving full-screen chat gives back the split.
   archive state follow that harness and vault, not the app. Switching vaults
   swaps the chat rail, the tab strip and the agent; no chat or agent crosses
   over.
+- **A chat from another surface is continued, not copied.** A conversation a
+  Telegram or Discord bot, Hermes Desktop or the Hermes CLI started is the same
+  Hermes session that surface still writes, so a turn here lands in the transcript
+  the platform's bot reads. The dock names the surface, and the narrower composer
+  is the whole difference: that connection carries the prompt, the answer, the
+  tools, approvals and **Stop**, not a per-turn model or thinking pick, not files,
+  not page or dashboard-card context, and not a steer into a live turn. Nothing
+  forks, copies or ends the conversation.
 - **Secrets stay out of the renderer.** Pi's endpoint key and Hermes's profile key
   are read in the main process. The vault's own secrets live in OS secure storage,
   never in the vault file — see [Security](./29-security.md).
@@ -441,6 +507,14 @@ the arrangement you left; leaving full-screen chat gives back the split.
 - **A chat you open in Hermes Desktop is the same chat, when Hermes is the
   companion.** Renames, pins and archives are Hermes-side; do not expect a
   LifeQuest-only copy. Pi's chats exist only in this app's session store.
+- **Do not look for an import step.** A chat a Telegram or Discord bot, Hermes
+  Desktop or the Hermes CLI started is already in **Chats**; open it and type.
+  The dock continues the same conversation over the gateway's own connection, so
+  the bot's next message on the platform and your next turn here are one
+  transcript. There is no fork, copy or new-chat step.
+- **Only a chat another surface owns is narrowed.** A chat this app started keeps
+  the full composer, and a Pi chat is untouched. With an empty **Chats** list
+  there is nothing to continue and nothing changes.
 
 ## Related
 
