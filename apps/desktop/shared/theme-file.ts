@@ -43,6 +43,7 @@ export type DomainSwitcherPlace =
   | "floating-bottom-right"
   | "hidden";
 export type DomainSwitcherVariant = "segmented" | "pill" | "icons" | "list";
+export type DomainSwitcherFrame = "pill" | "bare";
 
 export type NavRailPlace = "left" | "right" | "floating";
 export type TitlebarSize = "compact" | "default" | "tall";
@@ -54,6 +55,8 @@ export type ThemeChrome = {
   domainSwitcher: {
     place: DomainSwitcherPlace;
     variant: DomainSwitcherVariant;
+    /** The dock's own frame: the pill container, or a bare stack of rows. */
+    frame: DomainSwitcherFrame;
   };
   /** The sidebar's own column: which edge it holds and how much room it keeps. */
   navRail: { place: NavRailPlace; width: NavRailWidth };
@@ -147,7 +150,7 @@ export type ThemeFile = {
 
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
   wingSwitcher: { place: "rail-top", variant: "labels" },
-  domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+  domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
   navRail: { place: "left", width: "default" },
   chatDock: { side: "right" },
   titlebar: { size: "default" },
@@ -215,6 +218,7 @@ export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "icons",
   "list",
 ];
+export const DOMAIN_FRAMES: readonly DomainSwitcherFrame[] = ["pill", "bare"];
 export const NAV_RAIL_PLACES: readonly NavRailPlace[] = [
   "left",
   "right",
@@ -518,9 +522,21 @@ export function parseThemeFile(raw: unknown): ParseResult {
       if (typeof variant !== "string" && domain.variant !== undefined) {
         return { ok: false, error: variant };
       }
+      const frame = domain.frame;
+      if (
+        frame !== undefined &&
+        (typeof frame !== "string" ||
+          !(DOMAIN_FRAMES as readonly string[]).includes(frame))
+      ) {
+        return {
+          ok: false,
+          error: `chrome.domainSwitcher.frame must be one of ${DOMAIN_FRAMES.join(", ")}`,
+        };
+      }
       chrome.domainSwitcher = {
         place: place as DomainSwitcherPlace,
         variant: (variant as DomainSwitcherVariant) ?? "segmented",
+        frame: (frame as DomainSwitcherFrame | undefined) ?? "pill",
       };
     }
     const titlebar = raw.chrome.titlebar;
@@ -801,7 +817,7 @@ export const THEME_VOCABULARY = [
   "A theme is presentation only: a JSON file at <app profile>/themes/<name>.json, never in the vault, and it needs no Decision.",
   "Shape: { name (slug), label, description?, chrome?, material?, scene?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
-  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
+  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill | icons | list; frame pill | bare — bare drops the dock's container so the rows are the whole control).",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
   "scene.frames.canvas: none | hairline | double | halo (the page's decorative edge); scene.frames.cards: theme | outline | raised (how the page's cards are drawn).",
