@@ -237,8 +237,9 @@ a Strategy (How) in Track to enable dispatch." With no active agents, the sectio
   [Projects](./12-projects.md).
 - The [Life Map](./11-life-map.md) does not draw task cards in this release. Dates on a task
   are its own `links.date`; the calendar's events are separate records.
-- The Dashboard's **Today & this week** card lists the recurring tasks that are overdue, due
-  today or due later this week, each with a tick that completes that occurrence. See
+- The Dashboard's **Today & this week** card lists only the recurring tasks that are
+  overdue or due today, each with a tick that completes that occurrence. A task due on
+  a later day, even later this same week, is not drawn until its own day. See
   [Dashboard](./06-dashboard.md).
 
 ### Recurring tasks are a schedule, not cards

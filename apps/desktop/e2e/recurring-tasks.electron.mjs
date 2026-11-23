@@ -16,12 +16,16 @@
  *  1. `card-recurring`  — the real Today & this week card's Recurring block
  *                         leads the card: it is drawn ABOVE the Today and This
  *                         week groups (measured in the card's own box), and it
- *                         lists the overdue, due-today and this-week fixture
- *                         records with their state labels, the later and paused
- *                         fixtures are absent, and the heading count matches the
- *                         rows. The fixture dates are the run's own today, so
- *                         this holds on any day, and the expectation comes from
- *                         the harness (`window.recurringTasksExpectations`).
+ *                         lists ONLY the overdue and due-today fixture records
+ *                         with their state labels. The paused, later and
+ *                         tomorrow ("this-week") fixtures are absent: a record
+ *                         due on a later day waits for its own day instead of
+ *                         being dosed a day early. No card row prints "This week"
+ *                         and none carries data-state="this-week". The heading
+ *                         count and the DOM row count both match the rows. The
+ *                         fixture dates are the run's own today, so this holds on
+ *                         any day, and the expectation comes from the harness
+ *                         (`window.recurringTasksExpectations`).
  *  2. `review-row`      — the built-in Weekly review row is drawn as a link to
  *                         `/review/weekly` with NO tick while its open period is
  *                         unfinished; a `?reviews=done` mount (the review is
@@ -270,6 +274,10 @@ const CARD_SAMPLE = `(() => {
   }
   return {
     rows,
+    // The number of [data-testid^="recurring-row-"] elements this sample read.
+    // Published in the sample (and thus the report) so the card claim and the
+    // wrapper can both compare it against expectations.card.count.
+    rowCount: rows.length,
     headingText,
     countText,
     count: countText !== null && countText !== "" ? Number(countText) : null,
@@ -502,9 +510,31 @@ async function main() {
     "({ name: window.recurringTasksSkin, applied: document.documentElement.dataset.skin ?? null })",
   );
   const card = await sample(win, CARD_SAMPLE, "card");
+
+  // The negative control: the harness publishes the tomorrow record, and the
+  // claim checks the DOM itself for its row — a direct query by the exact
+  // testid, not only a scan of the sampled rows.
+  const tomorrow = first.card.tomorrow;
+  const tomorrowSelector = `[data-testid="recurring-row-${tomorrow.id}"]`;
+  const tomorrowInDom = await win.webContents.executeJavaScript(
+    `document.querySelector(${JSON.stringify(tomorrowSelector)}) !== null`,
+  );
+  // The old "This week" expectation is inverted, not deleted: no card row may
+  // print that label or carry that state.
+  const thisWeekInDom = await win.webContents.executeJavaScript(
+    `document.querySelectorAll('.home-task-card [data-state="this-week"]').length`,
+  );
+  const thisWeekRows = card.rows.filter(
+    (row) => row.state === "This week" || row.dataState === "this-week",
+  );
+  const noThisWeekOnCard = thisWeekRows.length === 0 && thisWeekInDom === 0;
+
   const cardDetail = JSON.stringify({
-    rows: card.rows.map((row) => [row.id, row.title, row.state, row.link]),
+    rows: card.rows.map((row) => [row.id, row.title, row.state, row.dataState, row.link]),
     count: card.count,
+    rowCount: card.rowCount,
+    tomorrow: { expectation: tomorrow, selector: tomorrowSelector, inDom: tomorrowInDom },
+    thisWeek: { rows: thisWeekRows.length, inDom: thisWeekInDom },
     manage: card.manage,
     order: card.order,
   });
@@ -524,19 +554,24 @@ async function main() {
     "card-recurring",
     card.cardPresent &&
       card.order?.recurringFirst === true &&
-      card.rows.length === first.card.count &&
+      card.rowCount === first.card.count &&
+      card.count === first.card.count &&
+      rowOf(card.rows, tomorrow.id) === null &&
+      tomorrowInDom === false &&
+      noThisWeekOnCard &&
       cardRowsMatch &&
       absentMatch &&
-      card.count === first.card.count &&
       card.manage?.href === first.card.manage.href &&
       card.manage?.text === first.card.manage.text,
-    `${cardDetail}; expected the Recurring block to sit ABOVE the Today/This week
-      groups and ${JSON.stringify({
-      rows: first.card.rows.map((row) => [row.id, row.title, row.label, row.link]),
-      count: first.card.count,
-      absent: first.card.absentIds,
-      manage: first.card.manage,
-    })}`,
+    `${cardDetail}; expected the Recurring block to sit ABOVE the Today/This week ` +
+      `groups and to list ONLY the overdue and due-today rows (${first.card.count} rows), ` +
+      `with no "This week" label / data-state="this-week" on the card and the tomorrow ` +
+      `record ${JSON.stringify(tomorrow)} absent from the DOM; ${JSON.stringify({
+        rows: first.card.rows.map((row) => [row.id, row.title, row.label, row.link]),
+        count: first.card.count,
+        absent: first.card.absentIds,
+        manage: first.card.manage,
+      })}`,
   );
   await shoot(win, "recurring-tasks-card.png");
 
@@ -856,8 +891,9 @@ async function main() {
     pass: errors.length === 0,
     failures: errors,
     what:
-      "the shipped recurring-tasks UI: the Dashboard's Today & this week card listing the " +
-      "overdue/due-today/this-week records with their labels and the built-in weekly review " +
+      "the shipped recurring-tasks UI: the Dashboard's Today & this week card listing ONLY the " +
+      'overdue and due-today records with their labels — the later, paused and tomorrow ("this-week") ' +
+      'records are absent and no "This week" label row is drawn — and the built-in weekly review ' +
       "row as an unticked link, a tick that writes one completeRecurring and leaves the row " +
       "(and prints a refused write on the card), the manage link reaching the real Act page's " +
       "recurring section, the manager listing every record with cadence/next-due/badges/" +

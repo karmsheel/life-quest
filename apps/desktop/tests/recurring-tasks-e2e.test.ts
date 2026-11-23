@@ -17,8 +17,10 @@ import { describe, it } from "node:test";
  * against the other implementation. This is the pixels half:
  *
  *   - the Dashboard's Today & this week card grows a Recurring block listing
- *     what is overdue, due today and due this week — with the built-in review
- *     cadences as rows that link to their page and carry no tick;
+ *     what is owed NOW — overdue and due today. A record dated later, even
+ *     tomorrow in the same week, is not dosed a day early: it waits for its own
+ *     day. The built-in review cadences appear as rows that link to their page
+ *     and carry no tick;
  *   - ticking an operator row writes one `completeRecurring`, records it in the
  *     vault and advances the date (no Done card is materialised);
  *   - the card's manage link reaches the real Task Manager's Recurring tasks
@@ -38,9 +40,13 @@ import { describe, it } from "node:test";
  *   2. The fixture only makes sense on the day it was written, so the run is
  *      green today and red tomorrow (every date here is derived from today).
  *   3. The card draws no Recurring block at all, or draws the paused/later
- *      records it must hide, or the heading count disagrees with the rows.
+ *      records it must hide — including a same-week record dated tomorrow,
+ *      which is the "dosed a day early" failure — or the heading count
+ *      disagrees with the rows.
  *   4. The card's state labels are wrong or missing (an overdue row reading
- *      "This week"), so the operator cannot tell urgency from the Dashboard.
+ *      "Due today"), or a future record's "This week" label leaks onto the
+ *      card: with the due-today-only rule no card row may carry "This week" at
+ *      all; that vocabulary stays in the model for the manager.
  *   5. The built-in weekly review row is missing while it is due, carries a
  *      tick (it clears on its review page, not here), links to the wrong route,
  *      or survives its review being marked done (stale review index read).
@@ -143,6 +149,8 @@ type Expectations = {
     count: number;
     rows: ExpectedCardRow[];
     absentIds: string[];
+    /** A same-week record dated tomorrow: the "not dosed a day early" control. */
+    tomorrow: { id: string; title: string; dueDate: string };
     manage: { testId: string; text: string; href: string };
   };
   review: { id: string; title: string; link: string; expected: boolean };
@@ -174,6 +182,7 @@ type ManagerRow = {
 
 type CardSample = {
   rows: CardRow[];
+  rowCount: number;
   headingText: string | null;
   countText: string | null;
   count: number | null;
@@ -386,6 +395,31 @@ describe("recurring tasks shipped UI e2e", () => {
       card.count,
       expectations.card.count,
       `the Recurring heading counts ${JSON.stringify(card.countText)}, expected ${expectations.card.count}`,
+    );
+    assert.equal(
+      card.rowCount,
+      expectations.card.count,
+      `the DOM holds ${card.rowCount} [data-testid^="recurring-row-"] elements, expected ${expectations.card.count}`,
+    );
+    // The fixture's same-week record dated tomorrow is the falsifiable case for
+    // "a scheduled task is not dosed a day early": it must be absent today even
+    // though the model calls it "this-week", and no card row may wear that
+    // vocabulary (the old "This week" label assertion, inverted).
+    const tomorrow = expectations.card.tomorrow;
+    assert.ok(tomorrow?.id, "the harness publishes no tomorrow-record expectation");
+    assert.ok(
+      expectations.card.absentIds.includes(tomorrow.id),
+      `the harness does not expect the tomorrow record ${tomorrow.id} to be absent`,
+    );
+    assert.equal(
+      rowOf(card.rows, tomorrow.id),
+      null,
+      `the card lists ${tomorrow.id} (${tomorrow.title}), due ${tomorrow.dueDate}, which is not due today`,
+    );
+    assert.equal(
+      card.rows.filter((row) => row.state === "This week" || row.dataState === "this-week").length,
+      0,
+      `the card draws a "This week" recurring row; with the due-today-only rule only Overdue and Due today are owed now`,
     );
     for (const expected of expectations.card.rows) {
       const row = rowOf(card.rows, expected.id);
