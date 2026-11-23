@@ -121,6 +121,7 @@ type AreaReadout = {
   slug?: string;
   title?: string | null;
   controls?: number;
+  box?: Box;
 };
 
 /** One inbox filter: the picker's options, the applied value, its geometry. */
@@ -809,7 +810,19 @@ describe("Notebox page — general capture", () => {
       0,
       "the filter band still contains chip buttons",
     );
-    assert.deepEqual(filterLayout.labels, ["Status", "Area", "Project"]);
+    assert.deepEqual(filterLayout.labels, ["Status", "Project", "Area"]);
+    // The Area readout is the row's right end: the last field in the band, and
+    // to the right of the project picker.
+    assert.equal(
+      inbox.controls.filterArea.box?.left,
+      filterLayout.fields[2]?.left,
+      "the Area readout is not the band's last field",
+    );
+    assert.ok(
+      (inbox.controls.filterArea.box?.left ?? 0) >
+        (inbox.controls.filterProject.box.left ?? 0),
+      "the Area readout is not to the right of the project picker",
+    );
 
     // Each seeded row: stored value on the row, contract label beside it.
     for (const row of inbox.rows) {

@@ -775,7 +775,8 @@ export function SignalChainFeed() {
           filter, so the band names it in a readout and offers the two cuts
           that are the page's own — status and project. Selects rather than
           rows of chips keep the band from pushing the chain down the page,
-          and each picker's own value is the filter it applies. */}
+          and each picker's own value is the filter it applies. The area
+          readout sits at the right end, the last thing the row says. */}
       <div
         className="signal-chain__filters"
         role="group"
@@ -800,17 +801,6 @@ export function SignalChainFeed() {
             ))}
           </select>
         </label>
-        <span
-          className="signal-chain__filter"
-          data-testid="signal-filter-domain-readout"
-          data-area-slug={captureArea?.slug ?? ""}
-          title="The domain picker at the top is Notebox's area filter."
-        >
-          <span className="signal-chain__filter-label">Area</span>
-          <span className="signal-chain__filter-value">
-            {captureAreaName}
-          </span>
-        </span>
         <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Project</span>
           <select
@@ -828,6 +818,17 @@ export function SignalChainFeed() {
             ))}
           </select>
         </label>
+        <span
+          className="signal-chain__filter"
+          data-testid="signal-filter-domain-readout"
+          data-area-slug={captureArea?.slug ?? ""}
+          title="The domain picker at the top is Notebox's area filter."
+        >
+          <span className="signal-chain__filter-label">Area</span>
+          <span className="signal-chain__filter-value">
+            {captureAreaName}
+          </span>
+        </span>
       </div>
 
       {loading ? (

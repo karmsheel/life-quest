@@ -390,6 +390,7 @@ const SAMPLE = `(() => {
             slug: readout.getAttribute("data-area-slug") ?? "",
             title: readout.getAttribute("title"),
             controls: readout.querySelectorAll("select, input, button").length,
+            box: box(readout),
           }
         : { present: false };
     })(),
@@ -1793,8 +1794,20 @@ async function main() {
         (baseline.filterLayout?.selects ?? -1) === 2 &&
         (baseline.filterLayout?.readouts ?? -1) === 1 &&
         (baseline.filterLayout?.labels ?? []).join(",") ===
-          "Status,Area,Project",
+          "Status,Project,Area",
       `band ${JSON.stringify(baseline.filterLayout?.band)}, selects ${baseline.filterLayout?.selects}, readouts ${baseline.filterLayout?.readouts}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
+    );
+    // The Area readout is the row's right end: the last field in the band, and
+    // to the right of the project picker.
+    const filterFieldBoxes = baseline.filterLayout?.fields ?? [];
+    check(
+      "the Area readout sits at the right end of the band",
+      filterFieldBoxes.length === 3 &&
+        (baseline.filterArea?.box?.left ?? -1) ===
+          (filterFieldBoxes[2]?.left ?? -2) &&
+        (baseline.filterArea?.box?.left ?? -1) >
+          (baseline.filters?.project?.box?.left ?? Infinity),
+      `area ${JSON.stringify(baseline.filterArea?.box)}, project ${JSON.stringify(baseline.filters?.project?.box)}, fields ${JSON.stringify(filterFieldBoxes)}`,
     );
 
     // The triage itself: one operator gesture on the project-filed row.
