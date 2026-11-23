@@ -508,3 +508,133 @@ Add checks (the rig remains the only test):
 | e2e-rig | `e2e/theme-background.electron.mjs` |
 | docs | `docs/wiki/28-settings.md`, `docs/wiki/37-extensions.md` |
 | Lead | integration, typecheck, docs:check, both E2E rigs, commit, handover |
+
+---
+
+# Round 3 — the agent's background tooling
+
+**Status:** implementation contract, third pass on the same branch.
+
+The operator asked whether the companion has tools for these settings. Audit: `write_theme` /
+`validate_theme` already accept `scene.background.image` and `scene.background.panels` (same
+shared parser), and `THEME_VOCABULARY` is injected into every companion turn — so authoring
+works. Two gaps remain: `get_theme` reports no scene at all (no picture, no panel shades, no
+inventory of stored pictures), and the agent cannot put a picture into the profile
+(`backgrounds/` is written only by the operator's picker). This round closes both.
+
+## R3.1 `get_theme` reports the background layer and the picture inventory
+
+`apps/desktop/electron/theme-tools.ts`, `get_theme` response gains:
+
+- For the kept theme's `current` and for every `themes[]` summary: a resolved
+  `scene: { preset, intensity, frames, image, panels }` — exactly `resolveScene(theme.scene)`
+  from the shared model (defaults filled in, so the agent reads the real worn values; a theme
+  that names nothing still shows `plain`/`calm`, `image: null`, both panels `solid`).
+- Top-level `backgrounds: Array<{ file: string; bytes: number; mime: string }>` — every file in
+  `<app profile>/backgrounds/` whose name matches `BACKGROUND_IMAGE_FILE`, sorted by name
+  (stat'ed; a file that vanished between read and stat is skipped). The agent can name any of
+  these in `scene.background.image.file`.
+- `get_theme`'s description updated: it now returns the resolved scene, the pictures stored in
+  the profile, and the kept file.
+
+Add an inventory helper beside the store in `electron/theme-background.ts`:
+`listBackgrounds(): Promise<Array<{ file: string; bytes: number; mime: string }>>` (mkdir the
+directory if absent; filter `BACKGROUND_IMAGE_FILE`; stat; map extension→mime with the module's
+existing table; skip vanished/!file entries). `theme-background.ts` is the one module that knows
+the store, so the tool imports the list from there rather than re-reading the folder.
+
+## R3.2 A tool that stores a picture from the vault
+
+New tool in `THEME_TOOL_DEFS`:
+
+```ts
+{
+  name: "store_background_picture",
+  description:
+    "Copy a picture from the open vault into the app profile's backgrounds/ folder and return the stored file name. The source must be an image file inside the vault (e.g. images/files/<id>.png) — never a URL or a path outside the vault. Nothing the operator sees changes until a theme names the returned file in scene.background.image.file; write_theme then previews and Keep/Revert is still the consent.",
+  parameters: {
+    type: "object",
+    properties: {
+      source: { type: "string", description: "Vault-relative image path, e.g. images/files/<id>.png" },
+    },
+    required: ["source"],
+  },
+}
+```
+
+Handler (in `theme-tools.ts`):
+
+1. `source` string, trimmed, no NUL, no scheme (the `chat-image.ts` rule: a Windows drive
+   letter is a path; `https:`/`file:` are not). Relative resolves against the vault root;
+   absolute is kept.
+2. Vault root comes from the dispatcher (see R3.3). No root / empty → `{ error: { code:
+   "NOT_FOUND", message: "open a vault before storing a background picture" } }`.
+3. Prove containment with `assertPhysicalContainment(vaultRoot, resolved)` (vault-core, read) —
+   the source must be a real file inside the vault; a symlink out is refused.
+4. `storeBackground(contained)` from `electron/theme-background.ts` — its existing checks apply
+   (regular file, 16 MB, png/jpeg/gif/webp extension + magic bytes, content-addressed copy,
+   `.tmp`+rename).
+5. Answer `{ stored: "<file>", image: { file, fit: "cover", position: "center", dim: "soft",
+   blur: "none" }, note: "write_theme with scene.background.image = image to wear it; the operator's Settings override still outranks the theme." }`.
+   Refusal sentences: "source must be a picture inside the vault" for containment/scheme
+   problems; `storeBackground`'s own sentences otherwise (size/type/magic/read).
+
+The tool never touches the vault (read only) and writes only the profile's `backgrounds/
+folder. It does not write, preview or keep a theme by itself.
+
+## R3.3 Wiring
+
+- `executeThemeTool(name, args, vaultRoot?: string | null)` gains the optional root.
+  `map-tools.ts` passes its `root` argument at the theme branch (the pairing door goes through
+  the same dispatcher); the tools still dispatch before `openVault`, so a theme remains
+  readable with no vault open and only the store tool requires one.
+- Connected/pairing agents stay refused: `THEME_TOOL_DEFS` are only advertised/dispatched on
+  the companion path, as before. No new name is added to any grant vocabulary.
+- `THEME_VOCABULARY` gains one line:
+  `get_theme lists the pictures stored in the app profile's backgrounds/ (file, bytes, mime) and the resolved scene (preset, intensity, frames, image, panels); name one in scene.background.image.file. store_background_picture copies a vault image into that folder and returns the file name; write_theme then wears it (preview/Keep). The operator's Settings override outranks a theme.`
+
+## R3.4 E2E — extend the background rig
+
+In `e2e/theme-background.electron.mjs`, after the existing 24 checks, open the real companion
+door (`e2eCompanionDoor()` + MCP SDK client, exactly as the theme-chrome rig does) and add:
+
+1. `the-companion-door-offers-the-background-tools` — `listTools` contains `get_theme`,
+   `validate_theme`, `write_theme`, `store_background_picture`.
+2. `get-theme-reports-the-background-layer` — `get_theme` returns the kept theme's resolved
+   `scene` (picture file + panel shades as worn), each file's `scene`, a `backgrounds` array
+   containing the picture the rig stored through Settings, and `vocabulary` containing
+   `scene.background.panels`.
+3. `the-agent-stores-a-vault-picture` — the rig copies its fixture into
+   `<vault>/images/files/agent-background.png`, calls `store_background_picture` with that
+   vault-relative path, gets a stored file name under `<profile>/backgrounds/`, and
+   `get_theme` now lists it.
+4. `the-agent-wears-the-picture-it-stored` — `validate_theme` then `write_theme` with
+   `scene.background.image = { ...returned image }` and `scene.background.panels
+   { navRail: "light", chat: "medium" }`; the real window previews the picture and the panel
+   datasets, Keep keeps it, reload still wears it.
+5. `store-background-refuses-a-path-outside-the-vault` — `"../escape.png"` and a non-image vault
+   file are refused with the tool's sentence; no profile file appears.
+Keep the existing 24 checks green; add one artifact screenshot of the agent-authored wallpaper
+if cheap (the existing app screenshot may be reused).
+
+## R3.5 Docs
+
+- `docs/wiki/37-extensions.md`: the companion-tools sentences (intro and the "Import and
+  History are page gestures" bullet) now name four tools — `get_theme` (files, kept theme,
+  resolved scene, stored pictures), `validate_theme`, `write_theme`, and
+  `store_background_picture` (copies a vault image into the profile's `backgrounds/`; the theme
+  still previews and Keep is the consent; the operator's Settings override wins). Mention the
+  scene/panels/picture fields it can author.
+- `docs/wiki/28-settings.md`: one clause in the Background paragraph — a theme (and so the
+  companion) names a picture already stored in the profile; the agent can copy one out of the
+  vault with its tool, and Settings still outranks it.
+- No route/tab/rail/version change.
+
+## R3.6 Ownership (round 3)
+
+| Owner | Files |
+|---|---|
+| model-main | `electron/theme-tools.ts`, `electron/theme-background.ts` (list helper), `electron/map-tools.ts` (root pass-through), `shared/theme-file.ts` (vocabulary line) |
+| e2e-rig | `e2e/theme-background.electron.mjs` (+ wrapper artifact list if needed) |
+| docs | `docs/wiki/37-extensions.md`, `docs/wiki/28-settings.md` |
+| Lead | integration, typecheck, docs:check, both E2E rigs, commit, handover |
