@@ -50,9 +50,10 @@
  *     exactly "Unassigned" and "No project", never a blank cell. Changing a
  *     row's status select hands the bridge exactly `{status: "acting"}`, and the
  *     row paints "Acting" only after the re-read that follows — the screen
- *     change is the vault's answer, not the page's echo. The status filter
- *     chips narrow to the triaged row, say "No signals match these filters."
- *     when nothing matches, and All restores the chain.
+ *     change is the vault's answer, not the page's echo. The three filters are
+ *     drop-downs sharing one line — status, area and project — not rows of
+ *     pills; the status picker narrows to the triaged row, says "No signals
+ *     match these filters." when nothing matches, and All restores the chain.
  *  9. The dock's mirrored surface is the same Notebox: its control is labelled
  *     Notebox, it lists the same chain, and its heading says Notebox.
  * 10. No unmodelled bridge call, no console error, nothing spills horizontally
@@ -226,17 +227,23 @@ const SAMPLE = `(() => {
       ),
     };
   });
+  // One triage filter: the picker, the options it offers, the value currently
+  // applied, and the box it occupies. The band is three selects on one line now,
+  // so a filter is read off its picker rather than off pressed chips.
   const filterOf = (testid) => {
-    const group = q('[data-testid="' + testid + '"]');
+    const select = q('[data-testid="' + testid + '"]');
     return {
-      present: Boolean(group),
-      buttons: group
-        ? Array.from(group.querySelectorAll("button")).map((button) => ({
-            testid: button.getAttribute("data-testid"),
-            text: text(button),
-            pressed: button.getAttribute("aria-pressed"),
+      present: Boolean(select),
+      testid,
+      tag: select ? select.tagName : null,
+      value: select ? select.value : null,
+      options: select
+        ? Array.from(select.options).map((option) => ({
+            value: option.value,
+            label: (option.textContent || "").trim(),
           }))
         : [],
+      box: box(select),
     };
   };
   const composer = q('[data-testid="chain-composer"]');
@@ -339,12 +346,18 @@ const SAMPLE = `(() => {
     },
     rows,
     counts,
-    // The inbox's own surface: the filter bar's buttons and their pressed
-    // state, plus the two empty lines (no matches vs no records at all).
+    // The inbox's own surface: the three filter pickers, their values and their
+    // geometry, plus the two empty lines (no matches vs no records at all).
     filters: {
       status: filterOf("signal-filter-status"),
       domain: filterOf("signal-filter-domain"),
       project: filterOf("signal-filter-project"),
+    },
+    filterLayout: {
+      band: box(q(".signal-chain__filters")),
+      labels: all(".signal-chain__filter-label").map(text),
+      fields: all(".signal-chain__filter").map(box),
+      buttons: all(".signal-chain__filters button").length,
     },
     filterEmpty: text(q('[data-testid="signal-filter-empty"]')),
     emptyLine: text(q('[data-testid="signal-empty"]')),
@@ -489,6 +502,21 @@ const selectRowStatus = (body, value) => `(() => {
   if (!row) return "no row";
   const select = row.querySelector('[data-testid="signal-status-select"]');
   if (!select) return "no status select";
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+  setter.call(select, ${JSON.stringify(value)});
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return "ok";
+})()`;
+
+/**
+ * Pick a value on one of the three inbox filters. Same native-setter rule as a
+ * row select: the picker is the operator's control, and React only sees the
+ * change when a real bubbling `change` event follows the value assignment.
+ */
+const selectFilter = (testid, value) => `(() => {
+  const select = document.querySelector('[data-testid="' + ${JSON.stringify(testid)} + '"]');
+  if (!select) return "no filter";
+  if (select.tagName !== "SELECT") return "not a select";
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
   setter.call(select, ${JSON.stringify(value)});
   select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -647,10 +675,6 @@ async function main() {
 
   const rowWithBody = (state, body) =>
     (state.rows || []).find((row) => ((row.body ?? row.text) ?? "").includes(body)) ?? null;
-
-  /** The filter bar's button carrying this testid, or null. */
-  const filterButton = (state, group, testid) =>
-    (state.filters?.[group]?.buttons ?? []).find((button) => button.testid === testid) ?? null;
 
   try {
     await win.loadURL(url);
@@ -1641,44 +1665,72 @@ async function main() {
       `labels ${JSON.stringify(projectOptionLabels)} vs projects ${JSON.stringify((inboxExpected?.projects ?? []).map((project) => project.title))}`,
     );
 
-    const statusFilterButtons = (baseline.filters?.status?.buttons ?? []).map(
-      (button) => button.testid,
+    // The band is three drop-downs on one line now, not three rows of pills:
+    // every picker's options and the geometry that proves the one line are
+    // measured off the shipped page.
+    const statusValues = (baseline.filters?.status?.options ?? []).map(
+      (option) => option.value,
     );
     check(
-      "the status filter offers All and the five states",
-      statusFilterButtons.length === 6 &&
-        ["all", "inbox", "triaged", "acting", "done", "dropped"].every((name) =>
-          statusFilterButtons.includes(`signal-filter-status-${name}`),
-        ),
-      `buttons ${JSON.stringify(statusFilterButtons)}`,
+      "the status filter is a drop-down offering All and the five states",
+      baseline.filters?.status?.tag === "SELECT" &&
+        statusValues.join(",") === "all,inbox,triaged,acting,done,dropped",
+      `tag ${JSON.stringify(baseline.filters?.status?.tag)}, options ${JSON.stringify(statusValues)}`,
     );
     check(
       "the status filter starts on All",
-      filterButton(baseline, "status", "signal-filter-status-all")?.pressed === "true",
-      `All pressed ${JSON.stringify(filterButton(baseline, "status", "signal-filter-status-all"))}`,
+      baseline.filters?.status?.value === "all",
+      `value ${JSON.stringify(baseline.filters?.status?.value)}`,
     );
-    const domainFilterButtons = (baseline.filters?.domain?.buttons ?? []).map(
-      (button) => button.testid,
+    const domainValues = (baseline.filters?.domain?.options ?? []).map(
+      (option) => option.value,
     );
     check(
-      "the domain filter offers All, Unassigned and the areas",
+      "the area filter is a drop-down offering All, Unassigned and the areas",
       (baseline.filters?.domain?.present ?? false) &&
-        domainFilterButtons.includes("signal-filter-domain-all") &&
-        domainFilterButtons.includes("signal-filter-domain-none") &&
-        domainFilterButtons.includes("signal-filter-domain-health"),
-      `buttons ${JSON.stringify(domainFilterButtons)}`,
+        baseline.filters?.domain?.tag === "SELECT" &&
+        domainValues.includes("all") &&
+        domainValues.includes("none") &&
+        domainValues.includes("health"),
+      `tag ${JSON.stringify(baseline.filters?.domain?.tag)}, options ${JSON.stringify(domainValues)}`,
     );
-    const projectFilterButtons = (baseline.filters?.project?.buttons ?? []).map(
-      (button) => button.testid,
+    const projectValues = (baseline.filters?.project?.options ?? []).map(
+      (option) => option.value,
     );
     check(
-      "the project filter offers All and every live project",
-      projectFilterButtons.length === (inboxExpected?.projects ?? []).length + 1 &&
-        projectFilterButtons.includes("signal-filter-project-all") &&
+      "the project filter is a drop-down offering All and every live project",
+      baseline.filters?.project?.tag === "SELECT" &&
+        projectValues.length === (inboxExpected?.projects ?? []).length + 1 &&
+        projectValues.includes("all") &&
         (inboxExpected?.projects ?? []).every((project) =>
-          projectFilterButtons.includes(`signal-filter-project-${project.id}`),
+          projectValues.includes(project.id),
         ),
-      `buttons ${JSON.stringify(projectFilterButtons)}`,
+      `options ${JSON.stringify(projectValues)}`,
+    );
+    const filterFieldTops = (baseline.filterLayout?.fields ?? []).map(
+      (field) => field?.top ?? null,
+    );
+    const filterPickerTops = ["status", "domain", "project"].map(
+      (group) => baseline.filters?.[group]?.box?.top ?? null,
+    );
+    check(
+      "the three filters share one line",
+      filterFieldTops.length === 3 &&
+        filterFieldTops.every(
+          (top) => top !== null && top === filterFieldTops[0],
+        ) &&
+        filterPickerTops.every(
+          (top) => top !== null && top === filterPickerTops[0],
+        ),
+      `field tops ${JSON.stringify(filterFieldTops)}, picker tops ${JSON.stringify(filterPickerTops)}`,
+    );
+    check(
+      "the filter band is one compact row, not three pill rows",
+      (baseline.filterLayout?.band?.height ?? 0) <= 56 &&
+        (baseline.filterLayout?.buttons ?? -1) === 0 &&
+        (baseline.filterLayout?.labels ?? []).join(",") ===
+          "Status,Area,Project",
+      `band ${JSON.stringify(baseline.filterLayout?.band)}, buttons ${baseline.filterLayout?.buttons}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
     );
 
     // The triage itself: one operator gesture on the project-filed row.
@@ -1752,11 +1804,19 @@ async function main() {
       `stored ${JSON.stringify(storedTriage && { status: storedTriage.status })}`,
     );
 
-    // The filter chips: a match, then no matches, then back to All. The acting
-    // chip is a second read of the status the triage just wrote.
-    await js(click('[data-testid="signal-filter-status-acting"]'));
+    // The filters: a match, then no matches, then back to All. Choosing Acting
+    // is a second read of the status the triage just wrote.
+    const acted = await js(selectFilter("signal-filter-status", "acting"));
+    check(
+      "the status filter accepts the operator's choice",
+      acted === "ok",
+      `select returned ${JSON.stringify(acted)}`,
+    );
     const actingFilter = await waitState(
-      (state) => state.rows.length === 1 && rowWithBody(state, inboxTarget?.body ?? "") !== null,
+      (state) =>
+        state.rows.length === 1 &&
+        rowWithBody(state, inboxTarget?.body ?? "") !== null &&
+        state.filters?.status?.value === "acting",
       "the acting filter to show just the triaged row",
     );
     check(
@@ -1767,14 +1827,14 @@ async function main() {
       `${actingFilter.rows.length} rows, bodies ${JSON.stringify(actingFilter.rows.map((row) => row.body))}`,
     );
     check(
-      "the acting chip reads as pressed",
-      filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed === "true",
-      `acting chip ${JSON.stringify(filterButton(actingFilter, "status", "signal-filter-status-acting"))}`,
+      "the status picker holds Acting",
+      actingFilter.filters?.status?.value === "acting",
+      `status picker ${JSON.stringify(actingFilter.filters?.status)}`,
     );
 
     // The operator-facing half of the evidence, taken while the Acting filter
-    // proves the change: the one triaged row, its Acting chip and select, and
-    // the pressed chip that narrowed the list to it.
+    // proves the change: the one triaged row, its Acting select, and the
+    // status picker that narrowed the list to it.
     await js(`(() => {
       const rows = Array.from(document.querySelectorAll('[data-testid="signal-row"]'));
       const row = rows.find((candidate) => {
@@ -1796,11 +1856,12 @@ async function main() {
       `${inboxShotBytes} bytes`,
     );
 
-    await js(click('[data-testid="signal-filter-status-done"]'));
+    await js(selectFilter("signal-filter-status", "done"));
     const doneFilter = await waitState(
       (state) =>
         state.rows.length === 0 &&
-        (state.filterEmpty ?? "") === "No signals match these filters.",
+        (state.filterEmpty ?? "") === "No signals match these filters." &&
+        state.filters?.status?.value === "done",
       "the done filter to leave no rows and say why",
     );
     check(
@@ -1814,14 +1875,16 @@ async function main() {
       `empty line ${JSON.stringify(doneFilter.emptyLine)}`,
     );
     check(
-      "the done chip reads as pressed",
-      filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed === "true",
-      `done chip ${JSON.stringify(filterButton(doneFilter, "status", "signal-filter-status-done"))}`,
+      "the status picker holds Done",
+      doneFilter.filters?.status?.value === "done",
+      `status picker ${JSON.stringify(doneFilter.filters?.status)}`,
     );
 
-    await js(click('[data-testid="signal-filter-status-all"]'));
+    await js(selectFilter("signal-filter-status", "all"));
     const allFilter = await waitState(
-      (state) => state.rows.length === expected.seeded.count + CAPTURES_DRIVEN,
+      (state) =>
+        state.rows.length === expected.seeded.count + CAPTURES_DRIVEN &&
+        state.filters?.status?.value === "all",
       "the all filter to restore the chain",
     );
     check(
@@ -1830,9 +1893,9 @@ async function main() {
       `${allFilter.rows.length} rows vs ${expected.seeded.count + CAPTURES_DRIVEN}`,
     );
     check(
-      "the all chip reads as pressed again",
-      filterButton(allFilter, "status", "signal-filter-status-all")?.pressed === "true",
-      `All chip ${JSON.stringify(filterButton(allFilter, "status", "signal-filter-status-all"))}`,
+      "the status picker is back on All",
+      allFilter.filters?.status?.value === "all",
+      `status picker ${JSON.stringify(allFilter.filters?.status)}`,
     );
 
     checks.inbox = {
@@ -1845,9 +1908,10 @@ async function main() {
         priorityLabels: priorityOptionLabels,
         projectOptions: (projectSelect?.options ?? []).map((option) => option.value),
         projectLabels: projectOptionLabels,
-        filterStatus: statusFilterButtons,
-        filterDomain: domainFilterButtons,
-        filterProject: projectFilterButtons,
+        filterStatus: baseline.filters?.status ?? null,
+        filterDomain: baseline.filters?.domain ?? null,
+        filterProject: baseline.filters?.project ?? null,
+        filterLayout: baseline.filterLayout ?? null,
       },
       triage: {
         targetId: inboxTarget?.id ?? null,
@@ -1873,17 +1937,17 @@ async function main() {
       filter: {
         acting: {
           rows: actingFilter.rows.length,
-          pressed: filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed ?? null,
+          value: actingFilter.filters?.status?.value ?? null,
         },
         done: {
           rows: doneFilter.rows.length,
           empty: doneFilter.filterEmpty,
           emptyLine: doneFilter.emptyLine,
-          pressed: filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed ?? null,
+          value: doneFilter.filters?.status?.value ?? null,
         },
         all: {
           rows: allFilter.rows.length,
-          pressed: filterButton(allFilter, "status", "signal-filter-status-all")?.pressed ?? null,
+          value: allFilter.filters?.status?.value ?? null,
         },
       },
       screenshot: { name: path.basename(inboxShot), bytes: inboxShotBytes },

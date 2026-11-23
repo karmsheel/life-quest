@@ -74,9 +74,10 @@ was attached, before the capture is logged.
 6. Press **Enter** or choose the primary **Log** button. The box clears, the area picker resets
    to **- unassigned -**, the preview drops, and the new signal appears at the top of the list
    with status **Inbox**.
-7. Narrow the list with the filter chips above it: by **status**, by **area**, or by
-   **project**. Filters combine with the area lens; a filter with no matches says
-   "No signals match these filters."
+7. Narrow the list with the three filters in the row above it — **Status**, **Area** and
+   **Project** — each a compact drop-down on the same line, not a row of pills: pick a value
+   and the list narrows to it. Filters combine with the area lens; a filter with no matches
+   says "No signals match these filters."
 8. Work a signal in the list:
    - Change its **Area**, **Project**, **Status** or **Priority** with the selects on the row.
      These are direct writes; nothing asks for approval.
@@ -104,7 +105,7 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | **Area** picker | **- unassigned -** plus every unlocked area (never the base **Life**). Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
 | Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
-| Filter chips | Three chip rows above the list: **status** (All, Inbox, Triaged, Acting, Done, Dropped), **area** (All, Unassigned, each live area) and **project** (All, each live project). The active chip is pressed; filters combine. |
+| Filter row | Three compact drop-downs on one line above the list: **Status** (All, Inbox, Triaged, Acting, Done, Dropped), **Area** (All, Unassigned, each live area) and **Project** (All, each live project). Each picker shows the value applied; filters combine. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Unassigned** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
@@ -334,7 +335,7 @@ never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
   slug — the file keeps `domainSlug: null`.
 - "No project" and "None" are the row labels for an unfiled project and an unset priority;
   neither is a stored value. `priority: "normal"` is a real choice and shows **Normal**.
-- The filter chips are a view: switching area lens or filter never rewrites a signal. A
+- The filters are a view: switching area lens or filter never rewrites a signal. A
   capture you cannot see under a filter is still on the chain.
 - Editing a signal does not touch a task made from it: the task copied the text at the time
   it was made. Changing the signal's project later does not move the task.

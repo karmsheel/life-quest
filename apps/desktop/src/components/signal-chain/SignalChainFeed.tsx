@@ -8,7 +8,6 @@ import {
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import type {
   Project,
@@ -755,7 +754,7 @@ export function SignalChainFeed() {
       ) : null}
 
       {/* The box and the filters are separate jobs: space and a hairline keep
-          the capture surface from reading as the first row of chips. */}
+          the capture surface from reading as the first filter. */}
       <hr
         className="signal-chain__rule"
         role="separator"
@@ -763,95 +762,72 @@ export function SignalChainFeed() {
         data-testid="chain-rule"
       />
 
-      {/* The triage band above the list. The area lens above the page still
-          applies; these chips narrow what is left and never widen it. */}
+      {/* The triage band above the list: three compact selects on one line.
+          The area lens above the page still applies; these narrow what is
+          left and never widen it. Selects rather than rows of chips keep the
+          band from pushing the chain down the page, and the picker's own
+          value is the applied filter. */}
       <div
         className="signal-chain__filters"
         role="group"
         aria-label="Filter the inbox"
       >
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by status"
-          data-testid="signal-filter-status"
-        >
+        <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Status</span>
-          <FilterChip
-            testid="signal-filter-status-all"
-            active={statusFilter === "all"}
-            onClick={() => setStatusFilter("all")}
+          <select
+            className="signal-chain__filter-select"
+            aria-label="Filter by status"
+            data-testid="signal-filter-status"
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as SignalStatus | "all")
+            }
           >
-            All
-          </FilterChip>
-          {SIGNAL_STATUSES.map((status) => (
-            <FilterChip
-              key={status}
-              testid={`signal-filter-status-${status}`}
-              active={statusFilter === status}
-              onClick={() => setStatusFilter(status)}
-            >
-              {SIGNAL_STATUS_LABELS[status]}
-            </FilterChip>
-          ))}
-        </div>
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by area"
-          data-testid="signal-filter-domain"
-        >
+            <option value="all">All</option>
+            {SIGNAL_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {SIGNAL_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Area</span>
-          <FilterChip
-            testid="signal-filter-domain-all"
-            active={domainFilter === "all"}
-            onClick={() => setDomainFilter("all")}
+          <select
+            className="signal-chain__filter-select"
+            aria-label="Filter by area"
+            data-testid="signal-filter-domain"
+            value={domainFilter}
+            onChange={(e) =>
+              setDomainFilter(e.target.value as string | "all" | "none")
+            }
           >
-            All
-          </FilterChip>
-          <FilterChip
-            testid="signal-filter-domain-none"
-            active={domainFilter === "none"}
-            onClick={() => setDomainFilter("none")}
-          >
-            Unassigned
-          </FilterChip>
-          {liveDomains.map((domain) => (
-            <FilterChip
-              key={domain.slug}
-              testid={`signal-filter-domain-${domain.slug}`}
-              active={domainFilter === domain.slug}
-              onClick={() => setDomainFilter(domain.slug)}
-            >
-              {domain.meta.name}
-            </FilterChip>
-          ))}
-        </div>
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by project"
-          data-testid="signal-filter-project"
-        >
+            <option value="all">All</option>
+            <option value="none">Unassigned</option>
+            {liveDomains.map((domain) => (
+              <option key={domain.slug} value={domain.slug}>
+                {domain.meta.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Project</span>
-          <FilterChip
-            testid="signal-filter-project-all"
-            active={projectFilter === "all"}
-            onClick={() => setProjectFilter("all")}
+          <select
+            className="signal-chain__filter-select"
+            aria-label="Filter by project"
+            data-testid="signal-filter-project"
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
           >
-            All
-          </FilterChip>
-          {projects.map((project) => (
-            <FilterChip
-              key={project.id}
-              testid={`signal-filter-project-${project.id}`}
-              active={projectFilter === project.id}
-              onClick={() => setProjectFilter(project.id)}
-            >
-              {project.title}
-            </FilterChip>
-          ))}
-        </div>
+            <option value="all">All</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.title}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {loading ? (
@@ -1330,28 +1306,5 @@ function SignalFileCard({ attachment }: { attachment: SignalFileAttachment }) {
         <span>Save</span>
       </Button>
     </div>
-  );
-}
-
-/**
- * One triage filter. `aria-pressed` is the pressed state, so the chip is a
- * toggle to a screen reader and the rig reads the same fact the eye does.
- */
-function FilterChip(props: {
-  testid: string;
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={`signal-chain__chip${props.active ? " signal-chain__chip--active" : ""}`}
-      data-testid={props.testid}
-      aria-pressed={props.active}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </button>
   );
 }

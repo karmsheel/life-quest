@@ -101,6 +101,16 @@ type Select = {
   options: { value: string; label: string }[];
 };
 
+type Box = { left: number; top: number; width: number; height: number };
+
+/** One inbox filter: the picker's options, the applied value, its geometry. */
+type FilterControl = Select & {
+  present: boolean;
+  testid: string;
+  tag: string | null;
+  box: Box;
+};
+
 /** One fixture seed, with the labels the contract says its row must paint. */
 type InboxExpectedSeed = {
   id: string;
@@ -150,9 +160,15 @@ type InboxCheck = {
     priorityLabels: string[];
     projectOptions: string[];
     projectLabels: string[];
-    filterStatus: string[];
-    filterDomain: string[];
-    filterProject: string[];
+    filterStatus: FilterControl;
+    filterDomain: FilterControl;
+    filterProject: FilterControl;
+    filterLayout: {
+      band: Box;
+      labels: string[];
+      fields: Box[];
+      buttons: number;
+    };
   };
   triage: {
     targetId: string | null;
@@ -174,14 +190,14 @@ type InboxCheck = {
     listReadsAfter: number;
   };
   filter: {
-    acting: { rows: number; pressed: string | null };
+    acting: { rows: number; value: string | null };
     done: {
       rows: number;
       empty: string | null;
       emptyLine: string | null;
-      pressed: string | null;
+      value: string | null;
     };
-    all: { rows: number; pressed: string | null };
+    all: { rows: number; value: string | null };
   };
   screenshot: { name: string; bytes: number };
 };
@@ -597,11 +613,13 @@ describe("Notebox page — general capture", () => {
     );
     assert.equal(checks.final.route, "/chain");
 
-    // ── the inbox: a triage select changes an item's status on screen ──────
-    // The renderer contract fixes the attributes, chips, selects and filter
-    // chips; the driver read them off the live DOM and made one triage gesture
-    // through the operator's own select. These assertions refuse a report where
-    // the page echoed its own state, mislabelled a row, or never re-read.
+    // ── the inbox: three filter drop-downs on one line ─────────────────────
+    // The renderer contract fixes the attributes, labels, row selects and the
+    // three filter pickers; the driver read them off the live DOM, made one
+    // triage gesture through the operator's own select, then picked values on
+    // the status filter. These assertions refuse a report where the filters
+    // went back to rows of pills, the page echoed its own state, mislabelled a
+    // row, or never re-read.
     const inbox = checks.inbox;
     assert.equal(inbox.rows.length, expected.seeded.count);
     assert.deepEqual(
@@ -628,26 +646,90 @@ describe("Notebox page — general capture", () => {
         inbox.controls.projectLabels.includes("Reading list"),
       `the project select labels are ${JSON.stringify(inbox.controls.projectLabels)}`,
     );
-    assert.ok(
-      inbox.controls.filterStatus.includes("signal-filter-status-all") &&
-        inbox.controls.filterStatus.includes("signal-filter-status-done"),
-      `the status filter buttons are ${JSON.stringify(inbox.controls.filterStatus)}`,
+
+    // The three filters are pickers, not chip rows: All plus the contract's
+    // values, each holding the applied value in its own control.
+    assert.equal(
+      inbox.controls.filterStatus?.tag,
+      "SELECT",
+      "the status filter is not a drop-down",
     );
     assert.deepEqual(
-      [...inbox.controls.filterProject].sort(),
-      [
-        "signal-filter-project-a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
-        "signal-filter-project-all",
-        "signal-filter-project-b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
-      ].sort(),
-      "the project filter is not All plus one chip per live project",
+      inbox.controls.filterStatus.options.map((option) => option.value),
+      ["all", "inbox", "triaged", "acting", "done", "dropped"],
+      "the status filter does not offer All and the five stored values",
+    );
+    assert.deepEqual(
+      inbox.controls.filterStatus.options.map((option) => option.label),
+      ["All", "Inbox", "Triaged", "Acting", "Done", "Dropped"],
+      "the status filter labels are not the contract's",
+    );
+    assert.equal(
+      inbox.controls.filterStatus.value,
+      "all",
+      "the status filter does not start on All",
+    );
+    assert.equal(
+      inbox.controls.filterDomain?.tag,
+      "SELECT",
+      "the area filter is not a drop-down",
+    );
+    const domainFilterValues = inbox.controls.filterDomain.options.map(
+      (option) => option.value,
     );
     assert.ok(
-      inbox.controls.filterDomain.includes("signal-filter-domain-all") &&
-        inbox.controls.filterDomain.includes("signal-filter-domain-none") &&
-        inbox.controls.filterDomain.includes("signal-filter-domain-health"),
-      `the domain filter buttons are ${JSON.stringify(inbox.controls.filterDomain)}`,
+      domainFilterValues.includes("all") &&
+        domainFilterValues.includes("none") &&
+        domainFilterValues.includes("health"),
+      `the area filter options are ${JSON.stringify(domainFilterValues)}`,
     );
+    assert.equal(
+      inbox.controls.filterProject?.tag,
+      "SELECT",
+      "the project filter is not a drop-down",
+    );
+    assert.deepEqual(
+      [...inbox.controls.filterProject.options.map((option) => option.value)].sort(),
+      [
+        "a2f4e78f-1e7f-4aac-bee3-6b80042d16c1",
+        "all",
+        "b7c9d1a2-3f4e-4b6c-8d9e-0f1a2b3c4d5e",
+      ].sort(),
+      "the project filter is not All plus one option per live project",
+    );
+
+    // The requested change, measured: the three pickers share one line, the
+    // band is one compact row, and no chip buttons are left in it.
+    const filterLayout = inbox.controls.filterLayout;
+    assert.equal(
+      filterLayout.fields.length,
+      3,
+      "the filter band does not hold three fields",
+    );
+    for (const field of filterLayout.fields) {
+      assert.equal(
+        field.top,
+        filterLayout.fields[0].top,
+        `a filter field sits on its own line: ${JSON.stringify(filterLayout.fields)}`,
+      );
+    }
+    for (const group of ["filterStatus", "filterDomain", "filterProject"]) {
+      assert.equal(
+        inbox.controls[group].box.top,
+        inbox.controls.filterStatus.box.top,
+        `${group} is not on the status filter's line`,
+      );
+    }
+    assert.ok(
+      filterLayout.band.height <= 56,
+      `the filter band is ${filterLayout.band.height}px tall, not one compact row`,
+    );
+    assert.equal(
+      filterLayout.buttons,
+      0,
+      "the filter band still contains chip buttons",
+    );
+    assert.deepEqual(filterLayout.labels, ["Status", "Area", "Project"]);
 
     // Each seeded row: stored value on the row, contract label beside it.
     for (const row of inbox.rows) {
@@ -722,15 +804,15 @@ describe("Notebox page — general capture", () => {
       `the chain was not re-read after the triage (${inbox.triage.listReadsBefore} reads)`,
     );
 
-    // The filter chips narrow, say there is no match, and restore the chain.
+    // The status filter narrows, says there is no match, and restores the chain.
     assert.equal(inbox.filter.acting.rows, 1, "the acting filter did not show the triaged row");
-    assert.equal(inbox.filter.acting.pressed, "true");
+    assert.equal(inbox.filter.acting.value, "acting");
     assert.equal(inbox.filter.done.rows, 0, "a status with no rows still painted rows");
     assert.equal(inbox.filter.done.empty, "No signals match these filters.");
     assert.equal(inbox.filter.done.emptyLine, null, "the no-match line became the empty-vault line");
-    assert.equal(inbox.filter.done.pressed, "true");
+    assert.equal(inbox.filter.done.value, "done");
     assert.equal(inbox.filter.all.rows, expected.seeded.count + 5);
-    assert.equal(inbox.filter.all.pressed, "true");
+    assert.equal(inbox.filter.all.value, "all");
     assert.ok(
       inbox.screenshot.bytes > 20_000,
       `the triage capture looks empty (${inbox.screenshot.bytes} bytes)`,
