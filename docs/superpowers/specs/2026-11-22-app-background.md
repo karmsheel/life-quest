@@ -347,3 +347,160 @@ Add, next to the existing `.scene-backdrop` rules:
 and `studio` import from it and should write against this contract meanwhile. The Lead runs
 `npm run typecheck` for integration (teammates may run it read-only; never start a dev server
 or E2E).
+
+---
+
+# Round 2 — shell-wide backdrop and per-panel shading
+
+**Status:** implementation contract, second pass on the same branch.
+
+The operator asked for the background to show **under the left sidebar and the right chat
+bar** too, with an adjustable amount of occlusion per panel — from completely blocking (the
+panel opaque, as today) through intermediate shading to completely clear (the full backdrop
+shows through). This adds two per-panel shade axes to the same background layer, carried by
+the theme file, overridable in Settings → Appearance, authorable in the Extensions studio.
+
+## R2.1 Model — `apps/desktop/shared/theme-file.ts`
+
+```ts
+/** How much of the backdrop shows through one shell panel. */
+export type PanelOcclusion = "solid" | "heavy" | "medium" | "light" | "clear";
+
+export const PANEL_OCCLUSIONS: readonly PanelOcclusion[] = [
+  "solid", "heavy", "medium", "light", "clear",
+];
+
+export type ThemeBackgroundPanels = {
+  /** The left sidebar (nav rail). */
+  navRail: PanelOcclusion;
+  /** The right chat bar (the dock panel). */
+  chat: PanelOcclusion;
+};
+
+export const DEFAULT_BACKGROUND_PANELS: ThemeBackgroundPanels = {
+  navRail: "solid",
+  chat: "solid",
+};
+```
+
+- `ThemeScene.background.panels: ThemeBackgroundPanels` (always resolved; defaults `solid`
+  for both, which is exactly today's look).
+- `ThemeBackgroundFile.panels?: Partial<ThemeBackgroundPanels>` so a theme file names only
+  the panels it changes.
+- Parser: `scene.background.panels` must be an object; each declared axis must be one of
+  `PANEL_OCCLUSIONS`, with the field named in the error, e.g.
+  `scene.background.panels.navRail must be one of solid, heavy, medium, light, clear`.
+- `resolveScene`: `panels: { ...DEFAULT_BACKGROUND_PANELS, ...scene?.background?.panels }`.
+- `layerScene`: theme first, operator second, **per axis**:
+  `panels: { ...DEFAULT_BACKGROUND_PANELS, ...theme?.background?.panels, ...override?.background?.panels }`.
+- `THEME_VOCABULARY`: add
+  `scene.background.panels.navRail / .chat: solid | heavy | medium | light | clear (how much of the backdrop shows through the sidebar / chat bar; solid is the opaque panel).`
+
+Meaning of the words (CSS owns the pixels, the model only names the step):
+
+| value | panel surface |
+|---|---|
+| `solid` | 100% panel paint — opaque, the current look |
+| `heavy` | 80% panel paint |
+| `medium` | 58% panel paint |
+| `light` | 34% panel paint |
+| `clear` | 0% panel paint — the full backdrop shows through |
+
+## R2.2 Renderer — the backdrop moves behind the whole shell
+
+- `AppShell.tsx`: render `<SceneBackdrop />` as the **first child of `.shell`**, before
+  `<NavRail />` (it leaves `.shell__main`). One layer behind the whole tray, not one per pane.
+- `global.css`:
+  - `.shell { background: var(--background); }` — the page canvas base now lives on the tray,
+    under the scene.
+  - `.shell__main { position: relative; z-index: 1; background: transparent; }` — the page
+    draws above the scene; the old `:root:not([data-scene-backdrop=plain]) .shell__main
+    { position: relative }` rule is folded into this (position is always relative now).
+    Keep the border/shadow. The material `wash`/`grid` background-images still paint on the
+    page and remain transparent gradients, so they tint rather than hide the scene.
+  - `.nav-rail` background becomes
+    `color-mix(in srgb, var(--canvas-base) var(--scene-panel-sidebar-veil, 100%), transparent)`.
+  - `.chat-panel` background becomes
+    `color-mix(in srgb, var(--background) var(--scene-panel-chat-veil, 100%), transparent)`.
+  - Root maps the model's words to veil percentages:
+    `:root[data-scene-panel-sidebar="solid"] { --scene-panel-sidebar-veil: 100%; }` … `clear`
+    → 0%; the same five for `data-scene-panel-chat` / `--scene-panel-chat-veil`.
+  - Panels keep their hairlines, their z-index (rail/chat already 20, above the scene), and
+    their inner chrome bands (tab strip, composer/footer/actions bars) — those are content
+    surfaces, not the panel veil.
+  - The window strip and the rail's over-titlebar band stay chrome (the scene covers the
+    shell tray below the strip, not the window titlebar).
+- `src/lib/themes/theme-file.ts` `applyScene`: always write
+  `root.dataset.scenePanelSidebar = scene.background.panels.navRail` and
+  `root.dataset.scenePanelChat = scene.background.panels.chat`.
+- `ThemeProvider`: `readStoredSceneOverride` parses `background.panels` (partial; unknown
+  values dropped, not half-trusted); `resetBackgroundOverride()` clears **both**
+  `background.image` and `background.panels` from the operator's override (the section's one
+  Reset hands the whole background back).
+
+## R2.3 Settings UI — `BackgroundControls.tsx`
+
+Two new rows after **Blur** (always enabled — the shade applies to whatever backdrop is set,
+picture or drawn sky):
+
+1. **Sidebar** — `data-testid="background-panel-sidebar"`, options
+   `background-option-panel-sidebar-<value>` for `solid | heavy | medium | light | clear`.
+2. **Chat bar** — `data-testid="background-panel-chat"`, options
+   `background-option-panel-chat-<value>`.
+
+Labels: **Solid**, **Heavy**, **Medium**, **Light**, **Clear**. Hints: Solid = the panel is
+painted fully, as before; Clear = the whole background shows through; the steps between shade
+it. A row shows the **yours** pill (`background-panel-sidebar-yours` /
+`background-panel-chat-yours`) when the operator's override names that axis. Settings'
+existing **Reset to theme** (`background-reset`) clears image + panels.
+
+## R2.4 Extensions studio
+
+`BackgroundControls` renders the same rows in controlled mode under `studio-` ids
+(`studio-background-panel-sidebar`, `studio-background-option-panel-sidebar-<value>`, …), so
+no new component is needed. `draft-theme.ts` `withScenePatch` deep-merges the panels object
+per axis (a single-axis patch must not wipe the other axis), and drops `scene.background`
+only when it becomes empty. Update `SECTION_INTROS.scene` to mention the panel shades.
+
+## R2.5 E2E — extend `tests/theme-background-e2e.test.ts` / `e2e/theme-background.electron.mjs`
+
+Add checks (the rig remains the only test):
+1. A fresh profile is `solid` on both panels: root datasets `data-scene-panel-sidebar=`
+   `data-scene-panel-chat=solid`, nav rail and chat panel computed backgrounds are effectively
+   opaque (alpha ≥ 0.99).
+2. Settings → Appearance shows the **Sidebar** and **Chat bar** rows; picking **Clear** for
+   the sidebar and **Heavy** for the chat bar repaints root datasets, the rows show **yours**,
+   the nav rail becomes fully transparent and the chat panel ~80% opaque (computed alpha).
+3. With **Clear** on both panels the picture is visibly behind rail and chat — the panel
+   screenshots/computed styles prove it; reload keeps the picks.
+4. Reset to theme restores both panels to `solid`.
+5. A theme file carrying `scene.background.panels { navRail: "clear", chat: "light" }`
+   previews, Keep keeps it, reload still wears it.
+6. Extensions studio Fields → Scene shows the two rows and Save writes the panels object;
+   read the saved JSON back.
+7. Invalid panel value (e.g. `panels.chat: "translucent"`) is refused with the field named.
+8. Existing 16 checks stay green (the scene layer moved but its testids/attributes and the
+   drawn-sky fallback are unchanged).
+
+## R2.6 Docs
+
+- `docs/wiki/28-settings.md` **Background** paragraph: add the two shade rows — **Sidebar** and
+  **Chat bar**, five steps from **Solid** (the panel painted fully) through **Heavy**,
+  **Medium**, **Light** to **Clear** (the background shows through), marked "yours", Reset
+  to theme hands the whole background back. Note the shading applies to the backdrop (picture
+  or drawn sky) and the window strip stays chrome.
+- `docs/wiki/37-extensions.md`: JSON shape gains
+  `scene.background.panels: { navRail, chat }` with the five values; validation names the
+  axis; studio Scene section includes the rows.
+- No route/tab/rail/version change.
+
+## R2.7 Ownership (round 2)
+
+| Owner | Files |
+|---|---|
+| model-main | `apps/desktop/shared/theme-file.ts` |
+| appearance | `AppShell.tsx`, `ThemeProvider.tsx`, `src/lib/themes/theme-file.ts`, `BackgroundControls.tsx`, `styles/global.css` |
+| studio | `studio/draft-theme.ts`, `studio/StudioFields.tsx` (intro copy only) |
+| e2e-rig | `e2e/theme-background.electron.mjs` |
+| docs | `docs/wiki/28-settings.md`, `docs/wiki/37-extensions.md` |
+| Lead | integration, typecheck, docs:check, both E2E rigs, commit, handover |
