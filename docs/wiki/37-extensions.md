@@ -149,18 +149,25 @@ be built without opening the JSON tab.
 - **Material** — the six axes: radius, elevation, type scale, density, motion and backdrop.
   They are named steps, not free values, and the shell reads them as its own tokens.
 - **Scene** — the **Sky** row (`plain`, `starfield`, `orbit`, `aurora`, `horizon` or `mesh`),
-  **Intensity**, the picture layer beneath those rows, plus the page's decorative edge and how
-  its cards are drawn. The drawn presets are the app's own drawing: the file names one of them
-  and supplies no image file, shader or stylesheet. The picture is a separate, declared field —
-  `scene.background.image: { file, fit, position, dim, blur }` — where `file` names a picture
-  already stored in the app profile's `backgrounds/` folder (never a path, a URL or the vault),
-  `fit` is `cover`, `contain` or `tile`, `position` is `center`, `top` or `bottom`,
-  `dim` is `none`, `soft` or `strong`, and `blur` is `none`, `soft` or `deep`. The file names
-  the picture and never carries its bytes, so exporting a theme does not copy the picture:
-  another machine falls back to the drawn preset until the same picture is chosen there. The
-  parser checks each field and names the one that failed
-  (`scene.background.image.fit must be one of cover, contain, tile`), and a picture the
-  profile no longer holds falls back to the drawn sky when the theme is worn.
+  **Intensity**, the picture layer and the two panel shades beneath those rows, plus the page's
+  decorative edge and how its cards are drawn. The drawn presets are the app's own drawing: the
+  file names one of them and supplies no image file, shader or stylesheet. The picture is a
+  separate, declared field — `scene.background.image: { file, fit, position, dim, blur }` —
+  where `file` names a picture already stored in the app profile's `backgrounds/` folder (never
+  a path, a URL or the vault), `fit` is `cover`, `contain` or `tile`, `position` is `center`,
+  `top` or `bottom`, `dim` is `none`, `soft` or `strong`, and `blur` is `none`, `soft` or
+  `deep`. The file names the picture and never carries its bytes, so exporting a theme does not
+  copy the picture: another machine falls back to the drawn preset until the same picture is
+  chosen there. The same layer says how much of the backdrop shows through the shell's two
+  panels — `scene.background.panels: { navRail, chat }`, each `solid`, `heavy`, `medium`,
+  `light` or `clear` (`solid` paints the panel fully, `clear` lets the whole background
+  through, the steps between shade it) — and either axis may be named alone, the other staying
+  `solid`. The parser checks each field and names the one that failed
+  (`scene.background.image.fit must be one of cover, contain, tile`;
+  `scene.background.panels.navRail must be one of solid, heavy, medium, light, clear`), and a
+  picture the profile no longer holds falls back to the drawn sky when the theme is worn. The
+  studio's Scene section shows the picture rows and the **Sidebar** and **Chat bar** rows and
+  writes them into the file like any other field.
 - **Palette** — the light (`colors`) and dark (`darkColors`) palettes. Each is optional, but a
   palette that is present is **complete**: the editor writes the full set of colours the shell
   paints with — surfaces, text, borders and accents, each with the text colour it is paired

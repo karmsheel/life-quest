@@ -429,7 +429,11 @@ Meaning of the words (CSS owns the pixels, the model only names the step):
     their inner chrome bands (tab strip, composer/footer/actions bars) — those are content
     surfaces, not the panel veil.
   - The window strip and the rail's over-titlebar band stay chrome (the scene covers the
-    shell tray below the strip, not the window titlebar).
+    shell tray below the strip, not the window titlebar). The layer does reach past the
+    tray's right and bottom by `--shell-frame` (`top: 0`, `right/bottom:
+    calc(-1 * var(--shell-frame))`, `left: 0`), because the sheet and the dock escape the
+    tray into the window frame; without that, a clear panel would stop short of the window
+    edge and the frame's mat would show as a seam under the glass.
 - `src/lib/themes/theme-file.ts` `applyScene`: always write
   `root.dataset.scenePanelSidebar = scene.background.panels.navRail` and
   `root.dataset.scenePanelChat = scene.background.panels.chat`.

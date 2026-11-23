@@ -31,6 +31,7 @@ type Report = {
   artifacts: {
     settings: string;
     app: string;
+    clearPanels: string;
     horizon: string;
     studio: string;
   };
@@ -131,6 +132,7 @@ describe("app background", () => {
       for (const artifact of [
         report.artifacts.settings,
         report.artifacts.app,
+        report.artifacts.clearPanels,
         report.artifacts.horizon,
         report.artifacts.studio,
       ]) {

@@ -8,23 +8,28 @@ import {
   BACKGROUND_IMAGE_FITS,
   BACKGROUND_IMAGE_POSITIONS,
   DEFAULT_BACKGROUND_IMAGE,
+  PANEL_OCCLUSIONS,
   type BackgroundImageBlur,
   type BackgroundImageDim,
   type BackgroundImageFit,
   type BackgroundImagePosition,
+  type PanelOcclusion,
   type ThemeBackgroundImage,
+  type ThemeBackgroundPanels,
   type ThemeScene,
   type ThemeSceneOverride,
 } from "@/lib/themes/theme-file";
 
 /**
- * Settings → Appearance: the picture layer, the rung above the drawn scene.
+ * Settings → Appearance: the background layer, the rung above the drawn scene.
  *
  * A theme file may name a picture — a file already stored in the app profile's
- * `backgrounds/` — and this section is where the operator chooses their own,
- * tunes how it fills the page, and hands it back. The picture is copied into
- * the profile, never the vault, and never a path: the shared model's file-name
- * rule is the vocabulary, the app reads the bytes and paints them.
+ * `backgrounds/` — and how much of that backdrop shows through each side panel.
+ * This section is where the operator chooses their own picture, tunes how it
+ * fills the page, shades the rail and the dock, and hands the whole background
+ * back. The picture is copied into the profile, never the vault, and never a
+ * path: the shared model's file-name rule is the vocabulary, the app reads the
+ * bytes and paints them.
  *
  * The rows reuse MaterialControls/SceneControls' shape — same header, same
  * `settings-card__row theme-material__row` rows, same segmented buttons — so the
@@ -112,6 +117,44 @@ const AXES: readonly PictureAxisSpec[] = [
   },
 ];
 
+const PANEL_LABELS: Record<PanelOcclusion, string> = {
+  solid: "Solid",
+  heavy: "Heavy",
+  medium: "Medium",
+  light: "Light",
+  clear: "Clear",
+};
+
+/** The two shell panels, as the model names them and as the rig ids them. */
+type PanelAxis = keyof ThemeBackgroundPanels;
+
+interface PanelAxisSpec {
+  axis: PanelAxis;
+  /** The option-id segment: `background-option-panel-sidebar-<value>`. */
+  optionKey: "sidebar" | "chat";
+  /** data-testid of the whole control (`background-panel-sidebar`). */
+  testId: string;
+  label: string;
+  hint: string;
+}
+
+const PANEL_AXES: readonly PanelAxisSpec[] = [
+  {
+    axis: "navRail",
+    optionKey: "sidebar",
+    testId: "background-panel-sidebar",
+    label: "Sidebar",
+    hint: "How much of the backdrop shows through the sidebar. Solid paints the panel fully, as before; Clear lets the whole background through.",
+  },
+  {
+    axis: "chat",
+    optionKey: "chat",
+    testId: "background-panel-chat",
+    label: "Chat bar",
+    hint: "How much of the backdrop shows through the chat bar. The steps between shade it; Clear shows the whole background.",
+  },
+];
+
 export interface BackgroundControlsProps {
   /** Controlled scene: the decoration to describe. */
   value?: ThemeScene;
@@ -135,6 +178,7 @@ export function BackgroundControls({
   const controlled = value !== undefined;
   const effectiveScene = value ?? scene;
   const picture = effectiveScene.background.image;
+  const panels = effectiveScene.background.panels;
   const headingId = useId();
   const labelPrefix = useId();
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -145,10 +189,17 @@ export function BackgroundControls({
 
   const overrideImage =
     controlled ? undefined : sceneOverride.background?.image;
+  const overridePanels =
+    controlled ? undefined : sceneOverride.background?.panels;
   /** A picture the operator picked — as opposed to the theme's or none. */
   const pictureIsYours = overrideImage !== undefined && overrideImage !== null;
-  /** Any picture pick at all, including `null` (the theme's picture hidden). */
-  const hasImagePick = overrideImage !== undefined;
+  /**
+   * Any background pick at all: the picture (including `null`, which hides the
+   * theme's) or either panel shade. The section's one Reset hands all of them
+   * back, so any of them arms it.
+   */
+  const hasBackgroundPick =
+    overrideImage !== undefined || overridePanels !== undefined;
 
   const emit = (patch: ThemeSceneOverride) => {
     if (controlled) {
@@ -209,6 +260,23 @@ export function BackgroundControls({
     emit({ background: { image: next } });
   };
 
+  /**
+   * Move one panel's shade. The studio gets the one axis it changed (its draft
+   * patch deep-merges panels); Settings sends both, because the provider's
+   * scene merge is shallow and a single-axis patch would wipe the other panel's
+   * pick.
+   */
+  const pickPanel = (axis: PanelAxis, option: PanelOcclusion) => {
+    if (controlled) {
+      emit({
+        background: { panels: { [axis]: option } as Partial<ThemeBackgroundPanels> },
+      });
+      return;
+    }
+    const next: ThemeBackgroundPanels = { ...panels, [axis]: option };
+    emit({ background: { panels: next } });
+  };
+
   return (
     <section
       className="theme-material theme-background"
@@ -223,16 +291,16 @@ export function BackgroundControls({
           <p className="theme-material__intro">
             {controlled ? (
               <>
-                The picture the theme file names. It is stored in the app profile,
-                not the vault; picks paint the draft at once and only{" "}
-                <strong>Save</strong> writes them.
+                The picture and panel shades the theme file names. The picture is
+                stored in the app profile, not the vault; picks paint the draft at
+                once and only <strong>Save</strong> writes them.
               </>
             ) : (
               <>
                 A picture of your own, copied into this installation&rsquo;s
-                profile — never the vault. It replaces the drawn sky while it is
-                set, and <strong>Reset to theme</strong> hands the theme&rsquo;s
-                picture (or its sky) back.
+                profile — never the vault — and how much of it shows through the
+                sidebar and the chat bar.{" "}
+                <strong>Reset to theme</strong> hands the whole background back.
               </>
             )}
           </p>
@@ -242,7 +310,7 @@ export function BackgroundControls({
             variant="outline"
             className="theme-material__reset"
             data-testid="background-reset"
-            disabled={!hasImagePick}
+            disabled={!hasBackgroundPick}
             onClick={() => resetBackgroundOverride()}
           >
             <RotateCcw size={13} aria-hidden />
@@ -364,6 +432,68 @@ export function BackgroundControls({
                       onClick={() => pickAxis(spec.axis, option.value)}
                     >
                       {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* The panel shades come last: the picture's axes describe the layer,
+            these two describe what the shell's own panels let through. They are
+            always live — the shade applies to whatever backdrop is set, the
+            operator's picture or the theme's drawn sky. */}
+        {PANEL_AXES.map((spec) => {
+          const effective = panels[spec.axis];
+          const overridden = overridePanels?.[spec.axis] !== undefined;
+          const labelId = `${labelPrefix}-panel-${spec.axis}`;
+          return (
+            <div
+              key={spec.axis}
+              className="settings-card__row theme-material__row"
+            >
+              <div className="settings-card__copy">
+                <div className="settings-card__label theme-material__label">
+                  <span id={labelId}>{spec.label}</span>
+                  {overridden ? (
+                    <span
+                      className="theme-material__yours"
+                      data-testid={idFor(`${spec.testId}-yours`)}
+                      title="You picked this shade; it overrides the theme's"
+                    >
+                      <span
+                        className="theme-material__yours-dot"
+                        aria-hidden="true"
+                      />
+                      yours
+                    </span>
+                  ) : null}
+                </div>
+                <p className="theme-material__hint">{spec.hint}</p>
+              </div>
+              <div
+                className="ui-segmented ui-segmented--sm theme-material__control"
+                role="radiogroup"
+                aria-labelledby={labelId}
+                data-testid={idFor(spec.testId)}
+              >
+                {PANEL_OCCLUSIONS.map((option) => {
+                  const active = effective === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      aria-label={`${spec.label}: ${PANEL_LABELS[option]}`}
+                      className={`ui-segmented__option${active ? " is-active" : ""}`}
+                      data-testid={idFor(
+                        `background-option-panel-${spec.optionKey}-${option}`,
+                      )}
+                      onClick={() => pickPanel(spec.axis, option)}
+                    >
+                      {PANEL_LABELS[option]}
                     </button>
                   );
                 })}

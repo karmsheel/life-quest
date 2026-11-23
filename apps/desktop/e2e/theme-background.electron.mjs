@@ -40,6 +40,32 @@
  *     "../escape.png"` and a bad `fit` are refused with the field named, in the
  *     studio's JSON verdict and in the watcher's write refusal.
  *
+ * Round 2 puts the backdrop behind the whole shell tray and gives the sidebar
+ * and the chat bar a five-step shade (Solid/Heavy/Medium/Light/Clear), carried
+ * by the theme file and overridable in Settings. The same rig proves it:
+ *
+ * 13. `a-fresh-shell-is-solid-on-both-panels` — the default is the opaque shell
+ *     the app always had: root datasets solid, computed panel alphas 1.
+ * 14. `settings-shades-the-sidebar-and-chat-bar` — the two always-live rows
+ *     appear; Clear on the sidebar and Heavy on the dock repaint the datasets,
+ *     the computed veils, both "yours" pills, and the panel surfaces.
+ * 15. `clear-panels-show-the-wallpaper-through-the-shell` — with both panels
+ *     clear the scene layer is a child of `.shell` and its rect covers the rail
+ *     and dock columns, so the picture runs behind them (artifact
+ *     `theme-background-clear-panels.png`).
+ * 16. `panel-picks-survive-a-reload` — the picks are the operator's override and
+ *     come back on the same reload the picture uses.
+ * 17. `reset-restores-solid-panels` — Reset to theme hands the shades back with
+ *     the picture: both panels opaque again.
+ * 18. `a-theme-file-can-shade-the-panels` — the picture theme also names
+ *     `panels { navRail: clear, chat: light }`; it previews, Keep keeps it, a
+ *     reload still wears it, and the profile JSON still names both.
+ * 19. `the-studio-authors-the-panel-shades` — the studio's controlled rows pick
+ *     one axis at a time, the draft paints each, and Save writes the deep-merged
+ *     `scene.background.panels` object (read back).
+ * 20. `an-invalid-panel-is-refused-by-name` — `panels.chat: "translucent"` is
+ *     refused with the field named in the studio verdict and the watcher.
+ *
  * The world is throwaway: its own profile, vault, stub Hermes host, stub
  * `hermes` on PATH and its own MCP ports. `bootForE2e` runs the product's main
  * process, preload and renderer, so this is the shipped shell. The picker seam
@@ -52,7 +78,8 @@
  *
  * Exit 0 = every check held. The report is `e2e/artifacts/theme-background.json`
  * and the pictures are `theme-background-settings.png`, `theme-background-app.png`,
- * `theme-background-horizon.png` and `theme-background-studio.png`, all beside it.
+ * `theme-background-clear-panels.png`, `theme-background-horizon.png` and
+ * `theme-background-studio.png`, all beside it.
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -76,6 +103,10 @@ const SETTINGS_PNG = path.join(artifactsDir, "theme-background-settings.png");
 const APP_PNG = path.join(artifactsDir, "theme-background-app.png");
 const HORIZON_PNG = path.join(artifactsDir, "theme-background-horizon.png");
 const STUDIO_PNG = path.join(artifactsDir, "theme-background-studio.png");
+const CLEAR_PANELS_PNG = path.join(
+  artifactsDir,
+  "theme-background-clear-panels.png",
+);
 const FIXTURE = path.join(here, "fixtures", "background-ridge.png");
 const FIXTURE_NAME = "background-ridge";
 
@@ -196,6 +227,81 @@ const SAMPLE = `(async () => {
         (options.length > 0 && options.every((option) => option.disabled === true)),
     };
   };
+  const navRailEl = document.querySelector(".nav-rail");
+  const chatPanelEl = document.querySelector(".chat-panel");
+  const shellEl = document.querySelector(".shell");
+  const rectOf = (el) => {
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return {
+      left: Math.round(box.left),
+      right: Math.round(box.right),
+      top: Math.round(box.top),
+      bottom: Math.round(box.bottom),
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    };
+  };
+  /**
+   * The alpha channel of a computed CSS colour.
+   *
+   * The panel veils are color-mix(... transparent); Chromium may serialise the
+   * resolved value as rgba(), rgb(... / a) or color(srgb ... / a), so this reads
+   * whichever shape it got and falls back to a one-pixel canvas fill for any
+   * other colour syntax.
+   */
+  const alphaOf = (color) => {
+    if (!color) return null;
+    const value = String(color).trim();
+    if (value === "transparent") return 0;
+    const open = value.indexOf("(");
+    const close = value.lastIndexOf(")");
+    if (open > 0 && close > open) {
+      const inner = value.slice(open + 1, close);
+      // Serialisations differ by engine: comma rgba(), space rgb(... / a) and
+      // color(srgb ... / a) all occur, and an alpha may arrive as a percentage.
+      const alphaNumber = (text) => {
+        const value = String(text).trim();
+        const percent = value.endsWith("%");
+        const number = Number(percent ? value.slice(0, -1) : value);
+        if (!Number.isFinite(number)) return null;
+        return percent ? number / 100 : number;
+      };
+      const slash = inner.split("/");
+      if (slash.length === 2) {
+        const alpha = alphaNumber(slash[1]);
+        return alpha === null ? 1 : alpha;
+      }
+      // Comma forms carry alpha as a fourth argument (rgba()/hsla() legacy).
+      const parts = inner.split(",");
+      if (parts.length >= 4) {
+        const alpha = alphaNumber(parts[3]);
+        if (alpha !== null) return alpha;
+      }
+      // Any other colour function without a slash is implicitly opaque; the
+      // canvas fallback below is only for bare keywords.
+      return 1;
+    }
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      return context.getImageData(0, 0, 1, 1).data[3] / 255;
+    } catch {
+      return null;
+    }
+  };
+  const panelProbe = (el) => {
+    if (!el) return null;
+    const color = getComputedStyle(el).backgroundColor;
+    return { color, alpha: alphaOf(color) };
+  };
+  const veilOf = (name) =>
+    getComputedStyle(root).getPropertyValue(name).trim() || null;
   const section = document.querySelector('[data-testid="theme-background"]');
   const previewBar = document.querySelector('[data-testid="theme-preview-bar"]');
   const errorBar = document.querySelector('[data-testid="theme-error"]');
@@ -240,6 +346,23 @@ const SAMPLE = `(async () => {
       sceneImageDim: root.dataset.sceneImageDim ?? null,
       sceneImageBlur: root.dataset.sceneImageBlur ?? null,
       sceneIntensity: root.dataset.sceneIntensity ?? null,
+      scenePanelSidebar: root.dataset.scenePanelSidebar ?? null,
+      scenePanelChat: root.dataset.scenePanelChat ?? null,
+    },
+    // Round 2: the backdrop now spans the whole tray and the rail/dock veil it.
+    panels: {
+      sidebar: root.dataset.scenePanelSidebar ?? null,
+      chat: root.dataset.scenePanelChat ?? null,
+      sidebarVeil: veilOf("--scene-panel-sidebar-veil"),
+      chatVeil: veilOf("--scene-panel-chat-veil"),
+      rail: panelProbe(navRailEl),
+      chatPanel: panelProbe(chatPanelEl),
+      railRect: rectOf(navRailEl),
+      chatRect: rectOf(chatPanelEl),
+      shellRect: rectOf(shellEl),
+      sceneParentClass:
+        layer && layer.parentElement ? String(layer.parentElement.className) : null,
+      sceneRect: rectOf(layer),
     },
     layer: layer
       ? {
@@ -276,6 +399,14 @@ const SAMPLE = `(async () => {
       position: optionGroup("", "position"),
       dim: optionGroup("", "dim"),
       blur: optionGroup("", "blur"),
+      sidebarShade: optionGroup("", "panel-sidebar"),
+      chatShade: optionGroup("", "panel-chat"),
+      sidebarYours: Boolean(
+        document.querySelector('[data-testid="background-panel-sidebar-yours"]'),
+      ),
+      chatYours: Boolean(
+        document.querySelector('[data-testid="background-panel-chat-yours"]'),
+      ),
       presetOptions: presetHost
         ? [...presetHost.querySelectorAll('[data-testid^="' + presetPrefix + '"]')].map((el) =>
             (el.getAttribute("data-testid") || "").slice(presetPrefix.length),
@@ -296,6 +427,8 @@ const SAMPLE = `(async () => {
       position: optionGroup("studio-", "position"),
       dim: optionGroup("studio-", "dim"),
       blur: optionGroup("studio-", "blur"),
+      sidebarShade: optionGroup("studio-", "panel-sidebar"),
+      chatShade: optionGroup("studio-", "panel-chat"),
     },
     editor: {
       present: Boolean(editor),
@@ -533,6 +666,32 @@ async function main() {
       sceneBackdrop: baseline?.root.sceneBackdrop,
       layer: baseline?.layer?.preset,
       picture: Boolean(baseline?.picture),
+    }),
+  );
+
+  // ── R2.1: a fresh profile is solid on both shell panels ─────────────────
+  const freshRailAlpha = baseline?.panels?.rail?.alpha ?? 0;
+  const freshChatAlpha = baseline?.panels?.chatPanel?.alpha ?? 0;
+  check(
+    "a-fresh-shell-is-solid-on-both-panels",
+    baseline?.shell === true &&
+      baseline.panels.sidebar === "solid" &&
+      baseline.panels.chat === "solid" &&
+      freshRailAlpha >= 0.99 &&
+      freshChatAlpha >= 0.99 &&
+      baseline.panels.sidebarVeil === "100%" &&
+      baseline.panels.chatVeil === "100%",
+    JSON.stringify({
+      datasets: {
+        sidebar: baseline?.panels?.sidebar,
+        chat: baseline?.panels?.chat,
+      },
+      veils: {
+        sidebar: baseline?.panels?.sidebarVeil,
+        chat: baseline?.panels?.chatVeil,
+      },
+      rail: baseline?.panels?.rail,
+      chatPanel: baseline?.panels?.chatPanel,
     }),
   );
 
@@ -789,6 +948,158 @@ async function main() {
     }),
   );
 
+  // ── R2.2/R2.3: the two panel shades in Settings ─────────────────────────
+  // The rows are always live — the shade applies to whatever backdrop is set —
+  // and picking Clear on the sidebar must make the rail paint exactly the
+  // backdrop behind it, while Heavy leaves the chat bar ~80% opaque.
+  const panelAppearanceOpened = await openAppearance();
+  const panelRows = panelAppearanceOpened
+    ? await waitFor(
+        (s) =>
+          s.settings.section === true &&
+          s.settings.sidebarShade !== null &&
+          s.settings.chatShade !== null &&
+          s.settings.sidebarShade.options.length === 5 &&
+          s.settings.chatShade.options.length === 5,
+        15_000,
+      )
+    : null;
+  const expectedPanelOptions =
+    "panel-sidebar-solid,panel-sidebar-heavy,panel-sidebar-medium,panel-sidebar-light,panel-sidebar-clear";
+  const sidebarClearPressed = panelRows
+    ? await click("background-option-panel-sidebar-clear")
+    : false;
+  const sidebarClear = sidebarClearPressed
+    ? await waitFor(
+        (s) =>
+          s.root.scenePanelSidebar === "clear" &&
+          s.settings.sidebarShade?.active === "panel-sidebar-clear" &&
+          (s.panels.rail?.alpha ?? 1) <= 0.02 &&
+          s.panels.sidebarVeil === "0%",
+        10_000,
+      )
+    : null;
+  const chatHeavyPressed = sidebarClear
+    ? await click("background-option-panel-chat-heavy")
+    : false;
+  const chatHeavy = chatHeavyPressed
+    ? await waitFor(
+        (s) =>
+          s.root.scenePanelChat === "heavy" &&
+          s.settings.chatShade?.active === "panel-chat-heavy" &&
+          (s.panels.chatPanel?.alpha ?? 1) >= 0.75 &&
+          (s.panels.chatPanel?.alpha ?? 1) <= 0.85 &&
+          s.panels.chatVeil === "80%",
+        10_000,
+      )
+    : null;
+  check(
+    "settings-shades-the-sidebar-and-chat-bar",
+    panelAppearanceOpened === true &&
+      panelRows?.settings.sidebarShade?.options.join(",") === expectedPanelOptions &&
+      panelRows.settings.chatShade?.options.join(",") ===
+        "panel-chat-solid,panel-chat-heavy,panel-chat-medium,panel-chat-light,panel-chat-clear" &&
+      panelRows.settings.sidebarYours === false &&
+      panelRows.settings.chatYours === false &&
+      sidebarClearPressed === true &&
+      sidebarClear !== null &&
+      sidebarClear.settings.sidebarYours === true &&
+      sidebarClear.root.scenePanelSidebar === "clear" &&
+      typeof sidebarClear.panels.rail?.color === "string" &&
+      chatHeavyPressed === true &&
+      chatHeavy !== null &&
+      chatHeavy.settings.chatYours === true &&
+      chatHeavy.root.scenePanelChat === "heavy",
+    JSON.stringify({
+      rows: panelRows
+        ? {
+            sidebar: panelRows.settings.sidebarShade,
+            chat: panelRows.settings.chatShade,
+            yoursAtStart: {
+              sidebar: panelRows.settings.sidebarYours,
+              chat: panelRows.settings.chatYours,
+            },
+          }
+        : null,
+      afterSidebar: sidebarClear
+        ? {
+            dataset: sidebarClear.root.scenePanelSidebar,
+            veil: sidebarClear.panels.sidebarVeil,
+            railColor: sidebarClear.panels.rail?.color,
+            railAlpha: sidebarClear.panels.rail?.alpha,
+            yours: sidebarClear.settings.sidebarYours,
+          }
+        : null,
+      afterChat: chatHeavy
+        ? {
+            dataset: chatHeavy.root.scenePanelChat,
+            veil: chatHeavy.panels.chatVeil,
+            chatColor: chatHeavy.panels.chatPanel?.color,
+            chatAlpha: chatHeavy.panels.chatPanel?.alpha,
+            yours: chatHeavy.settings.chatYours,
+          }
+        : null,
+    }),
+  );
+
+  // ── R2.3: both panels clear — the wallpaper runs behind rail and dock ───
+  const chatClearPressed = chatHeavy
+    ? await click("background-option-panel-chat-clear")
+    : false;
+  const bothClear = chatClearPressed
+    ? await waitFor(
+        (s) =>
+          s.root.scenePanelSidebar === "clear" &&
+          s.root.scenePanelChat === "clear" &&
+          (s.panels.rail?.alpha ?? 1) <= 0.02 &&
+          (s.panels.chatPanel?.alpha ?? 1) <= 0.02 &&
+          s.panels.sidebarVeil === "0%" &&
+          s.panels.chatVeil === "0%",
+        10_000,
+      )
+    : null;
+  await leaveSettings();
+  await sleep(900);
+  const clearPanelsShot = await win.webContents.capturePage();
+  fs.writeFileSync(CLEAR_PANELS_PNG, clearPanelsShot.toPNG());
+  const clearPanels = await evaluate(SAMPLE);
+  const clearState = bothClear ? clearPanels : null;
+  const clearSceneParent = (clearState?.panels?.sceneParentClass ?? "").split(" ");
+  const clearRect = clearState?.panels?.sceneRect ?? null;
+  const clearRailRect = clearState?.panels?.railRect ?? null;
+  const clearChatRect = clearState?.panels?.chatRect ?? null;
+  const clearShellRect = clearState?.panels?.shellRect ?? null;
+  const spansShell =
+    clearSceneParent.includes("shell") &&
+    Boolean(clearRect && clearRailRect && clearChatRect && clearShellRect) &&
+    clearRect.left <= clearRailRect.left &&
+    clearRect.right >= clearChatRect.right &&
+    clearRect.width >= clearShellRect.width - 2;
+  check(
+    "clear-panels-show-the-wallpaper-through-the-shell",
+    bothClear !== null &&
+      clearState?.root.scenePanelSidebar === "clear" &&
+      clearState.root.scenePanelChat === "clear" &&
+      (clearState.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (clearState.panels.chatPanel?.alpha ?? 1) <= 0.02 &&
+      spansShell === true &&
+      clearState.settings.section === false &&
+      (clearState.picture?.url ?? "").startsWith("blob:") === true &&
+      clearState.layer?.preset === "image",
+    JSON.stringify({
+      sceneParent: clearState?.panels?.sceneParentClass ?? null,
+      sceneRect: clearRect,
+      railRect: clearRailRect,
+      chatRect: clearChatRect,
+      shellRect: clearShellRect,
+      spansShell,
+      rail: clearState?.panels?.rail ?? null,
+      chatPanel: clearState?.panels?.chatPanel ?? null,
+      picture: (clearState?.picture?.url ?? "").slice(0, 24),
+      layer: clearState?.layer?.preset,
+    }),
+  );
+
   // ── 5: reload keeps the operator's picture and axes ─────────────────────
   const beforeReload = await evaluate(SAMPLE);
   const firstUrl = beforeReload?.picture?.url ?? null;
@@ -828,6 +1139,42 @@ async function main() {
     }),
   );
 
+  // ── R2.4: the panel picks are the operator's, so a reload keeps them ────
+  const panelsReloaded = await waitFor(
+    (s) =>
+      s.root.scenePanelSidebar === "clear" &&
+      s.root.scenePanelChat === "clear" &&
+      (s.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (s.panels.chatPanel?.alpha ?? 1) <= 0.02 &&
+      s.panels.sidebarVeil === "0%" &&
+      s.panels.chatVeil === "0%",
+    20_000,
+  );
+  const panelsReloadedParent = (panelsReloaded?.panels?.sceneParentClass ?? "").split(" ");
+  check(
+    "panel-picks-survive-a-reload",
+    panelsReloaded?.root.scenePanelSidebar === "clear" &&
+      panelsReloaded.root.scenePanelChat === "clear" &&
+      (panelsReloaded.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (panelsReloaded.panels.chatPanel?.alpha ?? 1) <= 0.02 &&
+      panelsReloadedParent.includes("shell") &&
+      (panelsReloaded.picture?.url ?? "").startsWith("blob:") === true,
+    JSON.stringify({
+      datasets: {
+        sidebar: panelsReloaded?.root.scenePanelSidebar,
+        chat: panelsReloaded?.root.scenePanelChat,
+      },
+      veils: {
+        sidebar: panelsReloaded?.panels.sidebarVeil,
+        chat: panelsReloaded?.panels.chatVeil,
+      },
+      rail: panelsReloaded?.panels.rail ?? null,
+      chatPanel: panelsReloaded?.panels.chatPanel ?? null,
+      sceneParent: panelsReloaded?.panels.sceneParentClass ?? null,
+      picture: (panelsReloaded?.picture?.url ?? "").slice(0, 24),
+    }),
+  );
+
   // ── 6: Reset to theme hands the picture back ────────────────────────────
   const resetOpened = await openAppearance();
   const resetReady = resetOpened
@@ -864,6 +1211,42 @@ async function main() {
       errors: reset?.errors,
     }),
   );
+  // R2.4: the section's one Reset hands the panel shades back with the picture.
+  const resetPanelState = await waitFor(
+    (s) =>
+      s.root.scenePanelSidebar === "solid" &&
+      s.root.scenePanelChat === "solid" &&
+      (s.panels.rail?.alpha ?? 0) >= 0.99 &&
+      (s.panels.chatPanel?.alpha ?? 0) >= 0.99,
+    12_000,
+  );
+  check(
+    "reset-restores-solid-panels",
+    resetPanelState?.root.scenePanelSidebar === "solid" &&
+      resetPanelState.root.scenePanelChat === "solid" &&
+      (resetPanelState.panels.rail?.alpha ?? 0) >= 0.99 &&
+      (resetPanelState.panels.chatPanel?.alpha ?? 0) >= 0.99 &&
+      resetPanelState.panels.sidebarVeil === "100%" &&
+      resetPanelState.panels.chatVeil === "100%" &&
+      resetPanelState.settings.sidebarYours === false &&
+      resetPanelState.settings.chatYours === false,
+    JSON.stringify({
+      datasets: {
+        sidebar: resetPanelState?.root.scenePanelSidebar,
+        chat: resetPanelState?.root.scenePanelChat,
+      },
+      veils: {
+        sidebar: resetPanelState?.panels.sidebarVeil,
+        chat: resetPanelState?.panels.chatVeil,
+      },
+      rail: resetPanelState?.panels.rail ?? null,
+      chatPanel: resetPanelState?.panels.chatPanel ?? null,
+      yours: {
+        sidebar: resetPanelState?.settings.sidebarYours,
+        chat: resetPanelState?.settings.chatYours,
+      },
+    }),
+  );
   await leaveSettings();
 
   // ── 7: a theme file may carry the picture ───────────────────────────────
@@ -885,12 +1268,26 @@ async function main() {
               dim: "soft",
               blur: "none",
             },
+            panels: { navRail: "clear", chat: "light" },
           },
         },
       },
       null,
       2,
     )}\n`,
+  );
+  const panelPreview = await waitFor(
+    (s) =>
+      s.preview === true &&
+      (s.previewText ?? "").includes(pictureThemeFile) &&
+      s.root.scenePanelSidebar === "clear" &&
+      s.root.scenePanelChat === "light" &&
+      (s.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (s.panels.chatPanel?.alpha ?? 0) >= 0.3 &&
+      (s.panels.chatPanel?.alpha ?? 0) <= 0.38 &&
+      s.panels.sidebarVeil === "0%" &&
+      s.panels.chatVeil === "34%",
+    15_000,
   );
   const picturePreview = await waitFor(
     (s) =>
@@ -967,6 +1364,71 @@ async function main() {
           }
         : null,
       errors: pictureReloaded?.errors,
+    }),
+  );
+
+  // R2.5: the theme file's panel shades survived Keep and the reload, and the
+  // profile file the app parsed still names them.
+  const panelReloaded = await waitFor(
+    (s) =>
+      s.keptFile === pictureThemeFile &&
+      s.root.scenePanelSidebar === "clear" &&
+      s.root.scenePanelChat === "light" &&
+      (s.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (s.panels.chatPanel?.alpha ?? 0) >= 0.3 &&
+      (s.panels.chatPanel?.alpha ?? 0) <= 0.38,
+    20_000,
+  );
+  let pictureThemeOnDisk = null;
+  try {
+    pictureThemeOnDisk = JSON.parse(
+      fs.readFileSync(path.join(themesDir, pictureThemeFile), "utf8"),
+    );
+  } catch {
+    pictureThemeOnDisk = null;
+  }
+  check(
+    "a-theme-file-can-shade-the-panels",
+    panelPreview?.root.scenePanelSidebar === "clear" &&
+      panelPreview.root.scenePanelChat === "light" &&
+      (panelPreview.panels.rail?.alpha ?? 1) <= 0.02 &&
+      (panelPreview.panels.chatPanel?.alpha ?? 0) >= 0.3 &&
+      (panelPreview.panels.chatPanel?.alpha ?? 0) <= 0.38 &&
+      panelPreview.panels.sidebarVeil === "0%" &&
+      panelPreview.panels.chatVeil === "34%" &&
+      pictureKept?.keptFile === pictureThemeFile &&
+      pictureReloaded?.keptFile === pictureThemeFile &&
+      panelReloaded?.keptFile === pictureThemeFile &&
+      panelReloaded.root.scenePanelSidebar === "clear" &&
+      panelReloaded.root.scenePanelChat === "light" &&
+      pictureThemeOnDisk?.scene?.background?.panels?.navRail === "clear" &&
+      pictureThemeOnDisk?.scene?.background?.panels?.chat === "light",
+    JSON.stringify({
+      preview: panelPreview
+        ? {
+            datasets: {
+              sidebar: panelPreview.root.scenePanelSidebar,
+              chat: panelPreview.root.scenePanelChat,
+            },
+            veils: {
+              sidebar: panelPreview.panels.sidebarVeil,
+              chat: panelPreview.panels.chatVeil,
+            },
+            rail: panelPreview.panels.rail,
+            chatPanel: panelPreview.panels.chatPanel,
+          }
+        : null,
+      reloaded: panelReloaded
+        ? {
+            datasets: {
+              sidebar: panelReloaded.root.scenePanelSidebar,
+              chat: panelReloaded.root.scenePanelChat,
+            },
+            rail: panelReloaded.panels.rail,
+            chatPanel: panelReloaded.panels.chatPanel,
+          }
+        : null,
+      onDisk: pictureThemeOnDisk?.scene?.background?.panels ?? null,
     }),
   );
 
@@ -1158,8 +1620,48 @@ async function main() {
         12_000,
       )
     : null;
+  // R2.5: the studio's two controlled panel rows. Picked one at a time; the
+  // draft must paint each shade (the shell datasets move with it) before the
+  // next pick, because each emits only its own axis for withScenePatch to merge.
+  const studioPanelRows = studioAxes
+    ? await waitFor(
+        (s) =>
+          s.studio.sidebarShade !== null &&
+          s.studio.chatShade !== null &&
+          s.studio.sidebarShade.options.length === 5 &&
+          s.studio.chatShade.options.length === 5,
+        12_000,
+      )
+    : null;
+  const studioSidebarPressed = studioPanelRows
+    ? await click("studio-background-option-panel-sidebar-clear")
+    : false;
+  const studioSidebarPainted = studioSidebarPressed
+    ? await waitFor(
+        (s) =>
+          s.studio.sidebarShade?.active === "panel-sidebar-clear" &&
+          s.root.scenePanelSidebar === "clear" &&
+          (s.panels.rail?.alpha ?? 1) <= 0.02,
+        10_000,
+      )
+    : null;
+  const studioChatPressed = studioSidebarPainted
+    ? await click("studio-background-option-panel-chat-medium")
+    : false;
+  const studioPanelsPicked = studioChatPressed
+    ? await waitFor(
+        (s) =>
+          s.studio.sidebarShade?.active === "panel-sidebar-clear" &&
+          s.studio.chatShade?.active === "panel-chat-medium" &&
+          s.root.scenePanelSidebar === "clear" &&
+          s.root.scenePanelChat === "medium" &&
+          (s.panels.chatPanel?.alpha ?? 1) >= 0.5 &&
+          (s.panels.chatPanel?.alpha ?? 1) <= 0.66,
+        10_000,
+      )
+    : null;
   // Frame the artifact on the Scene tab's picture rows, not the strip top.
-  if (studioAxes) {
+  if (studioPanelsPicked) {
     await evaluate(`(() => {
       const panel = document.querySelector('[data-testid="studio-background-panel"]');
       if (!panel) return false;
@@ -1176,7 +1678,7 @@ async function main() {
   await sleep(500);
   const studioShot = await win.webContents.capturePage();
   fs.writeFileSync(STUDIO_PNG, studioShot.toPNG());
-  const studioSaveReady = studioAxes
+  const studioSaveReady = studioPanelsPicked
     ? await until(
         `(() => { const b = document.querySelector('[data-testid="studio-save"]'); return Boolean(b && !b.disabled); })()`,
         10_000,
@@ -1203,6 +1705,7 @@ async function main() {
     await sleep(100);
   }
   const savedImage = savedStudio?.scene?.background?.image ?? null;
+  const savedPanels = savedStudio?.scene?.background?.panels ?? null;
   check(
     "the-studio-authors-the-picture-and-saves-it",
     extensionsPage === true &&
@@ -1252,6 +1755,36 @@ async function main() {
       preview: studioSavedPreview?.previewText,
       savedImage,
       storedName,
+    }),
+  );
+  check(
+    "the-studio-authors-the-panel-shades",
+    studioOpened === true &&
+      studioPanelRows?.studio.sidebarShade?.options.length === 5 &&
+      studioPanelRows.studio.chatShade?.options.length === 5 &&
+      studioSidebarPressed === true &&
+      studioSidebarPainted !== null &&
+      studioChatPressed === true &&
+      studioPanelsPicked !== null &&
+      savedPanels?.navRail === "clear" &&
+      savedPanels?.chat === "medium",
+    JSON.stringify({
+      rows: studioPanelRows
+        ? {
+            sidebar: studioPanelRows.studio.sidebarShade,
+            chat: studioPanelRows.studio.chatShade,
+          }
+        : null,
+      picked: studioPanelsPicked
+        ? {
+            sidebar: studioPanelsPicked.studio.sidebarShade?.active,
+            chat: studioPanelsPicked.studio.chatShade?.active,
+            rail: studioPanelsPicked.panels.rail,
+            chatPanel: studioPanelsPicked.panels.chatPanel,
+          }
+        : null,
+      savedPanels,
+      savedStudio: savedStudio?.scene?.background ?? null,
     }),
   );
   // Hand the preview back: the drawn mesh theme returns for the last two checks.
@@ -1363,6 +1896,20 @@ async function main() {
       s.editor.saveDisabled === true,
     12_000,
   );
+  // R2.5: the panel shades are validated by the same parser, naming the axis.
+  const badPanel = JSON.parse(JSON.stringify(baseDraft));
+  badPanel.scene.background.panels = {
+    ...(badPanel.scene.background.panels ?? {}),
+    chat: "translucent",
+  };
+  await setEditorSource(`${JSON.stringify(badPanel, null, 2)}\n`);
+  const panelVerdict = await waitFor(
+    (s) =>
+      s.editor.present === true &&
+      (s.editor.statusText ?? "").includes("scene.background.panels.chat") &&
+      s.editor.saveDisabled === true,
+    12_000,
+  );
   // Close the editor; the draft (and its preview) must not have reached disk.
   const cancelEditor = await click("extension-editor-cancel");
   const editorClosed = cancelEditor
@@ -1432,6 +1979,28 @@ async function main() {
     20_000,
   );
   await click("theme-dismiss").catch(() => false);
+  await sleep(250);
+  fs.rmSync(path.join(themesDir, "refused-fit.json"), { force: true });
+  await sleep(250);
+  fs.writeFileSync(
+    path.join(themesDir, "refused-panels.json"),
+    `${JSON.stringify(
+      {
+        name: "refused-panels",
+        label: "Refused Panels",
+        scene: {
+          background: { panels: { navRail: "solid", chat: "translucent" } },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const panelRefusal = await waitFor(
+    (s) => s.error !== null && s.error.includes("scene.background.panels.chat"),
+    20_000,
+  );
+  await click("theme-dismiss").catch(() => false);
   check(
     "the-watcher-refuses-an-invalid-picture-by-name",
     escapeRefusal?.error?.includes("scene.background.image.file") === true &&
@@ -1443,6 +2012,21 @@ async function main() {
       fit: fitRefusal?.error,
       shell: fitRefusal?.shell,
       errors: fitRefusal?.errors,
+    }),
+  );
+
+  check(
+    "an-invalid-panel-is-refused-by-name",
+    panelVerdict?.editor.statusText?.includes("scene.background.panels.chat") === true &&
+      panelVerdict.editor.saveDisabled === true &&
+      panelRefusal?.error?.includes("scene.background.panels.chat") === true &&
+      panelRefusal.shell === true &&
+      diskAfterRefusal?.scene?.background?.panels?.navRail === "clear" &&
+      diskAfterRefusal?.scene?.background?.panels?.chat === "medium",
+    JSON.stringify({
+      verdict: panelVerdict?.editor ?? null,
+      watcher: panelRefusal?.error ?? null,
+      diskPanels: diskAfterRefusal?.scene?.background?.panels ?? null,
     }),
   );
 
@@ -1460,6 +2044,7 @@ async function main() {
       app: path.relative(desktopRoot, APP_PNG),
       horizon: path.relative(desktopRoot, HORIZON_PNG),
       studio: path.relative(desktopRoot, STUDIO_PNG),
+      clearPanels: path.relative(desktopRoot, CLEAR_PANELS_PNG),
     },
     themeFiles: {
       picture: pictureThemeFile,

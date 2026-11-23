@@ -59,6 +59,7 @@ import {
   layerComposition,
   layerScene,
   MOTIONS,
+  PANEL_OCCLUSIONS,
   parseThemeFile,
   RADII,
   NAV_RAIL_PLACES,
@@ -77,6 +78,7 @@ import {
   WING_VARIANTS,
   type CompositionOverride,
   type ThemeBackgroundImage,
+  type ThemeBackgroundPanels,
   type ThemeChrome,
   type ThemeChromeOverride,
   type ThemeComposition,
@@ -290,6 +292,32 @@ function readStoredBackgroundImage(
   return { file, fit, position, dim, blur };
 }
 
+/**
+ * Read the operator's stored panel shades.
+ *
+ * Partial by design: a theme file — and so an override — may name one panel and
+ * leave the other to the theme. Each axis is validated on its own, so an
+ * unknown word is dropped rather than poisoning its sibling.
+ */
+function readStoredBackgroundPanels(
+  value: unknown,
+): Partial<ThemeBackgroundPanels> | undefined {
+  if (!isRecord(value)) return undefined;
+  const pick = <T extends string>(
+    candidate: unknown,
+    allowed: readonly T[],
+  ): T | undefined =>
+    typeof candidate === "string" && (allowed as readonly string[]).includes(candidate)
+      ? (candidate as T)
+      : undefined;
+  const panels: Partial<ThemeBackgroundPanels> = {};
+  const navRail = pick(value.navRail, PANEL_OCCLUSIONS);
+  if (navRail) panels.navRail = navRail;
+  const chat = pick(value.chat, PANEL_OCCLUSIONS);
+  if (chat) panels.chat = chat;
+  return Object.keys(panels).length > 0 ? panels : undefined;
+}
+
 function readStoredSceneOverride(): ThemeSceneOverride {
   try {
     const raw = JSON.parse(
@@ -315,6 +343,7 @@ function readStoredSceneOverride(): ThemeSceneOverride {
       const preset = raw.background.preset;
       const intensity = raw.background.intensity;
       const image = readStoredBackgroundImage(raw.background.image);
+      const panels = readStoredBackgroundPanels(raw.background.panels);
       override.background = {
         ...(typeof preset === "string" &&
         (SCENE_BACKDROPS as readonly string[]).includes(preset)
@@ -327,6 +356,8 @@ function readStoredSceneOverride(): ThemeSceneOverride {
         // `undefined` is "the stored pick says nothing about a picture";
         // `null` is the operator hiding the theme's picture and must survive.
         ...(image !== undefined ? { image } : {}),
+        // Panel shades are partial: the operator may have moved only one.
+        ...(panels !== undefined ? { panels } : {}),
       };
       if (Object.keys(override.background).length === 0) delete override.background;
     }
@@ -861,22 +892,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [paintTheme]);
 
   /**
-   * Drop the operator's picture pick and nothing else.
+   * Drop the operator's background picks — the picture and the two panel
+   * shades — and nothing else.
    *
-   * A picture is one pick among the scene's axes, so handing it back to the
-   * theme must not also throw away the operator's preset or intensity. The
-   * override keeps every other key; `scene.background` only disappears when it
-   * held nothing but the picture.
+   * These are one rung of the scene, so the section's one Reset hands the whole
+   * background back to the theme while the operator's preset and intensity
+   * picks stay. `scene.background` only disappears when it held nothing else.
    */
   const resetBackgroundOverride = useCallback(() => {
     const current = sceneOverrideRef.current;
-    if (!current.background || !("image" in current.background)) return;
-    const { image: _dropped, ...background } = current.background;
+    const background = current.background;
+    if (!background) return;
+    if (!("image" in background) && !("panels" in background)) return;
+    const { image: _image, panels: _panels, ...rest } = background;
     const next: ThemeSceneOverride = { ...current };
-    if (Object.keys(background).length === 0) {
+    if (Object.keys(rest).length === 0) {
       delete next.background;
     } else {
-      next.background = background;
+      next.background = rest;
     }
     sceneOverrideRef.current = next;
     setSceneOverrideState(next);

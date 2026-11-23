@@ -703,9 +703,13 @@ a {
   height: 100%;
   color: var(--fg);
   /* No gap: the panes abut, and each pane's own trailing hairline is its seam —
-     the rail's between sidebar and sheet, the sheet's between page and dock. The
-     mat is not this tray's business — the rail carries it to the window's top in
-     its own column, and the sheet and dock meet the strip directly. */
+     the rail's between sidebar and sheet, the sheet's between page and dock.
+     The tray paints the page canvas base, because the scene backdrop now sits
+     behind the whole shell and the side panels veil it: what shows through a
+     panel's shade is this canvas (or the theme's picture), not a pane's own
+     opaque fill. The rail still carries the mat to the window's top in its own
+     column, and the sheet and dock meet the strip directly. */
+  background: var(--background);
   gap: 0;
   /* The seam's handle is positioned against this tray, and the tracks above are
      exactly the geometry it is placed from. */
@@ -828,7 +832,14 @@ a {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: var(--background);
+  /* The page is a layer above the scene, not a pane that owns the background:
+     the tray paints the canvas base and the backdrop sits on it, so the sheet
+     itself is transparent and only its cards and its own surfaces paint. The
+     material wash/grid below still tint this surface; they are transparent
+     gradients, so the scene reads through them. */
+  position: relative;
+  z-index: 1;
+  background: transparent;
   border: 0;
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -978,7 +989,15 @@ a {
   --rail-header-inset: calc(
     var(--density-pad-rail-x) + var(--density-pad-row-x) + 1.5px
   );
-  background: var(--canvas-base);
+  /* The sidebar's shade: the rail's mat mixed with whatever is behind the tray,
+     so a clear shade lets the scene (picture or sky) show through. 100% is the
+     opaque rail the shell has always worn; the five steps are the theme model's
+     words, mapped on the document root (see "the panel shades" below). */
+  background: color-mix(
+    in srgb,
+    var(--canvas-base) var(--scene-panel-sidebar-veil, 100%),
+    transparent
+  );
   border: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -7642,8 +7661,14 @@ a.home-mini-list__link:hover {
   top: 0;
   align-self: stretch;
   /* The sheet's own canvas — the dock is the right-hand pane of one page, so it
-     takes `--background` with the sheet and not the card step above it. */
-  background: var(--background);
+     takes `--background` with the sheet and not the card step above it. The
+     shade mixes it with the scene behind the tray: 100% is the opaque dock the
+     shell has always worn, and the steps down let the backdrop read through. */
+  background: color-mix(
+    in srgb,
+    var(--background) var(--scene-panel-chat-veil, 100%),
+    transparent
+  );
   color: var(--fg);
   border: 0;
   /* The escape lives in the box, not in a negative margin: a stretched grid item
@@ -14702,24 +14727,82 @@ button.chat-panel__activity-line:hover {
 
 /* ——— the scene behind the page ————————————————————————————————————————————
    A theme may name a sky. The vocabulary is the app's: presets, not pixels.
-   The layer sits inside the page canvas, under the page's content, and behind
-   a palette scrim — decoration must never cost the text its contrast. An
-   arguing theme cannot: a scene is only ever a preset and an intensity.
+   The layer sits behind the whole shell tray — rail, sheet and dock — under
+   every pane, and behind a palette scrim: decoration must never cost the text
+   its contrast. An arguing theme cannot: a scene is only ever a preset, an
+   intensity and a pair of panel shades.
 
-   The layer is positioned only while a scene is on, so the default shell keeps
-   the layout it had; a plain scene leaves no positioning context behind. */
-:root:not([data-scene-backdrop="plain"]) .shell__main {
-  position: relative;
-}
-
+   The sheet draws above it (`z-index: 1` on `.shell__main`, always positioned
+   now), and the rail and dock veil it with their own shade. The old
+   "position the sheet only while a scene is on" rule is gone: the sheet is a
+   layer over the scene at all times, and a plain scene simply leaves the tray's
+   canvas base showing. */
 :root:not([data-scene-backdrop="plain"]) .shell__content {
   position: relative;
   z-index: 1;
 }
 
+/* — the panel shades ————————————————————————————————————————————————————————
+   How much of the scene shows through one shell panel. The model names a step;
+   these five rules own what each step means: `solid` is the opaque panel the
+   shell has always worn, `clear` lets the whole backdrop through, and the steps
+   between shade it. The panel's own background mixes its fill at the veil
+   percentage (see `.nav-rail` / `.chat-panel`), so a theme can never ship a
+   colour or an arbitrary opacity — only one of these words. */
+:root[data-scene-panel-sidebar="solid"] {
+  --scene-panel-sidebar-veil: 100%;
+}
+
+:root[data-scene-panel-sidebar="heavy"] {
+  --scene-panel-sidebar-veil: 80%;
+}
+
+:root[data-scene-panel-sidebar="medium"] {
+  --scene-panel-sidebar-veil: 58%;
+}
+
+:root[data-scene-panel-sidebar="light"] {
+  --scene-panel-sidebar-veil: 34%;
+}
+
+:root[data-scene-panel-sidebar="clear"] {
+  --scene-panel-sidebar-veil: 0%;
+}
+
+:root[data-scene-panel-chat="solid"] {
+  --scene-panel-chat-veil: 100%;
+}
+
+:root[data-scene-panel-chat="heavy"] {
+  --scene-panel-chat-veil: 80%;
+}
+
+:root[data-scene-panel-chat="medium"] {
+  --scene-panel-chat-veil: 58%;
+}
+
+:root[data-scene-panel-chat="light"] {
+  --scene-panel-chat-veil: 34%;
+}
+
+:root[data-scene-panel-chat="clear"] {
+  --scene-panel-chat-veil: 0%;
+}
+
 .scene-backdrop {
   position: absolute;
-  inset: 0;
+  /*
+   * The tray's box plus the window frame it escapes into. The sheet and the
+   * dock reach past the shell's right and bottom edges by `--shell-frame`; the
+   * backdrop has to follow them there, or a clear panel would stop short of the
+   * window edge and the frame's mat would show as a seam under the glass.
+   * Nothing extends upward: the window strip and the rail's over-strip band stay
+   * chrome, and the scene starts at the tray's top.
+   */
+  top: 0;
+  right: calc(-1 * var(--shell-frame));
+  bottom: calc(-1 * var(--shell-frame));
+  left: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;

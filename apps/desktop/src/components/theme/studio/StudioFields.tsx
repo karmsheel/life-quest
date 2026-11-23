@@ -69,7 +69,7 @@ const SECTION_INTROS: Record<Exclude<StudioSection, "composition">, string> = {
   material:
     "The six named material steps. This section writes the file's `material` layer; Settings' own picks still outrank a theme after it is kept.",
   scene:
-    "The decoration layer: a named sky, its intensity, the page/card frames, and the picture layer under the sky rows. Written to the file, never injected as CSS — a picture names a file already stored in this installation's profile.",
+    "The decoration layer: a named sky, its intensity, the page/card frames, the picture layer under the sky rows, and how much of it all shows through the Sidebar and Chat bar. Written to the file, never injected as CSS — a picture names a file already stored in this installation's profile.",
   palette:
     "The two palettes a file may carry. A palette is whole — every required colour or none — and every text pair is checked before Save.",
 };
