@@ -87,7 +87,7 @@ type BarState = {
 /** The composer box: the measure the action bar has to keep. */
 type ComposerBoxState = { box: Box; maxWidth: string; width: string } | null;
 
-/** The window strip: the shipped pair, and the duplicate that must not return. */
+/** The window strip: the shipped three, and the duplicate that must not return. */
 type StripState = {
   present: boolean;
   box: Box | null;
@@ -261,7 +261,7 @@ function shellBox(state: FocusState): Box | undefined {
   return state.shell?.box;
 }
 
-/** The window strip's pair, and the duplicate that must not return. */
+/** The window strip's three controls, and the duplicate that must not return. */
 function assertStrip(label: string, state: FocusState) {
   const strip = state.strip;
   assert.ok(strip, `${label}: the window strip was not sampled`);
@@ -273,23 +273,28 @@ function assertStrip(label: string, state: FocusState) {
   const classes = strip.classes ?? [];
   assert.equal(
     strip.childCount,
-    2,
-    `${label}: the strip's trailing cluster is not the shipped pair (${JSON.stringify(classes)})`,
+    3,
+    `${label}: the strip's trailing cluster is not the shipped three (${JSON.stringify(classes)})`,
   );
   assert.equal(
     classes.length,
-    2,
-    `${label}: the strip's trailing cluster is not the shipped pair (${JSON.stringify(classes)})`,
+    3,
+    `${label}: the strip's trailing cluster is not the shipped three (${JSON.stringify(classes)})`,
   );
   assert.match(
     String(classes[0] ?? ""),
-    /theme-mode-toggle/,
-    `${label}: the day/night control does not lead the strip's cluster (${classes[0]})`,
+    /layouts-menu__trigger/,
+    `${label}: the layouts control does not lead the strip's cluster (${classes[0]})`,
   );
   assert.match(
     String(classes[1] ?? ""),
+    /theme-mode-toggle/,
+    `${label}: the day/night control does not follow the layouts control (${classes[1]})`,
+  );
+  assert.match(
+    String(classes[2] ?? ""),
     /settings-menu/,
-    `${label}: the settings menu does not trail the strip's cluster (${classes[1]})`,
+    `${label}: the settings menu does not trail the strip's cluster (${classes[2]})`,
   );
   assert.equal(
     strip.holdsChatFocus,
@@ -307,16 +312,19 @@ function assertStrip(label: string, state: FocusState) {
     `${label}: a Collapse/Restore main page label survives (${JSON.stringify(strip.staleMainPageLabels)})`,
   );
   const boxes = state.cluster ?? [];
-  const first = boxes[0];
-  const second = boxes[1];
-  assert.ok(
-    first && second,
-    `${label}: the strip's pair was not measured (${JSON.stringify(boxes)})`,
+  assert.equal(
+    boxes.length,
+    3,
+    `${label}: the strip's three controls were not measured (${JSON.stringify(boxes)})`,
   );
-  assert.ok(
-    first.box.right <= second.box.left,
-    `${label}: the day/night control does not sit before the gear (${first.box.right} vs ${second.box.left})`,
-  );
+  for (let index = 1; index < boxes.length; index += 1) {
+    assert.ok(
+      boxes[index - 1]!.box.right <= boxes[index]!.box.left,
+      `${label}: trailing control ${index} is drawn before the one it follows (${JSON.stringify(
+        boxes.map((entry) => entry.box),
+      )})`,
+    );
+  }
 }
 
 /**
@@ -744,7 +752,7 @@ function assertCollapsedExit(label: string, state: FocusState) {
     false,
     `${label}: the dock's control is still reachable with the dock collapsed`,
   );
-  // The strip is still the shipped pair while the dock is collapsed: the mode's
+  // The strip is still the shipped three while the dock is collapsed: the mode's
   // one door left with the dock, but no second door replaces it up there.
   assertStrip(label, state);
   assert.equal(state.divider.present, false, `${label}: the divider is drawn with no dock`);

@@ -6,6 +6,7 @@ import { SettingsSection } from "@/components/ui/SettingsSection";
 import type { ThemePreference } from "@/lib/theme";
 import { MaterialControls } from "./MaterialControls";
 import { SceneControls } from "./SceneControls";
+import { BackgroundControls } from "./BackgroundControls";
 import { CompositionControls } from "./CompositionControls";
 import { LayoutControls } from "./LayoutControls";
 import { SkinPicker } from "./SkinPicker";
@@ -54,6 +55,7 @@ export function SettingsAppearance() {
       <SkinPicker />
       <MaterialControls />
       <SceneControls />
+      <BackgroundControls />
       <CompositionControls />
       <LayoutControls />
       <ThemeFiles />

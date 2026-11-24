@@ -494,9 +494,10 @@ function checkUnfocused(label, state) {
 
 /**
  * The window strip: the mode has one door, in the dock's bottom action bar, so
- * the strip's trailing cluster is the day/night control and the gear — in that
- * order — and
- * nothing in it opens the mode. A second door here is exactly the duplicate the
+ * nothing in the trailing cluster opens the mode directly. The cluster is the
+ * layouts control, the day/night control and the gear — in that order: the
+ * picker is the window's arrangement, the palette is how it looks, the gear is
+ * where its settings live. A full-screen control here would be the duplicate the
  * change removed, so it is asserted absent in every arrangement the run samples,
  * not only while the mode is on.
  */
@@ -509,18 +510,23 @@ function checkStrip(label, state) {
   );
   const classes = Array.isArray(strip?.classes) ? strip.classes : [];
   check(
-    `${label}: the strip's trailing cluster is the shipped pair`,
-    strip?.childCount === 2 && classes.length === 2,
+    `${label}: the strip's trailing cluster is the shipped three`,
+    strip?.childCount === 3 && classes.length === 3,
     `cluster ${JSON.stringify(classes)}`,
   );
   check(
-    `${label}: the day/night control leads the strip's cluster`,
-    String(classes[0] ?? "").includes("theme-mode-toggle"),
+    `${label}: the layouts control leads the strip's cluster`,
+    String(classes[0] ?? "").includes("layouts-menu__trigger"),
+    `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: the day/night control follows the layouts control`,
+    String(classes[1] ?? "").includes("theme-mode-toggle"),
     `cluster ${JSON.stringify(classes)}`,
   );
   check(
     `${label}: the settings menu trails the strip's cluster`,
-    String(classes[1] ?? "").includes("settings-menu"),
+    String(classes[2] ?? "").includes("settings-menu"),
     `cluster ${JSON.stringify(classes)}`,
   );
   check(
@@ -537,10 +543,14 @@ function checkStrip(label, state) {
 
   const boxes = state.cluster ?? [];
   check(
-    `${label}: the strip's pair is drawn day/night then gear, left to right`,
-    Boolean(boxes[0]?.box && boxes[1]?.box) &&
-      boxes[0].box.right <= boxes[1].box.left,
-    `boxes ${JSON.stringify([boxes[0]?.box, boxes[1]?.box])}`,
+    `${label}: the strip's controls are drawn layouts, day/night then gear, left to right`,
+    boxes.length === 3 &&
+      boxes.every(
+        (entry, index) =>
+          Boolean(entry?.box) &&
+          (index === 0 || boxes[index - 1].box.right <= entry.box.left),
+      ),
+    `boxes ${JSON.stringify(boxes.map((entry) => entry?.box))}`,
   );
 }
 
@@ -935,7 +945,7 @@ function checkRestored(label, before, after) {
     `${label}: no second full-screen door returned to the strip`,
     after.strip?.holdsChatFocus === false &&
       after.strip?.hasMainPageControl === false &&
-      after.strip?.childCount === 2,
+      after.strip?.childCount === 3,
     `strip ${JSON.stringify(after.strip)}`,
   );
   check(
@@ -976,7 +986,7 @@ function checkCollapsedExit(label, state) {
     state.dockControl.found === false,
     `dock control ${JSON.stringify(state.dockControl)}`,
   );
-  // The strip is still the shipped pair while the dock is collapsed: the mode's
+  // The strip is still the shipped three while the dock is collapsed: the mode's
   // one door left with the dock, but no second door replaces it up there.
   checkStrip(label, state);
   check(

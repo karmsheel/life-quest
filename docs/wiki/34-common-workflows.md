@@ -128,12 +128,13 @@ Full detail: [Reviews](./18-reviews.md), [Daily Journal](./16-daily-journal.md).
 1. **Notebox** on the governance shelf. The box has focus; its placeholder is
    **What's on your mind?**.
 2. Type a capture. **Enter** logs; **Shift+Enter** starts a new line. Or choose
-   **Image** to attach one picture (or drag or paste one onto the box), or
-   **Link** and type an absolute `http`/`https` address, then **Add link**. A
-   capture may have no description when it has an attachment.
-3. Pick an **Area** if you want one (the default is **- unassigned -**), then
-   choose **Log**. The capture appears at the top of the list with its picture or
-   link chip.
+   the **plus** (**Attach a file**) to attach any picture or file, drag or paste
+   one onto the box, or paste one absolute `http`/`https` URL to attach it as a
+   link. A capture may have no description when it has an attachment.
+3. The capture files under the **Area** the switcher at the top has open —
+   **Life (general)** on the Life lens, the area's name on an area lens. To file
+   into another area, choose it at the top first. Then choose **Log**, and the
+   capture appears at the top of the list with its picture, file or link chip.
 4. Change its **Area**, choose **Edit** to rewrite the description, or **Delete**
    to hide it. **Make task** creates a backlog task from it — an attachment-only
    capture is named from its picture or link — and the button then reads **Open

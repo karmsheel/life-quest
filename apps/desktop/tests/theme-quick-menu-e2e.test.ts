@@ -172,18 +172,21 @@ describe("titlebar theme quick menu", () => {
     assert.equal(landing.theme.attr, "dark", "the shipped palette is not night");
     assert.equal(landing.menu, null, "the menu is open before the pointer arrives");
     assert.equal(landing.titlebar?.shortcutsInStrip, false, "a shortcuts control is still in the strip");
-    // The strip's trailing cluster is the day/night control and the gear it
-    // belongs with: full-screen chat has one door, in the dock's own top row.
+    // The strip's trailing cluster is the layouts control, the day/night control
+    // and the gear it belongs with: full-screen chat still has its own door in
+    // the dock's top row, and the picker's Full agent card writes the same state.
     assert.deepEqual(
       landing.titlebar?.classes.map((className) =>
-        className.includes("theme-mode-toggle")
-          ? "theme"
-          : className.includes("settings-menu")
-            ? "settings"
-            : className,
+        className.includes("layouts-menu__trigger")
+          ? "layouts"
+          : className.includes("theme-mode-toggle")
+            ? "theme"
+            : className.includes("settings-menu")
+              ? "settings"
+              : className,
       ),
-      ["theme", "settings"],
-      "the titlebar's trailing cluster is not theme + settings",
+      ["layouts", "theme", "settings"],
+      "the titlebar's trailing cluster is not layouts + theme + settings",
     );
     assert.equal(
       landing.titlebar?.fullScreenInTrailing,

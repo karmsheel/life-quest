@@ -4,8 +4,9 @@
  * Two real pages are mounted here, in one MemoryRouter, so the Dashboard's
  * "Manage recurring →" link is a real navigation and not a stub:
  *
- *  - `pages/HomePage` at `/home`, drawing its real Today & this week card with
- *    the new Recurring block.
+ *  - `pages/HomePage` at `/home`, drawing its real Today & this week card and
+ *    its Recurring block: ONLY the overdue and due-today rows, never a record
+ *    still waiting on a later day this week.
  *  - `pages/ActPage` at `/act`, drawing the real Task Manager with the real
  *    `RecurringTasksSection` and its inline editor.
  *
@@ -22,8 +23,14 @@
  * suite runs, so:
  *   - the overdue fixture is three days late,
  *   - the due-today fixture is today,
- *   - the this-week fixture is tomorrow (the vault's week start is chosen so
- *     tomorrow is always inside this week — see `weekStartDay` below),
+ *   - the tomorrow fixture is due tomorrow and its `recurringState()` is
+ *     "this-week" on every day of the year (the vault's week start is chosen so
+ *     tomorrow is always inside this week — see `weekStartDay` below). It is the
+ *     card's NEGATIVE CONTROL: the card draws only overdue and due-today rows, so
+ *     a record due on a later day — even tomorrow, inside this same week — is NOT
+ *     owed today and must not be on the card; it appears on its own day. The
+ *     Manage-recurring list still shows it, and it stays the pause/resume
+ *     fixture,
  *   - the later fixture is twenty days out,
  *   - the paused fixture is due yesterday but paused,
  *   - the monthly fixture is later than this week.
@@ -119,10 +126,13 @@ const LATER_RECURRENCE: Recurrence = {
 /**
  * The operator's records.
  *
- * Deliberately uneven: one of each cadence form, one overdue, one due today, one
- * later this week, one later, one paused with a completion in its history, and a
- * monthly one so the manager's cadence sentence is exercised in its "on the Nth"
- * form. The paused record is also the one with a `Last done` line.
+ * Deliberately uneven: one of each cadence form, one overdue, one due today (with
+ * a page link, so the card's title route is exercised on a due row), one
+ * due tomorrow (the card's negative control, still listed by the manager, and
+ * the pause/resume fixture), one later, one paused with a completion in its
+ * history, and a monthly one so the manager's cadence sentence is exercised in
+ * its "on the Nth" form. The paused record is also the one with a `Last done`
+ * line.
  */
 const SEED: RecurringTask[] = [
   {
@@ -141,6 +151,9 @@ const SEED: RecurringTask[] = [
     notes: "",
     recurrence: { unit: "week", weekday: weekdayOf(TODAY) },
     dueDate: TODAY,
+    // A due-today row that has a page: the card must render the title as a
+    // link to this route, not as plain text.
+    link: "/act",
     paused: false,
     history: [],
     origin: "operator",
@@ -271,9 +284,15 @@ const WEEKLY_REVIEW_OPEN = openReviewDate("weekly", WEEK_START, DEFAULT_REVIEW_A
  * The driver reads this instead of re-deriving dates in its own process.
  */
 const EXPECTATIONS = (() => {
+  // The card draws only what is owed NOW: overdue and due today. A "this-week"
+  // record (r-week, due tomorrow) is deliberately excluded — it is not drawn a
+  // day early, and appears on the card only on its own day. The model still
+  // answers "this-week"/"later" for the Manage-recurring editor, and
+  // `dueLabel`'s exhaustive switch must keep naming that state even though this
+  // card never prints it.
   const operatorDue = SEED.filter((item) => {
     const state = recurringState(item, TODAY, WEEK_START);
-    return state === "overdue" || state === "today" || state === "this-week";
+    return state === "overdue" || state === "today";
   }).map((item) => {
     const state = recurringState(item, TODAY, WEEK_START) as RecurringDueState;
     return {
@@ -314,6 +333,14 @@ const EXPECTATIONS = (() => {
     card: {
       count: cardRows.length,
       rows: cardRows,
+      // The negative control, published so the driver can query its row by id:
+      // due tomorrow ("this-week"), so the card must NOT draw it, even though
+      // the manager still lists it. Exactly id/title/dueDate.
+      tomorrow: {
+        id: "r-week",
+        title: (SEED.find((item) => item.id === "r-week") as RecurringTask).title,
+        dueDate: TOMORROW,
+      },
       absentIds: SEED.filter((item) => !operatorDue.some((row) => row.id === item.id)).map(
         (item) => item.id,
       ),

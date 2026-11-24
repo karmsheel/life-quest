@@ -249,11 +249,13 @@ const SAMPLE = `(() => {
           box: box(actions),
           // The bar's own action buttons; the version badge is a control in the
           // same row but not one of the dock's surface actions, so it is measured
-          // separately below.
+          // separately below. The boxes are kept so the trailing run's adjacency
+          // can be read off the same sample as its order.
           controls: Array.from(actions.querySelectorAll(".chat-panel__action")).map((el) => ({
             label: el.getAttribute("aria-label"),
             icon: iconClass(el),
-            disabled: el.disabled
+            disabled: el.disabled,
+            box: box(el)
           })),
           badge: versionBadge
             ? {
@@ -557,18 +559,19 @@ function checkControls(label, state, side) {
       ? "Move chat to the right of the page"
       : "Move chat to the left of the page";
 
-  // The titlebar's trailing cluster is the day/night control and the settings
-  // menu. The keyboard-shortcuts control, like the chat controls that left
-  // before it — the side switch, the collapse and the full-screen door — now
-  // lives in the dock's own bottom action bar; a stale copy anywhere in the
-  // strip is the regression this guards, because a "contained" control is not a
-  // correctly placed one.
+  // The titlebar's trailing cluster is the layouts control, the day/night
+  // control and the settings menu. The keyboard-shortcuts control, like the chat
+  // controls that left before it — the side switch, the collapse and the
+  // full-screen door — now lives in the dock's own bottom action bar; a stale
+  // copy anywhere in the strip is the regression this guards, because a
+  // "contained" control is not a correctly placed one.
   const expectedTrailing = [
+    "layouts-menu__trigger",
     "theme-mode-toggle",
     "settings-menu",
   ];
   check(
-    `${label}: the titlebar's trailing cluster is theme and settings`,
+    `${label}: the titlebar's trailing cluster is layouts, theme and settings`,
     controls.length === expectedTrailing.length &&
       expectedTrailing.every((needle, index) =>
         String(classes[index] ?? "").includes(needle),
@@ -635,9 +638,9 @@ function checkControls(label, state, side) {
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
   // slot, the chain and the full-screen door in the leading group, then the
-  // trailing group — the shortcuts reference, the reading settings, the side
-  // switch and the way out. "Chat history" left the bar with the list surface,
-  // so its return is a stale slot rather than a shipped one.
+  // trailing run — the shortcuts reference, the chat display settings it leads
+  // into, the side switch and the way out. "Chat history" left the bar with the
+  // list surface, so its return is a stale slot rather than a shipped one.
   const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
   check(
     `${label}: the bar carries its seven actions in order`,
@@ -652,17 +655,27 @@ function checkControls(label, state, side) {
     ]),
     `bar ${JSON.stringify(barLabels)}`,
   );
+  const displaySettings = (state.actions?.controls ?? []).find(
+    (control) => control.label === "Chat display settings",
+  );
   check(
-    `${label}: the shortcuts control leads the bar's trailing group`,
+    `${label}: the shortcuts and display-settings controls sit immediately before the switch`,
     state.shortcutsAction?.found === true &&
       state.shortcutsAction?.label === "Keyboard shortcuts" &&
       state.shortcutsAction?.icon === "lucide-keyboard" &&
-      Boolean(state.shortcutsAction?.box && state.sideSwitch?.box) &&
-      state.shortcutsAction.box.right < state.sideSwitch.box.left &&
+      Boolean(
+        state.shortcutsAction?.box &&
+          displaySettings?.box &&
+          state.sideSwitch?.box,
+      ) &&
+      state.shortcutsAction.box.right < displaySettings.box.left &&
+      displaySettings.box.left - state.shortcutsAction.box.right <= 8 &&
+      displaySettings.box.right < state.sideSwitch.box.left &&
+      state.sideSwitch.box.left - displaySettings.box.right <= 8 &&
       Boolean(state.actions?.box) &&
       state.shortcutsAction.box.top >= state.actions.box.top &&
       state.shortcutsAction.box.bottom <= state.actions.box.bottom,
-    `shortcuts ${JSON.stringify(state.shortcutsAction)} vs switch ${JSON.stringify(state.sideSwitch?.box)}`,
+    `shortcuts ${JSON.stringify(state.shortcutsAction)} vs display ${JSON.stringify(displaySettings?.box)} vs switch ${JSON.stringify(state.sideSwitch?.box)}`,
   );
   check(
     `${label}: the switch sits immediately before the collapse control`,

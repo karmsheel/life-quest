@@ -739,7 +739,9 @@ type LifequestApi = {
       size: number;
       relPath?: string;
     }> | null;
-  }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
+  }) => Promise<
+    Result<true> | { ok: true; settlesOnStream?: boolean } | { ok: false; error: string }
+  >;
   companionApproval: (payload: {
     runId: string;
     requestId: string;
@@ -1125,6 +1127,19 @@ type LifequestApi = {
    * is the operator cancelling; the copy previews like any write, never kept.
    */
   themeImport: () => Promise<Result<{ file: string; label: string } | null>>;
+  /**
+   * Choose a background picture through main's dialog. Main copies it into the
+   * app profile's `backgrounds/` and answers with the stored file name; `null`
+   * is the operator cancelling, and a refusal carries main's own sentence.
+   */
+  themePickBackground: () => Promise<Result<{ file: string } | null>>;
+  /**
+   * One stored background picture's bytes, for the worn scene to draw. A
+   * failure is a quiet `null` to the page: the drawn preset keeps painting.
+   */
+  themeReadBackground: (
+    file: string,
+  ) => Promise<Result<{ file: string; mime: string; bytes: Uint8Array }>>;
   /** Main saw the directory move; the renderer reads it again. */
   onThemesChanged: (cb: () => void) => () => void;
   /**

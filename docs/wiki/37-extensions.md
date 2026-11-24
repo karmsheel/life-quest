@@ -12,7 +12,10 @@ deliberately refuses (no package code, a strict content policy, one privileged w
 unsigned installer). **Extensions** is the umbrella for the things that extend the
 experience — today themes, later the same page grows a second kind without changing what the
 first one is. A single theme file is still a *theme* everywhere it matters: the companion
-tools are `get_theme`, `validate_theme` and `write_theme`, and the folder is `themes/`.
+tools are `get_theme` (the files, the kept theme, each theme's resolved scene and the pictures
+stored in the profile's `backgrounds/`), `validate_theme`, `write_theme` and
+`store_background_picture` (a vault image copied into that folder so a theme can name it), and
+the folder is `themes/`.
 
 ## Where it lives
 
@@ -31,10 +34,10 @@ This page is part of the [Wiki home](./index.md).
 Each card is one file in the app profile's `themes/` folder (never the vault — a look is this
 installation's, not the folder's). A card names the file's **label** and **file name**, its
 own description if it has one, and a row of chips summarising what it changes: **Palette**
-(or *Inherits palette*), `wings …` and `domains …` placements, **Material**, `sky …`, and
-`composition · N widgets`. An **Active** pill marks the one file the window is wearing; a
-**Previewing** pill marks the ten-second preview currently on screen. A bundled example's
-card also carries a **Gallery** chip (see below).
+(or *Inherits palette*), `wings …` and `domains …` placements, **Material**, `sky …`,
+`picture`, and `composition · N widgets`. An **Active** pill marks the one file the window is
+wearing; a **Previewing** pill marks the ten-second preview currently on screen. A bundled
+example's card also carries a **Gallery** chip (see below).
 
 ## The gallery of bundled examples
 
@@ -148,9 +151,26 @@ be built without opening the JSON tab.
   stored as your overrides.
 - **Material** — the six axes: radius, elevation, type scale, density, motion and backdrop.
   They are named steps, not free values, and the shell reads them as its own tokens.
-- **Scene** — the backdrop (`plain`, `starfield`, `orbit` or `aurora`) and how lively it runs,
-  plus the page's decorative edge and how its cards are drawn. The scene is the app's drawing;
-  the file names it and supplies no image, shader or stylesheet.
+- **Scene** — the **Sky** row (`plain`, `starfield`, `orbit`, `aurora`, `horizon` or `mesh`),
+  **Intensity**, the picture layer and the two panel shades beneath those rows, plus the page's
+  decorative edge and how its cards are drawn. The drawn presets are the app's own drawing: the
+  file names one of them and supplies no image file, shader or stylesheet. The picture is a
+  separate, declared field — `scene.background.image: { file, fit, position, dim, blur }` —
+  where `file` names a picture already stored in the app profile's `backgrounds/` folder (never
+  a path, a URL or the vault), `fit` is `cover`, `contain` or `tile`, `position` is `center`,
+  `top` or `bottom`, `dim` is `none`, `soft` or `strong`, and `blur` is `none`, `soft` or
+  `deep`. The file names the picture and never carries its bytes, so exporting a theme does not
+  copy the picture: another machine falls back to the drawn preset until the same picture is
+  chosen there. The same layer says how much of the backdrop shows through the shell's two
+  panels — `scene.background.panels: { navRail, chat }`, each `solid`, `heavy`, `medium`,
+  `light` or `clear` (`solid` paints the panel fully, `clear` lets the whole background
+  through, the steps between shade it) — and either axis may be named alone, the other staying
+  `solid`. The parser checks each field and names the one that failed
+  (`scene.background.image.fit must be one of cover, contain, tile`;
+  `scene.background.panels.navRail must be one of solid, heavy, medium, light, clear`), and a
+  picture the profile no longer holds falls back to the drawn sky when the theme is worn. The
+  studio's Scene section shows the picture rows and the **Sidebar** and **Chat bar** rows and
+  writes them into the file like any other field.
 - **Palette** — the light (`colors`) and dark (`darkColors`) palettes. Each is optional, but a
   palette that is present is **complete**: the editor writes the full set of colours the shell
   paints with — surfaces, text, borders and accents, each with the text colour it is paired
@@ -171,7 +191,8 @@ palette change repaints the window at once; nothing is written, kept or previewe
 edit, and no preview bar appears. **Cancel** drops the draft and hands the kept look back.
 **Save** validates the whole file with the shared parser and writes it through the same gate
 as any save, so it previews for ten seconds with **Keep** and **Revert**. The studio writes
-only declared fields: no free CSS, no colour outside the palette set, no image, no new key.
+only declared fields: no free CSS, no colour outside the palette set, no new key, and no image
+bytes of its own — the picture layer names a file the profile already stores.
 
 **This is not the same layer as Settings.** Settings → Appearance is *your* override layer: a
 pick made there outranks the theme, is marked as yours, and survives the file being kept,
@@ -234,8 +255,16 @@ move between profiles without anyone finding a folder.
   the picker without choosing a file does nothing.
 - Like everything else on this page, an import is **data, not code**, and it lands in the app
   profile — never in the vault.
-- Import and History are page gestures, not companion tools. The companion keeps
-  `get_theme`, `validate_theme` and `write_theme`; these two are not exposed to it.
+- Import and History are page gestures, not companion tools; the companion's four are
+  `get_theme`, `validate_theme`, `write_theme` and `store_background_picture`. `get_theme`
+  reports the kept theme, each theme's resolved scene — sky, intensity, frames, picture and
+  panel shades — and the pictures stored in the profile's `backgrounds/`; `validate_theme` and
+  `write_theme` take `scene.background.image` and `scene.background.panels` like any other
+  field, so the agent can author them in the same closed vocabulary; `store_background_picture`
+  copies a picture from the open vault into that folder and returns the file name, reading the
+  vault and writing only the profile. A stored picture changes nothing until `write_theme`
+  names it, and even then the window previews it for ten seconds with **Keep** and **Revert** —
+  Keep is the consent. The operator's Settings override still outranks a theme.
 
 ## What it cannot do
 

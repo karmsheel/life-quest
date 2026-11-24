@@ -1742,6 +1742,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       // stream can still have left the answer on the companion's side, so the
       // finally below reads the transcript back when this is true.
       let failed = false;
+      // Set by a transport whose terminal event is already on its way when the
+      // call answers (a chat continued from another surface). Its frames and
+      // this call's reply travel different channels and can arrive in either
+      // order, so the safety-net settle below must not close the turn before
+      // its terminal frame lands — that is what split a fast turn into "your
+      // message" and "the answer" as two bubbles.
+      let settlesOnStream = false;
       try {
         const result = await api().companionChatStream({
           sessionId: id,
@@ -1789,6 +1796,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         if ("ok" in result && result.ok === false) {
           failed = true;
           if (turnVault === vaultEpoch.current) failTurn(id, result.error);
+        } else if (
+          "ok" in result &&
+          result.ok === true &&
+          "settlesOnStream" in result &&
+          result.settlesOnStream === true
+        ) {
+          settlesOnStream = true;
         }
       } catch (err) {
         failed = true;
@@ -1810,7 +1824,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         // used to leave a finished turn pulsing as running for as long as the
         // read took — and forever, when the read waited on a companion that was
         // not answering. The refresh is a nicety; the settle is the promise.
-        settleTurnRef.current(id);
+        //
+        // Except where the transport told us its own terminal frame is already
+        // in flight: settling then would race that frame and split one turn into
+        // two. Those turns are settled by their terminal event instead.
+        if (!settlesOnStream) settleTurnRef.current(id);
         if (failed) {
           // Repair what the operator can see: a turn that failed its transport
           // may still have written its reply down. The forced read is skipped

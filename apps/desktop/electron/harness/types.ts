@@ -68,9 +68,13 @@ export type HarnessResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
 
-/** The same shape for a method that returns nothing on success. */
+/** The same shape for a method that returns nothing on success.
+ *
+ *  `settlesOnStream` is the chat turn's only extra: the transport guarantees its
+ *  own terminal event before answering, so the renderer must not settle the turn
+ *  from this reply (see `ChatStreamOutcome` in companion-client.ts). */
 export type HarnessAck =
-  | { ok: true }
+  | { ok: true; settlesOnStream?: boolean }
   | { ok: false; error: string };
 
 /** One turn, as the harness receives it. */

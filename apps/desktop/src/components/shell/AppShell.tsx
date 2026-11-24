@@ -25,6 +25,8 @@ export function AppShell() {
     side: chatSide,
     setThemeSide,
     focus: chatFocus,
+    split: chatSplit,
+    layout: chatLayout,
   } = useChatDock();
   const { chrome } = useTheme();
   const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
@@ -75,6 +77,14 @@ export function AppShell() {
               the pointer has run off the handle it started on.
             */
             data-divider-dragging={chatColumn.dragging || undefined}
+            /*
+              Which of the layouts picker's four arrangements the window is
+              wearing, published for the same reason the classes below are: the
+              arrangement is one fact, and everything that draws it — the
+              stylesheet, the rigs, the picker's own card — reads that one fact
+              instead of reconstructing it from flags.
+            */
+            data-layout={chatLayout}
             className={[
               "shell",
               chatOpen ? "shell--chat-open" : "shell--chat-collapsed",
@@ -88,15 +98,25 @@ export function AppShell() {
               // window's chrome and holds the chats list — so the tray keeps its
               // leading track and the dock starts where the page used to.
               chatFocus ? "shell--chat-focus" : "",
+              // The even split: the page and the dock take a half each of the
+              // frame beside the rail, and `shell--chat-left` above says which
+              // of the two leads. It is a fixed preset, not a width, so the
+              // seam's handle is withdrawn while it is on (see below). Full
+              // screen holds the split underneath in the provider, but only the
+              // arrangement on screen is announced: the mode's own rules win,
+              // and leaving it puts the split back.
+              chatSplit && !chatFocus ? "shell--layout-split" : "",
             ]
               .filter(Boolean)
               .join(" ")}
           >
+            {/* The theme's decoration layer: one backdrop behind the whole
+                tray, rail and dock included, so the sidebar and the chat bar
+                can let it show through at their own shade. It is not part of
+                any pane's structure and never takes a click. */}
+            <SceneBackdrop />
             <NavRail />
             <div className="shell__main">
-              {/* The theme's decoration layer, behind the page and under the
-                  content; it is not part of the page's structure. */}
-              <SceneBackdrop />
               {/* The theme's composition widgets for the page's top band. They
                   are page furniture, not chrome: they stand inside the sheet,
                   above the routed content, and never take the way out. */}
@@ -128,10 +148,13 @@ export function AppShell() {
             </div>
             <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
             {/* The handle on the seam, drawn only while there is a column to drag:
-                a collapsed dock is one floating mark, not a pane, and a
-                full-screen dock has no page on its leading side to share a seam
-                with. */}
-            {chatOpen && !chatFocus ? (
+                a collapsed dock is one floating mark, not a pane, a full-screen
+                dock has no page on its leading side to share a seam with, and an
+                even split is a preset rather than a width — its halves are the
+                frame's, so there is no number for the handle to move. The
+                layouts picker is that arrangement's only door, and the studio
+                card brings the handle back. */}
+            {chatOpen && !chatFocus && !chatSplit ? (
               <ChatDivider side={chatSide} props={chatColumn.dividerProps} />
             ) : null}
             {/* What the gesture says out loud. A drag has no button to come back
