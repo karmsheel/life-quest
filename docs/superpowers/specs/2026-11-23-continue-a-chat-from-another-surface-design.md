@@ -27,9 +27,11 @@ feature gives LifeQuest the same ability.
   canonical JSON-RPC WebSocket. The reply lands in the same transcript, so the
   bot's next message on the platform and the next message here are the same
   conversation. Nothing is forked, copied, or ended.
-- The chat carries the surface it came from ("Telegram", "Discord", "Hermes
-  Desktop", "Hermes CLI", …) in the dock header and the composer says the
-  conversation is shared. There is no "new chat" step.
+- The surface it came from is worn as its own mark where the chat's name is
+  listed — the **Chats** rail row, the dock's tab strip, and the thread header
+  chip (Telegram's plane, Discord's controller; the generic share mark and the
+  name for a surface without one) — and the composer says the conversation is
+  shared. There is no "new chat" step.
 - Composer controls the WS door cannot carry are disabled for these chats, with a
   reason in the tooltip: per-turn model/thinking pills, attachments, and steering.
   Page context is not attached either (the desktop has no such context); the

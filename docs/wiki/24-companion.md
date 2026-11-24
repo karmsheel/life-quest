@@ -281,12 +281,15 @@ one used to fail with **Chat stream failed (500)**.
 The dock continues that same conversation instead, over the gateway's own
 connection:
 
-1. Open the chat from **Chats**. Beside the chat's name the thread header names
-   where it came from — **Telegram**, **Discord**, **Hermes Desktop**, **Hermes
-   CLI**, or the surface's own name — and the composer carries one quiet line
-   above the box: "Shared with Telegram — replies land in the same transcript;
-   page and vault context cards are not attached." A chat this app started wears
-   no such chip.
+1. Open the chat from **Chats**. Its name leads with the mark of the surface it
+   came from — Telegram's plane or Discord's controller — in the **Chats** row,
+   in the dock's tab strip, and in the thread header beside the chat's name,
+   whose tooltip names the surface. A surface without a mark of its own (**Hermes
+   Desktop**, the **Hermes CLI**, or another surface) shows its name beside the
+   generic share mark instead. The composer carries one quiet line above the box:
+   "Shared with Telegram — replies land in the same transcript; page and vault
+   context cards are not attached." A chat this app started wears no mark and no
+   chip.
 2. Type and send. The reply is written into that same conversation, so the bot's
    next message on the platform and the next turn here are one transcript.
    Nothing is forked, copied or ended, and there is no new chat to start.
@@ -406,7 +409,7 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Tab strip | One tab per open chat, pinned chats as fixed squares at the head (no close control on a square), each chat's status mark (invisible at rest, pulsing when live, ringed when waiting) or kickoff icon at the start of its name, and a close **×**. The tabs shrink to about three characters of the name and then an ellipsis, after which the strip scrolls sideways (the wheel or its thin scrollbar), with **+** immediately after the last tab and **Full screen chat** at its trailing end. |
 | Top-row toggle | **Full screen chat** / **Exit full screen chat** at the trailing end of the dock's top row (the tab strip, or the header when no tab is drawn): collapses the main page and gives the chat the workspace right of the rail, or restores the split. |
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
-| Source chip | Beside the chat's name when the conversation started on another surface: the share mark and the surface's name — **Telegram**, **Discord**, **Hermes Desktop**, **Hermes CLI**, or **another surface** — with a tooltip saying this is the same conversation, continued here, not copied. Absent on a chat the app started. |
+| Source chip | Beside the chat's name when the conversation started on another surface: the surface's own mark — **Telegram**'s plane, **Discord**'s controller — in the same slot the **Chats** row and the tab strip lead the name with; a surface without a mark shows the shared-conversation icon and the surface's name — **Hermes Desktop**, **Hermes CLI**, or **another surface**. The tooltip names the surface and says this is the same conversation, continued here, not copied. Absent on a chat the app started. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
 | Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. A chat continued from another surface draws a one-line note above the box in place of the card pills, and the controls that connection cannot carry are disabled with the reason. |
 | Dock actions | **New chat**, **Notebox**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch, **Collapse chat**, and the version badge (**Check for updates**). |

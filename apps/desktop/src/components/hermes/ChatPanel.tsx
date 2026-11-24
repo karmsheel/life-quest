@@ -82,6 +82,7 @@ import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
 import { SESSION_ICON } from "@/lib/session-icon";
+import { platformMarkFor } from "@/lib/platform-mark";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
@@ -577,6 +578,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   */
   const continuable = isContinuableSession(activeSession);
   const sourceLabel = sessionSourceLabel(activeSession?.source);
+  /*
+    The platform's own mark, when it has one. A chat from Telegram or Discord
+    leads with the logo instead of the word: the word is repeated in every list,
+    the mark is read at a glance and survives a narrow tab. A surface without a
+    mark (Hermes Desktop, the CLI, a plugin's platform) keeps its name beside the
+    generic share icon, because an unnamed glyph would say "something" rather
+    than which something.
+  */
+  const SourceMark = platformMarkFor(activeSession?.source);
   /** The composer's one quiet line, naming the surface and what is not carried. */
   const composerNote = continuable
     ? `Shared with ${sourceLabel} — replies land in the same transcript; page and vault context cards are not attached.`
@@ -2020,6 +2030,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 // instead of the plain status dot; the square keeps its letter.
                 const iconKind = chat.sessionIcons[id] ?? null;
                 const Icon = iconKind ? SESSION_ICON[iconKind] : null;
+                // A chat from another surface leads with that platform's mark,
+                // the same one the Chats row wears (see lib/platform-mark.tsx).
+                const PlatformMark = row ? platformMarkFor(row.source) : null;
                 // The square has room for one glyph, so it takes the first
                 // letter of the whitespace-trimmed label, uppercased.
                 const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
@@ -2029,6 +2042,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     role="presentation"
                     data-tab-id={id}
                     data-icon={iconKind ?? undefined}
+                    data-source={
+                      row && isContinuableSession(row) ? row.source : undefined
+                    }
                     className={[
                       "chat-panel__tab",
                       pinned ? "chat-panel__tab--pinned" : "",
@@ -2091,6 +2107,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                           <span className="chat-panel__tab-mark" aria-hidden>
                             {Icon ? (
                               <Icon className="chat-panel__tab-icon" size={11} />
+                            ) : PlatformMark ? (
+                              <PlatformMark
+                                className="chat-panel__tab-icon"
+                                size={11}
+                              />
                             ) : (
                               <span className="chat-panel__tab-dot" />
                             )}
@@ -2257,14 +2278,30 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               */}
               {continuable ? (
                 <span
-                  className="chat-panel__source"
+                  className={
+                    SourceMark
+                      ? "chat-panel__source chat-panel__source--mark"
+                      : "chat-panel__source"
+                  }
                   data-source={activeSession?.source}
                   role="img"
                   aria-label={`Continued from ${sourceLabel}: the same conversation, continued here, not copied`}
                   title={`Started on ${sourceLabel} — this is the same conversation, continued here, not copied.`}
                 >
-                  <MessageSquareShare size={11} aria-hidden />
-                  <span className="chat-panel__source-label">{sourceLabel}</span>
+                  {SourceMark ? (
+                    <>
+                      <SourceMark className="chat-panel__source-mark" size={12} />
+                      {/* The chip's accessible name is the aria-label above; the
+                          word stays in the DOM for tests and for a screen reader
+                          that reads the chip's text, but never paints. */}
+                      <span className="visually-hidden">{sourceLabel}</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquareShare size={11} aria-hidden />
+                      <span className="chat-panel__source-label">{sourceLabel}</span>
+                    </>
+                  )}
                 </span>
               ) : null}
               {/*

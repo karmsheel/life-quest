@@ -7916,6 +7916,29 @@ a.home-mini-list__link:hover {
   white-space: nowrap;
 }
 
+/* A platform with its own mark wears the mark and not the word: Telegram's
+   plane or Discord's controller says where the chat began at a glance, keeps the
+   name row narrow, and is read in a language the word would have to be
+   translated for. The chip stays the same small pill, emptied of text and
+   squared off around the glyph; the surface's name survives in the chip's
+   accessible label and tooltip (and in the composer's one-line note). */
+.chat-panel__source--mark {
+  justify-content: center;
+  gap: 0;
+  min-width: 1.25rem;
+  padding: 0 0.3rem;
+}
+
+.chat-panel__source-mark {
+  display: block;
+  flex: none;
+  color: var(--muted);
+}
+
+/* The mark is drawn in the same slot the rail and tab strips use, at the same
+   size, so the three surfaces agree. The chip itself never brightens on hover:
+   it is a label, and nothing happens on click. */
+
 /* Renaming happens in the name's own place: the field replaces it, so the row
    does not jump when the name is clicked. This soft box is the only outline the
    row draws, and only while the field is open — the resting name has none. */

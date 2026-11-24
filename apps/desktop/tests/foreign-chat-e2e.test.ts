@@ -88,10 +88,22 @@ const DEV_PORT = 5173;
 /** The profile no real Hermes install has; also the string `recent.json` names. */
 const PROFILE = "lq-foreign-e2e";
 
-/** The two chats the fake gateway lists: one another surface owns, one not. */
+/**
+ * The chats the fake gateway lists. The two foreign ones carry PLAIN titles that
+ * do not contain the platform's word ("Spring bed plan", not "Telegram · …"),
+ * so the origin can only be shown by the platform mark the rail, tab and header
+ * chip draw — a title can never make the artifact pass.
+ *
+ * Each foreign chat carries its own turn script. The WS answer exists ONLY in
+ * the WebSocket frames — never in a REST transcript — so its appearance in the
+ * DOM proves the reply streamed over the gateway socket. The narration is what
+ * the transport streams BEFORE its tool call: it becomes a work-log line, the
+ * same shape a real REST turn has (`assistant.completed` then carries the
+ * authoritative whole reply), so narration and answer are different words.
+ */
 const TELEGRAM = {
   id: "tg-garden-chat",
-  title: "Telegram · garden plan",
+  title: "Spring bed plan",
   source: "telegram",
   transcript: [
     {
@@ -103,6 +115,34 @@ const TELEGRAM = {
       content: "The tulips hold the north bed until May; after them, the nigella.",
     },
   ],
+  turn: {
+    text: "Continue where we left off: what should I sow in the south bed this weekend?",
+    narration: "Let me pull up the bed plan we wrote for the south bed.",
+    replyMarker: "WS-ONLY-REPLY",
+    reply:
+      "WS-ONLY-REPLY — sow nigella in the south bed this weekend; the gateway socket carried this answer, not the REST transcript.",
+    replyPrefix: "WS-ONLY-REPLY — sow nigella",
+  },
+};
+const DISCORD = {
+  id: "dc-game-night",
+  title: "Game night roster",
+  source: "discord",
+  transcript: [
+    { role: "user", content: "Who is hosting game night this month?" },
+    {
+      role: "assistant",
+      content: "Mara is hosting; bring the deck and the score pad.",
+    },
+  ],
+  turn: {
+    text: "Who is bringing snacks to game night?",
+    narration: "Let me check the game night roster in the vault.",
+    replyMarker: "DISCORD-WS-REPLY",
+    reply:
+      "DISCORD-WS-REPLY — the Discord chat continued on the same stored session over the gateway socket.",
+    replyPrefix: "DISCORD-WS-REPLY — the Discord chat",
+  },
 };
 const API = {
   id: "api-tasks-chat",
@@ -117,22 +157,8 @@ const API = {
   ],
 };
 
-/**
- * The turn's texts. The WS answer exists ONLY in the WebSocket frames — never
- * in a REST transcript — so its appearance in the DOM is the proof the reply
- * was streamed over the gateway socket. The narration is what the transport
- * streams BEFORE its tool call: it becomes a work-log narration line, which is
- * exactly the shape a real REST turn has (`assistant.completed` then carries
- * the authoritative whole reply). Narration and answer are deliberately
- * different words, the way a real reply's are.
- */
+/** The second Telegram turn (held running, then stopped from the dock). */
 const SEED = {
-  turnText: "Continue where we left off: what should I sow in the south bed this weekend?",
-  wsNarration: "Let me pull up the bed plan we wrote for the south bed.",
-  wsReplyMarker: "WS-ONLY-REPLY",
-  wsReply:
-    "WS-ONLY-REPLY — sow nigella in the south bed this weekend; the gateway socket carried this answer, not the REST transcript.",
-  wsReplyPrefix: "WS-ONLY-REPLY — sow nigella",
   secondTurnText: "Now write the whole spring schedule into the garden note.",
   secondPartialMarker: "SECOND-TURN-PARTIAL",
   secondPartial:
@@ -163,6 +189,21 @@ type RowSample = {
   live: boolean;
   archived: boolean;
   rowText: string;
+  /** `data-platform-mark` on the svg in the row's leading slot, when present. */
+  mark: string | null;
+  /** Text inside the leading slot: a logo must not paint a word there. */
+  markText: string;
+  markSlotSvgs: number;
+  hasDot: boolean;
+};
+
+type TabSample = {
+  id: string | null;
+  source: string | null;
+  mark: string | null;
+  markText: string;
+  label: string;
+  active: boolean;
 };
 
 type DisabledControl = {
@@ -180,7 +221,9 @@ type Sample = {
   hasRail: boolean;
   rows: RowSample[];
   telegramRow: RowSample | null;
+  discordRow: RowSample | null;
   apiRow: RowSample | null;
+  tabs: TabSample[];
   hasHeader: boolean;
   headerContinuable: string | null;
   headerSource: string | null;
@@ -189,6 +232,15 @@ type Sample = {
   chipText: string | null;
   chipTitle: string | null;
   chipSource: string | null;
+  chipVariantMark: boolean;
+  chipMark: string | null;
+  chipRole: string | null;
+  chipAriaLabel: string | null;
+  chipHasLabelElement: boolean;
+  chipHiddenText: string | null;
+  chipHiddenWidth: number | null;
+  chipHiddenHeight: number | null;
+  chipPaintedText: string | null;
   hasNote: boolean;
   noteText: string | null;
   noteSource: string | null;
@@ -243,6 +295,7 @@ type Report = {
   };
   sessions: {
     telegram: typeof TELEGRAM;
+    discord: typeof DISCORD;
     api: typeof API;
   };
   seed: typeof SEED;
@@ -251,6 +304,8 @@ type Report = {
     afterFirstReply: Sample | null;
     secondTurnRunning: Sample | null;
     afterStop: Sample | null;
+    discordOpen: Sample | null;
+    discordReply: Sample | null;
     apiChat: Sample | null;
   };
   measurements: {
@@ -259,8 +314,10 @@ type Report = {
     replyPaintedAt?: number;
     screenshotBytes?: number;
     telegramTurnsBefore?: number;
+    discordTurnsBefore?: number;
     apiTurnsBefore?: number;
     telegramFooterOnlyTurns?: number;
+    discordFooterOnlyTurns?: number;
     apiFooterOnlyTurns?: number;
   };
   gateway: {
@@ -479,7 +536,7 @@ async function buildWorld(): Promise<World> {
         callsDir,
         profile: PROFILE,
         gatewayPort,
-        sessions: { telegram: TELEGRAM, api: API },
+        sessions: { telegram: TELEGRAM, discord: DISCORD, api: API },
         seed: SEED,
         mcpPorts,
       },
@@ -672,24 +729,145 @@ describe("a chat from another surface, continued in the real dock", () => {
           `the Telegram sidebar row does not carry data-source="telegram": ${JSON.stringify(open.telegramRow)}`,
         );
         assert.equal(
+          open.discordRow?.continuable,
+          "true",
+          `the Discord sidebar row does not carry data-continuable="true": ${JSON.stringify(open.discordRow)}`,
+        );
+        assert.equal(
+          open.discordRow?.source,
+          "discord",
+          `the Discord sidebar row does not carry data-source="discord": ${JSON.stringify(open.discordRow)}`,
+        );
+        assert.equal(
           open.apiRow?.continuable,
           null,
           `the api_server row was marked continuable: ${JSON.stringify(open.apiRow)}`,
         );
+
+        // ── (2a) the rail leads with the platform LOGO, not a word ────────
+        // The titles are plain ("Spring bed plan", "Game night roster"): the
+        // platform word appears nowhere in them, so only a mark can satisfy
+        // this. The leading slot itself paints no text.
+        assert.match(TELEGRAM.title, /^(?!.*telegram)/i, "");
+        assert.match(DISCORD.title, /^(?!.*discord)/i, "");
+        assert.equal(
+          open.telegramRow?.mark,
+          "telegram",
+          `the Telegram rail row does not lead with the Telegram mark: ${JSON.stringify(open.telegramRow)}`,
+        );
+        assert.equal(
+          open.discordRow?.mark,
+          "discord",
+          `the Discord rail row does not lead with the Discord mark: ${JSON.stringify(open.discordRow)}`,
+        );
+        assert.equal(
+          open.telegramRow?.markSlotSvgs,
+          1,
+          `the Telegram row's mark slot holds ${open.telegramRow?.markSlotSvgs} svgs: ${JSON.stringify(open.telegramRow)}`,
+        );
+        assert.equal(
+          open.telegramRow?.markText,
+          "",
+          `the Telegram row's mark slot paints a word: ${JSON.stringify(open.telegramRow?.markText)}`,
+        );
+        assert.equal(
+          open.discordRow?.markText,
+          "",
+          `the Discord row's mark slot paints a word: ${JSON.stringify(open.discordRow?.markText)}`,
+        );
+        assert.equal(
+          open.telegramRow?.hasDot,
+          false,
+          "the Telegram row still draws the status dot instead of the mark",
+        );
+        assert.equal(
+          open.discordRow?.hasDot,
+          false,
+          "the Discord row still draws the status dot instead of the mark",
+        );
+        assert.equal(
+          open.apiRow?.mark,
+          null,
+          `the api_server rail row wears a platform mark: ${JSON.stringify(open.apiRow)}`,
+        );
+        assert.equal(
+          open.apiRow?.markSlotSvgs,
+          0,
+          `the api_server rail row's mark slot holds a platform svg: ${JSON.stringify(open.apiRow)}`,
+        );
+
+        // ── (2b) the open chat's tab leads with the same mark ────────────
+        const tgTab =
+          open.tabs.find((tab) => tab.id === TELEGRAM.id) ?? null;
+        assert.ok(
+          tgTab,
+          `no dock tab for the open Telegram chat: ${JSON.stringify(open.tabs)}`,
+        );
+        assert.equal(
+          tgTab!.source,
+          "telegram",
+          `the Telegram tab does not carry data-source: ${JSON.stringify(tgTab)}`,
+        );
+        assert.equal(
+          tgTab!.mark,
+          "telegram",
+          `the Telegram tab does not lead with the Telegram mark: ${JSON.stringify(tgTab)}`,
+        );
+        assert.equal(
+          tgTab!.markText,
+          "",
+          `the Telegram tab's mark slot paints a word: ${JSON.stringify(tgTab?.markText)}`,
+        );
+
+        // ── (2c) the dock header chip is the LOGO; the word is not painted ─
         assert.equal(
           open.headerContinuable,
           "true",
           `the dock header does not carry data-continuable: ${JSON.stringify(open.headerText)}`,
         );
         assert.equal(
-          open.chipText,
+          open.chipVariantMark,
+          true,
+          `the dock header chip is not the icon-only variant: ${JSON.stringify(open.chipText)}`,
+        );
+        assert.equal(
+          open.chipMark,
+          "telegram",
+          `the dock header chip does not draw the Telegram mark: ${JSON.stringify(open.chipMark)}`,
+        );
+        assert.equal(
+          open.chipRole,
+          "img",
+          `the dock header chip has no img role: ${JSON.stringify(open.chipRole)}`,
+        );
+        assert.equal(
+          open.chipHasLabelElement,
+          false,
+          "the dock header chip still paints a visible .chat-panel__source-label word",
+        );
+        assert.equal(
+          open.chipHiddenText,
           "Telegram",
-          `the dock header's source chip reads ${JSON.stringify(open.chipText)}, not "Telegram"`,
+          `the chip's visually-hidden word is ${JSON.stringify(open.chipHiddenText)}, not "Telegram"`,
+        );
+        assert.ok(
+          (open.chipHiddenWidth ?? 2) <= 1 && (open.chipHiddenHeight ?? 2) <= 1,
+          `the chip's word is not hidden: bounding box ${open.chipHiddenWidth}x${open.chipHiddenHeight}`,
+        );
+        assert.equal(
+          (open.chipPaintedText ?? "").includes("Telegram"),
+          false,
+          `the chip paints the word "Telegram": ${JSON.stringify(open.chipPaintedText)}`,
+        );
+        assert.match(
+          open.chipAriaLabel ?? "",
+          /Telegram/,
+          `the chip's aria-label is ${JSON.stringify(open.chipAriaLabel)}`,
         );
         assert.match(
           open.chipTitle ?? "",
           /Telegram/,
-          `the source chip's title is ${JSON.stringify(open.chipTitle)}`,
+          `the chip's tooltip is ${JSON.stringify(open.chipTitle)}`,
         );
         assert.match(
           open.noteText ?? "",
@@ -732,7 +910,7 @@ describe("a chat from another surface, continued in the real dock", () => {
         const replied = report.states.afterFirstReply;
         assert.ok(replied, "the artifact has no sample after the first reply");
         assert.equal(
-          replied.transcript?.includes(SEED.wsReply),
+          replied.transcript?.includes(TELEGRAM.turn.reply),
           true,
           `the WS-only reply never reached the live DOM: ${JSON.stringify(replied.transcript)}`,
         );
@@ -770,7 +948,7 @@ describe("a chat from another surface, continued in the real dock", () => {
           `the continued send added ${contentTurns.length} content turn(s): ${JSON.stringify(addedTurns)}`,
         );
         const continuedTurn =
-          contentTurns.find((turn) => turn.text.includes(SEED.turnText)) ?? null;
+          contentTurns.find((turn) => turn.text.includes(TELEGRAM.turn.text)) ?? null;
         assert.ok(
           continuedTurn,
           `no content turn carries the operator's message: ${JSON.stringify(addedTurns)}`,
@@ -781,16 +959,16 @@ describe("a chat from another surface, continued in the real dock", () => {
           `the continued turn never completed: ${JSON.stringify(continuedTurn)}`,
         );
         assert.ok(
-          continuedTurn!.text.includes(SEED.wsReply),
+          continuedTurn!.text.includes(TELEGRAM.turn.reply),
           `the turn carrying the message does not also carry the reply: ${JSON.stringify(continuedTurn)}`,
         );
         assert.equal(
-          addedTurns.filter((turn) => turn.text.includes(SEED.wsReply)).length,
+          addedTurns.filter((turn) => turn.text.includes(TELEGRAM.turn.reply)).length,
           1,
           `the reply is carried by more than one turn: ${JSON.stringify(addedTurns)}`,
         );
         assert.equal(
-          addedTurns.filter((turn) => turn.text.includes(SEED.turnText)).length,
+          addedTurns.filter((turn) => turn.text.includes(TELEGRAM.turn.text)).length,
           1,
           `the message is carried by more than one turn: ${JSON.stringify(addedTurns)}`,
         );
@@ -803,7 +981,7 @@ describe("a chat from another surface, continued in the real dock", () => {
         // the REST stream's `assistant.completed` has) is painted exactly once;
         // the narration before the tool travelled the socket, not the DOM after
         // the settled work log folds.
-        const answerPaints = countIn(replied.transcript, SEED.wsReply);
+        const answerPaints = countIn(replied.transcript, TELEGRAM.turn.reply);
         assert.equal(
           answerPaints,
           1,
@@ -814,7 +992,7 @@ describe("a chat from another surface, continued in the real dock", () => {
           framesOut.some(
             (frame) =>
               frame.type === "message.delta" &&
-              (frame.payload as { text?: string } | null)?.text === SEED.wsNarration,
+              (frame.payload as { text?: string } | null)?.text === TELEGRAM.turn.narration,
           ),
           `the narration delta never travelled the socket: ${JSON.stringify(framesOut.map((frame) => frame.type))}`,
         );
@@ -826,7 +1004,7 @@ describe("a chat from another surface, continued in the real dock", () => {
           framesOut.some(
             (frame) =>
               frame.type === "message.complete" &&
-              (frame.payload as { text?: string } | null)?.text === SEED.wsReply,
+              (frame.payload as { text?: string } | null)?.text === TELEGRAM.turn.reply,
           ),
           "the whole reply never travelled the socket on message.complete",
         );
@@ -921,6 +1099,127 @@ describe("a chat from another surface, continued in the real dock", () => {
           `the stopped turn never settled: ${JSON.stringify(report.states.afterStop)}`,
         );
 
+        // ── (5b) the Discord chat continued too, with its own mark ────────
+        const dcOpen = report.states.discordOpen;
+        assert.ok(dcOpen, "the artifact has no sample of the opened Discord chat");
+        assert.equal(
+          dcOpen.discordRow?.mark,
+          "discord",
+          `the Discord rail row does not lead with the Discord mark: ${JSON.stringify(dcOpen.discordRow)}`,
+        );
+        assert.equal(
+          dcOpen.chipVariantMark,
+          true,
+          "the Discord dock chip is not the icon-only variant",
+        );
+        assert.equal(
+          dcOpen.chipMark,
+          "discord",
+          `the Discord dock chip does not draw the Discord mark: ${JSON.stringify(dcOpen.chipMark)}`,
+        );
+        assert.equal(
+          dcOpen.chipHasLabelElement,
+          false,
+          "the Discord dock chip still paints a visible word",
+        );
+        assert.equal(
+          dcOpen.chipHiddenText,
+          "Discord",
+          `the Discord chip's visually-hidden word is ${JSON.stringify(dcOpen.chipHiddenText)}`,
+        );
+        assert.ok(
+          (dcOpen.chipHiddenWidth ?? 2) <= 1 && (dcOpen.chipHiddenHeight ?? 2) <= 1,
+          `the Discord chip's word is not hidden: bounding box ${dcOpen.chipHiddenWidth}x${dcOpen.chipHiddenHeight}`,
+        );
+        assert.equal(
+          (dcOpen.chipPaintedText ?? "").includes("Discord"),
+          false,
+          `the Discord chip paints the word: ${JSON.stringify(dcOpen.chipPaintedText)}`,
+        );
+        assert.match(
+          dcOpen.chipAriaLabel ?? "",
+          /Discord/,
+          `the Discord chip's aria-label is ${JSON.stringify(dcOpen.chipAriaLabel)}`,
+        );
+        const dcTab =
+          dcOpen.tabs.find((tab) => tab.id === DISCORD.id) ?? null;
+        assert.ok(dcTab, `no dock tab for the open Discord chat: ${JSON.stringify(dcOpen.tabs)}`);
+        assert.equal(dcTab!.source, "discord", "the Discord tab does not carry data-source");
+        assert.equal(
+          dcTab!.mark,
+          "discord",
+          `the Discord tab does not lead with the Discord mark: ${JSON.stringify(dcTab)}`,
+        );
+        assert.equal(dcTab!.markText, "", "the Discord tab's mark slot paints a word");
+
+        const dcResumed = report.websocket.resume.find(
+          (frame) => frame.params.session_id === DISCORD.id,
+        );
+        assert.ok(
+          dcResumed,
+          `session.resume never named the Discord session ${DISCORD.id}: ${JSON.stringify(report.websocket.resume.map((frame) => frame.params.session_id))}`,
+        );
+        assert.equal(
+          dcResumed!.params.profile,
+          PROFILE,
+          `the Discord resume did not name the served profile: ${JSON.stringify(dcResumed!.params)}`,
+        );
+        const dcSubmitted = report.websocket.submit.find(
+          (frame) =>
+            frame.params.session_id === DISCORD.id &&
+            typeof frame.params.submission_id === "string" &&
+            frame.params.submission_id.length > 0,
+        );
+        assert.ok(
+          dcSubmitted,
+          `prompt.submit never named the Discord session with a submission_id: ${JSON.stringify(report.websocket.submit.map((frame) => frame.params))}`,
+        );
+        const dcTurnsBefore = report.measurements.discordTurnsBefore ?? 0;
+        const dcTurns = report.states.discordReply?.turns ?? [];
+        const dcAddedTurns = dcTurns.slice(dcTurnsBefore);
+        const dcContentTurns = dcAddedTurns.filter(
+          (turn) => turn.text.replace(/^Completed · .*$/m, "").trim().length > 0,
+        );
+        assert.equal(
+          dcAddedTurns.length,
+          1,
+          `the Discord send added ${dcAddedTurns.length} turn(s): ${JSON.stringify(dcAddedTurns)}`,
+        );
+        assert.equal(
+          dcContentTurns.length,
+          1,
+          `the Discord send added ${dcContentTurns.length} content turn(s): ${JSON.stringify(dcAddedTurns)}`,
+        );
+        assert.ok(
+          dcContentTurns[0].text.includes(DISCORD.turn.text) &&
+            dcContentTurns[0].text.includes(DISCORD.turn.reply),
+          `the Discord turn does not carry both the message and the reply: ${JSON.stringify(dcContentTurns[0])}`,
+        );
+        assert.equal(
+          report.measurements.discordFooterOnlyTurns,
+          0,
+          `the Discord send added ${report.measurements.discordFooterOnlyTurns} footer-only turn(s)`,
+        );
+        assert.equal(
+          countIn(report.states.discordReply?.transcript, DISCORD.turn.reply),
+          1,
+          `the Discord reply appears ${countIn(report.states.discordReply?.transcript, DISCORD.turn.reply)} time(s) in the dock`,
+        );
+        assert.equal(
+          report.gateway.refusals.filter(
+            (refusal) => refusal.sessionId === DISCORD.id,
+          ).length,
+          0,
+          `the API door was asked to write the Discord chat: ${JSON.stringify(report.gateway.refusals)}`,
+        );
+        assert.equal(
+          report.gateway.streamRequests.filter(
+            (request) => request.sessionId === DISCORD.id,
+          ).length,
+          0,
+          `the Discord chat was sent through the REST chat stream: ${JSON.stringify(report.gateway.streamRequests)}`,
+        );
+
         // ── (6) the api_server chat kept the API transport ────────────────
         assert.ok(
           report.gateway.streamRequests.some(
@@ -1008,8 +1307,8 @@ describe("a chat from another surface, continued in the real dock", () => {
         assert.equal(
           served.some(
             (row) =>
-              String(row.content).includes(SEED.wsReplyMarker) ||
-              String(row.content).includes(SEED.wsNarration),
+              String(row.content).includes(TELEGRAM.turn.replyMarker) ||
+              String(row.content).includes(TELEGRAM.turn.narration),
           ),
           false,
           `the fake REST transcript carried the narration or the WS-only reply: ${JSON.stringify(served)}`,
@@ -1061,6 +1360,30 @@ describe("a chat from another surface, continued in the real dock", () => {
           report.screenshots ?? [],
           ["foreign-chat.png"],
           `the artifact's screenshot list is ${JSON.stringify(report.screenshots)}`,
+        );
+        // The capture was taken while the rail showed BOTH platform marks and
+        // the opened Telegram header chip drew its mark: the state the driver
+        // captured is in the artifact, so the picture's ingredients are checked.
+        const captured = report.states.afterFirstReply;
+        assert.equal(
+          captured?.telegramRow?.mark,
+          "telegram",
+          `the captured rail was missing the Telegram mark: ${JSON.stringify(captured?.telegramRow)}`,
+        );
+        assert.equal(
+          captured?.discordRow?.mark,
+          "discord",
+          `the captured rail was missing the Discord mark: ${JSON.stringify(captured?.discordRow)}`,
+        );
+        assert.equal(
+          captured?.chipMark,
+          "telegram",
+          `the captured header was missing the Telegram mark: ${JSON.stringify(captured?.chipMark)}`,
+        );
+        assert.equal(
+          captured?.chipPaintedText?.includes("Telegram"),
+          false,
+          "the captured header painted the word instead of the mark",
         );
         assert.ok(
           Date.now() - fs.statSync(SCREENSHOT).mtimeMs < 240_000,

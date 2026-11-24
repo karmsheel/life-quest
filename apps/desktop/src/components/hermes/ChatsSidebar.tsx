@@ -25,6 +25,7 @@ import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { companionStatusSummary } from "@/lib/companion-status-copy";
 import { SESSION_ICON } from "@/lib/session-icon";
+import { platformMarkFor } from "@/lib/platform-mark";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { Link } from "react-router-dom";
 import {
@@ -401,6 +402,10 @@ export function ChatsSidebar() {
     // feature's icon; a chat the operator opened keeps the quiet status dot.
     const iconKind = chat.sessionIcons[s.id] ?? null;
     const OriginIcon = iconKind ? SESSION_ICON[iconKind] : null;
+    // A chat from another surface leads its name with that platform's mark —
+    // Telegram's plane, Discord's controller — instead of the plain dot, so the
+    // rail says where the conversation began without adding a word to its title.
+    const PlatformMark = platformMarkFor(s.source);
     return (
       <li
         key={s.id}
@@ -481,6 +486,8 @@ export function ChatsSidebar() {
               <span className="chats-rail__mark" aria-hidden>
                 {OriginIcon ? (
                   <OriginIcon className="chats-rail__mark-icon" size={11} />
+                ) : PlatformMark ? (
+                  <PlatformMark className="chats-rail__mark-icon" size={11} />
                 ) : (
                   <span className="chats-rail__dot" />
                 )}

@@ -306,7 +306,10 @@ async function serveControl(world) {
  */
 async function buildGateway(world, controlState) {
   const tg = world.sessions.telegram;
+  const dc = world.sessions.discord;
   const api = world.sessions.api;
+  const foreign = [tg, dc];
+  const allSessions = [tg, dc, api];
   const seed = world.seed;
   const nowSeconds = () => Math.floor(Date.now() / 1000);
   const state = {
@@ -357,7 +360,7 @@ async function buildGateway(world, controlState) {
   });
 
   const sessionById = (id) =>
-    [tg, api].find((session) => session.id === id) ?? null;
+    allSessions.find((session) => session.id === id) ?? null;
 
   const transcriptFor = (id) => {
     const session = sessionById(id);
@@ -440,7 +443,7 @@ async function buildGateway(world, controlState) {
         };
         // The real gateway's refusal for a chat another surface owns. This is
         // the 500 the dock used to show as "Chat stream failed (500)".
-        if (sessionId === tg.id) {
+        if (foreign.some((session) => session.id === sessionId)) {
           state.refusals.push({ ...record, status: 500, body: seed.refusalBody });
           json(res, seed.refusalBody, 500);
           return;
@@ -510,7 +513,7 @@ async function buildGateway(world, controlState) {
 
     if (route === "/api/sessions" && (req.method ?? "GET") === "GET") {
       state.sessionsRequests.push(request);
-      json(res, { object: "list", data: [sessionRow(tg), sessionRow(api)] });
+      json(res, { object: "list", data: allSessions.map(sessionRow) });
       return;
     }
     if (route === "/api/sessions" && (req.method ?? "POST") === "POST") {
@@ -624,47 +627,48 @@ async function buildGateway(world, controlState) {
       if (ws.readyState === 1) run();
     }, delayMs);
 
-  const streamFirstTurn = (ws, sessionId, admissionId) => {
-    const runId = "wsrun-e2e-1";
+  const streamTurn = (ws, session, admissionId) => {
+    const runId = `wsrun-e2e-${session.id}`;
+    const turn = session.turn;
     // Real pacing: the gateway answers resume/submit promptly, then streams.
     // A zero-latency fake would let the renderer's invoke reply beat the queued
     // event frames (a pre-existing IPC race), splitting the turn for a reason
     // that is the fake's; a real turn cannot be that fast.
     const schedule = [
       [40, () =>
-        notify(ws, "message.delta", sessionId, {
+        notify(ws, "message.delta", session.id, {
           run_id: runId,
-          text: seed.wsNarration,
+          text: turn.narration,
         })],
       [90, () =>
-        notify(ws, "tool.start", sessionId, {
+        notify(ws, "tool.start", session.id, {
           run_id: runId,
-          tool_id: "tool-e2e-1",
+          tool_id: `tool-e2e-${session.id}`,
           name: "vault_search",
-          args: { query: "south bed plan" },
-          preview: "Searching the vault for the south bed plan",
+          args: { query: session.title },
+          preview: `Searching the vault for ${session.title}`,
         })],
       [140, () =>
-        notify(ws, "tool.complete", sessionId, {
+        notify(ws, "tool.complete", session.id, {
           run_id: runId,
-          tool_id: "tool-e2e-1",
+          tool_id: `tool-e2e-${session.id}`,
           name: "vault_search",
-          result_text: "Found the south bed plan",
-          summary: "Found the south bed plan",
+          result_text: `Found the notes for ${session.title}`,
+          summary: `Found the notes for ${session.title}`,
           duration_s: 0.05,
         })],
       [190, () =>
-        notify(ws, "message.delta", sessionId, {
+        notify(ws, "message.delta", session.id, {
           run_id: runId,
-          text: seed.wsReplyPrefix,
+          text: turn.replyPrefix,
         })],
       [280, () =>
-        notify(ws, "message.complete", sessionId, {
+        notify(ws, "message.complete", session.id, {
           run_id: runId,
           admission_id: admissionId,
           outcome: "completed",
           status: "complete",
-          text: seed.wsReply,
+          text: turn.reply,
           usage: { input_tokens: 42, output_tokens: 24 },
         })],
     ];
@@ -773,8 +777,9 @@ async function buildGateway(world, controlState) {
           session_id: sessionId,
           submission_id: params.submission_id ?? null,
         });
-        if (sessionId === tg.id && count === 1) {
-          streamFirstTurn(ws, sessionId, admissionId);
+        const session = sessionById(sessionId);
+        if (session && foreign.some((row) => row.id === sessionId) && count === 1) {
+          streamTurn(ws, session, admissionId);
         } else if (sessionId === tg.id && count === 2) {
           streamSecondTurnPartial(ws, sessionId, admissionId);
         } else {
@@ -891,20 +896,58 @@ async function waitUntil(predicate, timeoutMs, label) {
  */
 function snapshotExpression(world) {
   const telegramTitle = world.sessions.telegram.title;
+  const discordTitle = world.sessions.discord.title;
   const apiTitle = world.sessions.api.title;
   return `(() => {
     const text = (el) => ((el && el.textContent) || "").trim();
     const attr = (el, name) => (el ? el.getAttribute(name) : null);
-    const rows = Array.from(document.querySelectorAll(".chats-rail__row")).map((li) => ({
-      label: text(li.querySelector(".chats-rail__label")),
-      continuable: attr(li, "data-continuable"),
-      source: attr(li, "data-source"),
-      live: li.hasAttribute("data-live"),
-      archived: li.hasAttribute("data-archived"),
-      rowText: text(li),
-    }));
+    // Text a person can actually read: a visually-hidden word is in the DOM
+    // but not painted, so it must not count as "the word is shown".
+    const paintedText = (root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let out = "";
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const parent = node.parentElement;
+        if (!parent || parent.closest(".visually-hidden")) continue;
+        out += node.textContent ?? "";
+      }
+      return out.replace(/\s+/g, " ").trim();
+    };
+    const rows = Array.from(document.querySelectorAll(".chats-rail__row")).map((li) => {
+      const markSlot = li.querySelector(".chats-rail__mark");
+      const markSvg = markSlot ? markSlot.querySelector("svg[data-platform-mark]") : null;
+      return {
+        label: text(li.querySelector(".chats-rail__label")),
+        continuable: attr(li, "data-continuable"),
+        source: attr(li, "data-source"),
+        live: li.hasAttribute("data-live"),
+        archived: li.hasAttribute("data-archived"),
+        rowText: text(li),
+        mark: markSvg ? markSvg.getAttribute("data-platform-mark") : null,
+        markText: markSlot ? paintedText(markSlot) : "",
+        markSlotSvgs: markSlot ? markSlot.querySelectorAll("svg").length : 0,
+        hasDot: Boolean(markSlot && markSlot.querySelector(".chats-rail__dot")),
+      };
+    });
+    const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
+      const markSlot = tab.querySelector(".chat-panel__tab-mark");
+      const markSvg = markSlot ? markSlot.querySelector("svg[data-platform-mark]") : null;
+      return {
+        id: attr(tab, "data-tab-id"),
+        source: attr(tab, "data-source"),
+        mark: markSvg ? markSvg.getAttribute("data-platform-mark") : null,
+        markText: markSlot ? paintedText(markSlot) : "",
+        label: text(tab),
+        active: tab.classList.contains("chat-panel__tab--active"),
+      };
+    });
     const header = document.querySelector(".chat-panel__header--thread");
     const chip = document.querySelector(".chat-panel__source");
+    const chipLabel = chip ? chip.querySelector(".chat-panel__source-label") : null;
+    const chipHidden = chip ? chip.querySelector(".visually-hidden") : null;
+    const chipHiddenRect = chipHidden ? chipHidden.getBoundingClientRect() : null;
+    const chipMarkSvg = chip ? chip.querySelector("svg[data-platform-mark]") : null;
     const note = document.querySelector(".chat-panel__composer-note");
     const disabledControls = Array.from(
       document.querySelectorAll('[data-continued-disabled="true"]'),
@@ -925,15 +968,28 @@ function snapshotExpression(world) {
       hasRail: Boolean(document.querySelector(".chats-rail")),
       rows,
       telegramRow: rows.find((row) => row.label === ${JSON.stringify(telegramTitle)}) ?? null,
+      discordRow: rows.find((row) => row.label === ${JSON.stringify(discordTitle)}) ?? null,
       apiRow: rows.find((row) => row.label === ${JSON.stringify(apiTitle)}) ?? null,
+      tabs,
       hasHeader: Boolean(header),
       headerContinuable: attr(header, "data-continuable"),
       headerSource: attr(header, "data-source"),
       headerText: header ? text(header) : null,
       hasChip: Boolean(chip),
-      chipText: chip ? text(chip.querySelector(".chat-panel__source-label")) || text(chip) : null,
+      chipText: chipLabel ? text(chipLabel) : chip ? text(chip) : null,
       chipTitle: chip ? attr(chip, "title") : null,
       chipSource: chip ? attr(chip, "data-source") : null,
+      chipVariantMark: chip
+        ? chip.classList.contains("chat-panel__source--mark")
+        : false,
+      chipMark: chipMarkSvg ? chipMarkSvg.getAttribute("data-platform-mark") : null,
+      chipRole: chip ? attr(chip, "role") : null,
+      chipAriaLabel: chip ? attr(chip, "aria-label") : null,
+      chipHasLabelElement: Boolean(chipLabel),
+      chipHiddenText: chipHidden ? text(chipHidden) : null,
+      chipHiddenWidth: chipHiddenRect ? chipHiddenRect.width : null,
+      chipHiddenHeight: chipHiddenRect ? chipHiddenRect.height : null,
+      chipPaintedText: chip ? paintedText(chip) : null,
       hasNote: Boolean(note),
       noteText: note ? text(note) : null,
       noteSource: note ? attr(note, "data-source") : null,
@@ -1058,6 +1114,8 @@ async function run() {
     afterFirstReply: null,
     secondTurnRunning: null,
     afterStop: null,
+    discordOpen: null,
+    discordReply: null,
     apiChat: null,
   };
 
@@ -1088,7 +1146,7 @@ async function run() {
     const js = (code) => win.webContents.executeJavaScript(code);
     const snap = () => snapshot(win, world);
 
-    // ── the rail is up, and both chats are listed ───────────────────────────
+    // ── the rail is up, and all three chats are listed ─────────────────────
     await waitFor(
       win,
       `Boolean(document.querySelector(".chats-rail"))`,
@@ -1098,13 +1156,13 @@ async function run() {
     const listed = await waitUntil(
       async () => {
         const sample = await snap();
-        return Boolean(sample.telegramRow && sample.apiRow);
+        return Boolean(sample.telegramRow && sample.discordRow && sample.apiRow);
       },
       MOUNT_TIMEOUT_MS,
-      "the fake gateway's two chats to be listed",
+      "the fake gateway's three chats to be listed",
     );
     check(
-      "the app lists the gateway's Telegram and api_server chats",
+      "the app lists the Telegram, Discord and api_server chats",
       listed.ok,
       `rows: ${JSON.stringify((await snap()).rows)}`,
     );
@@ -1134,10 +1192,16 @@ async function run() {
 
     // ── (1) the source data reached the renderer ───────────────────────────
     const tgRow = states.telegramOpen.telegramRow;
+    const dcRow = states.telegramOpen.discordRow;
     check(
       "the Telegram row carries the source data (data-continuable + data-source)",
       tgRow?.continuable === "true" && tgRow?.source === "telegram",
       `row: ${JSON.stringify(tgRow)}`,
+    );
+    check(
+      "the Discord row carries the source data (data-continuable + data-source)",
+      dcRow?.continuable === "true" && dcRow?.source === "discord",
+      `row: ${JSON.stringify(dcRow)}`,
     );
     const apiRowSample = states.telegramOpen.apiRow;
     check(
@@ -1145,19 +1209,77 @@ async function run() {
       apiRowSample?.continuable === null && apiRowSample?.source === null,
       `api row: ${JSON.stringify(apiRowSample)}`,
     );
+    // ── (2a) the rail leads each foreign row with its platform LOGO ────────
+    // The titles are plain words ("Spring bed plan", "Game night roster"), so a
+    // word in the title cannot satisfy this: only the mark can.
     check(
-      "the dock header wears the Telegram source chip",
+      "the Telegram rail row leads with the Telegram mark, not a word or the status dot",
+      tgRow?.mark === "telegram" &&
+        tgRow?.markSlotSvgs === 1 &&
+        tgRow?.markText === "" &&
+        tgRow?.hasDot === false,
+      `telegram row: ${JSON.stringify(tgRow)}`,
+    );
+    check(
+      "the Discord rail row leads with the Discord mark, not a word or the status dot",
+      dcRow?.mark === "discord" &&
+        dcRow?.markSlotSvgs === 1 &&
+        dcRow?.markText === "" &&
+        dcRow?.hasDot === false,
+      `discord row: ${JSON.stringify(dcRow)}`,
+    );
+    check(
+      "the api_server rail row wears neither platform mark",
+      apiRowSample?.mark === null && apiRowSample?.markSlotSvgs === 0,
+      `api row: ${JSON.stringify(apiRowSample)}`,
+    );
+    // ── (2b) the dock tab strip leads the Telegram tab with the mark ───────
+    const tgTab =
+      states.telegramOpen.tabs.find((tab) => tab.id === world.sessions.telegram.id) ??
+      null;
+    check(
+      "the open Telegram tab carries data-source and its platform mark",
+      Boolean(tgTab) &&
+        tgTab.source === "telegram" &&
+        tgTab.mark === "telegram" &&
+        tgTab.markText === "",
+      `tabs: ${JSON.stringify(states.telegramOpen.tabs)}`,
+    );
+    // ── (2c) the dock header chip is the LOGO, and the word is not painted ──
+    check(
+      "the dock header chip draws the Telegram logo with no visible word",
       states.telegramOpen.headerContinuable === "true" &&
         states.telegramOpen.headerSource === "telegram" &&
-        states.telegramOpen.chipText === "Telegram" &&
-        typeof states.telegramOpen.chipTitle === "string" &&
-        states.telegramOpen.chipTitle.includes("Telegram"),
+        states.telegramOpen.chipVariantMark === true &&
+        states.telegramOpen.chipMark === "telegram" &&
+        states.telegramOpen.chipRole === "img" &&
+        states.telegramOpen.chipHasLabelElement === false &&
+        states.telegramOpen.chipHiddenText === "Telegram" &&
+        (states.telegramOpen.chipHiddenWidth ?? 2) <= 1 &&
+        (states.telegramOpen.chipHiddenHeight ?? 2) <= 1 &&
+        !(states.telegramOpen.chipPaintedText ?? "").includes("Telegram"),
       `header: ${JSON.stringify({
         continuable: states.telegramOpen.headerContinuable,
         source: states.telegramOpen.headerSource,
-        chip: states.telegramOpen.chipText,
-        title: states.telegramOpen.chipTitle,
+        variant: states.telegramOpen.chipVariantMark,
+        mark: states.telegramOpen.chipMark,
+        role: states.telegramOpen.chipRole,
+        labelElement: states.telegramOpen.chipHasLabelElement,
+        hidden: states.telegramOpen.chipHiddenText,
+        hiddenBox: [
+          states.telegramOpen.chipHiddenWidth,
+          states.telegramOpen.chipHiddenHeight,
+        ],
+        painted: states.telegramOpen.chipPaintedText,
       })}`,
+    );
+    check(
+      "the chip's accessible label and tooltip still name the surface",
+      typeof states.telegramOpen.chipAriaLabel === "string" &&
+        states.telegramOpen.chipAriaLabel.includes("Telegram") &&
+        typeof states.telegramOpen.chipTitle === "string" &&
+        states.telegramOpen.chipTitle.includes("Telegram"),
+      `aria-label: ${JSON.stringify(states.telegramOpen.chipAriaLabel)} / title: ${JSON.stringify(states.telegramOpen.chipTitle)}`,
     );
     check(
       "the composer says the conversation is shared with Telegram",
@@ -1202,7 +1324,7 @@ async function run() {
 
     // ── send the first turn: it must travel the WebSocket ──────────────────
     measurements.firstSendAt = Date.now();
-    const sent = await js(typeAndSendExpression(world.seed.turnText));
+    const sent = await js(typeAndSendExpression(world.sessions.telegram.turn.text));
     check(
       "the shipped send control sends the first turn",
       sent?.ok === true,
@@ -1228,7 +1350,7 @@ async function run() {
         // An idle composer draws no send control at all (the arrow appears
         // once there is something to send), so "settled" is "no stop control".
         return (
-          sample.transcript?.includes(world.seed.wsReply) === true &&
+          sample.transcript?.includes(world.sessions.telegram.turn.reply) === true &&
           sample.sendState !== "stop" &&
           sample.rowLive === false
         );
@@ -1278,7 +1400,7 @@ async function run() {
     );
     check(
       "the WS-only reply painted in the live DOM",
-      states.afterFirstReply.transcript?.includes(world.seed.wsReply) === true,
+      states.afterFirstReply.transcript?.includes(world.sessions.telegram.turn.reply) === true,
       `transcript: ${JSON.stringify(states.afterFirstReply.transcript)}`,
     );
     check(
@@ -1303,14 +1425,14 @@ async function run() {
     const contentTurns = addedTurns.filter((turn) => !footerOnly(turn));
     measurements.telegramFooterOnlyTurns = addedTurns.length - contentTurns.length;
     const continuedTurn =
-      contentTurns.find((turn) => turn.text.includes(world.seed.turnText)) ?? null;
+      contentTurns.find((turn) => turn.text.includes(world.sessions.telegram.turn.text)) ?? null;
     check(
       "the continued send is one turn carrying both the message and the reply",
       addedTurns.length === 1 &&
         contentTurns.length === 1 &&
         Boolean(continuedTurn) &&
         continuedTurn.status === "completed" &&
-        continuedTurn.text.includes(world.seed.wsReply),
+        continuedTurn.text.includes(world.sessions.telegram.turn.reply),
       `turns before ${telegramTurnsBefore}, added ${JSON.stringify(addedTurns)}`,
     );
     check(
@@ -1320,9 +1442,9 @@ async function run() {
     );
     check(
       "no added turn paints a second copy of the message or the reply",
-      addedTurns.filter((turn) => turn.text.includes(world.seed.turnText))
+      addedTurns.filter((turn) => turn.text.includes(world.sessions.telegram.turn.text))
         .length === 1 &&
-        addedTurns.filter((turn) => turn.text.includes(world.seed.wsReply))
+        addedTurns.filter((turn) => turn.text.includes(world.sessions.telegram.turn.reply))
           .length === 1,
       `added turns: ${JSON.stringify(addedTurns)}`,
     );
@@ -1331,19 +1453,19 @@ async function run() {
     // the narration that preceded the tool came over the socket, not REST.
     check(
       "the WS-only answer is painted once, and the narration arrived over the socket",
-      countIn(transcriptAfterReply, world.seed.wsReply) === 1 &&
+      countIn(transcriptAfterReply, world.sessions.telegram.turn.reply) === 1 &&
         host.state.ws.out.some(
           (frame) =>
             frame.type === "message.delta" &&
-            frame.payload?.text === world.seed.wsNarration,
+            frame.payload?.text === world.sessions.telegram.turn.narration,
         ) &&
         host.state.ws.out.some((frame) => frame.type === "tool.start") &&
         host.state.ws.out.some(
           (frame) =>
             frame.type === "message.complete" &&
-            frame.payload?.text === world.seed.wsReply,
+            frame.payload?.text === world.sessions.telegram.turn.reply,
         ),
-      `answer x${countIn(transcriptAfterReply, world.seed.wsReply)} / frames out: ${JSON.stringify(host.state.ws.out.map((frame) => frame.type))}: ${JSON.stringify(transcriptAfterReply)}`,
+      `answer x${countIn(transcriptAfterReply, world.sessions.telegram.turn.reply)} / frames out: ${JSON.stringify(host.state.ws.out.map((frame) => frame.type))}: ${JSON.stringify(transcriptAfterReply)}`,
     );
     const restTelegram = host.state.restServed[world.sessions.telegram.id];
     check(
@@ -1352,8 +1474,8 @@ async function run() {
         restTelegram.length > 0 &&
         restTelegram.every(
           (row) =>
-            !String(row.content).includes(world.seed.wsReplyMarker) &&
-            !String(row.content).includes(world.seed.wsNarration),
+            !String(row.content).includes(world.sessions.telegram.turn.replyMarker) &&
+            !String(row.content).includes(world.sessions.telegram.turn.narration),
         ),
       `REST telegram transcript: ${JSON.stringify(restTelegram)}`,
     );
@@ -1460,6 +1582,177 @@ async function run() {
       })}`,
     );
 
+    // ── the Discord chat: same continuation, its own platform mark ─────────
+    const openedDiscord = await js(
+      openRowExpression(world.sessions.discord.title),
+    );
+    check(
+      "the Discord chat opens from the sidebar",
+      openedDiscord?.ok === true,
+      `open result: ${JSON.stringify(openedDiscord)}`,
+    );
+    await waitFor(
+      win,
+      `(() => {
+        const el = document.querySelector(".chat-panel__composer-input");
+        const messages = document.querySelector(".chat-panel__messages");
+        return Boolean(el) && el.disabled !== true && Boolean(messages) &&
+          (messages.innerText || "").includes(${JSON.stringify(world.sessions.discord.transcript[0].content)});
+      })()`,
+      "the Discord chat's composer and REST transcript to paint",
+      MOUNT_TIMEOUT_MS,
+    );
+    await sleep(350);
+    states.discordOpen = await snap();
+    measurements.discordTurnsBefore = states.discordOpen.turnCount;
+    const dcTurnSample = world.sessions.discord.turn;
+    check(
+      "the dock header chip draws the Discord logo with no visible word",
+      states.discordOpen.headerSource === "discord" &&
+        states.discordOpen.chipVariantMark === true &&
+        states.discordOpen.chipMark === "discord" &&
+        states.discordOpen.chipRole === "img" &&
+        states.discordOpen.chipHasLabelElement === false &&
+        states.discordOpen.chipHiddenText === "Discord" &&
+        (states.discordOpen.chipHiddenWidth ?? 2) <= 1 &&
+        (states.discordOpen.chipHiddenHeight ?? 2) <= 1 &&
+        !(states.discordOpen.chipPaintedText ?? "").includes("Discord") &&
+        typeof states.discordOpen.chipAriaLabel === "string" &&
+        states.discordOpen.chipAriaLabel.includes("Discord") &&
+        typeof states.discordOpen.chipTitle === "string" &&
+        states.discordOpen.chipTitle.includes("Discord"),
+      `header: ${JSON.stringify({
+        source: states.discordOpen.headerSource,
+        variant: states.discordOpen.chipVariantMark,
+        mark: states.discordOpen.chipMark,
+        role: states.discordOpen.chipRole,
+        labelElement: states.discordOpen.chipHasLabelElement,
+        hidden: states.discordOpen.chipHiddenText,
+        hiddenBox: [
+          states.discordOpen.chipHiddenWidth,
+          states.discordOpen.chipHiddenHeight,
+        ],
+        painted: states.discordOpen.chipPaintedText,
+        aria: states.discordOpen.chipAriaLabel,
+        title: states.discordOpen.chipTitle,
+      })}`,
+    );
+    const dcTab =
+      states.discordOpen.tabs.find(
+        (tab) => tab.id === world.sessions.discord.id,
+      ) ?? null;
+    check(
+      "the open Discord tab carries data-source and its platform mark",
+      Boolean(dcTab) &&
+        dcTab.source === "discord" &&
+        dcTab.mark === "discord" &&
+        dcTab.markText === "",
+      `tabs: ${JSON.stringify(states.discordOpen.tabs)}`,
+    );
+    const dcSent = await js(
+      typeAndSendExpression(world.sessions.discord.turn.text),
+    );
+    check(
+      "the shipped send control sends the Discord turn",
+      dcSent?.ok === true,
+      `send result: ${JSON.stringify(dcSent)}`,
+    );
+    const dcFrames = await waitUntil(
+      () =>
+        host.state.ws.resume.some(
+          (frame) => frame.params.session_id === world.sessions.discord.id,
+        ) &&
+        host.state.ws.submit.some(
+          (frame) => frame.params.session_id === world.sessions.discord.id,
+        ),
+      ACTION_TIMEOUT_MS,
+      "session.resume and prompt.submit for the Discord chat",
+    );
+    const dcReplied = await waitUntil(
+      async () => {
+        const sample = await snap();
+        return (
+          sample.transcript?.includes(dcTurnSample.reply) === true &&
+          sample.sendState !== "stop" &&
+          sample.rowLive === false
+        );
+      },
+      ACTION_TIMEOUT_MS,
+      "the Discord WS reply to paint and the turn to settle",
+    );
+    await sleep(300);
+    states.discordReply = await snap();
+    const dcTurnsBefore = measurements.discordTurnsBefore ?? 0;
+    const dcAddedTurns = states.discordReply.turns.slice(dcTurnsBefore);
+    const dcContentTurns = dcAddedTurns.filter((turn) => !footerOnly(turn));
+    measurements.discordFooterOnlyTurns =
+      dcAddedTurns.length - dcContentTurns.length;
+    const dcContinuedTurn =
+      dcContentTurns.find((turn) =>
+        turn.text.includes(world.sessions.discord.turn.text),
+      ) ?? null;
+    const dcTranscript = states.discordReply.transcript ?? "";
+    check(
+      "the Discord send continued the Discord session over the WebSocket",
+      dcFrames.ok &&
+        host.state.ws.resume.some(
+          (frame) =>
+            frame.params.session_id === world.sessions.discord.id &&
+            frame.params.profile === world.profile,
+        ) &&
+        host.state.ws.submit.some(
+          (frame) =>
+            frame.params.session_id === world.sessions.discord.id &&
+            typeof frame.params.submission_id === "string" &&
+            frame.params.submission_id.length > 0,
+        ),
+      `frames: ${JSON.stringify({
+        resume: host.state.ws.resume.map((frame) => frame.params.session_id),
+        submit: host.state.ws.submit.map((frame) => ({
+          session: frame.params.session_id,
+          submission: frame.params.submission_id,
+        })),
+      })}`,
+    );
+    check(
+      "the Discord reply painted in one turn, no footer-only turn",
+      dcAddedTurns.length === 1 &&
+        dcContentTurns.length === 1 &&
+        Boolean(dcContinuedTurn) &&
+        dcContinuedTurn.status === "completed" &&
+        dcContinuedTurn.text.includes(dcTurnSample.reply) &&
+        countIn(dcTranscript, dcTurnSample.reply) === 1 &&
+        measurements.discordFooterOnlyTurns === 0,
+      `turns before ${dcTurnsBefore}, added ${JSON.stringify(dcAddedTurns)}`,
+    );
+    check(
+      "the Discord chat never used the API chat route",
+      !host.state.refusals.some(
+        (refusal) => refusal.sessionId === world.sessions.discord.id,
+      ) &&
+        !host.state.streamRequests.some(
+          (request) => request.sessionId === world.sessions.discord.id,
+        ),
+      `refusals: ${JSON.stringify(host.state.refusals)} / streams: ${JSON.stringify(host.state.streamRequests)}`,
+    );
+    check(
+      "the Discord turn's narration and answer travelled the socket",
+      host.state.ws.out.some(
+        (frame) =>
+          frame.type === "message.delta" &&
+          frame.payload?.text === dcTurnSample.narration,
+      ) &&
+        host.state.ws.out.some(
+          (frame) =>
+            frame.type === "message.complete" &&
+            frame.payload?.text === dcTurnSample.reply,
+        ),
+      `frames out: ${JSON.stringify(host.state.ws.out.map((frame) => frame.type))}`,
+    );
+    notes.push(
+      `the Discord chat ${JSON.stringify(dcTurnSample.reply)} was continued on the same stored session over the socket; the REST transcript served ${JSON.stringify(host.state.restServed[world.sessions.discord.id])}`,
+    );
+
     // ── the normal api_server chat must keep the REST transport ────────────
     const openedApi = await js(openRowExpression(world.sessions.api.title));
     check(
@@ -1563,7 +1856,7 @@ async function run() {
       `cli log: ${JSON.stringify(cliLog)}`,
     );
     notes.push(
-      `the WS-only reply ${JSON.stringify(world.seed.wsReply)} exists only in the socket frames; the REST transcript served ${JSON.stringify(host.state.restServed[world.sessions.telegram.id])}`,
+      `the WS-only reply ${JSON.stringify(world.sessions.telegram.turn.reply)} exists only in the socket frames; the REST transcript served ${JSON.stringify(host.state.restServed[world.sessions.telegram.id])}`,
     );
     notes.push(
       `the fake API refused the Telegram chat's API door ${host.state.refusals.length} time(s); its stream was hit ${host.state.streamRequests.length} time(s), only for the api_server chat`,
