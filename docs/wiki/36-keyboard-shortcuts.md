@@ -170,7 +170,7 @@ in **Keyboard**:
 - **Ctrl/Cmd+Enter** is the composer's send key by default (Enter breaks the
   line). It is a preference rather than a movement: Settings → **Composer** can
   hand sending to plain Enter, and Ctrl/Cmd+Enter keeps sending in either mode.
-- **Middle click** closes the tab under the pointer. A pinned square swallows the
+- **Middle click** closes the tab under the pointer. A pinned tab swallows the
   press and closes nothing; **Unpin** is a pinned tab's way out.
 
 ### Chat text zoom

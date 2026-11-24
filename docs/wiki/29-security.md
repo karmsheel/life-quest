@@ -20,7 +20,7 @@ boundary, and the enforcement is in the main process.
 | Which companion runs | The setup screen's picker and Settings → Hermes → **Companion** | `apps/desktop/electron/harness/registry.ts` |
 | MCP doors and their bind errors | Settings → Hermes → **MCP doors** (`Local`, `Invite`) | `apps/desktop/electron/mcp-server.ts`, `pairing-door.ts` |
 | Agent pairing and grants | Agents, and the pairing Decision in Decisions | `apps/desktop/electron/pairing-secrets.ts`, `packages/vault-core/src/pairing-grant.ts` |
-| Update download and install | The dock's build number, Settings → Updates | `apps/desktop/electron/updater.ts`, `main.ts` |
+| Update download and install | The rail's build number, Settings → Updates | `apps/desktop/electron/updater.ts`, `main.ts` |
 | Database restore | Settings → Vault → **Books** | `packages/vault-core/src/books-export.ts` |
 | Vault path containment | Any vault read or write | `packages/vault-core/src/paths.ts` |
 

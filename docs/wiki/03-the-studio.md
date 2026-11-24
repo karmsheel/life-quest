@@ -20,18 +20,20 @@ routes:
   centred on the strip, between the rail's column and the trailing controls; on
   the welcome and companion screens the tab is absent. The trailing cluster is
   the **layouts** control, the day/night control and the **Settings** gear;
-  full-screen chat's door is the dock's own top row, and the layouts picker
-  offers the same mode as its **Full agent** card.
+  full-screen chat's door is the dock's bottom action bar, beside the Notebox,
+  not the strip, and the layouts picker offers the same mode as its **Full
+  agent** card.
 - The **rail** is the leading column of the shell grid. Its wing band and the
   active wing's pages sit under the title bar, and its foot holds the **Log** and
   the **vault chip**.
 - The **main pane** begins directly under the title bar. It has no band of its
   own; the page is the column.
 - The **chat dock** is the trailing column, or the middle column when you swap
-  sides. **Full screen chat** at the trailing end of its top row collapses the
-  main page and gives the dock the workspace to the right of the rail; the rail
-  and its chats list stay. The layouts picker can also give the page and the dock
-  **half the window each**, in either order, without moving the rail.
+  sides. **Full screen chat** in its bottom action bar, immediately after the
+  **Notebox**, collapses the main page and gives the dock the workspace to the
+  right of the rail; the rail and its chats list stay. The layouts picker can
+  also give the page and the dock **half the window each**, in either order,
+  without moving the rail.
 - **Settings** (`/settings?tab=<id>`) and **Decisions** (`/decisions`) are sheets
   over the page, not pages of their own.
 
@@ -94,9 +96,9 @@ settings sheet instead of a smaller menu.
    page* / *Move chat to the right of the page*). The rail never moves; the dock
    and the page trade columns. The switch carries no pressed state — it names the
    move, not a mode.
-8. **Go full screen with the chat.** Press **Full screen chat** at the trailing
-   end of the dock's top row — the tab strip when one is drawn, the header row
-   otherwise. The main page collapses, the chat takes the workspace right of the
+8. **Go full screen with the chat.** Press **Full screen chat** in the dock's
+   bottom action bar, next to the **Notebox** icon. The main page collapses, the
+   chat takes the workspace right of the
    rail, and the rail with its **Chats** list stays; the control now reads **Exit
    full screen chat**. **Mod+Shift+F** toggles the same mode from anywhere. The
    mode is session state, not a preference: relaunching brings the two-pane
@@ -156,9 +158,10 @@ The window title bar:
   opens the starred-theme quick menu on hover or keyboard focus; then the
   **Settings** gear, which is a plain link to the settings sheet. The gear has no
   popover and no expanded state — one press opens the whole sheet over the page
-  you were on. The strip's layouts picker and the dock's own **Full screen chat**
+  you were on. The strip's layouts picker and the dock's **Full screen chat**
   control are one state, not two: either door moves the picker's tick and the
   other control's pressed state, and **Mod+Shift+F** toggles it from anywhere.
+  The full-screen door itself lives in the dock's bottom action bar.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -204,17 +207,19 @@ The rail:
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
   pulses when the count grows.
-- A divider, then the foot: **Log** closes the rail's navigation, the **vault
-  chip** names the workspace, and the collapse toggle holds the row's trailing
-  end — the sidebar's bottom corner. The Log and the chip share what the toggle
-  leaves, so the chip sits one toggle left of the rail's trailing edge rather
-  than flush against it. Wide, the chip shows the vault's name and a caret; thin,
-  the three stack — the vault's initials under the Log icon, with the expand
-  emblem closing the column. Clicking the chip
-  raises the **Switch vault** dialog: every recent vault with the open one marked
-  **Open now**, a note that switching loads that folder's files in place, and
-  **Open another folder…** for a folder this computer has never seen. The
-  version badge is not here — it lives in the dock's bottom bar.
+- A divider, then the foot, in two rows. The first closes the rail's navigation:
+  **Log** on the left, the **vault chip** naming the workspace on the right, the
+  two splitting the row. The second is the rail's caption line: the **version
+  badge** under the Log and the sidebar's collapse toggle under the chip, at the
+  column's bottom trailing corner. The build number glows there when a newer
+  release exists, with **Update available** beside it while the rail is wide
+  enough for the words. Wide, the chip shows the vault's name and a caret; thin,
+  the rows stack — the Log's icon, the vault's initials, the build number — and
+  the expand emblem moves up to the topband, where the way back belongs.
+  Clicking the chip raises the **Switch vault** dialog: every recent vault with
+  the open one marked **Open now**, a note that switching loads that folder's
+  files in place, and **Open another folder…** for a folder this computer has
+  never seen.
 
 The main pane is the page's own column, beginning directly under the title bar.
 It is the element the chat reads as the current page (`data-page-context-root`),
@@ -239,17 +244,19 @@ The chat dock:
   approval, or — for a chat the app started rather than the operator — a small
   icon for what started it, chosen from a task handed over with **Send to
   agent**, a review interview, a planning session or an automation run, and
-  remembered with the chat. Tabs share the strip and shrink with the dock the way
-  a browser's do, each keeping a floor of about three characters of its chat's
-  name and then an ellipsis, beside that mark and its close control; once they
-  are all at the floor the strip stops squeezing and scrolls sideways, moved by
-  the wheel or its own thin scrollbar, and the tab that comes in front is
-  scrolled into view. A **+** immediately after the last tab is **New chat tab** —
+  remembered with the chat. Each tab takes the width of its chat's name — up to
+  about three or four words — rather than stretching or being cut short while the
+  strip has room; only when the strip fills do the tabs compress, labels
+  truncating toward a floor of about three characters of the name and an
+  ellipsis beside that mark and its close control. Once they are all at the floor
+  the strip stops squeezing and scrolls sideways, moved by the wheel or its own
+  thin scrollbar, and the tab that comes in front is scrolled into view. A **+** immediately after the last tab is **New chat tab** —
   the plus sits where the next tab will appear, not on the strip's trailing edge.
   A middle click closes a tab and **Ctrl/Cmd+W** closes the tab in front.
   Right-clicking a tab opens **Pin**, **Rename**, **Archive** and **Delete**.
-- **Pinned chats** lead the strip as fixed squares: the label's first letter and a
-  small pin, no close control. A pinned chat is durable state, so it has a tab on
+- **Pinned chats** lead the strip: a pinned tab leads with the pin in the slot a
+  plain tab spends on its status mark, then wears the chat's name like any other
+  tab, with no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
   until it is unpinned.
 - **Archived chats** are not in the working list by default. **View options** →
@@ -257,11 +264,16 @@ The chat dock:
   live rows; **Only archived** shows the archive alone. An archived row is
   restorable from its own menu but never openable, and the dock's own tab strip
   stays live-only.
-- The dock's **top row** — the tab strip when one is drawn, the header row
-  otherwise — ends in **Full screen chat** / **Exit full screen chat**. Choosing
-  it collapses the main page and gives the dock the workspace right of the rail;
+- The dock's **bottom action bar** leads with **New chat**, the **Notebox** and
+  **Full screen chat** / **Exit full screen chat**. Choosing the last collapses
+  the main page and gives the dock the workspace right of the rail;
   **Mod+Shift+F** does the same from anywhere. It is the window's only
-  full-screen control, and it is drawn pressed while the mode is on.
+  full-screen control; while the mode is on its glyph turns around to the
+  minimize pair, but the slot keeps the bar's resting look rather than lighting
+  up as a selected surface. The bar is a card at its own fixed width, centred on
+  the composer box — a wider field does not stretch it, and it never reaches past
+  the field it belongs to — floating with a margin on every side and softly
+  rounded, in the split dock and in full screen alike.
 - The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
   The history is not a dock surface: the whole chat list lives in the rail's
   **Chats** section.
@@ -277,12 +289,15 @@ The chat dock:
   The message text keeps the same margins: the transcript's content box is the
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.
-- The dock's bottom action bar under the composer, in order: **New chat**,
-  **Notebox**, **Keyboard shortcuts** (opens the reference as a dock
-  surface), **Chat display settings** (opens Settings → **Chat display**), the
-  two-panes side switch, **Collapse chat**, and the version badge (**Check for
-  updates**), which glows and gains **Update available** when a release is
-  offered.
+- The dock's bottom action bar under the composer: a card centred on the composer
+  at its own fixed width — a wider field for reading does not stretch the dock's
+  chrome — floating with a margin on every side and softly rounded, and never
+  wider than the field it belongs to, in the split dock and in full screen alike.
+  In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
+  chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
+  display settings** (opens Settings → **Chat display**), the two-panes side
+  switch, and **Collapse chat**. The build number is not here: it lives in the
+  rail's foot, under the **Log**.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 
@@ -391,7 +406,8 @@ catalogued in [Settings](./28-settings.md).
 - A pinned chat cannot be archived or deleted until it is unpinned: while pinned,
   its sidebar row hides the hover archive control and its row menu loses
   **Archive** and **Delete**. The tab's own menu offers **Unpin**.
-- A tab keeps at least about three characters of its chat's name and an ellipsis
+- A tab is as wide as its chat's name up to a few words; when the strip fills,
+  it keeps at least about three characters of its chat's name and an ellipsis
   beside its leading mark and close control. When the strip runs out of room it
   scrolls sideways rather than squeezing the tabs further, and the tab that comes
   in front is scrolled into view.

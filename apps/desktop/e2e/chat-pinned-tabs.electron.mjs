@@ -16,8 +16,8 @@
  *  1. A pinned chat is not a tab at boot. The pin is durable Hermes state, so a
  *     pinned chat must be in the strip on the landing, ahead of the chats this
  *     run opened, without anything being clicked first.
- *  2. The pinned tab is drawn as a normal tab — a label and a close control —
- *     instead of a square with the chat's first letter and a small pin. Closing
+ *  2. The pinned tab is drawn as a pin-led tab with the chat's name — no close
+ *     control — instead of a square with the chat's first letter. Closing
  *     it would then silently drop a tab the operator made permanent.
  *  3. A pinned row still offers the hover Archive control, or its three-dot
  *     menu still offers Archive/Delete: both would take a pinned chat out from
@@ -30,13 +30,13 @@
  *     with a close control again.
  *  7. The sidebar row does not regain its Archive hover control (or its
  *     Archive/Delete menu items) once the pin is gone.
- *  8. Pin from the tab menu does not re-pin, or the square does not come back.
+ *  8. Pin from the tab menu does not re-pin, or the pin-led tab does not come back.
  *  9. Rename from the tab menu does not open the header field on that tab's
  *     chat, or the commit does not patch that chat's title.
  * 10. Archive from the tab menu leaves the row or the tab behind.
  * 11. Delete from the tab menu writes without asking, or the ask is not the
  *     app's own dialog.
- * 12. A strip with a single pinned tab is not drawn: the pinned square is the
+ * 12. A strip with a single pinned tab is not drawn: the pinned tab is the
  *     reason the strip exists, so one pinned tab is still a strip.
  * 13. The dock header keeps its Archive icon while the active chat is pinned.
  * 14. Bridge stubs masking real calls — anything the surfaces reach for that is
@@ -140,9 +140,9 @@ const SAMPLE = `(() => {
     });
   }
 
-  // The dock's strip. A pinned chat draws as a square: a letter and a small pin,
-  // no label and no close control. Those are reported separately so a square is
-  // read as a square rather than as a normal tab that lost its label.
+  // The dock's strip. A pinned chat leads with its pin and keeps its name, with
+  // no close control; those are reported separately so a pinned tab is read as
+  // pinned rather than as a normal tab that lost its close.
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
     const main = tab.matches("[role=tab]") ? tab : tab.querySelector("[role=tab]");
     const labelEl = tab.querySelector(".chat-panel__tab-label");
@@ -580,26 +580,25 @@ async function main() {
     // Park the pointer away from the rows before the first sample.
     await unhover();
 
-    // 1 — the pinned chat is a tab at boot, drawn as a square ahead of the chat
-    // the dock opened: first letter, a small pin, no label, no close control.
+    // 1 — the pinned chat is a tab at boot, ahead of the chat the dock opened:
+    // a leading pin, the chat's name, no close control.
     mark("landing");
     const landing = await settle(300);
     states.landing = landing;
     check(
-      "the landing draws two tabs: the pinned square first, the open chat second",
+      "the landing draws two tabs: the pinned tab first, the open chat second",
       landing.tabCount === 2 &&
         landing.tabs[0]?.pinned === true &&
-        landing.tabs[0]?.letter === "P" &&
         landing.tabs[0]?.pin === true &&
         landing.tabs[0]?.hasClose === false &&
-        landing.tabs[0]?.label === "" &&
+        landing.tabs[0]?.label === "Pinned note" &&
         landing.tabs[1]?.pinned === false &&
         landing.tabs[1]?.label === "Alpha planning" &&
         landing.tabs[1]?.hasClose === true,
       JSON.stringify(landing.tabs),
     );
     check(
-      "the pinned square is a compact tab, not a full-width one",
+      "the pinned tab is a compact tab, not a full-width one",
       typeof landing.tabs[0]?.box?.width === "number" &&
         typeof landing.tabs[1]?.box?.width === "number" &&
         landing.tabs[0].box.width < landing.tabs[1].box.width,
@@ -624,7 +623,7 @@ async function main() {
     );
     await shot("landing");
 
-    // 2 — clicking the square opens the pinned chat; the header hides the
+    // 2 — clicking the pinned tab opens the pinned chat; the header hides the
     // Archive icon, because a pinned chat must be unpinned before it can be put
     // away (its tab is permanent).
     mark("active-pinned");
@@ -632,7 +631,7 @@ async function main() {
     const activePinned = await settle();
     states.activePinned = activePinned;
     check(
-      "the pinned chat is the open thread when its square is clicked",
+      "the pinned chat is the open thread when its pin-led tab is clicked",
       activePinned.heading === "Pinned note" &&
         activePinned.tabs.find((tab) => tab.pinned)?.active === true,
       JSON.stringify({ heading: activePinned.heading, tabs: activePinned.tabs }),
@@ -729,7 +728,7 @@ async function main() {
       JSON.stringify(menuEscaped.tabMenu),
     );
 
-    // 7 — Unpin from the tab menu: the patch reaches the gateway, the square
+    // 7 — Unpin from the tab menu: the patch reaches the gateway, the pin
     // becomes a normal tab with a close control, and the header's Archive icon
     // comes back because the active chat is no longer pinned.
     mark("unpin");
@@ -746,12 +745,13 @@ async function main() {
     );
     const normalTab = unpinnedTab.tabs.find((tab) => tab.label === "Pinned note");
     check(
-      "the square became a normal tab with a close control",
+      "the pinned tab became a normal tab with a close control",
       unpinnedTab.tabMenu === null &&
         unpinnedTab.tabCount === 2 &&
         unpinnedTab.tabs.every((tab) => tab.pinned === false) &&
         normalTab?.hasClose === true &&
-        normalTab?.letter === null,
+        normalTab?.pin === false &&
+        normalTab?.label === "Pinned note",
       JSON.stringify(unpinnedTab.tabs),
     );
     check(
@@ -809,7 +809,7 @@ async function main() {
       JSON.stringify(unpinnedTabMenu.tabMenu),
     );
 
-    // 10 — Pin from that menu re-pins: the square comes back at the front.
+    // 10 — Pin from that menu re-pins: the pin-led tab comes back at the front.
     mark("repin");
     check("clicked Pin in the tab menu", await clickTabMenuItem("Pin chat"), "no Pin item");
     const repinned = await settle();
@@ -821,11 +821,11 @@ async function main() {
       JSON.stringify(repinned.patchCalls.at(-1)),
     );
     check(
-      "the pinned square came back at the front of the strip",
+      "the pinned tab came back at the front of the strip",
       repinned.tabMenu === null &&
         repinned.tabCount === 2 &&
         repinned.tabs[0]?.pinned === true &&
-        repinned.tabs[0]?.letter === "P" &&
+        repinned.tabs[0]?.label === "Pinned note" &&
         repinned.tabs[0]?.pin === true &&
         repinned.tabs[0]?.hasClose === false,
       JSON.stringify(repinned.tabs),
@@ -871,7 +871,7 @@ async function main() {
     await shot("renamed-tab");
 
     // 12 — Archive from the tab menu removes the row and the tab; the pinned
-    // square is then the strip's only tab, and the strip is still drawn.
+    // pinned tab is then the strip's only tab, and the strip is still drawn.
     mark("archive");
     check("right-clicked the renamed tab", await rightClickTabLabel("Alpha renamed"), "no Alpha tab");
     await settle();
@@ -894,7 +894,7 @@ async function main() {
       }),
     );
     check(
-      "one pinned tab still draws the strip, with the pinned square as its only tab",
+      "one pinned tab still draws the strip, with the pinned tab as its only tab",
       archivedFromTabMenu.tabCount === 1 &&
         archivedFromTabMenu.tabs[0]?.pinned === true &&
         archivedFromTabMenu.strip !== null &&
@@ -917,7 +917,7 @@ async function main() {
     const bravoTab = await settle();
     states.bravoTab = bravoTab;
     check(
-      "Bravo opened as a normal tab beside the pinned square",
+      "Bravo opened as a normal tab beside the pinned tab",
       bravoTab.tabCount === 2 &&
         bravoTab.tabs[1]?.label === "Bravo budget" &&
         bravoTab.tabs[1]?.active === true &&
@@ -959,16 +959,16 @@ async function main() {
       }),
     );
 
-    // 15 — what is left is the pinned square, alone in a strip that is still
+    // 15 — what is left is the pinned tab, alone in a strip that is still
     // drawn: the pin, not a second tab, is why the strip exists.
     mark("final");
     const final = await settle();
     states.final = final;
     check(
-      "the pinned chat's square is the strip's one tab, and the strip is still drawn",
+      "the pinned chat's tab is the strip's one tab, and the strip is still drawn",
       final.tabCount === 1 &&
         final.tabs[0]?.pinned === true &&
-        final.tabs[0]?.letter === "P" &&
+        final.tabs[0]?.label === "Pinned note" &&
         final.tabs[0]?.pin === true &&
         final.tabs[0]?.hasClose === false &&
         final.strip !== null,

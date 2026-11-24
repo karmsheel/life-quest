@@ -237,13 +237,15 @@ describe("chat sessions harness", () => {
       assert.equal(landing.chainBody?.hidden, true, "the chain painted on landing");
       assert.equal(landing.signalListCalls, 0, "the chain was read before it was asked for");
 
-      // The dock's bottom action bar: five slots in order, the chain second and
-      // the shortcuts reference third. The history slot that used to lead the
-      // bar is gone with the dock's list.
+      // The dock's bottom action bar: seven slots in order — the new chat, the
+      // chain (Notebox), the full-screen door, then the trailing group. The
+      // history slot that used to lead the bar is gone with the dock's list.
       const slots = [
         "New chat",
         "Notebox",
+        "Full screen chat",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ];
@@ -254,12 +256,12 @@ describe("chat sessions harness", () => {
       );
       assert.deepEqual(
         landing.actions.map((slot) => slot.disabled),
-        [false, false, false, false, false],
+        slots.map(() => false),
         "an action slot is inert",
       );
       assert.deepEqual(
         landing.actions.map((slot) => slot.opacity),
-        [1, 1, 1, 1, 1],
+        slots.map(() => 1),
         "an action slot is dimmed",
       );
       assert.equal(
@@ -285,8 +287,17 @@ describe("chat sessions harness", () => {
         `the action bar is missing: ${JSON.stringify(landing.actionsBar)}`,
       );
       assert.ok(
-        Math.abs((landing.actionsBar?.bottom ?? 0) - landing.panel.bottom) <= 2,
-        `the action bar does not ride the bottom edge: ${landing.actionsBar?.bottom}px vs ${landing.panel.bottom}px`,
+        Boolean(landing.actionsBar && landing.panel) &&
+          landing.actionsBar.bottom < landing.panel.bottom &&
+          landing.actionsBar.bottom <= landing.panel.bottom - 4,
+        `the action bar does not float inside the dock's bottom: ${landing.actionsBar?.bottom}px in a panel ending at ${landing.panel.bottom}px`,
+      );
+      assert.ok(
+        Boolean(landing.actionsBar && landing.composerBox) &&
+          Math.abs(landing.actionsBar.width - landing.composerBox.width) <= 1 &&
+          Math.abs(landing.actionsBar.left - landing.composerBox.left) <= 1 &&
+          Math.abs(landing.actionsBar.right - landing.composerBox.right) <= 1,
+        `the action bar left the composer box's measure: ${JSON.stringify(landing.actionsBar)} vs ${JSON.stringify(landing.composerBox)}`,
       );
       assert.ok(
         channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,

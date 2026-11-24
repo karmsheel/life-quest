@@ -316,7 +316,7 @@ type ChatSessionsContextValue = {
    * working set, so the two differ exactly by the pinned chats.
    */
   tabIds: string[];
-  /** The ids in `tabIds` that are pinned chats: the ones drawn as squares. */
+  /** The ids in `tabIds` that are pinned chats: the ones led by a pin. */
   pinnedTabIds: string[];
   activeSession: HermesSession | null;
   /**
@@ -1430,7 +1430,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    */
   const closeTab = useCallback(
     (id: string, emptySurface: ChatSurface = "thread") => {
-      // A pinned chat's square is the operator's chosen permanent tab: closing
+      // A pinned chat's tab is the operator's chosen permanent one: closing
       // it is what Unpin is for, and nothing may drop it behind their back.
       if (sessionsRef.current.find((s) => s.id === id)?.pinned) return;
       // A run left behind a closed tab would keep streaming into a chat nobody
@@ -1537,7 +1537,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }
       }
       if (typeof patch.pinned === "boolean") {
-        // An unpin keeps the chat on screen: the square it wore as a pinned tab
+        // An unpin keeps the chat on screen: the pin it wore as a pinned tab
         // becomes an ordinary tab, so the operator can still see the
         // conversation they just un-pinned (and reach Rename/Archive/Delete on
         // it). A pin clears the same suppression, so a chat closed in an earlier

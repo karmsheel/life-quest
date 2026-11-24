@@ -129,7 +129,7 @@ const SAMPLE = `(() => {
   const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
   // The titlebar carries no chat control at all now: the side switch and the
   // collapse left for the dock's bottom bar, and the full-screen door it once
-  // kept as its one exception is the dock's own top-row control. The SAMPLE
+  // kept as its one exception is in that bar too, beside the Notebox. The SAMPLE
   // keeps every one of those facts so the assertions can say "here" and "not
   // there" rather than only one.
   const staleTitlebar = {
@@ -261,7 +261,14 @@ const SAMPLE = `(() => {
             ? {
                 label: versionBadge.getAttribute("aria-label"),
                 text: (versionBadge.textContent || "").trim(),
-                box: box(versionBadge)
+                box: box(versionBadge),
+                inBar: Boolean(actions && actions.contains(versionBadge)),
+                inRail: Boolean(
+                  document.querySelector(".nav-rail")?.contains(versionBadge)
+                ),
+                inMeta: Boolean(
+                  document.querySelector(".nav-rail__meta")?.contains(versionBadge)
+                )
               }
             : null
         }
@@ -540,10 +547,9 @@ function checkArrangement(label, state, side) {
 /**
  * Where the controls live. The titlebar's trailing cluster is the day/night
  * control and the settings menu, and nothing else: no chat side switch,
- * collapse or full-screen door rides the drag band any more — the door is the
- * dock's own top-row control now — and the dock's bottom action bar carries the
- * side switch immediately before the collapse it belongs with, in the order the
- * bar ships.
+ * collapse or full-screen door rides the drag band any more — the door is in the
+ * dock's bottom action bar now — and that bar carries the side switch
+ * immediately before the collapse it belongs with, in the order the bar ships.
  */
 function checkControls(label, state, side) {
   const controls = state.trailing?.controls ?? [];
@@ -556,9 +562,9 @@ function checkControls(label, state, side) {
   // The titlebar's trailing cluster is the layouts control, the day/night
   // control and the settings menu. The keyboard-shortcuts control, like the chat
   // controls that left before it — the side switch, the collapse and the
-  // full-screen door — now lives in the dock's own bar or top row; a stale copy
-  // anywhere in the strip is the regression this guards, because a "contained"
-  // control is not a correctly placed one.
+  // full-screen door — now lives in the dock's own bottom action bar; a stale
+  // copy anywhere in the strip is the regression this guards, because a
+  // "contained" control is not a correctly placed one.
   const expectedTrailing = [
     "layouts-menu__trigger",
     "theme-mode-toggle",
@@ -631,17 +637,17 @@ function checkControls(label, state, side) {
   );
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
-  // slot, the chain, then the trailing run — the shortcuts reference, the chat
-  // display settings it leads into, the side switch and the way out. "Chat
-  // history" left the bar with the list surface, so its return is a stale slot
-  // rather than a shipped one; the display-settings control arrived with the
-  // chat's reading controls, between the shortcuts reference and the switch.
+  // slot, the chain and the full-screen door in the leading group, then the
+  // trailing run — the shortcuts reference, the chat display settings it leads
+  // into, the side switch and the way out. "Chat history" left the bar with the
+  // list surface, so its return is a stale slot rather than a shipped one.
   const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
   check(
-    `${label}: the bar carries its six actions in order`,
+    `${label}: the bar carries its seven actions in order`,
     same(barLabels, [
       "New chat",
       "Notebox",
+      "Full screen chat",
       "Keyboard shortcuts",
       "Chat display settings",
       expectedSwitchLabel,
@@ -1210,24 +1216,22 @@ async function main() {
       `collapse action ${JSON.stringify(restored.collapseAction)}`,
     );
     check(
-      "restored: the version badge holds the bar's trailing end",
-      Boolean(barBox && badgeBox) &&
-        badgeBox.left > (collapseBox?.right ?? 0) &&
-        badgeBox.right <= barBox.right &&
-        barBox.right - badgeBox.right <= 10 &&
-        badgeBox.top >= barBox.top &&
-        badgeBox.bottom <= barBox.bottom,
-      `badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}, collapse ends at ${collapseBox?.right}px`,
-    );
-    check(
-      "restored: the collapse control sits just left of the version badge",
-      Boolean(collapseBox && badgeBox) &&
+      "restored: the collapse control holds the dock bar's trailing end",
+      Boolean(barBox && collapseBox) &&
         collapseBox.left > barBox.left + barBox.width / 2 &&
-        collapseBox.right <= badgeBox.left &&
-        badgeBox.left - collapseBox.right <= 12 &&
+        collapseBox.right <= barBox.right &&
+        barBox.right - collapseBox.right <= 10 &&
         collapseBox.top >= barBox.top &&
         collapseBox.bottom <= barBox.bottom,
-      `action ${JSON.stringify(collapseBox)} vs badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}`,
+      `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+    );
+    check(
+      "restored: the version badge lives in the rail's caption row, not the bar",
+      Boolean(restored.actions?.badge && badgeBox) &&
+        restored.actions.badge.inRail === true &&
+        restored.actions.badge.inMeta === true &&
+        restored.actions.badge.inBar === false,
+      `badge ${JSON.stringify(restored.actions?.badge)}`,
     );
     check(
       "restored: the bottom-bar collapse names its move and its side",

@@ -7,7 +7,7 @@
  * operator clicked the version number — and they had no reason to click it,
  * because nothing said there was news. Main now reads the feed every
  * `UPDATE_POLL_MS` and pushes what it finds over `onUpdateDecision`; this provider
- * turns that push into a state change, so the dock's build number glows without
+ * turns that push into a state change, so the rail's build number glows without
  * the operator asking. There is no in-window notice card: the glow, its caption
  * and the build number's own dialog are the whole surface.
  *

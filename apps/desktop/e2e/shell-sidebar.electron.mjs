@@ -337,8 +337,9 @@ const SAMPLE = `(() => {
     titlebarVault: titlebarVault
       ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
       : null,
-    // The rail's foot: the Log row, the vault chip and the collapse toggle on one
-    // line when the rail is wide, stacked when it is thin.
+    // The rail's foot: two rows. The navigation row carries the Log and the
+    // vault chip; the caption row under it carries the build number and the
+    // collapse toggle. Thin, each row stacks.
     foot: foot
       ? {
           box: box(foot),
@@ -349,6 +350,40 @@ const SAMPLE = `(() => {
             className: typeof el.className === "string" ? el.className : "",
             box: box(el)
           })),
+          footRow: (() => {
+            const el = foot.querySelector(".nav-rail__foot-row");
+            return el ? box(el) : null;
+          })(),
+          meta: (() => {
+            const el = foot.querySelector(".nav-rail__meta");
+            if (!el) return null;
+            return {
+              box: box(el),
+              display: getComputedStyle(el).display,
+              flexDirection: getComputedStyle(el).flexDirection,
+              children: Array.from(el.children).map((child) => ({
+                tag: child.tagName.toLowerCase(),
+                className:
+                  typeof child.className === "string" ? child.className : "",
+                box: box(child)
+              })),
+              version: (() => {
+                const badge = el.querySelector(".update-badge");
+                return badge
+                  ? {
+                      box: box(badge),
+                      text: (badge.textContent || "").trim(),
+                      label: badge.getAttribute("aria-label"),
+                      display: getComputedStyle(badge).display
+                    }
+                  : null;
+              })(),
+              toggle: (() => {
+                const control = el.querySelector(".nav-rail__collapse");
+                return control ? { box: box(control) } : null;
+              })()
+            };
+          })(),
           logRow: box(foot.querySelector(".nav-rail__link")),
           collapse: box(foot.querySelector(".nav-rail__collapse"))
         }
@@ -1553,39 +1588,47 @@ async function main() {
       `in rail ${expanded.vaultChip?.inRail}, in foot ${expanded.vaultChip?.inFoot}`,
     );
     check(
-      "the foot's three controls are the Log row, the vault chip and the collapse toggle",
+      "the foot is two rows: the navigation row and the caption row",
       Boolean(expanded.foot) &&
-        expanded.foot.children.length === 3 &&
-        expanded.foot.children[0].className.includes("nav-rail__link") &&
-        expanded.foot.children[1].className.includes("nav-rail__vault") &&
-        expanded.foot.children[2].className.includes("nav-rail__collapse"),
+        expanded.foot.children.length === 2 &&
+        expanded.foot.children[0].className.includes("nav-rail__foot-row") &&
+        expanded.foot.children[1].className.includes("nav-rail__meta") &&
+        Boolean(expanded.foot.footRow && expanded.foot.meta?.box),
       `foot children ${JSON.stringify(expanded.foot?.children)}`,
     );
     check(
-      "the wide foot is one row",
+      "the wide foot stacks the caption row under the navigation row",
       expanded.foot?.display === "flex" &&
-        expanded.foot?.flexDirection === "row",
-      `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}`,
+        expanded.foot?.flexDirection === "column" &&
+        expanded.foot.meta.box.top >= (expanded.foot.footRow?.bottom ?? 0) - 1,
+      `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}, navigation ${JSON.stringify(expanded.foot?.footRow)}, caption ${JSON.stringify(expanded.foot?.meta?.box)}`,
     );
     check(
-      "the Log and the vault chip split the room the toggle leaves",
-      Boolean(expanded.foot?.logRow && expanded.vaultChip && expanded.railToggle) &&
+      "the Log and the vault chip split the navigation row",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip && expanded.foot.footRow) &&
         expanded.foot.logRow.width > 0 &&
         Math.abs(expanded.foot.logRow.width - expanded.vaultChip.box.width) <= 1 &&
-        expanded.foot.logRow.width >= expanded.foot.box.width * 0.33 &&
-        expanded.railToggle.box.width < expanded.foot.logRow.width * 0.5,
-      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} toggle ${JSON.stringify(expanded.railToggle?.box)} foot ${JSON.stringify(expanded.foot?.box)}`,
+        expanded.foot.logRow.width >= expanded.foot.footRow.width * 0.4,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} navigation row ${JSON.stringify(expanded.foot?.footRow)}`,
     );
-    // The chip is shifted left to make room for the toggle: it ends one gap before
-    // the toggle's leading edge, and the toggle ends at the rail's trailing edge.
+    // The build number takes the caption row's leading end, under the Log; the
+    // collapse toggle holds its trailing end, under the vault chip.
     check(
-      "the vault chip sits one toggle left of the rail's trailing edge",
-      Boolean(expanded.vaultChip && expanded.railToggle && expanded.foot && expanded.rail) &&
-        expanded.vaultChip.box.right < expanded.railToggle.box.left &&
-        expanded.railToggle.box.left - expanded.vaultChip.box.right <= 8 &&
-        expanded.railToggle.box.right >= expanded.foot.box.right - 1 &&
-        expanded.foot.box.right >= expanded.rail.box.right - 8,
-      `chip ends at ${expanded.vaultChip?.box.right}px, toggle starts at ${expanded.railToggle?.box.left}px, toggle ends at ${expanded.railToggle?.box.right}px, foot ends at ${expanded.foot?.box.right}px, rail ends at ${expanded.rail?.box.right}px`,
+      "the build number sits under the Log in the caption row",
+      Boolean(expanded.foot?.meta?.version && expanded.foot?.logRow && expanded.foot?.meta?.box) &&
+        expanded.foot.meta.version.display !== "none" &&
+        expanded.foot.meta.version.text.startsWith("v") &&
+        Math.abs(expanded.foot.meta.version.box.left - (expanded.foot.footRow?.left ?? 0)) <= 6,
+      `version ${JSON.stringify(expanded.foot?.meta?.version)}, navigation row ${JSON.stringify(expanded.foot?.footRow)}`,
+    );
+    check(
+      "the sidebar toggle sits under the vault chip in the caption row",
+      Boolean(expanded.foot?.meta?.toggle && expanded.vaultChip && expanded.foot?.meta?.box) &&
+        expanded.foot.meta.toggle.box.top >= expanded.vaultChip.box.bottom - 1 &&
+        expanded.foot.meta.toggle.box.right >= expanded.foot.meta.box.right - 6 &&
+        expanded.foot.meta.toggle.box.right >= expanded.vaultChip.box.right - 8 &&
+        expanded.foot.meta.toggle.box.left <= expanded.vaultChip.box.right,
+      `toggle ${JSON.stringify(expanded.foot?.meta?.toggle?.box)}, chip ${JSON.stringify(expanded.vaultChip?.box)}, caption row ${JSON.stringify(expanded.foot?.meta?.box)}`,
     );
     check(
       "the Log and the vault chip share the foot's row",
@@ -2289,6 +2332,17 @@ async function main() {
         collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
       `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, children ${collapsed.foot?.children.length}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
     );
+    // The caption row retires in the icon column: 56px cannot hold the build
+    // number as a target, so the thin foot is the Log and the vault's initials.
+    check(
+      "the thin rail hides the caption row and its build number",
+      Boolean(collapsed.foot?.meta) &&
+        collapsed.foot.meta.display === "none" &&
+        Boolean(collapsed.foot.meta.version?.box) &&
+        collapsed.foot.meta.version.box.width === 0 &&
+        collapsed.foot.meta.version.box.height === 0,
+      `caption row ${JSON.stringify(collapsed.foot?.meta?.display)}, version ${JSON.stringify(collapsed.foot?.meta?.version)}, box ${JSON.stringify(collapsed.foot?.meta?.box)}`,
+    );
     // The way back belongs at the top of the thin column: the square control sits
     // in the header, above the wing tabs, not buried under the rows at the foot.
     check(
@@ -2551,11 +2605,13 @@ async function main() {
       `label ${JSON.stringify(restored.railToggle?.label)}, aria-expanded ${JSON.stringify(restored.railToggle?.ariaExpanded)}, icon ${JSON.stringify(restored.railToggle?.icon)}`,
     );
     check(
-      "reopen restores the foot's single row and the chip's full name",
-      restored.foot?.flexDirection === "row" &&
+      "reopen restores the foot's two rows and the chip's full name",
+      restored.foot?.flexDirection === "column" &&
+        restored.foot?.children.length === 2 &&
+        restored.foot?.meta?.display !== "none" &&
         restored.vaultChip?.name?.display !== "none" &&
         restored.vaultChip?.initials?.display === "none",
-      `foot direction ${JSON.stringify(restored.foot?.flexDirection)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
+      `foot direction ${JSON.stringify(restored.foot?.flexDirection)}, children ${restored.foot?.children.length}, caption display ${JSON.stringify(restored.foot?.meta?.display)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
     );
     check(
       "reopen restores the horizontal wing switcher",

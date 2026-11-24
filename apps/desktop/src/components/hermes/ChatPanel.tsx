@@ -67,7 +67,6 @@ import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
-import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
@@ -859,8 +858,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * `.chat-panel__tabs`). A tab that opened off the right edge would be in front
    * but invisible — the operator would have a chat on screen and no tab to find
    * it by — so every change of the front tab or the strip walks it back into the
-   * visible band, and no further. The trailing full-screen control sticks to
-   * that edge, so the band ends where the control begins.
+   * visible band, and no further. Nothing rides the band's trailing edge any
+   * more: the plus travels with the tabs, so the whole band is tabs.
    */
   useEffect(() => {
     const strip = tabsRef.current;
@@ -870,17 +869,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       `[data-tab-id="${CSS.escape(sessionId)}"]`,
     );
     if (!tab) return;
-    const trailing = strip.querySelector<HTMLElement>(
-      ".chat-panel__tabs-trailing",
-    );
-    const rightInset = trailing ? trailing.getBoundingClientRect().width : 0;
     const port = strip.getBoundingClientRect();
     const box = tab.getBoundingClientRect();
     const gap = 8;
     if (box.left < port.left) {
       strip.scrollLeft -= port.left - box.left + gap;
-    } else if (box.right > port.right - rightInset) {
-      strip.scrollLeft += box.right - (port.right - rightInset) + gap;
+    } else if (box.right > port.right) {
+      strip.scrollLeft += box.right - port.right + gap;
     }
   }, [sessionId, orderedTabIds, view, open]);
 
@@ -1528,7 +1523,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * The browser's other tab gesture: the middle button closes the tab under the
-   * pointer. A pinned square is not a closable tab — Unpin is the way out of the
+   * pointer. A pinned tab is not a closable tab — Unpin is the way out of the
    * band, exactly as the close control's absence says — so that press is
    * swallowed but closes nothing. Swallowing matters on Linux, where a middle
    * press otherwise starts X11's primary-selection paste or autoscroll.
@@ -1548,13 +1543,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setTabMenu(null);
   }
 
-  /** Drop one chat out of the pinned band: the square goes back to a tab. */
+  /** Drop one chat out of the pinned band: the pin leaves its leading slot. */
   function unpinTab(id: string): void {
     closeTabMenu();
     void patchSession(id, { pinned: false });
   }
 
-  /** Raise one chat into the pinned band: its tab becomes a square. */
+  /** Raise one chat into the pinned band: its leading slot becomes the pin. */
   function pinTab(id: string): void {
     closeTabMenu();
     void patchSession(id, { pinned: true });
@@ -1998,22 +1993,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     ),
   } as CSSProperties;
 
-  /*
-    The dock's own full-screen door. It is drawn at the trailing end of the top
-    row — the tab strip when the thread has one, the header row on the chain and
-    shortcuts surfaces and on a thread with no tab yet — so the control is always
-    one click away whichever surface of the dock is in front. The class differs
-    only in size: the strip's band is tighter than a header row.
-  */
-  const focusToggle = (className: string) => (
-    <ChatFocusToggle
-      className={className}
-      testId="chat-fullscreen"
-      offLabel="Full screen chat"
-      onLabel="Exit full screen chat"
-    />
-  );
-
   return (
     <aside
       ref={panelRef}
@@ -2041,14 +2020,14 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
             A live tab's dot pulses, a tab waiting on an approval keeps a ring,
             and the close control stops a turn before it drops the tab. The
-            pinned band leads the strip and is drawn as squares. A pin is a
-            durable Hermes flag rather than a strip-local decoration, so a pinned
-            chat has a tab even on a launch where it was never opened — which is
-            why the strip shows with a single pinned chat and nothing else open.
-            A square carries the label's first letter and a filled pin in the
-            room the dot and label would take, and no close control: the way out
-            of the band is the menu's Unpin, so a pin is never dropped by a stray
-            press. Right-click opens that menu on any tab.
+            pinned band leads the strip: a pinned tab leads with the pin in the
+            slot a plain tab spends on its status mark, then wears the chat's
+            name like any other tab, and keeps no close control — the way out of
+            the band is the menu's Unpin, so a pin is never dropped by a stray
+            press. A pin is a durable Hermes flag rather than a strip-local
+            decoration, so a pinned chat has a tab even on a launch where it was
+            never opened — which is why the strip shows with a single pinned
+            chat and nothing else open. Right-click opens that menu on any tab.
           */}
           {view === "thread" && tabIds.length > 0 ? (
             <div
@@ -2065,15 +2044,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 const live = tabRun.sending;
                 const waiting = tabRun.approval !== null;
                 // A kickoff chat wears the mark of the work that started it
-                // instead of the plain status dot; the square keeps its letter.
+                // instead of the plain status dot.
                 const iconKind = chat.sessionIcons[id] ?? null;
                 const Icon = iconKind ? SESSION_ICON[iconKind] : null;
                 // A chat from another surface leads with that platform's mark,
                 // the same one the Chats row wears (see lib/platform-mark.tsx).
                 const PlatformMark = row ? platformMarkFor(row.source) : null;
-                // The square has room for one glyph, so it takes the first
-                // letter of the whitespace-trimmed label, uppercased.
-                const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
                 return (
                   <div
                     key={id}
@@ -2122,41 +2098,45 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       }}
                     >
                       {pinned ? (
-                        <>
-                          <span className="chat-panel__tab-letter" aria-hidden>
-                            {letter}
-                          </span>
+                        /*
+                          A pinned tab leads with the pin itself, in the slot a
+                          plain tab spends on its status mark, and then wears the
+                          chat's name like any other tab. The pin is what makes a
+                          tab pinned, not a square that hides the name; the live
+                          and approval states paint the pin the way they paint a
+                          status dot. It keeps no close control: a pin is never
+                          dropped by a stray press, only by the menu's Unpin.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
                           <Pin
                             className="chat-panel__tab-pin"
-                            size={10}
+                            size={11}
                             fill="currentColor"
-                            aria-hidden
                           />
-                        </>
+                        </span>
                       ) : (
-                        <>
-                          {/*
-                            The tab's leading mark: the status dot at rest, or
-                            the kickoff chat's own icon. The state (a live
-                            pulse, an approval ring) paints this one slot
-                            whichever mark it holds, so a chat with an icon
-                            loses nothing a plain tab shows.
-                          */}
-                          <span className="chat-panel__tab-mark" aria-hidden>
-                            {Icon ? (
-                              <Icon className="chat-panel__tab-icon" size={11} />
-                            ) : PlatformMark ? (
-                              <PlatformMark
-                                className="chat-panel__tab-icon"
-                                size={11}
-                              />
-                            ) : (
-                              <span className="chat-panel__tab-dot" />
-                            )}
-                          </span>
-                          <span className="chat-panel__tab-label">{label}</span>
-                        </>
+                        /*
+                          The tab's leading mark: the status dot at rest, the
+                          kickoff chat's own icon, or the platform's mark for a
+                          chat continued from another surface. The state (a live
+                          pulse, an approval ring) paints this one slot whichever
+                          mark it holds, so a chat with an icon loses nothing a
+                          plain tab shows.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
+                          {Icon ? (
+                            <Icon className="chat-panel__tab-icon" size={11} />
+                          ) : PlatformMark ? (
+                            <PlatformMark
+                              className="chat-panel__tab-icon"
+                              size={11}
+                            />
+                          ) : (
+                            <span className="chat-panel__tab-dot" />
+                          )}
+                        </span>
                       )}
+                      <span className="chat-panel__tab-label">{label}</span>
                     </button>
                     {pinned ? null : (
                       <button
@@ -2178,8 +2158,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 in miniature — the same store action, the same one-blank-at-a-
                 time rule — and it sits in the tab flow directly after the last
                 tab, where the next tab will appear, rather than parked on the
-                band's trailing edge. The strip's slack falls after the plus;
-                the full-screen door keeps the corner.
+                band's trailing edge. The strip's slack falls after the plus: the
+                strip is the chats, and the full-screen door lives in the bottom
+                action bar, where the dock keeps its other chrome.
               */}
               <button
                 type="button"
@@ -2190,15 +2171,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               >
                 <Plus size={13} aria-hidden />
               </button>
-              {/*
-                The strip's trailing corner: the way to the whole workspace. It
-                sticks to the band's trailing edge while the strip scrolls — a
-                full strip must not hide that door — and it is the only mark in
-                the strip that does so now that the plus travels with the tabs.
-              */}
-              <div className="chat-panel__tabs-trailing">
-                {focusToggle("chat-panel__icon-btn chat-panel__tab-focus")}
-              </div>
             </div>
           ) : null}
           {view === "chain" ? (
@@ -2207,14 +2179,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 The surface's name, marked by the rail's own Notebox glyph and
                 centred on the band: this is the dock's one page, so the heading
                 is a label for the column rather than a title pinned left of a
-                control. The focus door keeps the trailing corner to itself.
+                control. The full-screen door lives in the bottom action bar
+                now, so the band carries nothing but its name.
               */}
               <div className="chat-panel__chain-heading">
                 <Inbox size={15} aria-hidden />
                 <p className="chat-panel__heading">Notebox</p>
-              </div>
-              <div className="chat-panel__header-actions">
-                {focusToggle("chat-panel__icon-btn")}
               </div>
             </div>
           ) : view === "shortcuts" ? (
@@ -2247,7 +2217,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 >
                   <Pencil size={16} aria-hidden />
                 </Link>
-                {focusToggle("chat-panel__icon-btn")}
               </div>
             </div>
           ) : (
@@ -2351,15 +2320,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   )}
                 </span>
               ) : null}
-              {/*
-                A thread with no tab draws no strip, so the full-screen door
-                moves down into the name row rather than disappearing; a thread
-                with a tab keeps it in the strip above, where the operator's
-                pointer already is for the tabs themselves.
-              */}
-              <div className="chat-panel__header-actions">
-                {tabIds.length === 0 ? focusToggle("chat-panel__icon-btn") : null}
-              </div>
             </div>
           )}
           {/*
@@ -3218,9 +3178,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             The dock's own actions, pinned to the bottom of the bar and shared by
             every surface. The bar leads with the new-chat slot: the whole
             history lives in the sidebar, so this bar does not carry a second
-            entry point to it. The chain is the dock's second way into the
-            Life-Chain, alongside the rail's, and the side-switch and collapse
-            controls trail the group at the bar's far right.
+            entry point to it. The full-screen door follows it, beside the chain
+            (the Notebox): the mode is a way of reading the chat, and the bar is
+            the dock's one piece of chrome every surface shares, so this is where
+            the control can always be found — whichever surface is in front. The
+            side-switch and collapse controls trail the group at the bar's far
+            right.
           */}
           <nav className="chat-panel__actions" aria-label="Dock actions">
             <button
@@ -3242,6 +3205,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             >
               <Inbox size={20} aria-hidden />
             </button>
+            {/*
+              The full-screen door sits with the chain in the bar's leading
+              group: both are ways of changing what the dock shows, and the bar
+              is shared by every surface — so a thread with no tab, the chain and
+              the shortcuts reference all keep the same door in the same place.
+              The component carries its own words and its own arrow-pair, and it
+              is the window's one door to the mode (Mod+Shift+F is the shortcut).
+            */}
+            <ChatFocusToggle
+              className="chat-panel__icon-btn chat-panel__action"
+              testId="chat-fullscreen"
+              offLabel="Full screen chat"
+              onLabel="Exit full screen chat"
+              iconSize={20}
+            />
             {/*
               The keyboard-shortcuts reference, at the head of the trailing
               group and beside the switch it now shares the corner with: it is a
@@ -3323,13 +3301,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <PanelRightClose size={20} aria-hidden />
               )}
             </button>
-            {/*
-              The build number, and the app's manual update check, at the bar's
-              trailing end: the operator's hand is already here when they are done
-              with the dock, and the number is chrome, not a page. It stays a
-              control in every state; the glow is what says a release is waiting.
-            */}
-            <UpdateBadge />
           </nav>
         </div>
 

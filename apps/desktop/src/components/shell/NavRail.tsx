@@ -6,6 +6,7 @@ import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
 import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { NavBrandButton, NavCollapseButton } from "./NavCollapseButton";
+import { UpdateBadge } from "./UpdateBadge";
 import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
@@ -243,16 +244,16 @@ export function NavRail() {
         foot, so the four pages that belong to no wing read as their own cordoned
         section at the foot of the sidebar.
 
-        The foot is one row of three: the Log closes the rail's navigation, the
-        chip names the open vault, and the collapse toggle holds the row's
-        trailing end — the sidebar's bottom corner. That is where the collapse
-        control lives now: at the bottom of the column, the last thing in it,
-        rather than closing the lockup's row at the top. The Log and the chip
-        share what the toggle leaves, so the chip sits one toggle and one gap left
-        of the rail's trailing edge instead of flush against it. In the thin rail
-        the three stack — the Log's icon, the vault's initials, then the pure
-        emblem that reopens the rail — so the vault is still one click away
-        without leaving the icon column.
+        The foot is two rows. The first closes the rail's navigation: the Log and
+        the chip that names the open vault split it between them. The second is
+        the column's caption line — the build number under the Log, and the
+        collapse toggle under the chip, at the sidebar's trailing corner. The
+        number and the toggle share that row so the toggle's hover square does
+        not sit beside the Log's label, and so the version reads as the small
+        print under the navigation rather than as a button in the dock's chrome.
+        In the thin rail the rows stack — the Log's icon, the vault's initials,
+        the build number — and the pure emblem that reopens the rail moves up to
+        the topband, where the way back belongs.
       */}
       <div className="nav-rail__section nav-rail__section--bottom">
         {bottomPinned.length > 0 ? (
@@ -267,11 +268,16 @@ export function NavRail() {
           <>
             <div className="nav-rail__divider" role="separator" />
             <div className="nav-rail__foot" data-nav-group="footer">
-              {footerPinned.map(renderItem)}
-              <VaultChip />
-              {collapsed ? null : (
-                <NavCollapseButton className="nav-rail__collapse" />
-              )}
+              <div className="nav-rail__foot-row">
+                {footerPinned.map(renderItem)}
+                <VaultChip />
+              </div>
+              <div className="nav-rail__meta">
+                <UpdateBadge />
+                {collapsed ? null : (
+                  <NavCollapseButton className="nav-rail__collapse" />
+                )}
+              </div>
             </div>
           </>
         ) : null}
