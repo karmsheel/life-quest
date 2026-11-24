@@ -426,22 +426,48 @@ type Report = {
         listToRowGap: number | null;
         rule: {
           present: boolean;
-          background?: string;
-          height?: string;
-          display?: string;
-          paint: LayoutColor;
+          borderTopStyle: string | null;
+          borderTopWidth: string | null;
+          borderTopColor: string | null;
+          backgroundColor: string | null;
+          height: string | null;
+          display: string | null;
+          borderPaint: LayoutColor;
+          fillPaint: LayoutColor;
         };
       };
       dock: {
+        header: {
+          heading: string | null;
+          icon: boolean;
+          iconBox: Box | null;
+          headingBox: Box | null;
+          groupBox: Box | null;
+          headerBox: Box | null;
+        } | null;
+        headerCentreGap: number | null;
+        headerGroupInside: boolean;
         card: {
           box: Box;
           background: string | null;
           borderTop: string | null;
         } | null;
-        assign: { box: Box; aria: string | null } | null;
+        assign: {
+          box: Box;
+          aria: string | null;
+          borderTopWidth: string | null;
+          borderTopStyle: string | null;
+          borderRadius: string | null;
+          background: string | null;
+        } | null;
         assignToCardRatio: number | null;
         assignBottomGap: number | null;
         assignContained: boolean;
+        assignFlat: boolean;
+        assignRectangular: boolean;
+        assignFill: LayoutColor;
+        assignRightGap: number | null;
+        assignRightOfCentre: boolean;
         cardBackground: string | null;
         cardBorderTop: string | null;
         matchesPageBackground: boolean;
@@ -902,10 +928,10 @@ describe("Notebox page — general capture", () => {
 
     // ── the redesign's measured shape ──────────────────────────────────────
     // The page's capture box is the one narrow, centred thing in a full-width
-    // column; the filter band and the chain list keep the cards' width; the
-    // divider between box and band is a visible neutral grey. The dock's row
-    // cards are the page's cards — transparent ink, the same hairline — and
-    // each row's area picker lives inside its card at the foot, half its width.
+    // column; the band and list keep the cards' width; the divider is a dotted
+    // neutral grey rule painted by its border, with no solid fill. The dock's
+    // row cards are the page's cards, its header glyph+name group is centred on
+    // the band, and each row's area picker is a flat filled field on its right.
     const layout = checks.layout;
     assert.ok(layout.page.composer, "the page has no composer box to measure");
     assert.ok(layout.page.row, "the page has no row card to measure");
@@ -928,21 +954,59 @@ describe("Notebox page — general capture", () => {
       `the chain list is ${layout.page.listToRowGap}px off the cards' width ` +
         `(${layout.page.list?.width}px vs ${layout.page.row?.width}px)`,
     );
-    const rulePaint = layout.page.rule.paint;
-    assert.equal(layout.page.rule.present, true, "no divider above the filter band");
-    assert.equal(layout.page.rule.height, "1px", "the divider is thicker than a hairline");
+
+    // Divider: a dotted line drawn by the border, not a solid background block.
+    const rule = layout.page.rule;
+    const ruleBorder = rule.borderPaint;
+    assert.equal(rule.present, true, "no divider above the filter band");
+    assert.equal(rule.borderTopStyle, "dotted", "the divider is not a dotted rule");
     assert.ok(
-      (rulePaint.alpha ?? 0) >= 0.2,
-      `the divider is too faint: ${JSON.stringify(rulePaint)}`,
+      parseFloat(rule.borderTopWidth ?? "0") >= 1,
+      `the divider border is ${rule.borderTopWidth}`,
     );
     assert.ok(
-      (rulePaint.spread ?? 99) <= 6,
-      `the divider is not neutral: ${JSON.stringify(rulePaint)}`,
+      (ruleBorder.alpha ?? 0) >= 0.2,
+      `the divider border is too faint: ${JSON.stringify(ruleBorder)}`,
     );
     assert.ok(
-      (rulePaint.luminance ?? 0) >= 30 && (rulePaint.luminance ?? 0) <= 200,
-      `the divider luminance is ${rulePaint.luminance} (raw ${rulePaint.raw})`,
+      (ruleBorder.spread ?? 99) <= 6,
+      `the divider border is not neutral: ${JSON.stringify(ruleBorder)}`,
     );
+    assert.ok(
+      (ruleBorder.luminance ?? 0) >= 30 && (ruleBorder.luminance ?? 0) <= 200,
+      `the divider border luminance is ${ruleBorder.luminance} (raw ${ruleBorder.raw})`,
+    );
+    assert.equal(
+      rule.fillPaint.alpha,
+      0,
+      `the divider still paints a solid fill: ${JSON.stringify(rule.fillPaint)}`,
+    );
+
+    // The chain surface's header: the Inbox glyph left of the name, the group
+    // absolutely centred on the band and held inside it.
+    const header = layout.dock.header;
+    assert.ok(header, "the dock's chain surface has no header to measure");
+    assert.equal(header?.heading, "Notebox", "the dock's chain header is not Notebox");
+    assert.equal(header?.icon, true, "the dock's chain header has no glyph");
+    assert.ok(
+      header?.iconBox &&
+        header?.headingBox &&
+        header.iconBox.left + header.iconBox.width <=
+          header.headingBox.left + 1,
+      `the glyph is not left of the name: icon ${JSON.stringify(header?.iconBox)} heading ${JSON.stringify(header?.headingBox)}`,
+    );
+    assert.ok(
+      (layout.dock.headerCentreGap ?? 99) <= 2,
+      `the header group is ${layout.dock.headerCentreGap}px off the band's centre ` +
+        `(group ${JSON.stringify(header?.groupBox)} band ${JSON.stringify(header?.headerBox)})`,
+    );
+    assert.equal(
+      layout.dock.headerGroupInside,
+      true,
+      `the header group is not inside the band: group ${JSON.stringify(header?.groupBox)} band ${JSON.stringify(header?.headerBox)}`,
+    );
+
+    // Cards and the picker inside them.
     assert.ok(layout.dock.card, "the dock's first row has no card to measure");
     assert.ok(layout.dock.assign, "the dock's first row has no area picker to measure");
     assert.equal(
@@ -972,6 +1036,31 @@ describe("Notebox page — general capture", () => {
       (layout.dock.assignBottomGap ?? 99) >= 0 &&
         (layout.dock.assignBottomGap ?? 99) <= 16,
       `the area picker sits ${layout.dock.assignBottomGap}px from its card's foot`,
+    );
+    assert.equal(
+      layout.dock.assignFlat,
+      true,
+      `the area picker still has a border: ${JSON.stringify({ width: layout.dock.assign?.borderTopWidth, style: layout.dock.assign?.borderTopStyle })}`,
+    );
+    assert.equal(
+      layout.dock.assignRectangular,
+      true,
+      `the area picker is still rounded: ${layout.dock.assign?.borderRadius}`,
+    );
+    assert.ok(
+      (layout.dock.assignFill.alpha ?? 0) > 0.5,
+      `the area picker has no fill of its own: ${JSON.stringify(layout.dock.assignFill)}`,
+    );
+    assert.ok(
+      layout.dock.assignRightGap !== null &&
+        layout.dock.assignRightGap >= 0 &&
+        layout.dock.assignRightGap <= 32,
+      `the area picker is ${layout.dock.assignRightGap}px from the card's right edge`,
+    );
+    assert.equal(
+      layout.dock.assignRightOfCentre,
+      true,
+      "the area picker is not on the card's right half",
     );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.

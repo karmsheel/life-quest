@@ -7863,6 +7863,31 @@ a.home-mini-list__link:hover {
   letter-spacing: 0.02em;
 }
 
+/* The chain surface's header: the Notebox glyph and its name centred on the
+   band, with the focus door left in the trailing corner. The group is taken out
+   of the flex line and centred on the header's own width, so it stays on the
+   band's centre whether or not the actions at the end have anything in them. */
+.chat-panel__header--chain {
+  position: relative;
+  justify-content: flex-end;
+}
+
+.chat-panel__chain-heading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.chat-panel__chain-heading svg {
+  color: var(--muted);
+}
+
 /* Body and composer belong to the thread view. `hidden` needs the explicit
    override below because both elements set `display: flex`. */
 .chat-panel__body[hidden],
@@ -10776,21 +10801,31 @@ button.chat-panel__activity-line:hover {
   gap: 0.4rem;
 }
 
-/* The assignment picker, inside the card at its foot: half the card's width,
-   under what the row says, so the area it is filed under reads as part of the
-   capture rather than as a bar beneath it. */
+/* The assignment picker, inside the card at its foot on the right: half the
+   card's width, under what the row says, so the area it is filed under reads
+   as part of the capture rather than as a bar beneath it. It is a flat field,
+   not an outlined control: its own fill separates it from the card, and square
+   corners keep it from looking like a second rounded card inside the first. */
 .chat-panel__chain-assign {
   display: block;
   width: 50%;
   margin-top: 0.5rem;
-  padding: 0.2rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--bg);
+  margin-left: auto;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--muted-surface);
   color: var(--muted);
   font: inherit;
   font-size: 0.6875rem;
   cursor: pointer;
+}
+
+/* No outline by default, so focus paints its own ring: the field must stay
+   findable from the keyboard. */
+.chat-panel__chain-assign:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .chat-panel__chain-empty {
@@ -10939,15 +10974,18 @@ button.chat-panel__activity-line:hover {
   margin: 0.6rem 0.7rem 0;
 }
 
-/* The capture box and the filters are different jobs, so a hairline and a
-   breath of space sit between them: the box is not the first filter row. The
-   line is a neutral grey from the palette, not the cards' ember outline — it
-   divides the page rather than drawing a surface. */
+/* The capture box and the filters are different jobs, so a rule and a breath of
+   space sit between them: the box is not the first filter row. The line is a
+   dotted neutral grey from the palette, not the cards' ember outline — it
+   divides the page rather than drawing a surface, and the dots keep it from
+   reading as a card edge. */
 .signal-chain__rule {
-  height: 1px;
+  height: 0;
   margin: 0.15rem 0;
   border: 0;
-  background: color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+  border-top: 1px dotted
+    color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  background: none;
 }
 
 /* A picture dropped on the box lights the box rather than a page-wide overlay:

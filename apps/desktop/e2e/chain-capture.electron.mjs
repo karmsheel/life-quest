@@ -466,9 +466,15 @@ const SAMPLE = `(() => {
         const el = q(".signal-chain__rule");
         if (!el) return { present: false };
         const computed = getComputedStyle(el);
+        // The line is the border now, not a background fill: the rig reads both
+        // so "dotted grey" cannot pass on a solid block that merely has a
+        // dotted border somewhere.
         return {
           present: true,
-          background: computed.backgroundColor,
+          borderTopStyle: computed.borderTopStyle,
+          borderTopWidth: computed.borderTopWidth,
+          borderTopColor: computed.borderTopColor,
+          backgroundColor: computed.backgroundColor,
           height: computed.height,
           display: computed.display,
         };
@@ -532,10 +538,32 @@ const SAMPLE = `(() => {
       const dockLog = dockComposer
         ? dockComposer.querySelector('[aria-label="Log signal"]')
         : null;
+      // The chain surface's header band: the glyph + name group is absolutely
+      // centred on it, with the focus door trailing in its own corner.
+      const headerEl = panel
+        ? panel.querySelector(".chat-panel__header--chain")
+        : null;
+      const groupEl = headerEl
+        ? headerEl.querySelector(".chat-panel__chain-heading")
+        : null;
+      const headerIconEl = groupEl ? groupEl.querySelector("svg") : null;
+      const headerHeadingEl = headerEl
+        ? headerEl.querySelector(".chat-panel__heading")
+        : null;
       return {
         surface: panel ? panel.getAttribute("data-chat-surface") : null,
         heading: text(q(".chat-panel__heading")),
         action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
+        header: headerEl
+          ? {
+              heading: text(headerHeadingEl),
+              icon: Boolean(headerIconEl),
+              iconBox: box(headerIconEl),
+              headingBox: box(headerHeadingEl),
+              groupBox: box(groupEl),
+              headerBox: box(headerEl),
+            }
+          : null,
         items: all(".chat-panel__chain-item").map((item) => {
           const linkEl = item.querySelector(".chat-panel__chain-link");
           const messageEl = item.querySelector(".chat-panel__chain-message");
@@ -561,11 +589,16 @@ const SAMPLE = `(() => {
                   borderTop: style(messageEl, "borderTopColor"),
                 }
               : null,
-            // The area picker now lives inside the card at its foot.
+            // The area picker now lives inside the card at its foot: a flat
+            // field on the right, so its own paint and radius are sampled too.
             assign: assignEl
               ? {
                   box: box(assignEl),
                   aria: assignEl.getAttribute("aria-label"),
+                  borderTopWidth: style(assignEl, "borderTopWidth"),
+                  borderTopStyle: style(assignEl, "borderTopStyle"),
+                  borderRadius: style(assignEl, "borderRadius"),
+                  background: style(assignEl, "backgroundColor"),
                 }
               : null,
           };
@@ -2365,6 +2398,44 @@ async function main() {
       dockAssignBox.top + dockAssignBox.height <=
         dockMessageBox.top + dockMessageBox.height + 1;
 
+    // The chain surface's header band, with its glyph+name group and the trailing
+    // focus door, measured against the band's own centre.
+    const dockHeader = layoutState.dock.header;
+    const dockHeaderCentreGap =
+      centreOf(dockHeader?.groupBox) !== null &&
+      centreOf(dockHeader?.headerBox) !== null
+        ? Math.abs(centreOf(dockHeader?.groupBox) - centreOf(dockHeader?.headerBox))
+        : null;
+    const dockHeaderGroupInside =
+      Boolean(dockHeader?.groupBox && dockHeader?.headerBox) &&
+      dockHeader.groupBox.left >= dockHeader.headerBox.left - 1 &&
+      dockHeader.groupBox.left + dockHeader.groupBox.width <=
+        dockHeader.headerBox.left + dockHeader.headerBox.width + 1 &&
+      dockHeader.groupBox.top >= dockHeader.headerBox.top - 1 &&
+      dockHeader.groupBox.top + dockHeader.groupBox.height <=
+        dockHeader.headerBox.top + dockHeader.headerBox.height + 1;
+
+    // The flat right-hand picker: its edges, radius, fill and what it sits on.
+    const dockCardRight = dockMessageBox
+      ? dockMessageBox.left + dockMessageBox.width
+      : null;
+    const dockAssignRight = dockAssignBox
+      ? dockAssignBox.left + dockAssignBox.width
+      : null;
+    const dockAssignRightGap =
+      dockCardRight !== null && dockAssignRight !== null
+        ? dockCardRight - dockAssignRight
+        : null;
+    const dockAssignFlat =
+      dockAssign?.borderTopWidth === "0px" ||
+      dockAssign?.borderTopStyle === "none";
+    const dockAssignRectangular = dockAssign?.borderRadius === "0px";
+    const dockAssignFill = describeColor(dockAssign?.background);
+    const dockAssignRightOfCentre =
+      centreOf(dockAssignBox) !== null &&
+      centreOf(dockMessageBox) !== null &&
+      centreOf(dockAssignBox) > centreOf(dockMessageBox);
+
     checks.layout = {
       page: {
         composer: pageLayout.composer,
@@ -2389,16 +2460,31 @@ async function main() {
             ? Math.abs(pageLayout.list.width - pageLayout.row.width)
             : null,
         rule: {
-          ...pageLayout.rule,
-          paint: describeColor(pageLayout.rule?.background),
+          present: pageLayout.rule?.present === true,
+          borderTopStyle: pageLayout.rule?.borderTopStyle ?? null,
+          borderTopWidth: pageLayout.rule?.borderTopWidth ?? null,
+          borderTopColor: pageLayout.rule?.borderTopColor ?? null,
+          backgroundColor: pageLayout.rule?.backgroundColor ?? null,
+          height: pageLayout.rule?.height ?? null,
+          display: pageLayout.rule?.display ?? null,
+          borderPaint: describeColor(pageLayout.rule?.borderTopColor),
+          fillPaint: describeColor(pageLayout.rule?.backgroundColor),
         },
       },
       dock: {
+        header: dockHeader ?? null,
+        headerCentreGap: dockHeaderCentreGap,
+        headerGroupInside: dockHeaderGroupInside,
         card: dockMessage,
         assign: dockAssign,
         assignToCardRatio: dockAssignRatio,
         assignBottomGap: dockAssignBottomGap,
         assignContained: dockAssignContained,
+        assignFlat: dockAssignFlat,
+        assignRectangular: dockAssignRectangular,
+        assignFill: dockAssignFill,
+        assignRightGap: dockAssignRightGap,
+        assignRightOfCentre: dockAssignRightOfCentre,
         cardBackground: dockMessage?.background ?? null,
         cardBorderTop: dockMessage?.borderTop ?? null,
         matchesPageBackground:
@@ -2431,14 +2517,46 @@ async function main() {
         Math.abs(pageLayout.list.width - pageLayout.row.width) <= 2,
       `list ${JSON.stringify(pageLayout.list)} vs row ${JSON.stringify(pageLayout.row)}`,
     );
+    const ruleBorder = describeColor(pageLayout.rule?.borderTopColor);
+    const ruleFill = describeColor(pageLayout.rule?.backgroundColor);
     check(
-      "the page divider is a visible neutral grey",
+      "the page divider is a dotted neutral grey rule",
       pageLayout.rule?.present === true &&
-        describeColor(pageLayout.rule?.background).alpha >= 0.2 &&
-        describeColor(pageLayout.rule?.background).spread <= 6 &&
-        describeColor(pageLayout.rule?.background).luminance >= 30 &&
-        describeColor(pageLayout.rule?.background).luminance <= 200,
-      `rule ${JSON.stringify(describeColor(pageLayout.rule?.background))}`,
+        pageLayout.rule?.borderTopStyle === "dotted" &&
+        parseFloat(pageLayout.rule?.borderTopWidth ?? "0") >= 1 &&
+        ruleBorder.alpha >= 0.2 &&
+        ruleBorder.spread <= 6 &&
+        ruleBorder.luminance >= 30 &&
+        ruleBorder.luminance <= 200,
+      `rule ${JSON.stringify({ style: pageLayout.rule?.borderTopStyle, width: pageLayout.rule?.borderTopWidth, border: ruleBorder, height: pageLayout.rule?.height })}`,
+    );
+    check(
+      "the page divider paints no solid fill under its border",
+      ruleFill.alpha === 0,
+      `fill ${JSON.stringify(ruleFill)}`,
+    );
+    check(
+      "the dock's chain header names the surface",
+      dockHeader?.heading === "Notebox",
+      `header ${JSON.stringify(dockHeader)}`,
+    );
+    check(
+      "the dock's header glyph sits left of its name",
+      dockHeader?.icon === true &&
+        Boolean(dockHeader?.iconBox && dockHeader?.headingBox) &&
+        dockHeader.iconBox.left + dockHeader.iconBox.width <=
+          dockHeader.headingBox.left + 1,
+      `icon ${JSON.stringify(dockHeader?.iconBox)} heading ${JSON.stringify(dockHeader?.headingBox)}`,
+    );
+    check(
+      "the dock's header group is centred on its band",
+      dockHeaderCentreGap !== null && dockHeaderCentreGap <= 2,
+      `group centre gap ${dockHeaderCentreGap} (group ${JSON.stringify(dockHeader?.groupBox)} band ${JSON.stringify(dockHeader?.headerBox)})`,
+    );
+    check(
+      "the dock's header group sits inside the band",
+      dockHeaderGroupInside,
+      `group ${JSON.stringify(dockHeader?.groupBox)} band ${JSON.stringify(dockHeader?.headerBox)}`,
     );
     check(
       "the dock's cards are the page's cards",
@@ -2456,6 +2574,24 @@ async function main() {
         dockAssignBottomGap >= 0 &&
         dockAssignBottomGap <= 16,
       `assign ${JSON.stringify(dockAssignBox)} in card ${JSON.stringify(dockMessageBox)}, ratio ${dockAssignRatio}, bottom gap ${dockAssignBottomGap}`,
+    );
+    check(
+      "the dock's area picker is a flat rectangular field",
+      dockAssignFlat && dockAssignRectangular,
+      `border-top ${JSON.stringify({ width: dockAssign?.borderTopWidth, style: dockAssign?.borderTopStyle })}, radius ${JSON.stringify(dockAssign?.borderRadius)}`,
+    );
+    check(
+      "the dock's area picker has its own fill",
+      (dockAssignFill.alpha ?? 0) > 0.5,
+      `background ${JSON.stringify(dockAssignFill)}`,
+    );
+    check(
+      "the dock's area picker sits on the card's right",
+      dockAssignRightGap !== null &&
+        dockAssignRightGap >= 0 &&
+        dockAssignRightGap <= 32 &&
+        dockAssignRightOfCentre,
+      `right gap ${dockAssignRightGap}, assign centre right of card centre ${dockAssignRightOfCentre} (assign ${JSON.stringify(dockAssignBox)} card ${JSON.stringify(dockMessageBox)})`,
     );
 
     // ── 8. the box's area is the lens at the top ─────────────────────────────

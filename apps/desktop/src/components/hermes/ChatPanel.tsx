@@ -2202,8 +2202,17 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : null}
           {view === "chain" ? (
-            <div className="chat-panel__header">
-              <p className="chat-panel__heading">Notebox</p>
+            <div className="chat-panel__header chat-panel__header--chain">
+              {/*
+                The surface's name, marked by the rail's own Notebox glyph and
+                centred on the band: this is the dock's one page, so the heading
+                is a label for the column rather than a title pinned left of a
+                control. The focus door keeps the trailing corner to itself.
+              */}
+              <div className="chat-panel__chain-heading">
+                <Inbox size={15} aria-hidden />
+                <p className="chat-panel__heading">Notebox</p>
+              </div>
               <div className="chat-panel__header-actions">
                 {focusToggle("chat-panel__icon-btn")}
               </div>
