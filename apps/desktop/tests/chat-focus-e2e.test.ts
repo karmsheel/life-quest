@@ -20,6 +20,8 @@ const REPORT = path.join(ARTIFACTS, "chat-focus.json");
 const FOCUS_SHOT = path.join(ARTIFACTS, "chat-focus.png");
 /** The contract's readable measure: 56rem at the bench's 16px root. */
 const MEASURE = 56 * 16;
+/** `--dock-actions-width`: the shipped 22.5rem dock's composer box, 20.55rem. */
+const ACTIONS_MEASURE = 20.55 * 16;
 
 type Box = {
   left: number;
@@ -413,15 +415,27 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     `${label}: the dock's top row is not the tab strip (${state.topRow?.className})`,
   );
 
-  // The card: the composer box's own measure, floating inside the dock with a
-  // margin on every side and the composer's soft corner.
+  // The card: its own measure, floating inside the dock with a margin on every
+  // side and the composer's soft corner. A wide composer grows around it; the
+  // chrome does not stretch with the field.
   assert.ok(chat, `${label}: the dock has no box to measure the bar against`);
   assert.ok(composerBox, `${label}: the composer box was not found`);
   assert.ok(
-    near(bar.box.width, composerBox.width) &&
-      near(bar.box.left, composerBox.left) &&
-      near(bar.box.right, composerBox.right),
-    `${label}: the bar does not keep the composer box's measure (${JSON.stringify(bar.box)} vs ${JSON.stringify(composerBox)})`,
+    near(bar.box.width, Math.min(ACTIONS_MEASURE, composerBox.width), 2) &&
+      near(
+        bar.box.left + bar.box.right,
+        composerBox.left + composerBox.right,
+        4,
+      ) &&
+      bar.box.left >= composerBox.left - 1 &&
+      bar.box.right <= composerBox.right + 1,
+    `${label}: the bar does not keep its own measure centred on the composer box (${JSON.stringify(bar.box)} vs ${JSON.stringify(composerBox)})`,
+  );
+  assert.ok(
+    composerBox.width <= ACTIONS_MEASURE + 2 ||
+      (near(bar.box.width, ACTIONS_MEASURE, 2) &&
+        bar.box.width < composerBox.width - 12),
+    `${label}: a wider composer stretched the dock's chrome (${JSON.stringify(bar.box)} vs ${JSON.stringify(composerBox)})`,
   );
   assert.ok(
     bar.box.left >= chat.left + 4 && bar.box.right <= chat.right - 4,
@@ -559,15 +573,19 @@ function assertFocused(label: string, state: FocusState, base: FocusState) {
       `${label}: the ${name} is not full width (${rect.box.width}px vs ${chat.box.width}px)`,
     );
   }
-  // The action bar is not chrome across the glass: it follows the composer box
-  // into the readable measure.
+  // The action bar is not chrome across the glass: it keeps its own measure,
+  // centred on the composer box, so the mode's wider field does not stretch it.
   assert.ok(state.composerBox, `${label}: the composer box was not found in the mode`);
   assert.ok(
-    near(state.bar.box.width, state.composerBox.box.width) &&
-      near(state.bar.box.left, state.composerBox.box.left) &&
-      near(state.bar.box.right, state.composerBox.box.right) &&
+    near(state.bar.box.width, ACTIONS_MEASURE, 2) &&
+      near(
+        state.bar.box.left + state.bar.box.right,
+        state.composerBox.box.left + state.composerBox.box.right,
+        4,
+      ) &&
+      state.bar.box.width < state.composerBox.box.width - 12 &&
       state.bar.box.width < chat.box.width - 8,
-    `${label}: the action bar does not follow the composer box's measure (${JSON.stringify(state.bar.box)} vs ${JSON.stringify(state.composerBox.box)} in ${JSON.stringify(chat.box)})`,
+    `${label}: the action bar did not keep its own measure centred on the composer box (${JSON.stringify(state.bar.box)} vs ${JSON.stringify(state.composerBox.box)} in ${JSON.stringify(chat.box)})`,
   );
 
   // The readable measure: width 100%, max-width 56rem, centred.

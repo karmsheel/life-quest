@@ -90,7 +90,14 @@ type Arrangement = {
   actions: {
     box: Box;
     controls: { label: string | null; icon: string | null; disabled: boolean }[];
-    badge: { label: string | null; text: string; box: Box } | null;
+    badge: {
+      label: string | null;
+      text: string;
+      box: Box;
+      inBar: boolean;
+      inRail: boolean;
+      inMeta: boolean;
+    } | null;
   } | null;
   collapseAction: {
     label: string | null;
@@ -911,33 +918,30 @@ describe("chat dock side switch", () => {
       `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
-    // The build number moved into this bar, to the right of the collapse control:
-    // the version badge, not the collapse control, holds the window's bottom-right
-    // end now.
+    // The build number is back in the rail's caption row; the collapse control is
+    // the dock bar's trailing end now.
     const badgeBox = restored.actions?.badge?.box;
-    assert.ok(badgeBox, "the bottom bar carries no version badge");
+    assert.ok(badgeBox, "the rail carries no version badge");
     assert.match(
       restored.actions?.badge?.text ?? "",
       /^v\d+\.\d+\.\d+/,
       `the badge does not show the build number (${restored.actions?.badge?.text})`,
     );
     assert.equal(
-      badgeBox.left > collapseBox.right &&
-        badgeBox.right <= bar.right &&
-        bar.right - badgeBox.right <= 10 &&
-        badgeBox.top >= bar.top &&
-        badgeBox.bottom <= bar.bottom,
-      true,
-      `the version badge does not hold the bar's trailing end (${JSON.stringify(badgeBox)} in ${JSON.stringify(bar)}, collapse ends at ${collapseBox.right}px)`,
-    );
-    assert.equal(
       collapseBox.left > bar.left + bar.width / 2 &&
-        collapseBox.right <= badgeBox.left &&
-        badgeBox.left - collapseBox.right <= 12 &&
+        collapseBox.right <= bar.right &&
+        bar.right - collapseBox.right <= 10 &&
         collapseBox.top >= bar.top &&
         collapseBox.bottom <= bar.bottom,
       true,
-      `the collapse control does not sit just left of the badge (${JSON.stringify(collapseBox)} vs ${JSON.stringify(badgeBox)} in ${JSON.stringify(bar)})`,
+      `the collapse control does not hold the bar's trailing end (${JSON.stringify(collapseBox)} in ${JSON.stringify(bar)})`,
+    );
+    assert.equal(
+      restored.actions?.badge?.inRail === true &&
+        restored.actions.badge.inMeta === true &&
+        restored.actions.badge.inBar === false,
+      true,
+      `the version badge is not in the rail's caption row (${JSON.stringify(restored.actions?.badge)})`,
     );
     assert.equal(
       barCollapsed.chat,

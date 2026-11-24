@@ -51,6 +51,8 @@ const url =
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 /** `56rem` at the bench's 16px root: the contract's readable measure. */
 const MEASURE = 56 * 16;
+/** `--dock-actions-width`: the shipped 22.5rem dock's composer box, 20.55rem. */
+const ACTIONS_MEASURE = 20.55 * 16;
 
 const SAMPLE = `(() => {
   const box = (el) => {
@@ -609,15 +611,30 @@ function checkDoors(label, state, focused) {
     `top row copy ${JSON.stringify(state.topRowCopy)}, row holds control: ${state.topRow?.holdsControl}`,
   );
 
-  // The card: the composer box's own width and edges, not the dock's. The field
-  // is the measure the bar belongs to, on both the split dock and the full-screen
-  // column, so its two borders line up with the composer box's two borders.
+  // The card: it keeps its own measure — the composer box at the shipped dock —
+  // as the field grows, and it is centred on the field rather than sized by it.
+  // On a narrow dock the composer box caps the width, so the bar never reaches
+  // past the field it belongs to.
   check(
-    `${label}: the bar keeps the composer box's measure`,
+    `${label}: the bar keeps its own measure and is centred on the composer box`,
     Boolean(barBox && composerBox) &&
-      near(barBox.width, composerBox.width, 1) &&
-      near(barBox.left, composerBox.left, 1) &&
-      near(barBox.right, composerBox.right, 1),
+      near(
+        barBox.width,
+        Math.min(ACTIONS_MEASURE, composerBox.width),
+        2,
+      ) &&
+      near(barBox.left + barBox.right, composerBox.left + composerBox.right, 4) &&
+      barBox.left >= composerBox.left - 1 &&
+      barBox.right <= composerBox.right + 1,
+    `bar ${JSON.stringify(barBox)} vs composer box ${JSON.stringify(composerBox)} (own measure ${ACTIONS_MEASURE}px)`,
+  );
+  check(
+    `${label}: a wider composer does not stretch the dock's chrome`,
+    Boolean(barBox && composerBox) &&
+      (composerBox.width <= ACTIONS_MEASURE + 2
+        ? true
+        : near(barBox.width, ACTIONS_MEASURE, 2) &&
+          barBox.width < composerBox.width - 12),
     `bar ${JSON.stringify(barBox)} vs composer box ${JSON.stringify(composerBox)}`,
   );
   check(
@@ -762,9 +779,9 @@ function checkFocused(label, state, base) {
   }
   const chatBox = state.chat?.box;
   // The strip and the header lead the dock full width, but the action bar is
-  // not chrome across the glass any more: it follows the composer box into the
-  // readable measure, gauge-lined with the field. checkDoors asserts that
-  // alignment; here the mode's own measure is the claim.
+  // not chrome across the glass any more: it keeps its own measure, centred on
+  // the composer box, so the mode's wider field does not stretch it. checkDoors
+  // asserts that alignment; here the mode's own measure is the claim.
   for (const [name, rect] of [
     ["tab strip", state.content?.tabs],
     ["header", state.content?.header],
@@ -776,12 +793,16 @@ function checkFocused(label, state, base) {
     );
   }
   check(
-    `${label}: the action bar narrows to the composer box's measure`,
+    `${label}: the action bar keeps its own measure, centred on the composer box`,
     Boolean(state.bar?.box && state.composerBox?.box && chatBox) &&
       state.bar.box.width < chatBox.width - 8 &&
-      near(state.bar.box.width, state.composerBox.box.width, 1) &&
-      near(state.bar.box.left, state.composerBox.box.left, 1) &&
-      near(state.bar.box.right, state.composerBox.box.right, 1),
+      near(state.bar.box.width, ACTIONS_MEASURE, 2) &&
+      state.bar.box.width < state.composerBox.box.width - 12 &&
+      near(
+        state.bar.box.left + state.bar.box.right,
+        state.composerBox.box.left + state.composerBox.box.right,
+        4,
+      ),
     `bar ${JSON.stringify(state.bar?.box)} vs composer box ${JSON.stringify(state.composerBox?.box)} in dock ${JSON.stringify(chatBox)}`,
   );
 

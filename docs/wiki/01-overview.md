@@ -139,15 +139,16 @@ question scopes stay `execute`, so saved links and prompts keep working.
 
 **Notebox**, **Decisions**, **Daily Journal** and **Automations** are pinned
 above the **Log** because they are governance, not a wing: they belong to no area
-and are reachable from everywhere. The version badge lives in the chat dock's
-bottom bar, not at the foot of the rail.
+and are reachable from everywhere. The version badge lives at the foot of the
+rail, under the **Log**, not in the dock's chrome.
 
 The chat dock holds the companion. Its strip carries the open chats as tabs,
 pinned chats as squares, and a **+** for a new tab; a vertical agent switcher
-names which companion answers; the bottom bar is a card at the composer box's
-width that leads with **New chat**, **Notebox**, **Full screen chat**, the
-**Keyboard shortcuts** reference, the side switch, **Collapse chat** and the
-version badge. See [Companion](./24-companion.md).
+names which companion answers; the bottom bar is a card centred on the composer
+at its own fixed width — a wider field does not stretch it — and leads with
+**New chat**, **Notebox**, **Full screen chat**, the **Keyboard shortcuts**
+reference, the side switch and **Collapse chat**. See
+[Companion](./24-companion.md).
 
 ## Rules and behaviour
 

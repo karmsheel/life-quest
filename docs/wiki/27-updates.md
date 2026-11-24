@@ -1,24 +1,23 @@
 # Updates
 
 LifeQuest tells you when a newer release exists, without installing anything you
-did not ask for. The build number lives in the chat dock's bottom bar: quiet text
-while you are current, a glowing chip when GitHub names something newer —
-including a release that lands while you are working — with **Update available**
-beside it when the dock is wide enough for the words. Clicking the chip opens the one dialog that offers to download the
-installer, hand it to Windows, and step aside so it can replace the app. See also
+did not ask for. The build number lives in the rail's foot, under the **Log**:
+quiet text while you are current, a glowing chip when GitHub names something
+newer — including a release that lands while you are working — with **Update
+available** beside it while the rail is wide enough for the words. Clicking the
+chip opens the one dialog that offers to download the installer, hand it to
+Windows, and step aside so it can replace the app. See also
 [Wiki home](./index.md).
 
 ## Where it lives
 
-- The version badge (`v0.3.3`) sits at the trailing end of the chat dock's bottom
-  action bar, after **Collapse chat**. The bar's accessible name is "Dock
-  actions".
-- When an update is available, the number gains the accent glow and, when the
-  action-bar card has room for it, a small **Update available** line appears
-  beside the number. The shipped dock is narrower than the caption's seat now
-  that the bar keeps the composer box's width and carries the full-screen door:
-  at that width the glow alone is the signal, and dragging the dock wider brings
-  the words back.
+- The version badge (`v0.3.3`) sits in the rail's caption row, the foot's second
+  row, under the **Log**; the sidebar's collapse toggle shares that row at its
+  trailing end.
+- When an update is available, the number gains the accent glow and a small
+  **Update available** line appears beside it while the rail is wide enough for
+  the words. The thin rail retires the caption row with the words: expand the
+  sidebar to read the number and check.
 - There is no in-window notice, card or toast: the glowing chip is the app's own
   surface for news, and a native notification covers the case where the window is
   not focused.
@@ -70,9 +69,9 @@ that comes back glows again.
 
 ### When you ask for a check
 
-1. Click the version number in the dock bar in any state. If an offer is already
-   known, the dialog opens on it; if not, it opens on **Checking for updates** and
-   reads the feed.
+1. Click the version number in the rail's foot in any state. If an offer is
+   already known, the dialog opens on it; if not, it opens on **Checking for
+   updates** and reads the feed.
 2. Read the offer: "You are running **v0.3.3**. Version **0.3.4** is ready to
    download." Choose **What changed** to unfold the release notes, shown as plain
    text exactly as written on GitHub. The installer's file name and size sit under
@@ -113,7 +112,7 @@ makes when a release carries no Windows installer.
   (it reads **Checking…** while it works), and **Release page** appears when a
   release is being offered.
 - **Settings → Developer** carries one switch, **Preview the update badge**. Turn
-  it on and the dock's build number glows as if a release had been published, and
+  it on and the rail's build number glows as if a release had been published, and
   the dialog offers `v9.9.9` — a version that does not exist — under the kicker
   **Preview — not a real release**. The preview carries no installer, so nothing
   can be downloaded from it; Settings → Updates keeps reporting what GitHub really
@@ -124,7 +123,7 @@ makes when a release carries no Windows installer.
 
 | Part | What it does |
 |---|---|
-| **Update available** | Quiet label beside the build number, shown while an offer (or the preview) is up and the action-bar card has room for the words. |
+| **Update available** | Quiet label beside the build number in the rail's caption row, shown while an offer (or the preview) is up and the rail has room for the words. |
 | Version number | `v0.3.3`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.4 is available". Glows only when there is something to install. |
 | Native notification | Title **LifeQuest 0.3.4 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |

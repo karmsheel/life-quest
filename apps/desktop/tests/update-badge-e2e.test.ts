@@ -82,8 +82,11 @@ type State = {
     ariaLabel: string | null;
     ariaHaspopup: string | null;
     ariaExpanded: string | null;
-    inBar: boolean;
+    inMeta: boolean;
     inRail: boolean;
+    inFoot: boolean;
+    inDockBar: boolean;
+    underLog: boolean;
     boxShadow: string;
     color: string;
     background: string;
@@ -111,10 +114,10 @@ type State = {
       resolved: { accent: string; accentFill: string };
     };
   } | null;
-  bar: {
+  meta: {
     box: Box;
     padding: { top: number; right: number; bottom: number; left: number };
-    /** The action bar's container identity: the caption's narrow rule is a query on it. */
+    /** The caption row's container identity: the caption's thin-rail rule is a query on it. */
     containerType: string;
     containerName: string;
     background: string;
@@ -132,19 +135,22 @@ type State = {
       className: string;
       box: Box | null;
     }[];
+    footBox: Box | null;
+    footRowBox: Box | null;
+    logRowBox: Box | null;
   } | null;
-  collapse: {
+  toggle: {
     ariaLabel: string | null;
-    testId: string | null;
     box: Box;
+    display: string;
   } | null;
   label: {
     tag: string;
     text: string;
     dataLabel: string | null;
-    inBar: boolean;
+    inMeta: boolean;
     nextToChip: boolean;
-    /** `none` in a narrow bar: the caption leaves the layout, it does not shrink. */
+    /** `none` in the thin rail: the caption leaves the layout, it does not shrink. */
     display: string;
     visibility: string;
     focusables: number;
@@ -216,12 +222,12 @@ type Report = {
     animation: string | null;
   };
   screenshots: string[];
-  /** The narrow-dock probe: the halo's reach against the room the narrow bar gives it. */
+  /** The thin-rail probe: the halo's reach against the room the icon column gives it. */
   narrowGlow: {
     reach: number;
     room: number;
     captionDisplay: string | null;
-    bar: Box | null;
+    meta: Box | null;
   };
 };
 
@@ -325,70 +331,79 @@ describe("auto-update badge", () => {
       afterRemount,
     } = report.states;
 
-    // The badge's home is the dock's bottom action bar, not the rail. It is the
-    // bar's last control — after the collapse button — inside the bar's padding,
-    // and it never resizes that bar. The bar itself is a card floating inside the
-    // dock's bottom-right corner now, keeping the composer box's measure.
-    const bar = available.bar;
-    assert.ok(bar, "the dock's action bar rendered nothing");
-    assert.equal(available.chip?.inBar, true, "the chip left the dock's action bar");
-    assert.equal(available.chip?.inRail, false, "the chip is still painted by the rail");
-    assert.equal(bar?.containsChip, true, "the bar does not contain the chip");
+    // The badge's home is the rail's caption row — the foot's second row, under
+    // the Log. The build number leads that row, the sidebar's collapse toggle
+    // trails it, and the row sits inside the rail's column.
+    const meta = available.meta;
+    assert.ok(meta, "the rail's caption row rendered nothing");
+    assert.equal(available.chip?.inRail, true, "the chip left the rail");
+    assert.equal(available.chip?.inMeta, true, "the chip left the rail's caption row");
+    assert.equal(available.chip?.inFoot, true, "the chip left the rail's foot");
+    assert.equal(available.chip?.inDockBar, false, "the chip is still in the dock's action bar");
+    assert.equal(meta?.containsChip, true, "the caption row does not contain the chip");
     assert.equal(
-      bar?.lastControlIsChip,
+      available.chip?.underLog,
       true,
-      `the chip is not the bar's last control: ${JSON.stringify(bar?.controls.map((control) => control.ariaLabel))}`,
+      `the chip is not under the Log: chip ${JSON.stringify(available.chip?.box)}, Log ${JSON.stringify(meta?.logRowBox)}`,
     );
     assert.equal(
-      bar?.lastChildIsChip,
-      true,
-      "something is still painted after the chip in the bar",
+      meta?.lastControlIsChip,
+      false,
+      "the chip is the caption row's last control — the sidebar toggle should be",
     );
     assert.equal(
-      available.collapse?.testId,
-      "chat-collapse",
-      "the control the chip should trail is not the collapse control",
+      meta?.lastControlAriaLabel,
+      "Collapse sidebar",
+      `the caption row's trailing control is ${JSON.stringify(meta?.lastControlAriaLabel)}`,
     );
     assert.equal(
-      available.collapse?.ariaLabel,
-      "Collapse chat",
-      `the collapse control is labelled ${JSON.stringify(available.collapse?.ariaLabel)}`,
+      available.toggle?.ariaLabel,
+      "Collapse sidebar",
+      `the sidebar toggle is labelled ${JSON.stringify(available.toggle?.ariaLabel)}`,
     );
     assert.ok(
-      (available.chip?.box.left ?? -Infinity) >=
-        (available.collapse?.box.right ?? Infinity),
-      `the chip is not to the right of the collapse control: chip ${JSON.stringify(available.chip?.box)}, collapse ${JSON.stringify(available.collapse?.box)}`,
+      Boolean(meta?.box && available.toggle?.box) &&
+        available.chip?.box &&
+        available.chip.box.left < available.toggle.box.left &&
+        available.toggle.box.right <= meta.box.right + 1,
+      `the toggle does not trail the chip: chip ${JSON.stringify(available.chip?.box)}, toggle ${JSON.stringify(available.toggle?.box)}, row ${JSON.stringify(meta?.box)}`,
     );
-    // Inside the bar's own padding: the chip is a row's content, not something
-    // bleeding into the bar's gutter.
+    // The foot is two rows: the navigation row, then this caption line under it.
+    assert.ok(
+      Boolean(meta?.box && meta?.footRowBox && meta?.logRowBox && meta?.footBox) &&
+        meta.box.top >= meta.footRowBox.bottom - 1 &&
+        meta.footRowBox.top >= meta.footBox.top - 1 &&
+        meta.logRowBox.left >= (available.rail?.box.left ?? 0),
+      `caption row ${JSON.stringify(meta?.box)}, navigation row ${JSON.stringify(meta?.footRowBox)}, foot ${JSON.stringify(meta?.footBox)}, Log ${JSON.stringify(meta?.logRowBox)}`,
+    );
+    // Inside the caption row's own padding: the number is a row's content, not
+    // something bleeding into the rail's gutter.
     assert.ok(
       available.chip &&
-        bar &&
-        available.chip.box.left >= bar.box.left + bar.padding.left &&
-        available.chip.box.right <= bar.box.right - bar.padding.right &&
-        available.chip.box.top >= bar.box.top + bar.padding.top &&
-        available.chip.box.bottom <= bar.box.bottom - bar.padding.bottom,
-      `the chip spills past the bar's padding: chip ${JSON.stringify(available.chip?.box)}, bar ${JSON.stringify(bar?.box)}, padding ${JSON.stringify(bar?.padding)}`,
+        meta &&
+        available.chip.box.left >= meta.box.left + meta.padding.left - 0.5 &&
+        available.chip.box.right <= meta.box.right - meta.padding.right + 0.5 &&
+        available.chip.box.top >= meta.box.top &&
+        available.chip.box.bottom <= meta.box.bottom,
+      `the chip spills past the caption row's padding: chip ${JSON.stringify(available.chip?.box)}, row ${JSON.stringify(meta?.box)}, padding ${JSON.stringify(meta?.padding)}`,
     );
-    // The bar floats inside the dock's bottom-right corner — the card keeps the
-    // composer box's width now — and the chip holds the card's trailing end.
+    // The caption row closes the rail's foot and stays inside the column.
     assert.ok(
-      bar &&
-        bar.box.right <= available.viewport.width - 4 &&
-        bar.box.bottom <= available.viewport.height - 4 &&
-        available.viewport.width - bar.box.right <= 80 &&
-        available.viewport.height - bar.box.bottom <= 20 &&
-        (available.chip?.box.right ?? -Infinity) <= bar.box.right - bar.padding.right + 1,
-      `the bar or the chip left the dock's bottom-right card: bar ${JSON.stringify(bar?.box)}, chip ${JSON.stringify(available.chip?.box)}, window ${JSON.stringify(available.viewport)}`,
+      Boolean(meta?.box && available.rail?.box) &&
+        meta.box.bottom <= available.rail.box.bottom &&
+        available.rail.box.bottom - meta.box.bottom <= 16 &&
+        meta.box.left >= available.rail.box.left &&
+        meta.box.right <= available.rail.box.right,
+      `the caption row left the rail's foot: row ${JSON.stringify(meta?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
     );
-    // And the chip is shorter than the row it lives in: the bar's height is
-    // decided by its action buttons and its padding, never by the badge.
+    // And the chip is shorter than the row it lives in: the row's height is
+    // decided by the toggle and its padding, never by the badge.
     assert.ok(
       available.chip &&
-        bar &&
+        meta &&
         available.chip.box.height <=
-          bar.box.height - bar.padding.top - bar.padding.bottom + 1,
-      `the chip is taller than the bar's own row: chip ${available.chip?.box.height}px, bar ${JSON.stringify(bar?.box)}`,
+          meta.box.height - meta.padding.top - meta.padding.bottom + 1,
+      `the chip is taller than the caption row: chip ${available.chip?.box.height}px, row ${JSON.stringify(meta?.box)}`,
     );
 
     // The version line is the operator's manual way in, so it is a control in
@@ -428,11 +443,11 @@ describe("auto-update badge", () => {
       null,
       `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
     );
-    // The caption is a state, not a size: the bar with the glowing pill and its
-    // words is the same box as the bar with neither.
+    // The caption is a state, not a size: the caption row with the glowing
+    // number and its words is the same box as the row with neither.
     assert.ok(
-      sameBox(available.bar?.box, upToDate.bar?.box),
-      `the available state resized the bar: available ${JSON.stringify(available.bar?.box)}, up-to-date ${JSON.stringify(upToDate.bar?.box)}`,
+      sameBox(available.meta?.box, upToDate.meta?.box),
+      `the available state resized the caption row: available ${JSON.stringify(available.meta?.box)}, up-to-date ${JSON.stringify(upToDate.meta?.box)}`,
     );
 
     // The manual check at rest: one launch check, then the operator's click
@@ -546,12 +561,11 @@ describe("auto-update badge", () => {
       "the build number stopped reading the running version",
     );
 
-    // The caption: a glowing pill is a state without a sentence, so the bar says
-    // what it means — the words exist while the offer does, immediately left of
-    // the pill, and never as a second focus stop in a bar of action controls.
-    // The card keeps the composer box's width now, and at the shipped dock that
-    // is narrower than the caption's seat: the words retire here, and the widened
-    // dock below is where they are measured on the row.
+    // The caption: a glowing number is a state without a sentence, so the rail's
+    // caption row says what it means — the words exist while the offer does,
+    // immediately left of the number, and never as a second focus stop in the
+    // chrome. The wide rail has room for them; the thin rail retires them (the
+    // probe below is the other half of that claim).
     assert.equal(
       available.label?.text,
       "Update available",
@@ -570,64 +584,47 @@ describe("auto-update badge", () => {
       "the caption grew a control of its own",
     );
     assert.equal(
-      available.label?.inBar,
+      available.label?.inMeta,
       true,
-      "the caption is not inside the dock's action bar",
+      "the caption is not inside the rail's caption row",
     );
     assert.equal(
       available.label?.nextToChip,
       true,
       "the caption is not immediately before the chip in DOM order",
     );
-    assert.equal(
+    assert.notEqual(
       available.label?.display,
       "none",
-      `the shipped dock did not retire the caption (display: ${JSON.stringify(available.label?.display)})`,
+      `the wide rail retired the caption (display: ${JSON.stringify(available.label?.display)})`,
+    );
+    assert.ok(
+      available.label?.box &&
+        available.chip?.box &&
+        available.label.box.right <= available.chip.box.left &&
+        available.chip.box.left - available.label.box.right <= 12 &&
+        available.label.box.top < available.chip.box.bottom &&
+        available.label.box.bottom > available.chip.box.top,
+      `the caption is not inline to the chip's left: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
+    );
+    assert.ok(
+      available.label?.box &&
+        available.chip?.box &&
+        Math.abs(
+          (available.label.box.top + available.label.box.bottom) / 2 -
+            (available.chip.box.top + available.chip.box.bottom) / 2,
+        ) <= 2,
+      `the caption does not ride the chip's row: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
+    );
+    assert.ok(
+      (available.label?.overflow.scrollWidth ?? Infinity) <=
+        (available.label?.overflow.clientWidth ?? 0),
+      `the caption bleeds out of the rail: ${JSON.stringify(available.label?.overflow)}`,
     );
     assert.equal(
       rgbKey(available.label?.color ?? ""),
       rgbKey(report.glow.resolved.accent),
       `the caption is not wearing the state ink: ${available.label?.color}`,
-    );
-
-    // The caption's row, measured on the dock wide enough to hold it: same row,
-    // immediately left of the chip, its right edge ending before the chip's left
-    // edge, and the gap the row's own spacing rather than a second column.
-    const wide = report.states.wideDock;
-    assert.ok(wide, "the rig never sampled the widened dock");
-    assert.notEqual(
-      wide.label?.display,
-      "none",
-      "the caption did not come back on a wide dock",
-    );
-    assert.equal(
-      wide.label?.text,
-      "Update available",
-      `the wide caption does not read 'Update available' (${JSON.stringify(wide.label?.text)})`,
-    );
-    assert.equal(wide.label?.inBar, true, "the wide caption left the action bar");
-    assert.ok(
-      wide.label?.box &&
-        wide.chip?.box &&
-        wide.label.box.right <= wide.chip.box.left &&
-        wide.chip.box.left - wide.label.box.right <= 24 &&
-        wide.label.box.top < wide.chip.box.bottom &&
-        wide.label.box.bottom > wide.chip.box.top,
-      `the caption is not inline to the chip's left: caption ${JSON.stringify(wide.label?.box)} vs chip ${JSON.stringify(wide.chip?.box)}`,
-    );
-    assert.ok(
-      wide.label?.box &&
-        wide.chip?.box &&
-        Math.abs(
-          (wide.label.box.top + wide.label.box.bottom) / 2 -
-            (wide.chip.box.top + wide.chip.box.bottom) / 2,
-        ) <= 2,
-      `the caption does not ride the chip's row: caption ${JSON.stringify(wide.label?.box)} vs chip ${JSON.stringify(wide.chip?.box)}`,
-    );
-    assert.ok(
-      (wide.label?.overflow.scrollWidth ?? Infinity) <=
-        (wide.label?.overflow.clientWidth ?? 0),
-      `the caption bleeds out of the wide bar: ${JSON.stringify(wide.label?.overflow)}`,
     );
     assert.equal(
       available.chip?.boxShadow,
@@ -683,88 +680,70 @@ describe("auto-update badge", () => {
     // off flat.
     assert.ok(
       report.glow.reach <= report.glow.room,
-      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the action bar gives it — it would be clipped`,
+      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the rail gives it — it would be clipped`,
     );
 
-    // ── the narrow dock: the caption retreats, the chip stays whole ─────────
-    // The fix's container query, measured: driving the dock's column down must
-    // take the caption out of the row (`display: none`) rather than squeeze the
-    // build number out of the bar's padding, and the halo must keep its room.
+    // ── the thin rail: the caption row retires with the words ────────────────
+    // The caption row is the query's container, measured: collapsing the rail to
+    // its icon column must take the whole row out of the layout rather than
+    // squeeze the build number into the column's edge, where its halo would be
+    // clipped. The wide rail's caption row comes back on reopening.
     const narrow = report.states.narrow;
-    assert.ok(narrow, "the rig never parked the dock narrow");
-    assert.ok(narrow.bar?.box, "the narrow dock drew no action bar");
+    assert.ok(narrow, "the rig never collapsed the rail");
     assert.ok(
-      narrow.bar!.box.width < (available.bar?.box.width ?? Number.POSITIVE_INFINITY),
-      `the dock did not actually narrow: bar ${narrow.bar!.box.width}px vs wide ${available.bar?.box.width}px`,
+      (narrow.rail?.box.width ?? Number.POSITIVE_INFINITY) <= 58,
+      `the rail did not actually collapse: ${JSON.stringify(narrow.rail?.box)}`,
     );
-    // The caption retires because the bar is the query's container — not because
-    // some width coincidentally collapsed it.
     assert.equal(
-      narrow.bar?.containerName,
-      "dock-actions",
-      `the action bar's container name is ${JSON.stringify(narrow.bar?.containerName)}`,
+      narrow.meta?.containerName,
+      "rail-meta",
+      `the caption row's container name is ${JSON.stringify(narrow.meta?.containerName)}`,
     );
     assert.ok(
-      (narrow.bar?.containerType ?? "").includes("inline-size"),
-      `the action bar's container-type is ${JSON.stringify(narrow.bar?.containerType)}`,
+      (narrow.meta?.containerType ?? "").includes("inline-size"),
+      `the caption row's container-type is ${JSON.stringify(narrow.meta?.containerType)}`,
+    );
+    assert.equal(
+      narrow.meta?.display,
+      "none",
+      `the thin rail left the caption row in the layout (display: ${JSON.stringify(narrow.meta?.display)})`,
     );
     assert.equal(
       narrow.captionCount,
       1,
-      `the narrow bar holds ${narrow.captionCount} captions, expected the one it retires`,
+      `the thin rail holds ${narrow.captionCount} captions, expected the retired one`,
     );
     assert.equal(
-      narrow.label?.display,
-      "none",
-      `a narrow bar left the caption in the layout (display: ${JSON.stringify(narrow.label?.display)}); it must retire, not shrink`,
-    );
-    assert.equal(
-      narrow.label?.inBar,
+      narrow.label?.inMeta,
       true,
-      "the retired caption is not the action bar's own element",
+      "the retired caption is not the caption row's own element",
     );
-    // The chip stays the trailing control and stays inside the bar's padding.
+    // The row takes no room in the icon column: the number is not painted, and
+    // the expand emblem is not here (it moved up into the header).
     assert.equal(
-      narrow.bar?.lastControlIsChip,
+      narrow.chip?.inRail,
       true,
-      `the chip is not the narrow bar's trailing control: ${JSON.stringify(narrow.bar?.controls.map((control) => control.ariaLabel))}`,
-    );
-    assert.equal(narrow.bar?.lastChildIsChip, true, "the chip is not the narrow bar's last child");
-    assert.ok(
-      narrow.bar?.box &&
-        narrow.bar.padding &&
-        narrow.chip?.box &&
-        narrow.chip.box.right <= narrow.bar.box.right - narrow.bar.padding.right + 0.5 &&
-        narrow.chip.box.left >= narrow.bar.box.left + narrow.bar.padding.left - 0.5,
-      `the chip left the narrow bar's padding: chip ${JSON.stringify(narrow.chip?.box)}, bar ${JSON.stringify(narrow.bar?.box)}, padding ${JSON.stringify(narrow.bar?.padding)}`,
+      "the build number left the rail's DOM",
     );
     assert.ok(
-      narrow.collapse?.box &&
-        narrow.chip?.box &&
-        narrow.chip.box.left >= narrow.collapse.box.right - 0.5,
-      `the chip collides with the collapse control: chip ${JSON.stringify(narrow.chip?.box)}, collapse ${JSON.stringify(narrow.collapse?.box)}`,
-    );
-    // The halo's room survives the retraction — the whole point of moving the
-    // caption instead of letting it squeeze the chip.
-    assert.ok(
-      report.narrowGlow.reach > 0 &&
-        report.narrowGlow.reach <= report.narrowGlow.room,
-      `in the narrow bar the halo reaches ${report.narrowGlow.reach}px into ${report.narrowGlow.room}px of room`,
+      narrow.chip?.box &&
+        narrow.chip.box.width === 0 &&
+        narrow.chip.box.height === 0,
+      `the number still paints in the thin rail: ${JSON.stringify(narrow.chip?.box)}`,
     );
     assert.equal(
-      report.narrowGlow.captionDisplay,
-      "none",
-      `the narrow caption's display is ${JSON.stringify(report.narrowGlow.captionDisplay)}`,
+      narrow.toggle,
+      null,
+      "the sidebar toggle stayed in the thin rail's caption row",
     );
-    // ...and the restore leaves the shipped window's states untouched: the card
-    // comes back to its box, and the caption stays retired at the shipped width
-    // (the widened-dock probe above is where its row is measured).
+    // ...and reopening leaves the shipped wide rail untouched: the caption row
+    // and the number come back to the boxes they had, and the words return.
     const narrowRestored = report.states.narrowRestored;
-    assert.ok(narrowRestored, "the rig never restored the dock's width");
-    assert.equal(
+    assert.ok(narrowRestored, "the rig never reopened the rail");
+    assert.notEqual(
       narrowRestored.label?.display,
       "none",
-      "the shipped dock showed a caption it has no room for",
+      "the caption stayed retired after the rail came back wide",
     );
     assert.equal(
       narrowRestored.label?.text,
@@ -772,10 +751,11 @@ describe("auto-update badge", () => {
       "the restored caption does not read 'Update available'",
     );
     assert.ok(
-      narrowRestored.bar?.box &&
-        available.bar?.box &&
-        Math.abs(narrowRestored.bar.box.width - available.bar.box.width) <= 1,
-      `the restored bar is ${narrowRestored.bar?.box.width}px wide, not the shipped ${available.bar?.box.width}px`,
+      narrowRestored.meta?.box &&
+        available.meta?.box &&
+        Math.abs(narrowRestored.meta.box.width - available.meta.box.width) <= 1 &&
+        Math.abs(narrowRestored.meta.box.left - available.meta.box.left) <= 1,
+      `the restored caption row is ${JSON.stringify(narrowRestored.meta?.box)}, not the shipped ${JSON.stringify(available.meta?.box)}`,
     );
 
     // The chip wears the palette's own inks, not new ones.
@@ -884,9 +864,9 @@ describe("auto-update badge", () => {
     assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
     assert.equal(junk.dialog, null, "a junk answer opened the popup unasked");
     assert.equal(
-      junk.chip?.inBar,
+      junk.chip?.inMeta,
       true,
-      "a junk answer took the chip out of the dock's action bar",
+      "a junk answer took the chip out of the rail's caption row",
     );
     assert.equal(
       junk.label,
@@ -927,9 +907,9 @@ describe("auto-update badge", () => {
       `unmounting with a junk progress handle threw: ${JSON.stringify(afterRemount.dom.errors)}`,
     );
     assert.equal(
-      afterRemount.bar?.containsChip === true && afterRemount.chip?.tag === "button",
+      afterRemount.meta?.containsChip === true && afterRemount.chip?.tag === "button",
       true,
-      "the dock's action bar did not survive the provider's remount",
+      "the rail's caption row did not survive the provider's remount",
     );
 
     for (const file of report.screenshots) {
@@ -1112,18 +1092,12 @@ describe("auto-update badge", () => {
       "Update available",
       `the preview dropped the caption: ${JSON.stringify(previewBar.label?.text)}`,
     );
-    // The caption element is the same one the release draws — and at the shipped
-    // dock width the card retires it, exactly as the real offer's does (the
-    // widened-dock probe above is where its row is measured).
+    // The caption element is the same one the release draws, in the rail's
+    // caption row and marked as a preview.
     assert.equal(
-      previewBar.label?.inBar,
+      previewBar.label?.inMeta,
       true,
-      "the preview's caption left the dock's action bar",
-    );
-    assert.equal(
-      previewBar.label?.display,
-      "none",
-      "the preview's shipped-width dock displayed a caption it has no room for",
+      "the preview's caption left the rail's caption row",
     );
     assert.equal(
       report.glow.layers.length,

@@ -64,7 +64,6 @@ import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
-import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
@@ -3029,13 +3028,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <PanelRightClose size={20} aria-hidden />
               )}
             </button>
-            {/*
-              The build number, and the app's manual update check, at the bar's
-              trailing end: the operator's hand is already here when they are done
-              with the dock, and the number is chrome, not a page. It stays a
-              control in every state; the glow is what says a release is waiting.
-            */}
-            <UpdateBadge />
           </nav>
         </div>
 

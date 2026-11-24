@@ -392,7 +392,7 @@ it could not check.
 **Check now** (shown as **Checking…**) re-reads the feed by hand instead of
 replaying the session's answer. The app asks at launch and then once an hour while
 it is open. The check is anonymous and stores nothing. The version badge in the
-dock's bottom bar is the other manual check. See [Updates](./27-updates.md).
+rail's foot is the other manual check. See [Updates](./27-updates.md).
 
 ## About me
 
@@ -404,9 +404,9 @@ written to `.lifequest/about.md` and reaches the companion as context only.
 ## Developer
 
 **Developer** — *The bench: switches and the studio's own identity*. It holds one
-switch, **Preview the update badge**: *Makes the build number in the chat dock's
-bottom bar glow, and opens the upgrade popup from it, as if a newer LifeQuest had
-been published. Nothing is downloaded: the preview carries no installer, so the
+switch, **Preview the update badge**: *Makes the build number in the rail's foot
+glow, and opens the upgrade popup from it, as if a newer LifeQuest had been
+published. Nothing is downloaded: the preview carries no installer, so the
 popup offers the release page instead.* The switch persists (it is stored locally)
 and is off to begin with. The note under it says which state you are seeing: the
 preview alone (a non-existent **v9.9.9**), a preview shadowed by a real release the

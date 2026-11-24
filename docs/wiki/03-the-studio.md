@@ -175,17 +175,19 @@ The rail:
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
   pulses when the count grows.
-- A divider, then the foot: **Log** closes the rail's navigation, the **vault
-  chip** names the workspace, and the collapse toggle holds the row's trailing
-  end — the sidebar's bottom corner. The Log and the chip share what the toggle
-  leaves, so the chip sits one toggle left of the rail's trailing edge rather
-  than flush against it. Wide, the chip shows the vault's name and a caret; thin,
-  the three stack — the vault's initials under the Log icon, with the expand
-  emblem closing the column. Clicking the chip
-  raises the **Switch vault** dialog: every recent vault with the open one marked
-  **Open now**, a note that switching loads that folder's files in place, and
-  **Open another folder…** for a folder this computer has never seen. The
-  version badge is not here — it lives in the dock's bottom bar.
+- A divider, then the foot, in two rows. The first closes the rail's navigation:
+  **Log** on the left, the **vault chip** naming the workspace on the right, the
+  two splitting the row. The second is the rail's caption line: the **version
+  badge** under the Log and the sidebar's collapse toggle under the chip, at the
+  column's bottom trailing corner. The build number glows there when a newer
+  release exists, with **Update available** beside it while the rail is wide
+  enough for the words. Wide, the chip shows the vault's name and a caret; thin,
+  the rows stack — the Log's icon, the vault's initials, the build number — and
+  the expand emblem moves up to the topband, where the way back belongs.
+  Clicking the chip raises the **Switch vault** dialog: every recent vault with
+  the open one marked **Open now**, a note that switching loads that folder's
+  files in place, and **Open another folder…** for a folder this computer has
+  never seen.
 
 The main pane is the page's own column, beginning directly under the title bar.
 It is the element the chat reads as the current page (`data-page-context-root`),
@@ -251,15 +253,15 @@ The chat dock:
   The message text keeps the same margins: the transcript's content box is the
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.
-- The dock's bottom action bar under the composer: a card at the composer box's
-  width, floating with a margin on every side and softly rounded, so it never runs
-  wider than the field it belongs to — in the split dock and in full screen alike.
+- The dock's bottom action bar under the composer: a card centred on the composer
+  at its own fixed width — a wider field for reading does not stretch the dock's
+  chrome — floating with a margin on every side and softly rounded, and never
+  wider than the field it belongs to, in the split dock and in full screen alike.
   In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
   chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
   display settings** (opens Settings → **Chat display**), the two-panes side
-  switch, **Collapse chat**, and the version badge (**Check for updates**), which
-  glows when a release is offered and gains **Update available** when the dock is
-  wide enough for the words.
+  switch, and **Collapse chat**. The build number is not here: it lives in the
+  rail's foot, under the **Log**.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 

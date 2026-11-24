@@ -259,7 +259,14 @@ const SAMPLE = `(() => {
             ? {
                 label: versionBadge.getAttribute("aria-label"),
                 text: (versionBadge.textContent || "").trim(),
-                box: box(versionBadge)
+                box: box(versionBadge),
+                inBar: Boolean(actions && actions.contains(versionBadge)),
+                inRail: Boolean(
+                  document.querySelector(".nav-rail")?.contains(versionBadge)
+                ),
+                inMeta: Boolean(
+                  document.querySelector(".nav-rail__meta")?.contains(versionBadge)
+                )
               }
             : null
         }
@@ -1196,24 +1203,22 @@ async function main() {
       `collapse action ${JSON.stringify(restored.collapseAction)}`,
     );
     check(
-      "restored: the version badge holds the bar's trailing end",
-      Boolean(barBox && badgeBox) &&
-        badgeBox.left > (collapseBox?.right ?? 0) &&
-        badgeBox.right <= barBox.right &&
-        barBox.right - badgeBox.right <= 10 &&
-        badgeBox.top >= barBox.top &&
-        badgeBox.bottom <= barBox.bottom,
-      `badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}, collapse ends at ${collapseBox?.right}px`,
-    );
-    check(
-      "restored: the collapse control sits just left of the version badge",
-      Boolean(collapseBox && badgeBox) &&
+      "restored: the collapse control holds the dock bar's trailing end",
+      Boolean(barBox && collapseBox) &&
         collapseBox.left > barBox.left + barBox.width / 2 &&
-        collapseBox.right <= badgeBox.left &&
-        badgeBox.left - collapseBox.right <= 12 &&
+        collapseBox.right <= barBox.right &&
+        barBox.right - collapseBox.right <= 10 &&
         collapseBox.top >= barBox.top &&
         collapseBox.bottom <= barBox.bottom,
-      `action ${JSON.stringify(collapseBox)} vs badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}`,
+      `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+    );
+    check(
+      "restored: the version badge lives in the rail's caption row, not the bar",
+      Boolean(restored.actions?.badge && badgeBox) &&
+        restored.actions.badge.inRail === true &&
+        restored.actions.badge.inMeta === true &&
+        restored.actions.badge.inBar === false,
+      `badge ${JSON.stringify(restored.actions?.badge)}`,
     );
     check(
       "restored: the bottom-bar collapse names its move and its side",
