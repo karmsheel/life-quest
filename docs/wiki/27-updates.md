@@ -1,28 +1,29 @@
 # Updates
 
 LifeQuest tells you when a newer release exists, without installing anything you
-did not ask for. The build number lives in the rail's foot, under the **Log**:
-quiet text while you are current, a glowing chip when GitHub names something
-newer — including a release that lands while you are working — with **Update
-available** beside it while the rail is wide enough for the words. Clicking the
-chip opens the one dialog that offers to download the installer, hand it to
-Windows, and step aside so it can replace the app. See also
-[Wiki home](./index.md).
+did not ask for. The build number lives at the top of the rail, under the
+**LifeQuest lockup**: quiet text while you are current, a glowing chip when
+GitHub names something newer — including a release that lands while you are
+working — with **Update available** beside it while the rail is wide enough for
+the words. Clicking the chip opens the one dialog that offers to download the
+installer, hand it to Windows, and step aside so it can replace the app. See
+also [Wiki home](./index.md).
 
 ## Where it lives
 
-- The version badge (`v0.3.3`) sits in the rail's caption row, the foot's second
-  row, under the **Log**; the sidebar's collapse toggle shares that row at its
-  trailing end.
+- The version badge (`v0.3.3`) sits directly under the rail's lockup, centred on
+  the column. The foot's one row holds the **Log**, the **vault chip** and the
+  sidebar's collapse toggle, which keeps the trailing corner immediately right of
+  the chip.
 - When an update is available, the number gains the accent glow and a small
   **Update available** line appears beside it while the rail is wide enough for
-  the words. The thin rail retires the caption row with the words: expand the
-  sidebar to read the number and check.
+  the words. The thin rail retires the number with the words: expand the sidebar
+  to read it and check.
 - There is no in-window notice, card or toast: the glowing chip is the app's own
   surface for news, and a native notification covers the case where the window is
   not focused.
-- With the dock collapsed the number is not on screen. Reopen the dock from its
-  launcher to see the version and ask for a check.
+- With the rail collapsed the number is not on screen. Its topband emblem
+  reopens the rail so you can see the version and ask for a check.
 - The dialog is an in-window modal portalled over the app, not a page and not an
   OS window.
 - **Settings → Updates** repeats what the feed said and adds **Check now**.
@@ -54,8 +55,8 @@ byte moves.
 ### When a release lands while you are working
 
 1. Main reads the feed on its hourly clock. A release it has not seen before
-   turns the dock's build number into the glowing chip: the number gains the
-   accent glow and, when the dock is wide enough, an **Update available** caption
+   turns the rail's build number into the glowing chip: the number gains the
+   accent glow and, when the rail is wide enough, an **Update available** caption
    appears beside it — "LifeQuest 0.3.4 is available" lives in the chip's own
    tooltip and dialog. Nothing covers the page and nothing takes the focus.
 2. Click the glowing number to open the dialog on the offer already in hand.
@@ -69,7 +70,7 @@ that comes back glows again.
 
 ### When you ask for a check
 
-1. Click the version number in the rail's foot in any state. If an offer is
+1. Click the version number under the rail's lockup in any state. If an offer is
    already known, the dialog opens on it; if not, it opens on **Checking for
    updates** and reads the feed.
 2. Read the offer: "You are running **v0.3.3**. Version **0.3.4** is ready to
@@ -99,7 +100,7 @@ makes when a release carries no Windows installer.
    (forcing the network); **Close** dismisses.
 2. If the check could not answer, the kicker reads **Update check failed**, the
    title **Could not check for updates**, and the body names the reason.
-   **Try again** retries. The dock bar stays quiet — it never glows on a failed
+   **Try again** retries. The rail stays quiet — it never glows on a failed
    check.
 
 ### Check and preview from Settings
@@ -123,7 +124,7 @@ makes when a release carries no Windows installer.
 
 | Part | What it does |
 |---|---|
-| **Update available** | Quiet label beside the build number in the rail's caption row, shown while an offer (or the preview) is up and the rail has room for the words. |
+| **Update available** | Quiet label beside the build number under the rail's lockup, shown while an offer (or the preview) is up and the rail has room for the words. |
 | Version number | `v0.3.3`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.4 is available". Glows only when there is something to install. |
 | Native notification | Title **LifeQuest 0.3.4 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |
@@ -136,7 +137,7 @@ makes when a release carries no Windows installer.
 ## Rules and behaviour
 
 - **The launch's check, then the watch.** The app asks once at launch and main
-  keeps that answer for the session; Settings → Updates and the dock's build
+  keeps that answer for the session; Settings → Updates and the rail's build
   number pass `force` because the operator asked by hand. The watch also passes
   `force`, with `background: true`, because its job is to reach the network again
   and notice a release published after the launch.
@@ -146,7 +147,7 @@ makes when a release carries no Windows installer.
   and offered installer alone: an offer you can still install is not made stale by
   a check that did not happen.
 - **One answer reaches the UI.** Main pushes every watch answer over
-  `update:decision`; the dock's badge and the dialog both draw the feed's latest
+  `update:decision`; the rail's badge and the dialog both draw the feed's latest
   answer instead of two views that can disagree.
 - **Only a strictly newer version is offered.** Versions are compared as numbers
   per component, so `0.10.0` beats `0.9.0`; a prerelease is older than the release
@@ -154,7 +155,7 @@ makes when a release carries no Windows installer.
   unreadable tag fails closed: no glow, no download.
 - **A check that did not answer is not an answer.** A missing release, a draft, an
   HTTP failure or an unreadable payload is reported as "could not check", and the
-  dock bar never glows. A failed manual check is not cached, so the next attempt
+  rail never glows. A failed manual check is not cached, so the next attempt
   reaches the network.
 - **The app runs one installer, and only the one it offered.** The renderer cannot
   name a URL: it can only agree to the installer main itself selected. Before a
@@ -203,10 +204,10 @@ build (an unpacked folder) and is not part of the update path.
 - **The version number is always clickable**, even with no update. Clicking when
   current is a legitimate manual check, and it opens the dialog on the answer
   instead of doing nothing.
-- **The glow is a state, not a style.** A quiet dock bar means no offer, not a
+- **The glow is a state, not a style.** A quiet build number means no offer, not a
   broken update system. The dialog always reports what actually happened.
-- **A collapsed dock hides the number.** The launcher brings the dock back; the
-  hourly watch keeps running either way.
+- **A collapsed rail hides the number.** Its topband emblem brings the rail back;
+  the hourly watch keeps running either way.
 - **SmartScreen may warn on first launch** of an unsigned private build. The
   README's instruction is **More info → Run anyway**; the updater itself does not
   change that.

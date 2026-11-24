@@ -81,7 +81,7 @@
      the day value is a light neutral that sits quietly on the paper mat, and the
      dark blocks below sink it toward the night mat — one standard in every theme,
      at each mode's own weight. */
-  --divider: #bdbdbd;
+  --divider: #c8c8c8;
   --divider-width: 1px;
 
   --text-strong: #0d0c0a;
@@ -253,7 +253,7 @@
   /* Night inverts the ladder, so the divider sinks with it: the same neutral
      hairline, darker than its day ink so it reads on the near-black mat instead
      of glowing off it. The thickness stays `--divider-width`. */
-  --divider: #454545;
+  --divider: #3a3a3a;
 
   /* The supplied lockup's ink on the night mat: both words cream, the Q emblem
      ember. UEST keeps its own token so a theme can diverge, but the shipped
@@ -353,7 +353,7 @@
     --input: #46433c;
     --ring: #2563eb;
     /* The night divider ink, for the no-preference boot before a skin paints. */
-    --divider: #454545;
+    --divider: #3a3a3a;
 
     --bg-panel: #222120;
     --bg-subtle: #1c1b1a;

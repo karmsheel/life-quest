@@ -101,7 +101,7 @@ type Arrangement = {
       box: Box;
       inBar: boolean;
       inRail: boolean;
-      inMeta: boolean;
+      inHeader: boolean;
     } | null;
   } | null;
   collapseAction: {
@@ -936,8 +936,8 @@ describe("chat dock side switch", () => {
       `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
-    // The build number is back in the rail's caption row; the collapse control is
-    // the dock bar's trailing end now.
+    // The build number is at the top of the rail, under the lockup; the collapse
+    // control is the dock bar's trailing end now.
     const badgeBox = restored.actions?.badge?.box;
     assert.ok(badgeBox, "the rail carries no version badge");
     assert.match(
@@ -956,10 +956,10 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       restored.actions?.badge?.inRail === true &&
-        restored.actions.badge.inMeta === true &&
+        restored.actions.badge.inHeader === true &&
         restored.actions.badge.inBar === false,
       true,
-      `the version badge is not in the rail's caption row (${JSON.stringify(restored.actions?.badge)})`,
+      `the version badge is not in the rail's header under the lockup (${JSON.stringify(restored.actions?.badge)})`,
     );
     assert.equal(
       barCollapsed.chat,

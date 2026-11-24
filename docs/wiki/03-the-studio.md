@@ -23,9 +23,10 @@ routes:
   full-screen chat's door is the dock's bottom action bar, beside the Notebox,
   not the strip, and the layouts picker offers the same mode as its **Full
   agent** card.
-- The **rail** is the leading column of the shell grid. Its wing band and the
-  active wing's pages sit under the title bar, and its foot holds the **Log** and
-  the **vault chip**.
+- The **rail** is the leading column of the shell grid. Its header carries the
+  lockup and the build number, its wing band and the active wing's pages sit
+  under the title bar, and its foot holds the **Log**, the **vault chip** and the
+  collapse toggle.
 - The **main pane** begins directly under the title bar. It has no band of its
   own; the page is the column.
 - The **chat dock** is the trailing column, or the middle column when you swap
@@ -170,8 +171,8 @@ The rail:
 
 - The **LifeQuest lockup**, centred in the rail's header row and held one
   rail-content inset below the window's top edge, with the same measure again
-  between it and the wing band below. The active logo is **Minimal** by default,
-  and any of **Modern**, **Athletic**, **Classic** or **Minimal** from
+  below the build number before the wing band. The active logo is **Minimal** by
+  default, and any of **Modern**, **Athletic**, **Classic** or **Minimal** from
   Settings → Developer. It is drawn from the shipped art, with the art's two
   short flanking rules left unpainted — the lockup reads LIFE · Q · UEST, no
   dashes; its three inks (LIFE, the Q emblem, UEST) are theme colours, so the
@@ -181,10 +182,15 @@ The rail:
   sidebar**). The pointer is its only hover cue — no fill behind it and no
   tooltip. The air around the mark — and the rest of the strip beside it — stays
   the window's drag handle.
+- The **build number** (`v0.3.3`), centred directly under the lockup in the
+  header: the app's one manual update door. It glows when a newer release exists,
+  with **Update available** beside it while the rail is wide enough for the
+  words; clicking it opens the update dialog. The thin rail retires the number
+  with the words — expand the sidebar to read it.
 - A collapse toggle (**Collapse sidebar** / **Expand sidebar**), with
-  `aria-expanded` and `aria-controls="nav-rail"`. Wide, it is the reachable
-  square at the sidebar's bottom trailing corner beside the vault chip and the
-  Log; collapsed, it moves to the top of the 56px column, because the way back
+  `aria-expanded` and `aria-controls="nav-rail"`. Wide, it is the square at the
+  trailing end of the foot's one row, immediately right of the vault chip;
+  collapsed, it moves to the top of the 56px column, because the way back
   belongs where the column starts rather than under its rows. It and the centred
   lockup share one collapsed state, so the two doors can never disagree.
   Collapsed, the column has no room for a word: the lockup leaves with its button
@@ -207,23 +213,18 @@ The rail:
   Journal**, **Automations**. **Decisions** wears a count of every pending
   Decision in the vault — the shelf is global governance, not lens-filtered — and
   pulses when the count grows.
-- A divider, then the foot, in two rows. The first closes the rail's navigation:
-  **Log** on the left, the **vault chip** naming the workspace on the right, the
-  two splitting the row. The second is the rail's caption line: the **version
-  badge** under the Log and the sidebar's collapse toggle under the chip, at the
-  column's bottom trailing corner. The build number glows there when a newer
-  release exists, with **Update available** beside it while the rail is wide
-  enough for the words. Wide, the chip shows the vault's name and a caret; thin,
-  the rows stack — the Log's icon, the vault's initials, the build number — and
-  the expand emblem moves up to the topband, where the way back belongs.
-  Clicking the chip raises the **Switch vault** dialog: every recent vault with
-  the open one marked **Open now**, a note that switching loads that folder's
-  files in place, and **Open another folder…** for a folder this computer has
-  never seen.
+- A divider, then the foot, in one row: **Log** on the left, the **vault chip**
+  naming the workspace, and the sidebar's collapse toggle at the trailing corner
+  immediately right of the chip. Wide, the chip shows the vault's name and a
+  caret; thin, the row stacks — the Log's icon and the vault's initials — and the
+  expand emblem moves up to the topband, where the way back belongs. Clicking the
+  chip raises the **Switch vault** dialog: every recent vault with the open one
+  marked **Open now**, a note that switching loads that folder's files in place,
+  and **Open another folder…** for a folder this computer has never seen.
 
 The rail's three dividers — above **Chats**, above the governance shelf, and above
 the foot — are the app's own line rather than a theme ink: each is a crisp 1px of
-neutral gray, light by day (`#bdbdbd`) and darker at night (`#454545`), and the
+neutral gray, light by day (`#c8c8c8`) and darker at night (`#3a3a3a`), and the
 pair is identical in every theme, so the sidebar's groups are separated the same
 way whichever palette you wear. A theme's palette colours surfaces and its own
 borders; it cannot tint these.
@@ -303,8 +304,8 @@ The chat dock:
   In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
   chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
   display settings** (opens Settings → **Chat display**), the two-panes side
-  switch, and **Collapse chat**. The build number is not here: it lives in the
-  rail's foot, under the **Log**.
+  switch, and **Collapse chat**. The build number is not here: it lives at the
+  top of the rail, under the lockup.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 

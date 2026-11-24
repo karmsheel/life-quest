@@ -1054,33 +1054,36 @@ a {
   z-index: 20;
 }
 
-/* The rail's first row: the lockup alone, centred on the column. It used to hold
-   the lockup at the leading edge and the collapse toggle at the trailing one. The
-   toggle has moved down to the rail's foot, so the mark is the row's only content
-   and the row's whole job is to centre it on the sidebar rather than anchor it to
-   an edge.
+/* The rail's first row: the lockup with the build number under it, both centred
+   on the column. The collapse toggle used to close this row at its trailing edge;
+   it lives in the rail's foot beside the vault chip now, so the header is the
+   mark and the version it belongs to, and the row's whole job is to centre them
+   on the sidebar rather than anchor a control to an edge.
 
    The box still starts at the window's top edge, so the strip's leading corner
    stays a window drag handle; it is taller than the titlebar row, which is free:
    the strip's own fill ends at the rail's trailing edge and the dock's strip keeps
    its own geometry on the other side of the seam. The row carries the rail-content
-   inset above and below the mark, so the lockup is held off the window's top by
+   inset above and below the pair, so the lockup is held off the window's top by
    one measure. The bottom inset gives up the rail's flex gap because the wing
    switcher's band below already spends it — the pair then meet on the same
-   measure. Collapsed, the lockup leaves and the row stays as the window's drag
-   handle and the column's top air (see "The thin rail"). It paints the rail's own
-   mat, so the sidebar runs to the window's top and the titlebar's fill begins only
-   at the sheet's leading edge. */
+   measure. Collapsed, the lockup and the version leave and the row stays as the
+   window's drag handle and the column's top air, with the square control centred
+   in it (see "The thin rail"). It paints the rail's own mat, so the sidebar runs
+   to the window's top and the titlebar's fill begins only at the sheet's leading
+   edge. */
 .nav-rail__header {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.12rem;
   flex: 0 0 auto;
-  /* One lockup row plus the inset above and below. Box-sizing makes the content
-     box exactly the lockup's height, which is what pins the mark's top edge to
-     the inset rather than centring it in a leftover strip. */
+  /* One lockup row, one version line, and the inset above and below. Box-sizing
+     makes the content box exactly the pair's height, which is what pins the
+     mark's top edge to the inset rather than centring it in a leftover strip. */
   height: calc(
-    1.7rem + var(--rail-header-inset) + var(--rail-header-inset) -
+    2.9rem + var(--rail-header-inset) + var(--rail-header-inset) -
       var(--density-gap-rail)
   );
   /* The row spans the rail's box and takes its inset back out of the rail's
@@ -1091,6 +1094,38 @@ a {
   padding-right: 0;
   padding-bottom: calc(var(--rail-header-inset) - var(--density-gap-rail));
   -webkit-app-region: drag;
+  /* The version line is what retreats when the column narrows (see the container
+     query below the version slot). */
+  container-type: inline-size;
+  container-name: rail-header;
+}
+
+/* The build number's slot under the lockup: centred small print, not a row of its
+   own — the version is a control (see `UpdateBadge`), so the slot is carved out of
+   the header's drag band and the pill keeps only the room its own ink needs. The
+   slot is what the thin rail hides: 56px cannot hold the version as a target. */
+.nav-rail__version {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  max-width: 100%;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+
+.nav-rail__version .update-badge {
+  margin: 0;
+  padding: 0.1rem 0.3rem;
+}
+
+/* The caption's words ride beside the version only while the header has room:
+   under a narrow rail they retreat and the glow alone is the signal, exactly as
+   the caption row used to do. */
+@container rail-header (max-width: 11rem) {
+  .nav-rail__version .update-badge__label {
+    display: none;
+  }
 }
 
 /* One lockup, one ink model. The three groups are the supplied art's own classes:
@@ -1281,20 +1316,17 @@ a {
   margin-top: auto;
 }
 
-/* The rail's foot: two rows, not one. The first closes the navigation — the Log
-   and the vault chip split it between them — and the second is the column's
-   caption line: the build number under the Log, the collapse toggle under the
-   chip at the sidebar's bottom corner. The number and the toggle share that row
-   so the version reads as small print under the navigation rather than as a
-   control in the dock's chrome, and so the toggle keeps the trailing corner of
-   the column. */
+/* The rail's foot: one row. The Log closes the navigation, the vault chip names
+   the open vault, and the collapse toggle holds the row's trailing corner — so
+   the column ends on the navigation it belongs to. The version that used to share
+   a caption row under this one lives up under the lockup now. */
 .nav-rail__foot {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
 }
 
-/* The navigation half of the foot: the Log and the chip split it equally. */
+/* The foot's row: the Log and the chip split it, the square toggle takes the
+   trailing end. */
 .nav-rail__foot-row {
   display: flex;
   align-items: stretch;
@@ -1306,49 +1338,13 @@ a {
   min-width: 0;
 }
 
-/* The caption line: the build number leads it and the collapse toggle trails it.
-   It is also the caption's container — the words retreat on the thin rail rather
-   than squeezing the number out of the column. */
-.nav-rail__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding-inline: 0.25rem;
-  min-width: 0;
-  container-type: inline-size;
-  container-name: rail-meta;
-}
-
-/* The build number's quiet line in the rail: the pill keeps only the room its own
-   ink needs, so it sits under the Log rather than stretching across the row. */
-.nav-rail__meta .update-badge {
-  margin: 0;
-  padding: 0.15rem 0.3rem;
-}
-
-.nav-rail__meta .update-badge__label {
-  margin: 0 0.1rem 0 0;
-  text-align: left;
-}
-
-/* The thin rail cannot hold the words: the glow alone is the signal there, as it
-   is in any column too narrow for the sentence. The wide rail keeps them. */
-@container rail-meta (max-width: 11rem) {
-  .nav-rail__meta .update-badge__label {
-    display: none;
-  }
-}
-
-/* The collapse toggle in the caption row: a fixed square at the row's trailing
-   end, one step under the vault chip and level with the build number. It is the
-   `.nav-toggle` square at every width; only its place in the foot changes. */
-/* The `.nav-toggle` square sets `margin: 0` further down the sheet, so the
-   trailing push is restated at the row's own specificity rather than relying on
-   source order. */
-.nav-rail__meta .nav-rail__collapse {
+/* The collapse toggle at the foot's trailing corner: the `.nav-toggle` square at
+   every width, beside the vault chip rather than under it. While the rail is wide
+   it is the last control in the column; thin, the square moves to the topband and
+   this cell is absent, so the Log and the chip have the row to themselves. */
+.nav-rail__foot-row > .nav-rail__collapse {
   flex: 0 0 auto;
   align-self: center;
-  margin-left: auto;
 }
 
 /* The vault chip in the foot of the rail. A chip rather than the old square
@@ -1589,7 +1585,7 @@ a {
 
 /* The foot stacks in the thin rail: the Log's icon and the vault's initials,
    centred in the column. The expand emblem moved up into the header, where the
-   way back belongs, and the caption row is retired with the words — the thin
+   way back belongs, and the version line is retired with the words — the thin
    column cannot hold the number as a target worth aiming at. */
 .shell--nav-collapsed .nav-rail__foot-row {
   flex-direction: column;
@@ -1601,12 +1597,12 @@ a {
   flex: 0 0 auto;
 }
 
-/* The thin column retires the caption row with the words: 56px cannot hold the
+/* The thin column retires the version line with the words: 56px cannot hold the
    build number as a target the operator can hit, and the rail's own state has
    never been the place to read the version. The Log and the vault's initials are
    the thin foot; expanding the rail brings the number, the words and the toggle
    back. */
-.shell--nav-collapsed .nav-rail__meta {
+.shell--nav-collapsed .nav-rail__version {
   display: none;
 }
 
@@ -1633,18 +1629,18 @@ a {
 }
 
 /* The words that come with the glow: `Update available`, beside the build number
-   and only while there is something to install. In the rail's caption row the
-   words ride inline to the number's left, so they take the row's height rather
-   than a row of their own and stay small and uppercase — a state caption in the
-   chrome, not prose.
+   and only while there is something to install. In the rail's version slot under
+   the lockup the words ride inline to the number's left, so they take the line's
+   height rather than a line of their own and stay small and uppercase — a state
+   caption in the chrome, not prose.
 
    It wears the state ink for the same reason the pill does: this is not
    decoration, it is "there is something for you to do". Nothing is tabbable
    here; the pill beside it is the control, and the words are its reason.
 
-   The words are the one thing in the row that may retreat: the container query
-   beside `.nav-rail__meta` hides them when the rail is too narrow to hold them
-   (the thin rail keeps the glow alone). The shrink is a last resort under a
+   The words are the one thing on the line that may retreat: the container query
+   beside `.nav-rail__version` hides them when the column is too narrow to hold
+   them (the thin rail keeps the glow alone). The shrink is a last resort under a
    wider font, so the caption can never push the pill out of the column's
    padding — the pill is the control and the halo needs that room. */
 .update-badge__label {
@@ -1663,12 +1659,12 @@ a {
   text-overflow: ellipsis;
 }
 
-/* The build number in the rail's caption row, under the Log. It is the app's one
-   manual way to ask GitHub whether there is something newer: a control in every
-   state — that is what makes the check reachable at any time, not only at
-   launch — but it is dressed as the quiet text the chrome earns: no fill, no
-   border, the rail's muted ink. Only the affordances a control needs are added:
-   a pointer, an ink change on hover, and a focus ring for the keyboard. */
+/* The build number, under the rail's lockup. It is the app's one manual way to
+   ask GitHub whether there is something newer: a control in every state — that is
+   what makes the check reachable at any time, not only at launch — but it is
+   dressed as the quiet text the chrome earns: no fill, no border, the rail's
+   muted ink. Only the affordances a control needs are added: a pointer, an ink
+   change on hover, and a focus ring for the keyboard. */
 .update-badge {
   appearance: none;
   border: 0;
@@ -1707,13 +1703,13 @@ a {
 }
 
 /* The build number once the feed has named a newer release. It is the one thing
-   in the rail's caption row that can appear out of nowhere, so it wears the state
-   ink and a halo — a *state*, not decoration: the accent here means "there is
-   something for you to do", the same thing it means on a nav badge.
+   on the rail's version line that can appear out of nowhere, so it wears the
+   state ink and a halo — a *state*, not decoration: the accent here means "there
+   is something for you to do", the same thing it means on a nav badge.
 
    Sized to its own label rather than stretched across the column, so the halo has
-   the row's own slack to bloom into: the caption row is taller than the pill and
-   its padding is the room, and the rig measures that room against the halo's
+   the header's own slack to bloom into: the version line is taller than the pill
+   and its gap is the room, and the rig measures that room against the halo's
    reach. */
 .update-badge--available {
   background: var(--accent-fill);

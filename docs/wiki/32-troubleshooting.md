@@ -288,7 +288,7 @@ backup, `domain.sqlite.bak` beside the database is the copy of what was there.
 
 ### The release check failed
 
-The build number in the rail's foot glows when a newer release exists;
+The build number at the top of the rail glows when a newer release exists;
 clicking it opens the dialog. Settings → Updates runs the same check by hand
 (**Check now**). A check that did not happen is reported as a failure, never as
 "up to date".
@@ -314,7 +314,7 @@ accent glow and, when the rail is wide enough, an **Update available** caption.
 There is no in-window pop-up — click the glowing number to see the offer — and a
 release the feed stops offering clears the glow. If the window is not focused you
 also get a native notification. A collapsed sidebar hides the build number with
-the caption row; expand the rail to read it. Nothing installs without your
+the lockup; expand the rail to read it. Nothing installs without your
 **Download and install** and the native confirmation.
 
 ## Images

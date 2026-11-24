@@ -12,9 +12,9 @@
  * is asserted to be 0 at every step.
  *
  * `update-badge.electron.mjs` proves the badge, its caption and the dialog
- * against a stubbed bridge, including the narrow dock where the caption
- * retreats. `update-install.electron.mjs` proves the feed rules and the download
- * against the real main. This rig covers the fact neither of those can reach:
+ * against a stubbed bridge, including the thin rail where the words retreat.
+ * `update-install.electron.mjs` proves the feed rules and the download against
+ * the real main. This rig covers the fact neither of those can reach:
  *
  *   · a release published after launch reaches the renderer with no click, no
  *     reload and no card — main's watch reads the feed on its own clock, pushes
@@ -28,9 +28,10 @@
  *   · clicking the glowing build number opens the real upgrade dialog, and
  *     "Not now" closes it without losing the offer.
  *
- * The app has to reach its dock: the badge lives in the rail's caption row, and
- * the notice this rig used to sample lived above every route. So this rig is
- * the old one plus a throwaway world — a vault created in the temp dir and a
+ * The app has to reach its dock: the badge lives at the top of the rail, in the
+ * version slot under the lockup, and the notice this rig used to sample lived
+ * above every route. So this rig is the old one plus a throwaway world — a vault
+ * created in the temp dir and a
  * `recent.json` that reopens it, a Pi endpoint pointing at the rig's own server
  * so the companion gate answers ready, and free MCP doors — and NOTHING else
  * changes. The operator's profile and vault are never read.
@@ -49,8 +50,8 @@
  *  5. The news arrives but the badge does not turn state: no
  *     `.update-badge--available`, the wrong `data-update-version`, or no caption
  *     (in the bar, even if the shipped dock's card retires the words).
- *  6. The caption is not the rail's caption row's own element immediately before
- *     the badge, or the number leaves the rail's foot.
+ *  6. The caption is not the rail's version slot's own element immediately before
+ *     the badge, or the number leaves the version slot for the dock's bar.
  *  7. The same release on later ticks raises a second surface — an alert, a
  *     dialog, a notice, or a second caption — instead of the badge simply
  *     staying on.
@@ -237,8 +238,8 @@ function freePorts(count) {
  * `noticeCount` is deliberately the first field: the in-window card was removed,
  * so every step of this run is also a measured claim that it did not come back.
  * The badge is reported by class and by its data attributes, and the caption is
- * reported as its own element immediately before the badge in the dock's action
- * bar — the absence of a card is only half the story; the presence of the glow
+ * reported as its own element immediately before the badge in the rail's version
+ * slot — the absence of a card is only half the story; the presence of the glow
  * and its sentence is the other half.
  */
 const SAMPLE = `(() => {
@@ -279,11 +280,16 @@ const SAMPLE = `(() => {
     caption && caption.classList && caption.classList.contains('update-badge__label')
       ? caption
       : captions[0] ?? null;
-  // The badge's home: the rail's caption row, the foot's second row under the
-  // Log. The row is what the news lands in now that the dock's bar no longer
-  // carries the build number.
-  const metaRow = document.querySelector('.nav-rail__meta');
-  const metaControls = metaRow ? Array.from(metaRow.querySelectorAll('button')) : [];
+  // The badge's home: the rail's version slot at the top of the column, inside
+  // the header directly under the lockup. The slot is what the news lands in now
+  // that the dock's bar no longer carries the build number, and the foot below is
+  // one row (Log, vault chip, collapse toggle) with no caption row in it.
+  const versionSlot = document.querySelector('.nav-rail__version');
+  const railHeader = document.querySelector('.nav-rail__header');
+  const footerRow = document.querySelector('.nav-rail__foot-row');
+  const versionControls = versionSlot
+    ? Array.from(versionSlot.querySelectorAll('button'))
+    : [];
   const dialog = document.querySelector('.update-dialog');
   return {
     noticeCount: document.querySelectorAll('.update-notice').length,
@@ -296,7 +302,7 @@ const SAMPLE = `(() => {
       ? document.querySelector('.chat-panel').getAttribute('data-chat-surface')
       : null,
     hasShell: Boolean(document.querySelector('.shell')),
-    hasCaptionRow: Boolean(metaRow),
+    hasVersionSlot: Boolean(versionSlot),
     companionSetup: Boolean(
       document.querySelector('.companion-setup, .companion-setup-screen, .splash-screen'),
     ),
@@ -313,12 +319,14 @@ const SAMPLE = `(() => {
           text: (badge.textContent ?? '').trim(),
           box: box(badge),
           visible: visible(badge),
-          inMeta: Boolean(metaRow && metaRow.contains(badge)),
+          inVersion: Boolean(versionSlot && versionSlot.contains(badge)),
+          inHeader: Boolean(railHeader && railHeader.contains(badge)),
+          inFoot: Boolean(footerRow && footerRow.contains(badge)),
           inDockBar: Boolean(
             document.querySelector('.chat-panel__actions')?.contains(badge)
           ),
-          lastControlInMeta: metaControls.length
-            ? metaControls[metaControls.length - 1] === badge
+          lastControlInVersion: versionControls.length
+            ? versionControls[versionControls.length - 1] === badge
             : null,
         }
       : null,
@@ -328,21 +336,22 @@ const SAMPLE = `(() => {
           text: (captionEl.textContent ?? '').trim(),
           display: getComputedStyle(captionEl).display,
           dataLabel: captionEl.getAttribute('data-update-label'),
-          inMeta: Boolean(metaRow && metaRow.contains(captionEl)),
+          inVersion: Boolean(versionSlot && versionSlot.contains(captionEl)),
           immediatelyBeforeBadge:
             Boolean(badge) && captionEl.nextElementSibling === badge,
           box: box(captionEl),
           visible: visible(captionEl),
         }
       : null,
-    meta: metaRow
+    version: versionSlot
       ? {
-          box: box(metaRow),
-          lastControlIsBadge: metaControls.length
-            ? metaControls[metaControls.length - 1] === badge
+          box: box(versionSlot),
+          inHeader: Boolean(railHeader && railHeader.contains(versionSlot)),
+          lastControlIsBadge: versionControls.length
+            ? versionControls[versionControls.length - 1] === badge
             : null,
-          containsBadge: Boolean(badge && metaRow.contains(badge)),
-          controls: metaControls.map((el) => (el.getAttribute('aria-label') ?? '').trim()),
+          containsBadge: Boolean(badge && versionSlot.contains(badge)),
+          controls: versionControls.map((el) => (el.getAttribute('aria-label') ?? '').trim()),
         }
       : null,
     dialog: dialog
@@ -504,7 +513,7 @@ async function main() {
       title: document.title,
       rootChildren: document.querySelector('#root')?.childElementCount ?? null,
       hasShell: Boolean(document.querySelector('.shell')),
-      hasCaptionRow: Boolean(document.querySelector('.nav-rail__meta')),
+      hasVersionSlot: Boolean(document.querySelector('.nav-rail__version')),
       hasBadge: Boolean(document.querySelector('.update-badge')),
       hasChatPanel: Boolean(document.querySelector('.chat-panel')),
       hasWelcome: Boolean(document.querySelector('.welcome')),
@@ -537,7 +546,7 @@ async function main() {
   stage = "wait for the bridge and the dock";
   // The bridge is live as soon as the preload has run, before React mounts.
   await waitFor("Boolean(window.lifequest && window.lifequest.updateCheck)", "the preload bridge");
-  // The badge lives in the dock's action bar, so this is also the claim that the
+  // The badge lives at the top of the rail, so this is also the claim that the
   // real app opened a vault and reached its studio rather than the welcome or
   // companion-setup screen.
   try {
@@ -576,9 +585,9 @@ async function main() {
   const launch = await sample();
   states.launch = { feedRequests: launchRequests, ...launch };
   check(
-    "the launch reaches the rail's caption row",
-    launch.hasCaptionRow === true && launch.badge?.inMeta === true,
-    `caption row ${launch.hasCaptionRow}, badge in caption row ${launch.badge?.inMeta}`,
+    "the launch reaches the rail's version slot",
+    launch.hasVersionSlot === true && launch.badge?.inVersion === true,
+    `version slot ${launch.hasVersionSlot}, badge in version slot ${launch.badge?.inVersion}`,
   );
   check(
     "a launch with no newer release leaves the build number at rest",
@@ -601,12 +610,13 @@ async function main() {
     `dialog ${JSON.stringify(launch.dialog)}, alerts ${launch.alertCount}`,
   );
   check(
-    "the build number leads the rail's caption row, under the Log",
-    launch.badge?.inMeta === true &&
-      launch.meta?.containsBadge === true &&
+    "the build number is the rail's version line, under the lockup",
+    launch.badge?.inVersion === true &&
+      launch.version?.containsBadge === true &&
       launch.badge?.inDockBar === false &&
-      launch.meta?.lastControlIsBadge === false,
-    `caption row controls ${JSON.stringify(launch.meta?.controls)}`,
+      launch.badge?.inFoot === false &&
+      launch.version?.lastControlIsBadge === true,
+    `version slot controls ${JSON.stringify(launch.version?.controls)}`,
   );
 
   stage = "subscribe to the push channel";
@@ -696,28 +706,29 @@ async function main() {
     arrived.dialog === null && arrived.alertCount === 0,
     `dialog ${JSON.stringify(arrived.dialog)}, alerts ${arrived.alertCount}`,
   );
-  // The badge is back in the rail's caption row, under the Log: the glow and its
-  // sentence are the whole surface, and the caption sits inline before the number
-  // whenever the offer is up.
+  // The badge is at the top of the rail, in the version slot under the lockup:
+  // the glow and its sentence are the whole surface, and the caption sits inline
+  // before the number whenever the offer is up.
   check(
     "the offer puts a caption immediately before the build number",
     arrived.captionCount === 1 &&
       arrived.caption?.text === CAPTION_TEXT &&
-      arrived.caption?.inMeta === true &&
+      arrived.caption?.inVersion === true &&
       arrived.caption?.immediatelyBeforeBadge === true &&
       arrived.caption?.visible === true,
     `caption ${JSON.stringify(arrived.caption)} (count ${arrived.captionCount})`,
   );
   check(
-    "the glowing build number is still the rail's caption-row number",
-    arrived.badge?.inMeta === true &&
-      arrived.meta?.containsBadge === true &&
+    "the glowing build number is still the rail's version-line number",
+    arrived.badge?.inVersion === true &&
+      arrived.version?.containsBadge === true &&
       arrived.badge?.inDockBar === false &&
-      arrived.meta?.lastControlIsBadge === false,
-    `badge ${JSON.stringify(arrived.badge?.box)}, caption row controls ${JSON.stringify(arrived.meta?.controls)}`,
+      arrived.badge?.inFoot === false &&
+      arrived.version?.lastControlIsBadge === true,
+    `badge ${JSON.stringify(arrived.badge?.box)}, version slot controls ${JSON.stringify(arrived.version?.controls)}`,
   );
   // The shipped screen, as the handover points at it: the glowing build number
-  // in the rail's foot.
+  // under the lockup at the top of the rail.
   states.badgeScreenshot = await shoot("update-poll-badge.png");
   check(
     "the badge's picture is a real capture",
@@ -955,11 +966,11 @@ async function main() {
     `badge ${JSON.stringify(closedState.badge)}, caption ${JSON.stringify(closedState.caption)}`,
   );
   check(
-    "closing the dialog leaves the number in the rail's caption row",
-    closedState.badge?.inMeta === true &&
-      closedState.meta?.containsBadge === true &&
-      closedState.meta?.lastControlIsBadge === false,
-    `caption row controls ${JSON.stringify(closedState.meta?.controls)}`,
+    "closing the dialog leaves the number in the rail's version slot",
+    closedState.badge?.inVersion === true &&
+      closedState.version?.containsBadge === true &&
+      closedState.version?.lastControlIsBadge === true,
+    `version slot controls ${JSON.stringify(closedState.version?.controls)}`,
   );
   check(
     "closing the dialog raises no notice",

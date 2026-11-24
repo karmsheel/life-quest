@@ -18,7 +18,7 @@ import {
  * darker gray at night (`#454545`) so it reads on the near-black mat instead of
  * glowing off it.
  *
- * The driver (`e2e/rail-dividers.electron.mjs`) mounts the real shell harness in
+ * The driver (`e2e/rail-chrome.electron.mjs`) mounts the real shell harness in
  * a real Electron window and reads the computed ink and thickness of every
  * `.nav-rail__divider` in six palettes. This suite runs that driver and then
  * restates the claims over the artifact, so a regression names the palette and
@@ -26,7 +26,7 @@ import {
  *
  * A skipped rig is evidence of nothing, so this test skips only when the Vite
  * dev server is not listening on 5173; run it through
- * `/root/.local/bin/lifequest-e2e <checkout> tests/rail-dividers-e2e.test.ts`,
+ * `/root/.local/bin/lifequest-e2e <checkout> tests/rail-chrome-e2e.test.ts`,
  * which puts that server up under a throwaway profile and restores the bench.
  */
 
@@ -39,25 +39,30 @@ const electron = require("electron") as string;
 
 const DEV_PORT = 5173;
 const ARTIFACTS = path.join(desktopRoot, "e2e/artifacts");
-const DRIVER = path.join(desktopRoot, "e2e/rail-dividers.electron.mjs");
-const REPORT = path.join(ARTIFACTS, "rail-dividers.json");
+const DRIVER = path.join(desktopRoot, "e2e/rail-chrome.electron.mjs");
+const REPORT = path.join(ARTIFACTS, "rail-chrome.json");
 
 /**
  * The standard the operator asked for: 1px, carried by mode rather than theme.
  * The day ink must be lighter than the night ink — that ordering is asserted
  * below, so a future edit cannot flatten the pair or invert it.
  */
-const DIVIDER_INK = { day: "#bdbdbd", night: "#454545" };
-const DIVIDER_RGB = { day: "rgb(189, 189, 189)", night: "rgb(69, 69, 69)" };
+const DIVIDER_INK = { day: "#c8c8c8", night: "#3a3a3a" };
+const DIVIDER_RGB = { day: "rgb(200, 200, 200)", night: "rgb(58, 58, 58)" };
 const DIVIDER_WIDTH = "1px";
 const DIVIDER_COUNT = 3;
-const SCREENSHOTS = [
-  "rail-dividers-day.png",
-  "rail-dividers-night.png",
-  "rail-dividers-day-shell.png",
-];
-/** A picture smaller than this is a blank frame, not the shipped rail. */
-const SCREENSHOT_MIN_BYTES = 4 * 1024;
+/** A picture smaller than its floor is a blank frame, not the shipped chrome. */
+const SCREENSHOTS: Record<string, number> = {
+  "rail-chrome-day.png": 4 * 1024,
+  "rail-chrome-night.png": 4 * 1024,
+  "rail-chrome-day-shell.png": 10 * 1024,
+  "rail-chrome-collapsed.png": 4 * 1024,
+  // The header and foot bands are flat plates (a lockup, a version, three foot
+  // cells): a correct 280px-wide crop is only ~3 KB, so the floor is lower — a
+  // blank band of the same size still falls under it.
+  "rail-chrome-header.png": 1.5 * 1024,
+  "rail-chrome-foot.png": 1.5 * 1024,
+};
 
 type DividerLine = {
   top: number | null;
@@ -74,6 +79,44 @@ type DividerSample = {
   lines: DividerLine[];
 };
 
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+/** The two moves, as the driver measured them in Forge daylight. */
+type ChromeLayout = {
+  header: Box | null;
+  brand: Box | null;
+  version: Box | null;
+  versionDisplay: string | null;
+  versionInHeader: boolean | null;
+  versionCentreOffset: number | null;
+  badge: { text: string; tag: string; box: Box | null } | null;
+  headerControls: number | null;
+  foot: Box | null;
+  footRows: number | null;
+  footRow: Box | null;
+  chip: Box | null;
+  collapse: {
+    box: Box | null;
+    label: string | null;
+    isLastControl: boolean;
+  } | null;
+  metaRowRetired: boolean | null;
+};
+
+type CollapsedLayout = {
+  headerCollapse: { label: string | null; mode: string | null; box: Box | null } | null;
+  versionDisplay: string | null;
+  footHasCollapse: boolean;
+  headerControls: number | null;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -88,6 +131,7 @@ type Report = {
     widthToken: string;
   };
   samples: Record<string, DividerSample>;
+  layout: { wide: ChromeLayout; collapsed: CollapsedLayout };
   screenshots: string[];
 };
 
@@ -132,7 +176,7 @@ function runDriver(): Promise<number> {
   });
 }
 
-describe("rail dividers (1px neutral gray, lighter by day, every theme)", () => {
+describe("rail chrome (dividers, header, foot)", () => {
   it("draws the sidebar's three grouping lines at 1px of the mode's ink in every palette", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
@@ -281,15 +325,105 @@ describe("rail dividers (1px neutral gray, lighter by day, every theme)", () => 
       }
     }
 
+    // The two moves the operator asked for, restated from the driver's boxes.
+    // These are geometry claims, not a grep of the markup: a version that is
+    // still under the Log, or a toggle still under the chip, fails here.
+    const wide = report.layout.wide;
+    assert.ok(wide.header, "the rail rendered no header");
+    assert.equal(
+      wide.versionInHeader,
+      true,
+      "the build number is not inside the rail's header",
+    );
+    assert.notEqual(
+      wide.versionDisplay,
+      "none",
+      "the wide rail hides the build number",
+    );
+    assert.ok(wide.version, "the header holds no version slot");
+    assert.ok(wide.brand, "the header holds no lockup");
+    assert.ok(
+      wide.version.top >= wide.brand.bottom - 1,
+      `the version (${JSON.stringify(wide.version)}) is not under the lockup (${JSON.stringify(wide.brand)})`,
+    );
+    assert.ok(
+      wide.versionCentreOffset !== null &&
+        Math.abs(wide.versionCentreOffset) <= 1,
+      `the version is ${wide.versionCentreOffset}px off the column's centre`,
+    );
+    assert.equal(
+      wide.headerControls,
+      2,
+      `the header holds ${wide.headerControls} controls, expected the lockup and the build number`,
+    );
+    assert.ok(
+      wide.badge && /^v\d+\.\d+\.\d+$/.test(wide.badge.text),
+      `the version slot holds no version button (${JSON.stringify(wide.badge)})`,
+    );
+    assert.equal(
+      wide.footRows,
+      1,
+      `the foot is ${wide.footRows} rows, not the one row the collapse toggle sits in`,
+    );
+    assert.equal(
+      wide.metaRowRetired,
+      true,
+      "the retired caption row is still in the DOM",
+    );
+    assert.ok(wide.chip, "the foot holds no vault chip");
+    assert.ok(wide.collapse, "the foot row holds no collapse toggle");
+    assert.ok(
+      wide.collapse.box && wide.chip
+        ? wide.collapse.box.left >= wide.chip.right - 1
+        : false,
+      `the collapse toggle (${JSON.stringify(wide.collapse.box)}) is not right of the vault chip (${JSON.stringify(wide.chip)})`,
+    );
+    assert.equal(
+      wide.collapse.label,
+      "Collapse sidebar",
+      `the foot's square control is named ${JSON.stringify(wide.collapse.label)}`,
+    );
+    assert.equal(
+      wide.collapse.isLastControl,
+      true,
+      "the collapse toggle is not the last control in the column",
+    );
+
+    // Collapsed, the version retires and the way back is the Q emblem in the
+    // topband — the other half of the same two controls.
+    const collapsedLayout = report.layout.collapsed;
+    assert.equal(
+      collapsedLayout.versionDisplay,
+      "none",
+      "the thin rail still paints the build number",
+    );
+    assert.equal(
+      collapsedLayout.footHasCollapse,
+      false,
+      "the thin rail still draws the square toggle in the foot",
+    );
+    assert.equal(
+      collapsedLayout.headerControls,
+      1,
+      `the thin topband holds ${collapsedLayout.headerControls} controls, expected only the Q emblem`,
+    );
+    assert.ok(
+      collapsedLayout.headerCollapse &&
+        collapsedLayout.headerCollapse.label === "Expand sidebar" &&
+        collapsedLayout.headerCollapse.mode === "brand",
+      `the thin topband's control is ${JSON.stringify(collapsedLayout.headerCollapse)}`,
+    );
+
     // The pictures are this window's own capturePage of the shell harness: the
-    // rail column by day and by night, and the whole window for context. A
-    // picture that is missing or blank is not evidence the screen ships.
-    for (const name of SCREENSHOTS) {
+    // rail column by day and by night, the whole window, the two bands that
+    // moved, and the collapsed column. A picture that is missing or blank is not
+    // evidence the screen ships.
+    for (const [name, floor] of Object.entries(SCREENSHOTS)) {
       const file = path.join(ARTIFACTS, name);
       assert.equal(fs.existsSync(file), true, `missing screenshot ${name}`);
       const size = fs.statSync(file).size;
       assert.ok(
-        size > SCREENSHOT_MIN_BYTES,
+        size > floor,
         `screenshot ${name} is ${size} bytes — a blank frame, not the shipped rail`,
       );
     }
