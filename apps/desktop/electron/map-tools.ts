@@ -214,9 +214,11 @@ async function executeToolInner(
     });
   }
   // Theme tools are app-profile state, not vault state, so they dispatch before
-  // the vault is opened: a theme may be inspected even when no vault is.
+  // the vault is opened: a theme may be inspected even when no vault is. The
+  // root still rides along because one of them copies a vault picture into the
+  // profile — the tool refuses on its own when there is no vault.
   if (THEME_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeThemeTool(name, rec);
+    return executeThemeTool(name, rec, root);
   }
 
   const snap = await openVault(root);

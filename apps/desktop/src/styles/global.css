@@ -703,9 +703,13 @@ a {
   height: 100%;
   color: var(--fg);
   /* No gap: the panes abut, and each pane's own trailing hairline is its seam —
-     the rail's between sidebar and sheet, the sheet's between page and dock. The
-     mat is not this tray's business — the rail carries it to the window's top in
-     its own column, and the sheet and dock meet the strip directly. */
+     the rail's between sidebar and sheet, the sheet's between page and dock.
+     The tray paints the page canvas base, because the scene backdrop now sits
+     behind the whole shell and the side panels veil it: what shows through a
+     panel's shade is this canvas (or the theme's picture), not a pane's own
+     opaque fill. The rail still carries the mat to the window's top in its own
+     column, and the sheet and dock meet the strip directly. */
+  background: var(--background);
   gap: 0;
   /* The seam's handle is positioned against this tray, and the tracks above are
      exactly the geometry it is placed from. */
@@ -860,7 +864,14 @@ a {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: var(--background);
+  /* The page is a layer above the scene, not a pane that owns the background:
+     the tray paints the canvas base and the backdrop sits on it, so the sheet
+     itself is transparent and only its cards and its own surfaces paint. The
+     material wash/grid below still tint this surface; they are transparent
+     gradients, so the scene reads through them. */
+  position: relative;
+  z-index: 1;
+  background: transparent;
   border: 0;
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -1010,7 +1021,15 @@ a {
   --rail-header-inset: calc(
     var(--density-pad-rail-x) + var(--density-pad-row-x) + 1.5px
   );
-  background: var(--canvas-base);
+  /* The sidebar's shade: the rail's mat mixed with whatever is behind the tray,
+     so a clear shade lets the scene (picture or sky) show through. 100% is the
+     opaque rail the shell has always worn; the five steps are the theme model's
+     words, mapped on the document root (see "the panel shades" below). */
+  background: color-mix(
+    in srgb,
+    var(--canvas-base) var(--scene-panel-sidebar-veil, 100%),
+    transparent
+  );
   border: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -7674,8 +7693,14 @@ a.home-mini-list__link:hover {
   top: 0;
   align-self: stretch;
   /* The sheet's own canvas — the dock is the right-hand pane of one page, so it
-     takes `--background` with the sheet and not the card step above it. */
-  background: var(--background);
+     takes `--background` with the sheet and not the card step above it. The
+     shade mixes it with the scene behind the tray: 100% is the opaque dock the
+     shell has always worn, and the steps down let the backdrop read through. */
+  background: color-mix(
+    in srgb,
+    var(--background) var(--scene-panel-chat-veil, 100%),
+    transparent
+  );
   color: var(--fg);
   border: 0;
   /* The escape lives in the box, not in a negative margin: a stretched grid item
@@ -14504,6 +14529,39 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
 }
 
+/* ——— background picture row (Settings → Appearance) ————————————————————————
+   The Background section wears the Material section's frame; only its Picture
+   row is its own. The file name is a name, not a path — long enough to identify
+   the picture, clipped rather than wrapping the row's controls onto two lines. */
+
+.theme-background__picture-control {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.theme-background__picture-name {
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A refusal belongs under the row it refused, in the settings card's own error
+   step rather than the page's loud one: the section is still usable. It sits
+   between rows, so the row that follows keeps the block's spacing. */
+.theme-background__refusal {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+.theme-material__rows .theme-background__refusal + .theme-material__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
 /* ——— layout (Settings → Appearance) ——————————————————————————————————————————
    The operator's side of the chrome layout: where the wing switcher, the area
    lens and the sidebar sit, each one a pick above the theme's. Ruled off from
@@ -14871,24 +14929,82 @@ button.chat-panel__activity-line:hover {
 
 /* ——— the scene behind the page ————————————————————————————————————————————
    A theme may name a sky. The vocabulary is the app's: presets, not pixels.
-   The layer sits inside the page canvas, under the page's content, and behind
-   a palette scrim — decoration must never cost the text its contrast. An
-   arguing theme cannot: a scene is only ever a preset and an intensity.
+   The layer sits behind the whole shell tray — rail, sheet and dock — under
+   every pane, and behind a palette scrim: decoration must never cost the text
+   its contrast. An arguing theme cannot: a scene is only ever a preset, an
+   intensity and a pair of panel shades.
 
-   The layer is positioned only while a scene is on, so the default shell keeps
-   the layout it had; a plain scene leaves no positioning context behind. */
-:root:not([data-scene-backdrop="plain"]) .shell__main {
-  position: relative;
-}
-
+   The sheet draws above it (`z-index: 1` on `.shell__main`, always positioned
+   now), and the rail and dock veil it with their own shade. The old
+   "position the sheet only while a scene is on" rule is gone: the sheet is a
+   layer over the scene at all times, and a plain scene simply leaves the tray's
+   canvas base showing. */
 :root:not([data-scene-backdrop="plain"]) .shell__content {
   position: relative;
   z-index: 1;
 }
 
+/* — the panel shades ————————————————————————————————————————————————————————
+   How much of the scene shows through one shell panel. The model names a step;
+   these five rules own what each step means: `solid` is the opaque panel the
+   shell has always worn, `clear` lets the whole backdrop through, and the steps
+   between shade it. The panel's own background mixes its fill at the veil
+   percentage (see `.nav-rail` / `.chat-panel`), so a theme can never ship a
+   colour or an arbitrary opacity — only one of these words. */
+:root[data-scene-panel-sidebar="solid"] {
+  --scene-panel-sidebar-veil: 100%;
+}
+
+:root[data-scene-panel-sidebar="heavy"] {
+  --scene-panel-sidebar-veil: 80%;
+}
+
+:root[data-scene-panel-sidebar="medium"] {
+  --scene-panel-sidebar-veil: 58%;
+}
+
+:root[data-scene-panel-sidebar="light"] {
+  --scene-panel-sidebar-veil: 34%;
+}
+
+:root[data-scene-panel-sidebar="clear"] {
+  --scene-panel-sidebar-veil: 0%;
+}
+
+:root[data-scene-panel-chat="solid"] {
+  --scene-panel-chat-veil: 100%;
+}
+
+:root[data-scene-panel-chat="heavy"] {
+  --scene-panel-chat-veil: 80%;
+}
+
+:root[data-scene-panel-chat="medium"] {
+  --scene-panel-chat-veil: 58%;
+}
+
+:root[data-scene-panel-chat="light"] {
+  --scene-panel-chat-veil: 34%;
+}
+
+:root[data-scene-panel-chat="clear"] {
+  --scene-panel-chat-veil: 0%;
+}
+
 .scene-backdrop {
   position: absolute;
-  inset: 0;
+  /*
+   * The tray's box plus the window frame it escapes into. The sheet and the
+   * dock reach past the shell's right and bottom edges by `--shell-frame`; the
+   * backdrop has to follow them there, or a clear panel would stop short of the
+   * window edge and the frame's mat would show as a seam under the glass.
+   * Nothing extends upward: the window strip and the rail's over-strip band stay
+   * chrome, and the scene starts at the tray's top.
+   */
+  top: 0;
+  right: calc(-1 * var(--shell-frame));
+  bottom: calc(-1 * var(--shell-frame));
+  left: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
@@ -14905,6 +15021,82 @@ button.chat-panel__activity-line:hover {
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--background) 74%, transparent);
+}
+
+/* — the picture layer ——————————————————————————————————————————————————————
+   The operator's own wallpaper. It is the whole layer while it is set: the
+   drawn sky is not painted underneath it, so the picture is what the page sits
+   on. The axes are the shared model's closed vocabulary, written onto the layer
+   as data attributes by `applyScene`/the component; this stylesheet decides what
+   each word means. `background-size`/`repeat`/`position` carry Fit and Position,
+   `filter` carries Blur, and the `::after` scrim carries Dim. */
+.scene-backdrop__picture {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+.scene-backdrop--image[data-image-fit="cover"] .scene-backdrop__picture {
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.scene-backdrop--image[data-image-fit="contain"] .scene-backdrop__picture {
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.scene-backdrop--image[data-image-fit="tile"] .scene-backdrop__picture {
+  background-size: auto;
+  background-repeat: repeat;
+}
+
+.scene-backdrop--image[data-image-position="center"] .scene-backdrop__picture {
+  background-position: center;
+}
+
+.scene-backdrop--image[data-image-position="top"] .scene-backdrop__picture {
+  background-position: center top;
+}
+
+.scene-backdrop--image[data-image-position="bottom"] .scene-backdrop__picture {
+  background-position: center bottom;
+}
+
+/* Blur is painted with a small scale so the softened edges never show as a band
+   at the layer's bounds; the scale is static, so reduced motion keeps it. */
+.scene-backdrop--image[data-image-blur="soft"] .scene-backdrop__picture {
+  filter: blur(6px);
+  transform: scale(1.04);
+}
+
+.scene-backdrop--image[data-image-blur="deep"] .scene-backdrop__picture {
+  filter: blur(14px);
+  transform: scale(1.1);
+}
+
+/* Dim is the picture layer's own scrim: the drawn scene's 74% default is tuned
+   for thin shapes, not for a full photograph, so each step says its own weight.
+   The operator can always hand the picture back; none means "show me all of it". */
+.scene-backdrop--image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+}
+
+.scene-backdrop--image[data-image-dim="none"]::after {
+  background: transparent;
+}
+
+.scene-backdrop--image[data-image-dim="soft"]::after {
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+}
+
+.scene-backdrop--image[data-image-dim="strong"]::after {
+  background: color-mix(in srgb, var(--background) 82%, transparent);
 }
 
 :root[data-scene-intensity="calm"] .scene-backdrop {
@@ -15030,6 +15222,110 @@ button.chat-panel__activity-line:hover {
   }
   to {
     transform: translate3d(3%, 0, 0) scaleY(1.18);
+  }
+}
+
+/* — horizon — */
+.scene-backdrop__horizon {
+  position: absolute;
+  inset: 0;
+}
+
+/* One disc above the ridge line: a soft radial, because a hard circle would
+   read as a UI control rather than a sun. */
+.scene-backdrop__sun {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 78%, var(--background)) 0%,
+    color-mix(in srgb, var(--accent) 30%, transparent) 58%,
+    transparent 72%
+  );
+  opacity: calc(var(--scene-opacity) * 0.9);
+  animation: scene-sun calc(20s * var(--scene-speed)) ease-in-out var(--delay)
+    infinite alternate;
+  will-change: opacity;
+}
+
+@keyframes scene-sun {
+  from {
+    opacity: calc(var(--scene-opacity) * 0.6);
+  }
+  to {
+    opacity: calc(var(--scene-opacity) * 0.95);
+  }
+}
+
+/* Four stacked bands, lowest and widest first: layered distance rather than a
+   stripe. The bands drift a percent or two; they never cross the ridge budget. */
+.scene-backdrop__ridge {
+  position: absolute;
+  left: calc(var(--offset) * -1%);
+  right: calc(var(--offset) * -1%);
+  top: var(--top);
+  height: var(--height);
+  border-radius: 50% 50% 0 0 / 22% 22% 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 24%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 70%,
+    transparent
+  );
+  opacity: var(--scene-opacity);
+  animation: scene-ridge calc(26s * var(--scene-speed)) ease-in-out var(--delay)
+    infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes scene-ridge {
+  from {
+    transform: translate3d(-1.2%, 0, 0) scaleY(1);
+  }
+  to {
+    transform: translate3d(1.2%, -1%, 0) scaleY(1.06);
+  }
+}
+
+/* — mesh — */
+.scene-backdrop__mesh {
+  position: absolute;
+  inset: 0;
+  filter: blur(18px);
+}
+
+/* Three drifting colour blobs, each its own hue: gradients rather than pictures,
+   so the mesh is the app's pixels like every other sky. */
+.scene-backdrop__blob {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 40% 40%,
+    hsl(var(--hue) 82% 62% / 0.3),
+    transparent 70%
+  );
+  opacity: var(--scene-opacity);
+  animation: scene-mesh calc(var(--duration) * var(--scene-speed)) ease-in-out
+    var(--delay) infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes scene-mesh {
+  from {
+    transform: translate3d(-6%, 4%, 0) scale(1);
+    opacity: calc(var(--scene-opacity) * 0.55);
+  }
+  to {
+    transform: translate3d(6%, -4%, 0) scale(1.16);
+    opacity: var(--scene-opacity);
   }
 }
 

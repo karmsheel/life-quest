@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
+import { BackgroundControls } from "@/components/settings/BackgroundControls";
 import { LayoutControls } from "@/components/settings/LayoutControls";
 import { MaterialControls } from "@/components/settings/MaterialControls";
 import { SceneControls } from "@/components/settings/SceneControls";
@@ -31,10 +32,13 @@ import {
  *
  * The Chrome, Material and Scene sections are the Settings Appearance controls
  * in controlled mode (D9): same rows, same words, `studio-` ids, and the draft
- * passed as `value` so no operator override is touched. Composition has its own
- * schematic editor; Palette is the studio's only new control surface, and it
- * runs the parser's own contrast check so Save can never be pressed on a
- * palette the shell would refuse.
+ * passed as `value` so no operator override is touched. The Scene tab stacks
+ * the picture layer under the drawn-sky rows; both edit the draft's
+ * `scene.background`, so a picture authored here lands in the file exactly as
+ * one picked in Settings would. Composition has its own schematic editor;
+ * Palette is the studio's only new control surface, and it runs the parser's
+ * own contrast check so Save can never be pressed on a palette the shell would
+ * refuse.
  */
 export type StudioSection =
   | "composition"
@@ -65,7 +69,7 @@ const SECTION_INTROS: Record<Exclude<StudioSection, "composition">, string> = {
   material:
     "The six named material steps. This section writes the file's `material` layer; Settings' own picks still outrank a theme after it is kept.",
   scene:
-    "The decoration layer: a named sky, its intensity, and the page/card frames. Written to the file, never injected as CSS.",
+    "The decoration layer: a named sky, its intensity, the page/card frames, the picture layer under the sky rows, and how much of it all shows through the Sidebar and Chat bar. Written to the file, never injected as CSS — a picture names a file already stored in this installation's profile.",
   palette:
     "The two palettes a file may carry. A palette is whole — every required colour or none — and every text pair is checked before Save.",
 };
@@ -188,6 +192,11 @@ export function StudioFields({
           >
             <p className="studio__section-intro">{SECTION_INTROS.scene}</p>
             <SceneControls
+              value={resolveScene(draft.scene)}
+              onChange={(patch) => onChange(withScenePatch(draft, patch))}
+              testIdPrefix="studio-"
+            />
+            <BackgroundControls
               value={resolveScene(draft.scene)}
               onChange={(patch) => onChange(withScenePatch(draft, patch))}
               testIdPrefix="studio-"

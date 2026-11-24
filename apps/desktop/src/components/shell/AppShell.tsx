@@ -110,11 +110,13 @@ export function AppShell() {
               .filter(Boolean)
               .join(" ")}
           >
+            {/* The theme's decoration layer: one backdrop behind the whole
+                tray, rail and dock included, so the sidebar and the chat bar
+                can let it show through at their own shade. It is not part of
+                any pane's structure and never takes a click. */}
+            <SceneBackdrop />
             <NavRail />
             <div className="shell__main">
-              {/* The theme's decoration layer, behind the page and under the
-                  content; it is not part of the page's structure. */}
-              <SceneBackdrop />
               {/* The theme's composition widgets for the page's top band. They
                   are page furniture, not chrome: they stand inside the sheet,
                   above the routed content, and never take the way out. */}
