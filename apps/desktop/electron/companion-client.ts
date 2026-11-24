@@ -391,6 +391,21 @@ export type TranscriptMessage = {
 export type TranscriptEntry = TranscriptMessage;
 
 /**
+ * The outcome of one chat turn.
+ *
+ * `settlesOnStream` is set only by a transport that GUARANTEES its own terminal
+ * frame before it answers the turn call — the gateway-WebSocket continuation of
+ * another surface's chat. The renderer's post-call settle is a safety net for a
+ * transport that died without a terminal frame; on this path the terminal is
+ * already on its way, and settling before it lands would split the turn in two
+ * (the IPC frames and the call's reply are different channels and arrive in
+ * either order). So the renderer leaves such a turn to its frames.
+ */
+export type ChatStreamOutcome =
+  | { ok: true; settlesOnStream?: boolean }
+  | { ok: false; error: string };
+
+/**
  * One frame of a turn's stream.
  *
  * The `run.*` family is the turn skeleton every harness must speak: start,
@@ -736,6 +751,65 @@ export function createdSessionFromPayload(
   const fallback = oneLine(fallbackTitle);
   if (!row.title && fallback) return { ...row, title: fallback };
   return row;
+}
+
+/**
+ * The surfaces the gateway's OpenAI-compatible API owns.
+ *
+ * Hermes refuses a turn aimed at any other surface's session
+ * (`gateway/session_api_turn.py`: "API sessions are their own sessions") because
+ * the API would otherwise run a second agent on a transcript a CLI, Desktop,
+ * TUI or messaging lane is already writing. Those other-surface chats are still
+ * listed and readable here; they are continued over the gateway's canonical
+ * WebSocket instead, which is the door Hermes points clients at
+ * (`docs/user-guide/features/api-server.md`, "attach through the gateway
+ * WebSocket"). Keep this set in step with the sources the API transport accepts.
+ */
+const API_OWNED_SOURCES = new Set(["", "api_server", "bot_room"]);
+
+/**
+ * Whether a chat belongs to another surface, and therefore has to be continued
+ * through the gateway WebSocket rather than the API transport. An unknown or
+ * empty label is not continuable: an older gateway row carries no source, and
+ * the API path is the one that has always served it.
+ */
+export function isContinuableSession(
+  session: Pick<HermesSession, "source"> | string | null | undefined,
+): boolean {
+  const source =
+    typeof session === "string" ? session : (session?.source ?? "");
+  return !API_OWNED_SOURCES.has(source.trim().toLowerCase());
+}
+
+/**
+ * The surface's own name, for a chip or a sentence. Unknown label -> "another
+ * surface", so a platform Hermes grows later still reads as something.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  telegram: "Telegram",
+  discord: "Discord",
+  slack: "Slack",
+  whatsapp: "WhatsApp",
+  signal: "Signal",
+  imessage: "iMessage",
+  matrix: "Matrix",
+  mattermost: "Mattermost",
+  teams: "Teams",
+  buzz: "Buzz",
+  desktop: "Hermes Desktop",
+  gui: "Hermes Desktop",
+  cli: "Hermes CLI",
+  tui: "Hermes CLI",
+  local: "Hermes",
+  cron: "an automation",
+  acp: "an ACP client",
+  oneshot: "a one-shot run",
+};
+
+export function sessionSourceLabel(source: string | null | undefined): string {
+  const key = (source ?? "").trim().toLowerCase();
+  if (!key) return "";
+  return SOURCE_LABELS[key] ?? "another surface";
 }
 
 /** Visible chat name: a set title, otherwise the first thing the user asked. */

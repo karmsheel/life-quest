@@ -25,6 +25,7 @@ import {
   Link2,
   MessageCircleQuestion,
   MessageSquare,
+  MessageSquareShare,
   MoreVertical,
   PanelLeftClose,
   PanelRightClose,
@@ -81,13 +82,16 @@ import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
 import { SESSION_ICON } from "@/lib/session-icon";
+import { platformMarkFor } from "@/lib/platform-mark";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
 } from "@/vite-env";
 import {
   formatMessageWhen,
+  isContinuableSession,
   sessionLabel,
+  sessionSourceLabel,
 } from "../../../electron/companion-client.ts";
 
 /**
@@ -319,6 +323,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * from main leaves the previous one exactly where it was.
    */
   async function attachReceipt(file: File) {
+    // The receipt control is disabled on a continued chat, but a paste or a
+    // drop is not a control: it takes the same line rather than attaching a
+    // file the WebSocket door would silently drop.
+    if (continuable) {
+      chat.reportError(continuedFileReason ?? null);
+      return;
+    }
     chat.reportError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -363,6 +374,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   async function attachFile(file: File) {
     if (!sessionId) return;
+    // Same rule as the receipt's: a dropped file on a continued chat is refused
+    // here, because the WebSocket door carries the prompt only.
+    if (continuable) {
+      chat.reportError(continuedFileReason ?? null);
+      return;
+    }
     chat.reportError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -546,6 +563,54 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
+  /*
+    WHOSE CONVERSATION THIS IS.
+
+    A chat the API transport owns (`api_server`, `bot_room`, or an old row with
+    no source at all) is entirely ours. Every other source — Telegram, Discord,
+    Hermes Desktop, the CLI, an automation — is a chat another surface is still
+    writing. The dock can now continue one of those over the gateway WebSocket,
+    but that door carries a prompt and nothing else: no per-turn model or
+    thinking pick, no files, no page or vault context cards, and no steering a
+    live turn. So the header names the surface and the composer is honest about
+    what this door cannot carry, rather than letting a control look available
+    and then fail at the transport.
+  */
+  const continuable = isContinuableSession(activeSession);
+  const sourceLabel = sessionSourceLabel(activeSession?.source);
+  /*
+    The platform's own mark, when it has one. A chat from Telegram or Discord
+    leads with the logo instead of the word: the word is repeated in every list,
+    the mark is read at a glance and survives a narrow tab. A surface without a
+    mark (Hermes Desktop, the CLI, a plugin's platform) keeps its name beside the
+    generic share icon, because an unnamed glyph would say "something" rather
+    than which something.
+  */
+  const SourceMark = platformMarkFor(activeSession?.source);
+  /** The composer's one quiet line, naming the surface and what is not carried. */
+  const composerNote = continuable
+    ? `Shared with ${sourceLabel} — replies land in the same transcript; page and vault context cards are not attached.`
+    : "";
+  /** Why the model and thinking pills cannot be used on a continued chat. */
+  const continuedPillReason = continuable
+    ? `The model and thinking level are fixed for this chat — continuing a chat from ${sourceLabel} keeps running on the model it was started with.`
+    : undefined;
+  /**
+   * Why no file can ride a continued turn. Main refuses an attachment on these
+   * turns in exactly these words, so the disabled control and the refusal say
+   * the same sentence rather than two versions of it.
+   */
+  const continuedFileReason = continuable
+    ? "A chat started on another surface can't carry an attachment yet. Send it in a new chat."
+    : undefined;
+  /** Why page context does not ride a continued turn. */
+  const continuedPageReason = continuable
+    ? `Page context isn't attached when continuing a chat from ${sourceLabel}.`
+    : undefined;
+  /** Why the live-turn steer gesture is not offered here. */
+  const continuedSteerReason = continuable
+    ? `Steering isn't carried when continuing a chat from ${sourceLabel} — queue the message instead.`
+    : undefined;
   const reading = useOptionalChatDisplay();
 
   /**
@@ -1072,12 +1137,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * working, so a thought that arrives halfway through a long answer is not
    * lost waiting for the next turn.
    *
+   * A continued chat has no steer field: the gateway WebSocket that carries the
+   * turn carries a prompt and an interrupt, nothing in between. The send key's
+   * follow-up is queued behind the running turn instead, which is the one way
+   * to follow it there — so a keystroke an operator was used to steering with
+   * still does the useful thing rather than nothing.
+   *
    * The draft is cleared only when the steer lands. A refusal (the run ended
    * between the keypress and the call) must leave the words in the field, or
    * the operator loses them.
    */
   async function steerMessage(text: string) {
     if (!sessionId || !text) return;
+    if (continuable) {
+      queueMessage(text);
+      return;
+    }
     const ok = await chat.steerMessage(sessionId, text);
     if (ok) setDraft("");
   }
@@ -1326,6 +1401,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (!modified && sendKey !== "enter") return;
     e.preventDefault();
     if (sending) {
+      // `steerMessage` queues the follow-up instead when this chat is
+      // continued from another surface: that transport cannot steer, and the
+      // queue is the only way to follow a live turn there.
       void steerMessage(draft.trim());
       return;
     }
@@ -1793,9 +1871,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     before any model call — which is why the operator sees their message go up and
     no answer arrive — so the dock says what happened and offers the one click
     that moves the chat onto the profile's current model.
+
+    A continued chat is never offered that repair: it keeps running on the model
+    its gateway session was started with, and the WebSocket door carries no
+    per-turn model pick, so a "use the default model" button would promise a
+    control this transport does not have. Its model is read off the disabled
+    pill instead, read-only.
   */
   const modelRepairBanner =
-    chatModelRetired && defaultModelLabel ? (
+    chatModelRetired && defaultModelLabel && !continuable ? (
       <div className="chat-panel__error chat-panel__model-repair" role="status" data-testid="chat-model-repair">
         <p>
           This chat's model (<strong>{activeChatModel}</strong>) is no longer offered by
@@ -1946,6 +2030,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 // instead of the plain status dot; the square keeps its letter.
                 const iconKind = chat.sessionIcons[id] ?? null;
                 const Icon = iconKind ? SESSION_ICON[iconKind] : null;
+                // A chat from another surface leads with that platform's mark,
+                // the same one the Chats row wears (see lib/platform-mark.tsx).
+                const PlatformMark = row ? platformMarkFor(row.source) : null;
                 // The square has room for one glyph, so it takes the first
                 // letter of the whitespace-trimmed label, uppercased.
                 const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
@@ -1955,6 +2042,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     role="presentation"
                     data-tab-id={id}
                     data-icon={iconKind ?? undefined}
+                    data-source={
+                      row && isContinuableSession(row) ? row.source : undefined
+                    }
                     className={[
                       "chat-panel__tab",
                       pinned ? "chat-panel__tab--pinned" : "",
@@ -2017,6 +2107,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                           <span className="chat-panel__tab-mark" aria-hidden>
                             {Icon ? (
                               <Icon className="chat-panel__tab-icon" size={11} />
+                            ) : PlatformMark ? (
+                              <PlatformMark
+                                className="chat-panel__tab-icon"
+                                size={11}
+                              />
                             ) : (
                               <span className="chat-panel__tab-dot" />
                             )}
@@ -2109,7 +2204,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               </div>
             </div>
           ) : (
-            <div className="chat-panel__header chat-panel__header--thread">
+            <div
+              className="chat-panel__header chat-panel__header--thread"
+              data-continuable={continuable ? "true" : undefined}
+              data-source={continuable ? activeSession?.source : undefined}
+            >
               {renaming ? (
                 <form
                   className="chat-panel__rename"
@@ -2168,6 +2267,43 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </span>
                 </button>
               )}
+              {/*
+                The surface this conversation came from, worn beside the name.
+                It is a label, not a control: it answers "why does this chat
+                already have history I did not write here?" without a banner or
+                a second transcript. The tooltip says the one thing the label
+                cannot: this is the same conversation continued from there, not
+                a copy of it. Only a chat another surface owns wears it — an
+                api_server chat is this app's own and has no surface to name.
+              */}
+              {continuable ? (
+                <span
+                  className={
+                    SourceMark
+                      ? "chat-panel__source chat-panel__source--mark"
+                      : "chat-panel__source"
+                  }
+                  data-source={activeSession?.source}
+                  role="img"
+                  aria-label={`Continued from ${sourceLabel}: the same conversation, continued here, not copied`}
+                  title={`Started on ${sourceLabel} — this is the same conversation, continued here, not copied.`}
+                >
+                  {SourceMark ? (
+                    <>
+                      <SourceMark className="chat-panel__source-mark" size={12} />
+                      {/* The chip's accessible name is the aria-label above; the
+                          word stays in the DOM for tests and for a screen reader
+                          that reads the chip's text, but never paints. */}
+                      <span className="visually-hidden">{sourceLabel}</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquareShare size={11} aria-hidden />
+                      <span className="chat-panel__source-label">{sourceLabel}</span>
+                    </>
+                  )}
+                </span>
+              ) : null}
               {/*
                 A thread with no tab draws no strip, so the full-screen door
                 moves down into the name row rather than disappearing; a thread
@@ -2554,8 +2690,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   The field below keeps the placeholder it always had — cards in
                   context do not change what the composer is for, only what
                   "this card" means inside it.
+
+                  A continued chat does not show them at all: the WebSocket door
+                  carries the prompt only, so a card that looked "in context"
+                  there would be a promise the turn cannot keep. The composer's
+                  one-line note says so instead.
                 */}
-                {contextCards.length > 0 ? (
+                {contextCards.length > 0 && !continuable ? (
                   <div className="chat-panel__contexts" data-testid="chat-context-pills">
                     {contextCards.map((card) => (
                       <div
@@ -2634,6 +2775,25 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </div>
                 ) : null}
                 {/*
+                  A chat that lives on another surface keeps its voice, but the
+                  door it is continued through is narrower than the API's. This
+                  is the one quiet line that says so — the conversation is the
+                  same one, replies land where the surface's replies land, and
+                  the two kinds of context card this composer usually carries
+                  do not ride a continued turn. It is a sentence, not a warning
+                  band: nothing here is broken, the chat is simply shared.
+                */}
+                {continuable ? (
+                  <p
+                    className="chat-panel__composer-note"
+                    data-testid="chat-continued-note"
+                    data-source={activeSession?.source}
+                  >
+                    <MessageSquareShare size={11} aria-hidden />
+                    <span>{composerNote}</span>
+                  </p>
+                ) : null}
+                {/*
                   The composer's own surface: one box around the field the
                   operator writes in and the control row that belongs to it.
                   The field rests on top; the row sits inside the box's bottom
@@ -2648,7 +2808,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     className="chat-panel__composer-input chat-panel__composer-input--frameless"
                     placeholder={
                       sending
-                        ? "Steer the turn that is running…"
+                        ? continuable
+                          ? "Queue a message for the next turn…"
+                          : "Steer the turn that is running…"
                         : `Message ${companionName}…`
                     }
                     value={draft}
@@ -2734,9 +2896,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         type="button"
                         className="chat-panel__composer-plus"
                         data-testid="chat-attachment-button"
-                        disabled={!sessionId}
-                        aria-label="Attach a file"
-                        title="Attach a file"
+                        data-continued-disabled={continuable ? "true" : undefined}
+                        disabled={!sessionId || continuable}
+                        aria-label={continuable ? continuedFileReason : "Attach a file"}
+                        title={continuable ? continuedFileReason : "Attach a file"}
                         onClick={() => attachmentInputRef.current?.click()}
                       >
                         <Plus size={15} aria-hidden />
@@ -2745,9 +2908,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         <button
                           type="button"
                           className="chat-panel__attach"
-                          disabled={sending || !sessionId}
-                          aria-label="Attach a receipt"
-                          title="Attach a receipt"
+                          disabled={sending || !sessionId || continuable}
+                          data-continued-disabled={continuable ? "true" : undefined}
+                          aria-label={
+                            continuable ? continuedFileReason : "Attach a receipt"
+                          }
+                          title={continuable ? continuedFileReason : "Attach a receipt"}
                           onClick={() => receiptInputRef.current?.click()}
                         >
                           <ImagePlus size={15} aria-hidden />
@@ -2764,26 +2930,37 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                           and the pill stays on the line in its off state, because a
                           control that vanished when used could not be turned back
                           on.
+
+                          A continued chat never carries the screen: the WebSocket
+                          door has no such field, so the pill is disabled and reads
+                          "not sent" rather than showing an "in context" state the
+                          turn would not honour.
                         */}
                         <button
                           type="button"
                           className="chat-panel__page"
-                          data-state={pageContext.on ? "on" : "off"}
+                          data-state={pageContext.on && !continuable ? "on" : "off"}
                           data-testid="chat-page-context"
-                          aria-pressed={pageContext.on}
+                          data-continued-disabled={continuable ? "true" : undefined}
+                          disabled={continuable}
+                          aria-pressed={pageContext.on && !continuable}
                           aria-label={
-                            pageContext.on
-                              ? `Page context on: the ${pageContext.label} screen rides your next message`
-                              : `Page context off: the ${pageContext.label} screen will not be sent`
+                            continuable
+                              ? continuedPageReason
+                              : pageContext.on
+                                ? `Page context on: the ${pageContext.label} screen rides your next message`
+                                : `Page context off: the ${pageContext.label} screen will not be sent`
                           }
                           title={
-                            pageContext.on
-                              ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
-                              : `The ${pageContext.label} screen is not sent — click to send it again`
+                            continuable
+                              ? continuedPageReason
+                              : pageContext.on
+                                ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
+                                : `The ${pageContext.label} screen is not sent — click to send it again`
                           }
                           onClick={() => setPageContextOn(!pageContext.on)}
                         >
-                          {pageContext.on ? (
+                          {pageContext.on && !continuable ? (
                             <Eye size={12} aria-hidden />
                           ) : (
                             <EyeOff size={12} aria-hidden />
@@ -2795,7 +2972,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                             {pageContext.label}
                           </span>
                           <span className="chat-panel__page-kind">
-                            {pageContext.on ? "in context" : "off"}
+                            {continuable
+                              ? "not sent"
+                              : pageContext.on
+                                ? "in context"
+                                : "off"}
                           </span>
                         </button>
                         {receipt ? (
@@ -2846,6 +3027,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         sessionModel={activeChatSession?.model ?? null}
                         pick={runtimePick}
                         onChange={updateRuntimePick}
+                        continuedReason={continuedPillReason}
                       />
                       {controlVisible ? (
                         <button
@@ -2873,6 +3055,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   steer it into the live turn, or line it up to run next. The
                   line only appears while there is something to say — an idle
                   composer under a live turn is just the field.
+
+                  A continued chat keeps only the Queue gesture: the gateway
+                  WebSocket has no steer field, so the Steer control is drawn
+                  disabled with the reason rather than looking available.
                 */}
                 {sending && draft.trim() ? (
                   <div className="chat-panel__composer-live">
@@ -2880,9 +3066,14 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       type="button"
                       className="chat-panel__composer-live-action"
                       data-testid="chat-steer-button"
-                      disabled={!runId}
-                      aria-label="Steer this turn"
-                      title="Send this to the turn that is running now"
+                      data-continued-disabled={continuable ? "true" : undefined}
+                      disabled={!runId || continuable}
+                      aria-label={continuable ? continuedSteerReason : "Steer this turn"}
+                      title={
+                        continuable
+                          ? continuedSteerReason
+                          : "Send this to the turn that is running now"
+                      }
                       onClick={() => void steerMessage(draft.trim())}
                     >
                       Steer

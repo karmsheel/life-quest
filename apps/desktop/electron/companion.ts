@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,7 +19,14 @@ import {
   type HermesProfileInfo,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
-import { refreshServedProfile } from "./hermes-control.ts";
+import { refreshServedProfile, queryGatewayControl } from "./hermes-control.ts";
+import {
+  CONTINUATION_LOST,
+  CONTINUATION_UNAVAILABLE,
+  GatewayContinuation,
+  endpointSupportsContinuation,
+  type GatewayEndpoint,
+} from "./hermes-gateway-ws.ts";
 import { getFileUnsolicited } from "./companion-filing.ts";
 import {
   getCompanionProfile,
@@ -42,6 +50,7 @@ import {
   buildInstructions,
   buildTurnInput,
   createdSessionFromPayload,
+  isContinuableSession,
   messagesFromPayload,
   modelCatalogFromPayload,
   PAUSED_CONVERSATION_MESSAGE,
@@ -54,6 +63,7 @@ import {
   sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
+  type ChatStreamOutcome,
   type CompanionInstructionsInput,
   type CompanionModelCatalog,
   type CompanionRuntimeOverride,
@@ -419,6 +429,10 @@ function failureText(e: unknown): string {
  * as ready and starts one only when none answers. It never replaces a running
  * gateway, which is exactly the difference from `gateway restart`.
  *
+ * The answer's stdout is returned because the `--json` form also names the
+ * owner's internal session API — the endpoint a continued chat needs (see
+ * `hermes-gateway-ws.ts`). A caller that only wants the gateway up ignores it.
+ *
  * Older Hermes has no `ensure` verb. There the fallback is `gateway start` from
  * the ROOT home: under multiplexing a named profile may not own a gateway of its
  * own, so starting from the profile home would be refused with exit 78.
@@ -427,13 +441,12 @@ async function ensureGatewayRuntime(
   cli: string,
   profileHome: string,
   rootEnv: Record<string, string>,
-): Promise<void> {
+): Promise<HermesRun> {
   try {
-    await runHermes(cli, ["gateway", "ensure", "--json", "--timeout", "30"], {
+    return await runHermes(cli, ["gateway", "ensure", "--json", "--timeout", "30"], {
       ...rootEnv,
       HERMES_HOME: profileHome,
     });
-    return;
   } catch (e) {
     if (
       !/invalid choice|unknown command|unrecognized arguments/i.test(
@@ -443,7 +456,7 @@ async function ensureGatewayRuntime(
       throw e;
     }
   }
-  await runHermes(cli, ["gateway", "start"], rootEnv);
+  return runHermes(cli, ["gateway", "start"], rootEnv);
 }
 
 /**
@@ -1071,6 +1084,7 @@ export async function companionWriteMcpProfile(
 }
 
 export async function companionShutdown(): Promise<void> {
+  shutdownContinuation();
   await shutdownCompanion(current, realIo());
 }
 
@@ -1245,9 +1259,13 @@ export async function companionSessionsList(
     const response = res as Response;
     if (!response.ok) return { ok: false, error: `Sessions list failed (${response.status})` };
     const live = sessionsFromPayload(await response.json(), { includeArchived });
+    // The list is where a chat's surface becomes known. Remember it so a send
+    // can pick the transport without another read (see `sessionSource`).
+    for (const row of live) rememberSessionSource(row);
     if (!includeArchived) return { ok: true, value: live };
     const profilePath = current.kind === "ready" ? current.profilePath : "";
     const archived = await readArchivedSessions(profilePath);
+    for (const row of archived) rememberSessionSource(row);
     return { ok: true, value: mergeArchivedSessions(live, archived) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1276,6 +1294,7 @@ export async function companionSessionCreate(
     }
     const created = createdSessionFromPayload(await response.json(), trimmed);
     if (!created) return { ok: false, error: "Create session missing id" };
+    rememberSessionSource(created);
     return { ok: true, value: created };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1495,9 +1514,13 @@ export async function companionSessionDelete(
     );
     if (!named) {
       const alreadyAbsent = body?.deleted === false || body?.already_absent === true;
-      if (alreadyAbsent) return { ok: true, value: { id, deleted: true } };
+      if (alreadyAbsent) {
+        sessionSourceCache.delete(id);
+        return { ok: true, value: { id, deleted: true } };
+      }
       return { ok: false, error: "Delete session returned no id" };
     }
+    sessionSourceCache.delete(id);
     return { ok: true, value: { id: named, deleted: body.deleted !== false } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1574,6 +1597,309 @@ async function recoverPausedChat(
   }
 }
 
+// ── Continued chats: conversations another surface owns ─────────────────────
+//
+// The Chats list has always shown every conversation on the companion profile,
+// including ones started on Telegram, Discord, Hermes Desktop or the CLI. The
+// API transport cannot write those: Hermes refuses a turn aimed at a session
+// another surface owns (`permission_denied`), because it would run a second
+// agent beside the live owner. This section continues such a chat over the
+// gateway's own canonical WebSocket instead — the door Hermes documents for
+// exactly this ("attach through the gateway WebSocket"), and the one Hermes
+// Desktop uses. The session is shared, not copied: the reply lands in the same
+// Hermes transcript the platform's bot reads.
+
+/** The surface each listed chat came from, as the last list read named it. */
+const sessionSourceCache = new Map<string, string>();
+
+function rememberSessionSource(row: HermesSession | null | undefined): void {
+  if (!row) return;
+  sessionSourceCache.set(row.id, row.source);
+}
+
+/**
+ * The surface a chat belongs to.
+ *
+ * The list read usually has it; a chat that was opened by id before any list
+ * answer (a deep link, a review's stored session id) asks the gateway for its own
+ * row rather than guessing. An unreadable answer is "" — the API transport's
+ * own label — so an old or unknown row keeps the path it has always used.
+ */
+async function sessionSource(sessionId: string): Promise<string> {
+  const cached = sessionSourceCache.get(sessionId);
+  if (cached !== undefined) return cached;
+  try {
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) return "";
+    const row = sessionFromPayload(await res.json());
+    if (!row) return "";
+    rememberSessionSource(row);
+    return row.source;
+  } catch {
+    return "";
+  }
+}
+
+type ContinuationCache = {
+  home: string;
+  transport: GatewayContinuation;
+};
+
+let continuationCache: ContinuationCache | null = null;
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "127.0.0.1" || url.hostname === "[::1]" || url.hostname === "::1") &&
+      Boolean(url.port) &&
+      !url.username &&
+      !url.password &&
+      (url.pathname === "" || url.pathname === "/") &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The owner's internal session API, from `hermes gateway ensure --json`.
+ *
+ * The same ensure the app already runs to attach (it starts a gateway only when
+ * none answers and never replaces a running one) also names the endpoint a
+ * continued chat dials. Older Hermes prints an exit-code status instead of JSON;
+ * that is the "too old for a continued chat" refusal, named.
+ */
+async function discoverContinuationEndpoint(
+  profileHome: string,
+): Promise<GatewayEndpoint> {
+  const cli = await whichHermes();
+  if (!cli) {
+    throw new Error(
+      "The agent needs the Hermes CLI on your PATH. Install Hermes, then try again.",
+    );
+  }
+  const root = hermesRoot(process.env, os.homedir());
+  const run = await ensureGatewayRuntime(cli, profileHome, {
+    HERMES_HOME: root,
+    GATEWAY_MULTIPLEX_PROFILES: "true",
+  });
+  // The `--json` answer is one JSON object on stdout; an older or noisier build
+  // may put a line of prose before it, so the last object line is the fallback.
+  const stdout = run.stdout.trim();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(stdout);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      payload = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // fall through to the line scan
+  }
+  if (!payload) {
+    const line = stdout
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter((part) => part.startsWith("{"))
+      .pop();
+    if (line) {
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          payload = parsed as Record<string, unknown>;
+        }
+      } catch {
+        payload = null;
+      }
+    }
+  }
+  if (!payload) throw new Error(CONTINUATION_UNAVAILABLE);
+  const raw =
+    payload.endpoint && typeof payload.endpoint === "object"
+      ? (payload.endpoint as Record<string, unknown>)
+      : null;
+  if (payload.state !== "ready" || !raw) throw new Error(CONTINUATION_UNAVAILABLE);
+  const capabilities = Array.isArray(raw.capabilities)
+    ? raw.capabilities.filter((value): value is string => typeof value === "string")
+    : [];
+  const apiOrigin = typeof raw.api_origin === "string" ? raw.api_origin : "";
+  const instanceId = typeof raw.instance_id === "string" ? raw.instance_id : "";
+  const profileId = typeof raw.profile_id === "string" ? raw.profile_id : "";
+  if (
+    raw.runtime_protocol !== 1 ||
+    !instanceId ||
+    !profileId ||
+    !isLoopbackOrigin(apiOrigin) ||
+    !endpointSupportsContinuation({ capabilities })
+  ) {
+    throw new Error(CONTINUATION_UNAVAILABLE);
+  }
+  const controlHome =
+    typeof raw.control_home === "string" && raw.control_home
+      ? path.resolve(raw.control_home)
+      : path.resolve(profileId);
+  const resolvedProfile = path.resolve(profileId);
+  // A served secondary's store is not the launch profile's: `session.resume`
+  // has to be told which named profile to read (Hermes' `profile` parameter).
+  // The launch profile — multiplexed or standalone — needs nothing.
+  const servedSecondary =
+    typeof raw.control_home === "string" &&
+    raw.control_home !== "" &&
+    resolvedProfile !== controlHome;
+  const profileName = servedSecondary ? path.basename(resolvedProfile) : null;
+  if (profileName !== null && !isSafeProfileName(profileName)) {
+    throw new Error(CONTINUATION_UNAVAILABLE);
+  }
+  return {
+    apiOrigin: apiOrigin.replace(/\/$/, ""),
+    instanceId,
+    profileId: resolvedProfile,
+    profileName,
+    capabilities,
+    controlHome,
+  };
+}
+
+/**
+ * Mint the one-use ticket the gateway's WebSocket demands, over the same local
+ * control socket the app already uses to make the host re-read a profile.
+ */
+async function mintContinuationTicket(endpoint: GatewayEndpoint): Promise<string> {
+  const grant = await queryGatewayControl(endpoint.controlHome, "session-ticket", {
+    profile_id: endpoint.profileId,
+    instance_id: endpoint.instanceId,
+    purpose: "interactive",
+    scope: "host",
+  });
+  const ticket = grant && typeof grant.ticket === "string" ? grant.ticket : "";
+  if (!ticket) throw new Error(CONTINUATION_UNAVAILABLE);
+  return ticket;
+}
+
+/**
+ * The transport for the profile in force.
+ *
+ * One socket per profile serves every continued chat on it, so a second
+ * continued send does not reconnect. A failure tears the entry down: the next
+ * send rediscovers the owner (a gateway restart changes its instance id, and a
+ * ticket minted for the old one is refused).
+ */
+async function continuationFor(profileHome: string): Promise<GatewayContinuation> {
+  if (continuationCache && continuationCache.home === profileHome) {
+    return continuationCache.transport;
+  }
+  // A different profile's transport is not this vault's conversation any more:
+  // close it rather than leave its socket (and any live turn) behind.
+  if (continuationCache) {
+    continuationCache.transport.close();
+    continuationCache = null;
+  }
+  const endpoint = await discoverContinuationEndpoint(profileHome);
+  const transport = new GatewayContinuation(endpoint, () =>
+    mintContinuationTicket(endpoint),
+  );
+  continuationCache = { home: profileHome, transport };
+  return transport;
+}
+
+/** Close the continued-chat socket (quit, agent switch, profile change). */
+function shutdownContinuation(): void {
+  const cached = continuationCache;
+  continuationCache = null;
+  cached?.transport.close();
+}
+
+function continuationOwningRun(runId: string): GatewayContinuation | null {
+  const cached = continuationCache;
+  if (!cached) return null;
+  return cached.transport.ownsRun(runId) ? cached.transport : null;
+}
+
+/** The gateway's refusal, in the operator's own words. */
+function continuationError(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (detail === CONTINUATION_UNAVAILABLE || detail === CONTINUATION_LOST) {
+    return detail;
+  }
+  if (/permission_denied/.test(detail)) {
+    return "Hermes will not let this app write that chat. Open it in the surface it came from, or restart Hermes and try again.";
+  }
+  if (/not_found/.test(detail)) {
+    return "Hermes doesn't have this chat any more. Reopen it from the Chats list.";
+  }
+  if (/profile_mismatch/.test(detail)) {
+    return "The Hermes gateway is serving a different profile than this vault's agent. Recheck the companion in Settings › Hermes.";
+  }
+  if (/admission_conflict/.test(detail)) {
+    return "The gateway is already handling a message for this chat. Wait for it to finish.";
+  }
+  if (/queue_full/.test(detail)) {
+    return "This chat already has a message waiting to run.";
+  }
+  if (/session_authority|WebSocket did not answer|session-authority/.test(detail)) {
+    return CONTINUATION_UNAVAILABLE;
+  }
+  return detail || "The companion could not continue this chat.";
+}
+
+/**
+ * One turn on a chat another surface owns, over the gateway WebSocket.
+ *
+ * The turn's frames are translated to the same `ChatStreamEvent` shapes the API
+ * stream emits, so every existing surface (timeline, approval card, Stop) works
+ * unchanged. The per-turn model/thinking pick and attachments are not carried
+ * by this door; the renderer disables those controls for these chats instead of
+ * dropping them silently.
+ */
+async function continuationChatStream(
+  sessionId: string,
+  input: string,
+  onEvent: (evt: ChatStreamEvent) => void,
+): Promise<ChatStreamOutcome> {
+  const attempt = async (): Promise<void> => {
+    const profileHome = await activeProfileHome();
+    const transport = await continuationFor(profileHome);
+    await transport.submit({
+      sessionId,
+      text: input,
+      runId: `wsrun_${crypto.randomUUID()}`,
+      submissionId: crypto.randomUUID(),
+      onEvent,
+    });
+  };
+  try {
+    await attempt();
+    // The transport settled this turn on its own terminal frame before
+    // returning; telling the renderer so keeps its safety-net settle from
+    // racing the frames (see `ChatStreamOutcome`).
+    return { ok: true, settlesOnStream: true };
+  } catch (e) {
+    // A stale owner is the one failure worth a second try: a gateway restart
+    // changes its instance id, and a ticket minted for the old one is refused.
+    // Neither attempt can have started a turn (a refusal happens before
+    // admission), so rediscovering and dialling again is safe. A permanent
+    // refusal (permission_denied, not_found, an old Hermes) is reported once.
+    const detail = e instanceof Error ? e.message : String(e);
+    const stale = /ticket|closed|did not answer|refused the connection|instance/i.test(
+      detail,
+    );
+    shutdownContinuation();
+    if (stale && !/permission_denied|not_found/.test(detail)) {
+      try {
+        await attempt();
+        return { ok: true, settlesOnStream: true };
+      } catch (again) {
+        shutdownContinuation();
+        return { ok: false, error: continuationError(again) };
+      }
+    }
+    return { ok: false, error: continuationError(e) };
+  }
+}
+
 /**
  * One turn: the operator's text, the vault context, and — when the composer's
  * pills carry a pick — the model/provider and thinking level that turn should
@@ -1605,7 +1931,26 @@ export async function companionChatStream(
   runtime?: CompanionRuntimeOverride | null,
   attachment?: TurnAttachment | null,
   attachments?: TurnAttachment[] | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<ChatStreamOutcome> {
+  // A chat another surface owns is continued over the gateway's canonical
+  // WebSocket (see `hermes-gateway-ws.ts`): the API transport would refuse it,
+  // because Hermes will not run a second agent beside the chat's live owner.
+  // The decision is the session's own label, read here rather than passed in, so
+  // every caller — the composer, a review's stored session, an automation —
+  // gets the right door without knowing about it.
+  if (isContinuableSession(await sessionSource(sessionId))) {
+    // This door carries text only. A receipt or an attachment handed to a
+    // continued turn is refused by name rather than dropped on the floor: the
+    // operator would otherwise read the reply as having seen the file.
+    if (attachment || (attachments && attachments.length > 0)) {
+      return {
+        ok: false,
+        error:
+          "A chat started on another surface can't carry an attachment yet. Send it in a new chat.",
+      };
+    }
+    return continuationChatStream(sessionId, input, onEvent);
+  }
   // Terminal tracking lives outside the try so a dropped socket can still settle
   // the turn instead of leaving a permanent spinner.
   let terminated = false;
@@ -1784,6 +2129,15 @@ export async function companionApproval(
   requestId: string,
   allow: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // A continued chat's approval waits on its WebSocket as a server request; its
+  // run id names the turn that transport owns. Answering it here is what keeps
+  // the approval card identical across transports.
+  const continuation = continuationOwningRun(runId);
+  if (continuation) {
+    return continuation.answerApproval(runId, requestId, allow)
+      ? { ok: true }
+      : { ok: false, error: "That approval is no longer waiting." };
+  }
   try {
     const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
       method: "POST",
@@ -1807,6 +2161,19 @@ export async function companionApproval(
 export async function companionRunStop(
   runId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // A continued chat's Stop is `session.interrupt` on its gateway socket; the
+  // gateway answers the RPC and ends the run with its own terminal frame.
+  const continuation = continuationOwningRun(runId);
+  if (continuation) {
+    try {
+      const stopped = await continuation.interruptRun(runId);
+      return stopped
+        ? { ok: true }
+        : { ok: false, error: "That turn is no longer running." };
+    } catch (e) {
+      return { ok: false, error: continuationError(e) };
+    }
+  }
   try {
     const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
       method: "POST",

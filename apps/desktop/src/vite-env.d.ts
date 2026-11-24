@@ -739,7 +739,9 @@ type LifequestApi = {
       size: number;
       relPath?: string;
     }> | null;
-  }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
+  }) => Promise<
+    Result<true> | { ok: true; settlesOnStream?: boolean } | { ok: false; error: string }
+  >;
   companionApproval: (payload: {
     runId: string;
     requestId: string;
