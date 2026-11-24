@@ -71,7 +71,7 @@ const REVIEW_SCENARIOS = [
     name: "dailyBefore",
     params: { cadence: "daily", now: "2026-11-15T17:59:00" },
     expect: {
-      eyebrow: "Daily",
+      eyebrow: "Review / Daily",
       title: "14 Nov 2026",
       periodLabel: "14 Nov 2026",
       note: "The daily review for the current period opens 15 Nov 2026 at 18:00.",
@@ -83,7 +83,7 @@ const REVIEW_SCENARIOS = [
     name: "dailyOpen",
     params: { cadence: "daily", now: "2026-11-15T18:00:00" },
     expect: {
-      eyebrow: "Daily",
+      eyebrow: "Review / Daily",
       title: "15 Nov 2026",
       periodLabel: "15 Nov 2026",
       note: null,
@@ -95,9 +95,9 @@ const REVIEW_SCENARIOS = [
     name: "weeklyBefore",
     params: { cadence: "weekly", now: "2026-11-10T09:00:00" },
     expect: {
-      eyebrow: "Weekly",
-      title: "Week of 2 Nov 2026",
-      periodLabel: "Week of 2 Nov 2026",
+      eyebrow: "Review / Weekly",
+      title: "2-8 Nov '26 (W45)",
+      periodLabel: "2-8 Nov '26 (W45)",
       note: "The weekly review for the current period opens 15 Nov 2026 at 08:00.",
       nextDisabled: true,
     },
@@ -107,10 +107,54 @@ const REVIEW_SCENARIOS = [
     name: "weeklyOpen",
     params: { cadence: "weekly", now: "2026-11-15T08:00:00" },
     expect: {
-      eyebrow: "Weekly",
-      title: "Week of 9 Nov 2026",
-      periodLabel: "Week of 9 Nov 2026",
+      eyebrow: "Review / Weekly",
+      title: "9-15 Nov '26 (W46)",
+      periodLabel: "9-15 Nov '26 (W46)",
       note: null,
+      nextDisabled: true,
+    },
+    shot: "weekly-open",
+  },
+  {
+    // A week that crosses a month is named by BOTH ends, not by its start's
+    // month alone: 30 Nov – 6 Dec 2026 is week 49.
+    name: "weeklyCrossMonth",
+    params: { cadence: "weekly", now: "2026-12-06T09:00:00" },
+    expect: {
+      eyebrow: "Review / Weekly",
+      title: "30 Nov-6 Dec '26 (W49)",
+      periodLabel: "30 Nov-6 Dec '26 (W49)",
+      note: null,
+      nextDisabled: true,
+    },
+  },
+  {
+    // And one that crosses a year: the year belongs to each end.
+    name: "weeklyCrossYear",
+    params: { cadence: "weekly", now: "2027-01-03T09:00:00" },
+    expect: {
+      eyebrow: "Review / Weekly",
+      title: "28 Dec '26-3 Jan '27 (W53)",
+      periodLabel: "28 Dec '26-3 Jan '27 (W53)",
+      note: null,
+      nextDisabled: true,
+    },
+  },
+  {
+    // A Sunday-start vault numbers a week by the ISO week its Monday–Saturday
+    // span mostly sits in: Sun 8 – Sat 14 Nov 2026 is week 46, the same number
+    // a Monday-start week of the same days carries.
+    name: "weeklySundayStart",
+    params: {
+      cadence: "weekly",
+      now: "2026-11-15T09:00:00",
+      weekStartDay: "sunday",
+    },
+    expect: {
+      eyebrow: "Review / Weekly",
+      title: "8-14 Nov '26 (W46)",
+      periodLabel: "8-14 Nov '26 (W46)",
+      note: "The weekly review for the current period opens 21 Nov 2026 at 08:00.",
       nextDisabled: true,
     },
   },
@@ -118,7 +162,7 @@ const REVIEW_SCENARIOS = [
     name: "monthlyBefore",
     params: { cadence: "monthly", now: "2026-11-28T12:00:00" },
     expect: {
-      eyebrow: "Monthly",
+      eyebrow: "Review / Monthly",
       title: "Oct 2026",
       periodLabel: "Oct 2026",
       note: "The monthly review for the current period opens 29 Nov 2026 at 00:00.",
@@ -129,7 +173,7 @@ const REVIEW_SCENARIOS = [
     name: "monthlyOpen",
     params: { cadence: "monthly", now: "2026-11-29T00:00:00" },
     expect: {
-      eyebrow: "Monthly",
+      eyebrow: "Review / Monthly",
       title: "Nov 2026",
       periodLabel: "Nov 2026",
       note: null,
@@ -141,7 +185,7 @@ const REVIEW_SCENARIOS = [
     name: "quarterlyBefore",
     params: { cadence: "quarterly", now: "2026-12-28T12:00:00" },
     expect: {
-      eyebrow: "Quarterly",
+      eyebrow: "Review / Quarterly",
       title: "2026 Q3",
       periodLabel: "2026 Q3",
       note: "The quarterly review for the current period opens 29 Dec 2026 at 00:00.",
@@ -152,7 +196,7 @@ const REVIEW_SCENARIOS = [
     name: "quarterlyOpen",
     params: { cadence: "quarterly", now: "2026-12-29T00:00:00" },
     expect: {
-      eyebrow: "Quarterly",
+      eyebrow: "Review / Quarterly",
       title: "2026 Q4",
       periodLabel: "2026 Q4",
       note: null,
@@ -163,7 +207,7 @@ const REVIEW_SCENARIOS = [
     name: "yearlyBefore",
     params: { cadence: "yearly", now: "2026-12-24T23:59:00" },
     expect: {
-      eyebrow: "Yearly",
+      eyebrow: "Review / Yearly",
       title: "2025",
       periodLabel: "2025",
       note: "The yearly review for the current period opens 25 Dec 2026 at 00:00.",
@@ -175,7 +219,7 @@ const REVIEW_SCENARIOS = [
     name: "yearlyOpen",
     params: { cadence: "yearly", now: "2026-12-25T00:00:00" },
     expect: {
-      eyebrow: "Yearly",
+      eyebrow: "Review / Yearly",
       title: "2026",
       periodLabel: "2026",
       note: null,
@@ -195,7 +239,7 @@ const REVIEW_SCENARIOS = [
       }),
     },
     expect: {
-      eyebrow: "Daily",
+      eyebrow: "Review / Daily",
       title: "14 Nov 2026",
       periodLabel: "14 Nov 2026",
       note: "The daily review for the current period opens 15 Nov 2026 at 20:00.",
@@ -469,7 +513,7 @@ function verifyReviewScenario(scenario, sampleValue) {
     );
   }
   // The cadence is the eyebrow now, and the period is the page's one heading:
-  // `Weekly review · Week of 9 Nov 2026` said the same thing twice.
+  // `Weekly review · 9-15 Nov '26 (W46)` said the same thing twice.
   if (sampleValue.title !== expect.title) {
     failure(
       `${name}: the page's heading reads ${JSON.stringify(sampleValue.title)}, expected ${JSON.stringify(expect.title)}`,

@@ -12,6 +12,11 @@
  *
  * The wing itself is not in the eyebrow — the rail's selected wing tab says
  * which wing the operator is in, and repeating it here would say it twice.
+ *
+ * The Review wing is the one exception: its five cadence pages read
+ * `Review / Daily`, `Review / Weekly`, and so on. The cadences are one ladder
+ * in the rail, and the wing word in front of each says which ladder the page
+ * sits on, which the rail's tab says only while the operator is looking at it.
  */
 
 /** The page names, in the operator's words. */
@@ -45,9 +50,10 @@ export type EyebrowPage =
   | "Daily Journal";
 
 /**
- * The eyebrow text for a page: the page's own name, and nothing else —
- * `Dashboard`, `Dream`, `Task Manager`.
+ * The eyebrow text for a page: the page's own name — `Dashboard`, `Dream`,
+ * `Task Manager` — prefixed with the wing's name when the page carries one,
+ * as the Review wing's do: `Review / Daily`.
  */
-export function eyebrowFor(page: EyebrowPage): string {
-  return page;
+export function eyebrowFor(page: EyebrowPage, wing?: string): string {
+  return wing ? `${wing} / ${page}` : page;
 }

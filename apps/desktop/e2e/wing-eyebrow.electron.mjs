@@ -12,8 +12,8 @@
  * What this rig claims:
  *
  *  1. Every page under every wing opens with the eyebrow convention: the
- *     page's own name — "Dashboard", "Dream", "Life Map", "Task Manager",
- *     "Daily". The wing is not in the eyebrow; the rail's selected tab is.
+ *     page's own name — "Dashboard", "Dream", "Life Map", "Task Manager" —
+ *     and, under Review, the wing's name in front of it: "Review / Daily".
  *  2. The eyebrow is drawn in capitals by CSS, not by the markup, and it sits
  *     above the page's own title.
  *  3. Every eyebrow is the same muted grey — `--muted-foreground`, the shell's
@@ -24,7 +24,8 @@
  *     claims to be one.
  *  5. Personnel is renamed Agents, and the Act page is renamed Task Manager —
  *     in the rail and in the eyebrow.
- *  6. The five review cadences each carry their own name.
+ *  6. The five review cadences each carry their own name under the Review
+ *     wing word: "Review / Daily", "Review / Weekly", and so on.
  *  7. No page under a wing is missing its eyebrow, and no page carries two.
  *
  * NOT covered here: the real vault. The IPC bridge is stubbed, so this rig
@@ -75,12 +76,15 @@ const PAGES = [
   { route: "/projects", eyebrow: "Projects", wing: "Act", heading: "Projects" },
   { route: "/daily", eyebrow: "Daily Schedule", wing: "Act", heading: "Daily Schedule" },
   { route: "/act", eyebrow: "Task Manager", wing: "Act", heading: "Life" },
-  // Review
-  { route: "/review/daily", eyebrow: "Daily", wing: "Review", heading: "Daily review" },
-  { route: "/review/weekly", eyebrow: "Weekly", wing: "Review", heading: "Weekly review" },
-  { route: "/review/monthly", eyebrow: "Monthly", wing: "Review", heading: "Monthly review" },
-  { route: "/review/quarterly", eyebrow: "Quarterly", wing: "Review", heading: "Quarterly review" },
-  { route: "/review/yearly", eyebrow: "Yearly", wing: "Review", heading: "Yearly review" },
+  // Review — the one wing whose pages name it in the eyebrow. The review
+  // page's own h1 is its period (a date, a week span, a month, ...), which
+  // moves with the clock, so `heading: null` only asks that it drew a title;
+  // the review rigs check the text the label computes.
+  { route: "/review/daily", eyebrow: "Review / Daily", wing: "Review", heading: null },
+  { route: "/review/weekly", eyebrow: "Review / Weekly", wing: "Review", heading: null },
+  { route: "/review/monthly", eyebrow: "Review / Monthly", wing: "Review", heading: null },
+  { route: "/review/quarterly", eyebrow: "Review / Quarterly", wing: "Review", heading: null },
+  { route: "/review/yearly", eyebrow: "Review / Yearly", wing: "Review", heading: null },
 ];
 
 /** The rail labels, per wing — the claim that Images moved to Home. */
@@ -255,11 +259,17 @@ async function main() {
       const state = await sample();
       states[page.route] = state;
 
-      // The page proved it rendered — its own title is on screen.
+      // The page proved it rendered — its own title is on screen. The review
+      // pages' headings are their periods, which move with the clock, so for
+      // them a non-empty title is the proof; their rig checks the text.
       check(
         `${page.route} renders its own title`,
-        state.heading === page.heading,
-        `h1 read ${JSON.stringify(state.heading)}, expected ${JSON.stringify(page.heading)}`,
+        page.heading === null
+          ? typeof state.heading === "string" && state.heading.length > 0
+          : state.heading === page.heading,
+        page.heading === null
+          ? `h1 read ${JSON.stringify(state.heading)}, expected a title`
+          : `h1 read ${JSON.stringify(state.heading)}, expected ${JSON.stringify(page.heading)}`,
       );
 
       // The eyebrow is the page's own name — the rail carries the wing.

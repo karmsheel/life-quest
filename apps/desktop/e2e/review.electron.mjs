@@ -132,14 +132,14 @@ const artifactsDir = path.join(here, "artifacts");
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/review.html";
 
 /**
- * The default window. The review page's pair needs the sheet's room — a 48rem
- * reading column beside a 17rem checklist, plus the shell's 16rem sidebar and
- * the sheet's padding — so this is the smallest ordinary window where the column
- * can still be its measure. The chat dock is folded away before the layout
- * claims (that is what the operator's own dock control does, and the review
- * feature is not the dock's claim); when Start opens the dock again the review
- * page gives width back, which is the app's own graceful answer and not this
- * rig's claim.
+ * The default window. With the dock folded, the sheet has just enough room for
+ * the pair — a 48rem reading column beside a 17rem checklist — and no more.
+ *
+ * With the dock OPEN the sheet does not: the dock takes its column before the
+ * page sees any width, so the same window is cramped. The layout claims are
+ * measured both ways: first with the dock open (the checklist must stack above
+ * the page, the document keeping its margins), then folded (the pair must sit
+ * side by side at the full measure).
  */
 const DEFAULT_SIZE = { width: 1440, height: 900 };
 /**
@@ -149,7 +149,7 @@ const DEFAULT_SIZE = { width: 1440, height: 900 };
  * as one centred block rather than as a page with a panel bolted to an edge.
  */
 const WIDE_SIZE = { width: 1800, height: 1000 };
-/** Narrower than the stylesheet's 78rem threshold: the rail must stack above. */
+/** Narrower than the 48rem page plus the 17rem rail: this sheet must stack. */
 const NARROW_SIZE = { width: 900, height: 900 };
 
 const INPUT = ".note-live textarea";
@@ -175,6 +175,18 @@ const LOCKED_ROW = "review-area-spirit";
 const TOTAL_AREAS = AREA_ROWS.length;
 
 /** Read the review page and the box straight off the rendered DOM. */
+/**
+ * A weekly review's period heading, short enough for one line at the reading
+ * measure: `9-15 Nov '26 (W46)`. The start's month (and year) is omitted when
+ * the span shares them with the end; a span across a month reads
+ * `30 Nov-6 Dec '26`, one across a year `28 Dec '26-3 Jan '27`.
+ */
+const WEEK_TITLE =
+  /^\d{1,2}(?: [A-Z][a-z]{2}(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]{2} '\d{2} \(W\d{1,2}\)$/;
+
+/** The week-first document title inside the box: `W46 Review: 9-15 Nov '26`. */
+const DOC_TITLE = /^W\d{1,2} Review: .+/;
+
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const box = document.querySelector(".note-live");
@@ -225,6 +237,13 @@ const SAMPLE = `(() => {
       : [],
     headings: box ? box.querySelectorAll("h1, h2, h3, h4, h5, h6").length : 0,
     title: text(document.querySelector(".review-page__title")),
+    // The document's own title, the first heading the box draws from the file.
+    docTitle: box ? text(box.querySelector("h1")) : null,
+    // The review is a page, not a card: the box keeps square corners.
+    editorRadius: (() => {
+      const el = document.querySelector(".review-page__editor .note-live");
+      return el ? getComputedStyle(el).borderTopLeftRadius : null;
+    })(),
     period: text(document.querySelector('[data-testid="review-period"]')),
     eyebrow: text(document.querySelector('[data-testid="wing-eyebrow"]')),
     // The period the page is on, as the page itself records it: the driver can
@@ -324,9 +343,12 @@ const SAMPLE = `(() => {
     businessStatus: status("review-area-business-status"),
     relationshipsItem: item("review-area-relationships"),
     relationshipsStatus: status("review-area-relationships-status"),
+    // The reviewing line above the box is gone: the page has no chrome above
+    // the prose, and the autosave line sits under the box instead.
     scopeLine: text(document.querySelector('[data-testid="review-scope"]')),
     scopeName: text(document.querySelector('[data-testid="review-scope-name"]')),
     scopeWholeLifeLink: Boolean(document.querySelector('[data-testid="review-scope-life"]')),
+    statusRect: rect(document.querySelector('[data-testid="review-status"]')),
     markDoneLabel: (() => {
       const el = document.querySelector('[data-testid="review-mark-done"]');
       return el ? text(el) : null;
@@ -362,11 +384,13 @@ const SAMPLE = `(() => {
             }
           : null,
         layout: rect(layoutEl),
-        // The page's own side padding: the pair is centred inside it, and the
-        // trailing band is deliberately deeper than the leading one.
+        // The layout grid's side padding: the header, the reading column and the
+        // rail are centred inside it, the same band on both sides.
         layoutPadding: (() => {
-          if (!layoutEl) return null;
-          const style = getComputedStyle(layoutEl);
+          const el =
+            document.querySelector(".review-page-layout__inner") ?? layoutEl;
+          if (!el) return null;
+          const style = getComputedStyle(el);
           return {
             left: Math.round(parseFloat(style.paddingLeft) || 0),
             right: Math.round(parseFloat(style.paddingRight) || 0),
@@ -377,9 +401,8 @@ const SAMPLE = `(() => {
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
         header: rect(document.querySelector(".review-page__header")),
-        toolbar: rect(document.querySelector(".review-page__toolbar")),
         editor: rect(document.querySelector(".review-page__editor")),
-        scope: rect(document.querySelector('[data-testid="review-scope"]')),
+        status: rect(document.querySelector('[data-testid="review-status"]')),
         pageActions: rect(document.querySelector(".review-page__actions")),
         notes: rect(document.querySelector(".review-notes")),
       };
@@ -719,9 +742,10 @@ function layoutReport(layout) {
           railRight
         : null,
     headerLeft: layout?.header?.left ?? null,
-    toolbarLeft: layout?.toolbar?.left ?? null,
     editorLeft: layout?.editor?.left ?? null,
-    scopeLeft: layout?.scope?.left ?? null,
+    statusTop: layout?.status?.top ?? null,
+    statusRight: layout?.status ? layout.status.left + layout.status.width : null,
+    editorBottom: layout?.editor ? layout.editor.top + layout.editor.height : null,
     actionsLeft: layout?.pageActions?.left ?? null,
     notesLeft: layout?.notes?.left ?? null,
   };
@@ -734,10 +758,10 @@ function layoutReport(layout) {
  * padding — not the page centred with the rail hung off one edge, and not the
  * pair run out to the sheet's edges.
  *
- * The trailing band is deliberately deeper than the leading one, so the checklist
- * reads as sitting inside the right padding. `spareFloor` is the empty page the
- * claim demands on each side of the pair; it is only meaningful when the window
- * is wider than the pair needs.
+ * The page's side padding is symmetric so the document and the pair it makes with
+ * the checklist keep the same margin on both sides. `spareFloor` is the empty
+ * page the claim demands on each side of the pair; it is only meaningful when
+ * the sheet is wider than the pair needs.
  */
 function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   const report = layoutReport(layout);
@@ -753,8 +777,8 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
     failure(`${when}: the sheet's content box could not be read`);
     return report;
   }
-  // The page's own side padding: it must exist, and the trailing band must be
-  // deeper than the leading one.
+  // The page's own side padding: it must exist, and it must be the same on both
+  // sides — the document is centred, not pulled off its centre by the rail.
   if (report.layoutPadLeft === null || report.layoutPadRight === null) {
     failure(`${when}: the page's side padding could not be read`);
     return report;
@@ -762,9 +786,12 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   if (!(report.layoutPadLeft >= 8)) {
     failure(`${when}: the page has only ${report.layoutPadLeft}px of leading padding`);
   }
-  if (!(report.layoutPadRight > report.layoutPadLeft + 4)) {
+  if (!(report.layoutPadRight >= 8)) {
+    failure(`${when}: the page has only ${report.layoutPadRight}px of trailing padding`);
+  }
+  if (Math.abs(report.layoutPadRight - report.layoutPadLeft) > 2) {
     failure(
-      `${when}: the trailing padding (${report.layoutPadRight}px) is not deeper than the leading padding (${report.layoutPadLeft}px)`,
+      `${when}: the page's side padding is lopsided — ${report.layoutPadLeft}px leading, ${report.layoutPadRight}px trailing`,
     );
   }
   // The measure: the column never grows past 48rem.
@@ -805,9 +832,7 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   // from the leading edge would be a page divided against itself.
   for (const [part, left] of [
     ["header", report.headerLeft],
-    ["toolbar", report.toolbarLeft],
     ["editor", report.editorLeft],
-    ["scope line", report.scopeLeft],
     ["actions", report.actionsLeft],
     ["daily notes", report.notesLeft],
   ]) {
@@ -839,9 +864,11 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
 }
 
 /**
- * Claim the narrow window: the checklist stacks ABOVE the reading column, spans
- * the same column, and the two do not overlap. This is the stylesheet's 78rem
- * answer to "there is no room for a page beside a rail".
+ * Claim the cramped sheet: there is no room for the 17rem rail beside the 48rem
+ * page, so the checklist stacks ABOVE the reading column, spans the same column,
+ * and the two do not overlap. The document is not narrowed to make room for the
+ * rail: it takes the measure's full width when the sheet has it and the sheet's
+ * width when it does not, with the same margin on both sides.
  */
 function assertStacked(layout, when) {
   const report = layoutReport(layout);
@@ -873,6 +900,33 @@ function assertStacked(layout, when) {
       `${when}: the reading column is ${report.pageWidth}px wide inside a ${report.contentClientWidth}px sheet`,
     );
   }
+  // The document keeps the same margin on both sides: the rail above it must not
+  // shift it off its centre, which is what the old side-by-side squeeze did.
+  const innerWidth =
+    report.innerLeft !== null && report.innerRight !== null
+      ? report.innerRight - report.innerLeft
+      : null;
+  if (
+    innerWidth !== null &&
+    report.pageLeft !== null &&
+    report.pageRight !== null
+  ) {
+    const before = report.pageLeft - report.innerLeft;
+    const after = report.innerRight - report.pageRight;
+    if (Math.abs(before - after) > 2) {
+      failure(
+        `${when}: the stacked document's margins are lopsided — ${before}px before it and ${after}px after it`,
+      );
+    }
+    // The page takes the measure when the room allows it, otherwise the room:
+    // it never narrows to leave a rail beside it.
+    const wanted = Math.min(READING_MEASURE, innerWidth);
+    if (Math.abs((report.pageWidth ?? 0) - wanted) > 2) {
+      failure(
+        `${when}: the stacked reading column is ${report.pageWidth}px wide where the sheet could give it ${wanted}px`,
+      );
+    }
+  }
   return report;
 }
 
@@ -896,6 +950,28 @@ async function foldDock(win) {
     "the chat dock to fold away",
   );
   await frames(win);
+}
+
+/**
+ * The scope the checklist marks as active, or null when no row is. The page no
+ * longer prints a "Reviewing X" line above the box: the checklist's own selected
+ * row is where the scope is said.
+ */
+function activeScope(page) {
+  for (const [slug, item] of [
+    ["overall", page.lifeItem],
+    ["health", page.healthItem],
+    ["mind", page.mindItem],
+    ["financial", page.financeItem],
+    ["business", page.businessItem],
+    ["relationships", page.relationshipsItem],
+  ]) {
+    if (!item) continue;
+    if (String(item.className).includes("is-active") || item.ariaCurrent === "true") {
+      return slug;
+    }
+  }
+  return null;
 }
 
 /** The rail state as one small object, for both the driver's checks and the report. */
@@ -997,6 +1073,18 @@ async function main() {
   });
   await win.loadURL(`${url}?v=${Date.now()}`);
   await waitFor(win, "Boolean(window.reviewRigReady)", "reviewRigReady");
+  await frames(win);
+
+  // ── 0. the dock is open: the sheet is cramped, so the rail stacks ABOVE ───
+  // The dock takes its column before the page sees any width, so at this window
+  // the sheet has no room for the 48rem page beside the 17rem rail. The operator
+  // asked for the checklist to move above the document here, not to squeeze the
+  // document: the reading column must keep the same margin on both sides.
+  const cramped = await sample(win);
+  checks.cramped = cramped;
+  checks.crampedColumns = assertStacked(cramped.layout, "with the dock open");
+  await shot(win, "review-dock-open.png");
+
   await foldDock(win);
   // With the dock out of the way the sheet is wide enough for the column's full
   // measure; without this wait the first picture could be of a mid-reflow page.
@@ -1012,14 +1100,19 @@ async function main() {
   checks.opened = opened;
   checks.openedRail = railState(opened);
   assertDocument(opened, "on arrival", { blocks: 35 });
-  // The header is the Daily Journal's shape: the cadence is the page's eyebrow
-  // (the name is not repeated as the title), the period is the page's one
+  // The header is the Daily Journal's shape: the wing and cadence are the
+  // page's eyebrow (the name is not repeated as the title), the period is the
+  // page's one
   // heading over the prose with a calendar key beside it, and the two step keys
   // sit on the column's own edges as arrows with no label and no frame.
-  if (opened.eyebrow !== "Weekly") {
-    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Weekly"`);
+  if (opened.eyebrow !== "Review / Weekly") {
+    failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Review / Weekly"`);
   }
-  if (!/^Week of \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(String(opened.title))) {
+  // A week is named by its two ends and its calendar-week number, e.g.
+  // "9-15 November '26 (W46)". The span can cross a month or a year, so the
+  // start's month (and year) is optional; the end and the week number are
+  // always there.
+  if (!WEEK_TITLE.test(String(opened.title))) {
     failure(`the page's heading is not its period: ${JSON.stringify(opened.title)}`);
   }
   if (opened.title !== opened.period) {
@@ -1082,25 +1175,38 @@ async function main() {
     lifeStatus: `${TOTAL_AREAS - 1} areas left`,
     lifeDisabled: true,
   });
-  // The scope line names the scope the page is on, and only an area scope offers
-  // the way back to the whole-life review.
-  if (opened.scopeName !== "Life") {
-    failure(`the scope line's name read ${JSON.stringify(opened.scopeName)}, expected "Life"`);
+  // The reviewing line above the box is gone: the checklist's selected row says
+  // which review the page is on, and nothing sits between the pager and the
+  // document.
+  if (opened.scopeLine !== null || opened.scopeName !== null || opened.scopeWholeLifeLink) {
+    failure(
+      `the retired scope line is still on the page: ${JSON.stringify(opened.scopeLine)} / ${JSON.stringify(opened.scopeName)}`,
+    );
   }
-  if (!String(opened.scopeLine).includes("Reviewing")) {
-    failure(`the scope line does not say what is being reviewed: ${JSON.stringify(opened.scopeLine)}`);
+  if (activeScope(opened) !== "overall") {
+    failure(`the Life row is not the selected row on arrival (${JSON.stringify(activeScope(opened))})`);
   }
-  if (opened.scopeWholeLifeLink) {
-    failure("the whole-life link is offered while the page IS the whole-life review");
+  // The document is a page, not a card: square corners, its own week-first
+  // title, and the autosave line under the box it reports on.
+  if (!DOC_TITLE.test(String(opened.docTitle))) {
+    failure(`the document's title is ${JSON.stringify(opened.docTitle)}, not "W46 Review: 9-15 Nov '26"`);
+  }
+  if (opened.editorRadius !== "0px") {
+    failure(`the document box's corner radius is ${JSON.stringify(opened.editorRadius)}, not square`);
+  }
+  if (
+    !opened.layout?.status ||
+    !opened.layout?.editor ||
+    !(opened.layout.status.top >= opened.layout.editor.top + opened.layout.editor.height - 1)
+  ) {
+    failure("the autosave line is not under the document box");
   }
   if (opened.markDoneLabel !== "Mark life review complete") {
     failure(`the mark-done button reads ${JSON.stringify(opened.markDoneLabel)}`);
   }
-  // The pair must be centred at the default window, where the sheet has room for
-  // the column's full measure.
-  checks.centering = assertTwoColumn(opened.layout, "at the default window", {
-    spareFloor: 2,
-  });
+  // The pair must be centred at the default window, where the sheet has just
+  // enough room for the column's full measure and no spare page.
+  checks.centering = assertTwoColumn(opened.layout, "at the default window");
   await shot(win, "review-document.png");
   await shot(win, "review-checklist.png");
 
@@ -1267,18 +1373,13 @@ async function main() {
   if (agentDown.boxes !== 1 || agentDown.editing) {
     failure("an agent that is not answering took the review document away");
   }
-  // Pressing a row puts the page on that area: the scope line and the selected
-  // row must agree, or the kickoff and the box are about different sections.
-  if (agentDown.scopeName !== "Finance") {
-    failure(`the rail press left the scope line on ${JSON.stringify(agentDown.scopeName)}`);
+  // Pressing a row puts the page on that area: the selected row is the only
+  // place the scope is said now that the reviewing line is gone.
+  if (activeScope(agentDown) !== "financial") {
+    failure(`the rail press left the selected row on ${JSON.stringify(activeScope(agentDown))}`);
   }
   if (!agentDown.financeItem || !String(agentDown.financeItem.className).includes("is-active")) {
     failure("the Finance row is not the selected row after it was pressed");
-  }
-  if (!String(agentDown.scopeLine).includes("Whole-life review")) {
-    failure(
-      `an area scope does not offer the way back to the whole-life review: ${JSON.stringify(agentDown.scopeLine)}`,
-    );
   }
   const snapshotCalls = await setHarness(win, "window.reviewRigSnapshotCalls");
   checks.agentDownSnapshotCalls = snapshotCalls;
@@ -1469,7 +1570,7 @@ async function main() {
         `the calendar opened week ${JSON.stringify(moved.periodData)}, expected ${JSON.stringify(expectedWeek)}`,
       );
     }
-    if (!/^Week of /.test(String(moved.title))) {
+    if (!WEEK_TITLE.test(String(moved.title))) {
       failure(`the moved page's heading is not a week: ${JSON.stringify(moved.title)}`);
     }
     if (moved.nextDisabled !== false) {
@@ -1579,14 +1680,11 @@ async function main() {
     if (!String(last?.kickoff).includes(`## ${area.name}`)) {
       failure(`the ${area.name} kickoff does not name its own section: ${JSON.stringify(last?.kickoff)}`);
     }
-    if (areaStart.scopeName !== area.name) {
-      failure(`the ${area.name} row left the scope line on ${JSON.stringify(areaStart.scopeName)}`);
+    if (activeScope(areaStart) !== area.slug) {
+      failure(`the ${area.name} row left the selected row on ${JSON.stringify(activeScope(areaStart))}`);
     }
     if (areaStart.markDoneLabel !== `Mark ${area.name} review complete`) {
       failure(`the mark-done button reads ${JSON.stringify(areaStart.markDoneLabel)}`);
-    }
-    if (areaStart.scopeWholeLifeLink !== true) {
-      failure(`the ${area.name} scope does not offer the whole-life review link`);
     }
     await click(win, '[data-testid="review-mark-done"]');
     await waitForRailStatus(win, area.slug, "Done");
@@ -1640,7 +1738,7 @@ async function main() {
     win,
     `(() => {
       const eyebrow = document.querySelector('[data-testid="wing-eyebrow"]');
-      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Daily";
+      return Boolean(eyebrow) && eyebrow.textContent.trim() === "Review / Daily";
     })()`,
     "the daily review page",
   );
@@ -1855,8 +1953,10 @@ async function main() {
   await frames(win);
   const back = await sample(win);
   checks.back = back;
-  if (back.scopeName !== "Relationships") {
-    failure(`returning to the weekly review left the scope on ${JSON.stringify(back.scopeName)}, expected Relationships`);
+  if (activeScope(back) !== "relationships") {
+    failure(
+      `returning to the weekly review left the selected row on ${JSON.stringify(activeScope(back))}, expected relationships`,
+    );
   }
   if (back.markDoneLabel !== "Mark Relationships review complete") {
     failure(`the weekly mark-done button reads ${JSON.stringify(back.markDoneLabel)}`);
@@ -1984,11 +2084,8 @@ async function main() {
   if (lifeStarted.lifeStatus !== "In progress") {
     failure(`the Life review's status while it is being worked reads ${JSON.stringify(lifeStarted.lifeStatus)}`);
   }
-  if (lifeStarted.scopeName !== "Life") {
-    failure(`the life review left the scope line on ${JSON.stringify(lifeStarted.scopeName)}`);
-  }
-  if (lifeStarted.scopeWholeLifeLink) {
-    failure("the whole-life link is offered while the page IS the whole-life review");
+  if (activeScope(lifeStarted) !== "overall") {
+    failure(`the life review left the selected row on ${JSON.stringify(activeScope(lifeStarted))}`);
   }
   if (lifeStarted.markDoneLabel !== "Mark life review complete") {
     failure(`the life review's mark-done button reads ${JSON.stringify(lifeStarted.markDoneLabel)}`);
