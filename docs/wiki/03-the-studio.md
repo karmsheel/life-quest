@@ -212,17 +212,19 @@ The chat dock:
   approval, or — for a chat the app started rather than the operator — a small
   icon for what started it, chosen from a task handed over with **Send to
   agent**, a review interview, a planning session or an automation run, and
-  remembered with the chat. Tabs share the strip and shrink with the dock the way
-  a browser's do, each keeping a floor of about three characters of its chat's
-  name and then an ellipsis, beside that mark and its close control; once they
-  are all at the floor the strip stops squeezing and scrolls sideways, moved by
-  the wheel or its own thin scrollbar, and the tab that comes in front is
-  scrolled into view. A **+** immediately after the last tab is **New chat tab** —
+  remembered with the chat. Each tab takes the width of its chat's name — up to
+  about three or four words — rather than stretching or being cut short while the
+  strip has room; only when the strip fills do the tabs compress, labels
+  truncating toward a floor of about three characters of the name and an
+  ellipsis beside that mark and its close control. Once they are all at the floor
+  the strip stops squeezing and scrolls sideways, moved by the wheel or its own
+  thin scrollbar, and the tab that comes in front is scrolled into view. A **+** immediately after the last tab is **New chat tab** —
   the plus sits where the next tab will appear, not on the strip's trailing edge.
   A middle click closes a tab and **Ctrl/Cmd+W** closes the tab in front.
   Right-clicking a tab opens **Pin**, **Rename**, **Archive** and **Delete**.
-- **Pinned chats** lead the strip as fixed squares: the label's first letter and a
-  small pin, no close control. A pinned chat is durable state, so it has a tab on
+- **Pinned chats** lead the strip: a pinned tab leads with the pin in the slot a
+  plain tab spends on its status mark, then wears the chat's name like any other
+  tab, with no close control. A pinned chat is durable state, so it has a tab on
   every launch; right-click offers **Unpin** only, and archive and delete wait
   until it is unpinned.
 - **Archived chats** are not in the working list by default. **View options** →
@@ -365,7 +367,8 @@ catalogued in [Settings](./28-settings.md).
 - A pinned chat cannot be archived or deleted until it is unpinned: while pinned,
   its sidebar row hides the hover archive control and its row menu loses
   **Archive** and **Delete**. The tab's own menu offers **Unpin**.
-- A tab keeps at least about three characters of its chat's name and an ellipsis
+- A tab is as wide as its chat's name up to a few words; when the strip fills,
+  it keeps at least about three characters of its chat's name and an ellipsis
   beside its leading mark and close control. When the strip runs out of room it
   scrolls sideways rather than squeezing the tabs further, and the tab that comes
   in front is scrolled into view.

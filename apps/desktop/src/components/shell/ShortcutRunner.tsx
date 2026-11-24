@@ -132,7 +132,7 @@ export function ShortcutRunner() {
    * strip's own — open dock, thread surface, at least one tab in the strip (the
    * strip is drawn for a single chat too, so its one tab's close control and
    * this key stay in step), a chat in front — plus the rule the close control
-   * already follows: a pinned square is never dropped by a press or a key, Unpin
+   * already follows: a pinned tab is never dropped by a press or a key, Unpin
    * is its way out.
    */
   const closableTabRef = useRef<{ id: string; close: (id: string) => void } | null>(

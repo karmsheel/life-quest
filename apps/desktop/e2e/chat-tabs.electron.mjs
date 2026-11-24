@@ -157,22 +157,24 @@ const SAMPLE = `(() => {
     });
   }
 
-  // The tab's own box, not its label's: the equal-width claim is about the tab
-  // element, and a content-sized tab would show up here as a box narrower than
-  // its siblings whatever its title happens to be.
+  // The tab's own box, not its label's: a tab is content-sized up to its cap, so
+  // the box is where "the name's width" and "the cap" are measured, while the
+  // label's own clientWidth is where the truncation floor is read.
   //
-  // A pinned chat draws as a square: a letter and a small pin, no label and no
-  // close. Those are reported separately so a square is read as a square rather
-  // than as a normal tab that lost its label.
+  // A pinned chat is a tab like any other: the pin leads its leading slot and
+  // the chat's name follows, with no close control. Those are reported so a
+  // pinned tab is read as "pinned", not as a tab that lost its name.
   //
-  // A normal tab's leading slot is one mark — the status dot, or the kickoff
-  // icon of the work that started the chat — so the label only ever has what is
-  // left after that slot and the close control. The floor claim is measured on
-  // the label itself: its clientWidth against the canvas width, in the label's
-  // own font, of the label's first three characters PLUS the ellipsis glyph.
-  // The ellipsis costs about a character's width, so a tab wide enough for three
-  // characters alone still renders two and "…" — the floor has to budget for
-  // both. A tab squeezed to one glyph fails it.
+  // Every tab's leading slot is one mark — the status dot, a kickoff chat's
+  // icon, or a pinned chat's pin — so the label only ever has what is left after
+  // that slot (and the close control, when there is one). The floor claim is
+  // measured on the label itself: its clientWidth against the canvas width, in
+  // the label's own font, of the label's first three characters PLUS the
+  // ellipsis glyph. The ellipsis costs about a character's width, so a tab wide
+  // enough for three characters alone still renders two and "…" — the floor has
+  // to budget for both. A tab squeezed to one glyph fails it. The cap claim
+  // measures the full label's canvas width against the label's room: a capped
+  // tab must be visibly truncated, not merely capped at a number.
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
     const main = tab.matches("[role=tab]") ? tab : tab.querySelector("[role=tab]");
     const labelEl = tab.querySelector(".chat-panel__tab-label");
@@ -182,9 +184,11 @@ const SAMPLE = `(() => {
     const markEl = tab.querySelector(".chat-panel__tab-mark");
     const markSvg = markEl ? markEl.querySelector("svg") : null;
     const labelStyle = labelEl ? window.getComputedStyle(labelEl) : null;
+    const tabStyle = window.getComputedStyle(tab);
     const threeChars = labelEl ? Array.from(text(labelEl)).slice(0, 3).join("") : "";
     let threeCharWidth = null;
     let floorWidth = null;
+    let textWidth = null;
     if (labelStyle && threeChars) {
       const canvas = document.createElement("canvas");
       const measure = canvas.getContext("2d");
@@ -199,6 +203,7 @@ const SAMPLE = `(() => {
           labelStyle.fontFamily;
         threeCharWidth = Math.round(measure.measureText(threeChars).width * 100) / 100;
         floorWidth = Math.round(measure.measureText(threeChars + "…").width * 100) / 100;
+        textWidth = Math.round(measure.measureText(text(labelEl)).width * 100) / 100;
       }
     }
     return {
@@ -222,6 +227,10 @@ const SAMPLE = `(() => {
       threeCharWidth,
       /** Canvas width of those three characters plus the ellipsis glyph: the floor. */
       floorWidth,
+      /** Canvas width of the whole label in its own font; the cap truncates it. */
+      textWidth,
+      /** The tab's own max-width in px — the content-sized cap. */
+      maxWidth: Math.round(parseFloat(tabStyle.maxWidth) * 100) / 100,
       pinned: tab.getAttribute("data-pinned") === "true",
       pin: Boolean(pinEl),
       pinVisible: shown(pinEl),
@@ -611,7 +620,7 @@ async function main() {
       };
     })()`);
 
-  /** The pinned square, which wears a letter instead of a label, pressed with
+  /** The pinned tab, which leads with its pin and keeps its name, pressed with
    * the middle button: the store refuses to close a pin, so this must close
    * nothing and drop nothing. */
   const middleClickPinnedTab = () =>
@@ -1010,7 +1019,7 @@ async function main() {
   /** Open one tab's menu with a right-click, the way the operator does. */
   const openTabMenu = (label) =>
     run(`(async () => {
-      // A pinned tab is a square with a letter and no text label, so fall back
+      // A pinned tab leads with its pin but carries its name like any tab, so fall back
       // to the active tab when the name does not match one.
       const tab =
         Array.from(document.querySelectorAll(".chat-panel__tab")).find((el) =>
@@ -1081,6 +1090,41 @@ async function main() {
       }
       const end = read();
       return { reached: end.now === end.min, presses, start, end };
+    })()`);
+
+  /**
+   * Walk the dock's divider wider with ArrowLeft presses, the way a keyboard
+   * resizes the column. The content-sized tab claim needs a strip with room for
+   * full names, and the shipped dock is too narrow for three of them.
+   */
+  const widenDock = (presses = 24) =>
+    run(`(async () => {
+      const divider = document.querySelector(".chat-divider");
+      if (!divider) return { moved: false, presses: 0, reason: "no divider" };
+      const read = () => Number(divider.getAttribute("aria-valuenow"));
+      divider.focus();
+      const start = read();
+      for (let i = 0; i < ${presses}; i += 1) {
+        divider.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
+        );
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() =>
+          requestAnimationFrame(r)
+        )));
+      }
+      return { moved: read() > start, start, end: read() };
+    })()`);
+
+  /** Commit the sidebar row's open rename form, the way its Save button does. */
+  const commitRowRename = () =>
+    run(`(async () => {
+      const save = document.querySelector(
+        '.chats-rail__rename [aria-label="Save chat name"]'
+      );
+      if (!save) return false;
+      save.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
     })()`);
 
   const typeAndSend = (text) =>
@@ -1194,7 +1238,7 @@ async function main() {
 
     // 1 — the sidebar lists every live chat in one flat list, pinned first, and
     // the dock lands on a thread whose strip is drawn (the fixture's pinned
-    // chat is a permanent square, beside the open chat's tab).
+    // chat is a permanent pin-led tab, beside the open chat's tab).
     mark("landing");
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
@@ -1247,17 +1291,16 @@ async function main() {
       `heading "${landing.heading}", surface ${landing.surface}`,
     );
     // The pinned chat is a tab of its own before anything is opened: the pin is
-    // durable Hermes state, so a pinned chat is always in the strip. It draws as
-    // a square — first letter and a small pin, no label and no close — and sits
-    // first, ahead of the open chat's normal tab.
+    // durable Hermes state, so a pinned chat is always in the strip. It leads with
+    // its pin, wears its full name like any other tab, keeps no close control,
+    // and sits first, ahead of the open chat's normal tab.
     check(
-      "landing draws the pinned chat as a square tab ahead of the open chat",
+      "landing draws the pinned chat as a named, pin-led tab ahead of the open chat",
       landing.tabCount === 2 &&
         landing.tabs[0]?.pinned === true &&
-        landing.tabs[0]?.letter === "P" &&
         landing.tabs[0]?.pin === true &&
+        landing.tabs[0]?.label === "Pinned note" &&
         landing.tabs[0]?.hasClose === false &&
-        landing.tabs[0]?.label === "" &&
         landing.tabs[1]?.pinned === false &&
         landing.tabs[1]?.label === "Alpha planning" &&
         landing.tabs[1]?.hasClose === true &&
@@ -1302,19 +1345,19 @@ async function main() {
     screenshots.push(await shot("landing"));
 
     // 1a — the browser's middle click closes the tab under the pointer, but a
-    // pinned square is not a closable tab: the close control is absent because
+    // pinned tab is not a closable tab: the close control is absent because
     // Unpin is the only way out of the band, and the middle button must honour
     // the same rule. The press is swallowed first, so X11's paste never starts.
     const pinnedPress = await middleClickPinnedTab();
     const afterPinnedPress = await settle();
     check(
-      "a middle click on the pinned square closes nothing and keeps it pinned",
+      "a middle click on the pinned tab closes nothing and keeps it pinned",
       pinnedPress.ok === true &&
         pinnedPress.downPrevented === true &&
         pinnedPress.auxPrevented === true &&
         afterPinnedPress.tabCount === 2 &&
         afterPinnedPress.tabs[0]?.pinned === true &&
-        afterPinnedPress.tabs[0]?.letter === "P" &&
+        afterPinnedPress.tabs[0]?.label === "Pinned note" &&
         afterPinnedPress.tabs[1]?.label === "Alpha planning" &&
         afterPinnedPress.heading === "Alpha planning",
       JSON.stringify({ press: pinnedPress, tabs: afterPinnedPress.tabs }),
@@ -1390,7 +1433,7 @@ async function main() {
     // 1c — unpin the fixture's pinned chat from the sidebar, then close the tab
     // the pin left behind. The pin is what forced a second tab onto the landing,
     // so this is how the rest of the suite gets back to the one-chat baseline it
-    // was written against. The square has already become a normal tab with a
+    // was written against. The pinned tab has already become a normal tab with a
     // close control by the time the unpin lands.
     check("hovered the pinned row to unpin it", await hoverSidebarRow("Pinned note"), "no row to hover");
     check(
@@ -1407,9 +1450,10 @@ async function main() {
       JSON.stringify(unpinnedPinnedNote.patchCalls.at(-1)),
     );
     check(
-      "the unpinned chat's square became a normal tab with a close control",
+      "the unpinned chat's tab keeps its name and gains a close control",
       unpinnedPinnedNote.tabCount === 2 &&
         unpinnedPinnedNote.tabs.every((tab) => tab.pinned === false) &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.pin === false &&
         unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose === true &&
         unpinnedPinnedNote.tabs.find((tab) => tab.active)?.label === "Alpha planning",
       JSON.stringify(unpinnedPinnedNote.tabs),
@@ -1772,13 +1816,14 @@ async function main() {
       pinned.rows[0]?.pinState === true && pinned.rows.every((row) => !row.actionsVisible),
       JSON.stringify(pinned.rows.map((row) => [row.label, row.pinState, row.actionsVisible])),
     );
-    // Pinning a chat also squares off the tab it already had: pinned tabs come
-    // first in the strip, whatever order the working set was made in.
+    // Pinning a chat turns the tab it already had into a pin-led tab at the
+    // front, keeping its name: pinned tabs come first in the strip, whatever
+    // order the working set was made in.
     check(
-      "pinning a chat turns its open tab into a square at the front",
+      "pinning a chat turns its open tab into a pin-led tab at the front",
       pinned.tabCount === 3 &&
         pinned.tabs[0]?.pinned === true &&
-        pinned.tabs[0]?.letter === "B" &&
+        pinned.tabs[0]?.label === "Bravo budget" &&
         pinned.tabs[0]?.pin === true &&
         pinned.tabs[0]?.hasClose === false &&
         pinned.tabs.filter((tab) => tab.pinned).length === 1,
@@ -2281,62 +2326,160 @@ async function main() {
       JSON.stringify({ heading: newChatActive.heading, tabs: newChatActive.tabs }),
     );
 
-    // 19 — every open tab is one share of the strip, not one share of its own
-    // label. A third tab with a title unlike the other two is what makes a
-    // content-sized strip obvious: "Delta automation" would otherwise be twice
-    // the width of "New chat".
+    // 19 — a tab is its own name, not a share of the band: with room, a long
+    // title keeps its words and a short one keeps a short tab; only when the row
+    // fills do the tabs compress, and below the floor the strip scrolls.
     check(
       "middle-clicked Delta for a third tab",
       await middleClickSidebarRow("Delta automation"),
       "no row button",
     );
-    const equalTabs = await settle();
-    const equalLabels = equalTabs.tabs.map((tab) => tab.label);
+    const defaultTabs = await settle();
+    const openLabels = defaultTabs.tabs.map((tab) => tab.label);
     check(
       "three chats are open, with labels of different lengths",
-      equalTabs.tabCount === 3 &&
-        equalLabels.join("/") === "Bravo budget/New chat/Delta automation" &&
-        new Set(equalLabels.map((label) => label.length)).size > 1,
-      JSON.stringify(equalLabels),
+      defaultTabs.tabCount === 3 &&
+        openLabels.join("/") === "Bravo budget/New chat/Delta automation" &&
+        new Set(openLabels.map((label) => label.length)).size > 1,
+      JSON.stringify(openLabels),
     );
-    const equalWidths = equalTabs.tabs.map((tab) => tab.box?.width ?? null);
+
+    // With room the tabs are content-sized: a wide dock shows every fixture name
+    // in full, the long one holding a wider tab than the short one, and none of
+    // them past the cap.
+    const widened = await widenDock();
+    const contentTabs = await settle(320);
+    const contentWidths = contentTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
     check(
-      "every tab is the same width at the default dock width",
-      equalWidths.length === 3 &&
-        equalWidths.every((width) => typeof width === "number") &&
-        Math.max(...equalWidths) - Math.min(...equalWidths) <= 1,
-      JSON.stringify({ widths: equalWidths, tabs: equalLabels }),
+      "the divider walked the dock wide enough for the strip's content",
+      widened.moved === true &&
+        Boolean(contentTabs.chatDivider) &&
+        (contentTabs.chatDivider.now ?? 0) > (defaultTabs.chatDivider?.now ?? 0),
+      JSON.stringify({ walk: widened, divider: contentTabs.chatDivider }),
+    );
+    check(
+      "the tabs take the width of their names, not equal shares",
+      contentTabs.tabs.length === 3 &&
+        contentWidths.every((width) => Number.isFinite(width)) &&
+        Math.max(...contentWidths) - Math.min(...contentWidths) > 2,
+      JSON.stringify({ widths: contentWidths, tabs: openLabels }),
+    );
+    check(
+      "a longer name holds a wider tab than a shorter one",
+      (contentTabs.tabs.find((tab) => tab.label === "Delta automation")?.box?.width ?? 0) >
+        (contentTabs.tabs.find((tab) => tab.label === "New chat")?.box?.width ?? 0) &&
+        (contentTabs.tabs.find((tab) => tab.label === "Bravo budget")?.box?.width ?? 0) >
+          (contentTabs.tabs.find((tab) => tab.label === "New chat")?.box?.width ?? 0),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width])),
+    );
+    check(
+      "the fixture names are written in full at a wide dock",
+      contentTabs.tabs.every((tab) => tab.label === tab.name.split(" — ")[0]),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "no tab grows past its cap",
+      contentTabs.tabs.every(
+        (tab) =>
+          typeof tab.maxWidth === "number" &&
+          tab.maxWidth > 0 &&
+          typeof tab.box?.width === "number" &&
+          tab.box.width <= tab.maxWidth + 1,
+      ),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width, tab.maxWidth])),
+    );
+
+    screenshots.push(await shot("content-sized"));
+    // 19b — the cap: a few words fit; a title longer than that is truncated
+    // inside the tab rather than growing it without end, and the full name stays
+    // in the tab's title and accessible name. Renamed and restored here so the
+    // rest of the run keeps its fixture names.
+    const longName = "A very long session name that keeps going far past four words";
+    check(
+      "opened the active row's menu",
+      await clickRowControl("Delta automation", ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check(
+      "opened Rename chat for the long name",
+      await clickSidebarMenuItem("Rename chat"),
+      "no Rename chat item",
+    );
+    check("typed the long name", await typeRowRename(longName), "no rename field");
+    check("committed the long name", await commitRowRename(), "no rename field");
+    const capped = await settle(420);
+    const cappedTab = capped.tabs.find((tab) => tab.active) ?? null;
+    check(
+      "a title past the cap is truncated inside the tab, not left to grow",
+      cappedTab !== null &&
+        typeof cappedTab.maxWidth === "number" &&
+        cappedTab.maxWidth > 0 &&
+        typeof cappedTab.box?.width === "number" &&
+        cappedTab.box.width <= cappedTab.maxWidth + 1 &&
+        typeof cappedTab.labelWidth === "number" &&
+        typeof cappedTab.textWidth === "number" &&
+        cappedTab.labelWidth + 1 < cappedTab.textWidth &&
+        cappedTab.name.includes(longName),
+      JSON.stringify({
+        tab: cappedTab && {
+          label: cappedTab.label,
+          box: cappedTab.box,
+          maxWidth: cappedTab.maxWidth,
+          labelWidth: cappedTab.labelWidth,
+          textWidth: cappedTab.textWidth,
+          name: cappedTab.name,
+        },
+      }),
+    );
+    screenshots.push(await shot("tab-cap"));
+    check(
+      "opened the renamed row's menu",
+      await clickRowControl(longName, ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check(
+      "opened Rename chat to restore the fixture name",
+      await clickSidebarMenuItem("Rename chat"),
+      "no Rename chat item",
+    );
+    check("typed the fixture name again", await typeRowRename("Delta automation"), "no rename field");
+    check("committed the fixture name", await commitRowRename(), "no rename field");
+    const renamedBack = await settle(420);
+    check(
+      "the tab's fixture name came back",
+      renamedBack.tabs.some((tab) => tab.label === "Delta automation"),
+      JSON.stringify(renamedBack.tabs.map((tab) => tab.label)),
     );
 
     // Hit the divider's ArrowRight until the dock is at its floor, then read the
-    // same three tabs again: while there is still room they stay equal shares of
-    // the band, and they shrink with it — but never below the tab floor (three
-    // characters of the label beside its mark and close control). A strip that
-    // keeps squeezing the labels past that floor, or that clips the tabs instead
-    // of scrolling them, is what step 19b and step 26 are for.
-    const narrowed = await narrowDockToFloor();
+    // same three tabs again: the row compresses instead of keeping the wide
+    // strip, and the tabs shrink toward the shared floor — never below the room
+    // three characters of the label need beside its mark and close control. A
+    // strip that keeps squeezing past that floor, or that clips the tabs instead
+    // of scrolling them, is what step 19c and the crowded strip are for.
+    const narrowed = await narrowDockToFloor(60);
     const narrowTabs = await settle(360);
     check(
       "the divider walked the dock down to its floor",
       narrowed.reached === true &&
         typeof narrowTabs.chatDivider?.now === "number" &&
         narrowTabs.chatDivider.now === narrowTabs.chatDivider.min &&
-        narrowTabs.chatDivider.now < equalTabs.chatDivider?.now,
+        narrowTabs.chatDivider.now < (defaultTabs.chatDivider?.now ?? 0),
       JSON.stringify({
         walk: narrowed,
         divider: narrowTabs.chatDivider,
-        panelBefore: equalTabs.panel,
+        panelBefore: defaultTabs.panel,
         panelAfter: narrowTabs.panel,
       }),
     );
     check(
       "the dock really got narrower",
-      (narrowTabs.panel?.width ?? 0) < (equalTabs.panel?.width ?? 0),
-      JSON.stringify({ before: equalTabs.panel, after: narrowTabs.panel }),
+      (narrowTabs.panel?.width ?? 0) < (defaultTabs.panel?.width ?? 0),
+      JSON.stringify({ before: defaultTabs.panel, after: narrowTabs.panel }),
     );
     const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? null);
     check(
-      "the tabs are still the same width at the dock's floor",
+      "the tabs are held at the shared floor at the dock's narrowest",
       narrowTabs.tabCount === 3 &&
         narrowWidths.length === 3 &&
         narrowWidths.every((width) => typeof width === "number") &&
@@ -2344,16 +2487,22 @@ async function main() {
       JSON.stringify({ widths: narrowWidths, tabs: narrowTabs.tabs.map((tab) => tab.label) }),
     );
     check(
-      "every tab is narrower at the dock's floor than at its default width",
-      narrowWidths.length === equalWidths.length &&
+      "every tab is narrower at the dock's floor than at the wide dock",
+      narrowWidths.length === contentWidths.length &&
         narrowWidths.every(
-          (width, index) => typeof width === "number" && width < equalWidths[index],
+          (width, index) =>
+            typeof width === "number" && width < (contentWidths[index] ?? Number.POSITIVE_INFINITY),
         ),
-      JSON.stringify({ default: equalWidths, floor: narrowWidths }),
+      JSON.stringify({ content: contentWidths, floor: narrowWidths }),
     );
     check(
       "the strip kept all three chats while the dock narrowed",
-      narrowTabs.tabs.map((tab) => tab.label).join("/") === equalLabels.join("/"),
+      narrowTabs.tabs.map((tab) => tab.label).join("/") === openLabels.join("/"),
+      JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
+    );
+    check(
+      "the strip kept all three chats while the dock narrowed",
+      narrowTabs.tabs.map((tab) => tab.label).join("/") === openLabels.join("/"),
       JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
     );
     // 19b — the same three tabs at the dock's narrowest are the browser's tab
@@ -2745,12 +2894,14 @@ async function main() {
         renameSwitched.rowRenameValue === "Wrong chat name" &&
         renameSwitched.heading === "Seed chat 10" &&
         renameSwitched.patchCalls.length === patchesBeforeSwitch &&
-        !renameSwitched.patchCalls.some((call) => typeof call.patch.title === "string"),
+        !renameSwitched.patchCalls.some((call) => call.patch.title === "Wrong chat name"),
       JSON.stringify({
         rowRenaming: renameSwitched.rowRenaming,
         value: renameSwitched.rowRenameValue,
         heading: renameSwitched.heading,
-        patches: renameSwitched.patchCalls.slice(-2),
+        patches: renameSwitched.patchCalls.slice(-4),
+        before: patchesBeforeSwitch,
+        now: renameSwitched.patchCalls.length,
       }),
     );
     check(
@@ -2769,8 +2920,12 @@ async function main() {
       "cancelling closes the field and writes nothing",
       renameCancelled.rowRenaming === false &&
         renameCancelled.patchCalls.length === patchesBeforeSwitch &&
-        !renameCancelled.patchCalls.some((call) => typeof call.patch.title === "string"),
-      JSON.stringify({ rowRenaming: renameCancelled.rowRenaming }),
+        !renameCancelled.patchCalls.some((call) => call.patch.title === "Wrong chat name"),
+      JSON.stringify({
+        rowRenaming: renameCancelled.rowRenaming,
+        before: patchesBeforeSwitch,
+        now: renameCancelled.patchCalls.length,
+      }),
     );
     screenshots.push(await shot("archived-while-renaming"));
 
@@ -2835,11 +2990,12 @@ async function main() {
     // 26 — the strip is a browser's tab band at the dock's narrowest: a tab has
     // a floor (three characters of its label plus the ellipsis, beside its mark
     // and close control), and past that the band overflows and scrolls sideways
-    // instead of squeezing every chat to a glyph. Four unpinned chats beside a pinned square is what
-    // makes the floor reachable: at 300px the tabs cannot all fit above it.
+    // instead of squeezing every chat to a glyph. Four unpinned chats beside a
+    // pinned tab is what makes the floor reachable: at 300px the tabs cannot all
+    // fit above it.
     const floorDivider = plusAgain.chatDivider;
     check(
-      "pinned a chat to put a square back in the strip",
+      "pinned a chat to put a pinned tab back in the strip",
       await clickRowControl("Seed chat 11", ".chats-rail__pin-btn"),
       "no pin control",
     );
@@ -2857,7 +3013,7 @@ async function main() {
       unpinned: floorStrip.tabs.filter((tab) => !tab.pinned).length,
     };
     check(
-      "four unpinned chats and the pinned square are open at the dock's floor",
+      "four unpinned chats and the pinned tab are open at the dock's floor",
       floorTabCounts.all === 5 &&
         floorTabCounts.pinned === 1 &&
         floorTabCounts.unpinned === 4,
@@ -3265,7 +3421,10 @@ async function main() {
         newChatTab,
         newChatKept,
         newChatActive,
-        equalTabs,
+        defaultTabs,
+        contentTabs,
+        cappedTabs: capped,
+        restoredTabs: renamedBack,
         narrowTabs,
         longList,
         atFoot,
@@ -3349,7 +3508,7 @@ async function main() {
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],
       ["new chat", state.newChatTab.rowCount, state.newChatTab.tabCount, "", state.newChatTab.heading, "", ""],
       ["new chat kept", state.newChatKept.rowCount, state.newChatKept.tabCount, "", state.newChatKept.heading, "", ""],
-      ["three tabs", state.equalTabs.rowCount, state.equalTabs.tabCount, "", state.equalTabs.heading, "", ""],
+      ["three tabs", state.defaultTabs.rowCount, state.defaultTabs.tabCount, "", state.defaultTabs.heading, "", ""],
       [
         "tabs at floor",
         state.narrowTabs.rowCount,

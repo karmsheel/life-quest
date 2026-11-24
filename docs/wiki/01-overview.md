@@ -142,8 +142,9 @@ above the **Log** because they are governance, not a wing: they belong to no are
 and are reachable from everywhere. The version badge lives at the foot of the
 rail, under the **Log**, not in the dock's chrome.
 
-The chat dock holds the companion. Its strip carries the open chats as tabs,
-pinned chats as squares, and a **+** for a new tab; a vertical agent switcher
+The chat dock holds the companion. Its strip carries the open chats as tabs —
+each sized to its name up to a few words — with pinned chats leading them by a
+pin, and a **+** for a new tab; a vertical agent switcher
 names which companion answers; the bottom bar is a card centred on the composer
 at its own fixed width — a wider field does not stretch it — and leads with
 **New chat**, **Notebox**, **Full screen chat**, the **Keyboard shortcuts**

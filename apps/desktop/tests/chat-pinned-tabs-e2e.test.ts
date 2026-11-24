@@ -3,7 +3,7 @@
  *
  * The rig (`e2e/chat-pinned-tabs.electron.mjs`) drives the chat-tabs harness
  * page in a real Electron window — the shipping sidebar, dock, store and CSS,
- * with the IPC bridge stubbed — and measures the pinned square, the tab context
+ * with the IPC bridge stubbed — and measures the pinned tab, the tab context
  * menu and the sidebar row's pinned/unpinned states against the shipped DOM.
  * This wrapper asserts the report the rig wrote, so a skipped or silently
  * broken run cannot pass.
@@ -144,7 +144,7 @@ const tabLabels = (state: State) => state.tabs.map((tab) => tab.label);
 const pinnedTabs = (state: State) => state.tabs.filter((tab) => tab.pinned);
 
 describe("pinned chats in the dock's tab strip", () => {
-  it("draws a pinned square, offers the pinned/unpinned tab menus, and keeps the sidebar verbs in step", async (t) => {
+  it("draws a pin-led pinned tab, offers the pinned/unpinned tab menus, and keeps the sidebar verbs in step", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -182,14 +182,13 @@ describe("pinned chats in the dock's tab strip", () => {
       final,
     } = report.states;
 
-    // A pinned chat is a tab at boot, drawn as a square: first letter + pin, no
-    // label and no close, ahead of the open chat's normal tab.
+    // A pinned chat is a tab at boot, drawn with its pin leading and its name,
+    // no close, ahead of the open chat's normal tab.
     assert.equal(landing.tabCount, 2, "the landing did not draw the pinned tab beside the open chat");
     assert.equal(landing.tabs[0]?.pinned, true, "the first tab is not the pinned one");
-    assert.equal(landing.tabs[0]?.letter, "P", "the pinned square does not carry the chat's letter");
-    assert.equal(landing.tabs[0]?.pin, true, "the pinned square carries no pin icon");
-    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned square has a close control");
-    assert.equal(landing.tabs[0]?.label, "", "the pinned square draws a text label");
+    assert.equal(landing.tabs[0]?.pin, true, "the pinned tab carries no pin icon");
+    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned tab has a close control");
+    assert.equal(landing.tabs[0]?.label, "Pinned note", "the pinned tab lost its name");
     assert.equal(landing.tabs[1]?.pinned, false, "the open chat's tab is marked pinned");
     assert.equal(landing.tabs[1]?.label, "Alpha planning");
     assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
@@ -200,7 +199,7 @@ describe("pinned chats in the dock's tab strip", () => {
       "the dock header still carries chat controls",
     );
 
-    // Clicking the square opens the pinned chat; the header hides Archive while
+    // Clicking the tab opens the pinned chat; the header hides Archive while
     // the active chat is pinned.
     assert.equal(activePinned.heading, "Pinned note", "the pinned tab did not open its chat");
     assert.equal(
@@ -248,7 +247,7 @@ describe("pinned chats in the dock's tab strip", () => {
       "Escape did not close the pinned tab's menu",
     );
 
-    // Unpin reaches the gateway and the square becomes a normal tab with a close
+    // Unpin reaches the gateway and the tab becomes a normal tab with a close
     // control; the sidebar row and the header regain their Archive verbs.
     const unpin = unpinnedTab.patchCalls.at(-1);
     assert.equal(unpin?.id, "chat-pinned", "Unpin hit the wrong chat");
@@ -258,11 +257,11 @@ describe("pinned chats in the dock's tab strip", () => {
     assert.deepEqual(
       pinnedTabs(unpinnedTab).map((tab) => tab.label),
       [],
-      "the unpinned chat is still drawn as a pinned square",
+      "the unpinned chat is still drawn as a pinned tab",
     );
     const normalTab = unpinnedTab.tabs.find((tab) => tab.label === "Pinned note");
     assert.equal(normalTab?.hasClose, true, "the unpinned tab has no close control");
-    assert.equal(normalTab?.letter, null, "the unpinned tab still draws a letter");
+    assert.equal(normalTab?.pin, false, "the unpinned tab still leads with a pin");
     assert.deepEqual(
       unpinnedTab.header?.actions,
       [],
@@ -301,13 +300,13 @@ describe("pinned chats in the dock's tab strip", () => {
       "the unpinned tab's menu is not Pin/Rename/Archive/Delete",
     );
 
-    // Pin from that menu re-pins, and the square comes back at the front.
+    // Pin from that menu re-pins, and the pin-led tab comes back at the front.
     const repin = repinned.patchCalls.at(-1);
     assert.equal(repin?.id, "chat-pinned", "Pin hit the wrong chat");
     assert.equal(repin?.patch.pinned, true, "Pin never reached the bridge");
     assert.equal(repinned.tabMenu, null, "the tab menu stayed open after Pin");
-    assert.equal(repinned.tabs[0]?.pinned, true, "the re-pinned square is not first");
-    assert.equal(repinned.tabs[0]?.letter, "P");
+    assert.equal(repinned.tabs[0]?.pinned, true, "the re-pinned tab is not first");
+    assert.equal(repinned.tabs[0]?.label, "Pinned note");
     assert.equal(repinned.tabs[0]?.hasClose, false);
 
     // Rename from the tab menu opens the header field on that tab's chat and
@@ -324,7 +323,7 @@ describe("pinned chats in the dock's tab strip", () => {
       "the renamed chat's tab kept the old name",
     );
 
-    // Archive from the tab menu removes the row and the tab. The pinned square is
+    // Archive from the tab menu removes the row and the tab. The pinned tab is
     // then the strip's only tab, and the strip is still drawn because of it.
     const archive = archivedFromTabMenu.patchCalls.at(-1);
     assert.equal(archive?.id, "chat-alpha", "Archive hit the wrong chat");
@@ -336,7 +335,7 @@ describe("pinned chats in the dock's tab strip", () => {
     );
     assert.deepEqual(
       tabLabels(archivedFromTabMenu),
-      [""],
+      ["Pinned note"],
       "the archived chat kept its tab",
     );
     assert.equal(archivedFromTabMenu.tabCount, 1, "one pinned tab did not draw the strip");
@@ -345,7 +344,7 @@ describe("pinned chats in the dock's tab strip", () => {
     assert.equal(archivedFromTabMenu.heading, "Pinned note", "the dock did not hand over to the pinned chat");
 
     // A second tab for the delete step: Bravo, normal and in front.
-    assert.deepEqual(tabLabels(bravoTab), ["", "Bravo budget"]);
+    assert.deepEqual(tabLabels(bravoTab), ["Pinned note", "Bravo budget"]);
     assert.equal(bravoTab.tabs[1]?.active, true, "the new tab is not active");
     assert.equal(bravoTab.heading, "Bravo budget");
 
@@ -365,10 +364,10 @@ describe("pinned chats in the dock's tab strip", () => {
       "the deleted chat kept its tab",
     );
 
-    // What is left is the pinned square alone, in a strip that is still drawn.
-    assert.equal(final.tabCount, 1, "the final strip is not the one pinned square");
+    // What is left is the pinned tab alone, in a strip that is still drawn.
+    assert.equal(final.tabCount, 1, "the final strip is not the one pinned tab");
     assert.equal(final.tabs[0]?.pinned, true);
-    assert.equal(final.tabs[0]?.letter, "P");
+    assert.equal(final.tabs[0]?.label, "Pinned note");
     assert.equal(final.tabs[0]?.pin, true);
     assert.equal(final.tabs[0]?.hasClose, false);
     assert.equal(final.strip !== null, true, "the final strip is not drawn");

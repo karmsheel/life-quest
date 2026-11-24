@@ -290,9 +290,9 @@ Full detail: [Decisions](./23-decisions.md), [Companion](./24-companion.md).
 1. In the rail's **Chats** list, hover a chat row. **Pin chat** and **Archive
    chat** appear on the hover, and the row's three-dot menu carries **Pin** /
    **Unpin**, **Rename**, **Archive** and **Delete**.
-2. A pinned chat leads the list and becomes a permanent square tab in the dock's
-   tab strip. Right-click the square for **Unpin**; archive and delete are hidden
-   until a chat is unpinned.
+2. A pinned chat leads the list and becomes a permanent pin-led tab in the
+   dock's tab strip, still wearing its name. Right-click it for **Unpin**; archive
+   and delete are hidden until a chat is unpinned.
 3. Choose **Archive chat** (hover control or the row menu) to take the chat out of
    the working list and out of the strip. Archived chats can be restored but not
    opened.
@@ -303,10 +303,11 @@ Full detail: [Decisions](./23-decisions.md), [Companion](./24-companion.md).
 5. Restore an archived row with **Unarchive**. New chat opens its own tab beside
    the chat you were in, and the tab strip is remembered across an app restart —
    per vault and per agent.
-6. Open more chats than the strip holds and it still reads: the tabs shrink to a
-   floor of about three characters of each chat's name and then an ellipsis, then
-   the strip scrolls sideways, with the wheel or its thin scrollbar, and the tab
-   you open or switch to is scrolled into view. A chat the app started (a task
+6. Open more chats than the strip holds and it still reads: each tab is as wide
+   as its chat's name up to a few words, and when the strip fills the tabs
+   compress toward a floor of about three characters of each chat's name and then
+   an ellipsis. Past that floor the strip scrolls sideways, with the wheel or its
+   thin scrollbar, and the tab you open or switch to is scrolled into view. A chat the app started (a task
    handed over with **Send to agent**, a review interview, a planning session, an
    automation run) wears a small icon for what started it at the start of its
    name, in its tab and in its row in **Chats**; a chat you opened keeps the plain

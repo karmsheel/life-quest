@@ -13131,11 +13131,11 @@ button.chat-panel__activity-line:hover {
  *
  * The strip leads with the pinned band. A pin is durable Hermes state, not a
  * strip decoration: a pinned chat is drawn as a tab on every launch, whether or
- * not this run opened it, which is what keeps the squares in front across a
- * restart. That is also why the strip can be up with a single pinned square and
- * no open unpinned tab, and stays up when every other tab is closed. The squares
- * never stretch: they are a fixed leading column, and the unpinned tabs (and the
- * plus after them) share what is left of the strip between them.
+ * not this run opened it, which is what keeps the pinned tabs in front across a
+ * restart. That is also why the strip can be up with a single pinned tab and no
+ * open unpinned tab, and stays up when every other tab is closed. A pinned tab
+ * leads with its pin and then wears the chat's name, like any other tab; it
+ * never stretches past its cap.
  *
  * Below its `min-width` a tab stops shrinking and the strip scrolls like a
  * browser's: the floor is about three characters of the chat's name beside its
@@ -13168,23 +13168,24 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * One tab is one share of the strip, never a share of its own label: a basis of
- * zero and `flex-grow: 1` make every tab the same width — capped at the same
- * `max-width` — so a long title cannot hold a wider tab than a short one, and
- * narrowing the dock shrinks them all by the same amount. The label truncates;
- * the tab does not. The `min-width` is the browser's floor: room for the leading
- * mark (a status dot, or a kickoff chat's icon — the slot is the same for both),
- * three characters AND the ellipsis that says the name continues, and the close
- * control. Past it the strip scrolls instead of squeezing the labels to one
- * letter. The ellipsis is not free — it costs about a character's width — so the
- * floor is the three characters plus that mark plus a whole character more.
+ * A tab is its own name, not a share of the band: it takes the width its content
+ * asks for, capped at twelve rem — about three or four words of a chat's name —
+ * so a long title cannot grow a tab indefinitely. With room to spare the slack
+ * falls after the plus rather than stretching short tabs into empty boxes; only
+ * when the strip runs out of room does the row compress the tabs (the labels
+ * truncate), and below the shared floor the strip scrolls like a browser's. The
+ * floor is room for the leading mark (a status dot, a kickoff chat's icon, or a
+ * pin), three characters AND the ellipsis that says the name continues, and the
+ * close control. The ellipsis is not free — it costs about a character's width —
+ * so the floor is the three characters plus that mark plus a whole character
+ * more.
  */
 .chat-panel__tab {
   display: flex;
   align-items: center;
   min-width: 5.5rem;
-  max-width: 11rem;
-  flex: 1 1 0;
+  max-width: 12rem;
+  flex: 0 1 auto;
   border-radius: 0.4rem;
 }
 
@@ -13197,34 +13198,14 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * A pinned tab is a square in the band, never a share of the strip: it does not
- * grow, so the pinned chats keep a fixed leading column however many unpinned
- * tabs follow them. Its height is the strip's — `align-items: stretch` sizes
- * every tab alike — so a square sits flush with the normal tabs beside it.
+ * A pinned tab is a tab, not a square: it leads with the pin and then wears the
+ * chat's name like any other tab. Its cap is a little narrower than a normal
+ * tab's because it spends no width on a close control, so its label keeps the
+ * same writing measure as an unpinned tab's. Pins still lead the strip, in pin
+ * order, and never stretch.
  */
 .chat-panel__tab--pinned {
-  flex: 0 0 auto;
-  width: 2.1rem;
-  /* The square is its own width: the unpinned tabs' three-character floor is
-     not a size a square can take. */
-  min-width: 2.1rem;
-  max-width: 2.1rem;
-  justify-content: center;
-}
-
-.chat-panel__tab--pinned .chat-panel__tab-main {
-  gap: 0.1rem;
-  justify-content: center;
-  padding: 0.3rem 0.1rem;
-}
-
-/* The one glyph a square can carry: the chat name's first letter. It is set at
-   the label's size and line box, so a square alone in the strip is exactly as
-   tall as a normal tab alone would be. */
-.chat-panel__tab-letter {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
+  max-width: 10rem;
 }
 
 .chat-panel__tab-pin {

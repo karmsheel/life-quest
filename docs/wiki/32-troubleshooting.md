@@ -170,7 +170,7 @@ expected until an area is opened.
 
 - **A new chat opens its own tab** beside the one in front; **New chat** never
   replaces the conversation on screen.
-- **Pinned chats are permanent tabs** (small squares). While a chat is pinned the
+- **Pinned chats are permanent tabs** (the pin leads the tab). While a chat is pinned the
   sidebar hides its archive control and the row menu loses **Archive** and
   **Delete**; **Unpin** first.
 - **Archived chats** live behind the chats header's view options: **Hide archived**

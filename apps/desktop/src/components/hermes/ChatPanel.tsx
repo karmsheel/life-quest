@@ -1413,7 +1413,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * The browser's other tab gesture: the middle button closes the tab under the
-   * pointer. A pinned square is not a closable tab — Unpin is the way out of the
+   * pointer. A pinned tab is not a closable tab — Unpin is the way out of the
    * band, exactly as the close control's absence says — so that press is
    * swallowed but closes nothing. Swallowing matters on Linux, where a middle
    * press otherwise starts X11's primary-selection paste or autoscroll.
@@ -1433,13 +1433,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setTabMenu(null);
   }
 
-  /** Drop one chat out of the pinned band: the square goes back to a tab. */
+  /** Drop one chat out of the pinned band: the pin leaves its leading slot. */
   function unpinTab(id: string): void {
     closeTabMenu();
     void patchSession(id, { pinned: false });
   }
 
-  /** Raise one chat into the pinned band: its tab becomes a square. */
+  /** Raise one chat into the pinned band: its leading slot becomes the pin. */
   function pinTab(id: string): void {
     closeTabMenu();
     void patchSession(id, { pinned: true });
@@ -1897,14 +1897,14 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
             A live tab's dot pulses, a tab waiting on an approval keeps a ring,
             and the close control stops a turn before it drops the tab. The
-            pinned band leads the strip and is drawn as squares. A pin is a
-            durable Hermes flag rather than a strip-local decoration, so a pinned
-            chat has a tab even on a launch where it was never opened — which is
-            why the strip shows with a single pinned chat and nothing else open.
-            A square carries the label's first letter and a filled pin in the
-            room the dot and label would take, and no close control: the way out
-            of the band is the menu's Unpin, so a pin is never dropped by a stray
-            press. Right-click opens that menu on any tab.
+            pinned band leads the strip: a pinned tab leads with the pin in the
+            slot a plain tab spends on its status mark, then wears the chat's
+            name like any other tab, and keeps no close control — the way out of
+            the band is the menu's Unpin, so a pin is never dropped by a stray
+            press. A pin is a durable Hermes flag rather than a strip-local
+            decoration, so a pinned chat has a tab even on a launch where it was
+            never opened — which is why the strip shows with a single pinned
+            chat and nothing else open. Right-click opens that menu on any tab.
           */}
           {view === "thread" && tabIds.length > 0 ? (
             <div
@@ -1921,12 +1921,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 const live = tabRun.sending;
                 const waiting = tabRun.approval !== null;
                 // A kickoff chat wears the mark of the work that started it
-                // instead of the plain status dot; the square keeps its letter.
+                // instead of the plain status dot.
                 const iconKind = chat.sessionIcons[id] ?? null;
                 const Icon = iconKind ? SESSION_ICON[iconKind] : null;
-                // The square has room for one glyph, so it takes the first
-                // letter of the whitespace-trimmed label, uppercased.
-                const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
                 return (
                   <div
                     key={id}
@@ -1972,36 +1969,39 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       }}
                     >
                       {pinned ? (
-                        <>
-                          <span className="chat-panel__tab-letter" aria-hidden>
-                            {letter}
-                          </span>
+                        /*
+                          A pinned tab leads with the pin itself, in the slot a
+                          plain tab spends on its status mark, and then wears the
+                          chat's name like any other tab. The pin is what makes a
+                          tab pinned, not a square that hides the name; the live
+                          and approval states paint the pin the way they paint a
+                          status dot. It keeps no close control: a pin is never
+                          dropped by a stray press, only by the menu's Unpin.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
                           <Pin
                             className="chat-panel__tab-pin"
-                            size={10}
+                            size={11}
                             fill="currentColor"
-                            aria-hidden
                           />
-                        </>
+                        </span>
                       ) : (
-                        <>
-                          {/*
-                            The tab's leading mark: the status dot at rest, or
-                            the kickoff chat's own icon. The state (a live
-                            pulse, an approval ring) paints this one slot
-                            whichever mark it holds, so a chat with an icon
-                            loses nothing a plain tab shows.
-                          */}
-                          <span className="chat-panel__tab-mark" aria-hidden>
-                            {Icon ? (
-                              <Icon className="chat-panel__tab-icon" size={11} />
-                            ) : (
-                              <span className="chat-panel__tab-dot" />
-                            )}
-                          </span>
-                          <span className="chat-panel__tab-label">{label}</span>
-                        </>
+                        /*
+                          The tab's leading mark: the status dot at rest, or the
+                          kickoff chat's own icon. The state (a live pulse, an
+                          approval ring) paints this one slot whichever mark it
+                          holds, so a chat with an icon loses nothing a plain tab
+                          shows.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
+                          {Icon ? (
+                            <Icon className="chat-panel__tab-icon" size={11} />
+                          ) : (
+                            <span className="chat-panel__tab-dot" />
+                          )}
+                        </span>
                       )}
+                      <span className="chat-panel__tab-label">{label}</span>
                     </button>
                     {pinned ? null : (
                       <button
