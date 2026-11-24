@@ -23,6 +23,12 @@
  *     happened to change nothing.
  *  6. `material-lands-on-the-document` — the theme's radius/density/motion are
  *     written to the document root (the material layer), and are not free CSS.
+ *  7. `a-bare-area-lens-wears-no-frame` — the rig writes a theme file with
+ *     chrome.domainSwitcher.frame: "bare" on the floating dock; the dock
+ *     measures transparent, borderless, shadowless, square-cornered and
+ *     1.25rem from both window edges, the inner lens frame is stripped too,
+ *     each row paints its own surface, and a made-up frame value
+ *     ("bare-metal") is refused naming chrome.domainSwitcher.frame.
  *
  * The world is throwaway: its own profile, its own vault, a stub `hermes` first
  * on PATH, and its own MCP ports. `bootForE2e` runs the product's own main
@@ -63,6 +69,7 @@ const REPORT = path.join(artifactsDir, "themes-v2.json");
 const PREVIEW_PNG = path.join(artifactsDir, "themes-v2-preview.png");
 const KEPT_PNG = path.join(artifactsDir, "themes-v2-kept.png");
 const FLOATING_PNG = path.join(artifactsDir, "themes-v2-floating.png");
+const BARE_FRAME_PNG = path.join(artifactsDir, "themes-v2-bare-frame.png");
 const SETTINGS_PNG = path.join(artifactsDir, "themes-v2-settings.png");
 const MATERIAL_PNG = path.join(artifactsDir, "themes-v2-material.png");
 const LAYOUT_PNG = path.join(artifactsDir, "themes-v2-layout.png");
@@ -212,6 +219,49 @@ const SAMPLE = `(async () => {
     domainBelow: Boolean(document.querySelector('[data-chrome-place="below-titlebar"]')),
     domainFloating: Boolean(document.querySelector('[data-chrome-place="floating-bottom-right"]')),
     domainPill: Boolean(document.querySelector(".domain-switcher--pill")),
+    // The bare-frame probe reads the floating dock the way a user sees it: the
+    // wrapper's own frame, the inner lens frame, and each row's paint.
+    bareFrame: (() => {
+      const dock = document.querySelector('[data-chrome-place="floating-bottom-right"]');
+      if (!dock) return null;
+      const style = getComputedStyle(dock);
+      const box = dock.getBoundingClientRect();
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      // The fixed-position containing block is the document element, not the
+      // viewport, so the corner insets come off its client box.
+      const root = document.documentElement;
+      const tabs = dock.querySelector(".domain-switcher__tabs");
+      const tabsStyle = tabs ? getComputedStyle(tabs) : null;
+      const rows = [...dock.querySelectorAll('[role="radio"]')].map((el) => {
+        const rowStyle = getComputedStyle(el);
+        return {
+          background: rowStyle.backgroundColor,
+          color: rowStyle.color,
+          active: el.getAttribute("aria-checked") === "true",
+        };
+      });
+      return {
+        attribute: dock.getAttribute("data-chrome-frame"),
+        backgroundColor: style.backgroundColor,
+        borderTopWidth: style.borderTopWidth,
+        boxShadow: style.boxShadow,
+        borderRadius: style.borderRadius,
+        padding: style.padding,
+        rightGap: root.clientWidth - box.right,
+        bottomGap: root.clientHeight - box.bottom,
+        innerWidth: window.innerWidth,
+        rem,
+        tabs: tabsStyle
+          ? {
+              backgroundColor: tabsStyle.backgroundColor,
+              borderTopWidth: tabsStyle.borderTopWidth,
+              borderRadius: tabsStyle.borderRadius,
+              padding: tabsStyle.padding,
+            }
+          : null,
+        rows,
+      };
+    })(),
     lensInStrip: Boolean(document.querySelector(".window-titlebar__lens")),
     settingsEntry: Boolean(document.querySelector(".window-titlebar__settings")),
     // The strip's trailing cluster is the day/night control and the gear: the
@@ -1215,6 +1265,121 @@ async function main() {
   );
   const floatingShot = await win.webContents.capturePage();
   fs.writeFileSync(FLOATING_PNG, floatingShot.toPNG());
+
+  // ── 6a2: a bare area lens wears no frame ────────────────────────────────
+  writeThemeFile("matrix-bare.json", {
+    name: "matrix-bare",
+    label: "Bare Lens",
+    chrome: {
+      domainSwitcher: {
+        place: "floating-bottom-right",
+        variant: "list",
+        frame: "bare",
+      },
+    },
+  });
+  const bare = await waitFor(
+    (s) => s.domainFloating && s.bareFrame?.attribute === "bare",
+  );
+  const bareFrame = bare?.bareFrame;
+  const isTransparentPaint = (value) =>
+    value === "rgba(0, 0, 0, 0)" || value === "transparent";
+  check(
+    "a-bare-area-lens-wears-no-frame",
+    Boolean(bareFrame) &&
+      bareFrame.attribute === "bare" &&
+      isTransparentPaint(bareFrame.backgroundColor) &&
+      bareFrame.borderTopWidth === "0px" &&
+      bareFrame.boxShadow === "none" &&
+      bareFrame.borderRadius === "0px" &&
+      bareFrame.tabs !== null &&
+      isTransparentPaint(bareFrame.tabs.backgroundColor) &&
+      bareFrame.tabs.borderTopWidth === "0px" &&
+      bareFrame.tabs.borderRadius === "0px" &&
+      bareFrame.tabs.padding === "0px" &&
+      Math.abs(bareFrame.rightGap - bareFrame.rem * 1.25) <= 1 &&
+      Math.abs(bareFrame.bottomGap - bareFrame.rem * 1.25) <= 1 &&
+      bareFrame.rows.length >= 2,
+    JSON.stringify({
+      attribute: bareFrame?.attribute,
+      background: bareFrame?.backgroundColor,
+      border: bareFrame?.borderTopWidth,
+      shadow: bareFrame?.boxShadow,
+      radius: bareFrame?.borderRadius,
+      rightGap: bareFrame?.rightGap,
+      bottomGap: bareFrame?.bottomGap,
+      rem: bareFrame?.rem,
+      innerWidth: bareFrame?.innerWidth,
+      tabs: bareFrame?.tabs,
+      rows: bareFrame?.rows.length,
+    }),
+  );
+  // `background: transparent` computes to rgba(0, 0, 0, 0); every other row
+  // paint must be fully opaque, because the dock is no longer behind it.
+  const opaqueRowBackground = (value) => {
+    if (!value || value === "transparent") return false;
+    const match = value.match(/^rgba?\((.+)\)$/);
+    if (!match) return true;
+    const parts = match[1].split(",").map((part) => part.trim());
+    return parts.length < 4 || parseFloat(parts[3]) === 1;
+  };
+  check(
+    "bare-frame-rows-keep-their-own-surface",
+    Boolean(bareFrame) &&
+      bareFrame.rows.length >= 2 &&
+      bareFrame.rows.every((row) => opaqueRowBackground(row.background)),
+    JSON.stringify(
+      (bareFrame?.rows ?? []).map((row) => ({
+        background: row.background,
+        color: row.color,
+        active: row.active,
+      })),
+    ),
+  );
+  const bareShot = await win.webContents.capturePage();
+  fs.writeFileSync(BARE_FRAME_PNG, bareShot.toPNG());
+
+  // The refusal has to be judged with no preview asking consent: the preview
+  // bar outranks the error bar (ThemePreviewBar returns the preview first), so
+  // a refused write made mid-preview shows the preview's words and the error is
+  // only reachable after the ten seconds are up. Revert the bare preview first,
+  // exactly as the operator would, and the kept theme is back underneath.
+  await evaluate(
+    "(() => { const b = document.querySelector('[data-testid=\"theme-revert\"]'); if (b) b.click(); return true; })()",
+  );
+  const bareReverted = await waitFor(
+    (s) => !s.preview && s.wingTitlebar === true && s.domainBottom === true,
+  );
+  writeThemeFile("matrix-bad-frame.json", {
+    name: "matrix-bad-frame",
+    label: "Bad Frame",
+    chrome: {
+      domainSwitcher: {
+        place: "floating-bottom-right",
+        variant: "pill",
+        frame: "bare-metal",
+      },
+    },
+  });
+  const badFrame = await waitFor((s) => Boolean(s.error), 12_000);
+  check(
+    "an-invalid-frame-is-refused-by-name",
+    bareReverted?.kept === "solar-system.json" &&
+      Boolean(badFrame?.error) &&
+      badFrame.error.includes("chrome.domainSwitcher.frame") &&
+      // A refused file must not move the chrome: the kept theme is still worn.
+      badFrame.wingTitlebar === true &&
+      badFrame.domainBottom === true,
+    JSON.stringify({
+      revertedTo: bareReverted?.kept,
+      error: badFrame?.error,
+      wing: badFrame?.wingTitlebar,
+      domain: badFrame?.domainBottom,
+    }),
+  );
+  await evaluate(
+    "(() => { const b = document.querySelector('[data-testid=\"theme-dismiss\"]'); if (b) b.click(); return true; })()",
+  );
 
   writeThemeFile("matrix-hidden.json", {
     name: "matrix-hidden",
@@ -6119,6 +6284,7 @@ async function main() {
       preview: path.relative(desktopRoot, PREVIEW_PNG),
       kept: path.relative(desktopRoot, KEPT_PNG),
       floating: path.relative(desktopRoot, FLOATING_PNG),
+      bareFrame: path.relative(desktopRoot, BARE_FRAME_PNG),
       settings: path.relative(desktopRoot, SETTINGS_PNG),
       material: path.relative(desktopRoot, MATERIAL_PNG),
       layout: path.relative(desktopRoot, LAYOUT_PNG),

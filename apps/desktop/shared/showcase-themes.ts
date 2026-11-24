@@ -74,7 +74,7 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
     },
     chrome: {
       wingSwitcher: { place: "floating-left", variant: "icons" },
-      domainSwitcher: { place: "bottom-center", variant: "pill" },
+      domainSwitcher: { place: "bottom-center", variant: "pill", frame: "pill" },
       navRail: { place: "floating", width: "wide" },
       chatDock: { side: "left" },
       titlebar: { size: "tall" },
@@ -141,7 +141,7 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
     },
     chrome: {
       wingSwitcher: { place: "floating-left", variant: "icons" },
-      domainSwitcher: { place: "titlebar-center", variant: "pill" },
+      domainSwitcher: { place: "titlebar-center", variant: "pill", frame: "pill" },
       navRail: { place: "floating", width: "wide" },
       chatDock: { side: "right" },
       titlebar: { size: "tall" },
@@ -223,7 +223,7 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
     },
     chrome: {
       wingSwitcher: { place: "titlebar-left", variant: "labels" },
-      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
       navRail: { place: "left", width: "default" },
       chatDock: { side: "right" },
       titlebar: { size: "compact" },
@@ -300,7 +300,7 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
     },
     chrome: {
       wingSwitcher: { place: "rail-top", variant: "icons" },
-      domainSwitcher: { place: "below-titlebar", variant: "pill" },
+      domainSwitcher: { place: "below-titlebar", variant: "pill", frame: "pill" },
       navRail: { place: "floating", width: "narrow" },
       chatDock: { side: "right" },
       titlebar: { size: "compact" },
@@ -380,7 +380,7 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
     },
     chrome: {
       wingSwitcher: { place: "rail-top", variant: "compact" },
-      domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
       navRail: { place: "left", width: "narrow" },
       chatDock: { side: "right" },
       titlebar: { size: "tall" },

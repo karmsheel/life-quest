@@ -703,9 +703,13 @@ a {
   height: 100%;
   color: var(--fg);
   /* No gap: the panes abut, and each pane's own trailing hairline is its seam —
-     the rail's between sidebar and sheet, the sheet's between page and dock. The
-     mat is not this tray's business — the rail carries it to the window's top in
-     its own column, and the sheet and dock meet the strip directly. */
+     the rail's between sidebar and sheet, the sheet's between page and dock.
+     The tray paints the page canvas base, because the scene backdrop now sits
+     behind the whole shell and the side panels veil it: what shows through a
+     panel's shade is this canvas (or the theme's picture), not a pane's own
+     opaque fill. The rail still carries the mat to the window's top in its own
+     column, and the sheet and dock meet the strip directly. */
+  background: var(--background);
   gap: 0;
   /* The seam's handle is positioned against this tray, and the tracks above are
      exactly the geometry it is placed from. */
@@ -764,6 +768,38 @@ a {
 
 .shell--chat-left > .chat-panel {
   grid-column: 2;
+}
+
+/* The even split: the layouts picker's half-and-half arrangements.
+   The page and the dock take half of the window each, measured to the glass
+   rather than to the tray: from the rail's trailing edge to the window's
+   trailing edge. The trailing pane carries the shell frame past the tray's own
+   box, so that slack is taken out of the trailing track and added back by the
+   pane's own width — the seam then falls on the window's centre line, and the
+   arrangement stays a split when the window, or the rail's collapse, changes the
+   frame instead of freezing the halves at the pixels they had when the card was
+   pressed. `shell--chat-left` above still says which pane leads, so this one
+   pair of rules serves both split cards, and the dock's own swap control trades
+   between them. The full-screen mode wins over this block when both are armed:
+   the shell does not carry this class in the mode (see `AppShell`), so the two
+   arrangements cannot fight over the template. */
+.shell.shell--layout-split {
+  grid-template-columns:
+    var(--nav-column)
+    calc((100% - var(--nav-column) + var(--shell-frame)) / 2)
+    calc((100% - var(--nav-column) + var(--shell-frame)) / 2 - var(--shell-frame));
+}
+
+/* The dock's own width token belongs to the studio arrangement; in a split the
+   dock is its track. Trailing, the box still carries the frame slack out to the
+   glass; leading, it asks for its track and no more (the trailing sheet keeps its
+   own escape from the swapped rules above). */
+.shell.shell--layout-split.shell--chat-right > .chat-panel {
+  width: calc(100% + var(--shell-frame));
+}
+
+.shell.shell--layout-split.shell--chat-left > .chat-panel {
+  width: 100%;
 }
 
 /* Full-screen chat: the page pane leaves the tray and the dock takes everything
@@ -828,7 +864,14 @@ a {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: var(--background);
+  /* The page is a layer above the scene, not a pane that owns the background:
+     the tray paints the canvas base and the backdrop sits on it, so the sheet
+     itself is transparent and only its cards and its own surfaces paint. The
+     material wash/grid below still tint this surface; they are transparent
+     gradients, so the scene reads through them. */
+  position: relative;
+  z-index: 1;
+  background: transparent;
   border: 0;
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -978,7 +1021,15 @@ a {
   --rail-header-inset: calc(
     var(--density-pad-rail-x) + var(--density-pad-row-x) + 1.5px
   );
-  background: var(--canvas-base);
+  /* The sidebar's shade: the rail's mat mixed with whatever is behind the tray,
+     so a clear shade lets the scene (picture or sky) show through. 100% is the
+     opaque rail the shell has always worn; the five steps are the theme model's
+     words, mapped on the document root (see "the panel shades" below). */
+  background: color-mix(
+    in srgb,
+    var(--canvas-base) var(--scene-panel-sidebar-veil, 100%),
+    transparent
+  );
   border: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -7642,8 +7693,14 @@ a.home-mini-list__link:hover {
   top: 0;
   align-self: stretch;
   /* The sheet's own canvas — the dock is the right-hand pane of one page, so it
-     takes `--background` with the sheet and not the card step above it. */
-  background: var(--background);
+     takes `--background` with the sheet and not the card step above it. The
+     shade mixes it with the scene behind the tray: 100% is the opaque dock the
+     shell has always worn, and the steps down let the backdrop read through. */
+  background: color-mix(
+    in srgb,
+    var(--background) var(--scene-panel-chat-veil, 100%),
+    transparent
+  );
   color: var(--fg);
   border: 0;
   /* The escape lives in the box, not in a negative margin: a stretched grid item
@@ -11484,6 +11541,141 @@ button.chat-panel__activity-line:hover {
   border-bottom-right-radius: calc(var(--radius-sm) - 1px);
 }
 
+/* —— The layouts picker ——————————————————————————————————————————————————
+   The titlebar's third control and the four cards it opens. The picker reuses
+   the settings popover's shell; only the cards are its own.
+
+   The thumbnail is the whole idea: the rail, the page and the agent as three
+   blocks in their real order, so a card shows an arrangement rather than
+   describing one. The rail is the darkest block because it is the window's
+   chrome; the page is the paper; the agent carries the accent tint, so the eye
+   can find it in all four cards and read the shape without the label. The
+   active card takes the same accent wash the theme tiles take, which is what
+   makes the picker's answer legible at a glance. */
+.window-titlebar__trailing .layouts-menu__trigger {
+  appearance: none;
+  width: 2.75rem;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.window-titlebar__trailing .layouts-menu__trigger:hover {
+  background: var(--selected-soft);
+}
+
+/* Open, the trigger keeps the wash the menu controls take under the pointer, so
+   the trigger and its popover read as one thing — the same rule the day/night
+   control wears while its quick menu is up. */
+.window-titlebar__trailing .layouts-menu__trigger[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.layouts-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.layouts-menu__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.layouts-menu__card:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.layouts-menu__card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--text-strong);
+}
+
+.layouts-menu__card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.layouts-menu__card-label {
+  padding-inline: 0.1rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-thumb {
+  display: grid;
+  grid-template-rows: 1fr;
+  gap: 2px;
+  height: 2.75rem;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+}
+
+.layout-thumb--studio {
+  grid-template-columns: 0.22fr 1.55fr 1fr;
+}
+
+.layout-thumb--page-agent,
+.layout-thumb--agent-page {
+  grid-template-columns: 0.22fr 1fr 1fr;
+}
+
+.layout-thumb--agent {
+  grid-template-columns: 0.22fr 1fr;
+}
+
+.layout-thumb__pane {
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--border-soft);
+}
+
+.layout-thumb__pane--rail {
+  background: var(--border);
+}
+
+.layout-thumb__pane--agent {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layouts-menu__card {
+    transition: none;
+  }
+}
+
 .settings-menu__skin-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -13808,6 +14000,44 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-md);
 }
 
+/* The bare area lens: no dock pill and no inner `.ui-segmented` frame — the
+   rows are the whole control. Both layers are stripped because the pill is not
+   one frame: `.chrome-dock` draws the filled rounded container and
+   `.domain-switcher__tabs` draws a second hairline and `--bg-subtle` fill inside
+   it, so stripping only the dock still leaves a rounded box on screen. The
+   corner insets (right/bottom 1.25rem) are the placement rules' and stay. */
+.chrome-dock[data-chrome-frame="bare"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* With the container gone each row needs its own surface so the names read as
+   rows rather than as ink on the scene. `:not(.is-active):not(:hover)` is
+   load-bearing: the base hover fill, the `.is-active` fill/border/shadow and
+   the `[aria-checked="true"]` fill must keep winning, so the selected row still
+   reads as selected and hover still answers. */
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs .ui-segmented__option:not(.is-active):not(:hover) {
+  background: var(--bg-elevated);
+}
+
+/* The rail's column is already the surface, so only the inner frame goes. */
+.nav-rail__lens[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
 .window-titlebar__leading--wings {
   display: flex;
   align-items: center;
@@ -14299,6 +14529,39 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
 }
 
+/* ——— background picture row (Settings → Appearance) ————————————————————————
+   The Background section wears the Material section's frame; only its Picture
+   row is its own. The file name is a name, not a path — long enough to identify
+   the picture, clipped rather than wrapping the row's controls onto two lines. */
+
+.theme-background__picture-control {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.theme-background__picture-name {
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A refusal belongs under the row it refused, in the settings card's own error
+   step rather than the page's loud one: the section is still usable. It sits
+   between rows, so the row that follows keeps the block's spacing. */
+.theme-background__refusal {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+.theme-material__rows .theme-background__refusal + .theme-material__row {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
 /* ——— layout (Settings → Appearance) ——————————————————————————————————————————
    The operator's side of the chrome layout: where the wing switcher, the area
    lens and the sidebar sit, each one a pick above the theme's. Ruled off from
@@ -14666,24 +14929,82 @@ button.chat-panel__activity-line:hover {
 
 /* ——— the scene behind the page ————————————————————————————————————————————
    A theme may name a sky. The vocabulary is the app's: presets, not pixels.
-   The layer sits inside the page canvas, under the page's content, and behind
-   a palette scrim — decoration must never cost the text its contrast. An
-   arguing theme cannot: a scene is only ever a preset and an intensity.
+   The layer sits behind the whole shell tray — rail, sheet and dock — under
+   every pane, and behind a palette scrim: decoration must never cost the text
+   its contrast. An arguing theme cannot: a scene is only ever a preset, an
+   intensity and a pair of panel shades.
 
-   The layer is positioned only while a scene is on, so the default shell keeps
-   the layout it had; a plain scene leaves no positioning context behind. */
-:root:not([data-scene-backdrop="plain"]) .shell__main {
-  position: relative;
-}
-
+   The sheet draws above it (`z-index: 1` on `.shell__main`, always positioned
+   now), and the rail and dock veil it with their own shade. The old
+   "position the sheet only while a scene is on" rule is gone: the sheet is a
+   layer over the scene at all times, and a plain scene simply leaves the tray's
+   canvas base showing. */
 :root:not([data-scene-backdrop="plain"]) .shell__content {
   position: relative;
   z-index: 1;
 }
 
+/* — the panel shades ————————————————————————————————————————————————————————
+   How much of the scene shows through one shell panel. The model names a step;
+   these five rules own what each step means: `solid` is the opaque panel the
+   shell has always worn, `clear` lets the whole backdrop through, and the steps
+   between shade it. The panel's own background mixes its fill at the veil
+   percentage (see `.nav-rail` / `.chat-panel`), so a theme can never ship a
+   colour or an arbitrary opacity — only one of these words. */
+:root[data-scene-panel-sidebar="solid"] {
+  --scene-panel-sidebar-veil: 100%;
+}
+
+:root[data-scene-panel-sidebar="heavy"] {
+  --scene-panel-sidebar-veil: 80%;
+}
+
+:root[data-scene-panel-sidebar="medium"] {
+  --scene-panel-sidebar-veil: 58%;
+}
+
+:root[data-scene-panel-sidebar="light"] {
+  --scene-panel-sidebar-veil: 34%;
+}
+
+:root[data-scene-panel-sidebar="clear"] {
+  --scene-panel-sidebar-veil: 0%;
+}
+
+:root[data-scene-panel-chat="solid"] {
+  --scene-panel-chat-veil: 100%;
+}
+
+:root[data-scene-panel-chat="heavy"] {
+  --scene-panel-chat-veil: 80%;
+}
+
+:root[data-scene-panel-chat="medium"] {
+  --scene-panel-chat-veil: 58%;
+}
+
+:root[data-scene-panel-chat="light"] {
+  --scene-panel-chat-veil: 34%;
+}
+
+:root[data-scene-panel-chat="clear"] {
+  --scene-panel-chat-veil: 0%;
+}
+
 .scene-backdrop {
   position: absolute;
-  inset: 0;
+  /*
+   * The tray's box plus the window frame it escapes into. The sheet and the
+   * dock reach past the shell's right and bottom edges by `--shell-frame`; the
+   * backdrop has to follow them there, or a clear panel would stop short of the
+   * window edge and the frame's mat would show as a seam under the glass.
+   * Nothing extends upward: the window strip and the rail's over-strip band stay
+   * chrome, and the scene starts at the tray's top.
+   */
+  top: 0;
+  right: calc(-1 * var(--shell-frame));
+  bottom: calc(-1 * var(--shell-frame));
+  left: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
@@ -14700,6 +15021,82 @@ button.chat-panel__activity-line:hover {
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--background) 74%, transparent);
+}
+
+/* — the picture layer ——————————————————————————————————————————————————————
+   The operator's own wallpaper. It is the whole layer while it is set: the
+   drawn sky is not painted underneath it, so the picture is what the page sits
+   on. The axes are the shared model's closed vocabulary, written onto the layer
+   as data attributes by `applyScene`/the component; this stylesheet decides what
+   each word means. `background-size`/`repeat`/`position` carry Fit and Position,
+   `filter` carries Blur, and the `::after` scrim carries Dim. */
+.scene-backdrop__picture {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+.scene-backdrop--image[data-image-fit="cover"] .scene-backdrop__picture {
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.scene-backdrop--image[data-image-fit="contain"] .scene-backdrop__picture {
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.scene-backdrop--image[data-image-fit="tile"] .scene-backdrop__picture {
+  background-size: auto;
+  background-repeat: repeat;
+}
+
+.scene-backdrop--image[data-image-position="center"] .scene-backdrop__picture {
+  background-position: center;
+}
+
+.scene-backdrop--image[data-image-position="top"] .scene-backdrop__picture {
+  background-position: center top;
+}
+
+.scene-backdrop--image[data-image-position="bottom"] .scene-backdrop__picture {
+  background-position: center bottom;
+}
+
+/* Blur is painted with a small scale so the softened edges never show as a band
+   at the layer's bounds; the scale is static, so reduced motion keeps it. */
+.scene-backdrop--image[data-image-blur="soft"] .scene-backdrop__picture {
+  filter: blur(6px);
+  transform: scale(1.04);
+}
+
+.scene-backdrop--image[data-image-blur="deep"] .scene-backdrop__picture {
+  filter: blur(14px);
+  transform: scale(1.1);
+}
+
+/* Dim is the picture layer's own scrim: the drawn scene's 74% default is tuned
+   for thin shapes, not for a full photograph, so each step says its own weight.
+   The operator can always hand the picture back; none means "show me all of it". */
+.scene-backdrop--image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+}
+
+.scene-backdrop--image[data-image-dim="none"]::after {
+  background: transparent;
+}
+
+.scene-backdrop--image[data-image-dim="soft"]::after {
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+}
+
+.scene-backdrop--image[data-image-dim="strong"]::after {
+  background: color-mix(in srgb, var(--background) 82%, transparent);
 }
 
 :root[data-scene-intensity="calm"] .scene-backdrop {
@@ -14825,6 +15222,110 @@ button.chat-panel__activity-line:hover {
   }
   to {
     transform: translate3d(3%, 0, 0) scaleY(1.18);
+  }
+}
+
+/* — horizon — */
+.scene-backdrop__horizon {
+  position: absolute;
+  inset: 0;
+}
+
+/* One disc above the ridge line: a soft radial, because a hard circle would
+   read as a UI control rather than a sun. */
+.scene-backdrop__sun {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 78%, var(--background)) 0%,
+    color-mix(in srgb, var(--accent) 30%, transparent) 58%,
+    transparent 72%
+  );
+  opacity: calc(var(--scene-opacity) * 0.9);
+  animation: scene-sun calc(20s * var(--scene-speed)) ease-in-out var(--delay)
+    infinite alternate;
+  will-change: opacity;
+}
+
+@keyframes scene-sun {
+  from {
+    opacity: calc(var(--scene-opacity) * 0.6);
+  }
+  to {
+    opacity: calc(var(--scene-opacity) * 0.95);
+  }
+}
+
+/* Four stacked bands, lowest and widest first: layered distance rather than a
+   stripe. The bands drift a percent or two; they never cross the ridge budget. */
+.scene-backdrop__ridge {
+  position: absolute;
+  left: calc(var(--offset) * -1%);
+  right: calc(var(--offset) * -1%);
+  top: var(--top);
+  height: var(--height);
+  border-radius: 50% 50% 0 0 / 22% 22% 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 24%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 70%,
+    transparent
+  );
+  opacity: var(--scene-opacity);
+  animation: scene-ridge calc(26s * var(--scene-speed)) ease-in-out var(--delay)
+    infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes scene-ridge {
+  from {
+    transform: translate3d(-1.2%, 0, 0) scaleY(1);
+  }
+  to {
+    transform: translate3d(1.2%, -1%, 0) scaleY(1.06);
+  }
+}
+
+/* — mesh — */
+.scene-backdrop__mesh {
+  position: absolute;
+  inset: 0;
+  filter: blur(18px);
+}
+
+/* Three drifting colour blobs, each its own hue: gradients rather than pictures,
+   so the mesh is the app's pixels like every other sky. */
+.scene-backdrop__blob {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 40% 40%,
+    hsl(var(--hue) 82% 62% / 0.3),
+    transparent 70%
+  );
+  opacity: var(--scene-opacity);
+  animation: scene-mesh calc(var(--duration) * var(--scene-speed)) ease-in-out
+    var(--delay) infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes scene-mesh {
+  from {
+    transform: translate3d(-6%, 4%, 0) scale(1);
+    opacity: calc(var(--scene-opacity) * 0.55);
+  }
+  to {
+    transform: translate3d(6%, -4%, 0) scale(1.16);
+    opacity: var(--scene-opacity);
   }
 }
 
@@ -15025,6 +15526,47 @@ button.chat-panel__activity-line:hover {
 
 :root[data-chrome-nav-place="right"] .shell.shell--chat-focus > .chat-panel {
   grid-column: 1;
+  width: 100%;
+}
+
+/* —— The even split beside a moved rail ————————————————————————————————
+   The split's base rule measures the window from the rail's trailing edge; with
+   the rail moved it has to measure from the edge the rail actually owns, or the
+   two panes stop being halves. Same shape as the focus pair above: the
+   placement blocks already say where every pane stands, and these rules restate
+   only the tracks and widths the split changes, one class more specific so they
+   win whatever order the placements were written in.
+
+   A floating rail is out of the tray, so the split is the window itself: two
+   equal panes from glass to glass, the rail's card riding over the page as it
+   does in the studio. The trailing pane keeps carrying the frame slack back.
+   The right-hand rail is the trailing pane and keeps its own escape, so the two
+   surviving panes simply halve the tray. */
+:root[data-chrome-nav-place="floating"] .shell.shell--layout-split {
+  grid-template-columns:
+    0
+    calc((100% + var(--shell-frame)) / 2)
+    calc((100% + var(--shell-frame)) / 2 - var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"] .shell.shell--layout-split > .chat-panel {
+  width: calc(100% + var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"]
+  .shell.shell--layout-split.shell--chat-left
+  > .chat-panel {
+  width: 100%;
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--layout-split {
+  grid-template-columns:
+    calc((100% - var(--nav-column)) / 2)
+    calc((100% - var(--nav-column)) / 2)
+    var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--layout-split > .chat-panel {
   width: 100%;
 }
 

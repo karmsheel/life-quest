@@ -63,15 +63,41 @@ export function applyChrome(chrome: ThemeChrome, root: HTMLElement): void {
 /**
  * Write the scene layer onto the document.
  *
- * Two state attributes and nothing else: which preset the renderer should draw
- * and how lively it runs. The pixels belong to the bundled component, so a
- * theme can ask for a starfield but never for a file, a shader or a stylesheet.
+ * State attributes and nothing else: which preset the renderer should draw, how
+ * lively it runs, the two frame words, and how much of the backdrop shows
+ * through each shell panel. The pixels belong to the bundled component and the
+ * stylesheet, so a theme can ask for a starfield or a shade but never for a
+ * file, a shader or a stylesheet.
+ *
+ * A picture is the exception, and only by reference: the theme names a
+ * file-name the app already holds in its profile, and the layer is the one the
+ * component draws from bytes it reads itself. While a picture is set the
+ * backdrop attribute says `image` rather than the preset — deliberately, since
+ * the stylesheet anchors the layer on anything that is not `plain` — and the
+ * picture axes ride along as data attributes for the stylesheet and the rig.
  */
 export function applyScene(scene: ThemeScene, root: HTMLElement): void {
-  root.dataset.sceneBackdrop = scene.background.preset;
+  const image = scene.background.image;
+  root.dataset.sceneBackdrop = image ? "image" : scene.background.preset;
   root.dataset.sceneIntensity = scene.background.intensity;
   root.dataset.sceneCanvasFrame = scene.frames.canvas;
   root.dataset.sceneCardFrame = scene.frames.cards;
+  // The panel shades are always on the document: the backdrop now spans the
+  // whole tray, so the rail and the dock read one of five words even when the
+  // scene is plain and there is nothing to show through them.
+  root.dataset.scenePanelSidebar = scene.background.panels.navRail;
+  root.dataset.scenePanelChat = scene.background.panels.chat;
+  if (image) {
+    root.dataset.sceneImageFit = image.fit;
+    root.dataset.sceneImagePosition = image.position;
+    root.dataset.sceneImageDim = image.dim;
+    root.dataset.sceneImageBlur = image.blur;
+  } else {
+    delete root.dataset.sceneImageFit;
+    delete root.dataset.sceneImagePosition;
+    delete root.dataset.sceneImageDim;
+    delete root.dataset.sceneImageBlur;
+  }
 }
 
 /**

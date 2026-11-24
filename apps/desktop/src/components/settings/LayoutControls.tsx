@@ -4,6 +4,7 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { Button } from "@/components/ui/Button";
 import {
   DOMAIN_PLACES,
+  DOMAIN_FRAMES,
   DOMAIN_VARIANTS,
   CHAT_DOCK_SIDES,
   NAV_RAIL_PLACES,
@@ -81,6 +82,13 @@ const DOMAIN_VARIANT_LABELS: Record<
   pill: "Pill",
   icons: "Icons",
   list: "List",
+};
+const DOMAIN_FRAME_LABELS: Record<
+  ThemeChrome["domainSwitcher"]["frame"],
+  string
+> = {
+  pill: "Pill",
+  bare: "Bare",
 };
 const CHAT_DOCK_SIDE_LABELS: Record<ThemeChrome["chatDock"]["side"], string> = {
   left: "Left",
@@ -207,6 +215,23 @@ export function LayoutControls({
         pick({
           domainSwitcher: {
             variant: value as ThemeChrome["domainSwitcher"]["variant"],
+          },
+        }),
+    },
+    {
+      key: "domain-frame",
+      component: "domainSwitcher",
+      testIdPrefix: "chrome-domain-frame",
+      label: "Area lens frame",
+      options: DOMAIN_FRAMES.map((value) => ({
+        value,
+        label: DOMAIN_FRAME_LABELS[value],
+      })),
+      selected: effectiveChrome.domainSwitcher.frame,
+      onPick: (value) =>
+        pick({
+          domainSwitcher: {
+            frame: value as ThemeChrome["domainSwitcher"]["frame"],
           },
         }),
     },

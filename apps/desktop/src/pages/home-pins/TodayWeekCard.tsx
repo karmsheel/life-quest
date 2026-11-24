@@ -49,10 +49,13 @@ export function TodayWeekCard() {
   );
 
   /**
-   * What comes round and is due now — the operator's own records plus the
-   * built-in review cadences, derived on this render rather than stored.
-   * `new Date()` is the local clock, so a card left open overnight re-asks when
-   * the vault refreshes.
+   * What comes round and is owed now. The model still names three states —
+   * overdue, due today and later this week — because Manage recurring draws
+   * them, but this card keeps only the first two: a row due later, even
+   * tomorrow in the same week, waits for its own day rather than being dosed a
+   * day early. The operator's own records plus the built-in review cadences are
+   * derived on this render rather than stored. `new Date()` is the local clock,
+   * so a card left open overnight re-asks when the vault refreshes.
    */
   const recurring = useMemo<RecurringDueItem[]>(() => {
     if (!snapshot?.map) return [];

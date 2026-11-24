@@ -363,9 +363,14 @@ describe("keyboard shortcuts settings and runner", () => {
       "the bar's shortcuts action reports pressed on a thread",
     );
     const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
-    // The strip's trailing cluster is the day/night control and the gear; the
-    // full-screen door rides the dock's own top row, not this band.
-    const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
+    // The strip's trailing cluster is the layouts control, the day/night control
+    // and the gear; the full-screen door rides the dock's own top row, not this
+    // band.
+    const expectedTrailing = [
+      "layouts-menu__trigger",
+      "theme-mode-toggle",
+      "settings-menu",
+    ];
     expectedTrailing.forEach((needle, index) => {
       assert.ok(
         String(trailingClasses[index] ?? "").includes(needle),

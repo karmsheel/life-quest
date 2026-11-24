@@ -3,12 +3,13 @@
  *
  * The spike proved an agent can write a JSON file and the running app wears it
  * with a preview and a way back. What it did NOT have was a real agent doing the
- * writing: the rig dropped the file onto disk itself. These three tools close
+ * writing: the rig dropped the file onto disk itself. These four tools close
  * that loop:
  *
- *  - `get_theme`       — what exists, and which file is kept (so it can iterate)
+ *  - `get_theme`       — what exists, which file is kept, and the stored pictures
  *  - `validate_theme`  — dry run: field errors and the WCAG pair, named
  *  - `write_theme`     — write the file; the app previews it for ten seconds
+ *  - `store_background_picture` — copy a vault picture into the profile
  *
  * They live in main, not in `vault-core`, because a theme is app profile state:
  * `userData/themes/*.json`, never the vault. A theme is presentation and needs
@@ -22,21 +23,29 @@
 import fs from "node:fs";
 import path from "node:path";
 import { app } from "electron";
-import type { MapToolDef } from "@lifequest/vault-core";
 import {
+  assertPhysicalContainment,
+  type MapToolDef,
+} from "@lifequest/vault-core";
+import {
+  DEFAULT_BACKGROUND_IMAGE,
   parseThemeFile,
   resolveChrome,
   resolveMaterial,
+  resolveScene,
   THEME_VOCABULARY,
+  type ThemeBackgroundImage,
   type ThemeFile,
+  type ThemeScene,
 } from "../shared/theme-file.ts";
+import { listBackgrounds, storeBackground } from "./theme-background.js";
 import { saveThemeFile } from "./theme-store.js";
 
 export const THEME_TOOL_DEFS: MapToolDef[] = [
   {
     name: "get_theme",
     description:
-      "Read the app's theme files and the one currently kept. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the resolved chrome placement and material of the kept theme, and any composition widgets it carries.",
+      "Read the app's theme files, the one currently kept, and the pictures stored in the profile. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the kept file, each theme's resolved scene (preset, intensity, frames, picture and panel shades), the kept theme's resolved chrome placement and material, any composition widgets it carries, and the backgrounds/ inventory (file, bytes, mime) you may name in scene.background.image.file.",
     parameters: { type: "object", properties: {}, required: [] },
   },
   {
@@ -74,6 +83,21 @@ export const THEME_TOOL_DEFS: MapToolDef[] = [
         },
       },
       required: ["theme"],
+    },
+  },
+  {
+    name: "store_background_picture",
+    description:
+      "Copy a picture from the open vault into the app profile's backgrounds/ folder and return the stored file name. The source must be an image file inside the vault (e.g. images/files/<id>.png) — never a URL or a path outside the vault. Nothing the operator sees changes until a theme names the returned file in scene.background.image.file; write_theme then previews and Keep/Revert is still the consent.",
+    parameters: {
+      type: "object",
+      properties: {
+        source: {
+          type: "string",
+          description: "Vault-relative image path, e.g. images/files/<id>.png",
+        },
+      },
+      required: ["source"],
     },
   },
 ];
@@ -114,6 +138,8 @@ type ThemeSummary = {
   description?: string;
   chrome?: { wingSwitcher: { place: string; variant: string }; domainSwitcher: { place: string; variant: string } };
   material?: { radius: string; density: string; motion: string };
+  /** The scene as worn: defaults filled in, so the agent reads real values. */
+  scene?: ThemeScene;
   composition?: { layout: string; widgets: number };
   error?: string;
 };
@@ -141,6 +167,7 @@ async function listThemes(): Promise<ThemeSummary[]> {
         if (parsed.theme.description) summary.description = parsed.theme.description;
         summary.chrome = resolveChrome(parsed.theme.chrome);
         summary.material = resolveMaterial(parsed.theme.material);
+        summary.scene = resolveScene(parsed.theme.scene);
         if (parsed.theme.composition) {
           summary.composition = {
             layout: parsed.theme.composition.layout,
@@ -160,7 +187,12 @@ async function listThemes(): Promise<ThemeSummary[]> {
 
 async function getTheme(): Promise<unknown> {
   const keptFile = await readKeptFile();
-  const themes = await listThemes();
+  // The inventory is the profile's, not the vault's, so it is readable with no
+  // vault open — same as the theme files it sits beside.
+  const [themes, backgrounds] = await Promise.all([
+    listThemes(),
+    listBackgrounds(),
+  ]);
   const kept = themes.find((candidate) => candidate.file === keptFile && candidate.valid);
   return {
     keptFile,
@@ -169,6 +201,7 @@ async function getTheme(): Promise<unknown> {
           current: {
             file: kept.file,
             label: kept.label,
+            scene: kept.scene,
             chrome: kept.chrome,
             material: kept.material,
             ...(kept.composition ? { composition: kept.composition } : {}),
@@ -176,6 +209,7 @@ async function getTheme(): Promise<unknown> {
         }
       : { current: null }),
     themes,
+    backgrounds,
     vocabulary: THEME_VOCABULARY,
   };
 }
@@ -218,12 +252,81 @@ async function writeTheme(args: Record<string, unknown>): Promise<unknown> {
 }
 
 /**
+ * Whether a source string names a scheme instead of a path.
+ *
+ * A scheme is a fetch, not a file, and this tool never fetches. A Windows drive
+ * letter looks like a scheme (`C:`) but is an absolute path, so it is not one.
+ * The rule is `chat-image.ts`'s, kept identical so both doors refuse the same
+ * strings; that module's door is the chat's and does not export the helper, and
+ * this one is five lines.
+ */
+function hasScheme(ref: string): boolean {
+  if (/^[A-Za-z]:[\\/]/.test(ref)) return false;
+  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(ref);
+}
+
+/** What the agent is told to do with a stored picture; the tool writes no theme. */
+const STORE_NOTE =
+  "write_theme with scene.background.image = image to wear it; the operator's Settings override still outranks the theme.";
+
+/**
+ * Copy one vault picture into the profile's `backgrounds/`.
+ *
+ * The vault root arrives from the dispatcher, so a path the agent sends is a
+ * *vault* path: a relative one resolves against the root, an absolute one is
+ * kept only if the physical containment proof puts it inside the vault (a
+ * symlink out is refused). The copy is `theme-background.ts`'s, so the size,
+ * type, magic-byte and atomic-write rules are the operator's picker's own. This
+ * tool never writes a theme and never previews one: the returned file name is
+ * something `write_theme` can name, and Keep is still the operator's consent.
+ */
+async function storeBackgroundPicture(
+  args: Record<string, unknown>,
+  vaultRoot: string | null | undefined,
+): Promise<unknown> {
+  const source = args.source;
+  const raw = typeof source === "string" ? source.trim() : "";
+  // NUL is not part of a path, it is where one ends; a scheme is not a path at
+  // all. Both are refused before anything touches the filesystem.
+  if (!raw || raw.includes("\u0000") || hasScheme(raw)) {
+    return malformed("source must be a picture inside the vault");
+  }
+  if (!vaultRoot) {
+    return {
+      error: {
+        code: "NOT_FOUND",
+        message: "open a vault before storing a background picture",
+      },
+    };
+  }
+  const resolved = path.isAbsolute(raw)
+    ? path.normalize(raw)
+    : path.resolve(vaultRoot, raw);
+  let contained: string;
+  try {
+    contained = await assertPhysicalContainment(vaultRoot, resolved);
+  } catch {
+    return malformed("source must be a picture inside the vault");
+  }
+  const stored = await storeBackground(contained);
+  if (!stored.ok) return malformed(stored.error);
+  const image: ThemeBackgroundImage = {
+    file: stored.value.file,
+    ...DEFAULT_BACKGROUND_IMAGE,
+  };
+  return { stored: stored.value.file, image, note: STORE_NOTE };
+}
+
+/**
  * One theme tool call. `name` is already known to be one of THEME_TOOL_DEFS
  * (the door advertises only these, and the dispatcher checks the list first).
+ * `vaultRoot` is the open vault the dispatcher knows about; only the picture
+ * store needs it, and the other tools keep working with no vault open.
  */
 export async function executeThemeTool(
   name: string,
   args: Record<string, unknown>,
+  vaultRoot?: string | null,
 ): Promise<unknown> {
   if (name === "get_theme") return getTheme();
   if (name === "validate_theme") {
@@ -232,5 +335,8 @@ export async function executeThemeTool(
     return { ok: true, theme };
   }
   if (name === "write_theme") return writeTheme(args);
+  if (name === "store_background_picture") {
+    return storeBackgroundPicture(args, vaultRoot);
+  }
   return malformed(`Unknown theme tool: ${name}`);
 }

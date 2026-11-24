@@ -40,6 +40,7 @@ import {
   saveThemeFile,
   THEME_FILE,
 } from "./theme-store.js";
+import { readBackground, storeBackground } from "./theme-background.js";
 import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
@@ -138,6 +139,13 @@ const E2E: {
    * the shipped bundle has neither the branch nor the string.
    */
   themeImportSources?: string[];
+  /**
+   * Where `theme:pickBackground` takes its next picture from, for the background
+   * rig. Same shape and same reason as the import queue above: the product's
+   * native dialog cannot be driven by a rig, so a queued absolute path stands in
+   * for it. Present only inside the seam gate.
+   */
+  themeBackgroundSources?: string[];
 } = { showWindow: true };
 /**
  * Whether the rig seam is live in this process.
@@ -175,6 +183,7 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
           strictAssetPath?: unknown;
         };
         themeImportSources?: unknown;
+        themeBackgroundSources?: unknown;
       };
       if (typeof parsed.userData === "string" && parsed.userData.trim()) {
         // Realpath, not the string: `userData` must be absolute and existing
@@ -250,6 +259,16 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
             typeof source === "string" && path.isAbsolute(source),
         );
         if (absolute.length > 0) E2E.themeImportSources = absolute;
+      }
+      // The background rig's queue: the same absolute-path rule, because the
+      // picture's source path is the whole capability `storeBackground` reads.
+      const backgroundSources = parsed.themeBackgroundSources;
+      if (Array.isArray(backgroundSources)) {
+        const absolute = backgroundSources.filter(
+          (source): source is string =>
+            typeof source === "string" && path.isAbsolute(source),
+        );
+        if (absolute.length > 0) E2E.themeBackgroundSources = absolute;
       }
     } catch (err) {
       console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
@@ -695,7 +714,8 @@ function startCompanionHarnessBroadcast(): void {
   });
 }
 
-function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
+function registerIpcHandlers() {
+  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
   ipcMain.handle("vault:open", async (_e, rootPath: string) => {
@@ -1811,6 +1831,70 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     if (!imported.ok) return imported;
     BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
     return { ok: true as const, value: imported.value };
+  });
+
+  /**
+   * Choose a background picture and copy it into the profile.
+   *
+   * The picture is the operator's own, so the path comes from their dialog and
+   * never from the renderer — a renderer that could name the path could read any
+   * file the app can. The rig gets a queued fixture instead, taken only when the
+   * whole seam is live. Cancelling is `{ ok: true, value: null }`: backing out is
+   * not a failure. What comes back is the *stored* file name, which is what a
+   * theme or the operator's override names from then on.
+   */
+  ipcMain.handle("theme:pickBackground", async (event) => {
+    let sourcePath: string | null = null;
+    if (E2E_ACTIVE && E2E.themeBackgroundSources) {
+      // A defined queue is the rig's stand-in for the dialog for the whole run:
+      // once it is empty the answer is a cancel, never a native dialog a
+      // headless rig could not see. (The import queue above opens the dialog
+      // again instead, because one import per run is all that rig needs.)
+      sourcePath = E2E.themeBackgroundSources.shift() ?? null;
+    } else {
+      const win = windowFromEvent(event);
+      const options: Electron.OpenDialogOptions = {
+        title: "Choose a background picture",
+        filters: [
+          {
+            name: "Pictures",
+            extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+          },
+        ],
+        properties: ["openFile"],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: true as const, value: null };
+      }
+      sourcePath = result.filePaths[0] ?? null;
+    }
+    if (!sourcePath) return { ok: true as const, value: null };
+    const stored = await storeBackground(sourcePath);
+    if (!stored.ok) return stored;
+    return { ok: true as const, value: stored.value };
+  });
+
+  /**
+   * One stored picture's bytes, for the page to draw.
+   *
+   * The renderer supplies only the stored file name; `readBackground` proves it
+   * is one of ours and re-checks the bytes. A read failure is quiet data — the
+   * drawn preset keeps painting — so the refusal is passed through as the
+   * module's one sentence rather than turned into an error the page would show.
+   */
+  ipcMain.handle("theme:readBackground", async (_event, file: unknown) => {
+    if (typeof file !== "string") {
+      return { ok: false as const, error: "That picture could not be read." };
+    }
+    const picture = await readBackground(file);
+    if (!picture.ok) return picture;
+    return {
+      ok: true as const,
+      value: { file, mime: picture.value.mime, bytes: picture.value.bytes },
+    };
   });
 
   ipcMain.handle("theme:openFolder", async () => {

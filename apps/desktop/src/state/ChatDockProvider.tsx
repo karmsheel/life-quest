@@ -84,6 +84,27 @@ export const MAX_CONTEXT_CARDS = 3;
 export type ChatDockSide = "left" | "right";
 
 /**
+ * The arrangements the layouts picker offers.
+ *
+ * These are not themes and not routes: they are four ways of dividing the same
+ * window, chosen from one control in the title bar. The three beyond the shipped
+ * arrangement are the ones an operator reaches for when a page needs the whole
+ * desk, when the conversation does, or when both deserve half of it:
+ *
+ *  - `studio` — the shipped studio: rail, page, dock at the dock's own width.
+ *  - `page-agent` — an even split, the page leading and the agent trailing.
+ *  - `agent-page` — the same split with the panes swapped.
+ *  - `agent` — full-screen chat: the page leaves and the agent takes the
+ *    workspace beside the rail. It is the *same* state as the dock's own
+ *    full-screen control, not a second copy of it.
+ *
+ * The id is derived rather than stored: `focus`, `split` and `side` already say
+ * exactly which of the four is on screen, and a fourth stored answer would be
+ * one more thing that can disagree with the doors the operator actually pressed.
+ */
+export type LayoutId = "studio" | "page-agent" | "agent-page" | "agent";
+
+/**
  * What the dock is showing: the open thread, the Life-Chain the dock can carry,
  * or the keyboard-shortcuts reference.
  *
@@ -229,6 +250,30 @@ type ChatDockContextValue = {
   setFocus: (focus: boolean) => void;
   /** Trade the mode for its opposite; the one action every door calls. */
   toggleFocus: () => void;
+  /**
+   * The even split the layouts picker can put the page and the dock in: two
+   * equal columns of the frame beside the rail, the side saying which pane
+   * leads.
+   *
+   * It is a step further than `side`: `side` is where the dock sits in the
+   * studio's three unequal panes, while the split gives the page and the agent
+   * the same half and leaves the dock's own width token for the studio
+   * arrangement to come back to. The two split cards in the picker write this
+   * one flag plus a side; the dock's own swap control still trades the sides,
+   * so the swap and the picker cannot disagree about which way round the split
+   * is. Session state like `side` and `width`, for the same reason.
+   */
+  split: boolean;
+  /** Which of the picker's four arrangements is on screen, derived from the
+   *  flags above and never stored beside them. */
+  layout: LayoutId;
+  /**
+   * Wear one of the picker's four arrangements. This is the only entry point
+   * that writes `split`, and it takes every card through the same door: a pick
+   * comes to rest with the dock open, and `agent` is the existing full-screen
+   * mode rather than a second mode beside it.
+   */
+  setLayout: (layout: LayoutId) => void;
 };
 
 const ChatDockContext = createContext<ChatDockContextValue | null>(null);
@@ -236,6 +281,7 @@ const ChatDockContext = createContext<ChatDockContextValue | null>(null);
 export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(true);
   const [focus, setFocusState] = useState(false);
+  const [split, setSplitState] = useState(false);
   const [present, setPresent] = useState(false);
   const [side, setSide] = useState<ChatDockSide>("right");
   const [surface, setSurface] = useState<ChatSurface>("thread");
@@ -381,10 +427,18 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
    * the layout takes the full-screen mode with it. Otherwise collapsing the
    * chat while it held the whole workspace would leave the operator looking at
    * a page-less window and a launcher — the mode would be on with nothing in it.
+   *
+   * The even split leaves with it for the same reason: a split with no agent in
+   * it is a page beside an empty column, and the launcher is the dock's own way
+   * of saying "not in the layout right now". Reopening returns the studio
+   * arrangement; the layouts picker is one press away for anything else.
    */
   const setOpen = useCallback((next: boolean) => {
     setOpenState(next);
-    if (!next) setFocusState(false);
+    if (!next) {
+      setFocusState(false);
+      setSplitState(false);
+    }
   }, []);
 
   const setFocus = useCallback((next: boolean) => {
@@ -398,6 +452,47 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     // on over a collapsed dock has to bring the dock back with it.
     setOpenState(true);
   }, []);
+
+  /**
+   * Wear one of the picker's four arrangements.
+   *
+   * Every card comes through here so the picker holds no arrangement of its
+   * own: a pick opens the dock (all four cards place it), the split cards set
+   * the side they name and count as the operator choosing it — a theme's
+   * proposed side must not undo a split the operator just asked for — and the
+   * full-agent card hands the window to the dock's own full-screen mode without
+   * clearing the arrangement underneath it.
+   *
+   * That last part is deliberate: full-screen is a mode laid over whichever
+   * arrangement is on screen, not a fifth arrangement, so the card and the
+   * dock's own control behave identically. Leaving the mode — with the dock's
+   * control, its shortcut, or by choosing Studio in the picker — puts back the
+   * boxes the window had when the mode went on: the split returns to its
+   * halves, and Studio returns to the dock's own width.
+   */
+  const setLayout = useCallback((next: LayoutId) => {
+    setOpenState(true);
+    if (next === "agent") {
+      setFocusState(true);
+      return;
+    }
+    setFocusState(false);
+    if (next === "studio") {
+      setSplitState(false);
+      return;
+    }
+    operatorChoseSide.current = true;
+    setSide(next === "agent-page" ? "left" : "right");
+    setSplitState(true);
+  }, []);
+
+  const layout: LayoutId = focus
+    ? "agent"
+    : split
+      ? side === "left"
+        ? "agent-page"
+        : "page-agent"
+      : "studio";
 
   const pageLabel = useMemo(() => pageLabelFor(pathname), [pathname]);
 
@@ -432,6 +527,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       focus,
       setFocus,
       toggleFocus,
+      split,
+      layout,
+      setLayout,
     }),
     [
       open,
@@ -459,6 +557,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       focus,
       setFocus,
       toggleFocus,
+      split,
+      layout,
+      setLayout,
     ],
   );
 
