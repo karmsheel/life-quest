@@ -1875,21 +1875,28 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               ) : null}
             </>
           )}
+          {/*
+            The area picker belongs to the capture, not to the panel under it:
+            it sits inside the card, after what the card says, at half the
+            card's width. The page's row keeps its picks on the row for the
+            same reason — what it is filed under is part of the row, not a
+            second bar beneath it.
+          */}
+          <select
+            className="chat-panel__chain-assign"
+            aria-label="Assign to area"
+            value={s.domainSlug ?? ""}
+            disabled={busy || editing}
+            onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
+          >
+            <option value="">Life (general)</option>
+            {assignOptions(s).map((d) => (
+              <option key={d.slug} value={d.slug}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          className="chat-panel__chain-assign"
-          aria-label="Assign to area"
-          value={s.domainSlug ?? ""}
-          disabled={busy || editing}
-          onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
-        >
-          <option value="">Life (general)</option>
-          {assignOptions(s).map((d) => (
-            <option key={d.slug} value={d.slug}>
-              {d.name}
-            </option>
-          ))}
-        </select>
       </li>
     );
   }

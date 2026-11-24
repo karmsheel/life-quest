@@ -130,6 +130,15 @@ type DockComposer = {
 /** What one dispatched paste reported: did it land, was the default prevented. */
 type DockPaste = { found: boolean; prevented: boolean | null };
 
+/** The divider's computed paint, parsed into channels, alpha and derived numbers. */
+type LayoutColor = {
+  raw: string | null;
+  channels: number[] | null;
+  alpha: number | null;
+  spread: number | null;
+  luminance: number | null;
+};
+
 /** The box's area readout: the lens it files under, and no control of its own. */
 type ComposerArea = {
   present: boolean;
@@ -401,6 +410,42 @@ type Report = {
       screenshots: {
         pending: { name: string; bytes: number };
         logged: { name: string; bytes: number };
+      };
+    };
+    layout: {
+      page: {
+        composer: Box | null;
+        filters: Box | null;
+        list: Box | null;
+        row: Box | null;
+        rowBackground: string | null;
+        rowBorderTop: string | null;
+        composerToRowRatio: number | null;
+        composerCentreGap: number | null;
+        filtersToRowGap: number | null;
+        listToRowGap: number | null;
+        rule: {
+          present: boolean;
+          background?: string;
+          height?: string;
+          display?: string;
+          paint: LayoutColor;
+        };
+      };
+      dock: {
+        card: {
+          box: Box;
+          background: string | null;
+          borderTop: string | null;
+        } | null;
+        assign: { box: Box; aria: string | null } | null;
+        assignToCardRatio: number | null;
+        assignBottomGap: number | null;
+        assignContained: boolean;
+        cardBackground: string | null;
+        cardBorderTop: string | null;
+        matchesPageBackground: boolean;
+        matchesPageBorder: boolean;
       };
     };
   };
@@ -853,6 +898,80 @@ describe("Notebox page — general capture", () => {
     assert.equal(
       dockLink.screenshots.logged.name,
       "chain-capture-dock-link.png",
+    );
+
+    // ── the redesign's measured shape ──────────────────────────────────────
+    // The page's capture box is the one narrow, centred thing in a full-width
+    // column; the filter band and the chain list keep the cards' width; the
+    // divider between box and band is a visible neutral grey. The dock's row
+    // cards are the page's cards — transparent ink, the same hairline — and
+    // each row's area picker lives inside its card at the foot, half its width.
+    const layout = checks.layout;
+    assert.ok(layout.page.composer, "the page has no composer box to measure");
+    assert.ok(layout.page.row, "the page has no row card to measure");
+    assert.ok(
+      (layout.page.composerToRowRatio ?? 1) <= 0.75,
+      `the capture box is ${Math.round((layout.page.composerToRowRatio ?? 0) * 100)}% of a card's width ` +
+        `(${layout.page.composer?.width}px vs ${layout.page.row?.width}px)`,
+    );
+    assert.ok(
+      (layout.page.composerCentreGap ?? 99) <= 2,
+      `the capture box is ${layout.page.composerCentreGap}px off the cards' centre`,
+    );
+    assert.ok(
+      (layout.page.filtersToRowGap ?? 99) <= 2,
+      `the filter band is ${layout.page.filtersToRowGap}px off the cards' width ` +
+        `(${layout.page.filters?.width}px vs ${layout.page.row?.width}px)`,
+    );
+    assert.ok(
+      (layout.page.listToRowGap ?? 99) <= 2,
+      `the chain list is ${layout.page.listToRowGap}px off the cards' width ` +
+        `(${layout.page.list?.width}px vs ${layout.page.row?.width}px)`,
+    );
+    const rulePaint = layout.page.rule.paint;
+    assert.equal(layout.page.rule.present, true, "no divider above the filter band");
+    assert.equal(layout.page.rule.height, "1px", "the divider is thicker than a hairline");
+    assert.ok(
+      (rulePaint.alpha ?? 0) >= 0.2,
+      `the divider is too faint: ${JSON.stringify(rulePaint)}`,
+    );
+    assert.ok(
+      (rulePaint.spread ?? 99) <= 6,
+      `the divider is not neutral: ${JSON.stringify(rulePaint)}`,
+    );
+    assert.ok(
+      (rulePaint.luminance ?? 0) >= 30 && (rulePaint.luminance ?? 0) <= 200,
+      `the divider luminance is ${rulePaint.luminance} (raw ${rulePaint.raw})`,
+    );
+    assert.ok(layout.dock.card, "the dock's first row has no card to measure");
+    assert.ok(layout.dock.assign, "the dock's first row has no area picker to measure");
+    assert.equal(
+      layout.dock.card?.background,
+      layout.page.rowBackground,
+      "the dock's card is painted differently from the page's card",
+    );
+    assert.equal(
+      layout.dock.card?.borderTop,
+      layout.page.rowBorderTop,
+      "the dock's card hairline is not the page card's",
+    );
+    assert.equal(layout.dock.matchesPageBackground, true);
+    assert.equal(layout.dock.matchesPageBorder, true);
+    assert.equal(layout.dock.assign?.aria, "Assign to area");
+    assert.equal(
+      layout.dock.assignContained,
+      true,
+      `the area picker is not inside its card: ${JSON.stringify(layout.dock.assign?.box)} in ${JSON.stringify(layout.dock.card?.box)}`,
+    );
+    assert.ok(
+      (layout.dock.assignToCardRatio ?? 0) >= 0.4 &&
+        (layout.dock.assignToCardRatio ?? 0) <= 0.55,
+      `the area picker is ${Math.round((layout.dock.assignToCardRatio ?? 0) * 100)}% of its card's width`,
+    );
+    assert.ok(
+      (layout.dock.assignBottomGap ?? 99) >= 0 &&
+        (layout.dock.assignBottomGap ?? 99) <= 16,
+      `the area picker sits ${layout.dock.assignBottomGap}px from its card's foot`,
     );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.

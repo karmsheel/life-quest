@@ -162,6 +162,60 @@ const DOCK_LINK_REPLACEMENT_URL = "https://example.org/dock-replacement";
 const DOCK_LINK_SENTENCE =
   "the slow web piece https://www.are.na/editorial/slow-web is worth a read";
 
+/**
+ * A computed colour as channels in 0..255 and its alpha, or null channels when
+ * the string is not a colour this rig understands. Chromium serialises a
+ * `color-mix(...)` as `color(srgb r g b / a)` with fractional channels, and a
+ * plain colour as `rgb()`/`rgba()`; both are parsed so the page's divider can be
+ * held to "neutral, visible grey" from the live DOM rather than eyeballed.
+ */
+function parseColor(value) {
+  const raw = String(value ?? "").trim();
+  const alphaOf = (token) => {
+    if (token === undefined) return 1;
+    const text = String(token);
+    return text.endsWith("%") ? Number(text.slice(0, -1)) / 100 : Number(text);
+  };
+  const srgb = raw.match(
+    /^color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i,
+  );
+  if (srgb) {
+    return {
+      raw,
+      channels: [1, 2, 3].map((index) => Math.round(Number(srgb[index]) * 255)),
+      alpha: alphaOf(srgb[4]),
+    };
+  }
+  const rgb = raw.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)$/i,
+  );
+  if (rgb) {
+    return {
+      raw,
+      channels: [1, 2, 3].map((index) => Math.round(Number(rgb[index]))),
+      alpha: alphaOf(rgb[4]),
+    };
+  }
+  return { raw, channels: null, alpha: null };
+}
+
+/** The divider's paint as numbers: neutral spread, alpha, luminance. */
+function describeColor(value) {
+  const parsed = parseColor(value);
+  const channels = parsed.channels;
+  return {
+    raw: parsed.raw,
+    channels,
+    alpha: parsed.alpha,
+    spread: channels ? Math.max(...channels) - Math.min(...channels) : null,
+    // Luminance with alpha ignored: the haze is what makes the line visible,
+    // the grey underneath is what makes it neutral.
+    luminance: channels
+      ? Math.round((channels[0] + channels[1] + channels[2]) / 3)
+      : null,
+  };
+}
+
 const failures = [];
 function fail(message) {
   failures.push(message);
@@ -302,6 +356,7 @@ const SAMPLE = `(() => {
       height: Math.round(rect.height),
     };
   };
+  const style = (el, prop) => (el ? getComputedStyle(el)[prop] : null);
   const counts = { rows: rows.length };
   for (const row of rows) {
     const key = row.attachment || "none";
@@ -396,6 +451,29 @@ const SAMPLE = `(() => {
     })(),
     rows,
     counts,
+    // The page column's measured shape: the narrow, centred capture box; the
+    // band and the list at the column's full width; the divider's own paint.
+    // Widths and centres are measured here rather than read off the stylesheet,
+    // so a rule that is overridden or not applied at all fails the check.
+    layout: {
+      composer: box(composer),
+      filters: box(q(".signal-chain__filters")),
+      list: box(q(".signal-chain__list")),
+      row: box(q('[data-testid="signal-row"]')),
+      rowBackground: style(q('[data-testid="signal-row"]'), "backgroundColor"),
+      rowBorderTop: style(q('[data-testid="signal-row"]'), "borderTopColor"),
+      rule: (() => {
+        const el = q(".signal-chain__rule");
+        if (!el) return { present: false };
+        const computed = getComputedStyle(el);
+        return {
+          present: true,
+          background: computed.backgroundColor,
+          height: computed.height,
+          display: computed.display,
+        };
+      })(),
+    },
     // The inbox's own surface: the two filter pickers, the area readout that
     // names the domain picker's lens, and their geometry, plus the two empty
     // lines (no matches vs no records at all).
@@ -460,6 +538,8 @@ const SAMPLE = `(() => {
         action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
         items: all(".chat-panel__chain-item").map((item) => {
           const linkEl = item.querySelector(".chat-panel__chain-link");
+          const messageEl = item.querySelector(".chat-panel__chain-message");
+          const assignEl = item.querySelector(".chat-panel__chain-assign");
           return {
             body: text(item.querySelector(".chat-panel__chain-body")),
             stamp: text(item.querySelector(".chat-panel__chain-stamp")),
@@ -472,6 +552,22 @@ const SAMPLE = `(() => {
                   target: linkEl.getAttribute("target"),
                 }
               : { present: false },
+            // The row card's own paint and line, so the dock's card can be held
+            // against the page's: the redesign makes them the same surface.
+            message: messageEl
+              ? {
+                  box: box(messageEl),
+                  background: style(messageEl, "backgroundColor"),
+                  borderTop: style(messageEl, "borderTopColor"),
+                }
+              : null,
+            // The area picker now lives inside the card at its foot.
+            assign: assignEl
+              ? {
+                  box: box(assignEl),
+                  aria: assignEl.getAttribute("aria-label"),
+                }
+              : null,
           };
         }),
         // The dock's own composer. Every read is scoped inside the chat panel:
@@ -2232,6 +2328,134 @@ async function main() {
       "capture chain-capture-dock.png is a real picture",
       fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size > 20_000,
       `${fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size} bytes`,
+    );
+
+    // ── 7b. the redesign's measured shape ───────────────────────────────────
+    // The page's capture box is the one narrow thing in a full-width column and
+    // it is centred on the cards; the divider between box and band is a neutral
+    // grey. The dock's cards are the page's cards — no orange fill, the same
+    // hairline — and each row's area picker now sits inside its card at the
+    // foot, at half the card's width. All of it is measured off the live DOM.
+    const layoutState = await sample();
+    const pageLayout = layoutState.layout;
+    const pageRowWidth = pageLayout.row?.width ?? 0;
+    const pageComposerWidth = pageLayout.composer?.width ?? 0;
+    const centreOf = (value) => (value ? value.left + value.width / 2 : null);
+    const dockFirstRow = dockPainted.dock.items[0] ?? null;
+    const dockMessage = dockFirstRow?.message ?? null;
+    const dockAssign = dockFirstRow?.assign ?? null;
+    const dockMessageBox = dockMessage?.box ?? null;
+    const dockAssignBox = dockAssign?.box ?? null;
+    const dockAssignRatio =
+      dockAssignBox && dockMessageBox && dockMessageBox.width > 0
+        ? dockAssignBox.width / dockMessageBox.width
+        : null;
+    const dockAssignBottomGap =
+      dockAssignBox && dockMessageBox
+        ? dockMessageBox.top +
+          dockMessageBox.height -
+          (dockAssignBox.top + dockAssignBox.height)
+        : null;
+    const dockAssignContained =
+      Boolean(dockAssignBox && dockMessageBox) &&
+      dockAssignBox.left >= dockMessageBox.left - 1 &&
+      dockAssignBox.left + dockAssignBox.width <=
+        dockMessageBox.left + dockMessageBox.width + 1 &&
+      dockAssignBox.top >= dockMessageBox.top - 1 &&
+      dockAssignBox.top + dockAssignBox.height <=
+        dockMessageBox.top + dockMessageBox.height + 1;
+
+    checks.layout = {
+      page: {
+        composer: pageLayout.composer,
+        filters: pageLayout.filters,
+        list: pageLayout.list,
+        row: pageLayout.row,
+        rowBackground: pageLayout.rowBackground,
+        rowBorderTop: pageLayout.rowBorderTop,
+        composerToRowRatio:
+          pageRowWidth > 0 ? pageComposerWidth / pageRowWidth : null,
+        composerCentreGap:
+          centreOf(pageLayout.composer) !== null &&
+          centreOf(pageLayout.row) !== null
+            ? Math.abs(centreOf(pageLayout.composer) - centreOf(pageLayout.row))
+            : null,
+        filtersToRowGap:
+          pageLayout.filters && pageLayout.row
+            ? Math.abs(pageLayout.filters.width - pageLayout.row.width)
+            : null,
+        listToRowGap:
+          pageLayout.list && pageLayout.row
+            ? Math.abs(pageLayout.list.width - pageLayout.row.width)
+            : null,
+        rule: {
+          ...pageLayout.rule,
+          paint: describeColor(pageLayout.rule?.background),
+        },
+      },
+      dock: {
+        card: dockMessage,
+        assign: dockAssign,
+        assignToCardRatio: dockAssignRatio,
+        assignBottomGap: dockAssignBottomGap,
+        assignContained: dockAssignContained,
+        cardBackground: dockMessage?.background ?? null,
+        cardBorderTop: dockMessage?.borderTop ?? null,
+        matchesPageBackground:
+          dockMessage?.background === pageLayout.rowBackground,
+        matchesPageBorder: dockMessage?.borderTop === pageLayout.rowBorderTop,
+      },
+    };
+
+    check(
+      "the page's capture box is meaningfully narrower than its cards",
+      pageRowWidth > 0 && pageComposerWidth / pageRowWidth <= 0.75,
+      `composer ${pageComposerWidth}px vs row ${pageRowWidth}px`,
+    );
+    check(
+      "the page's capture box is centred on the card column",
+      centreOf(pageLayout.composer) !== null &&
+        centreOf(pageLayout.row) !== null &&
+        Math.abs(centreOf(pageLayout.composer) - centreOf(pageLayout.row)) <= 2,
+      `composer centre ${centreOf(pageLayout.composer)} vs row centre ${centreOf(pageLayout.row)}`,
+    );
+    check(
+      "the page's filter band keeps the cards' full width",
+      Boolean(pageLayout.filters && pageLayout.row) &&
+        Math.abs(pageLayout.filters.width - pageLayout.row.width) <= 2,
+      `filters ${JSON.stringify(pageLayout.filters)} vs row ${JSON.stringify(pageLayout.row)}`,
+    );
+    check(
+      "the page's chain list keeps the cards' full width",
+      Boolean(pageLayout.list && pageLayout.row) &&
+        Math.abs(pageLayout.list.width - pageLayout.row.width) <= 2,
+      `list ${JSON.stringify(pageLayout.list)} vs row ${JSON.stringify(pageLayout.row)}`,
+    );
+    check(
+      "the page divider is a visible neutral grey",
+      pageLayout.rule?.present === true &&
+        describeColor(pageLayout.rule?.background).alpha >= 0.2 &&
+        describeColor(pageLayout.rule?.background).spread <= 6 &&
+        describeColor(pageLayout.rule?.background).luminance >= 30 &&
+        describeColor(pageLayout.rule?.background).luminance <= 200,
+      `rule ${JSON.stringify(describeColor(pageLayout.rule?.background))}`,
+    );
+    check(
+      "the dock's cards are the page's cards",
+      dockMessage?.background === pageLayout.rowBackground &&
+        dockMessage?.borderTop === pageLayout.rowBorderTop,
+      `dock ${JSON.stringify({ background: dockMessage?.background, borderTop: dockMessage?.borderTop })} vs page ${JSON.stringify({ background: pageLayout.rowBackground, borderTop: pageLayout.rowBorderTop })}`,
+    );
+    check(
+      "the dock's area picker sits inside its card at half the card's width",
+      dockAssignContained &&
+        dockAssign?.aria === "Assign to area" &&
+        (dockAssignRatio ?? 0) >= 0.4 &&
+        (dockAssignRatio ?? 0) <= 0.55 &&
+        dockAssignBottomGap !== null &&
+        dockAssignBottomGap >= 0 &&
+        dockAssignBottomGap <= 16,
+      `assign ${JSON.stringify(dockAssignBox)} in card ${JSON.stringify(dockMessageBox)}, ratio ${dockAssignRatio}, bottom gap ${dockAssignBottomGap}`,
     );
 
     // ── 8. the box's area is the lens at the top ─────────────────────────────

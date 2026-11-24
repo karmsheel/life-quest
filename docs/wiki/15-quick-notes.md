@@ -100,14 +100,14 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Part | What it does |
 |---|---|
 | **Notebox** heading | The title and the line "A database of what you notice. Log now; assign later." The page reads as one centred column — capture, filters and chain down the middle of the pane. |
-| Capture box | One bordered surface, the page's one input: a three-row text area labelled **Log a signal** (placeholder **What's on your mind?**, autofocused, corner draggable for more room) and, inside the same box's foot, the **Plus** control, the **Area** readout and the **Log** button. The text field has no frame of its own — the box is the field — and the whole box takes the accent ring when the caret or any of its controls is in it. It is the description: a text capture needs text, and an attachment may be logged without it. |
+| Capture box | One bordered surface, the page's one input: a three-row text area labelled **Log a signal** (placeholder **What's on your mind?**, autofocused, corner draggable for more room) and, inside the same box's foot, the **Plus** control, the **Area** readout and the **Log** button. The text field has no frame of its own — the box is the field — and the whole box takes the accent ring when the caret or any of its controls is in it. It is the description: a text capture needs text, and an attachment may be logged without it. The box is the one narrow thing on the page — 32rem and centred — while the filter row and the chain below keep the column's full width. |
 | **Plus** control | The single attachment control at the box's bottom left (test name **Attach a file**, plus glyph). Opens a file picker with no type restriction — any picture or file — and dragging a file onto the composer or pasting a file into the box does the same. |
 | Picture preview | Inside the box, above the field, until the signal is logged: the chosen picture, its file name, the line "It will be kept in the vault with this capture.", and the X button **Remove the attached image**. |
 | File chip | Inside the box, above the field, until the signal is logged: a non-picture attachment's name and human size, with the X button **Remove the attached file**. |
 | Link chip | Inside the box, under the field, until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
 | **Area** readout | Names the area the capture will file under: **Life (general)** on the Life lens, the area's name on an area lens. It follows the switcher at the top and is a readout, not a picker — filing elsewhere means switching areas there. Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
-| Divider | A hairline with a breath of space on either side separates the capture box from the filters below it. |
+| Divider | A neutral grey hairline with a breath of space on either side separates the capture box from the filters below it. |
 | Filter row | One line above the list: the **Status** and **Project** drop-downs — **Status** (All, Inbox, Triaged, Acting, Done, Dropped) and **Project** (All, each live project) — with an **Area** readout right-aligned against the row's edge naming the domain picker at the top (**Life (general)** on the Life lens, the area's name on an area lens). The lens is the area filter; the two pickers narrow what it leaves and each shows the value applied. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Life (general)** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
@@ -320,13 +320,15 @@ The companion has the chain on its own tool surface, as the single Inbox door:
 The chat dock's own **Notebox** surface reads and writes the same chain: it shows the
 signals oldest-first above its composer, and its composer's placeholder is **Log a signal…**
 with a **Log signal** button. It draws the same records, including the picture and link
-cards. Its composer takes the page's two text gestures: type a description, or paste one
-absolute `http`/`https` address on its own to attach a link — the same link chip (host,
-address and **Remove the attached link**) waits above the field, and a URL pasted inside a
-sentence stays part of the description. A picture or any other file is captured on this
-page, not in the dock, and a non-picture file attachment is drawn on the page's row rather
-than in the dock. Its delete asks the same question. It is a convenience mirror of this
-page, not a second store.
+cards, and its rows are the page's cards in miniature: the sheet's own black with the one
+outline around it, not a tinted slab. Each row's **Area** picker sits inside the card at its
+foot, at half the card's width. Its composer takes the page's two text gestures: type a
+description, or paste one absolute `http`/`https` address on its own to attach a link — the
+same link chip (host, address and **Remove the attached link**) waits above the field, and a
+URL pasted inside a sentence stays part of the description. A picture or any other file is
+captured on this page, not in the dock, and a non-picture file attachment is drawn on the
+page's row rather than in the dock. Its delete asks the same question. It is a convenience
+mirror of this page, not a second store.
 
 ### The lens
 
