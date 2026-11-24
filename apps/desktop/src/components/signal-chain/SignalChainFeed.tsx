@@ -1168,15 +1168,25 @@ function SignalRow(props: {
           ))}
         </select>
         <div className="signal-row__actions">
+          {/*
+            The row's one act. A capture that becomes work is the reason the
+            row exists, so this is not another ghost text button beside Edit
+            and Delete: it wears a filled face and a small shadow, and the
+            press travels into the shadow the way a raised control does. When
+            the task already exists the same seat reads Open task, so the
+            action never moves under the operator's hand.
+          */}
           {props.linkedTaskId ? (
             <Button
               variant="ghost"
+              className="signal-row__make-task"
               to={"/act?task=" + encodeURIComponent(props.linkedTaskId)}
             >Open task</Button>
           ) : (
             <Button
               type="button"
               variant="ghost"
+              className="signal-row__make-task"
               onClick={props.onMakeTask}
               disabled={props.busy || !props.mapReady || !derivedTask.title}
             >Make task</Button>

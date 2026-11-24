@@ -474,7 +474,8 @@ const SAMPLE = `(() => {
         const computed = getComputedStyle(el);
         // The line is the border now, not a background fill: the rig reads both
         // so "dotted grey" cannot pass on a solid block that merely has a
-        // dotted border somewhere.
+        // dotted border somewhere. The margins are sampled with the box, so the
+        // air above and below the rule is a measurement, not a stylesheet read.
         return {
           present: true,
           borderTopStyle: computed.borderTopStyle,
@@ -483,6 +484,9 @@ const SAMPLE = `(() => {
           backgroundColor: computed.backgroundColor,
           height: computed.height,
           display: computed.display,
+          marginTop: computed.marginTop,
+          marginBottom: computed.marginBottom,
+          box: box(el),
         };
       })(),
       // The page row's own Area picker: the same flat field as the dock's.
@@ -499,18 +503,41 @@ const SAMPLE = `(() => {
           background: style(select, "backgroundColor"),
         };
       })(),
-      // The row's triage picks are not that field: they keep their outline.
-      triageSelect: (() => {
+      // Every picker on the first card: the redesign makes all four the same
+      // flat field (the one that files, and the three that triage).
+      rowSelects: (() => {
         const row = q('[data-testid="signal-row"]');
-        const select = row
-          ? row.querySelector(".signal-row__triage-select")
-          : null;
-        if (!select) return { present: false };
-        return {
-          present: true,
+        if (!row) return [];
+        return Array.from(row.querySelectorAll("select")).map((select) => ({
+          background: style(select, "backgroundColor"),
           borderTopWidth: style(select, "borderTopWidth"),
           borderTopStyle: style(select, "borderTopStyle"),
+          borderRadius: style(select, "borderRadius"),
+          value: select.value,
+        }));
+      })(),
+      // The card's act: one prominent button with the layered lift, while the
+      // Edit/Delete icon buttons stay ghost.
+      makeTask: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const button = row ? row.querySelector(".signal-row__make-task") : null;
+        if (!button) return { present: false };
+        return {
+          present: true,
+          text: text(button),
+          disabled: button.disabled === true,
+          boxShadow: style(button, "boxShadow"),
+          backgroundColor: style(button, "backgroundColor"),
+          borderTopColor: style(button, "borderTopColor"),
+          fontWeight: style(button, "fontWeight"),
+          paddingTop: style(button, "paddingTop"),
+          paddingLeft: style(button, "paddingLeft"),
         };
+      })(),
+      iconButtonShadow: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const button = row ? row.querySelector(".signal-row__icon-btn") : null;
+        return button ? style(button, "boxShadow") : null;
       })(),
     },
     // The inbox's own surface: the two filter pickers, the area readout that
@@ -2475,7 +2502,24 @@ async function main() {
       pageDomainFill.luminance !== null && canvasPaint.luminance !== null
         ? pageDomainFill.luminance - canvasPaint.luminance
         : null;
-    const pageTriage = pageLayout.triageSelect;
+    const pageRowSelects = pageLayout.rowSelects ?? [];
+    // The rule's own breath: its margin, and the air it actually leaves between
+    // the box above and the band below. The column's own gap is part of the air,
+    // so the measurement is what the eye sees rather than the stylesheet's word.
+    const ruleBox = pageLayout.rule?.box ?? null;
+    const ruleAirAbove =
+      ruleBox && pageLayout.composer
+        ? ruleBox.top - (pageLayout.composer.top + pageLayout.composer.height)
+        : null;
+    const ruleAirBelow =
+      ruleBox && pageLayout.filters
+        ? pageLayout.filters.top - (ruleBox.top + ruleBox.height)
+        : null;
+    const pageMakeTask = pageLayout.makeTask;
+    const makeTaskFill = describeColor(pageMakeTask?.backgroundColor);
+    const makeTaskBorder = describeColor(pageMakeTask?.borderTopColor);
+    const makeTaskShadowLayers =
+      String(pageMakeTask?.boxShadow ?? "").match(/rgba?\(/g)?.length ?? 0;
 
     checks.layout = {
       page: {
@@ -2510,6 +2554,11 @@ async function main() {
           backgroundColor: pageLayout.rule?.backgroundColor ?? null,
           height: pageLayout.rule?.height ?? null,
           display: pageLayout.rule?.display ?? null,
+          marginTop: pageLayout.rule?.marginTop ?? null,
+          marginBottom: pageLayout.rule?.marginBottom ?? null,
+          box: ruleBox,
+          airAbove: ruleAirAbove,
+          airBelow: ruleAirBelow,
           borderPaint: describeColor(pageLayout.rule?.borderTopColor),
           fillPaint: describeColor(pageLayout.rule?.backgroundColor),
         },
@@ -2518,7 +2567,17 @@ async function main() {
           fill: pageDomainFill,
           lightness: pageDomainLightness,
         },
-        triageSelect: pageTriage ?? { present: false },
+        rowSelects: pageRowSelects.map((picker) => ({
+          ...picker,
+          fill: describeColor(picker.background),
+        })),
+        makeTask: {
+          ...(pageMakeTask ?? { present: false }),
+          fill: makeTaskFill,
+          border: makeTaskBorder,
+          shadowLayers: makeTaskShadowLayers,
+        },
+        iconButtonShadow: pageLayout.iconButtonShadow ?? null,
       },
       dock: {
         header: dockHeader ?? null,
@@ -2584,6 +2643,16 @@ async function main() {
       "the page divider paints no solid fill under its border",
       ruleFill.alpha === 0,
       `fill ${JSON.stringify(ruleFill)}`,
+    );
+    check(
+      "the page divider leaves a full line of air above and below",
+      parseFloat(pageLayout.rule?.marginTop ?? "0") >= 15 &&
+        parseFloat(pageLayout.rule?.marginBottom ?? "0") >= 15 &&
+        ruleAirAbove !== null &&
+        ruleAirAbove >= 28 &&
+        ruleAirBelow !== null &&
+        ruleAirBelow >= 28,
+      `margins ${pageLayout.rule?.marginTop}/${pageLayout.rule?.marginBottom}, air above ${ruleAirAbove}px below ${ruleAirBelow}px`,
     );
     check(
       "the dock's chain header names the surface",
@@ -2669,11 +2738,34 @@ async function main() {
       `picker ${JSON.stringify(pageDomainFill)} vs sheet ${JSON.stringify(canvasPaint)}, luminance step ${pageDomainLightness}`,
     );
     check(
-      "the page's triage picks keep their outlined chips",
-      pageTriage?.present === true &&
-        pageTriage.borderTopStyle !== "none" &&
-        parseFloat(pageTriage.borderTopWidth ?? "0") >= 1,
-      `triage select ${JSON.stringify(pageTriage)}`,
+      "the page's four row pickers are one flat field",
+      pageRowSelects.length === 4 &&
+        pageRowSelects.every(
+          (picker) =>
+            picker.borderTopWidth === "0px" &&
+            picker.borderTopStyle === "none" &&
+            picker.borderRadius === "0px" &&
+            describeColor(picker.background).alpha > 0.5 &&
+            picker.background === dockAssign?.background,
+        ),
+      `pickers ${JSON.stringify(pageRowSelects)} vs dock ${JSON.stringify(dockAssign?.background)}`,
+    );
+    check(
+      "the page card's act is a prominent, filled Make task",
+      pageMakeTask?.present === true &&
+        pageMakeTask.disabled === false &&
+        (pageMakeTask.text === "Make task" || pageMakeTask.text === "Open task") &&
+        pageMakeTask.boxShadow !== "none" &&
+        makeTaskShadowLayers >= 2 &&
+        makeTaskFill.alpha > 0.5 &&
+        makeTaskBorder.alpha > 0 &&
+        parseFloat(pageMakeTask.fontWeight ?? "0") >= 600,
+      `act ${JSON.stringify({ text: pageMakeTask?.text, disabled: pageMakeTask?.disabled, shadow: pageMakeTask?.boxShadow, layers: makeTaskShadowLayers, fill: makeTaskFill, border: makeTaskBorder, weight: pageMakeTask?.fontWeight })}`,
+    );
+    check(
+      "the card's icon controls stay ghost",
+      pageLayout.iconButtonShadow === "none",
+      `icon button shadow ${JSON.stringify(pageLayout.iconButtonShadow)}`,
     );
 
     // ── 8. the box's area is the lens at the top ─────────────────────────────

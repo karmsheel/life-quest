@@ -434,6 +434,11 @@ type Report = {
           backgroundColor: string | null;
           height: string | null;
           display: string | null;
+          marginTop: string | null;
+          marginBottom: string | null;
+          box: Box | null;
+          airAbove: number | null;
+          airBelow: number | null;
           borderPaint: LayoutColor;
           fillPaint: LayoutColor;
         };
@@ -447,11 +452,29 @@ type Report = {
           fill: LayoutColor;
           lightness: number | null;
         };
-        triageSelect: {
+        rowSelects: {
+          background: string | null;
+          borderTopWidth: string | null;
+          borderTopStyle: string | null;
+          borderRadius: string | null;
+          value: string;
+          fill: LayoutColor;
+        }[];
+        makeTask: {
           present: boolean;
-          borderTopWidth?: string | null;
-          borderTopStyle?: string | null;
+          text?: string | null;
+          disabled?: boolean;
+          boxShadow?: string | null;
+          backgroundColor?: string | null;
+          borderTopColor?: string | null;
+          fontWeight?: string | null;
+          paddingTop?: string | null;
+          paddingLeft?: string | null;
+          fill: LayoutColor;
+          border: LayoutColor;
+          shadowLayers: number;
         };
+        iconButtonShadow: string | null;
       };
       dock: {
         header: {
@@ -1001,6 +1024,24 @@ describe("Notebox page — general capture", () => {
       0,
       `the divider still paints a solid fill: ${JSON.stringify(rule.fillPaint)}`,
     );
+    // The air is measured, not read off the stylesheet: the margins, and the
+    // space the box above and the band below actually leave around the rule.
+    assert.ok(
+      parseFloat(rule.marginTop ?? "0") >= 15,
+      `the divider's top margin is ${rule.marginTop}, not a full line of air`,
+    );
+    assert.ok(
+      parseFloat(rule.marginBottom ?? "0") >= 15,
+      `the divider's bottom margin is ${rule.marginBottom}, not a full line of air`,
+    );
+    assert.ok(
+      (rule.airAbove ?? 0) >= 28,
+      `only ${rule.airAbove}px of air above the divider`,
+    );
+    assert.ok(
+      (rule.airBelow ?? 0) >= 28,
+      `only ${rule.airBelow}px of air below the divider`,
+    );
 
     // The chain surface's header: the Inbox glyph left of the name, the group
     // absolutely centred on the band and held inside it.
@@ -1095,7 +1136,7 @@ describe("Notebox page — general capture", () => {
     );
 
     // The page's own Area picker is that same field: flat, square, filled with
-    // the same colour, and the triage selects beside it keep their outline.
+    // the same colour as the dock's.
     const domainPicker = layout.page.domainSelect;
     assert.equal(
       domainPicker.present,
@@ -1131,20 +1172,75 @@ describe("Notebox page — general capture", () => {
       `the page's Area picker is only ${domainPicker.lightness} luminance steps above the sheet ` +
         `(${JSON.stringify(domainPicker.fill)} vs ${JSON.stringify(canvas)})`,
     );
-    const triagePicker = layout.page.triageSelect;
+    // All four pickers on the card are that same flat field now: the one that
+    // files (Area) and the three that triage read as one control design.
+    const rowPickers = layout.page.rowSelects;
     assert.equal(
-      triagePicker.present,
-      true,
-      "the page's first row has no triage select to measure",
+      rowPickers.length,
+      4,
+      `the first card holds ${rowPickers.length} pickers, not four`,
     );
-    assert.notEqual(
-      triagePicker.borderTopStyle,
-      "none",
-      "the triage selects lost their outline",
+    for (const picker of rowPickers) {
+      assert.equal(
+        picker.borderTopWidth,
+        "0px",
+        `a row picker still has a border (value ${JSON.stringify(picker.value)}): ${picker.borderTopWidth}`,
+      );
+      assert.equal(
+        picker.borderTopStyle,
+        "none",
+        `a row picker still has a border (value ${JSON.stringify(picker.value)}): ${picker.borderTopStyle}`,
+      );
+      assert.equal(
+        picker.borderRadius,
+        "0px",
+        `a row picker is still rounded (value ${JSON.stringify(picker.value)}): ${picker.borderRadius}`,
+      );
+      assert.ok(
+        (picker.fill.alpha ?? 0) > 0.5,
+        `a row picker has no fill (value ${JSON.stringify(picker.value)}): ${JSON.stringify(picker.background)}`,
+      );
+      assert.equal(
+        picker.background,
+        layout.dock.assign?.background,
+        `row picker ${JSON.stringify(picker.value)} is painted differently from the dock's`,
+      );
+    }
+
+    // The card's act is the one prominent control: filled, lifted by a layered
+    // shadow, heavier text; the Edit/Delete icon buttons stay flat.
+    const makeTask = layout.page.makeTask;
+    assert.equal(makeTask.present, true, "the page card has no Make task control");
+    assert.equal(
+      makeTask.disabled,
+      false,
+      "the Make task control is disabled, so its shipped lift cannot be judged",
     );
     assert.ok(
-      parseFloat(triagePicker.borderTopWidth ?? "0") >= 1,
-      `the triage selects lost their outline: ${triagePicker.borderTopWidth}`,
+      makeTask.text === "Make task" || makeTask.text === "Open task",
+      `the act reads ${JSON.stringify(makeTask.text)}`,
+    );
+    assert.notEqual(makeTask.boxShadow, "none", "the Make task control has no lift");
+    assert.ok(
+      (makeTask.shadowLayers ?? 0) >= 2,
+      `the Make task shadow has ${makeTask.shadowLayers} layer(s): ${JSON.stringify(makeTask.boxShadow)}`,
+    );
+    assert.ok(
+      (makeTask.fill.alpha ?? 0) > 0.5,
+      `the Make task control is not filled: ${JSON.stringify(makeTask.fill)}`,
+    );
+    assert.ok(
+      (makeTask.border.alpha ?? 0) > 0,
+      `the Make task control has a transparent border: ${JSON.stringify(makeTask.border)}`,
+    );
+    assert.ok(
+      parseFloat(makeTask.fontWeight ?? "0") >= 600,
+      `the Make task weight is ${makeTask.fontWeight}`,
+    );
+    assert.equal(
+      layout.page.iconButtonShadow,
+      "none",
+      `the Edit/Delete icon buttons are lifted too: ${JSON.stringify(layout.page.iconButtonShadow)}`,
     );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.

@@ -10979,10 +10979,12 @@ button.chat-panel__activity-line:hover {
    dotted neutral grey from the palette, not the cards' ember outline — it
    divides the page rather than drawing a surface, and the dots keep it from
    reading as a card edge. Three pixels so the dots read from across the column
-   rather than as a faint dashed hairline. */
+   rather than as a faint dashed hairline. A full line of margin above and below
+   the dots gives the two jobs their own air: the column's own gap plus one
+   more line, so the rule divides rather than crowds. */
 .signal-chain__rule {
   height: 0;
-  margin: 0.15rem 0;
+  margin: 1rem 0;
   border: 0;
   border-top: 3px dotted
     color-mix(in srgb, var(--muted-foreground) 55%, transparent);
@@ -11264,32 +11266,26 @@ button.chat-panel__activity-line:hover {
   gap: 0.35rem;
 }
 
+/* Every picker on a card is the dock card's picker: a flat, square-cornered
+   field on a lifted fill rather than an outlined chip. The four selects on the
+   row — Status, Priority, Project and the Area picker — are one kind of
+   control, so they wear one design; the Area one keeps its own placement on
+   the row's right. Same fill as `.chat-panel__chain-assign`, because the dock
+   and the page show the same control. */
 .signal-row__domain,
 .signal-row__triage-select {
   max-width: 11rem;
   font: inherit;
   font-size: 0.78rem;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.15rem 0.4rem;
-}
-
-/* The row's Area picker is the dock card's picker: a flat, square-cornered
-   field on a lifted fill rather than an outlined chip. It is the one select on
-   the row that files the capture, so it is the one that reads as a field; the
-   triage selects keep their outline. Same fill as `.chat-panel__chain-assign`,
-   because the two surfaces show the same control. */
-.signal-row__domain {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
   border: 0;
   border-radius: 0;
-  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
-  color: var(--fg);
   padding: 0.2rem 0.4rem;
 }
 
-.signal-row__domain:focus-visible {
+.signal-row__domain:focus-visible,
+.signal-row__triage-select:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
@@ -11308,6 +11304,49 @@ button.chat-panel__activity-line:hover {
   gap: 0.2rem;
   justify-content: flex-end;
   align-items: center;
+}
+
+/* The row's one act. Making the capture into work is the reason the row is
+   there, so this seat is not another ghost word beside Edit and Delete: it has
+   a warm face, a firm edge of its own, a lit top line and a small drop shadow
+   that says "press me". The shadow deepens a step on hover and gives back under
+   the press, so the control moves like a key rather than a painted label.
+   `Open task` wears the same seat once the work exists. */
+.signal-row__make-task {
+  padding: 0.3rem 0.8rem;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 3px 7px rgba(0, 0, 0, 0.18);
+  transition:
+    box-shadow var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.signal-row__make-task:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--card));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 6px 14px rgba(0, 0, 0, 0.22);
+}
+
+.signal-row__make-task:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+/* A disabled seat has no lift: the control cannot be pressed, so it must not
+   look pressed-in-waiting. */
+.signal-row__make-task:disabled {
+  box-shadow: none;
 }
 
 .signal-row__icon-btn {
