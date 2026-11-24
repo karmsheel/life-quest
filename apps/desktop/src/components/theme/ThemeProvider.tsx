@@ -54,6 +54,7 @@ import {
   DEFAULT_THEME_SCENE,
   DENSITIES,
   DOMAIN_PLACES,
+  DOMAIN_FRAMES,
   DOMAIN_VARIANTS,
   layerChrome,
   layerComposition,
@@ -188,6 +189,9 @@ function readStoredChromeOverride(): ThemeChromeOverride {
           : {}),
         ...(pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)
           ? { variant: pick(raw.domainSwitcher.variant, DOMAIN_VARIANTS)! }
+          : {}),
+        ...(pick(raw.domainSwitcher.frame, DOMAIN_FRAMES)
+          ? { frame: pick(raw.domainSwitcher.frame, DOMAIN_FRAMES)! }
           : {}),
       };
       if (Object.keys(domain).length > 0) override.domainSwitcher = domain;

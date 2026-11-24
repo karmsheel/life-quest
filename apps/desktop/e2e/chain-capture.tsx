@@ -185,6 +185,10 @@ type HarnessWindow = Window & {
   chainCaptureFileReads?: string[];
   chainCaptureUpdates?: { id: string; patch: Record<string, unknown> }[];
   chainCaptureDeletes?: string[];
+  /** Every `domainSetActive` call, so the lens the box followed is evidence. */
+  chainCaptureLens?: (string | null)[];
+  /** The fixture's live areas, the tabs the switcher offers. */
+  chainCaptureAreas?: { slug: string; name: string }[];
   /** The picture the driver drops or picks, so it never retypes the bytes. */
   chainCaptureImageBase64?: string;
   chainCaptureImage?: { name: string; mime: string; width: number; height: number };
@@ -231,6 +235,7 @@ harness.chainCaptureReads = [];
 harness.chainCaptureFileReads = [];
 harness.chainCaptureUpdates = [];
 harness.chainCaptureDeletes = [];
+harness.chainCaptureLens = [];
 
 const domains = fixture.snapshot.domains as FixtureDomain[];
 const projects = fixture.projects as FixtureProject[];
@@ -322,6 +327,9 @@ function snapshot() {
 }
 harness.chainCaptureSnapshot = snapshot;
 harness.chainCaptureProjects = projects.map((project) => ({ ...project }));
+harness.chainCaptureAreas = domains
+  .filter((domain) => !domain.archived)
+  .map((domain) => ({ slug: domain.slug, name: domain.name }));
 
 /**
  * The fixture's inbox in contract terms: every seeded row's stored value beside
@@ -339,7 +347,7 @@ const inboxSeeds: InboxSeed[] = seededRows.map((row) => {
     domainSlug: row.domainSlug,
     domainLabel: row.domainSlug
       ? (domains.find((domain) => domain.slug === row.domainSlug)?.name ?? row.domainSlug)
-      : "Unassigned",
+      : "Life (general)",
     projectId: row.projectId ?? null,
     projectLabel: row.projectId
       ? (projects.find((project) => project.id === row.projectId)?.title ?? row.projectId)
@@ -475,7 +483,10 @@ const rawBridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   domainGetActive: () => ok(null),
-  domainSetActive: () => ok(null),
+  domainSetActive: (slug: string | null) => {
+    harness.chainCaptureLens?.push(slug);
+    return ok(null);
+  },
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () => ok([]),

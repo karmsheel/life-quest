@@ -8,7 +8,6 @@ import {
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import type {
   Project,
@@ -133,6 +132,17 @@ export function SignalChainFeed() {
     slug: d.slug,
     name: d.meta.name,
   }));
+  /**
+   * What a capture files under: the area lens at the top, never a second choice
+   * in the box. Filing somewhere else is the switcher's job, so the box cannot
+   * disagree with the page the operator is looking at. The Life lens is the
+   * general area, so a capture there is unassigned and reads "Life (general)".
+   */
+  const captureArea =
+    lens.kind === "domain"
+      ? (liveDomains.find((d) => d.slug === lens.slug) ?? null)
+      : null;
+  const captureAreaName = captureArea?.meta.name ?? "Life (general)";
 
   const [records, setRecords] = useState<SignalRecord[]>([]);
   const [skipped, setSkipped] = useState(0);
@@ -142,16 +152,15 @@ export function SignalChainFeed() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  /** The triage filters above the list, combined with the area lens. */
+  /**
+   * The triage filters above the list: status and project. The area is not one
+   * of them — the domain picker at the top is the one area filter for Notebox.
+   */
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "all">("all");
-  const [domainFilter, setDomainFilter] = useState<string | "all" | "none">(
-    "all",
-  );
   const [projectFilter, setProjectFilter] = useState<string | "all">("all");
   /** The row's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
 
-  const [domainSlug, setDomainSlug] = useState("");
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
@@ -164,9 +173,10 @@ export function SignalChainFeed() {
   const pendingImageRef = useRef<PendingImage | null>(null);
   pendingImageRef.current = pendingImage;
 
-  // The list is the chain narrowed twice: by the area lens the rail carries and
-  // by the triage chips above it. The two combine rather than replace, so an
-  // area tab shows that area's inbox in whatever triage cut the operator picked.
+  // The list is the chain narrowed twice: by the area lens at the top, which is
+  // the one area filter, and by the status and project filters below it. The
+  // two combine rather than replace, so an area tab shows that area's inbox in
+  // whatever triage cut the operator picked.
   const visible = useMemo(
     () =>
       records.filter((r) => {
@@ -174,17 +184,12 @@ export function SignalChainFeed() {
         if (statusFilter !== "all" && (r.status ?? "inbox") !== statusFilter) {
           return false;
         }
-        if (domainFilter === "none") {
-          if (r.domainSlug !== null) return false;
-        } else if (domainFilter !== "all" && r.domainSlug !== domainFilter) {
-          return false;
-        }
         if (projectFilter !== "all" && r.projectId !== projectFilter) {
           return false;
         }
         return true;
       }),
-    [records, lens, statusFilter, domainFilter, projectFilter],
+    [records, lens, statusFilter, projectFilter],
   );
   const imagePaths = useMemo(
     () =>
@@ -370,7 +375,6 @@ export function SignalChainFeed() {
     setPendingFile(null);
     setLink(null);
     setBody("");
-    setDomainSlug("");
     setEditingId(null);
   }
 
@@ -409,7 +413,7 @@ export function SignalChainFeed() {
         type: "thought",
         title: null,
         body,
-        domainSlug: domainSlug.trim() ? domainSlug : null,
+        domainSlug: captureArea?.slug ?? null,
         attachment,
       });
       if (!result.ok) {
@@ -711,20 +715,23 @@ export function SignalChainFeed() {
             />
           </div>
           <div className="signal-chain__composer-commit">
-            <label className="signal-chain__area">
-              Area
-              <select
-                value={domainSlug}
-                onChange={(e) => setDomainSlug(e.target.value)}
+            {/* The capture's area, following the lens at the top rather than a
+                picker of its own. A readout, not a select: filing elsewhere is
+                the switcher's job, so there is no second place to disagree. */}
+            <span
+              className="signal-chain__area"
+              data-testid="chain-area-readout"
+              data-area-slug={captureArea?.slug ?? ""}
+              title="A capture files under the area picked at the top. Switch areas there to file somewhere else."
+            >
+              <span className="signal-chain__area-label">Area</span>
+              <span
+                className="signal-chain__area-value"
+                data-testid="chain-area-value"
               >
-                <option value="">- unassigned -</option>
-                {liveDomains.map((d) => (
-                  <option key={d.slug} value={d.slug}>
-                    {d.meta.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {captureAreaName}
+              </span>
+            </span>
             <Button
               type="submit"
               variant="primary"
@@ -755,7 +762,7 @@ export function SignalChainFeed() {
       ) : null}
 
       {/* The box and the filters are separate jobs: space and a hairline keep
-          the capture surface from reading as the first row of chips. */}
+          the capture surface from reading as the first filter. */}
       <hr
         className="signal-chain__rule"
         role="separator"
@@ -763,95 +770,65 @@ export function SignalChainFeed() {
         data-testid="chain-rule"
       />
 
-      {/* The triage band above the list. The area lens above the page still
-          applies; these chips narrow what is left and never widen it. */}
+      {/* The triage band above the list, on one line. The area is not a
+          filter here: the domain picker at the top is Notebox's one area
+          filter, so the band names it in a readout and offers the two cuts
+          that are the page's own — status and project. Selects rather than
+          rows of chips keep the band from pushing the chain down the page,
+          and each picker's own value is the filter it applies. The area
+          readout sits at the right end, the last thing the row says. */}
       <div
         className="signal-chain__filters"
         role="group"
         aria-label="Filter the inbox"
       >
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by status"
-          data-testid="signal-filter-status"
-        >
+        <label className="signal-chain__filter">
           <span className="signal-chain__filter-label">Status</span>
-          <FilterChip
-            testid="signal-filter-status-all"
-            active={statusFilter === "all"}
-            onClick={() => setStatusFilter("all")}
+          <select
+            className="signal-chain__filter-select"
+            aria-label="Filter by status"
+            data-testid="signal-filter-status"
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as SignalStatus | "all")
+            }
           >
-            All
-          </FilterChip>
-          {SIGNAL_STATUSES.map((status) => (
-            <FilterChip
-              key={status}
-              testid={`signal-filter-status-${status}`}
-              active={statusFilter === status}
-              onClick={() => setStatusFilter(status)}
-            >
-              {SIGNAL_STATUS_LABELS[status]}
-            </FilterChip>
-          ))}
-        </div>
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by area"
-          data-testid="signal-filter-domain"
+            <option value="all">All</option>
+            {SIGNAL_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {SIGNAL_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="signal-chain__filter">
+          <span className="signal-chain__filter-label">Project</span>
+          <select
+            className="signal-chain__filter-select"
+            aria-label="Filter by project"
+            data-testid="signal-filter-project"
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span
+          className="signal-chain__filter signal-chain__filter--area"
+          data-testid="signal-filter-domain-readout"
+          data-area-slug={captureArea?.slug ?? ""}
+          title="The domain picker at the top is Notebox's area filter."
         >
           <span className="signal-chain__filter-label">Area</span>
-          <FilterChip
-            testid="signal-filter-domain-all"
-            active={domainFilter === "all"}
-            onClick={() => setDomainFilter("all")}
-          >
-            All
-          </FilterChip>
-          <FilterChip
-            testid="signal-filter-domain-none"
-            active={domainFilter === "none"}
-            onClick={() => setDomainFilter("none")}
-          >
-            Unassigned
-          </FilterChip>
-          {liveDomains.map((domain) => (
-            <FilterChip
-              key={domain.slug}
-              testid={`signal-filter-domain-${domain.slug}`}
-              active={domainFilter === domain.slug}
-              onClick={() => setDomainFilter(domain.slug)}
-            >
-              {domain.meta.name}
-            </FilterChip>
-          ))}
-        </div>
-        <div
-          className="signal-chain__filter-row"
-          role="group"
-          aria-label="Filter by project"
-          data-testid="signal-filter-project"
-        >
-          <span className="signal-chain__filter-label">Project</span>
-          <FilterChip
-            testid="signal-filter-project-all"
-            active={projectFilter === "all"}
-            onClick={() => setProjectFilter("all")}
-          >
-            All
-          </FilterChip>
-          {projects.map((project) => (
-            <FilterChip
-              key={project.id}
-              testid={`signal-filter-project-${project.id}`}
-              active={projectFilter === project.id}
-              onClick={() => setProjectFilter(project.id)}
-            >
-              {project.title}
-            </FilterChip>
-          ))}
-        </div>
+          <span className="signal-chain__filter-value">
+            {captureAreaName}
+          </span>
+        </span>
       </div>
 
       {loading ? (
@@ -1002,7 +979,7 @@ function SignalRow(props: {
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
             >
-              <option value="">- unassigned -</option>
+              <option value="">Life (general)</option>
               {domainOptions.map((d) => (
                 <option key={d.slug} value={d.slug}>
                   {d.name}
@@ -1206,7 +1183,7 @@ function SignalRow(props: {
             props.onAssign(s.id, next);
           }}
         >
-          <option value="">- unassigned -</option>
+          <option value="">Life (general)</option>
           {domainOptions.map((d) => (
             <option key={d.slug} value={d.slug}>
               {d.name}
@@ -1330,28 +1307,5 @@ function SignalFileCard({ attachment }: { attachment: SignalFileAttachment }) {
         <span>Save</span>
       </Button>
     </div>
-  );
-}
-
-/**
- * One triage filter. `aria-pressed` is the pressed state, so the chip is a
- * toggle to a screen reader and the rig reads the same fact the eye does.
- */
-function FilterChip(props: {
-  testid: string;
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={`signal-chain__chip${props.active ? " signal-chain__chip--active" : ""}`}
-      data-testid={props.testid}
-      aria-pressed={props.active}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </button>
   );
 }

@@ -50,12 +50,19 @@
  *     exactly "Unassigned" and "No project", never a blank cell. Changing a
  *     row's status select hands the bridge exactly `{status: "acting"}`, and the
  *     row paints "Acting" only after the re-read that follows — the screen
- *     change is the vault's answer, not the page's echo. The status filter
- *     chips narrow to the triaged row, say "No signals match these filters."
- *     when nothing matches, and All restores the chain.
+ *     change is the vault's answer, not the page's echo. The filter band is one
+ *     line: status and project drop-downs plus an Area readout of the domain
+ *     picker, which is the page's only area filter — not rows of pills, and no
+ *     second area picker; the status picker narrows to the triaged row, says
+ *     "No signals match these filters." when nothing matches, and All restores
+ *     the chain.
  *  9. The dock's mirrored surface is the same Notebox: its control is labelled
  *     Notebox, it lists the same chain, and its heading says Notebox.
- * 10. No unmodelled bridge call, no console error, nothing spills horizontally
+ * 10. The box files under the area lens, not under a picker of its own: the
+ *     Life lens reads "Life (general)" and writes an unassigned capture, an
+ *     area lens puts its name in the readout and that slug on the wire, and the
+ *     readout holds no control — the switcher at the top is the one picker.
+ * 11. No unmodelled bridge call, no console error, nothing spills horizontally
  *     past the window, and every capture is a real picture of the shipped page.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
@@ -226,17 +233,23 @@ const SAMPLE = `(() => {
       ),
     };
   });
+  // One triage filter: the picker, the options it offers, the value currently
+  // applied, and the box it occupies. The band is three selects on one line now,
+  // so a filter is read off its picker rather than off pressed chips.
   const filterOf = (testid) => {
-    const group = q('[data-testid="' + testid + '"]');
+    const select = q('[data-testid="' + testid + '"]');
     return {
-      present: Boolean(group),
-      buttons: group
-        ? Array.from(group.querySelectorAll("button")).map((button) => ({
-            testid: button.getAttribute("data-testid"),
-            text: text(button),
-            pressed: button.getAttribute("aria-pressed"),
+      present: Boolean(select),
+      testid,
+      tag: select ? select.tagName : null,
+      value: select ? select.value : null,
+      options: select
+        ? Array.from(select.options).map((option) => ({
+            value: option.value,
+            label: (option.textContent || "").trim(),
           }))
         : [],
+      box: box(select),
     };
   };
   const composer = q('[data-testid="chain-composer"]');
@@ -337,18 +350,65 @@ const SAMPLE = `(() => {
         : { present: false },
       error: text(q('[data-testid="chain-link-error"]')),
     },
+    // The box's area readout: the lens it will file under, and whether that
+    // readout is a control (it must not be — the switcher is the one picker).
+    composerArea: (() => {
+      const readout = q('[data-testid="chain-area-readout"]');
+      const value = q('[data-testid="chain-area-value"]');
+      return readout
+        ? {
+            present: true,
+            tag: readout.tagName,
+            value: text(value),
+            slug: readout.getAttribute("data-area-slug") ?? "",
+            title: readout.getAttribute("title"),
+            controls: readout.querySelectorAll("select, input, button").length,
+          }
+        : { present: false };
+    })(),
     rows,
     counts,
-    // The inbox's own surface: the filter bar's buttons and their pressed
-    // state, plus the two empty lines (no matches vs no records at all).
+    // The inbox's own surface: the two filter pickers, the area readout that
+    // names the domain picker's lens, and their geometry, plus the two empty
+    // lines (no matches vs no records at all).
     filters: {
       status: filterOf("signal-filter-status"),
-      domain: filterOf("signal-filter-domain"),
       project: filterOf("signal-filter-project"),
+    },
+    // The area is not a filter of its own any more: the domain picker at the
+    // top is the one area filter, so the band only names it.
+    filterArea: (() => {
+      const readout = q('[data-testid="signal-filter-domain-readout"]');
+      const value = readout
+        ? text(readout.querySelector(".signal-chain__filter-value"))
+        : null;
+      return readout
+        ? {
+            present: true,
+            tag: readout.tagName,
+            value,
+            slug: readout.getAttribute("data-area-slug") ?? "",
+            title: readout.getAttribute("title"),
+            controls: readout.querySelectorAll("select, input, button").length,
+            box: box(readout),
+          }
+        : { present: false };
+    })(),
+    // A separate area picker must be gone: the band is two selects and a readout.
+    filterAreaSelect: Boolean(q('[data-testid="signal-filter-domain"]')),
+    filterLayout: {
+      band: box(q(".signal-chain__filters")),
+      labels: all(".signal-chain__filter-label").map(text),
+      fields: all(".signal-chain__filter").map(box),
+      buttons: all(".signal-chain__filters button").length,
+      selects: all(".signal-chain__filters select").length,
+      readouts: all(".signal-chain__filter-value").length,
     },
     filterEmpty: text(q('[data-testid="signal-filter-empty"]')),
     emptyLine: text(q('[data-testid="signal-empty"]')),
     projects: window.chainCaptureProjects ?? [],
+    areas: window.chainCaptureAreas ?? [],
+    lensWrites: (window.chainCaptureLens ?? []).slice(),
     inbox: window.chainCaptureInbox ?? null,
     // The dock's own Life-Chain surface, which renders the same records and
     // carries the same Notebox name.
@@ -493,6 +553,37 @@ const selectRowStatus = (body, value) => `(() => {
   setter.call(select, ${JSON.stringify(value)});
   select.dispatchEvent(new Event("change", { bubbles: true }));
   return "ok";
+})()`;
+
+/**
+ * Pick a value on one of the three inbox filters. Same native-setter rule as a
+ * row select: the picker is the operator's control, and React only sees the
+ * change when a real bubbling `change` event follows the value assignment.
+ */
+const selectFilter = (testid, value) => `(() => {
+  const select = document.querySelector('[data-testid="' + ${JSON.stringify(testid)} + '"]');
+  if (!select) return "no filter";
+  if (select.tagName !== "SELECT") return "not a select";
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+  setter.call(select, ${JSON.stringify(value)});
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return "ok";
+})()`;
+
+/**
+ * Choose an area on the window's switcher, the one picker that decides where a
+ * capture files. The switcher is a radiogroup of tabs; the operator's gesture
+ * is a click on the tab whose name matches.
+ */
+const clickLens = (name) => `(() => {
+  const group = document.querySelector('[role="radiogroup"][aria-label="Area lens"]');
+  if (!group) return "no switcher";
+  const tab = Array.from(group.querySelectorAll("button")).find(
+    (button) => (button.textContent || "").trim() === ${JSON.stringify(name)},
+  );
+  if (!tab) return "no tab";
+  tab.click();
+  return true;
 })()`;
 
 /**
@@ -647,10 +738,6 @@ async function main() {
 
   const rowWithBody = (state, body) =>
     (state.rows || []).find((row) => ((row.body ?? row.text) ?? "").includes(body)) ?? null;
-
-  /** The filter bar's button carrying this testid, or null. */
-  const filterButton = (state, group, testid) =>
-    (state.filters?.[group]?.buttons ?? []).find((button) => button.testid === testid) ?? null;
 
   try {
     await win.loadURL(url);
@@ -855,6 +942,11 @@ async function main() {
       "the text capture carried no attachment",
       textCreate?.attachment === null,
       `attachment ${JSON.stringify(textCreate?.attachment)}`,
+    );
+    check(
+      "the text capture filed in Life (general)",
+      textCreate?.domainSlug === null,
+      `domain ${JSON.stringify(textCreate?.domainSlug)}`,
     );
     check(
       "the text row is marked text",
@@ -1641,44 +1733,92 @@ async function main() {
       `labels ${JSON.stringify(projectOptionLabels)} vs projects ${JSON.stringify((inboxExpected?.projects ?? []).map((project) => project.title))}`,
     );
 
-    const statusFilterButtons = (baseline.filters?.status?.buttons ?? []).map(
-      (button) => button.testid,
+    // The band is two drop-downs and the area readout on one line, not three
+    // rows of pills: every option list and the geometry that proves the one
+    // line are measured off the shipped page.
+    const statusValues = (baseline.filters?.status?.options ?? []).map(
+      (option) => option.value,
     );
     check(
-      "the status filter offers All and the five states",
-      statusFilterButtons.length === 6 &&
-        ["all", "inbox", "triaged", "acting", "done", "dropped"].every((name) =>
-          statusFilterButtons.includes(`signal-filter-status-${name}`),
-        ),
-      `buttons ${JSON.stringify(statusFilterButtons)}`,
+      "the status filter is a drop-down offering All and the five states",
+      baseline.filters?.status?.tag === "SELECT" &&
+        statusValues.join(",") === "all,inbox,triaged,acting,done,dropped",
+      `tag ${JSON.stringify(baseline.filters?.status?.tag)}, options ${JSON.stringify(statusValues)}`,
     );
     check(
       "the status filter starts on All",
-      filterButton(baseline, "status", "signal-filter-status-all")?.pressed === "true",
-      `All pressed ${JSON.stringify(filterButton(baseline, "status", "signal-filter-status-all"))}`,
-    );
-    const domainFilterButtons = (baseline.filters?.domain?.buttons ?? []).map(
-      (button) => button.testid,
+      baseline.filters?.status?.value === "all",
+      `value ${JSON.stringify(baseline.filters?.status?.value)}`,
     );
     check(
-      "the domain filter offers All, Unassigned and the areas",
-      (baseline.filters?.domain?.present ?? false) &&
-        domainFilterButtons.includes("signal-filter-domain-all") &&
-        domainFilterButtons.includes("signal-filter-domain-none") &&
-        domainFilterButtons.includes("signal-filter-domain-health"),
-      `buttons ${JSON.stringify(domainFilterButtons)}`,
+      "the area is a readout of the domain picker, not a filter of its own",
+      (baseline.filterArea?.present ?? false) &&
+        baseline.filterArea?.tag === "SPAN" &&
+        baseline.filterArea?.value === "Life (general)" &&
+        baseline.filterArea?.slug === "" &&
+        (baseline.filterArea?.controls ?? -1) === 0 &&
+        baseline.filterAreaSelect === false,
+      `readout ${JSON.stringify(baseline.filterArea)}, old picker ${JSON.stringify(baseline.filterAreaSelect)}`,
     );
-    const projectFilterButtons = (baseline.filters?.project?.buttons ?? []).map(
-      (button) => button.testid,
+    const projectValues = (baseline.filters?.project?.options ?? []).map(
+      (option) => option.value,
     );
     check(
-      "the project filter offers All and every live project",
-      projectFilterButtons.length === (inboxExpected?.projects ?? []).length + 1 &&
-        projectFilterButtons.includes("signal-filter-project-all") &&
+      "the project filter is a drop-down offering All and every live project",
+      baseline.filters?.project?.tag === "SELECT" &&
+        projectValues.length === (inboxExpected?.projects ?? []).length + 1 &&
+        projectValues.includes("all") &&
         (inboxExpected?.projects ?? []).every((project) =>
-          projectFilterButtons.includes(`signal-filter-project-${project.id}`),
+          projectValues.includes(project.id),
         ),
-      `buttons ${JSON.stringify(projectFilterButtons)}`,
+      `options ${JSON.stringify(projectValues)}`,
+    );
+    // Mixed heights are fine (two pickers, one readout): the line is proven by
+    // the fields' centres agreeing, not by their top edges.
+    const filterFieldCenters = (baseline.filterLayout?.fields ?? []).map(
+      (field) => (field ? field.top + field.height / 2 : null),
+    );
+    check(
+      "the two filters and the area readout share one line",
+      filterFieldCenters.length === 3 &&
+        filterFieldCenters.every(
+          (center) =>
+            center !== null && Math.abs(center - filterFieldCenters[0]) <= 1,
+        ),
+      `field centres ${JSON.stringify(filterFieldCenters)}`,
+    );
+    check(
+      "the filter band is one compact row of two pickers and a readout",
+      (baseline.filterLayout?.band?.height ?? 0) <= 56 &&
+        (baseline.filterLayout?.buttons ?? -1) === 0 &&
+        (baseline.filterLayout?.selects ?? -1) === 2 &&
+        (baseline.filterLayout?.readouts ?? -1) === 1 &&
+        (baseline.filterLayout?.labels ?? []).join(",") ===
+          "Status,Project,Area",
+      `band ${JSON.stringify(baseline.filterLayout?.band)}, selects ${baseline.filterLayout?.selects}, readouts ${baseline.filterLayout?.readouts}, labels ${JSON.stringify(baseline.filterLayout?.labels)}`,
+    );
+    // The Area readout is the row's right end: the last field in the band, to
+    // the right of the project picker, and pushed against the band's edge — not
+    // merely last in a left-packed row.
+    const filterFieldBoxes = baseline.filterLayout?.fields ?? [];
+    const filterBand = baseline.filterLayout?.band ?? null;
+    const filterAreaBox = baseline.filterArea?.box ?? null;
+    const areaRightGap =
+      filterBand && filterAreaBox
+        ? filterBand.left + filterBand.width - (filterAreaBox.left + filterAreaBox.width)
+        : null;
+    check(
+      "the Area readout sits at the right end of the band",
+      filterFieldBoxes.length === 3 &&
+        (filterAreaBox?.left ?? -1) === (filterFieldBoxes[2]?.left ?? -2) &&
+        (filterAreaBox?.left ?? -1) >
+          (baseline.filters?.project?.box?.left ?? Infinity),
+      `area ${JSON.stringify(filterAreaBox)}, project ${JSON.stringify(baseline.filters?.project?.box)}, fields ${JSON.stringify(filterFieldBoxes)}`,
+    );
+    check(
+      "the Area readout is right-aligned against the band's edge",
+      areaRightGap !== null && areaRightGap >= 0 && areaRightGap <= 14,
+      `right gap ${JSON.stringify(areaRightGap)}px, band ${JSON.stringify(filterBand)}, area ${JSON.stringify(filterAreaBox)}`,
     );
 
     // The triage itself: one operator gesture on the project-filed row.
@@ -1752,11 +1892,19 @@ async function main() {
       `stored ${JSON.stringify(storedTriage && { status: storedTriage.status })}`,
     );
 
-    // The filter chips: a match, then no matches, then back to All. The acting
-    // chip is a second read of the status the triage just wrote.
-    await js(click('[data-testid="signal-filter-status-acting"]'));
+    // The filters: a match, then no matches, then back to All. Choosing Acting
+    // is a second read of the status the triage just wrote.
+    const acted = await js(selectFilter("signal-filter-status", "acting"));
+    check(
+      "the status filter accepts the operator's choice",
+      acted === "ok",
+      `select returned ${JSON.stringify(acted)}`,
+    );
     const actingFilter = await waitState(
-      (state) => state.rows.length === 1 && rowWithBody(state, inboxTarget?.body ?? "") !== null,
+      (state) =>
+        state.rows.length === 1 &&
+        rowWithBody(state, inboxTarget?.body ?? "") !== null &&
+        state.filters?.status?.value === "acting",
       "the acting filter to show just the triaged row",
     );
     check(
@@ -1767,14 +1915,14 @@ async function main() {
       `${actingFilter.rows.length} rows, bodies ${JSON.stringify(actingFilter.rows.map((row) => row.body))}`,
     );
     check(
-      "the acting chip reads as pressed",
-      filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed === "true",
-      `acting chip ${JSON.stringify(filterButton(actingFilter, "status", "signal-filter-status-acting"))}`,
+      "the status picker holds Acting",
+      actingFilter.filters?.status?.value === "acting",
+      `status picker ${JSON.stringify(actingFilter.filters?.status)}`,
     );
 
     // The operator-facing half of the evidence, taken while the Acting filter
-    // proves the change: the one triaged row, its Acting chip and select, and
-    // the pressed chip that narrowed the list to it.
+    // proves the change: the one triaged row, its Acting select, and the
+    // status picker that narrowed the list to it.
     await js(`(() => {
       const rows = Array.from(document.querySelectorAll('[data-testid="signal-row"]'));
       const row = rows.find((candidate) => {
@@ -1796,11 +1944,12 @@ async function main() {
       `${inboxShotBytes} bytes`,
     );
 
-    await js(click('[data-testid="signal-filter-status-done"]'));
+    await js(selectFilter("signal-filter-status", "done"));
     const doneFilter = await waitState(
       (state) =>
         state.rows.length === 0 &&
-        (state.filterEmpty ?? "") === "No signals match these filters.",
+        (state.filterEmpty ?? "") === "No signals match these filters." &&
+        state.filters?.status?.value === "done",
       "the done filter to leave no rows and say why",
     );
     check(
@@ -1814,14 +1963,16 @@ async function main() {
       `empty line ${JSON.stringify(doneFilter.emptyLine)}`,
     );
     check(
-      "the done chip reads as pressed",
-      filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed === "true",
-      `done chip ${JSON.stringify(filterButton(doneFilter, "status", "signal-filter-status-done"))}`,
+      "the status picker holds Done",
+      doneFilter.filters?.status?.value === "done",
+      `status picker ${JSON.stringify(doneFilter.filters?.status)}`,
     );
 
-    await js(click('[data-testid="signal-filter-status-all"]'));
+    await js(selectFilter("signal-filter-status", "all"));
     const allFilter = await waitState(
-      (state) => state.rows.length === expected.seeded.count + CAPTURES_DRIVEN,
+      (state) =>
+        state.rows.length === expected.seeded.count + CAPTURES_DRIVEN &&
+        state.filters?.status?.value === "all",
       "the all filter to restore the chain",
     );
     check(
@@ -1830,9 +1981,9 @@ async function main() {
       `${allFilter.rows.length} rows vs ${expected.seeded.count + CAPTURES_DRIVEN}`,
     );
     check(
-      "the all chip reads as pressed again",
-      filterButton(allFilter, "status", "signal-filter-status-all")?.pressed === "true",
-      `All chip ${JSON.stringify(filterButton(allFilter, "status", "signal-filter-status-all"))}`,
+      "the status picker is back on All",
+      allFilter.filters?.status?.value === "all",
+      `status picker ${JSON.stringify(allFilter.filters?.status)}`,
     );
 
     checks.inbox = {
@@ -1845,9 +1996,11 @@ async function main() {
         priorityLabels: priorityOptionLabels,
         projectOptions: (projectSelect?.options ?? []).map((option) => option.value),
         projectLabels: projectOptionLabels,
-        filterStatus: statusFilterButtons,
-        filterDomain: domainFilterButtons,
-        filterProject: projectFilterButtons,
+        filterStatus: baseline.filters?.status ?? null,
+        filterProject: baseline.filters?.project ?? null,
+        filterArea: baseline.filterArea ?? null,
+        filterAreaSelect: baseline.filterAreaSelect === true,
+        filterLayout: baseline.filterLayout ?? null,
       },
       triage: {
         targetId: inboxTarget?.id ?? null,
@@ -1873,17 +2026,17 @@ async function main() {
       filter: {
         acting: {
           rows: actingFilter.rows.length,
-          pressed: filterButton(actingFilter, "status", "signal-filter-status-acting")?.pressed ?? null,
+          value: actingFilter.filters?.status?.value ?? null,
         },
         done: {
           rows: doneFilter.rows.length,
           empty: doneFilter.filterEmpty,
           emptyLine: doneFilter.emptyLine,
-          pressed: filterButton(doneFilter, "status", "signal-filter-status-done")?.pressed ?? null,
+          value: doneFilter.filters?.status?.value ?? null,
         },
         all: {
           rows: allFilter.rows.length,
-          pressed: filterButton(allFilter, "status", "signal-filter-status-all")?.pressed ?? null,
+          value: allFilter.filters?.status?.value ?? null,
         },
       },
       screenshot: { name: path.basename(inboxShot), bytes: inboxShotBytes },
@@ -1980,6 +2133,141 @@ async function main() {
       fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size > 20_000,
       `${fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size} bytes`,
     );
+
+    // ── 8. the box's area is the lens at the top ─────────────────────────────
+    // The box has no area picker of its own: a capture files under the area the
+    // switcher has open, and the Life lens (the general area) files it
+    // unassigned under the readout "Life (general)". Switching the lens is the
+    // one way to file somewhere else, so the readout is checked to be a readout
+    // and the write is checked to carry the lens it showed.
+    const lensArea = (dockPainted.areas ?? [])[0] ?? null;
+    const beforeLens = await sample();
+    check(
+      "the box files in Life (general) on the Life lens",
+      beforeLens.composerArea?.present === true &&
+        beforeLens.composerArea?.value === "Life (general)" &&
+        beforeLens.composerArea?.slug === "" &&
+        (beforeLens.composerArea?.controls ?? -1) === 0,
+      `readout ${JSON.stringify(beforeLens.composerArea)}`,
+    );
+    const lensClicked = await js(clickLens(lensArea?.name ?? ""));
+    check(
+      "the area switcher accepts the operator's choice",
+      lensClicked === true && lensArea !== null,
+      `click returned ${JSON.stringify(lensClicked)}, area ${JSON.stringify(lensArea)}`,
+    );
+    const lensed = await waitState(
+      (state) =>
+        state.composerArea?.slug === (lensArea?.slug ?? "") &&
+        state.composerArea?.value === (lensArea?.name ?? ""),
+      "the box's area to follow the switcher",
+    );
+    check(
+      "the box's area follows the switcher",
+      lensed.composerArea?.value === lensArea?.name &&
+        lensed.composerArea?.slug === lensArea?.slug,
+      `readout ${JSON.stringify(lensed.composerArea)} vs area ${JSON.stringify(lensArea)}`,
+    );
+    check(
+      "the switcher wrote the new lens",
+      (lensed.lensWrites ?? []).includes(lensArea?.slug ?? ""),
+      `lens writes ${JSON.stringify(lensed.lensWrites)}`,
+    );
+
+    // Log under the chosen area: the bridge is handed that area, and the row
+    // paints it — the readout is not a label dressing a null write.
+    const lensBody = "Filed under the open area.";
+    await js(setValue(".signal-chain textarea", lensBody));
+    await js(pressEnter(".signal-chain textarea"));
+    const lensLogged = await waitState(
+      (state) =>
+        (state.creates ?? []).length === CAPTURES_DRIVEN + 1 &&
+        rowWithBody(state, lensBody) !== null,
+      "the capture under the open area to land",
+    );
+    const lensCreate = lensLogged.creates[lensLogged.creates.length - 1];
+    const lensRow = rowWithBody(lensLogged, lensBody);
+    check(
+      "a capture under an area lens carries that area",
+      lensCreate?.domainSlug === (lensArea?.slug ?? null),
+      `create ${JSON.stringify(lensCreate)} vs area ${JSON.stringify(lensArea)}`,
+    );
+    check(
+      "the captured row paints the area it filed under",
+      lensRow?.dataDomainSlug === (lensArea?.slug ?? "") &&
+        lensRow?.domain === lensArea?.name,
+      `row ${JSON.stringify(lensRow && { dataDomainSlug: lensRow.dataDomainSlug, domain: lensRow.domain })}`,
+    );
+
+    check(
+      "the band's area readout follows the switcher too",
+      lensed.filterArea?.value === lensArea?.name &&
+        lensed.filterArea?.slug === lensArea?.slug,
+      `filter area ${JSON.stringify(lensed.filterArea)} vs area ${JSON.stringify(lensArea)}`,
+    );
+
+    // The operator-facing half: the switcher on the area, the readouts naming it
+    // and the new row filed under it, in one picture, framed from the page's top
+    // so the heading and the filter band sit above the filed row.
+    await js(`(() => {
+      const page = document.querySelector(".signal-chain");
+      let node = page ? page.parentElement : null;
+      while (node) {
+        const style = getComputedStyle(node);
+        if (
+          /auto|scroll/.test(style.overflowY) &&
+          node.scrollHeight > node.clientHeight
+        ) {
+          node.scrollTop = 0;
+          return "scrolled";
+        }
+        node = node.parentElement;
+      }
+      window.scrollTo(0, 0);
+      return "window";
+    })()`);
+    await sleep(300);
+    const lensShot = await captureFile("chain-capture-area.png");
+    const lensShotBytes = fs.statSync(lensShot).size;
+    check(
+      "capture chain-capture-area.png is a real picture",
+      lensShotBytes > 20_000,
+      `${lensShotBytes} bytes`,
+    );
+
+    // Back to Life: the readout returns to the general area.
+    const lifeClicked = await js(clickLens("Life"));
+    check(
+      "the Life tab is on the switcher",
+      lifeClicked === true,
+      `click returned ${JSON.stringify(lifeClicked)}`,
+    );
+    const backToLife = await waitState(
+      (state) =>
+        state.composerArea?.value === "Life (general)" &&
+        state.composerArea?.slug === "",
+      "the box's area to return to Life (general)",
+    );
+    check(
+      "the box returns to Life (general) on the Life lens",
+      backToLife.composerArea?.value === "Life (general)" &&
+        backToLife.composerArea?.slug === "",
+      `readout ${JSON.stringify(backToLife.composerArea)}`,
+    );
+
+    checks.lens = {
+      area: lensArea,
+      before: beforeLens.composerArea,
+      lensed: lensed.composerArea,
+      filterBefore: beforeLens.filterArea,
+      filterLensed: lensed.filterArea,
+      create: lensCreate ?? null,
+      row: lensRow,
+      after: backToLife.composerArea,
+      filterAfter: backToLife.filterArea,
+      lensWrites: backToLife.lensWrites ?? [],
+      screenshot: { name: path.basename(lensShot), bytes: lensShotBytes },
+    };
 
     // ── report ─────────────────────────────────────────────────────────────
     const report = {

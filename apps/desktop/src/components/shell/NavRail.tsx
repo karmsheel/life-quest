@@ -208,6 +208,7 @@ export function NavRail() {
           className="nav-rail__lens"
           data-chrome-slot="domain"
           data-chrome-place="left-rail"
+          data-chrome-frame={chrome.domainSwitcher.frame}
         >
           <DomainSwitcher variant={chrome.domainSwitcher.variant} />
         </div>

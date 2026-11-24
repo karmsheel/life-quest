@@ -123,9 +123,10 @@ const { startPairingDoors } = await import("../electron/pairing-door.ts");
  *      Monday weekly task due on a Tuesday), so the row lies about the schedule.
  *   4. A bad cadence is stored anyway: a weekly record with no weekday, an
  *      external URL in the internal-route field, or 30 February as a date.
- *   5. The dashboard's due buckets disagree with the manager's: a date counted
- *      as "this week" on the card and "later" on the page, or a paused record
- *      still surfacing as due.
+ *   5. The dashboard's due list disagrees with the manager's: a record due
+ *      tomorrow — later in the same week — is dosed a day early onto today's
+ *      card, a paused record surfaces as due, or a future record never appears
+ *      on its own day.
  *   6. Completing an occurrence does not advance the date, or advances it from
  *      the calendar — so an overdue weekly task replays weeks of past dates one
  *      tick at a time instead of scheduling the next one after today.
@@ -161,13 +162,18 @@ const INVITE_PORT = 18_756;
 
 /**
  * The fixed day every engine assertion runs on. A Thursday, deliberately: the
- * week buckets (today, this-week, later) are only falsifiable on a day that is
- * neither the first nor the last of its week.
+ * model's week buckets (today, this-week, later) are only falsifiable on a day
+ * that is neither the first nor the last of its week, and the next day is still
+ * inside it — which is exactly the "due tomorrow must not appear early" case.
  */
 const TODAY = "2026-11-19";
 const WEEK_START: WeekStartDay = "monday";
 /** The same day as a local Date, for the review window's wall-clock moments. */
 const NOW = new Date(2026, 10, 19, 10, 0, 0);
+/** The next local day: a same-week record that must not be drawn a day early. */
+const TOMORROW = addDays(TODAY, 1);
+/** Tomorrow at the same wall-clock moment: the day that record becomes due. */
+const TOMORROW_NOW = new Date(2026, 10, 20, 10, 0, 0);
 
 type Auth = { bearer?: string };
 type Reply = { status: number; json: unknown; raw: string };
@@ -472,9 +478,14 @@ describe("recurring tasks engine and tools e2e", () => {
     assert.equal(weekdayOf(linkedItem.dueDate), 6, "the weekly default landed on the wrong weekday");
 
     // ── 3. the due model's buckets, omissions and order ──────────────────────
+    // The card draws only what is owed NOW: overdue and due today. "this-week"
+    // (a record dated later in this week, tomorrow included) and "later" remain
+    // model states the Manage-recurring editor names, but they are not card
+    // rows — a scheduled task must not be dosed a day early.
     const buckets = [
       record("r-overdue", "Overdue fixture", { unit: "day" }, addDays(TODAY, -3)),
       record("r-today", "Today fixture", { unit: "day" }, TODAY),
+      record("r-tomorrow", "Tomorrow fixture", { unit: "day" }, TOMORROW),
       record("r-week", "This week fixture", { unit: "day" }, addDays(TODAY, 2)),
       record("r-later", "Later fixture", { unit: "day" }, addDays(TODAY, 20)),
       record("r-paused", "Paused fixture", { unit: "day" }, addDays(TODAY, -1), { paused: true }),
@@ -485,8 +496,13 @@ describe("recurring tasks engine and tools e2e", () => {
     assert.equal(recurringState(buckets[0], TODAY, WEEK_START), "overdue");
     assert.equal(recurringState(buckets[1], TODAY, WEEK_START), "today");
     assert.equal(recurringState(buckets[2], TODAY, WEEK_START), "this-week");
-    assert.equal(recurringState(buckets[3], TODAY, WEEK_START), "later");
-    assert.equal(recurringState(buckets[4], TODAY, WEEK_START), "paused");
+    assert.equal(recurringState(buckets[3], TODAY, WEEK_START), "this-week");
+    assert.equal(recurringState(buckets[4], TODAY, WEEK_START), "later");
+    assert.equal(recurringState(buckets[5], TODAY, WEEK_START), "paused");
+    assert.ok(
+      TOMORROW <= weekEnd(TODAY),
+      "the tomorrow fixture is not inside the same week (the fixture's own assumption)",
+    );
     assert.ok(
       addDays(TODAY, 2) <= weekEnd(TODAY),
       "the this-week fixture is not inside the same week (the fixture's own assumption)",
@@ -497,14 +513,42 @@ describe("recurring tasks engine and tools e2e", () => {
     const dueIds = due.map((item) => item.id);
     assert.deepEqual(
       dueIds,
-      ["r-overdue", "r-today", "r-week"],
-      `the due list is ${JSON.stringify(dueIds)}; paused and later must be absent and overdue first`,
+      ["r-overdue", "r-today"],
+      `the due list is ${JSON.stringify(dueIds)}; only overdue and due-today rows belong ` +
+        `on the card, so paused, later and the this-week records (tomorrow included) must be absent`,
     );
     assert.equal(due[0].state, "overdue");
     assert.equal(due[0].daysLate, 3, "the overdue row's daysLate is not the whole days from its date");
     assert.equal(due[1].state, "today");
-    assert.equal(due[2].state, "this-week");
     assert.ok(due.every((item) => item.kind === "task" && item.completable), "operator rows are not completable");
+
+    // The record due tomorrow appears on ITS day — as the due-today row — while
+    // a record still later in the same week keeps waiting. The review index is
+    // rebuilt for tomorrow's clock so its open periods still read as done.
+    const tomorrowReviews: ReviewIndexEntry[] = REVIEW_CADENCES.map((cadence) => ({
+      cadence,
+      period: openReviewPeriod(cadence, WEEK_START, DEFAULT_REVIEW_AVAILABILITY, TOMORROW_NOW),
+      locked: false,
+      scopes: { overall: { status: "done", sessionId: null } },
+    }));
+    const appeared = dueRecurringItems(buckets, tomorrowReviews, DUE_SETTINGS, TOMORROW_NOW);
+    checks.tomorrowAppearance = appeared;
+    const appearedIds = appeared.map((item) => item.id);
+    assert.deepEqual(
+      appearedIds,
+      ["r-overdue", "r-today", "r-tomorrow"],
+      `on its own day the due list is ${JSON.stringify(appearedIds)}; the tomorrow record must ` +
+        `be due-today and the record still later this week must still be absent`,
+    );
+    const appearedRow = appeared.find((item) => item.id === "r-tomorrow")!;
+    checks.tomorrowRow = appearedRow;
+    assert.equal(appearedRow.state, "today", "the tomorrow record is not due-today on its own day");
+    assert.equal(appearedRow.dueDate, TOMORROW);
+    assert.equal(appearedRow.daysLate, 0);
+    assert.ok(
+      !appearedIds.includes("r-week"),
+      "a record due later in the same week was dosed early on the preceding day",
+    );
 
     // The overdue row is the oldest, and ties keep a stable order.
     const tie = dueRecurringItems(
@@ -951,12 +995,20 @@ describe("recurring tasks engine and tools e2e", () => {
       failures: [],
       what:
         "the recurring-task engine over a real vault and the real MCP door: persistence and a " +
-        "pre-feature map file, due-date defaults and refusals, the dashboard's due buckets and " +
+        "pre-feature map file, due-date defaults and refusals, the dashboard's due list (overdue " +
+        "and due-today only — a same-week tomorrow record waits for its day and then appears) and " +
         "sort, completion history and its cap, the backlog rule, cadence arithmetic (week/month " +
         "anchor/leap year), built-in review rows that clear when the review is done or locked, " +
         "and the four companion tools with their advertised arguments and Schedule+Write gate",
       command: "cd apps/desktop && node --experimental-strip-types --test tests/recurring-engine-e2e.test.ts",
-      reference: { today: TODAY, weekStartDay: WEEK_START, now: NOW.toISOString(), historyLimit: RECURRING_HISTORY_LIMIT },
+      reference: {
+        today: TODAY,
+        tomorrow: TOMORROW,
+        weekStartDay: WEEK_START,
+        now: NOW.toISOString(),
+        tomorrowNow: TOMORROW_NOW.toISOString(),
+        historyLimit: RECURRING_HISTORY_LIMIT,
+      },
       door: { local: LOCAL_PORT, invite: INVITE_PORT, livePorts: [8643, 8646] },
       checks,
       transcript,

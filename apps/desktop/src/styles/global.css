@@ -770,6 +770,38 @@ a {
   grid-column: 2;
 }
 
+/* The even split: the layouts picker's half-and-half arrangements.
+   The page and the dock take half of the window each, measured to the glass
+   rather than to the tray: from the rail's trailing edge to the window's
+   trailing edge. The trailing pane carries the shell frame past the tray's own
+   box, so that slack is taken out of the trailing track and added back by the
+   pane's own width — the seam then falls on the window's centre line, and the
+   arrangement stays a split when the window, or the rail's collapse, changes the
+   frame instead of freezing the halves at the pixels they had when the card was
+   pressed. `shell--chat-left` above still says which pane leads, so this one
+   pair of rules serves both split cards, and the dock's own swap control trades
+   between them. The full-screen mode wins over this block when both are armed:
+   the shell does not carry this class in the mode (see `AppShell`), so the two
+   arrangements cannot fight over the template. */
+.shell.shell--layout-split {
+  grid-template-columns:
+    var(--nav-column)
+    calc((100% - var(--nav-column) + var(--shell-frame)) / 2)
+    calc((100% - var(--nav-column) + var(--shell-frame)) / 2 - var(--shell-frame));
+}
+
+/* The dock's own width token belongs to the studio arrangement; in a split the
+   dock is its track. Trailing, the box still carries the frame slack out to the
+   glass; leading, it asks for its track and no more (the trailing sheet keeps its
+   own escape from the swapped rules above). */
+.shell.shell--layout-split.shell--chat-right > .chat-panel {
+  width: calc(100% + var(--shell-frame));
+}
+
+.shell.shell--layout-split.shell--chat-left > .chat-panel {
+  width: 100%;
+}
+
 /* Full-screen chat: the page pane leaves the tray and the dock takes everything
    beside the rail. The rail holds the window's leading edge either way — it is
    chrome, and it carries the chats list the conversation is chosen from — so the
@@ -10673,6 +10705,9 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
+/* The capture's area: a readout of the lens at the top, not a picker. It keeps
+   the same quiet weight as the rest of the box's foot, with the value in the
+   text colour so the one fact worth reading stands out. */
 .signal-chain__area {
   display: inline-flex;
   align-items: center;
@@ -10682,17 +10717,9 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
-.signal-chain__area select {
-  width: auto;
-  max-width: 10rem;
-  padding: 0.3rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+.signal-chain__area-value {
   color: var(--fg);
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
+  font-weight: 600;
 }
 
 /* The page's act: the app's primary button, sized to read as the point of the
@@ -10930,32 +10957,38 @@ button.chat-panel__activity-line:hover {
   margin: 0.25rem 0 0;
 }
 
-/* —— Triage band: the chips above the inbox list ——
-   Three labelled rows, each of which wraps. Nothing here may push the page
-   wider than the window: the rows are flex-wrap and the chips are nowrap only
-   inside their own pill, so a long area or project name wraps the row rather
-   than the document. */
+/* —— Triage band: the filters on one line ——
+   Status and project are selects; the area is a readout of the domain picker
+   above, which is Notebox's one area filter. One line at the page's width,
+   each picker sized to its value and ellipsising a long one. The row wraps
+   only when the window is too narrow to hold it, so the band never pushes the
+   document wider than the window. */
 .signal-chain__filters {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.55rem 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  padding: 0.4rem 0.65rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
 
-.signal-chain__filter-row {
-  display: flex;
-  flex-wrap: wrap;
+.signal-chain__filter {
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.35rem;
+  /* Tall enough for a picker, so the area readout — which is text, not a field
+     — keeps the same box as the two selects beside it and the row reads even. */
+  min-height: 1.6rem;
   min-width: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .signal-chain__filter-label {
   flex: none;
-  min-width: 3.7rem;
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -10963,39 +10996,35 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
-.signal-chain__chip {
-  appearance: none;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  padding: 0.15rem 0.6rem;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out);
+/* The area readout ends the band against its right edge: the lens is the
+   page's scope rather than one of the picks, so it sits apart from them. */
+.signal-chain__filter--area {
+  margin-left: auto;
 }
 
-.signal-chain__chip:hover {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--selected) 12%, transparent);
-}
-
-.signal-chain__chip--active {
+/* The area readout names the lens the band's list is scoped to; it is text,
+   not a control, so it reads with the value's weight rather than a field's. */
+.signal-chain__filter-value {
   color: var(--fg);
   font-weight: 600;
-  background: var(--card);
-  border-color: var(--border);
-  box-shadow: var(--shadow-xs);
+  font-size: 0.78rem;
 }
 
-.signal-chain__chip:focus-visible {
+.signal-chain__filter-select {
+  min-width: 0;
+  max-width: 11rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.signal-chain__filter-select:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--selected) 55%, transparent);
   outline-offset: 1px;
 }
@@ -11510,6 +11539,141 @@ button.chat-panel__activity-line:hover {
   background: var(--skin-primary);
   border-top-left-radius: var(--radius-xs);
   border-bottom-right-radius: calc(var(--radius-sm) - 1px);
+}
+
+/* —— The layouts picker ——————————————————————————————————————————————————
+   The titlebar's third control and the four cards it opens. The picker reuses
+   the settings popover's shell; only the cards are its own.
+
+   The thumbnail is the whole idea: the rail, the page and the agent as three
+   blocks in their real order, so a card shows an arrangement rather than
+   describing one. The rail is the darkest block because it is the window's
+   chrome; the page is the paper; the agent carries the accent tint, so the eye
+   can find it in all four cards and read the shape without the label. The
+   active card takes the same accent wash the theme tiles take, which is what
+   makes the picker's answer legible at a glance. */
+.window-titlebar__trailing .layouts-menu__trigger {
+  appearance: none;
+  width: 2.75rem;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.window-titlebar__trailing .layouts-menu__trigger:hover {
+  background: var(--selected-soft);
+}
+
+/* Open, the trigger keeps the wash the menu controls take under the pointer, so
+   the trigger and its popover read as one thing — the same rule the day/night
+   control wears while its quick menu is up. */
+.window-titlebar__trailing .layouts-menu__trigger[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.layouts-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.layouts-menu__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.layouts-menu__card:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.layouts-menu__card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--text-strong);
+}
+
+.layouts-menu__card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.layouts-menu__card-label {
+  padding-inline: 0.1rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-thumb {
+  display: grid;
+  grid-template-rows: 1fr;
+  gap: 2px;
+  height: 2.75rem;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+}
+
+.layout-thumb--studio {
+  grid-template-columns: 0.22fr 1.55fr 1fr;
+}
+
+.layout-thumb--page-agent,
+.layout-thumb--agent-page {
+  grid-template-columns: 0.22fr 1fr 1fr;
+}
+
+.layout-thumb--agent {
+  grid-template-columns: 0.22fr 1fr;
+}
+
+.layout-thumb__pane {
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--border-soft);
+}
+
+.layout-thumb__pane--rail {
+  background: var(--border);
+}
+
+.layout-thumb__pane--agent {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layouts-menu__card {
+    transition: none;
+  }
 }
 
 .settings-menu__skin-label {
@@ -13836,6 +14000,44 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-md);
 }
 
+/* The bare area lens: no dock pill and no inner `.ui-segmented` frame — the
+   rows are the whole control. Both layers are stripped because the pill is not
+   one frame: `.chrome-dock` draws the filled rounded container and
+   `.domain-switcher__tabs` draws a second hairline and `--bg-subtle` fill inside
+   it, so stripping only the dock still leaves a rounded box on screen. The
+   corner insets (right/bottom 1.25rem) are the placement rules' and stay. */
+.chrome-dock[data-chrome-frame="bare"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* With the container gone each row needs its own surface so the names read as
+   rows rather than as ink on the scene. `:not(.is-active):not(:hover)` is
+   load-bearing: the base hover fill, the `.is-active` fill/border/shadow and
+   the `[aria-checked="true"]` fill must keep winning, so the selected row still
+   reads as selected and hover still answers. */
+.chrome-dock[data-chrome-frame="bare"] .domain-switcher__tabs .ui-segmented__option:not(.is-active):not(:hover) {
+  background: var(--bg-elevated);
+}
+
+/* The rail's column is already the surface, so only the inner frame goes. */
+.nav-rail__lens[data-chrome-frame="bare"] .domain-switcher__tabs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
 .window-titlebar__leading--wings {
   display: flex;
   align-items: center;
@@ -15324,6 +15526,47 @@ button.chat-panel__activity-line:hover {
 
 :root[data-chrome-nav-place="right"] .shell.shell--chat-focus > .chat-panel {
   grid-column: 1;
+  width: 100%;
+}
+
+/* —— The even split beside a moved rail ————————————————————————————————
+   The split's base rule measures the window from the rail's trailing edge; with
+   the rail moved it has to measure from the edge the rail actually owns, or the
+   two panes stop being halves. Same shape as the focus pair above: the
+   placement blocks already say where every pane stands, and these rules restate
+   only the tracks and widths the split changes, one class more specific so they
+   win whatever order the placements were written in.
+
+   A floating rail is out of the tray, so the split is the window itself: two
+   equal panes from glass to glass, the rail's card riding over the page as it
+   does in the studio. The trailing pane keeps carrying the frame slack back.
+   The right-hand rail is the trailing pane and keeps its own escape, so the two
+   surviving panes simply halve the tray. */
+:root[data-chrome-nav-place="floating"] .shell.shell--layout-split {
+  grid-template-columns:
+    0
+    calc((100% + var(--shell-frame)) / 2)
+    calc((100% + var(--shell-frame)) / 2 - var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"] .shell.shell--layout-split > .chat-panel {
+  width: calc(100% + var(--shell-frame));
+}
+
+:root[data-chrome-nav-place="floating"]
+  .shell.shell--layout-split.shell--chat-left
+  > .chat-panel {
+  width: 100%;
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--layout-split {
+  grid-template-columns:
+    calc((100% - var(--nav-column)) / 2)
+    calc((100% - var(--nav-column)) / 2)
+    var(--nav-column);
+}
+
+:root[data-chrome-nav-place="right"] .shell.shell--layout-split > .chat-panel {
   width: 100%;
 }
 

@@ -90,13 +90,14 @@ to keep something the companion says, put it in a page or a note.
 ### Work the recurring block
 
 The **Today & this week** card leads with a **Recurring** block and draws its two
-task columns beneath it. Its rows are the things that come round: what is due today,
-what you did not do, and what falls due later this week.
+task columns beneath it. Its rows are the things that come round and are owed now —
+the ones already **Overdue** and the ones **Due today**. A task due on a later day,
+even later this same week, waits for its own day and is not drawn before it.
 
 1. Read the rows top to bottom. They are in urgency order — the oldest
-   **Overdue** row first, then **Due today**, then **This week** — and each row is
-   the recurring task's title and one state label: **Overdue**, **Due today** or
-   **This week**. The heading's count is the number of rows.
+   **Overdue** row first, then **Due today** — and each row is the recurring
+   task's title and one state label: **Overdue** or **Due today**. The heading's
+   count is the number of rows.
 2. Tick a row to finish that occurrence. The app records the completion, moves
    the task's next due date on, and the row leaves the card with the count
    following it. A tick that fails prints its error on the card instead of moving
@@ -112,7 +113,9 @@ what you did not do, and what falls due later this week.
    there. See [Reviews](./18-reviews.md).
 5. The block's footer link **Manage recurring →** opens the Task Manager's
    **Recurring tasks** section, where a recurring task is added, edited, paused
-   and deleted. See [Task Manager](./14-task-manager.md).
+   and deleted. That list keeps the full schedule — every record with its next
+   due date — so a task waiting for a later day is still there to see and edit;
+   only this card waits for the day. See [Task Manager](./14-task-manager.md).
 
 With nothing due the block says **Nothing recurring due.** and still offers the
 manage link. A paused recurring task is not due, so the card does not draw it
@@ -228,7 +231,7 @@ same menu.
 | Companion brief (`companion-brief`) | The companion's typed items — watch, prompt, ahead, commitment, pattern — in priority order with the reason beneath; items expire and you dismiss them. Seeded first on the board; an empty brief says so |
 | Goals (`goal-progress`) | A count of open goals in the lens. Each goal names the area it is filed under (or **No area**) and, for a metric goal, its current value, pace and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | A **Deadline pressure** banner when an open goal in the lens is due within seven days or already overdue: the first goal's name (or that name and "N others") and **Dismiss**, which hides it until tomorrow |
-| Today & this week (`today-week`) | The card's **Recurring** block leads: the recurring tasks that are overdue, due today or due later this week, each with a tick, and the built-in review rows, which link to the review's page and carry no tick — then **Manage recurring →**. Beneath it, two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done. |
+| Today & this week (`today-week`) | The card's **Recurring** block leads: the recurring tasks that are overdue or due today, each with a tick, and the built-in review rows, which link to the review's page and carry no tick — then **Manage recurring →**. A task due on a later day, even later this same week, waits for its own day. Beneath it, two labelled groups, **Today** and **This week**, each with its task count, and each task with a tick that marks it done. |
 | Pending decisions (`pending-decisions`) | A count, then up to four pending Decisions visible in this lens, linked to the inbox |
 | Recent activity (`recent-log`) | The five newest Life log entries in the lens, one line each: the summary, then the event type and its time |
 
@@ -272,9 +275,10 @@ there is no migration write.
   e.g. **Life dashboard pins**.
 - The **Recurring** block on **Today & this week** is the card's one schedule:
   its rows are read from the recurring records and the review index every time
-  the card draws, so a row is due because its due date is today, earlier, or
-  still to come this week — not because anything was created for it. Drawing the
-  card writes nothing and opens no file.
+  the card draws, so a row is due because its due date is today or earlier — a
+  record dated later, even later this same week, is not drawn until its own day —
+  not because anything was created for it. Drawing the card writes nothing and
+  opens no file.
 - A tick on a **Recurring** row completes that occurrence and writes no board
   change: the record's next due date moves on, so the row leaves the card while
   the task itself stays off the board. The tick is the row's only control; the
