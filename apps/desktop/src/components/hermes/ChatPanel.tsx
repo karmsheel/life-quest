@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
@@ -52,6 +53,7 @@ import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
 import {
   linkHost,
+  parseLink,
   signalStampWhen,
   signalVisible,
 } from "@/lib/signal-chain";
@@ -499,6 +501,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const [signals, setSignals] = useState<SignalRecord[]>([]);
   const [signalsLoaded, setSignalsLoaded] = useState(false);
   const [chainDraft, setChainDraft] = useState("");
+  /**
+   * A link pasted into the chain composer, waiting for the next capture. The
+   * dock takes the page's gesture: a URL on its own becomes the attachment,
+   * never the body's text, and one capture carries one attachment.
+   */
+  const [chainLink, setChainLink] = useState<string | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
   const chainBusyRef = useRef(false);
   /**
@@ -510,8 +518,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const [editingSignalId, setEditingSignalId] = useState<string | null>(null);
   const [signalDraft, setSignalDraft] = useState("");
   const [signalBusyId, setSignalBusyId] = useState<string | null>(null);
-  /** The same two-state rule as the chat field: the arrow needs some text. */
-  const chainSendable = chainDraft.trim().length > 0;
+  /** The same rule as the page's box: words or an attachment make a capture. */
+  const chainSendable = chainDraft.trim().length > 0 || chainLink !== null;
   const chainControlVisible = chainBusy || chainSendable;
   /**
    * A capture may be a picture; the dock draws the same records the page does,
@@ -1214,6 +1222,20 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }, [requestedSessionId]);
 
   /**
+   * A pasted URL is a link capture, exactly as it is on the page: the paste
+   * itself is the gesture, so the URL becomes the chip and never the body's
+   * text. A URL inside a sentence is just text, and pastes a normal way.
+   */
+  function onChainPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    const parsed = parseLink(text);
+    if ("url" in parsed) {
+      e.preventDefault();
+      setChainLink(parsed.url);
+    }
+  }
+
+  /**
    * Log one signal through the same call the page makes. It files `thought` with
    * no title and in Life (general) — the chain is for capture, and the
    * type/title/domain calls belong on the page, where there is room to make
@@ -1223,7 +1245,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   async function onChainSubmit(e: FormEvent) {
     e.preventDefault();
     const body = chainDraft.trim();
-    if (!body || chainBusyRef.current) return;
+    // A link is a capture on its own: the page lets an attachment carry an
+    // empty description, and the dock is the same store, so it does too.
+    if ((!body && !chainLink) || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setChainBusy(true);
     chat.reportError(null);
@@ -1233,12 +1257,19 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
         title: null,
         body,
         domainSlug: null,
+        // Omitted, not null, for a text capture: the page always sends the key,
+        // but the dock's text write has always been these four fields and the
+        // rigs read that shape. A link is the only attachment the dock takes.
+        ...(chainLink
+          ? { attachment: { kind: "link" as const, url: chainLink } }
+          : {}),
       });
       if (!result.ok) {
         chat.reportError(result.error);
         return;
       }
       setChainDraft("");
+      setChainLink(null);
       await loadChain();
     } catch (err) {
       chat.reportError(err instanceof Error ? err.message : "Failed to log the signal");
@@ -1839,21 +1870,28 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               ) : null}
             </>
           )}
+          {/*
+            The area picker belongs to the capture, not to the panel under it:
+            it sits inside the card, after what the card says, at half the
+            card's width. The page's row keeps its picks on the row for the
+            same reason — what it is filed under is part of the row, not a
+            second bar beneath it.
+          */}
+          <select
+            className="chat-panel__chain-assign"
+            aria-label="Assign to area"
+            value={s.domainSlug ?? ""}
+            disabled={busy || editing}
+            onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
+          >
+            <option value="">Life (general)</option>
+            {assignOptions(s).map((d) => (
+              <option key={d.slug} value={d.slug}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          className="chat-panel__chain-assign"
-          aria-label="Assign to area"
-          value={s.domainSlug ?? ""}
-          disabled={busy || editing}
-          onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
-        >
-          <option value="">Life (general)</option>
-          {assignOptions(s).map((d) => (
-            <option key={d.slug} value={d.slug}>
-              {d.name}
-            </option>
-          ))}
-        </select>
       </li>
     );
   }
@@ -2136,8 +2174,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : null}
           {view === "chain" ? (
-            <div className="chat-panel__header">
-              <p className="chat-panel__heading">Notebox</p>
+            <div className="chat-panel__header chat-panel__header--chain">
+              {/*
+                The surface's name, marked by the rail's own Notebox glyph and
+                centred on the band: this is the dock's one page, so the heading
+                is a label for the column rather than a title pinned left of a
+                control. The full-screen door lives in the bottom action bar
+                now, so the band carries nothing but its name.
+              */}
+              <div className="chat-panel__chain-heading">
+                <Inbox size={15} aria-hidden />
+                <p className="chat-panel__heading">Notebox</p>
+              </div>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -2579,6 +2627,37 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 className="chat-panel__composer"
                 onSubmit={(e) => void onChainSubmit(e)}
               >
+                {/*
+                  The link waiting to be logged, above the field: a pasted URL
+                  becomes the capture's attachment, the same gesture the page's
+                  own box takes, so it rides the composer rather than sitting in
+                  the description as text. One attachment per capture, so a new
+                  paste replaces this one.
+                */}
+                {chainLink ? (
+                  <div
+                    className="chat-panel__chain-link-chip"
+                    data-testid="dock-chain-link-chip"
+                  >
+                    <Link2 size={13} aria-hidden />
+                    <span className="chat-panel__chain-link-host">
+                      {linkHost(chainLink) || chainLink}
+                    </span>
+                    <span className="chat-panel__chain-link-url">
+                      {chainLink}
+                    </span>
+                    <button
+                      type="button"
+                      className="chat-panel__chain-link-remove"
+                      aria-label="Remove the attached link"
+                      title="Remove the attached link"
+                      onClick={() => setChainLink(null)}
+                      disabled={chainBusy}
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
                 <div
                   className={
                     chainControlVisible
@@ -2593,6 +2672,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     value={chainDraft}
                     onChange={(e) => setChainDraft(e.target.value)}
                     onKeyDown={onComposerKeyDown}
+                    onPaste={onChainPaste}
                     disabled={chainBusy}
                     rows={2}
                     aria-label="Log a signal"

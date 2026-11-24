@@ -67,6 +67,33 @@ export function formatSignalFileSize(bytes: number): string {
 }
 
 /**
+ * Turn text the operator pasted into a link, or say why it is not one. A paste
+ * that carries a sentence is not this: a URL glued to other words stays text,
+ * and only a single whitespace-free absolute http(s) URL becomes a capture.
+ *
+ * Shared by the Notebox page and the dock's Notebox surface, so a paste that is
+ * a link in one place is a link in the other: one validator, not two that drift.
+ */
+export function parseLink(raw: string): { url: string } | { error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { error: "Paste the link you want to keep." };
+  if (/\s/.test(trimmed)) {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  if (trimmed.length > 2048) return { error: "That link is too long to keep." };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  return { url: parsed.href };
+}
+
+/**
  * The inbox's per-row area label. A row in the inbox must never paint a blank
  * cell, and the general (unassigned) area reads "Life (general)" — the same
  * wording the box and the area filter use, so the one state has one name.

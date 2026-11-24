@@ -346,8 +346,9 @@ describe("chat sessions harness", () => {
         `the swapped-in composer did not take the caret: it is on ${JSON.stringify(chain.active)}`,
       );
 
-      // Two blocks per row, plus the picker under the message and the thread
-      // through the date boxes. Measured, not read off the source.
+      // Two blocks per row, with the picker now inside the message card at its
+      // foot at half the card's width, and the thread through the date boxes.
+      // Measured, not read off the source.
       for (const item of chain.items) {
         assert.ok(
           item.stamp.right <= item.message.left + 1,
@@ -363,9 +364,15 @@ describe("chat sessions harness", () => {
           "the date block and the message block are the same colour",
         );
         assert.ok(
-          item.assignBox.top >= item.message.bottom - 1 &&
-            Math.abs(item.assignBox.left - item.message.left) <= 1,
-          "the assignment picker is not under the message box",
+          item.assignBox.top >= item.message.top - 1 &&
+            item.assignBox.top + item.assignBox.height <=
+              item.message.top + item.message.height + 1 &&
+            item.assignBox.left >= item.message.left - 1 &&
+            item.assignBox.left + item.assignBox.width <=
+              item.message.left + item.message.width + 1 &&
+            item.assignBox.width >= item.message.width * 0.4 - 1 &&
+            item.assignBox.width <= item.message.width * 0.55 + 1,
+          "the assignment picker is not inside the message card at its foot",
         );
         assert.ok(item.day.length > 0 && /\d/.test(item.time), "the stamp misses date or time");
         assert.deepEqual(

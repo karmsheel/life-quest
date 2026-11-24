@@ -2,7 +2,9 @@
  * Drives the Notebox page's general capture surface — text, image, any file and
  * a pasted link — and its inbox triage, in a real Electron window and writes
  * `e2e/artifacts/chain-capture.json` plus the `chain-capture-*.png` captures,
- * the file card's `chain-inbox-file.png` and the inbox's `chain-inbox-triage.png`.
+ * the file card's `chain-inbox-file.png`, the inbox's `chain-inbox-triage.png`,
+ * and the dock composer's `chain-capture-dock-link-pending.png` (a pending
+ * pasted link) and `chain-capture-dock-link.png` (the row it logs).
  *
  * Run with this checkout's dev server up:
  *
@@ -11,7 +13,8 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same claims, no eyeballing the app required. The
  * pictures are the operator-facing half: they show the shipped page with a real
- * uploaded image, a real file card, a pasted link row, and a triaged inbox row.
+ * uploaded image, a real file card, a pasted link row, a triaged inbox row,
+ * and the dock's composer holding a pending pasted link before it logs it.
  *
  * What this rig claims:
  *
@@ -64,6 +67,15 @@
  *     readout holds no control — the switcher at the top is the one picker.
  * 11. No unmodelled bridge call, no console error, nothing spills horizontally
  *     past the window, and every capture is a real picture of the shipped page.
+ * 12. The dock's composer takes the same pasted link as the page: ONE absolute
+ *     http(s) URL is prevented from entering its textarea and becomes a pending
+ *     chip naming the host and the URL; a URL inside a sentence is pasted as
+ *     text; a second URL replaces the chip; a link with an empty description
+ *     arms and shows the dock's Log control; and Log writes one link-only
+ *     capture (`body: ""`, no area) that the dock's own list paints back with a
+ *     timestamp and an external anchor, with no body line. The dock's field and
+ *     chip are read inside `.chat-panel`, because the page's textarea carries
+ *     the same accessible name.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
@@ -95,6 +107,11 @@
  *  i. The link stays paste-only: a driver that clicked a URL field would be
  *     exercising a composer that no longer exists, so the paste dispatches a
  *     real `ClipboardEvent` and the field is asserted to stay free of the URL.
+ *  j. The dock's paste could land on the page's textarea: both fields carry the
+ *     same accessible name, so the dock paste is scoped to `.chat-panel` and
+ *     reads the event's `defaultPrevented`. A dispatch that missed the dock
+ *     field, or a dock handler that never consumed the URL, fails instead of
+ *     reading as "the field is empty".
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -133,6 +150,71 @@ const ATTACHMENT_FILE = {
 
 /** A human file size as the row and the pending chip paint it ("12 KB"). */
 const SIZE_PATTERN = /(\d+(?:\.\d+)?)\s*(B|KB|MB)/;
+
+/**
+ * The dock's own pasted link. It is deliberately a different URL from the
+ * page's link, so a row lookup and the bridge's recorded payload name one
+ * capture unambiguously; the replacement URL proves a second paste swaps the
+ * chip rather than stacking a second pending attachment.
+ */
+const DOCK_LINK_URL = "https://www.are.na/editorial/slow-web";
+const DOCK_LINK_REPLACEMENT_URL = "https://example.org/dock-replacement";
+const DOCK_LINK_SENTENCE =
+  "the slow web piece https://www.are.na/editorial/slow-web is worth a read";
+
+/**
+ * A computed colour as channels in 0..255 and its alpha, or null channels when
+ * the string is not a colour this rig understands. Chromium serialises a
+ * `color-mix(...)` as `color(srgb r g b / a)` with fractional channels, and a
+ * plain colour as `rgb()`/`rgba()`; both are parsed so the page's divider can be
+ * held to "neutral, visible grey" from the live DOM rather than eyeballed.
+ */
+function parseColor(value) {
+  const raw = String(value ?? "").trim();
+  const alphaOf = (token) => {
+    if (token === undefined) return 1;
+    const text = String(token);
+    return text.endsWith("%") ? Number(text.slice(0, -1)) / 100 : Number(text);
+  };
+  const srgb = raw.match(
+    /^color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i,
+  );
+  if (srgb) {
+    return {
+      raw,
+      channels: [1, 2, 3].map((index) => Math.round(Number(srgb[index]) * 255)),
+      alpha: alphaOf(srgb[4]),
+    };
+  }
+  const rgb = raw.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)$/i,
+  );
+  if (rgb) {
+    return {
+      raw,
+      channels: [1, 2, 3].map((index) => Math.round(Number(rgb[index]))),
+      alpha: alphaOf(rgb[4]),
+    };
+  }
+  return { raw, channels: null, alpha: null };
+}
+
+/** The divider's paint as numbers: neutral spread, alpha, luminance. */
+function describeColor(value) {
+  const parsed = parseColor(value);
+  const channels = parsed.channels;
+  return {
+    raw: parsed.raw,
+    channels,
+    alpha: parsed.alpha,
+    spread: channels ? Math.max(...channels) - Math.min(...channels) : null,
+    // Luminance with alpha ignored: the haze is what makes the line visible,
+    // the grey underneath is what makes it neutral.
+    luminance: channels
+      ? Math.round((channels[0] + channels[1] + channels[2]) / 3)
+      : null,
+  };
+}
 
 const failures = [];
 function fail(message) {
@@ -274,6 +356,7 @@ const SAMPLE = `(() => {
       height: Math.round(rect.height),
     };
   };
+  const style = (el, prop) => (el ? getComputedStyle(el)[prop] : null);
   const counts = { rows: rows.length };
   for (const row of rows) {
     const key = row.attachment || "none";
@@ -368,6 +451,95 @@ const SAMPLE = `(() => {
     })(),
     rows,
     counts,
+    // The page column's measured shape: the narrow, centred capture box; the
+    // band and the list at the column's full width; the divider's own paint.
+    // Widths and centres are measured here rather than read off the stylesheet,
+    // so a rule that is overridden or not applied at all fails the check.
+    layout: {
+      composer: box(composer),
+      filters: box(q(".signal-chain__filters")),
+      list: box(q(".signal-chain__list")),
+      row: box(q('[data-testid="signal-row"]')),
+      rowBackground: style(q('[data-testid="signal-row"]'), "backgroundColor"),
+      rowBorderTop: style(q('[data-testid="signal-row"]'), "borderTopColor"),
+      // The sheet both surfaces sit on: the dock paints the background token
+      // with the page, so its own paint is the canvas the pickers step up from.
+      canvasBackground: (() => {
+        const panel = q(".chat-panel");
+        return panel ? getComputedStyle(panel).backgroundColor : null;
+      })(),
+      rule: (() => {
+        const el = q(".signal-chain__rule");
+        if (!el) return { present: false };
+        const computed = getComputedStyle(el);
+        // The line is the border now, not a background fill: the rig reads both
+        // so "dotted grey" cannot pass on a solid block that merely has a
+        // dotted border somewhere. The margins are sampled with the box, so the
+        // air above and below the rule is a measurement, not a stylesheet read.
+        return {
+          present: true,
+          borderTopStyle: computed.borderTopStyle,
+          borderTopWidth: computed.borderTopWidth,
+          borderTopColor: computed.borderTopColor,
+          backgroundColor: computed.backgroundColor,
+          height: computed.height,
+          display: computed.display,
+          marginTop: computed.marginTop,
+          marginBottom: computed.marginBottom,
+          box: box(el),
+        };
+      })(),
+      // The page row's own Area picker: the same flat field as the dock's.
+      domainSelect: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const select = row ? row.querySelector(".signal-row__domain") : null;
+        if (!select) return { present: false };
+        return {
+          present: true,
+          box: box(select),
+          borderTopWidth: style(select, "borderTopWidth"),
+          borderTopStyle: style(select, "borderTopStyle"),
+          borderRadius: style(select, "borderRadius"),
+          background: style(select, "backgroundColor"),
+        };
+      })(),
+      // Every picker on the first card: the redesign makes all four the same
+      // flat field (the one that files, and the three that triage).
+      rowSelects: (() => {
+        const row = q('[data-testid="signal-row"]');
+        if (!row) return [];
+        return Array.from(row.querySelectorAll("select")).map((select) => ({
+          background: style(select, "backgroundColor"),
+          borderTopWidth: style(select, "borderTopWidth"),
+          borderTopStyle: style(select, "borderTopStyle"),
+          borderRadius: style(select, "borderRadius"),
+          value: select.value,
+        }));
+      })(),
+      // The card's act: one prominent button with the layered lift, while the
+      // Edit/Delete icon buttons stay ghost.
+      makeTask: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const button = row ? row.querySelector(".signal-row__make-task") : null;
+        if (!button) return { present: false };
+        return {
+          present: true,
+          text: text(button),
+          disabled: button.disabled === true,
+          boxShadow: style(button, "boxShadow"),
+          backgroundColor: style(button, "backgroundColor"),
+          borderTopColor: style(button, "borderTopColor"),
+          fontWeight: style(button, "fontWeight"),
+          paddingTop: style(button, "paddingTop"),
+          paddingLeft: style(button, "paddingLeft"),
+        };
+      })(),
+      iconButtonShadow: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const button = row ? row.querySelector(".signal-row__icon-btn") : null;
+        return button ? style(button, "boxShadow") : null;
+      })(),
+    },
     // The inbox's own surface: the two filter pickers, the area readout that
     // names the domain picker's lens, and their geometry, plus the two empty
     // lines (no matches vs no records at all).
@@ -412,27 +584,114 @@ const SAMPLE = `(() => {
     inbox: window.chainCaptureInbox ?? null,
     // The dock's own Life-Chain surface, which renders the same records and
     // carries the same Notebox name.
-    dock: {
-      surface: q(".chat-panel")
-        ? q(".chat-panel").getAttribute("data-chat-surface")
-        : null,
-      heading: text(q(".chat-panel__heading")),
-      action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
-      items: all(".chat-panel__chain-item").map((item) => {
-        const linkEl = item.querySelector(".chat-panel__chain-link");
-        return {
-          body: text(item.querySelector(".chat-panel__chain-body")),
-          image: imageOf(item.querySelector(".chat-panel__chain-image")),
-          link: linkEl
+    dock: (() => {
+      const panel = q(".chat-panel");
+      const dockComposer = panel
+        ? panel.querySelector(".chat-panel__composer")
+        : null;
+      const dockTextarea = dockComposer
+        ? dockComposer.querySelector('[aria-label="Log a signal"]')
+        : null;
+      const dockChip = dockComposer
+        ? dockComposer.querySelector('[data-testid="dock-chain-link-chip"]')
+        : null;
+      const dockLog = dockComposer
+        ? dockComposer.querySelector('[aria-label="Log signal"]')
+        : null;
+      // The chain surface's header band: the glyph + name group is absolutely
+      // centred on it, with the focus door trailing in its own corner.
+      const headerEl = panel
+        ? panel.querySelector(".chat-panel__header--chain")
+        : null;
+      const groupEl = headerEl
+        ? headerEl.querySelector(".chat-panel__chain-heading")
+        : null;
+      const headerIconEl = groupEl ? groupEl.querySelector("svg") : null;
+      const headerHeadingEl = headerEl
+        ? headerEl.querySelector(".chat-panel__heading")
+        : null;
+      return {
+        surface: panel ? panel.getAttribute("data-chat-surface") : null,
+        heading: text(q(".chat-panel__heading")),
+        action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
+        header: headerEl
+          ? {
+              heading: text(headerHeadingEl),
+              icon: Boolean(headerIconEl),
+              iconBox: box(headerIconEl),
+              headingBox: box(headerHeadingEl),
+              groupBox: box(groupEl),
+              headerBox: box(headerEl),
+            }
+          : null,
+        items: all(".chat-panel__chain-item").map((item) => {
+          const linkEl = item.querySelector(".chat-panel__chain-link");
+          const messageEl = item.querySelector(".chat-panel__chain-message");
+          const assignEl = item.querySelector(".chat-panel__chain-assign");
+          return {
+            body: text(item.querySelector(".chat-panel__chain-body")),
+            stamp: text(item.querySelector(".chat-panel__chain-stamp")),
+            time: Boolean(item.querySelector(".chat-panel__chain-stamp")),
+            image: imageOf(item.querySelector(".chat-panel__chain-image")),
+            link: linkEl
+              ? {
+                  present: true,
+                  href: linkEl.getAttribute("href"),
+                  target: linkEl.getAttribute("target"),
+                }
+              : { present: false },
+            // The row card's own paint and line, so the dock's card can be held
+            // against the page's: the redesign makes them the same surface.
+            message: messageEl
+              ? {
+                  box: box(messageEl),
+                  background: style(messageEl, "backgroundColor"),
+                  borderTop: style(messageEl, "borderTopColor"),
+                }
+              : null,
+            // The area picker now lives inside the card at its foot: a flat
+            // field on the right, so its own paint and radius are sampled too.
+            assign: assignEl
+              ? {
+                  box: box(assignEl),
+                  aria: assignEl.getAttribute("aria-label"),
+                  borderTopWidth: style(assignEl, "borderTopWidth"),
+                  borderTopStyle: style(assignEl, "borderTopStyle"),
+                  borderRadius: style(assignEl, "borderRadius"),
+                  background: style(assignEl, "backgroundColor"),
+                }
+              : null,
+          };
+        }),
+        // The dock's own composer. Every read is scoped inside the chat panel:
+        // the page's textarea has the same accessible name, and the page's
+        // link chip carries the same remove label, so an unscoped read would
+        // be evidence about the wrong surface.
+        composer: {
+          present: Boolean(dockComposer),
+          textarea: dockTextarea
+            ? {
+                value: dockTextarea.value,
+                disabled: dockTextarea.disabled === true,
+              }
+            : null,
+          chip: dockChip
+            ? { present: true, text: text(dockChip) }
+            : { present: false },
+          remove: Boolean(
+            dockComposer &&
+              dockComposer.querySelector('[aria-label="Remove the attached link"]'),
+          ),
+          log: dockLog
             ? {
                 present: true,
-                href: linkEl.getAttribute("href"),
-                target: linkEl.getAttribute("target"),
+                disabled: dockLog.disabled === true,
+                label: dockLog.getAttribute("aria-label"),
               }
             : { present: false },
-        };
-      }),
-    },
+        },
+      };
+    })(),
     creates: window.chainCaptureCreates ?? [],
     reads: window.chainCaptureReads ?? [],
     fileReads: (window.chainCaptureFileReads ?? []).slice(),
@@ -664,6 +923,36 @@ const pasteText = (text) => `(() => {
     cancelable: true,
   });
   el.dispatchEvent(event);
+  return true;
+})()`;
+
+/**
+ * Paste into the DOCK's chain composer. The page's textarea carries the same
+ * accessible name, so the field is scoped into `.chat-panel`; the return value
+ * names whether the paste reached the field and whether the page's handler
+ * prevented it — "the URL never entered the field" is the evidence, not an
+ * empty value that could also mean the dispatch missed.
+ */
+const pasteDockText = (text) => `(() => {
+  const el = document.querySelector('.chat-panel [aria-label="Log a signal"]');
+  if (!el) return { found: false, prevented: null };
+  el.focus();
+  const data = new DataTransfer();
+  data.setData("text/plain", ${JSON.stringify(text)});
+  const event = new ClipboardEvent("paste", {
+    clipboardData: data,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return { found: true, prevented: event.defaultPrevented === true };
+})()`;
+
+/** Click the dock chain's own Log control, scoped away from the page's Log. */
+const clickDockLog = `(() => {
+  const el = document.querySelector('.chat-panel [aria-label="Log signal"]');
+  if (!el) return false;
+  el.click();
   return true;
 })()`;
 
@@ -2134,6 +2423,351 @@ async function main() {
       `${fs.statSync(path.join(artifactsDir, "chain-capture-dock.png")).size} bytes`,
     );
 
+    // ── 7b. the redesign's measured shape ───────────────────────────────────
+    // The page's capture box is the one narrow thing in a full-width column and
+    // it is centred on the cards; the divider between box and band is a neutral
+    // grey. The dock's cards are the page's cards — no orange fill, the same
+    // hairline — and each row's area picker now sits inside its card at the
+    // foot, at half the card's width. All of it is measured off the live DOM.
+    const layoutState = await sample();
+    const pageLayout = layoutState.layout;
+    const pageRowWidth = pageLayout.row?.width ?? 0;
+    const pageComposerWidth = pageLayout.composer?.width ?? 0;
+    const centreOf = (value) => (value ? value.left + value.width / 2 : null);
+    const dockFirstRow = dockPainted.dock.items[0] ?? null;
+    const dockMessage = dockFirstRow?.message ?? null;
+    const dockAssign = dockFirstRow?.assign ?? null;
+    const dockMessageBox = dockMessage?.box ?? null;
+    const dockAssignBox = dockAssign?.box ?? null;
+    const dockAssignRatio =
+      dockAssignBox && dockMessageBox && dockMessageBox.width > 0
+        ? dockAssignBox.width / dockMessageBox.width
+        : null;
+    const dockAssignBottomGap =
+      dockAssignBox && dockMessageBox
+        ? dockMessageBox.top +
+          dockMessageBox.height -
+          (dockAssignBox.top + dockAssignBox.height)
+        : null;
+    const dockAssignContained =
+      Boolean(dockAssignBox && dockMessageBox) &&
+      dockAssignBox.left >= dockMessageBox.left - 1 &&
+      dockAssignBox.left + dockAssignBox.width <=
+        dockMessageBox.left + dockMessageBox.width + 1 &&
+      dockAssignBox.top >= dockMessageBox.top - 1 &&
+      dockAssignBox.top + dockAssignBox.height <=
+        dockMessageBox.top + dockMessageBox.height + 1;
+
+    // The chain surface's header band, with its glyph+name group and the trailing
+    // focus door, measured against the band's own centre.
+    const dockHeader = layoutState.dock.header;
+    const dockHeaderCentreGap =
+      centreOf(dockHeader?.groupBox) !== null &&
+      centreOf(dockHeader?.headerBox) !== null
+        ? Math.abs(centreOf(dockHeader?.groupBox) - centreOf(dockHeader?.headerBox))
+        : null;
+    const dockHeaderGroupInside =
+      Boolean(dockHeader?.groupBox && dockHeader?.headerBox) &&
+      dockHeader.groupBox.left >= dockHeader.headerBox.left - 1 &&
+      dockHeader.groupBox.left + dockHeader.groupBox.width <=
+        dockHeader.headerBox.left + dockHeader.headerBox.width + 1 &&
+      dockHeader.groupBox.top >= dockHeader.headerBox.top - 1 &&
+      dockHeader.groupBox.top + dockHeader.groupBox.height <=
+        dockHeader.headerBox.top + dockHeader.headerBox.height + 1;
+
+    // The flat left-hand picker: its edges, radius, fill and what it sits on.
+    const dockAssignLeftGap =
+      dockAssignBox && dockMessageBox
+        ? dockAssignBox.left - dockMessageBox.left
+        : null;
+    const dockAssignFlat =
+      dockAssign?.borderTopWidth === "0px" ||
+      dockAssign?.borderTopStyle === "none";
+    const dockAssignRectangular = dockAssign?.borderRadius === "0px";
+    const dockAssignFill = describeColor(dockAssign?.background);
+    const dockAssignLeftOfCentre =
+      centreOf(dockAssignBox) !== null &&
+      centreOf(dockMessageBox) !== null &&
+      centreOf(dockAssignBox) < centreOf(dockMessageBox);
+
+    // The sheet's paint is the floor both pickers must read as a step up from.
+    const canvasPaint = describeColor(pageLayout.canvasBackground);
+    const dockAssignLightness =
+      dockAssignFill.luminance !== null && canvasPaint.luminance !== null
+        ? dockAssignFill.luminance - canvasPaint.luminance
+        : null;
+    const pageDomain = pageLayout.domainSelect;
+    const pageDomainFill = describeColor(pageDomain?.background);
+    const pageDomainLightness =
+      pageDomainFill.luminance !== null && canvasPaint.luminance !== null
+        ? pageDomainFill.luminance - canvasPaint.luminance
+        : null;
+    const pageRowSelects = pageLayout.rowSelects ?? [];
+    // The rule's own breath: its margin, and the air it actually leaves between
+    // the box above and the band below. The column's own gap is part of the air,
+    // so the measurement is what the eye sees rather than the stylesheet's word.
+    const ruleBox = pageLayout.rule?.box ?? null;
+    const ruleAirAbove =
+      ruleBox && pageLayout.composer
+        ? ruleBox.top - (pageLayout.composer.top + pageLayout.composer.height)
+        : null;
+    const ruleAirBelow =
+      ruleBox && pageLayout.filters
+        ? pageLayout.filters.top - (ruleBox.top + ruleBox.height)
+        : null;
+    const pageMakeTask = pageLayout.makeTask;
+    const makeTaskFill = describeColor(pageMakeTask?.backgroundColor);
+    const makeTaskBorder = describeColor(pageMakeTask?.borderTopColor);
+    const makeTaskShadowLayers =
+      String(pageMakeTask?.boxShadow ?? "").match(/rgba?\(/g)?.length ?? 0;
+
+    checks.layout = {
+      page: {
+        composer: pageLayout.composer,
+        filters: pageLayout.filters,
+        list: pageLayout.list,
+        row: pageLayout.row,
+        rowBackground: pageLayout.rowBackground,
+        rowBorderTop: pageLayout.rowBorderTop,
+        canvasBackground: pageLayout.canvasBackground ?? null,
+        canvasPaint,
+        composerToRowRatio:
+          pageRowWidth > 0 ? pageComposerWidth / pageRowWidth : null,
+        composerCentreGap:
+          centreOf(pageLayout.composer) !== null &&
+          centreOf(pageLayout.row) !== null
+            ? Math.abs(centreOf(pageLayout.composer) - centreOf(pageLayout.row))
+            : null,
+        filtersToRowGap:
+          pageLayout.filters && pageLayout.row
+            ? Math.abs(pageLayout.filters.width - pageLayout.row.width)
+            : null,
+        listToRowGap:
+          pageLayout.list && pageLayout.row
+            ? Math.abs(pageLayout.list.width - pageLayout.row.width)
+            : null,
+        rule: {
+          present: pageLayout.rule?.present === true,
+          borderTopStyle: pageLayout.rule?.borderTopStyle ?? null,
+          borderTopWidth: pageLayout.rule?.borderTopWidth ?? null,
+          borderTopColor: pageLayout.rule?.borderTopColor ?? null,
+          backgroundColor: pageLayout.rule?.backgroundColor ?? null,
+          height: pageLayout.rule?.height ?? null,
+          display: pageLayout.rule?.display ?? null,
+          marginTop: pageLayout.rule?.marginTop ?? null,
+          marginBottom: pageLayout.rule?.marginBottom ?? null,
+          box: ruleBox,
+          airAbove: ruleAirAbove,
+          airBelow: ruleAirBelow,
+          borderPaint: describeColor(pageLayout.rule?.borderTopColor),
+          fillPaint: describeColor(pageLayout.rule?.backgroundColor),
+        },
+        domainSelect: {
+          ...(pageDomain ?? { present: false }),
+          fill: pageDomainFill,
+          lightness: pageDomainLightness,
+        },
+        rowSelects: pageRowSelects.map((picker) => ({
+          ...picker,
+          fill: describeColor(picker.background),
+        })),
+        makeTask: {
+          ...(pageMakeTask ?? { present: false }),
+          fill: makeTaskFill,
+          border: makeTaskBorder,
+          shadowLayers: makeTaskShadowLayers,
+        },
+        iconButtonShadow: pageLayout.iconButtonShadow ?? null,
+      },
+      dock: {
+        header: dockHeader ?? null,
+        headerCentreGap: dockHeaderCentreGap,
+        headerGroupInside: dockHeaderGroupInside,
+        card: dockMessage,
+        assign: dockAssign,
+        assignToCardRatio: dockAssignRatio,
+        assignBottomGap: dockAssignBottomGap,
+        assignContained: dockAssignContained,
+        assignFlat: dockAssignFlat,
+        assignRectangular: dockAssignRectangular,
+        assignFill: dockAssignFill,
+        assignLightness: dockAssignLightness,
+        assignLeftGap: dockAssignLeftGap,
+        assignLeftOfCentre: dockAssignLeftOfCentre,
+        cardBackground: dockMessage?.background ?? null,
+        cardBorderTop: dockMessage?.borderTop ?? null,
+        matchesPageBackground:
+          dockMessage?.background === pageLayout.rowBackground,
+        matchesPageBorder: dockMessage?.borderTop === pageLayout.rowBorderTop,
+      },
+    };
+
+    check(
+      "the page's capture box is meaningfully narrower than its cards",
+      pageRowWidth > 0 && pageComposerWidth / pageRowWidth <= 0.75,
+      `composer ${pageComposerWidth}px vs row ${pageRowWidth}px`,
+    );
+    check(
+      "the page's capture box is centred on the card column",
+      centreOf(pageLayout.composer) !== null &&
+        centreOf(pageLayout.row) !== null &&
+        Math.abs(centreOf(pageLayout.composer) - centreOf(pageLayout.row)) <= 2,
+      `composer centre ${centreOf(pageLayout.composer)} vs row centre ${centreOf(pageLayout.row)}`,
+    );
+    check(
+      "the page's filter band keeps the cards' full width",
+      Boolean(pageLayout.filters && pageLayout.row) &&
+        Math.abs(pageLayout.filters.width - pageLayout.row.width) <= 2,
+      `filters ${JSON.stringify(pageLayout.filters)} vs row ${JSON.stringify(pageLayout.row)}`,
+    );
+    check(
+      "the page's chain list keeps the cards' full width",
+      Boolean(pageLayout.list && pageLayout.row) &&
+        Math.abs(pageLayout.list.width - pageLayout.row.width) <= 2,
+      `list ${JSON.stringify(pageLayout.list)} vs row ${JSON.stringify(pageLayout.row)}`,
+    );
+    const ruleBorder = describeColor(pageLayout.rule?.borderTopColor);
+    const ruleFill = describeColor(pageLayout.rule?.backgroundColor);
+    check(
+      "the page divider is a 3px dotted neutral grey rule",
+      pageLayout.rule?.present === true &&
+        pageLayout.rule?.borderTopStyle === "dotted" &&
+        pageLayout.rule?.borderTopWidth === "3px" &&
+        ruleBorder.alpha >= 0.2 &&
+        ruleBorder.spread <= 6 &&
+        ruleBorder.luminance >= 30 &&
+        ruleBorder.luminance <= 200,
+      `rule ${JSON.stringify({ style: pageLayout.rule?.borderTopStyle, width: pageLayout.rule?.borderTopWidth, border: ruleBorder, height: pageLayout.rule?.height })}`,
+    );
+    check(
+      "the page divider paints no solid fill under its border",
+      ruleFill.alpha === 0,
+      `fill ${JSON.stringify(ruleFill)}`,
+    );
+    check(
+      "the page divider leaves a full line of air above and below",
+      parseFloat(pageLayout.rule?.marginTop ?? "0") >= 15 &&
+        parseFloat(pageLayout.rule?.marginBottom ?? "0") >= 15 &&
+        ruleAirAbove !== null &&
+        ruleAirAbove >= 28 &&
+        ruleAirBelow !== null &&
+        ruleAirBelow >= 28,
+      `margins ${pageLayout.rule?.marginTop}/${pageLayout.rule?.marginBottom}, air above ${ruleAirAbove}px below ${ruleAirBelow}px`,
+    );
+    check(
+      "the dock's chain header names the surface",
+      dockHeader?.heading === "Notebox",
+      `header ${JSON.stringify(dockHeader)}`,
+    );
+    check(
+      "the dock's header glyph sits left of its name",
+      dockHeader?.icon === true &&
+        Boolean(dockHeader?.iconBox && dockHeader?.headingBox) &&
+        dockHeader.iconBox.left + dockHeader.iconBox.width <=
+          dockHeader.headingBox.left + 1,
+      `icon ${JSON.stringify(dockHeader?.iconBox)} heading ${JSON.stringify(dockHeader?.headingBox)}`,
+    );
+    check(
+      "the dock's header group is centred on its band",
+      dockHeaderCentreGap !== null && dockHeaderCentreGap <= 2,
+      `group centre gap ${dockHeaderCentreGap} (group ${JSON.stringify(dockHeader?.groupBox)} band ${JSON.stringify(dockHeader?.headerBox)})`,
+    );
+    check(
+      "the dock's header group sits inside the band",
+      dockHeaderGroupInside,
+      `group ${JSON.stringify(dockHeader?.groupBox)} band ${JSON.stringify(dockHeader?.headerBox)}`,
+    );
+    check(
+      "the dock's cards are the page's cards",
+      dockMessage?.background === pageLayout.rowBackground &&
+        dockMessage?.borderTop === pageLayout.rowBorderTop,
+      `dock ${JSON.stringify({ background: dockMessage?.background, borderTop: dockMessage?.borderTop })} vs page ${JSON.stringify({ background: pageLayout.rowBackground, borderTop: pageLayout.rowBorderTop })}`,
+    );
+    check(
+      "the dock's area picker sits inside its card at half the card's width",
+      dockAssignContained &&
+        dockAssign?.aria === "Assign to area" &&
+        (dockAssignRatio ?? 0) >= 0.4 &&
+        (dockAssignRatio ?? 0) <= 0.55 &&
+        dockAssignBottomGap !== null &&
+        dockAssignBottomGap >= 0 &&
+        dockAssignBottomGap <= 16,
+      `assign ${JSON.stringify(dockAssignBox)} in card ${JSON.stringify(dockMessageBox)}, ratio ${dockAssignRatio}, bottom gap ${dockAssignBottomGap}`,
+    );
+    check(
+      "the dock's area picker is a flat rectangular field",
+      dockAssignFlat && dockAssignRectangular,
+      `border-top ${JSON.stringify({ width: dockAssign?.borderTopWidth, style: dockAssign?.borderTopStyle })}, radius ${JSON.stringify(dockAssign?.borderRadius)}`,
+    );
+    check(
+      "the dock's area picker has its own fill",
+      (dockAssignFill.alpha ?? 0) > 0.5,
+      `background ${JSON.stringify(dockAssignFill)}`,
+    );
+    check(
+      "the dock's area picker is a visible step lighter than the sheet",
+      (dockAssignFill.alpha ?? 0) > 0.5 &&
+        dockAssignLightness !== null &&
+        dockAssignLightness >= 15,
+      `picker ${JSON.stringify(dockAssignFill)} vs sheet ${JSON.stringify(canvasPaint)}, luminance step ${dockAssignLightness}`,
+    );
+    check(
+      "the dock's area picker sits on the card's left",
+      dockAssignLeftGap !== null &&
+        dockAssignLeftGap >= 0 &&
+        dockAssignLeftGap <= 16 &&
+        dockAssignLeftOfCentre,
+      `left gap ${dockAssignLeftGap}, assign centre left of card centre ${dockAssignLeftOfCentre} (assign ${JSON.stringify(dockAssignBox)} card ${JSON.stringify(dockMessageBox)})`,
+    );
+    check(
+      "the page's Area picker is the same flat field as the dock's",
+      pageDomain?.present === true &&
+        pageDomain.borderTopWidth === "0px" &&
+        pageDomain.borderTopStyle === "none" &&
+        pageDomain.borderRadius === "0px" &&
+        (pageDomainFill.alpha ?? 0) > 0.5 &&
+        Boolean(pageDomain?.background) &&
+        pageDomain?.background === dockAssign?.background,
+      `page ${JSON.stringify({ border: [pageDomain?.borderTopWidth, pageDomain?.borderTopStyle], radius: pageDomain?.borderRadius, fill: pageDomain?.background })} vs dock ${JSON.stringify(dockAssign?.background)}`,
+    );
+    check(
+      "the page's Area picker is a visible step lighter than the sheet",
+      (pageDomainFill.alpha ?? 0) > 0.5 &&
+        pageDomainLightness !== null &&
+        pageDomainLightness >= 15,
+      `picker ${JSON.stringify(pageDomainFill)} vs sheet ${JSON.stringify(canvasPaint)}, luminance step ${pageDomainLightness}`,
+    );
+    check(
+      "the page's four row pickers are one flat field",
+      pageRowSelects.length === 4 &&
+        pageRowSelects.every(
+          (picker) =>
+            picker.borderTopWidth === "0px" &&
+            picker.borderTopStyle === "none" &&
+            picker.borderRadius === "0px" &&
+            describeColor(picker.background).alpha > 0.5 &&
+            picker.background === dockAssign?.background,
+        ),
+      `pickers ${JSON.stringify(pageRowSelects)} vs dock ${JSON.stringify(dockAssign?.background)}`,
+    );
+    check(
+      "the page card's act is a prominent, filled Make task",
+      pageMakeTask?.present === true &&
+        pageMakeTask.disabled === false &&
+        (pageMakeTask.text === "Make task" || pageMakeTask.text === "Open task") &&
+        pageMakeTask.boxShadow !== "none" &&
+        makeTaskShadowLayers >= 2 &&
+        makeTaskFill.alpha > 0.5 &&
+        makeTaskBorder.alpha > 0 &&
+        parseFloat(pageMakeTask.fontWeight ?? "0") >= 600,
+      `act ${JSON.stringify({ text: pageMakeTask?.text, disabled: pageMakeTask?.disabled, shadow: pageMakeTask?.boxShadow, layers: makeTaskShadowLayers, fill: makeTaskFill, border: makeTaskBorder, weight: pageMakeTask?.fontWeight })}`,
+    );
+    check(
+      "the card's icon controls stay ghost",
+      pageLayout.iconButtonShadow === "none",
+      `icon button shadow ${JSON.stringify(pageLayout.iconButtonShadow)}`,
+    );
+
     // ── 8. the box's area is the lens at the top ─────────────────────────────
     // The box has no area picker of its own: a capture files under the area the
     // switcher has open, and the Life lens (the general area) files it
@@ -2267,6 +2901,269 @@ async function main() {
       filterAfter: backToLife.filterArea,
       lensWrites: backToLife.lensWrites ?? [],
       screenshot: { name: path.basename(lensShot), bytes: lensShotBytes },
+    };
+
+    // ── 9. the dock's composer takes a pasted link ─────────────────────────
+    // The page's box and the dock's box are the same capture surface: one
+    // absolute http(s) URL on its own becomes the attachment, never body text,
+    // and the dock's Log files the same link-only record without a
+    // description. Every read and paste here is scoped inside `.chat-panel`:
+    // the page's textarea carries the same accessible name and the page's chip
+    // carries the same remove label, so an unscoped gesture would prove the
+    // wrong surface. The dock is still on its chain surface from step 7.
+    const dockBase = await sample();
+    const dockLinkBaseline = {
+      dockItems: dockBase.dock.items.length,
+      creates: (dockBase.creates ?? []).length,
+    };
+
+    // A URL inside a sentence is text: the paste is not prevented and no chip
+    // appears. A synthetic paste does not insert anything, so the field stays
+    // empty — the chip is the evidence, not a value that could be pre-filled.
+    const sentencePaste = await js(pasteDockText(DOCK_LINK_SENTENCE));
+    await sleep(250);
+    const sentenceState = await sample();
+    check(
+      "the dock paste helper reaches the dock's own textarea",
+      sentencePaste?.found === true,
+      `paste ${JSON.stringify(sentencePaste)}`,
+    );
+    check(
+      "a URL in a sentence is pasted as text, not prevented",
+      sentencePaste?.prevented === false,
+      `paste ${JSON.stringify(sentencePaste)}`,
+    );
+    check(
+      "a URL in a sentence leaves no pending link chip",
+      sentenceState.dock.composer?.chip?.present === false &&
+        (sentenceState.dock.composer?.textarea?.value ?? "") === "",
+      `composer ${JSON.stringify(sentenceState.dock.composer)}`,
+    );
+
+    // One absolute URL: prevented, gone from the field, a pending chip naming
+    // the host and the URL, and — with an empty description — a visible Log.
+    const dockPaste = await js(pasteDockText(DOCK_LINK_URL));
+    const dockPending = await waitState(
+      (state) =>
+        state.dock.composer?.chip?.present === true &&
+        (state.dock.composer?.chip?.text ?? "").includes("are.na") &&
+        (state.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL) &&
+        !((state.dock.composer?.textarea?.value ?? "").includes(DOCK_LINK_URL)) &&
+        state.dock.composer?.log?.present === true &&
+        state.dock.composer?.log?.disabled === false,
+      "the dock's pasted URL to become a pending link chip with Log armed",
+    );
+    check(
+      "the dock paste helper reached the dock composer",
+      dockPaste?.found === true,
+      `paste ${JSON.stringify(dockPaste)}`,
+    );
+    check(
+      "the dock prevented the pasted URL from entering the field",
+      dockPaste?.prevented === true,
+      `paste ${JSON.stringify(dockPaste)}`,
+    );
+    check(
+      "the dock's pasted URL becomes a chip naming the host",
+      (dockPending.dock.composer?.chip?.text ?? "").includes("are.na"),
+      `chip ${JSON.stringify(dockPending.dock.composer?.chip)}`,
+    );
+    check(
+      "the dock's chip shows the full URL",
+      (dockPending.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL),
+      `chip ${JSON.stringify(dockPending.dock.composer?.chip)}`,
+    );
+    check(
+      "the dock's pasted URL is not left in the textarea",
+      !(dockPending.dock.composer?.textarea?.value ?? "").includes(DOCK_LINK_URL),
+      `field ${JSON.stringify(dockPending.dock.composer?.textarea)}`,
+    );
+    check(
+      "the pending dock chip offers its remove control",
+      dockPending.dock.composer?.remove === true,
+      `composer ${JSON.stringify(dockPending.dock.composer)}`,
+    );
+    check(
+      "a pending dock link arms a visible, enabled Log control",
+      dockPending.dock.composer?.log?.present === true &&
+        dockPending.dock.composer?.log?.disabled === false &&
+        dockPending.dock.composer?.log?.label === "Log signal",
+      `log ${JSON.stringify(dockPending.dock.composer?.log)}`,
+    );
+
+    // A second valid URL replaces the pending chip, one attachment at a time.
+    const replacePaste = await js(pasteDockText(DOCK_LINK_REPLACEMENT_URL));
+    const replaced = await waitState(
+      (state) =>
+        (state.dock.composer?.chip?.text ?? "").includes("example.org") &&
+        !(state.dock.composer?.chip?.text ?? "").includes("are.na"),
+      "the second pasted URL to replace the dock's pending chip",
+    );
+    check(
+      "a second pasted URL replaces the dock's pending link",
+      replacePaste?.prevented === true &&
+        (replaced.dock.composer?.chip?.text ?? "").includes("example.org"),
+      `paste ${JSON.stringify(replacePaste)} chip ${JSON.stringify(replaced.dock.composer?.chip)}`,
+    );
+
+    // Put the first URL back, so the pending picture and the logged record are
+    // the URL this step names.
+    const restorePaste = await js(pasteDockText(DOCK_LINK_URL));
+    const restored = await waitState(
+      (state) =>
+        (state.dock.composer?.chip?.text ?? "").includes("are.na") &&
+        !(state.dock.composer?.chip?.text ?? "").includes("example.org"),
+      "the dock's pending chip to take the pasted URL again",
+    );
+    check(
+      "the dock chip takes a pasted URL again",
+      restorePaste?.prevented === true &&
+        (restored.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL),
+      `paste ${JSON.stringify(restorePaste)} chip ${JSON.stringify(restored.dock.composer?.chip)}`,
+    );
+
+    await sleep(250);
+    const dockPendingShot = await captureFile(
+      "chain-capture-dock-link-pending.png",
+    );
+    const dockPendingShotBytes = fs.statSync(dockPendingShot).size;
+    check(
+      "capture chain-capture-dock-link-pending.png is a real picture",
+      dockPendingShotBytes > 20_000,
+      `${dockPendingShotBytes} bytes`,
+    );
+
+    // Log it: one bridge write with an empty body, no area, and the link.
+    const dockLogClicked = await js(clickDockLog);
+    const dockLogged = await waitState(
+      (state) => {
+        const items = state.dock.items ?? [];
+        const last = items[items.length - 1];
+        return (
+          (state.creates ?? []).length === dockLinkBaseline.creates + 1 &&
+          last?.link?.present === true &&
+          last.link.href === DOCK_LINK_URL
+        );
+      },
+      "the dock's link-only capture to land as the chain's newest row",
+    );
+    const dockCreate = dockLogged.creates[dockLogged.creates.length - 1];
+    const dockItemsAfter = dockLogged.dock.items.length;
+    const dockNewRow = dockLogged.dock.items[dockLogged.dock.items.length - 1];
+
+    check(
+      "the dock's Log control is clickable",
+      dockLogClicked === true,
+      `Log click ${JSON.stringify(dockLogClicked)}`,
+    );
+    check(
+      "the dock's Log files a link attachment",
+      dockCreate?.attachment?.kind === "link" &&
+        dockCreate?.attachment?.url === DOCK_LINK_URL,
+      `create attachment ${JSON.stringify(dockCreate?.attachment)}`,
+    );
+    check(
+      "a link-only dock capture carries an empty body and no area",
+      dockCreate?.body === "" && dockCreate?.domainSlug === null,
+      `create ${JSON.stringify({ body: dockCreate?.body, domainSlug: dockCreate?.domainSlug })}`,
+    );
+    check(
+      "the dock's newest row anchors the pasted URL",
+      dockNewRow?.link?.present === true &&
+        dockNewRow.link.href === DOCK_LINK_URL,
+      `row link ${JSON.stringify(dockNewRow?.link)}`,
+    );
+    check(
+      "the dock's newest anchor opens externally",
+      dockNewRow?.link?.present === true && dockNewRow.link.target === "_blank",
+      `row link ${JSON.stringify(dockNewRow?.link)}`,
+    );
+    check(
+      "the dock's newest row carries a timestamp",
+      dockNewRow?.time === true && Boolean(dockNewRow?.stamp),
+      `row ${JSON.stringify(dockNewRow)}`,
+    );
+    check(
+      "the dock's newest row paints no body paragraph",
+      dockNewRow?.body === null,
+      `row body ${JSON.stringify(dockNewRow?.body)}`,
+    );
+    check(
+      "the dock's chain gained the new row",
+      dockItemsAfter > dockLinkBaseline.dockItems,
+      `${dockLinkBaseline.dockItems} -> ${dockItemsAfter} dock rows`,
+    );
+    // The dock re-reads the whole chain after its own write, so its list is the
+    // chain — including rows filed on the page while the dock was already open
+    // and never re-read. The baseline can lag the bridge; the post-write read
+    // cannot.
+    check(
+      "the dock's chain is the whole chain after its own read",
+      dockItemsAfter === expected.seeded.count + dockLogged.creates.length,
+      `${dockItemsAfter} dock rows vs ${expected.seeded.count} seeded + ${dockLogged.creates.length} captured`,
+    );
+    check(
+      "the dock's capture cleared its chip and draft",
+      dockLogged.dock.composer?.chip?.present === false &&
+        (dockLogged.dock.composer?.textarea?.value ?? "") === "",
+      `composer ${JSON.stringify(dockLogged.dock.composer)}`,
+    );
+
+    // The operator-facing half: scroll the dock's own list to its newest row
+    // so the picture shows the capture, not the top of the chain.
+    await js(`(() => {
+      const list = document.querySelector(".chat-panel__body--chain");
+      if (!list) return false;
+      list.scrollTop = list.scrollHeight;
+      return true;
+    })()`);
+    await sleep(300);
+    const dockLinkShot = await captureFile("chain-capture-dock-link.png");
+    const dockLinkShotBytes = fs.statSync(dockLinkShot).size;
+    check(
+      "capture chain-capture-dock-link.png is a real picture",
+      dockLinkShotBytes > 20_000,
+      `${dockLinkShotBytes} bytes`,
+    );
+
+    checks.dockLink = {
+      url: DOCK_LINK_URL,
+      replacementUrl: DOCK_LINK_REPLACEMENT_URL,
+      sentence: DOCK_LINK_SENTENCE,
+      baseline: dockLinkBaseline,
+      sentencePaste,
+      sentenceComposer: sentenceState.dock.composer,
+      pending: {
+        paste: dockPaste,
+        composer: dockPending.dock.composer,
+      },
+      replacement: {
+        paste: replacePaste,
+        chip: replaced.dock.composer?.chip ?? null,
+      },
+      restored: {
+        paste: restorePaste,
+        chip: restored.dock.composer?.chip ?? null,
+      },
+      create: dockCreate ?? null,
+      row: dockNewRow ?? null,
+      createsAfter: dockLogged.creates.length,
+      itemsAfter: dockItemsAfter,
+      added: dockItemsAfter - dockLinkBaseline.dockItems,
+      cleared: {
+        chipPresent: dockLogged.dock.composer?.chip?.present === true,
+        textarea: dockLogged.dock.composer?.textarea?.value ?? null,
+      },
+      screenshots: {
+        pending: {
+          name: path.basename(dockPendingShot),
+          bytes: dockPendingShotBytes,
+        },
+        logged: {
+          name: path.basename(dockLinkShot),
+          bytes: dockLinkShotBytes,
+        },
+      },
     };
 
     // ── report ─────────────────────────────────────────────────────────────

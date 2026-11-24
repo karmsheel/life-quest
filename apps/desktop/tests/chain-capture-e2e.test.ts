@@ -25,9 +25,11 @@ import { describe, it } from "node:test";
  *
  * The artifact is `e2e/artifacts/chain-capture.json` plus the captures the
  * driver takes — the seeded chain, a text capture, an uploaded image row, a
- * non-image file card (`chain-inbox-file.png`), a pasted link row, and the
- * triaged inbox (`chain-inbox-triage.png`) — each of which must be a real
- * capture of the shipped page, not an empty file.
+ * non-image file card (`chain-inbox-file.png`), a pasted link row, the dock's
+ * pending pasted link and the row it logs (`chain-capture-dock-link-pending.png`,
+ * `chain-capture-dock-link.png`), and the triaged inbox
+ * (`chain-inbox-triage.png`) — each of which must be a real capture of the
+ * shipped page, not an empty file.
  */
 
 const desktopRoot = path.resolve(
@@ -50,6 +52,8 @@ const CAPTURES = [
   "chain-inbox-file.png",
   "chain-capture-link.png",
   "chain-capture-dock.png",
+  "chain-capture-dock-link-pending.png",
+  "chain-capture-dock-link.png",
   "chain-inbox-triage.png",
 ];
 
@@ -102,6 +106,38 @@ type Select = {
 };
 
 type Box = { left: number; top: number; width: number; height: number };
+
+/** One row of the dock's chain list: its body, timestamp and attachments. */
+type DockItem = {
+  body: string | null;
+  stamp: string | null;
+  time: boolean;
+  image: Picture;
+  link:
+    | { present: true; href: string | null; target: string | null }
+    | { present: false };
+};
+
+/** The dock's own composer, read scoped inside `.chat-panel`. */
+type DockComposer = {
+  present: boolean;
+  textarea: { value: string; disabled: boolean } | null;
+  chip: { present: boolean; text?: string | null };
+  remove: boolean;
+  log: { present: boolean; disabled: boolean; label: string | null };
+};
+
+/** What one dispatched paste reported: did it land, was the default prevented. */
+type DockPaste = { found: boolean; prevented: boolean | null };
+
+/** The divider's computed paint, parsed into channels, alpha and derived numbers. */
+type LayoutColor = {
+  raw: string | null;
+  channels: number[] | null;
+  alpha: number | null;
+  spread: number | null;
+  luminance: number | null;
+};
 
 /** The box's area readout: the lens it files under, and no control of its own. */
 type ComposerArea = {
@@ -354,6 +390,130 @@ type Report = {
       filterAfter: AreaReadout;
       lensWrites: (string | null)[];
       screenshot: { name: string; bytes: number };
+    };
+    dockLink: {
+      url: string;
+      replacementUrl: string;
+      sentence: string;
+      baseline: { dockItems: number; creates: number };
+      sentencePaste: DockPaste;
+      sentenceComposer: DockComposer;
+      pending: { paste: DockPaste; composer: DockComposer };
+      replacement: { paste: DockPaste; chip: DockComposer["chip"] | null };
+      restored: { paste: DockPaste; chip: DockComposer["chip"] | null };
+      create: Create | null;
+      row: DockItem | null;
+      createsAfter: number;
+      itemsAfter: number;
+      added: number;
+      cleared: { chipPresent: boolean; textarea: string | null };
+      screenshots: {
+        pending: { name: string; bytes: number };
+        logged: { name: string; bytes: number };
+      };
+    };
+    layout: {
+      page: {
+        composer: Box | null;
+        filters: Box | null;
+        list: Box | null;
+        row: Box | null;
+        rowBackground: string | null;
+        rowBorderTop: string | null;
+        canvasBackground: string | null;
+        canvasPaint: LayoutColor;
+        composerToRowRatio: number | null;
+        composerCentreGap: number | null;
+        filtersToRowGap: number | null;
+        listToRowGap: number | null;
+        rule: {
+          present: boolean;
+          borderTopStyle: string | null;
+          borderTopWidth: string | null;
+          borderTopColor: string | null;
+          backgroundColor: string | null;
+          height: string | null;
+          display: string | null;
+          marginTop: string | null;
+          marginBottom: string | null;
+          box: Box | null;
+          airAbove: number | null;
+          airBelow: number | null;
+          borderPaint: LayoutColor;
+          fillPaint: LayoutColor;
+        };
+        domainSelect: {
+          present: boolean;
+          box?: Box;
+          borderTopWidth?: string | null;
+          borderTopStyle?: string | null;
+          borderRadius?: string | null;
+          background?: string | null;
+          fill: LayoutColor;
+          lightness: number | null;
+        };
+        rowSelects: {
+          background: string | null;
+          borderTopWidth: string | null;
+          borderTopStyle: string | null;
+          borderRadius: string | null;
+          value: string;
+          fill: LayoutColor;
+        }[];
+        makeTask: {
+          present: boolean;
+          text?: string | null;
+          disabled?: boolean;
+          boxShadow?: string | null;
+          backgroundColor?: string | null;
+          borderTopColor?: string | null;
+          fontWeight?: string | null;
+          paddingTop?: string | null;
+          paddingLeft?: string | null;
+          fill: LayoutColor;
+          border: LayoutColor;
+          shadowLayers: number;
+        };
+        iconButtonShadow: string | null;
+      };
+      dock: {
+        header: {
+          heading: string | null;
+          icon: boolean;
+          iconBox: Box | null;
+          headingBox: Box | null;
+          groupBox: Box | null;
+          headerBox: Box | null;
+        } | null;
+        headerCentreGap: number | null;
+        headerGroupInside: boolean;
+        card: {
+          box: Box;
+          background: string | null;
+          borderTop: string | null;
+        } | null;
+        assign: {
+          box: Box;
+          aria: string | null;
+          borderTopWidth: string | null;
+          borderTopStyle: string | null;
+          borderRadius: string | null;
+          background: string | null;
+        } | null;
+        assignToCardRatio: number | null;
+        assignBottomGap: number | null;
+        assignContained: boolean;
+        assignFlat: boolean;
+        assignRectangular: boolean;
+        assignFill: LayoutColor;
+        assignLightness: number | null;
+        assignLeftGap: number | null;
+        assignLeftOfCentre: boolean;
+        cardBackground: string | null;
+        cardBorderTop: string | null;
+        matchesPageBackground: boolean;
+        matchesPageBorder: boolean;
+      };
     };
   };
 };
@@ -673,6 +833,415 @@ describe("Notebox page — general capture", () => {
     assert.equal(lens.filterAfter.value, "Life (general)");
     assert.equal(lens.filterAfter.slug, "");
     assert.ok(lens.screenshot.bytes > 20_000, "the area capture looks empty");
+
+    // ── the dock's composer takes a pasted link ─────────────────────────────
+    // The page's box and the dock's box are one capture surface: a URL pasted
+    // into the dock's field is prevented from entering as text, becomes a
+    // pending chip, and Log writes one link-only record the dock paints back
+    // with a timestamp and an external anchor — no body line.
+    const dockLink = checks.dockLink;
+    assert.equal(
+      dockLink.pending.paste.found,
+      true,
+      "the dock paste never reached the dock's textarea",
+    );
+    assert.equal(
+      dockLink.pending.paste.prevented,
+      true,
+      "the dock did not consume the pasted URL",
+    );
+    assert.equal(
+      dockLink.pending.composer.chip.present,
+      true,
+      "the dock left no pending link chip",
+    );
+    assert.match(
+      dockLink.pending.composer.chip.text ?? "",
+      /are\.na/,
+      "the dock chip does not show the host",
+    );
+    assert.match(
+      dockLink.pending.composer.chip.text ?? "",
+      /https:\/\/www\.are\.na\/editorial\/slow-web/,
+      "the dock chip does not show the full URL",
+    );
+    assert.ok(
+      !(dockLink.pending.composer.textarea?.value ?? "").includes(dockLink.url),
+      "the dock left the pasted URL in its textarea",
+    );
+    assert.equal(
+      dockLink.pending.composer.remove,
+      true,
+      "no Remove the attached link control in the dock",
+    );
+    assert.equal(
+      dockLink.pending.composer.log.present,
+      true,
+      "the dock's Log control is hidden with a link pending",
+    );
+    assert.equal(
+      dockLink.pending.composer.log.disabled,
+      false,
+      "the dock's Log control is disabled with a link pending",
+    );
+    assert.equal(dockLink.pending.composer.log.label, "Log signal");
+
+    // A URL inside a sentence is text: not prevented, no chip, no draft.
+    assert.equal(dockLink.sentencePaste.found, true);
+    assert.equal(
+      dockLink.sentencePaste.prevented,
+      false,
+      "a URL inside a sentence was turned into a link",
+    );
+    assert.equal(dockLink.sentenceComposer.chip.present, false);
+    assert.equal(dockLink.sentenceComposer.textarea?.value, "");
+
+    // One attachment at a time: a second valid URL replaces the pending chip.
+    assert.equal(dockLink.replacement.paste.prevented, true);
+    assert.match(dockLink.replacement.chip?.text ?? "", /example\.org/);
+    assert.ok(
+      !(dockLink.replacement.chip?.text ?? "").includes("are.na"),
+      "the replacement chip still names the first host",
+    );
+    assert.match(dockLink.restored.chip?.text ?? "", /are\.na/);
+
+    // Log: a link-only capture with no body and no area, and the dock's own
+    // list paints it last (oldest-first) with a timestamp and the anchor.
+    assert.equal(dockLink.create?.attachment?.kind, "link");
+    assert.equal(dockLink.create?.attachment?.url, dockLink.url);
+    assert.equal(dockLink.create?.body, "", "a link-only capture was given a body");
+    assert.equal(
+      dockLink.create?.domainSlug,
+      null,
+      "a link-only capture was filed under an area",
+    );
+    assert.ok(dockLink.row, "the logged link is not the dock's newest row");
+    assert.equal(
+      dockLink.row?.link.present ? dockLink.row.link.href : null,
+      dockLink.url,
+    );
+    assert.equal(
+      dockLink.row?.link.present ? dockLink.row.link.target : null,
+      "_blank",
+    );
+    assert.equal(dockLink.row?.time, true, "the dock's new row has no timestamp");
+    assert.equal(
+      dockLink.row?.body,
+      null,
+      "the dock's link-only row paints a body line",
+    );
+    assert.ok(
+      dockLink.added >= 1,
+      `the dock gained no row (${dockLink.baseline.dockItems} -> ${dockLink.itemsAfter})`,
+    );
+    assert.equal(
+      dockLink.createsAfter,
+      dockLink.baseline.creates + 1,
+      "the dock's Log did not write exactly one signal",
+    );
+    assert.equal(
+      dockLink.itemsAfter,
+      expected.seeded.count + dockLink.createsAfter,
+      "the dock's list is not the whole chain after its own read",
+    );
+    assert.equal(
+      dockLink.cleared.chipPresent,
+      false,
+      "the dock kept its pending chip after logging",
+    );
+    assert.equal(dockLink.cleared.textarea, "");
+    assert.ok(
+      dockLink.screenshots.pending.bytes > 20_000,
+      "the dock's pending-link capture looks empty",
+    );
+    assert.equal(
+      dockLink.screenshots.pending.name,
+      "chain-capture-dock-link-pending.png",
+    );
+    assert.ok(
+      dockLink.screenshots.logged.bytes > 20_000,
+      "the dock's logged-link capture looks empty",
+    );
+    assert.equal(
+      dockLink.screenshots.logged.name,
+      "chain-capture-dock-link.png",
+    );
+
+    // ── the redesign's measured shape ──────────────────────────────────────
+    // The page's capture box is the one narrow, centred thing in a full-width
+    // column; the band and list keep the cards' width; the divider is a dotted
+    // neutral grey rule painted by its border, with no solid fill. The dock's
+    // row cards are the page's cards, its header glyph+name group is centred on
+    // the band, and each row's area picker is a flat filled field on its right.
+    const layout = checks.layout;
+    assert.ok(layout.page.composer, "the page has no composer box to measure");
+    assert.ok(layout.page.row, "the page has no row card to measure");
+    assert.ok(
+      (layout.page.composerToRowRatio ?? 1) <= 0.75,
+      `the capture box is ${Math.round((layout.page.composerToRowRatio ?? 0) * 100)}% of a card's width ` +
+        `(${layout.page.composer?.width}px vs ${layout.page.row?.width}px)`,
+    );
+    assert.ok(
+      (layout.page.composerCentreGap ?? 99) <= 2,
+      `the capture box is ${layout.page.composerCentreGap}px off the cards' centre`,
+    );
+    assert.ok(
+      (layout.page.filtersToRowGap ?? 99) <= 2,
+      `the filter band is ${layout.page.filtersToRowGap}px off the cards' width ` +
+        `(${layout.page.filters?.width}px vs ${layout.page.row?.width}px)`,
+    );
+    assert.ok(
+      (layout.page.listToRowGap ?? 99) <= 2,
+      `the chain list is ${layout.page.listToRowGap}px off the cards' width ` +
+        `(${layout.page.list?.width}px vs ${layout.page.row?.width}px)`,
+    );
+
+    // Divider: a 3px dotted line drawn by the border, not a solid background
+    // block, in a neutral visible grey.
+    const rule = layout.page.rule;
+    const ruleBorder = rule.borderPaint;
+    assert.equal(rule.present, true, "no divider above the filter band");
+    assert.equal(rule.borderTopStyle, "dotted", "the divider is not a dotted rule");
+    assert.equal(
+      rule.borderTopWidth,
+      "3px",
+      `the divider border is ${rule.borderTopWidth}, not 3px`,
+    );
+    assert.ok(
+      (ruleBorder.alpha ?? 0) >= 0.2,
+      `the divider border is too faint: ${JSON.stringify(ruleBorder)}`,
+    );
+    assert.ok(
+      (ruleBorder.spread ?? 99) <= 6,
+      `the divider border is not neutral: ${JSON.stringify(ruleBorder)}`,
+    );
+    assert.ok(
+      (ruleBorder.luminance ?? 0) >= 30 && (ruleBorder.luminance ?? 0) <= 200,
+      `the divider border luminance is ${ruleBorder.luminance} (raw ${ruleBorder.raw})`,
+    );
+    assert.equal(
+      rule.fillPaint.alpha,
+      0,
+      `the divider still paints a solid fill: ${JSON.stringify(rule.fillPaint)}`,
+    );
+    // The air is measured, not read off the stylesheet: the margins, and the
+    // space the box above and the band below actually leave around the rule.
+    assert.ok(
+      parseFloat(rule.marginTop ?? "0") >= 15,
+      `the divider's top margin is ${rule.marginTop}, not a full line of air`,
+    );
+    assert.ok(
+      parseFloat(rule.marginBottom ?? "0") >= 15,
+      `the divider's bottom margin is ${rule.marginBottom}, not a full line of air`,
+    );
+    assert.ok(
+      (rule.airAbove ?? 0) >= 28,
+      `only ${rule.airAbove}px of air above the divider`,
+    );
+    assert.ok(
+      (rule.airBelow ?? 0) >= 28,
+      `only ${rule.airBelow}px of air below the divider`,
+    );
+
+    // The chain surface's header: the Inbox glyph left of the name, the group
+    // absolutely centred on the band and held inside it.
+    const header = layout.dock.header;
+    assert.ok(header, "the dock's chain surface has no header to measure");
+    assert.equal(header?.heading, "Notebox", "the dock's chain header is not Notebox");
+    assert.equal(header?.icon, true, "the dock's chain header has no glyph");
+    assert.ok(
+      header?.iconBox &&
+        header?.headingBox &&
+        header.iconBox.left + header.iconBox.width <=
+          header.headingBox.left + 1,
+      `the glyph is not left of the name: icon ${JSON.stringify(header?.iconBox)} heading ${JSON.stringify(header?.headingBox)}`,
+    );
+    assert.ok(
+      (layout.dock.headerCentreGap ?? 99) <= 2,
+      `the header group is ${layout.dock.headerCentreGap}px off the band's centre ` +
+        `(group ${JSON.stringify(header?.groupBox)} band ${JSON.stringify(header?.headerBox)})`,
+    );
+    assert.equal(
+      layout.dock.headerGroupInside,
+      true,
+      `the header group is not inside the band: group ${JSON.stringify(header?.groupBox)} band ${JSON.stringify(header?.headerBox)}`,
+    );
+
+    // Cards and the picker inside them.
+    assert.ok(layout.dock.card, "the dock's first row has no card to measure");
+    assert.ok(layout.dock.assign, "the dock's first row has no area picker to measure");
+    assert.equal(
+      layout.dock.card?.background,
+      layout.page.rowBackground,
+      "the dock's card is painted differently from the page's card",
+    );
+    assert.equal(
+      layout.dock.card?.borderTop,
+      layout.page.rowBorderTop,
+      "the dock's card hairline is not the page card's",
+    );
+    assert.equal(layout.dock.matchesPageBackground, true);
+    assert.equal(layout.dock.matchesPageBorder, true);
+    assert.equal(layout.dock.assign?.aria, "Assign to area");
+    assert.equal(
+      layout.dock.assignContained,
+      true,
+      `the area picker is not inside its card: ${JSON.stringify(layout.dock.assign?.box)} in ${JSON.stringify(layout.dock.card?.box)}`,
+    );
+    assert.ok(
+      (layout.dock.assignToCardRatio ?? 0) >= 0.4 &&
+        (layout.dock.assignToCardRatio ?? 0) <= 0.55,
+      `the area picker is ${Math.round((layout.dock.assignToCardRatio ?? 0) * 100)}% of its card's width`,
+    );
+    assert.ok(
+      (layout.dock.assignBottomGap ?? 99) >= 0 &&
+        (layout.dock.assignBottomGap ?? 99) <= 16,
+      `the area picker sits ${layout.dock.assignBottomGap}px from its card's foot`,
+    );
+    assert.equal(
+      layout.dock.assignFlat,
+      true,
+      `the area picker still has a border: ${JSON.stringify({ width: layout.dock.assign?.borderTopWidth, style: layout.dock.assign?.borderTopStyle })}`,
+    );
+    assert.equal(
+      layout.dock.assignRectangular,
+      true,
+      `the area picker is still rounded: ${layout.dock.assign?.borderRadius}`,
+    );
+    assert.ok(
+      (layout.dock.assignFill.alpha ?? 0) > 0.5,
+      `the area picker has no fill of its own: ${JSON.stringify(layout.dock.assignFill)}`,
+    );
+    // The fill is a visible step up from the sheet both surfaces sit on.
+    const canvas = layout.page.canvasPaint;
+    assert.ok(
+      canvas.alpha !== null,
+      `the sheet has no readable paint: ${JSON.stringify(canvas)}`,
+    );
+    assert.ok(
+      (layout.dock.assignLightness ?? 0) >= 15,
+      `the dock's picker is only ${layout.dock.assignLightness} luminance steps above the sheet ` +
+        `(${JSON.stringify(layout.dock.assignFill)} vs ${JSON.stringify(canvas)})`,
+    );
+    assert.ok(
+      layout.dock.assignLeftGap !== null &&
+        layout.dock.assignLeftGap >= 0 &&
+        layout.dock.assignLeftGap <= 16,
+      `the area picker is ${layout.dock.assignLeftGap}px from the card's left edge`,
+    );
+    assert.equal(
+      layout.dock.assignLeftOfCentre,
+      true,
+      "the area picker is not on the card's left half",
+    );
+
+    // The page's own Area picker is that same field: flat, square, filled with
+    // the same colour as the dock's.
+    const domainPicker = layout.page.domainSelect;
+    assert.equal(
+      domainPicker.present,
+      true,
+      "the page's first row has no Area picker to measure",
+    );
+    assert.equal(
+      domainPicker.borderTopWidth,
+      "0px",
+      `the page's Area picker still has a border: ${domainPicker.borderTopWidth}`,
+    );
+    assert.equal(
+      domainPicker.borderTopStyle,
+      "none",
+      `the page's Area picker still has a border: ${domainPicker.borderTopStyle}`,
+    );
+    assert.equal(
+      domainPicker.borderRadius,
+      "0px",
+      `the page's Area picker is still rounded: ${domainPicker.borderRadius}`,
+    );
+    assert.ok(
+      (domainPicker.fill.alpha ?? 0) > 0.5,
+      `the page's Area picker has no fill: ${JSON.stringify(domainPicker.fill)}`,
+    );
+    assert.equal(
+      domainPicker.background,
+      layout.dock.assign?.background,
+      "the page's Area picker is painted differently from the dock's",
+    );
+    assert.ok(
+      (domainPicker.lightness ?? 0) >= 15,
+      `the page's Area picker is only ${domainPicker.lightness} luminance steps above the sheet ` +
+        `(${JSON.stringify(domainPicker.fill)} vs ${JSON.stringify(canvas)})`,
+    );
+    // All four pickers on the card are that same flat field now: the one that
+    // files (Area) and the three that triage read as one control design.
+    const rowPickers = layout.page.rowSelects;
+    assert.equal(
+      rowPickers.length,
+      4,
+      `the first card holds ${rowPickers.length} pickers, not four`,
+    );
+    for (const picker of rowPickers) {
+      assert.equal(
+        picker.borderTopWidth,
+        "0px",
+        `a row picker still has a border (value ${JSON.stringify(picker.value)}): ${picker.borderTopWidth}`,
+      );
+      assert.equal(
+        picker.borderTopStyle,
+        "none",
+        `a row picker still has a border (value ${JSON.stringify(picker.value)}): ${picker.borderTopStyle}`,
+      );
+      assert.equal(
+        picker.borderRadius,
+        "0px",
+        `a row picker is still rounded (value ${JSON.stringify(picker.value)}): ${picker.borderRadius}`,
+      );
+      assert.ok(
+        (picker.fill.alpha ?? 0) > 0.5,
+        `a row picker has no fill (value ${JSON.stringify(picker.value)}): ${JSON.stringify(picker.background)}`,
+      );
+      assert.equal(
+        picker.background,
+        layout.dock.assign?.background,
+        `row picker ${JSON.stringify(picker.value)} is painted differently from the dock's`,
+      );
+    }
+
+    // The card's act is the one prominent control: filled, lifted by a layered
+    // shadow, heavier text; the Edit/Delete icon buttons stay flat.
+    const makeTask = layout.page.makeTask;
+    assert.equal(makeTask.present, true, "the page card has no Make task control");
+    assert.equal(
+      makeTask.disabled,
+      false,
+      "the Make task control is disabled, so its shipped lift cannot be judged",
+    );
+    assert.ok(
+      makeTask.text === "Make task" || makeTask.text === "Open task",
+      `the act reads ${JSON.stringify(makeTask.text)}`,
+    );
+    assert.notEqual(makeTask.boxShadow, "none", "the Make task control has no lift");
+    assert.ok(
+      (makeTask.shadowLayers ?? 0) >= 2,
+      `the Make task shadow has ${makeTask.shadowLayers} layer(s): ${JSON.stringify(makeTask.boxShadow)}`,
+    );
+    assert.ok(
+      (makeTask.fill.alpha ?? 0) > 0.5,
+      `the Make task control is not filled: ${JSON.stringify(makeTask.fill)}`,
+    );
+    assert.ok(
+      (makeTask.border.alpha ?? 0) > 0,
+      `the Make task control has a transparent border: ${JSON.stringify(makeTask.border)}`,
+    );
+    assert.ok(
+      parseFloat(makeTask.fontWeight ?? "0") >= 600,
+      `the Make task weight is ${makeTask.fontWeight}`,
+    );
+    assert.equal(
+      layout.page.iconButtonShadow,
+      "none",
+      `the Edit/Delete icon buttons are lifted too: ${JSON.stringify(layout.page.iconButtonShadow)}`,
+    );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
     assert.equal(checks.final.rows, expected.seeded.count + 5);

@@ -7906,6 +7906,31 @@ a.home-mini-list__link:hover {
   letter-spacing: 0.02em;
 }
 
+/* The chain surface's header: the Notebox glyph and its name centred on the
+   band, with the focus door left in the trailing corner. The group is taken out
+   of the flex line and centred on the header's own width, so it stays on the
+   band's centre whether or not the actions at the end have anything in them. */
+.chat-panel__header--chain {
+  position: relative;
+  justify-content: flex-end;
+}
+
+.chat-panel__chain-heading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.chat-panel__chain-heading svg {
+  color: var(--muted);
+}
+
 /* Body and composer belong to the thread view. `hidden` needs the explicit
    override below because both elements set `display: flex`. */
 .chat-panel__body[hidden],
@@ -10576,17 +10601,14 @@ button.chat-panel__activity-line:hover {
   border-left: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent);
 }
 
-/* One signal: the rail, the message beside it, and the assignment picker under
-   the message. `when` spans both rows — that is what gives the rail the full
-   height of the row for the thread to run down. */
+/* One signal: the rail and the message card beside it. The date stamp spans the
+   row, which is what gives the rail the row's height for the thread to run
+   down. */
 .chat-panel__chain-item {
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-areas:
-    "when message"
-    "when assign";
+  grid-template-areas: "when message";
   column-gap: 0.5rem;
-  row-gap: 0.3rem;
   align-items: start;
 }
 
@@ -10624,13 +10646,17 @@ button.chat-panel__activity-line:hover {
   font-weight: 600;
 }
 
+/* The card is the page's card, in miniature: the sheet's own ink with the one
+   hairline around it, not a tinted slab. The page's `.signal-row` paints on the
+   page canvas and so does this; an accent fill here read as a different, louder
+   surface than the chain it mirrors. */
 .chat-panel__chain-message {
   grid-area: message;
   position: relative;
   padding: 0.5rem 1.5rem 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  background: transparent;
 }
 
 .chat-panel__chain-body {
@@ -10685,6 +10711,68 @@ button.chat-panel__activity-line:hover {
 
 .chat-panel__chain-link:hover {
   text-decoration: underline;
+}
+
+/* A link waiting on the dock's chain composer, above the field: the page's
+   pending-link chip, narrowed for a 20rem column. Host and address share one
+   line; the address ellipsizes so a long URL never pushes the X off the row. */
+.chat-panel__chain-link-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.32rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.chat-panel__chain-link-chip svg {
+  flex: none;
+}
+
+.chat-panel__chain-link-host {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chat-panel__chain-link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.chat-panel__chain-link-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__chain-link-remove:not(:disabled):hover {
+  color: var(--accent);
+}
+
+.chat-panel__chain-link-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* A titled signal keeps its title: the panel's composer never writes one, so a
@@ -10780,20 +10868,31 @@ button.chat-panel__activity-line:hover {
   gap: 0.4rem;
 }
 
-/* The assignment picker, under the message box: it lines up with the box and
-   not with the rail, so what the row says and where it is filed read as one
-   column. */
+/* The assignment picker, inside the card at its foot on the left: half the
+   card's width, under what the row says, so the area it is filed under reads
+   as part of the capture rather than as a bar beneath it. It is a flat field,
+   not an outlined control: its own lifted fill separates it from the card, and
+   square corners keep it from looking like a second rounded card inside the
+   first. */
 .chat-panel__chain-assign {
-  grid-area: assign;
-  width: 100%;
-  padding: 0.2rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--bg);
-  color: var(--muted);
+  display: block;
+  width: 50%;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+  color: var(--fg);
   font: inherit;
   font-size: 0.6875rem;
   cursor: pointer;
+}
+
+/* No outline by default, so focus paints its own ring: the field must stay
+   findable from the keyboard. */
+.chat-panel__chain-assign:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .chat-panel__chain-empty {
@@ -10820,11 +10919,19 @@ button.chat-panel__activity-line:hover {
 /* The capture box: one bordered surface holds the field AND its control row.
    The textarea has no frame of its own — the card is the input — so the plus,
    the area picker and Log sit inside the box the operator types in, not on a
-   bar beneath it. Three rows that grow on request keep the box compact. */
+   bar beneath it. Three rows that grow on request keep the box compact.
+
+   The box is the one narrow thing on the page: the chain below it keeps the
+   column's full width, because the list is what the eye reads, and a composer
+   the width of the list would read as the first row of it rather than the one
+   place a thought goes. Centred so both edges step in by the same breath. */
 .signal-chain__composer {
   display: flex;
   flex-direction: column;
   gap: 0;
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
   padding: 0;
   background: var(--bg);
   border: 1px solid var(--composer-border);
@@ -10934,13 +11041,21 @@ button.chat-panel__activity-line:hover {
   margin: 0.6rem 0.7rem 0;
 }
 
-/* The capture box and the filters are different jobs, so a hairline and a
-   breath of space sit between them: the box is not the first filter row. */
+/* The capture box and the filters are different jobs, so a rule and a breath of
+   space sit between them: the box is not the first filter row. The line is a
+   dotted neutral grey from the palette, not the cards' ember outline — it
+   divides the page rather than drawing a surface, and the dots keep it from
+   reading as a card edge. Three pixels so the dots read from across the column
+   rather than as a faint dashed hairline. A full line of margin above and below
+   the dots gives the two jobs their own air: the column's own gap plus one
+   more line, so the rule divides rather than crowds. */
 .signal-chain__rule {
-  height: 1px;
-  margin: 0.15rem 0;
+  height: 0;
+  margin: 1rem 0;
   border: 0;
-  background: var(--border);
+  border-top: 3px dotted
+    color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  background: none;
 }
 
 /* A picture dropped on the box lights the box rather than a page-wide overlay:
@@ -11218,16 +11333,28 @@ button.chat-panel__activity-line:hover {
   gap: 0.35rem;
 }
 
+/* Every picker on a card is the dock card's picker: a flat, square-cornered
+   field on a lifted fill rather than an outlined chip. The four selects on the
+   row — Status, Priority, Project and the Area picker — are one kind of
+   control, so they wear one design; the Area one keeps its own placement on
+   the row's right. Same fill as `.chat-panel__chain-assign`, because the dock
+   and the page show the same control. */
 .signal-row__domain,
 .signal-row__triage-select {
   max-width: 11rem;
   font: inherit;
   font-size: 0.78rem;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.15rem 0.4rem;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+  border: 0;
+  border-radius: 0;
+  padding: 0.2rem 0.4rem;
+}
+
+.signal-row__domain:focus-visible,
+.signal-row__triage-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .signal-row__triage {
@@ -11244,6 +11371,49 @@ button.chat-panel__activity-line:hover {
   gap: 0.2rem;
   justify-content: flex-end;
   align-items: center;
+}
+
+/* The row's one act. Making the capture into work is the reason the row is
+   there, so this seat is not another ghost word beside Edit and Delete: it has
+   a warm face, a firm edge of its own, a lit top line and a small drop shadow
+   that says "press me". The shadow deepens a step on hover and gives back under
+   the press, so the control moves like a key rather than a painted label.
+   `Open task` wears the same seat once the work exists. */
+.signal-row__make-task {
+  padding: 0.3rem 0.8rem;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 3px 7px rgba(0, 0, 0, 0.18);
+  transition:
+    box-shadow var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.signal-row__make-task:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--card));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 6px 14px rgba(0, 0, 0, 0.22);
+}
+
+.signal-row__make-task:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+/* A disabled seat has no lift: the control cannot be pressed, so it must not
+   look pressed-in-waiting. */
+.signal-row__make-task:disabled {
+  box-shadow: none;
 }
 
 .signal-row__icon-btn {
