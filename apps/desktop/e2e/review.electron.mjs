@@ -132,14 +132,14 @@ const artifactsDir = path.join(here, "artifacts");
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/review.html";
 
 /**
- * The default window. The review page's pair needs the sheet's room — a 48rem
- * reading column beside a 17rem checklist, plus the shell's 16rem sidebar and
- * the sheet's padding — so this is the smallest ordinary window where the column
- * can still be its measure. The chat dock is folded away before the layout
- * claims (that is what the operator's own dock control does, and the review
- * feature is not the dock's claim); when Start opens the dock again the review
- * page gives width back, which is the app's own graceful answer and not this
- * rig's claim.
+ * The default window. With the dock folded, the sheet has just enough room for
+ * the pair — a 48rem reading column beside a 17rem checklist — and no more.
+ *
+ * With the dock OPEN the sheet does not: the dock takes its column before the
+ * page sees any width, so the same window is cramped. The layout claims are
+ * measured both ways: first with the dock open (the checklist must stack above
+ * the page, the document keeping its margins), then folded (the pair must sit
+ * side by side at the full measure).
  */
 const DEFAULT_SIZE = { width: 1440, height: 900 };
 /**
@@ -149,7 +149,7 @@ const DEFAULT_SIZE = { width: 1440, height: 900 };
  * as one centred block rather than as a page with a panel bolted to an edge.
  */
 const WIDE_SIZE = { width: 1800, height: 1000 };
-/** Narrower than the stylesheet's 78rem threshold: the rail must stack above. */
+/** Narrower than the 48rem page plus the 17rem rail: this sheet must stack. */
 const NARROW_SIZE = { width: 900, height: 900 };
 
 const INPUT = ".note-live textarea";
@@ -176,14 +176,14 @@ const TOTAL_AREAS = AREA_ROWS.length;
 
 /** Read the review page and the box straight off the rendered DOM. */
 /**
- * A weekly review's period label: `9th to 15th November 2026 (Week 46)`, with
- * the start's month (and year) omitted when the span shares them with the end,
- * as in `9th to 15th November 2026`. A span that crosses a month reads
- * `30th November to 6th December 2026`; one that crosses a year,
- * `28th December 2026 to 3rd January 2027`.
+ * A weekly review's period label, short enough for one line at the reading
+ * measure: `9-15 November '26 (W46)`. The start's month (and year) is omitted
+ * when the span shares them with the end; a span across a month reads
+ * `30 November-6 December '26`, one across a year
+ * `28 December '26-3 January '27`.
  */
 const WEEK_TITLE =
-  /^\d{1,2}(?:st|nd|rd|th)(?: [A-Z][a-z]+(?: \d{4})?)? to \d{1,2}(?:st|nd|rd|th) [A-Z][a-z]+ \d{4} \(Week \d{1,2}\)$/;
+  /^\d{1,2}(?: [A-Z][a-z]+(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]+ '\d{2} \(W\d{1,2}\)$/;
 
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
@@ -372,8 +372,8 @@ const SAMPLE = `(() => {
             }
           : null,
         layout: rect(layoutEl),
-        // The page's own side padding: the pair is centred inside it, and the
-        // trailing band is deliberately deeper than the leading one.
+        // The page's own side padding: the pair is centred inside it, the same
+        // band on both sides.
         layoutPadding: (() => {
           if (!layoutEl) return null;
           const style = getComputedStyle(layoutEl);
@@ -744,10 +744,10 @@ function layoutReport(layout) {
  * padding — not the page centred with the rail hung off one edge, and not the
  * pair run out to the sheet's edges.
  *
- * The trailing band is deliberately deeper than the leading one, so the checklist
- * reads as sitting inside the right padding. `spareFloor` is the empty page the
- * claim demands on each side of the pair; it is only meaningful when the window
- * is wider than the pair needs.
+ * The page's side padding is symmetric so the document and the pair it makes with
+ * the checklist keep the same margin on both sides. `spareFloor` is the empty
+ * page the claim demands on each side of the pair; it is only meaningful when
+ * the sheet is wider than the pair needs.
  */
 function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   const report = layoutReport(layout);
@@ -763,8 +763,8 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
     failure(`${when}: the sheet's content box could not be read`);
     return report;
   }
-  // The page's own side padding: it must exist, and the trailing band must be
-  // deeper than the leading one.
+  // The page's own side padding: it must exist, and it must be the same on both
+  // sides — the document is centred, not pulled off its centre by the rail.
   if (report.layoutPadLeft === null || report.layoutPadRight === null) {
     failure(`${when}: the page's side padding could not be read`);
     return report;
@@ -772,9 +772,12 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   if (!(report.layoutPadLeft >= 8)) {
     failure(`${when}: the page has only ${report.layoutPadLeft}px of leading padding`);
   }
-  if (!(report.layoutPadRight > report.layoutPadLeft + 4)) {
+  if (!(report.layoutPadRight >= 8)) {
+    failure(`${when}: the page has only ${report.layoutPadRight}px of trailing padding`);
+  }
+  if (Math.abs(report.layoutPadRight - report.layoutPadLeft) > 2) {
     failure(
-      `${when}: the trailing padding (${report.layoutPadRight}px) is not deeper than the leading padding (${report.layoutPadLeft}px)`,
+      `${when}: the page's side padding is lopsided — ${report.layoutPadLeft}px leading, ${report.layoutPadRight}px trailing`,
     );
   }
   // The measure: the column never grows past 48rem.
@@ -849,9 +852,11 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
 }
 
 /**
- * Claim the narrow window: the checklist stacks ABOVE the reading column, spans
- * the same column, and the two do not overlap. This is the stylesheet's 78rem
- * answer to "there is no room for a page beside a rail".
+ * Claim the cramped sheet: there is no room for the 17rem rail beside the 48rem
+ * page, so the checklist stacks ABOVE the reading column, spans the same column,
+ * and the two do not overlap. The document is not narrowed to make room for the
+ * rail: it takes the measure's full width when the sheet has it and the sheet's
+ * width when it does not, with the same margin on both sides.
  */
 function assertStacked(layout, when) {
   const report = layoutReport(layout);
@@ -882,6 +887,33 @@ function assertStacked(layout, when) {
     failure(
       `${when}: the reading column is ${report.pageWidth}px wide inside a ${report.contentClientWidth}px sheet`,
     );
+  }
+  // The document keeps the same margin on both sides: the rail above it must not
+  // shift it off its centre, which is what the old side-by-side squeeze did.
+  const innerWidth =
+    report.innerLeft !== null && report.innerRight !== null
+      ? report.innerRight - report.innerLeft
+      : null;
+  if (
+    innerWidth !== null &&
+    report.pageLeft !== null &&
+    report.pageRight !== null
+  ) {
+    const before = report.pageLeft - report.innerLeft;
+    const after = report.innerRight - report.pageRight;
+    if (Math.abs(before - after) > 2) {
+      failure(
+        `${when}: the stacked document's margins are lopsided — ${before}px before it and ${after}px after it`,
+      );
+    }
+    // The page takes the measure when the room allows it, otherwise the room:
+    // it never narrows to leave a rail beside it.
+    const wanted = Math.min(READING_MEASURE, innerWidth);
+    if (Math.abs((report.pageWidth ?? 0) - wanted) > 2) {
+      failure(
+        `${when}: the stacked reading column is ${report.pageWidth}px wide where the sheet could give it ${wanted}px`,
+      );
+    }
   }
   return report;
 }
@@ -1007,6 +1039,18 @@ async function main() {
   });
   await win.loadURL(`${url}?v=${Date.now()}`);
   await waitFor(win, "Boolean(window.reviewRigReady)", "reviewRigReady");
+  await frames(win);
+
+  // ── 0. the dock is open: the sheet is cramped, so the rail stacks ABOVE ───
+  // The dock takes its column before the page sees any width, so at this window
+  // the sheet has no room for the 48rem page beside the 17rem rail. The operator
+  // asked for the checklist to move above the document here, not to squeeze the
+  // document: the reading column must keep the same margin on both sides.
+  const cramped = await sample(win);
+  checks.cramped = cramped;
+  checks.crampedColumns = assertStacked(cramped.layout, "with the dock open");
+  await shot(win, "review-dock-open.png");
+
   await foldDock(win);
   // With the dock out of the way the sheet is wide enough for the column's full
   // measure; without this wait the first picture could be of a mid-reflow page.
@@ -1031,9 +1075,9 @@ async function main() {
     failure(`the page's eyebrow reads ${JSON.stringify(opened.eyebrow)}, expected "Review / Weekly"`);
   }
   // A week is named by its two ends and its calendar-week number, e.g.
-  // "9th to 15th November 2026 (Week 46)". The span can cross a month or a
-  // year, so the start's date part is optional; the end and the week number
-  // are always there.
+  // "9-15 November '26 (W46)". The span can cross a month or a year, so the
+  // start's month (and year) is optional; the end and the week number are
+  // always there.
   if (!WEEK_TITLE.test(String(opened.title))) {
     failure(`the page's heading is not its period: ${JSON.stringify(opened.title)}`);
   }
@@ -1111,11 +1155,9 @@ async function main() {
   if (opened.markDoneLabel !== "Mark life review complete") {
     failure(`the mark-done button reads ${JSON.stringify(opened.markDoneLabel)}`);
   }
-  // The pair must be centred at the default window, where the sheet has room for
-  // the column's full measure.
-  checks.centering = assertTwoColumn(opened.layout, "at the default window", {
-    spareFloor: 2,
-  });
+  // The pair must be centred at the default window, where the sheet has just
+  // enough room for the column's full measure and no spare page.
+  checks.centering = assertTwoColumn(opened.layout, "at the default window");
   await shot(win, "review-document.png");
   await shot(win, "review-checklist.png");
 

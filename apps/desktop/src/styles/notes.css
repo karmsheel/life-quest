@@ -1723,34 +1723,43 @@
    sheet gives it, so the workshop reads as one block rather than as a page with
    a panel bolted to one edge.
 
-   The threshold is the window's, not the sheet's: a window narrower than ~78rem
-   has no room for a 48rem page beside a 17rem rail worth reading, so below that
-   the checklist stacks ABOVE the reading column (the order of a review: tick the
-   parts off, then write the whole). The daily review is one general review and
-   has no checklist at all, which is what `--single` says.
+   ROOM IS THE SHEET'S, NOT THE WINDOW'S. The rail and the dock take their width
+   before the page sees any, so a wide window with the dock open is as cramped as
+   a narrow one. The row therefore WRAPS instead of shrinking the prose: while
+   the sheet can hold the 48rem measure and the rail together they sit side by
+   side; when it cannot, the rail wraps to a line of its own — and because the
+   wrap direction is reversed, that line sits ABOVE the reading column, the order
+   of a review (tick the parts off, then write the whole). The prose never gives
+   width to the checklist: it keeps its measure, or the room the sheet has plus
+   the same margin on either side.
 
-   The pair sits inside the page's own side padding (below), not against the
-   sheet's edges: the report keeps the Daily Journal's 48rem measure and the
-   checklist rides in the room to its right, with the deeper trailing band making
-   it read as inside the right padding. */
+   The container query below is the other half of the same question — once the
+   rail has wrapped, it takes the page's column width and scrolls with the page
+   instead of sticking. It asks the layout's own content box, which is what the
+   sheet actually handed the page. The daily review is one general review and has
+   no checklist at all, which is what `--single` says. */
 .review-page-layout {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  /* The first line is the bottom one: a wrapped checklist lands ABOVE the page.
+     Cross-start is the bottom under `wrap-reverse`, so aligning to cross-END
+     (the top) keeps the rail at the top of the page while the two sit side by
+     side; aligning to cross-start would drop it to the line's foot. */
+  flex-wrap: wrap-reverse;
+  align-items: flex-end;
   justify-content: center;
   gap: 1.5rem;
   width: 100%;
   box-sizing: border-box;
-  /* The page no longer runs to the sheet's edges: the report + checklist pair is
-     centred inside the page's own side padding. The trailing band is deeper than
-     the leading one on purpose — the vertical checklist should read as sitting
-     inside the right padding rather than flush with the sheet's edge. */
-  padding-left: clamp(0.75rem, 1.25vw, 2rem);
-  padding-right: clamp(1.75rem, 2.75vw, 3.25rem);
+  /* Symmetric side padding: the pair, and the page alone once the rail is
+     stacked above it, stays centred in the sheet with the same margin either
+     side. A deeper trailing band would pull the document off its own centre. */
+  padding-inline: clamp(0.75rem, 1.6vw, 1.5rem);
+  container-type: inline-size;
 }
 
-/* The reading column keeps its measure and gives width back when the window has
-   none to spare; its auto margins are the row's business now, not its own. */
+/* The reading column keeps its measure; it only shrinks when it has a line of
+   its own that is narrower than the measure (the sheet itself is cramped). */
 .review-page-layout > .review-page {
   flex: 0 1 48rem;
   min-width: 0;
@@ -1763,27 +1772,17 @@
   justify-content: center;
 }
 
-@media (max-width: 78rem) {
-  .review-page-layout {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .review-page-layout > .review-page {
-    flex: 0 0 auto;
-    align-self: center;
-    width: 100%;
-  }
-
+@container (max-width: 66.49rem) {
+  /* No room for a 17rem rail beside the 48rem measure: the rail has wrapped
+     above the page, so give it the page's own column and let it scroll with the
+     page rather than stick. */
   .review-page-layout > .review-checklist {
     position: static;
-    order: -1;
-    align-self: center;
+    flex: 0 0 auto;
     width: 100%;
     max-width: 48rem;
     /* In a column the rail's base flex-basis would become its HEIGHT: stacked it
        is as tall as its rows, not a 17rem scroll box. */
-    flex: 0 0 auto;
     max-height: none;
     overflow: visible;
   }

@@ -269,6 +269,8 @@ type Report = {
     centering: Column;
     wide: Page;
     wideCentering: Column;
+    cramped: Page;
+    crampedColumns: Column;
     narrow: Page;
     narrowColumns: Column;
     blankLineBody: string;
@@ -465,10 +467,10 @@ describe("review ui e2e", () => {
     // The page opens on the CURRENT week, which is whatever week the suite runs
     // in: the claim is the shape of its own label, not a pinned date — the two
     // ends of the week and its ISO week number, e.g.
-    // `9th to 15th November 2026 (Week 46)`.
+    // `9-15 November '26 (W46)`.
     assert.match(
       String(opened.title),
-      /^\d{1,2}(?:st|nd|rd|th)(?: [A-Z][a-z]+(?: \d{4})?)? to \d{1,2}(?:st|nd|rd|th) [A-Z][a-z]+ \d{4} \(Week \d{1,2}\)$/,
+      /^\d{1,2}(?: [A-Z][a-z]+(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]+ '\d{2} \(W\d{1,2}\)$/,
       "the review page's heading is not its period",
     );
     assert.equal(
@@ -609,15 +611,19 @@ describe("review ui e2e", () => {
       Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
       `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
     );
-    // The page has its own side padding, and the trailing band is deeper than
-    // the leading one so the checklist reads as inside the right padding.
+    // The page has its own side padding, the same on both sides: the document is
+    // centred, not pulled off its centre by the rail.
     assert.ok(
       Number(centred.layoutPadLeft) >= 8,
       `the page has only ${centred.layoutPadLeft}px of leading padding`,
     );
     assert.ok(
-      Number(centred.layoutPadRight) > Number(centred.layoutPadLeft) + 4,
-      `the trailing padding (${centred.layoutPadRight}px) is not deeper than the leading padding (${centred.layoutPadLeft}px)`,
+      Number(centred.layoutPadRight) >= 8,
+      `the page has only ${centred.layoutPadRight}px of trailing padding`,
+    );
+    assert.ok(
+      Math.abs(Number(centred.layoutPadLeft) - Number(centred.layoutPadRight)) <= 2,
+      `the page's side padding is lopsided: ${centred.layoutPadLeft}px leading, ${centred.layoutPadRight}px trailing`,
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
@@ -651,6 +657,49 @@ describe("review ui e2e", () => {
         wide.pageRight !== null &&
         wide.railLeft >= wide.pageRight + 16,
       "in a wide window the checklist is not a real column to the right of the page",
+    );
+
+    // ── the dock open: the sheet is cramped, so the rail stacks ABOVE ──────
+    // The dock takes its column before the page sees any width, so the same
+    // window is cramped while it is open. The checklist must move above the
+    // document rather than sit beside it and squeeze the prose, and the document
+    // must keep the same margin on both sides while it does.
+    const cramped = report.checks.crampedColumns;
+    assert.ok(
+      cramped.railTop !== null && cramped.pageTop !== null,
+      "with the dock open the stacked layout could not be read",
+    );
+    assert.ok(
+      Number(cramped.railTop) < Number(cramped.pageTop),
+      "with the dock open the checklist is not above the reading column",
+    );
+    assert.ok(
+      Number(cramped.railBottom) <= Number(cramped.pageTop) + 1,
+      "with the dock open the checklist overlaps the reading column",
+    );
+    const crampedInner =
+      cramped.innerRight !== null && cramped.innerLeft !== null
+        ? cramped.innerRight - cramped.innerLeft
+        : null;
+    assert.ok(crampedInner !== null, "with the dock open the page's padded box could not be read");
+    assert.ok(
+      Number(cramped.pageWidth) >= Math.min(48 * 16, Number(crampedInner)) - 2,
+      `with the dock open the reading column is ${cramped.pageWidth}px wide, narrower than the sheet's ${crampedInner}px`,
+    );
+    const crampedBefore = Number(cramped.pageLeft) - Number(cramped.innerLeft);
+    const crampedAfter = Number(cramped.innerRight) - Number(cramped.pageRight);
+    assert.ok(
+      Math.abs(crampedBefore - crampedAfter) <= 2,
+      `with the dock open the document's margins are lopsided — ${crampedBefore}px before it, ${crampedAfter}px after it`,
+    );
+    assert.ok(
+      cramped.pageRight !== null &&
+        cramped.pageLeft !== null &&
+        cramped.railLeft !== null &&
+        cramped.railRight !== null &&
+        Math.abs(cramped.railLeft - cramped.pageLeft) <= 2 &&
+        Math.abs(cramped.railRight - cramped.pageRight) <= 2,
+      "with the dock open the checklist does not span the reading column's width",
     );
 
     // ── a narrow window: no room beside the column, so the rail stacks above ─
@@ -847,7 +896,7 @@ describe("review ui e2e", () => {
     );
     assert.match(
       String(picker.moved?.title),
-      /^\d{1,2}(?:st|nd|rd|th)\b.*\(Week \d{1,2}\)$/,
+      /^\d{1,2}(?: [A-Z][a-z]+)?-\d{1,2} [A-Z][a-z]+ '\d{2} \(W\d{1,2}\)$/,
       "the moved page's heading is not its week",
     );
     assert.equal(
