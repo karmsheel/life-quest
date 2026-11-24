@@ -71,6 +71,17 @@
   --border-soft: #edf0f4;
   --line: var(--border);
   --sidebar-border: var(--border);
+
+  /* The divider: the app's separating line, and the one ink a palette must not
+     own. The sidebar's grouping lines draw with this pair — 1px of neutral gray,
+     the same in every theme and in both modes — because the rail's sections are
+     structure, not brand. Skins write `--border` and `--line` from their own
+     palette (Forge's ember border is how these lines went orange); nothing writes
+     `--divider`, so no skin or theme file can tint them again. Declared once, not
+     per mode: "standard throughout the app and all themes" means one ink. */
+  --divider: #808080;
+  --divider-width: 1px;
+
   --text-strong: #0d0c0a;
   --text-soft: #989590;
   --text-faint: #b3b0a8;

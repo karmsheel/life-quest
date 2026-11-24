@@ -221,6 +221,12 @@ The rail:
   files in place, and **Open another folder…** for a folder this computer has
   never seen.
 
+The rail's three dividers — above **Chats**, above the governance shelf, and above
+the foot — are the app's own line rather than a theme ink: each is a crisp 1px of
+neutral gray (`#808080`), identical in every theme and in both day and night, so
+the sidebar's groups are separated the same way whichever palette you wear. A
+theme's palette colours surfaces and its own borders; it cannot tint these.
+
 The main pane is the page's own column, beginning directly under the title bar.
 It is the element the chat reads as the current page (`data-page-context-root`),
 so what the companion is told about the screen is exactly the page — never the

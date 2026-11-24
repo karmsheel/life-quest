@@ -1414,9 +1414,17 @@ a {
   display: none;
 }
 
+/* The sidebar's grouping lines: one standard, not a palette ink. The rail's
+   sections are structure, so the app draws these itself — a crisp 1px of neutral
+   gray (`--divider`) in every theme and both modes — instead of deriving them
+   from the skin's border, which is how Forge's three lines came out ember
+   orange. Both halves come from tokens, so the three lines cannot drift apart:
+   `--divider-width` is the one thickness they all wear. `flex: 0 0 auto` keeps a
+   squeezed rail from shrinking one of them to a sub-pixel line. */
 .nav-rail__divider {
-  height: 1px;
-  background: var(--border);
+  flex: 0 0 auto;
+  height: var(--divider-width);
+  background: var(--divider);
   margin: 0.4rem 0.35rem;
 }
 

@@ -16,6 +16,8 @@ The logo's three inks are theme tokens, not artwork colours: `--life-color` pain
 
 `--accent` is brand (`var(--primary)`). Hover fill is `--accent-fill`. `--muted` is text (`var(--muted-foreground)`). Quiet fill is `--muted-surface`. `--scrollbar-thumb` is the scrollbar's ink: an alias of `--muted-foreground`, so a skin repaints the bar with the rest of the chrome and the brand cannot reach it.
 
+`--divider` is the app's separating line, and the one structural ink a palette must not own: the sidebar's three grouping lines paint 1px of the neutral gray `#808080` — the thickness is `--divider-width` — the same in every skin and in both modes, declared once in `tokens.css` outside the mode blocks. Skins write `--border` and `--line` from their own palette (`forgeVarsFromColors`); nothing writes `--divider`, so Forge's ember border cannot tint the rail's groups. The seam rules that delimit panes keep using the palette's own border, because a seam is the palette's material while a divider is the app's structure.
+
 Skins write semantic and extension names onto `<html>`. They must not inline alias names.
 
 ThemeProvider may apply a named skin and light/dark/system. It must not generate a palette from one primary hex. Titlebar overlay reads `--titlebar-bg` (falling back to `--canvas-base`) and `--foreground` hex.
@@ -23,6 +25,7 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 ## Named rules
 
 - Token Contract — new UI uses semantic names.
+- Divider Standard — a divider that separates the sidebar's groups is app chrome, not palette ink: `1px` of the neutral gray `#808080`, read from `--divider` and `--divider-width`, identical in every theme and both modes. Never paint one with `--border` (that is how Forge's ember palette turned the rail's three lines orange), and a skin never writes the divider tokens. The shell rig measures all three lines per palette and mode.
 - State Color — red/green/blue/amber mean state, not decoration.
 - Theme Provider — named skins fill the contract.
 - Raw Color — hex only in primitives and palettes.
