@@ -462,6 +462,12 @@ const SAMPLE = `(() => {
       row: box(q('[data-testid="signal-row"]')),
       rowBackground: style(q('[data-testid="signal-row"]'), "backgroundColor"),
       rowBorderTop: style(q('[data-testid="signal-row"]'), "borderTopColor"),
+      // The sheet both surfaces sit on: the dock paints the background token
+      // with the page, so its own paint is the canvas the pickers step up from.
+      canvasBackground: (() => {
+        const panel = q(".chat-panel");
+        return panel ? getComputedStyle(panel).backgroundColor : null;
+      })(),
       rule: (() => {
         const el = q(".signal-chain__rule");
         if (!el) return { present: false };
@@ -477,6 +483,33 @@ const SAMPLE = `(() => {
           backgroundColor: computed.backgroundColor,
           height: computed.height,
           display: computed.display,
+        };
+      })(),
+      // The page row's own Area picker: the same flat field as the dock's.
+      domainSelect: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const select = row ? row.querySelector(".signal-row__domain") : null;
+        if (!select) return { present: false };
+        return {
+          present: true,
+          box: box(select),
+          borderTopWidth: style(select, "borderTopWidth"),
+          borderTopStyle: style(select, "borderTopStyle"),
+          borderRadius: style(select, "borderRadius"),
+          background: style(select, "backgroundColor"),
+        };
+      })(),
+      // The row's triage picks are not that field: they keep their outline.
+      triageSelect: (() => {
+        const row = q('[data-testid="signal-row"]');
+        const select = row
+          ? row.querySelector(".signal-row__triage-select")
+          : null;
+        if (!select) return { present: false };
+        return {
+          present: true,
+          borderTopWidth: style(select, "borderTopWidth"),
+          borderTopStyle: style(select, "borderTopStyle"),
         };
       })(),
     },
@@ -2415,26 +2448,34 @@ async function main() {
       dockHeader.groupBox.top + dockHeader.groupBox.height <=
         dockHeader.headerBox.top + dockHeader.headerBox.height + 1;
 
-    // The flat right-hand picker: its edges, radius, fill and what it sits on.
-    const dockCardRight = dockMessageBox
-      ? dockMessageBox.left + dockMessageBox.width
-      : null;
-    const dockAssignRight = dockAssignBox
-      ? dockAssignBox.left + dockAssignBox.width
-      : null;
-    const dockAssignRightGap =
-      dockCardRight !== null && dockAssignRight !== null
-        ? dockCardRight - dockAssignRight
+    // The flat left-hand picker: its edges, radius, fill and what it sits on.
+    const dockAssignLeftGap =
+      dockAssignBox && dockMessageBox
+        ? dockAssignBox.left - dockMessageBox.left
         : null;
     const dockAssignFlat =
       dockAssign?.borderTopWidth === "0px" ||
       dockAssign?.borderTopStyle === "none";
     const dockAssignRectangular = dockAssign?.borderRadius === "0px";
     const dockAssignFill = describeColor(dockAssign?.background);
-    const dockAssignRightOfCentre =
+    const dockAssignLeftOfCentre =
       centreOf(dockAssignBox) !== null &&
       centreOf(dockMessageBox) !== null &&
-      centreOf(dockAssignBox) > centreOf(dockMessageBox);
+      centreOf(dockAssignBox) < centreOf(dockMessageBox);
+
+    // The sheet's paint is the floor both pickers must read as a step up from.
+    const canvasPaint = describeColor(pageLayout.canvasBackground);
+    const dockAssignLightness =
+      dockAssignFill.luminance !== null && canvasPaint.luminance !== null
+        ? dockAssignFill.luminance - canvasPaint.luminance
+        : null;
+    const pageDomain = pageLayout.domainSelect;
+    const pageDomainFill = describeColor(pageDomain?.background);
+    const pageDomainLightness =
+      pageDomainFill.luminance !== null && canvasPaint.luminance !== null
+        ? pageDomainFill.luminance - canvasPaint.luminance
+        : null;
+    const pageTriage = pageLayout.triageSelect;
 
     checks.layout = {
       page: {
@@ -2444,6 +2485,8 @@ async function main() {
         row: pageLayout.row,
         rowBackground: pageLayout.rowBackground,
         rowBorderTop: pageLayout.rowBorderTop,
+        canvasBackground: pageLayout.canvasBackground ?? null,
+        canvasPaint,
         composerToRowRatio:
           pageRowWidth > 0 ? pageComposerWidth / pageRowWidth : null,
         composerCentreGap:
@@ -2470,6 +2513,12 @@ async function main() {
           borderPaint: describeColor(pageLayout.rule?.borderTopColor),
           fillPaint: describeColor(pageLayout.rule?.backgroundColor),
         },
+        domainSelect: {
+          ...(pageDomain ?? { present: false }),
+          fill: pageDomainFill,
+          lightness: pageDomainLightness,
+        },
+        triageSelect: pageTriage ?? { present: false },
       },
       dock: {
         header: dockHeader ?? null,
@@ -2483,8 +2532,9 @@ async function main() {
         assignFlat: dockAssignFlat,
         assignRectangular: dockAssignRectangular,
         assignFill: dockAssignFill,
-        assignRightGap: dockAssignRightGap,
-        assignRightOfCentre: dockAssignRightOfCentre,
+        assignLightness: dockAssignLightness,
+        assignLeftGap: dockAssignLeftGap,
+        assignLeftOfCentre: dockAssignLeftOfCentre,
         cardBackground: dockMessage?.background ?? null,
         cardBorderTop: dockMessage?.borderTop ?? null,
         matchesPageBackground:
@@ -2520,10 +2570,10 @@ async function main() {
     const ruleBorder = describeColor(pageLayout.rule?.borderTopColor);
     const ruleFill = describeColor(pageLayout.rule?.backgroundColor);
     check(
-      "the page divider is a dotted neutral grey rule",
+      "the page divider is a 3px dotted neutral grey rule",
       pageLayout.rule?.present === true &&
         pageLayout.rule?.borderTopStyle === "dotted" &&
-        parseFloat(pageLayout.rule?.borderTopWidth ?? "0") >= 1 &&
+        pageLayout.rule?.borderTopWidth === "3px" &&
         ruleBorder.alpha >= 0.2 &&
         ruleBorder.spread <= 6 &&
         ruleBorder.luminance >= 30 &&
@@ -2586,12 +2636,44 @@ async function main() {
       `background ${JSON.stringify(dockAssignFill)}`,
     );
     check(
-      "the dock's area picker sits on the card's right",
-      dockAssignRightGap !== null &&
-        dockAssignRightGap >= 0 &&
-        dockAssignRightGap <= 32 &&
-        dockAssignRightOfCentre,
-      `right gap ${dockAssignRightGap}, assign centre right of card centre ${dockAssignRightOfCentre} (assign ${JSON.stringify(dockAssignBox)} card ${JSON.stringify(dockMessageBox)})`,
+      "the dock's area picker is a visible step lighter than the sheet",
+      (dockAssignFill.alpha ?? 0) > 0.5 &&
+        dockAssignLightness !== null &&
+        dockAssignLightness >= 15,
+      `picker ${JSON.stringify(dockAssignFill)} vs sheet ${JSON.stringify(canvasPaint)}, luminance step ${dockAssignLightness}`,
+    );
+    check(
+      "the dock's area picker sits on the card's left",
+      dockAssignLeftGap !== null &&
+        dockAssignLeftGap >= 0 &&
+        dockAssignLeftGap <= 16 &&
+        dockAssignLeftOfCentre,
+      `left gap ${dockAssignLeftGap}, assign centre left of card centre ${dockAssignLeftOfCentre} (assign ${JSON.stringify(dockAssignBox)} card ${JSON.stringify(dockMessageBox)})`,
+    );
+    check(
+      "the page's Area picker is the same flat field as the dock's",
+      pageDomain?.present === true &&
+        pageDomain.borderTopWidth === "0px" &&
+        pageDomain.borderTopStyle === "none" &&
+        pageDomain.borderRadius === "0px" &&
+        (pageDomainFill.alpha ?? 0) > 0.5 &&
+        Boolean(pageDomain?.background) &&
+        pageDomain?.background === dockAssign?.background,
+      `page ${JSON.stringify({ border: [pageDomain?.borderTopWidth, pageDomain?.borderTopStyle], radius: pageDomain?.borderRadius, fill: pageDomain?.background })} vs dock ${JSON.stringify(dockAssign?.background)}`,
+    );
+    check(
+      "the page's Area picker is a visible step lighter than the sheet",
+      (pageDomainFill.alpha ?? 0) > 0.5 &&
+        pageDomainLightness !== null &&
+        pageDomainLightness >= 15,
+      `picker ${JSON.stringify(pageDomainFill)} vs sheet ${JSON.stringify(canvasPaint)}, luminance step ${pageDomainLightness}`,
+    );
+    check(
+      "the page's triage picks keep their outlined chips",
+      pageTriage?.present === true &&
+        pageTriage.borderTopStyle !== "none" &&
+        parseFloat(pageTriage.borderTopWidth ?? "0") >= 1,
+      `triage select ${JSON.stringify(pageTriage)}`,
     );
 
     // ── 8. the box's area is the lens at the top ─────────────────────────────

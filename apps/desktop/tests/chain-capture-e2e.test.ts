@@ -420,6 +420,8 @@ type Report = {
         row: Box | null;
         rowBackground: string | null;
         rowBorderTop: string | null;
+        canvasBackground: string | null;
+        canvasPaint: LayoutColor;
         composerToRowRatio: number | null;
         composerCentreGap: number | null;
         filtersToRowGap: number | null;
@@ -434,6 +436,21 @@ type Report = {
           display: string | null;
           borderPaint: LayoutColor;
           fillPaint: LayoutColor;
+        };
+        domainSelect: {
+          present: boolean;
+          box?: Box;
+          borderTopWidth?: string | null;
+          borderTopStyle?: string | null;
+          borderRadius?: string | null;
+          background?: string | null;
+          fill: LayoutColor;
+          lightness: number | null;
+        };
+        triageSelect: {
+          present: boolean;
+          borderTopWidth?: string | null;
+          borderTopStyle?: string | null;
         };
       };
       dock: {
@@ -466,8 +483,9 @@ type Report = {
         assignFlat: boolean;
         assignRectangular: boolean;
         assignFill: LayoutColor;
-        assignRightGap: number | null;
-        assignRightOfCentre: boolean;
+        assignLightness: number | null;
+        assignLeftGap: number | null;
+        assignLeftOfCentre: boolean;
         cardBackground: string | null;
         cardBorderTop: string | null;
         matchesPageBackground: boolean;
@@ -955,14 +973,16 @@ describe("Notebox page — general capture", () => {
         `(${layout.page.list?.width}px vs ${layout.page.row?.width}px)`,
     );
 
-    // Divider: a dotted line drawn by the border, not a solid background block.
+    // Divider: a 3px dotted line drawn by the border, not a solid background
+    // block, in a neutral visible grey.
     const rule = layout.page.rule;
     const ruleBorder = rule.borderPaint;
     assert.equal(rule.present, true, "no divider above the filter band");
     assert.equal(rule.borderTopStyle, "dotted", "the divider is not a dotted rule");
-    assert.ok(
-      parseFloat(rule.borderTopWidth ?? "0") >= 1,
-      `the divider border is ${rule.borderTopWidth}`,
+    assert.equal(
+      rule.borderTopWidth,
+      "3px",
+      `the divider border is ${rule.borderTopWidth}, not 3px`,
     );
     assert.ok(
       (ruleBorder.alpha ?? 0) >= 0.2,
@@ -1051,16 +1071,80 @@ describe("Notebox page — general capture", () => {
       (layout.dock.assignFill.alpha ?? 0) > 0.5,
       `the area picker has no fill of its own: ${JSON.stringify(layout.dock.assignFill)}`,
     );
+    // The fill is a visible step up from the sheet both surfaces sit on.
+    const canvas = layout.page.canvasPaint;
     assert.ok(
-      layout.dock.assignRightGap !== null &&
-        layout.dock.assignRightGap >= 0 &&
-        layout.dock.assignRightGap <= 32,
-      `the area picker is ${layout.dock.assignRightGap}px from the card's right edge`,
+      canvas.alpha !== null,
+      `the sheet has no readable paint: ${JSON.stringify(canvas)}`,
+    );
+    assert.ok(
+      (layout.dock.assignLightness ?? 0) >= 15,
+      `the dock's picker is only ${layout.dock.assignLightness} luminance steps above the sheet ` +
+        `(${JSON.stringify(layout.dock.assignFill)} vs ${JSON.stringify(canvas)})`,
+    );
+    assert.ok(
+      layout.dock.assignLeftGap !== null &&
+        layout.dock.assignLeftGap >= 0 &&
+        layout.dock.assignLeftGap <= 16,
+      `the area picker is ${layout.dock.assignLeftGap}px from the card's left edge`,
     );
     assert.equal(
-      layout.dock.assignRightOfCentre,
+      layout.dock.assignLeftOfCentre,
       true,
-      "the area picker is not on the card's right half",
+      "the area picker is not on the card's left half",
+    );
+
+    // The page's own Area picker is that same field: flat, square, filled with
+    // the same colour, and the triage selects beside it keep their outline.
+    const domainPicker = layout.page.domainSelect;
+    assert.equal(
+      domainPicker.present,
+      true,
+      "the page's first row has no Area picker to measure",
+    );
+    assert.equal(
+      domainPicker.borderTopWidth,
+      "0px",
+      `the page's Area picker still has a border: ${domainPicker.borderTopWidth}`,
+    );
+    assert.equal(
+      domainPicker.borderTopStyle,
+      "none",
+      `the page's Area picker still has a border: ${domainPicker.borderTopStyle}`,
+    );
+    assert.equal(
+      domainPicker.borderRadius,
+      "0px",
+      `the page's Area picker is still rounded: ${domainPicker.borderRadius}`,
+    );
+    assert.ok(
+      (domainPicker.fill.alpha ?? 0) > 0.5,
+      `the page's Area picker has no fill: ${JSON.stringify(domainPicker.fill)}`,
+    );
+    assert.equal(
+      domainPicker.background,
+      layout.dock.assign?.background,
+      "the page's Area picker is painted differently from the dock's",
+    );
+    assert.ok(
+      (domainPicker.lightness ?? 0) >= 15,
+      `the page's Area picker is only ${domainPicker.lightness} luminance steps above the sheet ` +
+        `(${JSON.stringify(domainPicker.fill)} vs ${JSON.stringify(canvas)})`,
+    );
+    const triagePicker = layout.page.triageSelect;
+    assert.equal(
+      triagePicker.present,
+      true,
+      "the page's first row has no triage select to measure",
+    );
+    assert.notEqual(
+      triagePicker.borderTopStyle,
+      "none",
+      "the triage selects lost their outline",
+    );
+    assert.ok(
+      parseFloat(triagePicker.borderTopWidth ?? "0") >= 1,
+      `the triage selects lost their outline: ${triagePicker.borderTopWidth}`,
     );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.

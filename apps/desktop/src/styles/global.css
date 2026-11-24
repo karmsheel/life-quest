@@ -10801,21 +10801,21 @@ button.chat-panel__activity-line:hover {
   gap: 0.4rem;
 }
 
-/* The assignment picker, inside the card at its foot on the right: half the
+/* The assignment picker, inside the card at its foot on the left: half the
    card's width, under what the row says, so the area it is filed under reads
    as part of the capture rather than as a bar beneath it. It is a flat field,
-   not an outlined control: its own fill separates it from the card, and square
-   corners keep it from looking like a second rounded card inside the first. */
+   not an outlined control: its own lifted fill separates it from the card, and
+   square corners keep it from looking like a second rounded card inside the
+   first. */
 .chat-panel__chain-assign {
   display: block;
   width: 50%;
   margin-top: 0.5rem;
-  margin-left: auto;
   padding: 0.25rem 0.4rem;
   border: 0;
   border-radius: 0;
-  background: var(--muted-surface);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+  color: var(--fg);
   font: inherit;
   font-size: 0.6875rem;
   cursor: pointer;
@@ -10978,12 +10978,13 @@ button.chat-panel__activity-line:hover {
    space sit between them: the box is not the first filter row. The line is a
    dotted neutral grey from the palette, not the cards' ember outline — it
    divides the page rather than drawing a surface, and the dots keep it from
-   reading as a card edge. */
+   reading as a card edge. Three pixels so the dots read from across the column
+   rather than as a faint dashed hairline. */
 .signal-chain__rule {
   height: 0;
   margin: 0.15rem 0;
   border: 0;
-  border-top: 1px dotted
+  border-top: 3px dotted
     color-mix(in srgb, var(--muted-foreground) 55%, transparent);
   background: none;
 }
@@ -11273,6 +11274,24 @@ button.chat-panel__activity-line:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.15rem 0.4rem;
+}
+
+/* The row's Area picker is the dock card's picker: a flat, square-cornered
+   field on a lifted fill rather than an outlined chip. It is the one select on
+   the row that files the capture, so it is the one that reads as a field; the
+   triage selects keep their outline. Same fill as `.chat-panel__chain-assign`,
+   because the two surfaces show the same control. */
+.signal-row__domain {
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+  color: var(--fg);
+  padding: 0.2rem 0.4rem;
+}
+
+.signal-row__domain:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .signal-row__triage {

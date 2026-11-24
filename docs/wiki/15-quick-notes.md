@@ -107,14 +107,14 @@ With nothing captured yet, the page shows: "Nothing on the chain yet. Write some
 | Link chip | Inside the box, under the field, until the signal is logged, after a URL is pasted: the link's host and the full address, with the X button **Remove the attached link**. |
 | **Area** readout | Names the area the capture will file under: **Life (general)** on the Life lens, the area's name on an area lens. It follows the switcher at the top and is a readout, not a picker — filing elsewhere means switching areas there. Sits inside the capture box's foot, beside the **Log** button, which is the box's one primary action and is disabled until there is a description or an attachment. |
 | **Log** button | The primary button inside the capture box's trailing corner (arrow-up glyph and **Log**). Pressing it, or **Enter** in the box, logs the capture. |
-| Divider | A dotted neutral grey rule with a breath of space on either side separates the capture box from the filters below it. |
+| Divider | A 3px dotted neutral grey rule with a breath of space on either side separates the capture box from the filters below it. |
 | Filter row | One line above the list: the **Status** and **Project** drop-downs — **Status** (All, Inbox, Triaged, Acting, Done, Dropped) and **Project** (All, each live project) — with an **Area** readout right-aligned against the row's edge naming the domain picker at the top (**Life (general)** on the Life lens, the area's name on an area lens). The lens is the area filter; the two pickers narrow what it leaves and each shows the value applied. |
 | Chain list | Newest first. Each row shows its attachment, the signal's title and body when it has one, the area, the project, the status, the priority, where it came from, when it was captured, and the row actions. |
 | Row meta | The area cell says **Life (general)** when the signal has none and never paints blank; the project cell says **No project** (or the stored id if the project was deleted); the status cell reads Inbox, Triaged, Acting, Done or Dropped; the priority cell reads High, Normal, Low or None. |
 | Triage selects | The row's **Status**, **Priority** and **Project** selects write the change at once. Status is the five states; priority adds **None** for unset; project adds **No project** to unfile it. |
 | Attachment | An image draws at the top of the row with its file name beneath it; a link draws a card at the top of the row with its host and address. The link card opens `https` addresses in the browser. Any other file draws a card with its name and size and a **Save** control (accessible name **Save the attached file**) that writes a copy of the vault's bytes to disk. |
 | Timestamp | "Today, 14:32" / "Yesterday, 09:05" for recent days; an older signal shows a medium date and time. |
-| Row actions | **Make task** (or **Open task**), pencil **Edit**, bin **Delete**, plus the inline **Area** select. |
+| Row actions | **Make task** (or **Open task**), pencil **Edit**, bin **Delete**, plus the inline **Area** select — a flat, square-cornered field on a lifted fill, the same picker the dock's cards carry, not an outlined chip. |
 | Edit form | **Description** textarea, **Area** select, **Save**, **Cancel**. Editing changes the description and area only; a picture, file or link stays as captured. |
 | Confirm dialog | Deleting asks first: title **Delete signal**, message "The signal is hidden from the chain. Its record and messages stay in the vault.", confirm **Delete signal**. |
 | Empty chain | "Nothing on the chain yet. Write something above." |
@@ -323,8 +323,8 @@ with a **Log signal** button. Its header centres the rail's Notebox glyph and th
 **Notebox** on the band, with the focus door in the trailing corner. It draws the same
 records, including the picture and link cards, and its rows are the page's cards in
 miniature: the sheet's own black with the one outline around it, not a tinted slab. Each
-row's **Area** picker sits inside the card at its foot on the right: a flat, square-cornered
-field on its own muted fill rather than an outlined control, at half the card's width. Its
+row's **Area** picker sits inside the card at its foot on the left: a flat, square-cornered
+field on a lifted fill rather than an outlined control, at half the card's width. Its
 composer takes the page's two text gestures: type a description, or paste one absolute
 `http`/`https` address on its own to attach a link — the same link chip (host, address and
 **Remove the attached link**) waits above the field, and a URL pasted inside a sentence
