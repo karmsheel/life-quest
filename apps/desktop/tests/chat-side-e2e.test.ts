@@ -89,7 +89,12 @@ type Arrangement = {
   } | null;
   actions: {
     box: Box;
-    controls: { label: string | null; icon: string | null; disabled: boolean }[];
+    controls: {
+      label: string | null;
+      icon: string | null;
+      disabled: boolean;
+      box?: Box;
+    }[];
     badge: { label: string | null; text: string; box: Box } | null;
   } | null;
   collapseAction: {
@@ -323,16 +328,17 @@ describe("chat dock side switch", () => {
 
     // The control itself: in the dock's bottom action bar, immediately before the
     // collapse it belongs with, wearing the swap icon and naming the move it
-    // makes. The titlebar no longer carries any chat control, the full-screen
-    // door included: the strip's trailing cluster is the day/night control and
-    // the settings menu, and nothing else.
+    // makes. The titlebar carries no chat control, the full-screen door
+    // included: the strip's trailing cluster is the layouts control, the
+    // day/night control and the settings menu — and nothing else.
     const rightTrailing = (right.trailing?.controls ?? []).map((row) => row.className);
     assert.deepEqual(
       rightTrailing.length,
-      2,
+      3,
       `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(rightTrailing)}`,
     );
     for (const [index, needle] of [
+      "layouts-menu__trigger",
       "theme-mode-toggle",
       "settings-menu",
     ].entries()) {
@@ -399,13 +405,16 @@ describe("chat dock side switch", () => {
       right.mutedBackground,
       `the switch's ink is not the bar's muted rest on the trailing side (${right.sideSwitch.color} vs ${right.mutedBackground})`,
     );
-    // The bar's own order, and the slot that left with the chat list.
+    // The bar's own order, and the slot that left with the chat list. The
+    // chat-display control arrived with the dock's reading settings, between
+    // the shortcuts reference and the side switch.
     assert.deepEqual(
       right.actions?.controls.map((control) => control.label),
       [
         "New chat",
         "Notebox",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ],
@@ -441,14 +450,26 @@ describe("chat dock side switch", () => {
       `the switch does not sit immediately before the collapse control (${JSON.stringify(switchBox)} vs ${JSON.stringify(rightCollapseBox)} in ${JSON.stringify(right.actions?.box)})`,
     );
     const shortcutsBox = right.shortcutsAction?.box;
-    assert.ok(switchBox && shortcutsBox, "the shortcuts action or the switch was not found");
+    // The chat-display control sits between the shortcuts reference and the
+    // switch now: the two reading doors lead into the switch, one control apart
+    // rather than adjacent.
+    const displaySettings = right.actions?.controls.find(
+      (control) => control.label === "Chat display settings",
+    );
+    const displayBox = displaySettings?.box;
+    assert.ok(
+      switchBox && shortcutsBox && displayBox,
+      "the shortcuts action, the display settings or the switch was not found",
+    );
     assert.equal(
-      shortcutsBox.right < switchBox.left &&
-        switchBox.left - shortcutsBox.right <= 8 &&
+      shortcutsBox.right < displayBox.left &&
+        displayBox.left - shortcutsBox.right <= 8 &&
+        displayBox.right < switchBox.left &&
+        switchBox.left - displayBox.right <= 8 &&
         shortcutsBox.top >= (right.actions?.box.top ?? 0) &&
         shortcutsBox.bottom <= (right.actions?.box.bottom ?? 0),
       true,
-      `the shortcuts action does not sit immediately before the switch (${JSON.stringify(shortcutsBox)} vs ${JSON.stringify(switchBox)})`,
+      `the shortcuts and display-settings actions do not sit immediately before the switch (${JSON.stringify(shortcutsBox)} vs ${JSON.stringify(displayBox)} vs ${JSON.stringify(switchBox)})`,
     );
     assert.equal(
       right.collapseAction?.icon,
@@ -599,6 +620,7 @@ describe("chat dock side switch", () => {
         "New chat",
         "Notebox",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the right of the page",
         "Collapse chat",
       ],
@@ -897,6 +919,7 @@ describe("chat dock side switch", () => {
         "New chat",
         "Notebox",
         "Keyboard shortcuts",
+        "Chat display settings",
         "Move chat to the left of the page",
         "Collapse chat",
       ],

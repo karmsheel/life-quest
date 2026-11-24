@@ -29,6 +29,7 @@ type Report = {
     preview: string;
     kept: string;
     floating: string;
+    bareFrame: string;
     settings: string;
     material: string;
     layout: string;
@@ -81,7 +82,12 @@ function runRig(world: string): Promise<{ code: number; report: Report | null }>
       [rig],
       {
         cwd: desktopRoot,
-        timeout: 240_000,
+        // The rig walks every chrome placement and wears a ten-second preview
+        // at each one; it runs for four minutes on an idle machine and longer
+        // when the box is busy. A tighter watchdog kills it before it can write
+        // its report, which reads as "the rig wrote no report" rather than a
+        // failure — so leave it real headroom.
+        timeout: 600_000,
         env: {
           ...process.env,
           ELECTRON_RUN_AS_NODE: undefined,
@@ -144,6 +150,7 @@ describe("theme files v2", () => {
         report.artifacts.preview,
         report.artifacts.kept,
         report.artifacts.floating,
+        report.artifacts.bareFrame,
         report.artifacts.settings,
         report.artifacts.material,
         report.artifacts.layout,

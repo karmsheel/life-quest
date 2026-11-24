@@ -839,6 +839,20 @@ const lifequest = {
     ipcRenderer.invoke("theme:import") as Promise<
       Result<{ file: string; label: string } | null>
     >,
+  /**
+   * Choose a background picture through main's dialog; main copies it into the
+   * profile and answers with the stored file name. `null` is the operator
+   * cancelling, and a refusal is main's operator-readable sentence.
+   */
+  themePickBackground: () =>
+    ipcRenderer.invoke("theme:pickBackground") as Promise<
+      Result<{ file: string } | null>
+    >,
+  /** One stored background picture's bytes; a failed read is a quiet refusal. */
+  themeReadBackground: (file: string) =>
+    ipcRenderer.invoke("theme:readBackground", file) as Promise<
+      Result<{ file: string; mime: string; bytes: Uint8Array }>
+    >,
   onThemesChanged: (cb: () => void) => {
     const listener = () => {
       cb();

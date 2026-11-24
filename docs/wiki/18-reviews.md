@@ -33,12 +33,14 @@ rail has five rows, each a page at its own route:
 
 Each opens in the centre pane as a page, not a sheet. Any other cadence segment
 under `/review/` redirects to `/review/weekly`. The header is the Daily
-Journal's, at a period's scale: the grey cadence eyebrow — **Daily**,
-**Weekly**, **Monthly**, **Quarterly** or **Yearly** — names the page, and the
-period itself is the page's one heading, centred over the prose. A calendar key
-beside the heading jumps to another period, and wordless arrow keys on the
-column's edges step one period at a time. The cadence is never repeated as a
-second title.
+Journal's, at a period's scale: the grey eyebrow names the wing and the cadence
+— **Review / Daily**, **Review / Weekly**, **Review / Monthly**,
+**Review / Quarterly** or **Review / Yearly** — and the period itself is the
+page's one heading, centred over the prose. A week's heading names both of its
+ends and its calendar-week number, for example
+`21-27 Sep '26 (W39)`. A calendar key beside the heading
+jumps to another period, and wordless arrow keys on the column's edges step one
+period at a time. The cadence is never repeated as a second title.
 
 **Daily is one general review of the day.** It has no checklist and no area
 sections, and the area lens does not narrow it: a day is reviewed as a day,
@@ -70,14 +72,15 @@ vertical column to the right of the report:
   pressing a checklist row moves the lens to that area. The checklist is the
   control; the lens shows what is selected.
 
-The report keeps the Daily Journal's 48rem measure and the checklist rides in
-the room to its right, with the pair centred inside the page's own side padding —
-the trailing band is deeper than the leading one, so the checklist reads as
-sitting inside the right padding rather than flush with the sheet's edge. When
-the sheet has room for the pair only by giving up some of that measure — an open
-chat dock beside the page, for instance — the column narrows rather than pushing
-the checklist away. Below roughly 78rem of window the checklist stacks above the
-reading column instead.
+The page keeps the Daily Journal's 48rem measure. The eyebrow and the period
+pager sit across the top of the page in that measure, and the report and the
+checklist come under them. Where the sheet has room for the two together they
+sit side by side, the pair centred in the page's own side padding with the same
+margin on both sides. Where it does not — an open chat dock beside the page, or
+a narrow window — the checklist takes its own row between the header and the
+report, and the document keeps its full measure (or the room the sheet has, with
+equal margins either side). The prose is never narrowed to make room for the
+checklist; when the sheet widens again, the checklist returns to the side.
 
 Back to [Wiki home](./index.md).
 
@@ -157,10 +160,11 @@ cannot be quietly rewritten.
    ([When a review opens](#when-a-review-opens)).
 2. Move the period with the two arrow keys on either side of the header, or
    jump with the **calendar** key beside the centred period. The heading reads
-   the period, for example `Week of 21 Sep 2026`. **Next** is disabled on the
-   open period: reviews are past and present only, and a review that has not
-   opened yet cannot be paged to. The calendar offers only periods whose window
-   has opened, and choosing any day inside a week takes you to that week.
+   the period, for example `21-27 Sep '26 (W39)` on Weekly.
+   **Next** is disabled on the open period: reviews are past and present only,
+   and a review that has not opened yet cannot be paged to. The calendar offers
+   only periods whose window has opened, and choosing any day inside a week
+   takes you to that week.
 3. On **Daily**, a period with no file says **No review for this period yet.**
    and offers **Start the interview** (create the file, fill the figures the
    cadence's rules ask for, open the companion chat) or **Write it myself**
@@ -173,11 +177,12 @@ cannot be quietly rewritten.
    - the Health interview opens in the chat pane, bound to this period's Health
      scope — in a tab of its own, and listed in **Chats** under its name from
      its first paint, even while the agent is still writing;
-   - the scope line above the body reads **Reviewing Health**.
+   - the **Health review** row becomes the checklist's selected row, and the
+     review is on the Health scope.
 5. Write in **Document** mode. The editor takes the whole file, renders markdown
 
    as you go, and saves itself after a short pause, when the pointer leaves the
-   editor, and on Ctrl/Cmd+S. The status beside the mode buttons reads **Saved**,
+   editor, and on Ctrl/Cmd+S. The status under the document reads **Saved**,
    **Saving…**, **Not saved**, or **Locked**.
 6. Press **Mark Health review complete** when that area's section says what you
    wanted. The checklist row flips to **Done**; the file stays editable and the
@@ -211,11 +216,10 @@ notes in this period.** and offers **Write today's note**.
 
 | Part | What it does |
 |---|---|
-| Cadence eyebrow, period heading and pager | The grey cadence eyebrow; the period as the page's one heading (for example `Week of 21 Sep 2026`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
-| **Review checklist** | Weekly and longer only; a vertical column to the right of the report, inside the page's right padding. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
-| Scope line | **Reviewing Health** (or **Reviewing Life**) above the body, with **Whole-life review** to move the lens back to Life without starting a session. |
-| Status text | **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. |
-| Editor | The Daily Journal's live markdown box at the journal's height, placeholder **Write this review.**, read-only while locked. |
+| Eyebrow, period heading and pager | The grey eyebrow naming the wing and cadence (for example **Review / Weekly**); the period as the page's one heading (for example `21-27 Sep '26 (W39)`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
+| **Review checklist** | Weekly and longer only; a vertical column beside the report where the sheet has room for the 48rem page and the rail together, and a full-width row between the header and the report where it does not — the reading column is never narrowed to make room for it. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
+| Status text | Under the document: **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. There is no scope line above the body — the checklist's selected row says which review the page is on. |
+| Editor | The Daily Journal's live markdown box at the journal's height, with square corners and its own review title as the first line — `W46 Review: 9-15 Nov '26` — placeholder **Write this review.**, read-only while locked. |
 | Action buttons | **Start interview** (resumes the active scope's session), **Plan next period**, a mark-complete button — **Mark life review complete** / **Mark Health review complete** / **Mark review complete** on Daily — while the review is open, and **Unlock** once it is locked. The mark-complete button is gone on a locked review: the companion marks the review complete itself once you have answered its interview. **Start interview** and **Mark life review complete** are disabled for Life until every area is done. |
 | **Review rules** | A collapsible panel: the cadence's standing rules and its `lifequest-snapshot` directives, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |

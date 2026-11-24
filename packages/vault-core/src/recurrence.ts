@@ -17,12 +17,21 @@ import type {
  * Two very different things sit in one list because the operator's question is
  * one question — "what comes round that I owe today?":
  *
- *  1. The operator's own recurring tasks, when their next occurrence has come
- *     round (overdue, today, or later this week).
+ *  1. The operator's own recurring tasks, when their next occurrence is owed
+ *     TODAY: overdue or due today. A record dated later is not drawn yet, even
+ *     when that date falls later in this same week — a scheduled task must not
+ *     be dosed a day early, so a daily task due tomorrow belongs on tomorrow's
+ *     board, not today's. `recurringState()` still answers "this-week" and
+ *     "later" for such records, because the Manage-recurring editor names those
+ *     states; only this card's derived list narrows.
  *  2. The five review cadences, which are recurring by nature but are not
  *     records the operator creates: a review is due once its review window has
  *     opened and its overall review is not done. Its truth is the review file,
- *     so its row links there and carries no tick.
+ *     so its row links there and carries no tick. Review rows need no separate
+ *     "due now" filter: `reviewRows()` only builds a row from a window
+ *     `openReviewDate()` has already opened, so a later window produces no row
+ *     at all — leave that function alone rather than "fixing" it to match the
+ *     task side.
  *
  * Nothing here materialises anything. A row exists because a date says it is
  * due, which is why opening the app twice cannot create a card twice.
@@ -152,8 +161,9 @@ export type DueSettings = {
  * Merge the two sources into one sorted list.
  *
  * Order is the operator's attention order: what is late first (oldest first),
- * then what is due today, then what falls later this week; ties by date, then
- * id so two rows on one day cannot swap places between renders.
+ * then what is due today; ties by date, then id so two rows on one day cannot
+ * swap places between renders. A record due on a future day is not in the list
+ * at all: it appears on its own day, never a day early.
  */
 export function dueRecurringItems(
   items: RecurringTask[],
@@ -166,7 +176,11 @@ export function dueRecurringItems(
 
   for (const item of items) {
     const state = recurringState(item, today, settings.weekStartDay);
-    if (state === "paused" || state === "later") continue;
+    // Only what is owed NOW is drawn: overdue and due today. "this-week" and
+    // "later" records stay in the model (the Manage-recurring editor names those
+    // states), and "paused" is not owed at all — none of them belongs on the
+    // card before its day.
+    if (state !== "overdue" && state !== "today") continue;
     rows.push({
       id: item.id,
       kind: "task",
@@ -184,6 +198,10 @@ export function dueRecurringItems(
   const rank: Record<RecurringDueState, number> = {
     overdue: 0,
     today: 1,
+    // Unreachable from this function now: the loop above drops every task row
+    // whose state is not "overdue" or "today", and a review row is only ever
+    // "overdue" or "today". The entry stays because `RecurringDueState` still
+    // carries "this-week" for the manager, and the map must cover the type.
     "this-week": 2,
   };
   return rows.sort((a, b) => {

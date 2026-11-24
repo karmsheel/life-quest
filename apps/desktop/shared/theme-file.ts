@@ -43,6 +43,7 @@ export type DomainSwitcherPlace =
   | "floating-bottom-right"
   | "hidden";
 export type DomainSwitcherVariant = "segmented" | "pill" | "icons" | "list";
+export type DomainSwitcherFrame = "pill" | "bare";
 
 export type NavRailPlace = "left" | "right" | "floating";
 export type TitlebarSize = "compact" | "default" | "tall";
@@ -54,6 +55,8 @@ export type ThemeChrome = {
   domainSwitcher: {
     place: DomainSwitcherPlace;
     variant: DomainSwitcherVariant;
+    /** The dock's own frame: the pill container, or a bare stack of rows. */
+    frame: DomainSwitcherFrame;
   };
   /** The sidebar's own column: which edge it holds and how much room it keeps. */
   navRail: { place: NavRailPlace; width: NavRailWidth };
@@ -77,23 +80,74 @@ export type ThemeChromeOverride = {
   titlebar?: Partial<ThemeChrome["titlebar"]>;
 };
 
-export type SceneBackdropPreset = "plain" | "starfield" | "orbit" | "aurora";
+export type SceneBackdropPreset =
+  | "plain"
+  | "starfield"
+  | "orbit"
+  | "aurora"
+  | "horizon"
+  | "mesh";
 export type SceneIntensity = "calm" | "default" | "lively";
 export type SceneCanvasFrame = "none" | "hairline" | "double" | "halo";
 export type SceneCardFrame = "theme" | "outline" | "raised";
+
+export type BackgroundImageFit = "cover" | "contain" | "tile";
+export type BackgroundImagePosition = "center" | "top" | "bottom";
+export type BackgroundImageDim = "none" | "soft" | "strong";
+export type BackgroundImageBlur = "none" | "soft" | "deep";
+
+/**
+ * How much of the backdrop shows through one shell panel.
+ *
+ * The words name a step, not a colour: the stylesheet maps each one to a veil
+ * percentage over the panel's own paint. `solid` is the opaque panel the app had
+ * before the background layer existed; `clear` lets the whole backdrop through.
+ */
+export type PanelOcclusion = "solid" | "heavy" | "medium" | "light" | "clear";
+
+/** The two shell panels a background can show through. */
+export type ThemeBackgroundPanels = {
+  /** The left sidebar (nav rail). */
+  navRail: PanelOcclusion;
+  /** The right chat bar (the dock panel). */
+  chat: PanelOcclusion;
+};
+
+/**
+ * A picture behind the page, named by its file in the app profile.
+ *
+ * The theme carries the *choices* — which stored picture and how it sits — not
+ * the bytes. Main copies the operator's pick into `<app profile>/backgrounds/`
+ * under a content-hashed name, so `file` is a name in that directory, never a
+ * path or a URL: a theme can travel between profiles without carrying an image,
+ * and a picture that is gone falls back to the drawn preset at paint time.
+ */
+export type ThemeBackgroundImage = {
+  /** A file name inside `<app profile>/backgrounds/`, never a path or a URL. */
+  file: string;
+  fit: BackgroundImageFit;
+  position: BackgroundImagePosition;
+  dim: BackgroundImageDim;
+  blur: BackgroundImageBlur;
+};
 
 /**
  * The scene layer: decoration, never structure.
  *
  * A theme names one of the bundled procedural backgrounds and how lively it
- * runs. It cannot ship an image, a canvas, or a shader — the vocabulary is
- * closed and the renderer is the app's, which is what keeps the page legible,
- * the CSP narrow and the frame budget honest.
+ * runs, and may name a picture already stored in the profile's `backgrounds/`.
+ * It cannot ship an image, a canvas, or a shader — the vocabulary is closed and
+ * the renderer is the app's, which is what keeps the page legible, the CSP
+ * narrow and the frame budget honest.
  */
 export type ThemeScene = {
   background: {
     preset: SceneBackdropPreset;
     intensity: SceneIntensity;
+    /** null = drawn preset only. */
+    image: ThemeBackgroundImage | null;
+    /** How much of the backdrop shows through the sidebar and the chat bar. */
+    panels: ThemeBackgroundPanels;
   };
   /**
    * The frame layer: how the page's edge and its cards are drawn. Still a closed
@@ -106,9 +160,19 @@ export type ThemeScene = {
   };
 };
 
+/** What a theme file may say about one scene background. */
+export type ThemeBackgroundFile = {
+  preset?: SceneBackdropPreset;
+  intensity?: SceneIntensity;
+  /** null means "no picture" and, in an override, hides the theme's picture. */
+  image?: ThemeBackgroundImage | null;
+  /** Only the panels the file changes; the rest stay at their layered value. */
+  panels?: Partial<ThemeBackgroundPanels>;
+};
+
 /** What a theme file may say about the scene: any field left out is defaulted. */
 export type ThemeSceneFile = {
-  background?: Partial<ThemeScene["background"]>;
+  background?: ThemeBackgroundFile;
   frames?: Partial<ThemeScene["frames"]>;
 };
 
@@ -147,14 +211,33 @@ export type ThemeFile = {
 
 export const DEFAULT_THEME_CHROME: ThemeChrome = {
   wingSwitcher: { place: "rail-top", variant: "labels" },
-  domainSwitcher: { place: "titlebar-center", variant: "segmented" },
+  domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
   navRail: { place: "left", width: "default" },
   chatDock: { side: "right" },
   titlebar: { size: "default" },
 };
 
+/** A picture's sitting defaults: fit the whole page, softened so text reads. */
+export const DEFAULT_BACKGROUND_IMAGE: Omit<ThemeBackgroundImage, "file"> = {
+  fit: "cover",
+  position: "center",
+  dim: "soft",
+  blur: "none",
+};
+
+/** Both panels opaque by default: exactly the look the app had before R2. */
+export const DEFAULT_BACKGROUND_PANELS: ThemeBackgroundPanels = {
+  navRail: "solid",
+  chat: "solid",
+};
+
 export const DEFAULT_THEME_SCENE: ThemeScene = {
-  background: { preset: "plain", intensity: "calm" },
+  background: {
+    preset: "plain",
+    intensity: "calm",
+    image: null,
+    panels: { ...DEFAULT_BACKGROUND_PANELS },
+  },
   frames: { canvas: "none", cards: "theme" },
 };
 
@@ -163,6 +246,8 @@ export const SCENE_BACKDROPS: readonly SceneBackdropPreset[] = [
   "starfield",
   "orbit",
   "aurora",
+  "horizon",
+  "mesh",
 ];
 export const SCENE_INTENSITIES: readonly SceneIntensity[] = [
   "calm",
@@ -180,6 +265,40 @@ export const SCENE_CARD_FRAMES: readonly SceneCardFrame[] = [
   "outline",
   "raised",
 ];
+
+export const BACKGROUND_IMAGE_FITS: readonly BackgroundImageFit[] = [
+  "cover",
+  "contain",
+  "tile",
+];
+export const BACKGROUND_IMAGE_POSITIONS: readonly BackgroundImagePosition[] = [
+  "center",
+  "top",
+  "bottom",
+];
+export const BACKGROUND_IMAGE_DIMS: readonly BackgroundImageDim[] = [
+  "none",
+  "soft",
+  "strong",
+];
+export const BACKGROUND_IMAGE_BLURS: readonly BackgroundImageBlur[] = [
+  "none",
+  "soft",
+  "deep",
+];
+export const PANEL_OCCLUSIONS: readonly PanelOcclusion[] = [
+  "solid",
+  "heavy",
+  "medium",
+  "light",
+  "clear",
+];
+
+/** The file-name rule shared by main's store, the parser and the rigs. */
+export const BACKGROUND_IMAGE_FILE =
+  /^[a-z0-9][a-z0-9-]{0,79}\.(png|jpe?g|webp|gif)$/;
+/** Main refuses a source picture larger than this. */
+export const MAX_BACKGROUND_IMAGE_BYTES = 16 * 1024 * 1024;
 
 export const DEFAULT_THEME_MATERIAL: ThemeMaterial = {
   radius: "soft",
@@ -215,6 +334,7 @@ export const DOMAIN_VARIANTS: readonly DomainSwitcherVariant[] = [
   "icons",
   "list",
 ];
+export const DOMAIN_FRAMES: readonly DomainSwitcherFrame[] = ["pill", "bare"];
 export const NAV_RAIL_PLACES: readonly NavRailPlace[] = [
   "left",
   "right",
@@ -297,6 +417,84 @@ function oneOf<T extends string>(
     return `${field} must be one of ${allowed.join(", ")}`;
   }
   return value as T;
+}
+
+/**
+ * One `scene.background.image` object.
+ *
+ * `file` is required and must be a name main could have stored; the four axes
+ * default from `DEFAULT_BACKGROUND_IMAGE` and a declared one must be in its
+ * allow-list. Existence is deliberately not checked: the picture lives in this
+ * profile, and a theme can be imported on a machine before its picture is, so a
+ * missing file is a paint-time fallback rather than a parse error.
+ */
+function parseBackgroundImage(
+  raw: unknown,
+): { ok: true; image: ThemeBackgroundImage } | { ok: false; error: string } {
+  if (!isRecord(raw)) {
+    return { ok: false, error: "scene.background.image must be an object or null" };
+  }
+  const file = raw.file;
+  if (typeof file !== "string" || !BACKGROUND_IMAGE_FILE.test(file)) {
+    return {
+      ok: false,
+      error:
+        "scene.background.image.file must be a lowercase picture name ending in .png, .jpg, .jpeg, .webp or .gif",
+    };
+  }
+  const image: ThemeBackgroundImage = { file, ...DEFAULT_BACKGROUND_IMAGE };
+  for (const [key, allowed] of [
+    ["fit", BACKGROUND_IMAGE_FITS],
+    ["position", BACKGROUND_IMAGE_POSITIONS],
+    ["dim", BACKGROUND_IMAGE_DIMS],
+    ["blur", BACKGROUND_IMAGE_BLURS],
+  ] as const) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (
+      typeof value !== "string" ||
+      !(allowed as readonly string[]).includes(value)
+    ) {
+      return {
+        ok: false,
+        error: `scene.background.image.${key} must be one of ${allowed.join(", ")}`,
+      };
+    }
+    (image as unknown as Record<string, string>)[key] = value;
+  }
+  return { ok: true, image };
+}
+
+/**
+ * One `scene.background.panels` object.
+ *
+ * A theme names only the panels it shades; the ones it leaves out keep whatever
+ * the layer below says. Unknown keys are ignored like the rest of the parser —
+ * the vocabulary is read from the two axes the shell actually has, and a typo in
+ * an axis name is not a value to trust.
+ */
+function parseBackgroundPanels(
+  raw: unknown,
+): { ok: true; panels: Partial<ThemeBackgroundPanels> } | { ok: false; error: string } {
+  if (!isRecord(raw)) {
+    return { ok: false, error: "scene.background.panels must be an object" };
+  }
+  const panels: Partial<ThemeBackgroundPanels> = {};
+  for (const axis of ["navRail", "chat"] as const) {
+    const value = raw[axis];
+    if (value === undefined) continue;
+    if (
+      typeof value !== "string" ||
+      !(PANEL_OCCLUSIONS as readonly string[]).includes(value)
+    ) {
+      return {
+        ok: false,
+        error: `scene.background.panels.${axis} must be one of ${PANEL_OCCLUSIONS.join(", ")}`,
+      };
+    }
+    panels[axis] = value as PanelOcclusion;
+  }
+  return { ok: true, panels };
 }
 
 // ---------------------------------------------------------------------------
@@ -518,9 +716,21 @@ export function parseThemeFile(raw: unknown): ParseResult {
       if (typeof variant !== "string" && domain.variant !== undefined) {
         return { ok: false, error: variant };
       }
+      const frame = domain.frame;
+      if (
+        frame !== undefined &&
+        (typeof frame !== "string" ||
+          !(DOMAIN_FRAMES as readonly string[]).includes(frame))
+      ) {
+        return {
+          ok: false,
+          error: `chrome.domainSwitcher.frame must be one of ${DOMAIN_FRAMES.join(", ")}`,
+        };
+      }
       chrome.domainSwitcher = {
         place: place as DomainSwitcherPlace,
         variant: (variant as DomainSwitcherVariant) ?? "segmented",
+        frame: (frame as DomainSwitcherFrame | undefined) ?? "pill",
       };
     }
     const titlebar = raw.chrome.titlebar;
@@ -629,9 +839,26 @@ export function parseThemeFile(raw: unknown): ParseResult {
           error: `scene.background.intensity must be one of ${SCENE_INTENSITIES.join(", ")}`,
         };
       }
+      // A null picture and an absent one are the same file: no image key at all.
+      // The distinction only matters in the operator's override, which the
+      // renderer parses on its own (see `layerScene`).
+      let image: ThemeBackgroundImage | null = null;
+      if (background.image !== undefined && background.image !== null) {
+        const parsedImage = parseBackgroundImage(background.image);
+        if (!parsedImage.ok) return parsedImage;
+        image = parsedImage.image;
+      }
+      let panels: Partial<ThemeBackgroundPanels> | undefined;
+      if (background.panels !== undefined) {
+        const parsedPanels = parseBackgroundPanels(background.panels);
+        if (!parsedPanels.ok) return parsedPanels;
+        panels = parsedPanels.panels;
+      }
       scene.background = {
         ...(preset ? { preset: preset as SceneBackdropPreset } : {}),
         ...(intensity ? { intensity: intensity as SceneIntensity } : {}),
+        ...(image ? { image } : {}),
+        ...(panels && Object.keys(panels).length > 0 ? { panels } : {}),
       };
     }
     const frames = raw.scene.frames;
@@ -766,6 +993,8 @@ export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
       preset: scene?.background?.preset ?? DEFAULT_THEME_SCENE.background.preset,
       intensity:
         scene?.background?.intensity ?? DEFAULT_THEME_SCENE.background.intensity,
+      image: scene?.background?.image ?? null,
+      panels: { ...DEFAULT_BACKGROUND_PANELS, ...scene?.background?.panels },
     },
     frames: {
       canvas: scene?.frames?.canvas ?? DEFAULT_THEME_SCENE.frames.canvas,
@@ -774,13 +1003,34 @@ export function resolveScene(scene?: ThemeSceneFile): ThemeScene {
   };
 }
 
-/** Layer the operator's scene picks over the worn theme's scene. */
+/**
+ * Layer the operator's scene picks over the worn theme's scene.
+ *
+ * The picture is the one field where "absent" and "null" differ: omitting
+ * `image` inherits the theme's picture, while an explicit `image: null` is the
+ * operator's "no picture", which also hides the theme's. That is what makes
+ * Reset to theme a plain deletion and Remove a real override. The panel shades
+ * layer per axis, so an operator who only touches the sidebar keeps the theme's
+ * choice for the chat bar.
+ */
 export function layerScene(
   theme?: ThemeSceneFile,
   override?: ThemeSceneOverride,
 ): ThemeScene {
   return resolveScene({
-    background: { ...theme?.background, ...override?.background },
+    background: {
+      ...theme?.background,
+      ...override?.background,
+      image:
+        override?.background?.image !== undefined
+          ? override.background.image
+          : theme?.background?.image ?? null,
+      panels: {
+        ...DEFAULT_BACKGROUND_PANELS,
+        ...theme?.background?.panels,
+        ...override?.background?.panels,
+      },
+    },
     frames: { ...theme?.frames, ...override?.frames },
   });
 }
@@ -801,9 +1051,12 @@ export const THEME_VOCABULARY = [
   "A theme is presentation only: a JSON file at <app profile>/themes/<name>.json, never in the vault, and it needs no Decision.",
   "Shape: { name (slug), label, description?, chrome?, material?, scene?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
-  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill).",
+  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill | icons | list; frame pill | bare — bare drops the dock's container so the rows are the whole control).",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
-  "scene.background.preset: plain | starfield | orbit | aurora (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the page only, behind a scrim, and stops dead under prefers-reduced-motion.",
+  "scene.background.preset: plain | starfield | orbit | aurora | horizon | mesh (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the whole shell — sidebar, page and dock — behind a scrim, and stops dead under prefers-reduced-motion.",
+  "scene.background.image: { file, fit, position, dim, blur } — a picture already stored in the app profile's backgrounds/ directory, which the operator picks; a theme names the stored file, never a path or URL. fit: cover | contain | tile; position: center | top | bottom; dim: none | soft | strong; blur: none | soft | deep. It replaces the drawn sky while set, and a missing file falls back to it.",
+  "scene.background.panels.navRail / .chat: solid | heavy | medium | light | clear (how much of the backdrop shows through the sidebar / chat bar; solid is the opaque panel).",
+  "get_theme lists the pictures stored in the app profile's backgrounds/ (file, bytes, mime) and the resolved scene (preset, intensity, frames, image, panels); name one in scene.background.image.file. store_background_picture copies a vault image into that folder and returns the file name; write_theme then wears it (preview/Keep). The operator's Settings override outranks a theme.",
   "scene.frames.canvas: none | hairline | double | halo (the page's decorative edge); scene.frames.cards: theme | outline | raised (how the page's cards are drawn).",
   COMPOSITION_VOCABULARY,
   "Colours are optional; when present the palette must be complete and pass WCAG AA, or the theme is refused with the failing pair named.",

@@ -58,12 +58,37 @@ export function withMaterialPatch(
   return { ...theme, material: { ...theme.material, ...patch } };
 }
 
-/** Merge scene picks into the theme's partial `scene`; empty layers drop the key. */
+/**
+ * Merge scene picks into the theme's partial `scene`; empty layers drop the key.
+ *
+ * A picture is whole or absent: the layers below the sky rows always report the
+ * entire image object (file plus its four axes), so a patch with an image
+ * replaces it rather than leaving a half image behind. An explicit
+ * `image: null` is the Remove button speaking — the draft has no picture, so
+ * the key goes instead of landing as a JSON `null` (the parser normalises an
+ * absent picture to none anyway).
+ *
+ * The panel shades are the opposite shape: two independent axes in one map, and
+ * the rows below the picture report only the axis that was picked. That object
+ * deep-merges axis by axis, so shading the chat bar leaves the sidebar's step
+ * alone (and a theme keeps only the axes it actually names). Everything else
+ * keeps merging field by field, and a layer that ends up empty drops out of the
+ * file entirely.
+ */
 export function withScenePatch(
   theme: ThemeFile,
   patch: ThemeSceneOverride,
 ): ThemeFile {
   const background = { ...theme.scene?.background, ...patch.background };
+  if (patch.background?.panels !== undefined) {
+    const panels = {
+      ...theme.scene?.background?.panels,
+      ...patch.background.panels,
+    };
+    if (Object.keys(panels).length > 0) background.panels = panels;
+    else delete background.panels;
+  }
+  if (patch.background?.image === null) delete background.image;
   const frames = { ...theme.scene?.frames, ...patch.frames };
   const scene: ThemeSceneFile = {
     ...(Object.keys(background).length > 0 ? { background } : {}),

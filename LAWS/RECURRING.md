@@ -10,7 +10,8 @@ on the Task Manager board. The five review cadences are built-in recurring items
 - A recurring task MUST NOT be a card: it MUST NOT appear in any of the Task Manager's six columns.
 - A recurring task's due row MUST be derived from its due date and the local day.
 - Opening the app, the Dashboard or the Task Manager MUST NOT create a task, a card or a file for an occurrence.
-- The Dashboard's Today & this week card MUST list the operator's recurring tasks that are overdue, due today, or due later in the vault's current week.
+- The Dashboard's Today & this week card MUST list the operator's recurring tasks that are overdue or due today.
+- A recurring task whose next occurrence is on a later day MUST NOT appear on the Dashboard before that day, even when the day falls in the vault's current week: a scheduled task MUST NOT be dosed a day early.
 - A paused recurring task MUST NOT appear as due anywhere.
 - A paused recurring task MUST keep its cadence, next due date and history until it is resumed.
 - Completing an occurrence MUST record that occurrence's due date and the local day it was completed.
