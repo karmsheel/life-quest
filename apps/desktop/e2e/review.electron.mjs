@@ -176,14 +176,16 @@ const TOTAL_AREAS = AREA_ROWS.length;
 
 /** Read the review page and the box straight off the rendered DOM. */
 /**
- * A weekly review's period label, short enough for one line at the reading
- * measure: `9-15 November '26 (W46)`. The start's month (and year) is omitted
- * when the span shares them with the end; a span across a month reads
- * `30 November-6 December '26`, one across a year
- * `28 December '26-3 January '27`.
+ * A weekly review's period heading, short enough for one line at the reading
+ * measure: `9-15 Nov '26 (W46)`. The start's month (and year) is omitted when
+ * the span shares them with the end; a span across a month reads
+ * `30 Nov-6 Dec '26`, one across a year `28 Dec '26-3 Jan '27`.
  */
 const WEEK_TITLE =
-  /^\d{1,2}(?: [A-Z][a-z]+(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]+ '\d{2} \(W\d{1,2}\)$/;
+  /^\d{1,2}(?: [A-Z][a-z]{2}(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]{2} '\d{2} \(W\d{1,2}\)$/;
+
+/** The week-first document title inside the box: `W46 Review: 9-15 Nov '26`. */
+const DOC_TITLE = /^W\d{1,2} Review: .+/;
 
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
@@ -235,6 +237,13 @@ const SAMPLE = `(() => {
       : [],
     headings: box ? box.querySelectorAll("h1, h2, h3, h4, h5, h6").length : 0,
     title: text(document.querySelector(".review-page__title")),
+    // The document's own title, the first heading the box draws from the file.
+    docTitle: box ? text(box.querySelector("h1")) : null,
+    // The review is a page, not a card: the box keeps square corners.
+    editorRadius: (() => {
+      const el = document.querySelector(".review-page__editor .note-live");
+      return el ? getComputedStyle(el).borderTopLeftRadius : null;
+    })(),
     period: text(document.querySelector('[data-testid="review-period"]')),
     eyebrow: text(document.querySelector('[data-testid="wing-eyebrow"]')),
     // The period the page is on, as the page itself records it: the driver can
@@ -334,9 +343,12 @@ const SAMPLE = `(() => {
     businessStatus: status("review-area-business-status"),
     relationshipsItem: item("review-area-relationships"),
     relationshipsStatus: status("review-area-relationships-status"),
+    // The reviewing line above the box is gone: the page has no chrome above
+    // the prose, and the autosave line sits under the box instead.
     scopeLine: text(document.querySelector('[data-testid="review-scope"]')),
     scopeName: text(document.querySelector('[data-testid="review-scope-name"]')),
     scopeWholeLifeLink: Boolean(document.querySelector('[data-testid="review-scope-life"]')),
+    statusRect: rect(document.querySelector('[data-testid="review-status"]')),
     markDoneLabel: (() => {
       const el = document.querySelector('[data-testid="review-mark-done"]');
       return el ? text(el) : null;
@@ -389,9 +401,8 @@ const SAMPLE = `(() => {
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
         header: rect(document.querySelector(".review-page__header")),
-        toolbar: rect(document.querySelector(".review-page__toolbar")),
         editor: rect(document.querySelector(".review-page__editor")),
-        scope: rect(document.querySelector('[data-testid="review-scope"]')),
+        status: rect(document.querySelector('[data-testid="review-status"]')),
         pageActions: rect(document.querySelector(".review-page__actions")),
         notes: rect(document.querySelector(".review-notes")),
       };
@@ -731,9 +742,10 @@ function layoutReport(layout) {
           railRight
         : null,
     headerLeft: layout?.header?.left ?? null,
-    toolbarLeft: layout?.toolbar?.left ?? null,
     editorLeft: layout?.editor?.left ?? null,
-    scopeLeft: layout?.scope?.left ?? null,
+    statusTop: layout?.status?.top ?? null,
+    statusRight: layout?.status ? layout.status.left + layout.status.width : null,
+    editorBottom: layout?.editor ? layout.editor.top + layout.editor.height : null,
     actionsLeft: layout?.pageActions?.left ?? null,
     notesLeft: layout?.notes?.left ?? null,
   };
@@ -820,9 +832,7 @@ function assertTwoColumn(layout, when, { spareFloor = 0 } = {}) {
   // from the leading edge would be a page divided against itself.
   for (const [part, left] of [
     ["header", report.headerLeft],
-    ["toolbar", report.toolbarLeft],
     ["editor", report.editorLeft],
-    ["scope line", report.scopeLeft],
     ["actions", report.actionsLeft],
     ["daily notes", report.notesLeft],
   ]) {
@@ -940,6 +950,28 @@ async function foldDock(win) {
     "the chat dock to fold away",
   );
   await frames(win);
+}
+
+/**
+ * The scope the checklist marks as active, or null when no row is. The page no
+ * longer prints a "Reviewing X" line above the box: the checklist's own selected
+ * row is where the scope is said.
+ */
+function activeScope(page) {
+  for (const [slug, item] of [
+    ["overall", page.lifeItem],
+    ["health", page.healthItem],
+    ["mind", page.mindItem],
+    ["financial", page.financeItem],
+    ["business", page.businessItem],
+    ["relationships", page.relationshipsItem],
+  ]) {
+    if (!item) continue;
+    if (String(item.className).includes("is-active") || item.ariaCurrent === "true") {
+      return slug;
+    }
+  }
+  return null;
 }
 
 /** The rail state as one small object, for both the driver's checks and the report. */
@@ -1143,16 +1175,31 @@ async function main() {
     lifeStatus: `${TOTAL_AREAS - 1} areas left`,
     lifeDisabled: true,
   });
-  // The scope line names the scope the page is on, and only an area scope offers
-  // the way back to the whole-life review.
-  if (opened.scopeName !== "Life") {
-    failure(`the scope line's name read ${JSON.stringify(opened.scopeName)}, expected "Life"`);
+  // The reviewing line above the box is gone: the checklist's selected row says
+  // which review the page is on, and nothing sits between the pager and the
+  // document.
+  if (opened.scopeLine !== null || opened.scopeName !== null || opened.scopeWholeLifeLink) {
+    failure(
+      `the retired scope line is still on the page: ${JSON.stringify(opened.scopeLine)} / ${JSON.stringify(opened.scopeName)}`,
+    );
   }
-  if (!String(opened.scopeLine).includes("Reviewing")) {
-    failure(`the scope line does not say what is being reviewed: ${JSON.stringify(opened.scopeLine)}`);
+  if (activeScope(opened) !== "overall") {
+    failure(`the Life row is not the selected row on arrival (${JSON.stringify(activeScope(opened))})`);
   }
-  if (opened.scopeWholeLifeLink) {
-    failure("the whole-life link is offered while the page IS the whole-life review");
+  // The document is a page, not a card: square corners, its own week-first
+  // title, and the autosave line under the box it reports on.
+  if (!DOC_TITLE.test(String(opened.docTitle))) {
+    failure(`the document's title is ${JSON.stringify(opened.docTitle)}, not "W46 Review: 9-15 Nov '26"`);
+  }
+  if (opened.editorRadius !== "0px") {
+    failure(`the document box's corner radius is ${JSON.stringify(opened.editorRadius)}, not square`);
+  }
+  if (
+    !opened.layout?.status ||
+    !opened.layout?.editor ||
+    !(opened.layout.status.top >= opened.layout.editor.top + opened.layout.editor.height - 1)
+  ) {
+    failure("the autosave line is not under the document box");
   }
   if (opened.markDoneLabel !== "Mark life review complete") {
     failure(`the mark-done button reads ${JSON.stringify(opened.markDoneLabel)}`);
@@ -1326,18 +1373,13 @@ async function main() {
   if (agentDown.boxes !== 1 || agentDown.editing) {
     failure("an agent that is not answering took the review document away");
   }
-  // Pressing a row puts the page on that area: the scope line and the selected
-  // row must agree, or the kickoff and the box are about different sections.
-  if (agentDown.scopeName !== "Finance") {
-    failure(`the rail press left the scope line on ${JSON.stringify(agentDown.scopeName)}`);
+  // Pressing a row puts the page on that area: the selected row is the only
+  // place the scope is said now that the reviewing line is gone.
+  if (activeScope(agentDown) !== "financial") {
+    failure(`the rail press left the selected row on ${JSON.stringify(activeScope(agentDown))}`);
   }
   if (!agentDown.financeItem || !String(agentDown.financeItem.className).includes("is-active")) {
     failure("the Finance row is not the selected row after it was pressed");
-  }
-  if (!String(agentDown.scopeLine).includes("Whole-life review")) {
-    failure(
-      `an area scope does not offer the way back to the whole-life review: ${JSON.stringify(agentDown.scopeLine)}`,
-    );
   }
   const snapshotCalls = await setHarness(win, "window.reviewRigSnapshotCalls");
   checks.agentDownSnapshotCalls = snapshotCalls;
@@ -1638,14 +1680,11 @@ async function main() {
     if (!String(last?.kickoff).includes(`## ${area.name}`)) {
       failure(`the ${area.name} kickoff does not name its own section: ${JSON.stringify(last?.kickoff)}`);
     }
-    if (areaStart.scopeName !== area.name) {
-      failure(`the ${area.name} row left the scope line on ${JSON.stringify(areaStart.scopeName)}`);
+    if (activeScope(areaStart) !== area.slug) {
+      failure(`the ${area.name} row left the selected row on ${JSON.stringify(activeScope(areaStart))}`);
     }
     if (areaStart.markDoneLabel !== `Mark ${area.name} review complete`) {
       failure(`the mark-done button reads ${JSON.stringify(areaStart.markDoneLabel)}`);
-    }
-    if (areaStart.scopeWholeLifeLink !== true) {
-      failure(`the ${area.name} scope does not offer the whole-life review link`);
     }
     await click(win, '[data-testid="review-mark-done"]');
     await waitForRailStatus(win, area.slug, "Done");
@@ -1914,8 +1953,10 @@ async function main() {
   await frames(win);
   const back = await sample(win);
   checks.back = back;
-  if (back.scopeName !== "Relationships") {
-    failure(`returning to the weekly review left the scope on ${JSON.stringify(back.scopeName)}, expected Relationships`);
+  if (activeScope(back) !== "relationships") {
+    failure(
+      `returning to the weekly review left the selected row on ${JSON.stringify(activeScope(back))}, expected relationships`,
+    );
   }
   if (back.markDoneLabel !== "Mark Relationships review complete") {
     failure(`the weekly mark-done button reads ${JSON.stringify(back.markDoneLabel)}`);
@@ -2043,11 +2084,8 @@ async function main() {
   if (lifeStarted.lifeStatus !== "In progress") {
     failure(`the Life review's status while it is being worked reads ${JSON.stringify(lifeStarted.lifeStatus)}`);
   }
-  if (lifeStarted.scopeName !== "Life") {
-    failure(`the life review left the scope line on ${JSON.stringify(lifeStarted.scopeName)}`);
-  }
-  if (lifeStarted.scopeWholeLifeLink) {
-    failure("the whole-life link is offered while the page IS the whole-life review");
+  if (activeScope(lifeStarted) !== "overall") {
+    failure(`the life review left the selected row on ${JSON.stringify(activeScope(lifeStarted))}`);
   }
   if (lifeStarted.markDoneLabel !== "Mark life review complete") {
     failure(`the life review's mark-done button reads ${JSON.stringify(lifeStarted.markDoneLabel)}`);

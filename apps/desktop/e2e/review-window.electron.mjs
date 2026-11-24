@@ -96,8 +96,8 @@ const REVIEW_SCENARIOS = [
     params: { cadence: "weekly", now: "2026-11-10T09:00:00" },
     expect: {
       eyebrow: "Review / Weekly",
-      title: "2-8 November '26 (W45)",
-      periodLabel: "2-8 November '26 (W45)",
+      title: "2-8 Nov '26 (W45)",
+      periodLabel: "2-8 Nov '26 (W45)",
       note: "The weekly review for the current period opens 15 Nov 2026 at 08:00.",
       nextDisabled: true,
     },
@@ -108,8 +108,8 @@ const REVIEW_SCENARIOS = [
     params: { cadence: "weekly", now: "2026-11-15T08:00:00" },
     expect: {
       eyebrow: "Review / Weekly",
-      title: "9-15 November '26 (W46)",
-      periodLabel: "9-15 November '26 (W46)",
+      title: "9-15 Nov '26 (W46)",
+      periodLabel: "9-15 Nov '26 (W46)",
       note: null,
       nextDisabled: true,
     },
@@ -122,8 +122,8 @@ const REVIEW_SCENARIOS = [
     params: { cadence: "weekly", now: "2026-12-06T09:00:00" },
     expect: {
       eyebrow: "Review / Weekly",
-      title: "30 November-6 December '26 (W49)",
-      periodLabel: "30 November-6 December '26 (W49)",
+      title: "30 Nov-6 Dec '26 (W49)",
+      periodLabel: "30 Nov-6 Dec '26 (W49)",
       note: null,
       nextDisabled: true,
     },
@@ -134,8 +134,8 @@ const REVIEW_SCENARIOS = [
     params: { cadence: "weekly", now: "2027-01-03T09:00:00" },
     expect: {
       eyebrow: "Review / Weekly",
-      title: "28 December '26-3 January '27 (W53)",
-      periodLabel: "28 December '26-3 January '27 (W53)",
+      title: "28 Dec '26-3 Jan '27 (W53)",
+      periodLabel: "28 Dec '26-3 Jan '27 (W53)",
       note: null,
       nextDisabled: true,
     },
@@ -152,8 +152,8 @@ const REVIEW_SCENARIOS = [
     },
     expect: {
       eyebrow: "Review / Weekly",
-      title: "8-14 November '26 (W46)",
-      periodLabel: "8-14 November '26 (W46)",
+      title: "8-14 Nov '26 (W46)",
+      periodLabel: "8-14 Nov '26 (W46)",
       note: "The weekly review for the current period opens 21 Nov 2026 at 08:00.",
       nextDisabled: true,
     },
@@ -513,7 +513,7 @@ function verifyReviewScenario(scenario, sampleValue) {
     );
   }
   // The cadence is the eyebrow now, and the period is the page's one heading:
-  // `Weekly review · 9-15 November '26 (W46)` said the same thing twice.
+  // `Weekly review · 9-15 Nov '26 (W46)` said the same thing twice.
   if (sampleValue.title !== expect.title) {
     failure(
       `${name}: the page's heading reads ${JSON.stringify(sampleValue.title)}, expected ${JSON.stringify(expect.title)}`,

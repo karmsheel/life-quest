@@ -689,10 +689,6 @@ function ReviewPageFor() {
   );
 
   /** The scope line's way back to the whole-life review: no session is started. */
-  const onOpenLifeScope = useCallback(() => {
-    void setActiveSlug(null);
-  }, [setActiveSlug]);
-
   // The area section a checked-out row asked for, brought into view once the
   // document has committed the body that holds it. Best effort by design: the
   // editor is a whole-file box, so the heading is found in the rendered blocks
@@ -1067,35 +1063,8 @@ function ReviewPageFor() {
           ) : (
             <>
               {/* The box is the page: there is no second view of it to switch
-                  between, so the row above the prose is only what the prose is —
-                  the scope line — and whether it has reached the vault. */}
-              <div className="review-page__toolbar">
-                {isDaily ? null : (
-                  <div className="review-page__scope" data-testid="review-scope">
-                    <span className="review-page__scope-label">Reviewing</span>
-                    <span
-                      className="review-page__scope-name"
-                      data-testid="review-scope-name"
-                    >
-                      {activeDomainName ?? "Life"}
-                    </span>
-                    {activeScope === "overall" ? null : (
-                      <button
-                        type="button"
-                        className="review-page__scope-link"
-                        data-testid="review-scope-life"
-                        onClick={onOpenLifeScope}
-                      >
-                        Whole-life review
-                      </button>
-                    )}
-                  </div>
-                )}
-                <span className="muted review-page__status" data-testid="review-status">
-                  {status}
-                </span>
-              </div>
-
+                  between, and no chrome above the prose — the checklist marks
+                  the scope and the autosave line sits under the box. */}
               <div
                 className="review-page__editor"
                   // The pointer leaving the box — for another pane, another app — is
@@ -1116,6 +1085,14 @@ function ReviewPageFor() {
                     placeholder="Write this review."
                     readOnly={locked}
                   />
+              </div>
+
+              {/* Whether the prose has reached the vault, under the box it
+                  reports on: the page's one line of chrome about the document. */}
+              <div className="review-page__status-row">
+                <span className="muted review-page__status" data-testid="review-status">
+                  {status}
+                </span>
               </div>
 
               <div className="review-page__actions">

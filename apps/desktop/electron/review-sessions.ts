@@ -82,7 +82,11 @@ function periodClause(
 ): string {
   const title = periodTitle(cadence, period, weekStartDay);
   const prefix = `${CADENCE_LABEL[cadence]} review · `;
-  return title.startsWith(prefix) ? title.slice(prefix.length) : title;
+  if (title.startsWith(prefix)) return title.slice(prefix.length);
+  // A week's title leads with its number — `W46 Review: 9-15 Nov '26` — so the
+  // clause is the span after the `W46 Review: ` head.
+  const weekHead = /^W\d{1,2} Review: /.exec(title);
+  return weekHead ? title.slice(weekHead[0].length) : title;
 }
 
 function scopeSuffix(scope: "overall" | string, domainName?: string | null): string {

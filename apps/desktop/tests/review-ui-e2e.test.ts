@@ -109,7 +109,7 @@ type Layout = {
   header: Rect | null;
   modes: Rect | null;
   editor: Rect | null;
-  scope: Rect | null;
+  status: Rect | null;
   pageActions: Rect | null;
   notes: Rect | null;
 };
@@ -144,9 +144,10 @@ type Column = {
   gap: number | null;
   groupCentre: number | null;
   headerLeft: number | null;
-  toolbarLeft: number | null;
   editorLeft: number | null;
-  scopeLeft: number | null;
+  statusTop: number | null;
+  statusRight: number | null;
+  editorBottom: number | null;
   actionsLeft: number | null;
   notesLeft: number | null;
 };
@@ -188,6 +189,11 @@ type Page = {
   headers: string[];
   headings: number;
   title: string | null;
+  /** The document's own file title, e.g. `W46 Review: 9-15 Nov '26`. */
+  docTitle: string | null;
+  /** The document box's corner radius: `0px` — the review is a page, not a card. */
+  editorRadius: string | null;
+  statusRect: Rect | null;
   period: string | null;
   eyebrow: string | null;
   periodData: string | null;
@@ -402,6 +408,27 @@ function railItem(page: Page, slug: string): RailItem | null {
 }
 
 /** One checklist row's status text by slug. */
+/**
+ * The scope the checklist marks as active, or null when no row is. The page no
+ * longer prints a "Reviewing X" line above the box; the selected checklist row
+ * is where the scope is said.
+ */
+function activeScope(page: Page): string | null {
+  const rows: [string, RailItem | null][] = [
+    ["overall", page.lifeItem],
+    ["health", page.healthItem],
+    ["mind", page.mindItem],
+    ["financial", page.financeItem],
+    ["business", page.businessItem],
+    ["relationships", page.relationshipsItem],
+  ];
+  for (const [slug, item] of rows) {
+    if (!item) continue;
+    if (item.className.includes("is-active") || item.ariaCurrent === "true") return slug;
+  }
+  return null;
+}
+
 function railText(page: Page, slug: string): string | null {
   if (slug === "overall") return page.lifeStatus;
   const key = slug === "financial" ? "finance" : slug;
@@ -466,11 +493,10 @@ describe("review ui e2e", () => {
     );
     // The page opens on the CURRENT week, which is whatever week the suite runs
     // in: the claim is the shape of its own label, not a pinned date — the two
-    // ends of the week and its ISO week number, e.g.
-    // `9-15 November '26 (W46)`.
+    // ends of the week and its ISO week number, e.g. `9-15 Nov '26 (W46)`.
     assert.match(
       String(opened.title),
-      /^\d{1,2}(?: [A-Z][a-z]+(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]+ '\d{2} \(W\d{1,2}\)$/,
+      /^\d{1,2}(?: [A-Z][a-z]{2}(?: '\d{2})?)?-\d{1,2} [A-Z][a-z]{2} '\d{2} \(W\d{1,2}\)$/,
       "the review page's heading is not its period",
     );
     assert.equal(
@@ -570,14 +596,26 @@ describe("review ui e2e", () => {
       true,
       "the Life review is pressable before the areas are done",
     );
-    // The scope line names the scope this box is, and only an area scope offers
-    // the way back to the whole-life review.
-    assert.equal(opened.scopeName, "Life", "the scope line does not name the Life scope");
-    assert.match(String(opened.scopeLine), /Reviewing/, "the scope line does not say what is being reviewed");
-    assert.equal(
-      opened.scopeWholeLifeLink,
-      false,
-      "the whole-life link is offered while the page IS the whole-life review",
+    // The reviewing line above the box is gone: the checklist's selected row
+    // says which review the page is on, and nothing sits between the pager and
+    // the prose.
+    assert.equal(opened.scopeName, null, "the retired scope line is still on the page");
+    assert.equal(opened.scopeLine, null, "the retired scope line is still on the page");
+    assert.equal(opened.scopeWholeLifeLink, false, "the retired whole-life link came back");
+    assert.equal(activeScope(opened), "overall", "the Life row is not the selected row on arrival");
+    // The document is a page, not a card: its own week-first title, square
+    // corners, and the autosave line under the box it reports on.
+    assert.match(
+      String(opened.docTitle),
+      /^W\d{1,2} Review: .+/,
+      "the document's title is not its week-first form",
+    );
+    assert.equal(opened.editorRadius, "0px", "the document box still has rounded corners");
+    assert.ok(
+      opened.statusRect !== null &&
+        opened.layout.editor !== null &&
+        opened.statusRect.top >= opened.layout.editor.top + opened.layout.editor.height - 1,
+      "the autosave line is not under the document box",
     );
     assert.equal(
       opened.markDoneLabel,
@@ -627,9 +665,7 @@ describe("review ui e2e", () => {
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
-      ["toolbar", centred.toolbarLeft],
       ["editor", centred.editorLeft],
-      ["scope line", centred.scopeLeft],
       ["actions", centred.actionsLeft],
       ["daily-notes strip", centred.notesLeft],
     ] as const) {
@@ -777,18 +813,13 @@ describe("review ui e2e", () => {
       true,
       "the filled snapshot is not visible in the review with the agent down",
     );
-    // Pressing a row puts the page on that area: the scope line and the selected
-    // row must agree, or the kickoff and the box are about different sections.
-    assert.equal(agentDown.scopeName, "Finance", "the Finance row left the scope line on another scope");
+    // Pressing a row puts the page on that area: the selected row is the only
+    // place the scope is said now that the reviewing line is gone.
+    assert.equal(activeScope(agentDown), "financial", "the Finance row left the selected row elsewhere");
     assert.equal(
       agentDown.financeItem !== null && agentDown.financeItem.className.includes("is-active"),
       true,
       "the pressed row is not the selected row",
-    );
-    assert.match(
-      String(agentDown.scopeLine),
-      /Whole-life review/,
-      "an area scope does not offer the way back to the whole-life review",
     );
     assert.equal(
       report.checks.agentDownSnapshotCalls.length,
@@ -968,19 +999,14 @@ describe("review ui e2e", () => {
         `the ${area.name} kickoff does not name its own section`,
       );
       assert.equal(
-        startedArea.page.scopeName,
-        area.name,
-        `the ${area.name} row left the scope line on another scope`,
+        activeScope(startedArea.page),
+        area.slug,
+        `the ${area.name} row left the selected row elsewhere`,
       );
       assert.equal(
         startedArea.page.markDoneLabel,
         `Mark ${area.name} review complete`,
         `the mark-done button is not the ${area.name} form`,
-      );
-      assert.equal(
-        startedArea.page.scopeWholeLifeLink,
-        true,
-        `the ${area.name} scope does not offer the whole-life review link`,
       );
       assert.equal(railText(completed, area.slug), "Done", `the ${area.name} row did not flip to Done`);
       const doneCount = remaining.findIndex((r) => r.slug === area.slug) + 3;
@@ -1166,8 +1192,8 @@ describe("review ui e2e", () => {
     // ── back on the weekly review: the lens survived the daily page ─────────
     const back = report.checks.back;
     assert.equal(
-      back.scopeName,
-      "Relationships",
+      activeScope(back),
+      "relationships",
       "the daily review consumed the title-bar lens the weekly page had",
     );
     assert.equal(
@@ -1220,9 +1246,9 @@ describe("review ui e2e", () => {
       "the Life review does not read In progress while it is being worked",
     );
     assert.equal(
-      report.checks.lifeStarted.scopeName,
-      "Life",
-      "the life review left the scope line on another scope",
+      activeScope(report.checks.lifeStarted),
+      "overall",
+      "the life review left the selected row on another scope",
     );
     assert.equal(
       report.checks.lifeStarted.markDoneLabel,

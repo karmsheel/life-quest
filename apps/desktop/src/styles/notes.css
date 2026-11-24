@@ -1552,23 +1552,23 @@
   color: var(--muted);
 }
 
-/* The row above the prose: the scope line on the leading edge and the autosave
-   line on the trailing one. There is no second view of the box to switch to. */
-.review-page__toolbar {
+/* The autosave line, under the box it reports on: there is no second view of the
+   document to switch to, and no chrome above the prose. */
+.review-page__status-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 0.75rem;
+  justify-content: flex-end;
+  margin-top: -0.35rem;
 }
 
 .review-page__status {
-  margin-left: auto;
   font-size: 0.85rem;
 }
 
 /* The box is the Daily Journal's box: the same live surface, the same generous
    height (a review is as long as a day's prose), inside the report's 48rem
-   column rather than the studio's default note height. */
+   column rather than the studio's default note height. The review is a page,
+   not a card: the box keeps square corners so it reads as the sheet's prose
+   rather than as a panel floating on it. */
 .review-page__editor {
   width: 100%;
 }
@@ -1576,6 +1576,7 @@
 .review-page__editor .note-live {
   min-height: 32rem;
   max-height: min(80vh, 68rem);
+  border-radius: 0;
 }
 
 .review-page__actions {
@@ -1964,49 +1965,3 @@
   color: var(--muted-foreground);
 }
 
-/* —— The active scope line ——
-   Above the body: which review this box is, and — when it is one area's — the way
-   back to the whole-life review without starting anything. A line of chrome, the
-   same weight as the autosave status, not a banner. */
-.review-page__scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem;
-  margin: 0;
-  font-size: 0.85rem;
-}
-
-.review-page__scope-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.review-page__scope-name {
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.review-page__scope-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: 0.85rem;
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-  cursor: pointer;
-}
-
-.review-page__scope-link:hover {
-  color: var(--fg);
-}
-
-.review-page__scope-link:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
