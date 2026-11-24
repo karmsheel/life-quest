@@ -25,9 +25,11 @@ import { describe, it } from "node:test";
  *
  * The artifact is `e2e/artifacts/chain-capture.json` plus the captures the
  * driver takes — the seeded chain, a text capture, an uploaded image row, a
- * non-image file card (`chain-inbox-file.png`), a pasted link row, and the
- * triaged inbox (`chain-inbox-triage.png`) — each of which must be a real
- * capture of the shipped page, not an empty file.
+ * non-image file card (`chain-inbox-file.png`), a pasted link row, the dock's
+ * pending pasted link and the row it logs (`chain-capture-dock-link-pending.png`,
+ * `chain-capture-dock-link.png`), and the triaged inbox
+ * (`chain-inbox-triage.png`) — each of which must be a real capture of the
+ * shipped page, not an empty file.
  */
 
 const desktopRoot = path.resolve(
@@ -50,6 +52,8 @@ const CAPTURES = [
   "chain-inbox-file.png",
   "chain-capture-link.png",
   "chain-capture-dock.png",
+  "chain-capture-dock-link-pending.png",
+  "chain-capture-dock-link.png",
   "chain-inbox-triage.png",
 ];
 
@@ -102,6 +106,29 @@ type Select = {
 };
 
 type Box = { left: number; top: number; width: number; height: number };
+
+/** One row of the dock's chain list: its body, timestamp and attachments. */
+type DockItem = {
+  body: string | null;
+  stamp: string | null;
+  time: boolean;
+  image: Picture;
+  link:
+    | { present: true; href: string | null; target: string | null }
+    | { present: false };
+};
+
+/** The dock's own composer, read scoped inside `.chat-panel`. */
+type DockComposer = {
+  present: boolean;
+  textarea: { value: string; disabled: boolean } | null;
+  chip: { present: boolean; text?: string | null };
+  remove: boolean;
+  log: { present: boolean; disabled: boolean; label: string | null };
+};
+
+/** What one dispatched paste reported: did it land, was the default prevented. */
+type DockPaste = { found: boolean; prevented: boolean | null };
 
 /** The box's area readout: the lens it files under, and no control of its own. */
 type ComposerArea = {
@@ -354,6 +381,27 @@ type Report = {
       filterAfter: AreaReadout;
       lensWrites: (string | null)[];
       screenshot: { name: string; bytes: number };
+    };
+    dockLink: {
+      url: string;
+      replacementUrl: string;
+      sentence: string;
+      baseline: { dockItems: number; creates: number };
+      sentencePaste: DockPaste;
+      sentenceComposer: DockComposer;
+      pending: { paste: DockPaste; composer: DockComposer };
+      replacement: { paste: DockPaste; chip: DockComposer["chip"] | null };
+      restored: { paste: DockPaste; chip: DockComposer["chip"] | null };
+      create: Create | null;
+      row: DockItem | null;
+      createsAfter: number;
+      itemsAfter: number;
+      added: number;
+      cleared: { chipPresent: boolean; textarea: string | null };
+      screenshots: {
+        pending: { name: string; bytes: number };
+        logged: { name: string; bytes: number };
+      };
     };
   };
 };
@@ -673,6 +721,139 @@ describe("Notebox page — general capture", () => {
     assert.equal(lens.filterAfter.value, "Life (general)");
     assert.equal(lens.filterAfter.slug, "");
     assert.ok(lens.screenshot.bytes > 20_000, "the area capture looks empty");
+
+    // ── the dock's composer takes a pasted link ─────────────────────────────
+    // The page's box and the dock's box are one capture surface: a URL pasted
+    // into the dock's field is prevented from entering as text, becomes a
+    // pending chip, and Log writes one link-only record the dock paints back
+    // with a timestamp and an external anchor — no body line.
+    const dockLink = checks.dockLink;
+    assert.equal(
+      dockLink.pending.paste.found,
+      true,
+      "the dock paste never reached the dock's textarea",
+    );
+    assert.equal(
+      dockLink.pending.paste.prevented,
+      true,
+      "the dock did not consume the pasted URL",
+    );
+    assert.equal(
+      dockLink.pending.composer.chip.present,
+      true,
+      "the dock left no pending link chip",
+    );
+    assert.match(
+      dockLink.pending.composer.chip.text ?? "",
+      /are\.na/,
+      "the dock chip does not show the host",
+    );
+    assert.match(
+      dockLink.pending.composer.chip.text ?? "",
+      /https:\/\/www\.are\.na\/editorial\/slow-web/,
+      "the dock chip does not show the full URL",
+    );
+    assert.ok(
+      !(dockLink.pending.composer.textarea?.value ?? "").includes(dockLink.url),
+      "the dock left the pasted URL in its textarea",
+    );
+    assert.equal(
+      dockLink.pending.composer.remove,
+      true,
+      "no Remove the attached link control in the dock",
+    );
+    assert.equal(
+      dockLink.pending.composer.log.present,
+      true,
+      "the dock's Log control is hidden with a link pending",
+    );
+    assert.equal(
+      dockLink.pending.composer.log.disabled,
+      false,
+      "the dock's Log control is disabled with a link pending",
+    );
+    assert.equal(dockLink.pending.composer.log.label, "Log signal");
+
+    // A URL inside a sentence is text: not prevented, no chip, no draft.
+    assert.equal(dockLink.sentencePaste.found, true);
+    assert.equal(
+      dockLink.sentencePaste.prevented,
+      false,
+      "a URL inside a sentence was turned into a link",
+    );
+    assert.equal(dockLink.sentenceComposer.chip.present, false);
+    assert.equal(dockLink.sentenceComposer.textarea?.value, "");
+
+    // One attachment at a time: a second valid URL replaces the pending chip.
+    assert.equal(dockLink.replacement.paste.prevented, true);
+    assert.match(dockLink.replacement.chip?.text ?? "", /example\.org/);
+    assert.ok(
+      !(dockLink.replacement.chip?.text ?? "").includes("are.na"),
+      "the replacement chip still names the first host",
+    );
+    assert.match(dockLink.restored.chip?.text ?? "", /are\.na/);
+
+    // Log: a link-only capture with no body and no area, and the dock's own
+    // list paints it last (oldest-first) with a timestamp and the anchor.
+    assert.equal(dockLink.create?.attachment?.kind, "link");
+    assert.equal(dockLink.create?.attachment?.url, dockLink.url);
+    assert.equal(dockLink.create?.body, "", "a link-only capture was given a body");
+    assert.equal(
+      dockLink.create?.domainSlug,
+      null,
+      "a link-only capture was filed under an area",
+    );
+    assert.ok(dockLink.row, "the logged link is not the dock's newest row");
+    assert.equal(
+      dockLink.row?.link.present ? dockLink.row.link.href : null,
+      dockLink.url,
+    );
+    assert.equal(
+      dockLink.row?.link.present ? dockLink.row.link.target : null,
+      "_blank",
+    );
+    assert.equal(dockLink.row?.time, true, "the dock's new row has no timestamp");
+    assert.equal(
+      dockLink.row?.body,
+      null,
+      "the dock's link-only row paints a body line",
+    );
+    assert.ok(
+      dockLink.added >= 1,
+      `the dock gained no row (${dockLink.baseline.dockItems} -> ${dockLink.itemsAfter})`,
+    );
+    assert.equal(
+      dockLink.createsAfter,
+      dockLink.baseline.creates + 1,
+      "the dock's Log did not write exactly one signal",
+    );
+    assert.equal(
+      dockLink.itemsAfter,
+      expected.seeded.count + dockLink.createsAfter,
+      "the dock's list is not the whole chain after its own read",
+    );
+    assert.equal(
+      dockLink.cleared.chipPresent,
+      false,
+      "the dock kept its pending chip after logging",
+    );
+    assert.equal(dockLink.cleared.textarea, "");
+    assert.ok(
+      dockLink.screenshots.pending.bytes > 20_000,
+      "the dock's pending-link capture looks empty",
+    );
+    assert.equal(
+      dockLink.screenshots.pending.name,
+      "chain-capture-dock-link-pending.png",
+    );
+    assert.ok(
+      dockLink.screenshots.logged.bytes > 20_000,
+      "the dock's logged-link capture looks empty",
+    );
+    assert.equal(
+      dockLink.screenshots.logged.name,
+      "chain-capture-dock-link.png",
+    );
 
     // Hygiene: every capture on the chain, nothing unmodelled, nothing broken.
     assert.equal(checks.final.rows, expected.seeded.count + 5);

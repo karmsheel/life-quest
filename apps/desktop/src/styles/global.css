@@ -10620,6 +10620,68 @@ button.chat-panel__activity-line:hover {
   text-decoration: underline;
 }
 
+/* A link waiting on the dock's chain composer, above the field: the page's
+   pending-link chip, narrowed for a 20rem column. Host and address share one
+   line; the address ellipsizes so a long URL never pushes the X off the row. */
+.chat-panel__chain-link-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.32rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.chat-panel__chain-link-chip svg {
+  flex: none;
+}
+
+.chat-panel__chain-link-host {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chat-panel__chain-link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.chat-panel__chain-link-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__chain-link-remove:not(:disabled):hover {
+  color: var(--accent);
+}
+
+.chat-panel__chain-link-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* A titled signal keeps its title: the panel's composer never writes one, so a
    row that has one came from somewhere else — an import, or Hermes itself — and
    dropping it would hide data the record carries. */

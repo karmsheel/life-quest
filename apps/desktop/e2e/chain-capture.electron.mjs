@@ -2,7 +2,9 @@
  * Drives the Notebox page's general capture surface — text, image, any file and
  * a pasted link — and its inbox triage, in a real Electron window and writes
  * `e2e/artifacts/chain-capture.json` plus the `chain-capture-*.png` captures,
- * the file card's `chain-inbox-file.png` and the inbox's `chain-inbox-triage.png`.
+ * the file card's `chain-inbox-file.png`, the inbox's `chain-inbox-triage.png`,
+ * and the dock composer's `chain-capture-dock-link-pending.png` (a pending
+ * pasted link) and `chain-capture-dock-link.png` (the row it logs).
  *
  * Run with this checkout's dev server up:
  *
@@ -11,7 +13,8 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same claims, no eyeballing the app required. The
  * pictures are the operator-facing half: they show the shipped page with a real
- * uploaded image, a real file card, a pasted link row, and a triaged inbox row.
+ * uploaded image, a real file card, a pasted link row, a triaged inbox row,
+ * and the dock's composer holding a pending pasted link before it logs it.
  *
  * What this rig claims:
  *
@@ -64,6 +67,15 @@
  *     readout holds no control — the switcher at the top is the one picker.
  * 11. No unmodelled bridge call, no console error, nothing spills horizontally
  *     past the window, and every capture is a real picture of the shipped page.
+ * 12. The dock's composer takes the same pasted link as the page: ONE absolute
+ *     http(s) URL is prevented from entering its textarea and becomes a pending
+ *     chip naming the host and the URL; a URL inside a sentence is pasted as
+ *     text; a second URL replaces the chip; a link with an empty description
+ *     arms and shows the dock's Log control; and Log writes one link-only
+ *     capture (`body: ""`, no area) that the dock's own list paints back with a
+ *     timestamp and an external anchor, with no body line. The dock's field and
+ *     chip are read inside `.chat-panel`, because the page's textarea carries
+ *     the same accessible name.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
@@ -95,6 +107,11 @@
  *  i. The link stays paste-only: a driver that clicked a URL field would be
  *     exercising a composer that no longer exists, so the paste dispatches a
  *     real `ClipboardEvent` and the field is asserted to stay free of the URL.
+ *  j. The dock's paste could land on the page's textarea: both fields carry the
+ *     same accessible name, so the dock paste is scoped to `.chat-panel` and
+ *     reads the event's `defaultPrevented`. A dispatch that missed the dock
+ *     field, or a dock handler that never consumed the URL, fails instead of
+ *     reading as "the field is empty".
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -133,6 +150,17 @@ const ATTACHMENT_FILE = {
 
 /** A human file size as the row and the pending chip paint it ("12 KB"). */
 const SIZE_PATTERN = /(\d+(?:\.\d+)?)\s*(B|KB|MB)/;
+
+/**
+ * The dock's own pasted link. It is deliberately a different URL from the
+ * page's link, so a row lookup and the bridge's recorded payload name one
+ * capture unambiguously; the replacement URL proves a second paste swaps the
+ * chip rather than stacking a second pending attachment.
+ */
+const DOCK_LINK_URL = "https://www.are.na/editorial/slow-web";
+const DOCK_LINK_REPLACEMENT_URL = "https://example.org/dock-replacement";
+const DOCK_LINK_SENTENCE =
+  "the slow web piece https://www.are.na/editorial/slow-web is worth a read";
 
 const failures = [];
 function fail(message) {
@@ -412,27 +440,69 @@ const SAMPLE = `(() => {
     inbox: window.chainCaptureInbox ?? null,
     // The dock's own Life-Chain surface, which renders the same records and
     // carries the same Notebox name.
-    dock: {
-      surface: q(".chat-panel")
-        ? q(".chat-panel").getAttribute("data-chat-surface")
-        : null,
-      heading: text(q(".chat-panel__heading")),
-      action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
-      items: all(".chat-panel__chain-item").map((item) => {
-        const linkEl = item.querySelector(".chat-panel__chain-link");
-        return {
-          body: text(item.querySelector(".chat-panel__chain-body")),
-          image: imageOf(item.querySelector(".chat-panel__chain-image")),
-          link: linkEl
+    dock: (() => {
+      const panel = q(".chat-panel");
+      const dockComposer = panel
+        ? panel.querySelector(".chat-panel__composer")
+        : null;
+      const dockTextarea = dockComposer
+        ? dockComposer.querySelector('[aria-label="Log a signal"]')
+        : null;
+      const dockChip = dockComposer
+        ? dockComposer.querySelector('[data-testid="dock-chain-link-chip"]')
+        : null;
+      const dockLog = dockComposer
+        ? dockComposer.querySelector('[aria-label="Log signal"]')
+        : null;
+      return {
+        surface: panel ? panel.getAttribute("data-chat-surface") : null,
+        heading: text(q(".chat-panel__heading")),
+        action: Boolean(q('.chat-panel [aria-label="Notebox"]')),
+        items: all(".chat-panel__chain-item").map((item) => {
+          const linkEl = item.querySelector(".chat-panel__chain-link");
+          return {
+            body: text(item.querySelector(".chat-panel__chain-body")),
+            stamp: text(item.querySelector(".chat-panel__chain-stamp")),
+            time: Boolean(item.querySelector(".chat-panel__chain-stamp")),
+            image: imageOf(item.querySelector(".chat-panel__chain-image")),
+            link: linkEl
+              ? {
+                  present: true,
+                  href: linkEl.getAttribute("href"),
+                  target: linkEl.getAttribute("target"),
+                }
+              : { present: false },
+          };
+        }),
+        // The dock's own composer. Every read is scoped inside the chat panel:
+        // the page's textarea has the same accessible name, and the page's
+        // link chip carries the same remove label, so an unscoped read would
+        // be evidence about the wrong surface.
+        composer: {
+          present: Boolean(dockComposer),
+          textarea: dockTextarea
+            ? {
+                value: dockTextarea.value,
+                disabled: dockTextarea.disabled === true,
+              }
+            : null,
+          chip: dockChip
+            ? { present: true, text: text(dockChip) }
+            : { present: false },
+          remove: Boolean(
+            dockComposer &&
+              dockComposer.querySelector('[aria-label="Remove the attached link"]'),
+          ),
+          log: dockLog
             ? {
                 present: true,
-                href: linkEl.getAttribute("href"),
-                target: linkEl.getAttribute("target"),
+                disabled: dockLog.disabled === true,
+                label: dockLog.getAttribute("aria-label"),
               }
             : { present: false },
-        };
-      }),
-    },
+        },
+      };
+    })(),
     creates: window.chainCaptureCreates ?? [],
     reads: window.chainCaptureReads ?? [],
     fileReads: (window.chainCaptureFileReads ?? []).slice(),
@@ -664,6 +734,36 @@ const pasteText = (text) => `(() => {
     cancelable: true,
   });
   el.dispatchEvent(event);
+  return true;
+})()`;
+
+/**
+ * Paste into the DOCK's chain composer. The page's textarea carries the same
+ * accessible name, so the field is scoped into `.chat-panel`; the return value
+ * names whether the paste reached the field and whether the page's handler
+ * prevented it — "the URL never entered the field" is the evidence, not an
+ * empty value that could also mean the dispatch missed.
+ */
+const pasteDockText = (text) => `(() => {
+  const el = document.querySelector('.chat-panel [aria-label="Log a signal"]');
+  if (!el) return { found: false, prevented: null };
+  el.focus();
+  const data = new DataTransfer();
+  data.setData("text/plain", ${JSON.stringify(text)});
+  const event = new ClipboardEvent("paste", {
+    clipboardData: data,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return { found: true, prevented: event.defaultPrevented === true };
+})()`;
+
+/** Click the dock chain's own Log control, scoped away from the page's Log. */
+const clickDockLog = `(() => {
+  const el = document.querySelector('.chat-panel [aria-label="Log signal"]');
+  if (!el) return false;
+  el.click();
   return true;
 })()`;
 
@@ -2267,6 +2367,269 @@ async function main() {
       filterAfter: backToLife.filterArea,
       lensWrites: backToLife.lensWrites ?? [],
       screenshot: { name: path.basename(lensShot), bytes: lensShotBytes },
+    };
+
+    // ── 9. the dock's composer takes a pasted link ─────────────────────────
+    // The page's box and the dock's box are the same capture surface: one
+    // absolute http(s) URL on its own becomes the attachment, never body text,
+    // and the dock's Log files the same link-only record without a
+    // description. Every read and paste here is scoped inside `.chat-panel`:
+    // the page's textarea carries the same accessible name and the page's chip
+    // carries the same remove label, so an unscoped gesture would prove the
+    // wrong surface. The dock is still on its chain surface from step 7.
+    const dockBase = await sample();
+    const dockLinkBaseline = {
+      dockItems: dockBase.dock.items.length,
+      creates: (dockBase.creates ?? []).length,
+    };
+
+    // A URL inside a sentence is text: the paste is not prevented and no chip
+    // appears. A synthetic paste does not insert anything, so the field stays
+    // empty — the chip is the evidence, not a value that could be pre-filled.
+    const sentencePaste = await js(pasteDockText(DOCK_LINK_SENTENCE));
+    await sleep(250);
+    const sentenceState = await sample();
+    check(
+      "the dock paste helper reaches the dock's own textarea",
+      sentencePaste?.found === true,
+      `paste ${JSON.stringify(sentencePaste)}`,
+    );
+    check(
+      "a URL in a sentence is pasted as text, not prevented",
+      sentencePaste?.prevented === false,
+      `paste ${JSON.stringify(sentencePaste)}`,
+    );
+    check(
+      "a URL in a sentence leaves no pending link chip",
+      sentenceState.dock.composer?.chip?.present === false &&
+        (sentenceState.dock.composer?.textarea?.value ?? "") === "",
+      `composer ${JSON.stringify(sentenceState.dock.composer)}`,
+    );
+
+    // One absolute URL: prevented, gone from the field, a pending chip naming
+    // the host and the URL, and — with an empty description — a visible Log.
+    const dockPaste = await js(pasteDockText(DOCK_LINK_URL));
+    const dockPending = await waitState(
+      (state) =>
+        state.dock.composer?.chip?.present === true &&
+        (state.dock.composer?.chip?.text ?? "").includes("are.na") &&
+        (state.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL) &&
+        !((state.dock.composer?.textarea?.value ?? "").includes(DOCK_LINK_URL)) &&
+        state.dock.composer?.log?.present === true &&
+        state.dock.composer?.log?.disabled === false,
+      "the dock's pasted URL to become a pending link chip with Log armed",
+    );
+    check(
+      "the dock paste helper reached the dock composer",
+      dockPaste?.found === true,
+      `paste ${JSON.stringify(dockPaste)}`,
+    );
+    check(
+      "the dock prevented the pasted URL from entering the field",
+      dockPaste?.prevented === true,
+      `paste ${JSON.stringify(dockPaste)}`,
+    );
+    check(
+      "the dock's pasted URL becomes a chip naming the host",
+      (dockPending.dock.composer?.chip?.text ?? "").includes("are.na"),
+      `chip ${JSON.stringify(dockPending.dock.composer?.chip)}`,
+    );
+    check(
+      "the dock's chip shows the full URL",
+      (dockPending.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL),
+      `chip ${JSON.stringify(dockPending.dock.composer?.chip)}`,
+    );
+    check(
+      "the dock's pasted URL is not left in the textarea",
+      !(dockPending.dock.composer?.textarea?.value ?? "").includes(DOCK_LINK_URL),
+      `field ${JSON.stringify(dockPending.dock.composer?.textarea)}`,
+    );
+    check(
+      "the pending dock chip offers its remove control",
+      dockPending.dock.composer?.remove === true,
+      `composer ${JSON.stringify(dockPending.dock.composer)}`,
+    );
+    check(
+      "a pending dock link arms a visible, enabled Log control",
+      dockPending.dock.composer?.log?.present === true &&
+        dockPending.dock.composer?.log?.disabled === false &&
+        dockPending.dock.composer?.log?.label === "Log signal",
+      `log ${JSON.stringify(dockPending.dock.composer?.log)}`,
+    );
+
+    // A second valid URL replaces the pending chip, one attachment at a time.
+    const replacePaste = await js(pasteDockText(DOCK_LINK_REPLACEMENT_URL));
+    const replaced = await waitState(
+      (state) =>
+        (state.dock.composer?.chip?.text ?? "").includes("example.org") &&
+        !(state.dock.composer?.chip?.text ?? "").includes("are.na"),
+      "the second pasted URL to replace the dock's pending chip",
+    );
+    check(
+      "a second pasted URL replaces the dock's pending link",
+      replacePaste?.prevented === true &&
+        (replaced.dock.composer?.chip?.text ?? "").includes("example.org"),
+      `paste ${JSON.stringify(replacePaste)} chip ${JSON.stringify(replaced.dock.composer?.chip)}`,
+    );
+
+    // Put the first URL back, so the pending picture and the logged record are
+    // the URL this step names.
+    const restorePaste = await js(pasteDockText(DOCK_LINK_URL));
+    const restored = await waitState(
+      (state) =>
+        (state.dock.composer?.chip?.text ?? "").includes("are.na") &&
+        !(state.dock.composer?.chip?.text ?? "").includes("example.org"),
+      "the dock's pending chip to take the pasted URL again",
+    );
+    check(
+      "the dock chip takes a pasted URL again",
+      restorePaste?.prevented === true &&
+        (restored.dock.composer?.chip?.text ?? "").includes(DOCK_LINK_URL),
+      `paste ${JSON.stringify(restorePaste)} chip ${JSON.stringify(restored.dock.composer?.chip)}`,
+    );
+
+    await sleep(250);
+    const dockPendingShot = await captureFile(
+      "chain-capture-dock-link-pending.png",
+    );
+    const dockPendingShotBytes = fs.statSync(dockPendingShot).size;
+    check(
+      "capture chain-capture-dock-link-pending.png is a real picture",
+      dockPendingShotBytes > 20_000,
+      `${dockPendingShotBytes} bytes`,
+    );
+
+    // Log it: one bridge write with an empty body, no area, and the link.
+    const dockLogClicked = await js(clickDockLog);
+    const dockLogged = await waitState(
+      (state) => {
+        const items = state.dock.items ?? [];
+        const last = items[items.length - 1];
+        return (
+          (state.creates ?? []).length === dockLinkBaseline.creates + 1 &&
+          last?.link?.present === true &&
+          last.link.href === DOCK_LINK_URL
+        );
+      },
+      "the dock's link-only capture to land as the chain's newest row",
+    );
+    const dockCreate = dockLogged.creates[dockLogged.creates.length - 1];
+    const dockItemsAfter = dockLogged.dock.items.length;
+    const dockNewRow = dockLogged.dock.items[dockLogged.dock.items.length - 1];
+
+    check(
+      "the dock's Log control is clickable",
+      dockLogClicked === true,
+      `Log click ${JSON.stringify(dockLogClicked)}`,
+    );
+    check(
+      "the dock's Log files a link attachment",
+      dockCreate?.attachment?.kind === "link" &&
+        dockCreate?.attachment?.url === DOCK_LINK_URL,
+      `create attachment ${JSON.stringify(dockCreate?.attachment)}`,
+    );
+    check(
+      "a link-only dock capture carries an empty body and no area",
+      dockCreate?.body === "" && dockCreate?.domainSlug === null,
+      `create ${JSON.stringify({ body: dockCreate?.body, domainSlug: dockCreate?.domainSlug })}`,
+    );
+    check(
+      "the dock's newest row anchors the pasted URL",
+      dockNewRow?.link?.present === true &&
+        dockNewRow.link.href === DOCK_LINK_URL,
+      `row link ${JSON.stringify(dockNewRow?.link)}`,
+    );
+    check(
+      "the dock's newest anchor opens externally",
+      dockNewRow?.link?.present === true && dockNewRow.link.target === "_blank",
+      `row link ${JSON.stringify(dockNewRow?.link)}`,
+    );
+    check(
+      "the dock's newest row carries a timestamp",
+      dockNewRow?.time === true && Boolean(dockNewRow?.stamp),
+      `row ${JSON.stringify(dockNewRow)}`,
+    );
+    check(
+      "the dock's newest row paints no body paragraph",
+      dockNewRow?.body === null,
+      `row body ${JSON.stringify(dockNewRow?.body)}`,
+    );
+    check(
+      "the dock's chain gained the new row",
+      dockItemsAfter > dockLinkBaseline.dockItems,
+      `${dockLinkBaseline.dockItems} -> ${dockItemsAfter} dock rows`,
+    );
+    // The dock re-reads the whole chain after its own write, so its list is the
+    // chain — including rows filed on the page while the dock was already open
+    // and never re-read. The baseline can lag the bridge; the post-write read
+    // cannot.
+    check(
+      "the dock's chain is the whole chain after its own read",
+      dockItemsAfter === expected.seeded.count + dockLogged.creates.length,
+      `${dockItemsAfter} dock rows vs ${expected.seeded.count} seeded + ${dockLogged.creates.length} captured`,
+    );
+    check(
+      "the dock's capture cleared its chip and draft",
+      dockLogged.dock.composer?.chip?.present === false &&
+        (dockLogged.dock.composer?.textarea?.value ?? "") === "",
+      `composer ${JSON.stringify(dockLogged.dock.composer)}`,
+    );
+
+    // The operator-facing half: scroll the dock's own list to its newest row
+    // so the picture shows the capture, not the top of the chain.
+    await js(`(() => {
+      const list = document.querySelector(".chat-panel__body--chain");
+      if (!list) return false;
+      list.scrollTop = list.scrollHeight;
+      return true;
+    })()`);
+    await sleep(300);
+    const dockLinkShot = await captureFile("chain-capture-dock-link.png");
+    const dockLinkShotBytes = fs.statSync(dockLinkShot).size;
+    check(
+      "capture chain-capture-dock-link.png is a real picture",
+      dockLinkShotBytes > 20_000,
+      `${dockLinkShotBytes} bytes`,
+    );
+
+    checks.dockLink = {
+      url: DOCK_LINK_URL,
+      replacementUrl: DOCK_LINK_REPLACEMENT_URL,
+      sentence: DOCK_LINK_SENTENCE,
+      baseline: dockLinkBaseline,
+      sentencePaste,
+      sentenceComposer: sentenceState.dock.composer,
+      pending: {
+        paste: dockPaste,
+        composer: dockPending.dock.composer,
+      },
+      replacement: {
+        paste: replacePaste,
+        chip: replaced.dock.composer?.chip ?? null,
+      },
+      restored: {
+        paste: restorePaste,
+        chip: restored.dock.composer?.chip ?? null,
+      },
+      create: dockCreate ?? null,
+      row: dockNewRow ?? null,
+      createsAfter: dockLogged.creates.length,
+      itemsAfter: dockItemsAfter,
+      added: dockItemsAfter - dockLinkBaseline.dockItems,
+      cleared: {
+        chipPresent: dockLogged.dock.composer?.chip?.present === true,
+        textarea: dockLogged.dock.composer?.textarea?.value ?? null,
+      },
+      screenshots: {
+        pending: {
+          name: path.basename(dockPendingShot),
+          bytes: dockPendingShotBytes,
+        },
+        logged: {
+          name: path.basename(dockLinkShot),
+          bytes: dockLinkShotBytes,
+        },
+      },
     };
 
     // ── report ─────────────────────────────────────────────────────────────

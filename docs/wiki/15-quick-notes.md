@@ -320,10 +320,13 @@ The companion has the chain on its own tool surface, as the single Inbox door:
 The chat dock's own **Notebox** surface reads and writes the same chain: it shows the
 signals oldest-first above its composer, and its composer's placeholder is **Log a signal…**
 with a **Log signal** button. It draws the same records, including the picture and link
-cards, but its composer is text-only: a picture, file or link is captured on this page, not
-in the dock, and a non-picture file attachment is drawn on the page's row rather than in the
-dock. Its delete asks the same question. It is a convenience mirror of this page, not a
-second store.
+cards. Its composer takes the page's two text gestures: type a description, or paste one
+absolute `http`/`https` address on its own to attach a link — the same link chip (host,
+address and **Remove the attached link**) waits above the field, and a URL pasted inside a
+sentence stays part of the description. A picture or any other file is captured on this
+page, not in the dock, and a non-picture file attachment is drawn on the page's row rather
+than in the dock. Its delete asks the same question. It is a convenience mirror of this
+page, not a second store.
 
 ### The lens
 
