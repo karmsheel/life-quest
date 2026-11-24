@@ -43,6 +43,8 @@ type ControlState = {
   title?: string | null;
   pressed?: string | null;
   icon?: string | null;
+  background?: string;
+  color?: string;
   box?: Box;
   display?: string;
   visibility?: string;
@@ -70,6 +72,7 @@ type BarState = {
   controlIndex: number;
   noteboxIndex: number;
   noteboxBox: Box | null;
+  noteboxRest: { background: string; color: string } | null;
   newChatBox: Box | null;
   shortcutsBox: Box | null;
   labels: (string | null)[];
@@ -370,6 +373,14 @@ function assertDoors(label: string, state: FocusState, focused: boolean) {
     bar.containsControl,
     true,
     `${label}: the door is not inside the bottom action bar`,
+  );
+  // The mode is stated by the turned-around glyph, not by a selected fill: the
+  // slot keeps the bar's resting ink even while aria-pressed is true.
+  assert.ok(
+    bar.noteboxRest &&
+      dock.background === bar.noteboxRest.background &&
+      dock.color === bar.noteboxRest.color,
+    `${label}: the full-screen door does not rest like the bar's other actions (${JSON.stringify({ background: dock.background, color: dock.color })} vs Notebox ${JSON.stringify(bar.noteboxRest)})`,
   );
   assert.equal(
     bar.controlIndex,

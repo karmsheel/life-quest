@@ -234,10 +234,12 @@ The chat dock:
   **Full screen chat** / **Exit full screen chat**. Choosing the last collapses
   the main page and gives the dock the workspace right of the rail;
   **Mod+Shift+F** does the same from anywhere. It is the window's only
-  full-screen control, and it is drawn pressed while the mode is on. The bar is a
-  card that keeps the composer box's width — it never reaches past the field it
-  belongs to — floating with a margin on every side and softly rounded, in the
-  split dock and in full screen alike.
+  full-screen control; while the mode is on its glyph turns around to the
+  minimize pair, but the slot keeps the bar's resting look rather than lighting
+  up as a selected surface. The bar is a card at its own fixed width, centred on
+  the composer box — a wider field does not stretch it, and it never reaches past
+  the field it belongs to — floating with a margin on every side and softly
+  rounded, in the split dock and in full screen alike.
 - The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
   The history is not a dock surface: the whole chat list lives in the rail's
   **Chats** section.

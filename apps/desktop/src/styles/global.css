@@ -9205,6 +9205,17 @@ button.chat-panel__activity-line:hover {
   color: var(--fg);
 }
 
+/* The full-screen door is the one pressed action that is not a selected surface:
+   its glyph turns around (maximize → minimize) while the mode is on, and that is
+   the whole statement. The slot keeps the bar's resting look — no selected fill,
+   no brightened ink — so the mode reads from the arrow rather than from a button
+   that looks active. Hover and keyboard focus still come from the shared action
+   rules, which is why this only overrides the resting state. */
+.chat-panel__action.chat-focus-toggle[aria-pressed="true"]:not(:hover) {
+  background: transparent;
+  color: var(--muted);
+}
+
 .chat-panel__action:disabled {
   opacity: 0.4;
   cursor: default;

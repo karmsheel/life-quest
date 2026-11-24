@@ -204,6 +204,15 @@ const SAMPLE = `(() => {
         controlIndex,
         noteboxIndex,
         noteboxBox: noteboxSlot ? box(noteboxSlot) : null,
+        // A neighbouring action in its resting ink: the full-screen door must
+        // read exactly like it while the mode is on (the glyph says the state,
+        // the slot does not light up).
+        noteboxRest: noteboxSlot
+          ? {
+              background: styleOf(noteboxSlot).backgroundColor,
+              color: styleOf(noteboxSlot).color
+            }
+          : null,
         newChatBox: newChatSlot ? box(newChatSlot) : null,
         shortcutsBox: shortcutsSlot ? box(shortcutsSlot) : null,
         labels: Array.from(actions.querySelectorAll(".chat-panel__action")).map(
@@ -244,6 +253,8 @@ const SAMPLE = `(() => {
           title: el.getAttribute("title"),
           pressed: el.getAttribute("aria-pressed"),
           icon: iconClass(el),
+          background: styleOf(el).backgroundColor,
+          color: styleOf(el).color,
           box: box(el),
           display: styleOf(el).display,
           visibility: styleOf(el).visibility
@@ -576,6 +587,13 @@ function checkDoors(label, state, focused) {
     `${label}: the dock control wears the mode's icon`,
     String(dock.icon ?? "").includes(expectedIcon),
     `icon ${JSON.stringify(dock.icon)}`,
+  );
+  check(
+    `${label}: the door rests like the bar's other actions — no selected fill`,
+    Boolean(dock.background && dock.color && bar?.noteboxRest) &&
+      dock.background === bar.noteboxRest.background &&
+      dock.color === bar.noteboxRest.color,
+    `door ${JSON.stringify({ background: dock.background, color: dock.color })} vs Notebox ${JSON.stringify(bar?.noteboxRest)}`,
   );
   check(
     `${label}: the dock control is painted`,

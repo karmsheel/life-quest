@@ -12,7 +12,10 @@ import { useChatDock } from "@/state/ChatDockProvider";
  * The icon turns around rather than changing meaning: maximize while the mode is
  * off, minimize while it is on, the same arrow-pair language the rail's own
  * collapse control uses. The press is a state, not a one-way door, so the
- * control carries `aria-pressed` and stays put in both modes.
+ * control carries `aria-pressed` and stays put in both modes — announced to
+ * assistive technology, but not painted: the slot keeps the bar's resting look
+ * and the turned-around glyph is what says the mode is on (see the stylesheet's
+ * `.chat-panel__action.chat-focus-toggle[aria-pressed="true"]`).
  *
  * The glyph is sized by the slot it rides: the bar's action slots are 20px
  * icons, while a smaller utility row may want a tighter mark.
