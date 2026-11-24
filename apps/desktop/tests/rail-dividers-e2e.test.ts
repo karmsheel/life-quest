@@ -12,8 +12,11 @@ import {
 } from "../src/lib/themes/presets.ts";
 
 /**
- * The left sidebar's three grouping lines: exactly 1px of the standard medium
- * gray, the same in every built-in theme and in both modes.
+ * The left sidebar's three grouping lines: exactly 1px of the app's neutral
+ * divider ink, the same in every built-in theme at each mode's own weight — a
+ * light gray by day (`#bdbdbd`) so the line sits quietly on the paper mat, and a
+ * darker gray at night (`#454545`) so it reads on the near-black mat instead of
+ * glowing off it.
  *
  * The driver (`e2e/rail-dividers.electron.mjs`) mounts the real shell harness in
  * a real Electron window and reads the computed ink and thickness of every
@@ -39,9 +42,13 @@ const ARTIFACTS = path.join(desktopRoot, "e2e/artifacts");
 const DRIVER = path.join(desktopRoot, "e2e/rail-dividers.electron.mjs");
 const REPORT = path.join(ARTIFACTS, "rail-dividers.json");
 
-/** The standard the operator asked for: 1px of #808080 in every theme. */
-const DIVIDER_INK = "#808080";
-const DIVIDER_RGB = "rgb(128, 128, 128)";
+/**
+ * The standard the operator asked for: 1px, carried by mode rather than theme.
+ * The day ink must be lighter than the night ink — that ordering is asserted
+ * below, so a future edit cannot flatten the pair or invert it.
+ */
+const DIVIDER_INK = { day: "#bdbdbd", night: "#454545" };
+const DIVIDER_RGB = { day: "rgb(189, 189, 189)", night: "rgb(69, 69, 69)" };
 const DIVIDER_WIDTH = "1px";
 const DIVIDER_COUNT = 3;
 const SCREENSHOTS = [
@@ -73,8 +80,8 @@ type Report = {
   url: string;
   vaultName: string | null;
   standard: {
-    ink: string;
-    rgb: string;
+    ink: { day: string; night: string };
+    rgb: { day: string; night: string };
     width: string;
     lines: number;
     token: string;
@@ -83,6 +90,18 @@ type Report = {
   samples: Record<string, DividerSample>;
   screenshots: string[];
 };
+
+/** WCAG relative luminance of a `#rrggbb` ink, for the day/night ordering. */
+function luminanceOf(hex: string): number {
+  const clean = hex.trim().replace(/^#/, "");
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const channel = parseInt(clean.slice(i, i + 2), 16) / 255;
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -113,8 +132,8 @@ function runDriver(): Promise<number> {
   });
 }
 
-describe("rail dividers (1px medium gray, every theme)", () => {
-  it("draws the sidebar's three grouping lines as one standard in every palette and mode", async (t) => {
+describe("rail dividers (1px neutral gray, lighter by day, every theme)", () => {
+  it("draws the sidebar's three grouping lines at 1px of the mode's ink in every palette", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -138,7 +157,9 @@ describe("rail dividers (1px medium gray, every theme)", () => {
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
 
-    // The standard is named in the artifact, not just satisfied implicitly.
+    // The standard is named in the artifact, not just satisfied implicitly — and
+    // the pair's ordering is restated from its own inks: the day ink is lighter
+    // than the night ink, so a future edit cannot flatten the two or invert them.
     assert.deepEqual(report.standard, {
       ink: DIVIDER_INK,
       rgb: DIVIDER_RGB,
@@ -147,6 +168,11 @@ describe("rail dividers (1px medium gray, every theme)", () => {
       token: "--divider",
       widthToken: "--divider-width",
     });
+    assert.ok(
+      luminanceOf(report.standard.ink.day) >
+        luminanceOf(report.standard.ink.night),
+      `the day divider ink (${report.standard.ink.day}, ${luminanceOf(report.standard.ink.day).toFixed(4)}) is not lighter than the night ink (${report.standard.ink.night}, ${luminanceOf(report.standard.ink.night).toFixed(4)})`,
+    );
 
     // Every built-in skin in both modes — cross-checked against the registry, so
     // a new skin cannot ship without being measured. "All themes" is only true
@@ -167,7 +193,24 @@ describe("rail dividers (1px medium gray, every theme)", () => {
       "the sweep did not cover every skin in both modes",
     );
 
+    // The ink is carried by the mode, not by the palette: every theme in a mode
+    // must paint the same value.
     for (const mode of ["day", "night"] as const) {
+      const inks = new Set(
+        (mode === "day" ? lightSkins : darkSkins).flatMap((name) =>
+          report.samples[`${mode}:${name}`].lines.map((line) => line.background),
+        ),
+      );
+      assert.deepEqual(
+        [...inks],
+        [DIVIDER_RGB[mode]],
+        `${mode}: the themes do not share one divider ink (${JSON.stringify([...inks])})`,
+      );
+    }
+
+    for (const mode of ["day", "night"] as const) {
+      const expectedInk = DIVIDER_INK[mode];
+      const expectedRgb = DIVIDER_RGB[mode];
       for (const name of mode === "day" ? lightSkins : darkSkins) {
         const sample = report.samples[`${mode}:${name}`];
         assert.ok(sample, `${mode}[${name}]: no sample in the report`);
@@ -177,11 +220,11 @@ describe("rail dividers (1px medium gray, every theme)", () => {
           `${mode}[${name}]: measured in the wrong mode (${sample.theme.dataTheme})`,
         );
 
-        // The ink is the app's own token, and no skin wrote it.
+        // The ink is the app's own mode token, and no skin wrote it.
         assert.equal(
           sample.tokens.divider,
-          DIVIDER_INK,
-          `${mode}[${name}]: --divider resolved to ${JSON.stringify(sample.tokens.divider)}`,
+          expectedInk,
+          `${mode}[${name}]: --divider resolved to ${JSON.stringify(sample.tokens.divider)}, expected the ${mode} ink ${expectedInk}`,
         );
         assert.equal(
           sample.tokens.dividerWidth,
@@ -189,7 +232,7 @@ describe("rail dividers (1px medium gray, every theme)", () => {
           `${mode}[${name}]: --divider-width resolved to ${JSON.stringify(sample.tokens.dividerWidth)}`,
         );
 
-        // Three lines, each exactly 1px, each the standard medium gray.
+        // Three lines, each exactly 1px, each the mode's ink.
         assert.equal(
           sample.lineCount,
           DIVIDER_COUNT,
@@ -208,8 +251,8 @@ describe("rail dividers (1px medium gray, every theme)", () => {
           );
           assert.equal(
             line.background,
-            DIVIDER_RGB,
-            `${mode}[${name}]: a grouping line paints ${line.background} — a palette ink leaked into the divider (expected ${DIVIDER_RGB})`,
+            expectedRgb,
+            `${mode}[${name}]: a grouping line paints ${line.background} — a palette ink leaked into the divider (expected ${expectedRgb}, the ${mode} ink ${expectedInk})`,
           );
         }
         assert.equal(

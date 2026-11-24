@@ -73,13 +73,15 @@
   --sidebar-border: var(--border);
 
   /* The divider: the app's separating line, and the one ink a palette must not
-     own. The sidebar's grouping lines draw with this pair — 1px of neutral gray,
-     the same in every theme and in both modes — because the rail's sections are
-     structure, not brand. Skins write `--border` and `--line` from their own
-     palette (Forge's ember border is how these lines went orange); nothing writes
-     `--divider`, so no skin or theme file can tint them again. Declared once, not
-     per mode: "standard throughout the app and all themes" means one ink. */
-  --divider: #808080;
+     own. The sidebar's three grouping lines draw with this pair — 1px of a
+     neutral gray — because the rail's sections are structure, not brand. Skins
+     write `--border` and `--line` from their own palette (Forge's ember border
+     is how these lines went orange); nothing writes `--divider`, so no skin or
+     theme file can tint them again. The ink is declared by *mode*, not by theme:
+     the day value is a light neutral that sits quietly on the paper mat, and the
+     dark blocks below sink it toward the night mat — one standard in every theme,
+     at each mode's own weight. */
+  --divider: #bdbdbd;
   --divider-width: 1px;
 
   --text-strong: #0d0c0a;
@@ -248,6 +250,10 @@
   --border: #333128;
   --input: #46433c;
   --ring: #2563eb;
+  /* Night inverts the ladder, so the divider sinks with it: the same neutral
+     hairline, darker than its day ink so it reads on the near-black mat instead
+     of glowing off it. The thickness stays `--divider-width`. */
+  --divider: #454545;
 
   /* The supplied lockup's ink on the night mat: both words cream, the Q emblem
      ember. UEST keeps its own token so a theme can diverge, but the shipped
@@ -346,6 +352,8 @@
     --border: #333128;
     --input: #46433c;
     --ring: #2563eb;
+    /* The night divider ink, for the no-preference boot before a skin paints. */
+    --divider: #454545;
 
     --bg-panel: #222120;
     --bg-subtle: #1c1b1a;

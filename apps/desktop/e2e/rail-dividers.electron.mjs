@@ -9,7 +9,10 @@
  * derives `--border` from its palette; Forge's palette is steel and low embers,
  * so all three lines read orange in the operator's default theme. The operator
  * asked for one app-wide standard instead: each line exactly **1px** and a
- * **medium gray** (`#808080`), the same in the app whatever theme is worn.
+ * **neutral gray**, the same in the app whatever theme is worn — and then that the
+ * ink vary by *mode* rather than by theme: a light gray by day (`#bdbdbd`, so the
+ * line sits quietly on the paper mat) and a darker gray at night (`#454545`, so it
+ * reads on the near-black mat instead of glowing off it).
  *
  * WHAT IT MEASURES, AND THE WAYS IT COULD FAIL (written down before the code)
  *
@@ -21,11 +24,13 @@
  *  2. A different weight. Every line's painted box and computed `height` must be
  *     exactly 1px, and all three must be equal to each other, so a line that is
  *     2px, 0.8px or shrunk by a flex contest fails.
- *  3. A palette-tinted ink. Every line's computed background must be
- *     `rgb(128, 128, 128)` — the medium gray the operator asked for — and the
- *     `--divider` token it reads must resolve to `#808080`. A skin that writes
- *     the token, or a rule that falls back to `--border` (the Forge orange), is
- *     caught by those two reads together.
+ *  3. A wrong ink. Every line's computed background must be the day ink
+ *     (`rgb(189, 189, 189)`) in daylight and the night ink (`rgb(69, 69, 69)`) at
+ *     night, and the `--divider` token must resolve to the matching hex. A skin
+ *     that writes the token, a rule that falls back to `--border` (the Forge
+ *     orange), or a mode that never switches the ink is caught by those reads;
+ *     a separate check pins the ordering — the day ink must be lighter than the
+ *     night one — so a future edit cannot quietly invert, or flatten, the pair.
  *  4. Only one theme measured. Every built-in skin is measured in both modes —
  *     Forge, Nous and Graphite, day and night — so "standard in all themes" is a
  *     table in the artifact rather than a promise. The rig only reads; it is the
@@ -65,9 +70,15 @@ const NIGHT_PNG = path.join(artifactsDir, "rail-dividers-night.png");
 const DAY_SHELL_PNG = path.join(artifactsDir, "rail-dividers-day-shell.png");
 const WINDOW = { width: 1280, height: 900 };
 
-/** The standard the operator asked for, named here so the rig can hold it. */
-const DIVIDER_INK = "#808080";
-const DIVIDER_RGB = "rgb(128, 128, 128)";
+/**
+ * The standard the operator asked for, named here so the rig can hold it.
+ *
+ * One neutral, carried by mode rather than by theme: a light gray in daylight so
+ * the line sits quietly on the paper mat, and a darker gray at night so it reads
+ * on the near-black mat instead of glowing off it. Both are the app's own ink —
+ * no skin writes either.
+ */
+const DIVIDER_INK = { day: "#bdbdbd", night: "#454545" };
 const DIVIDER_WIDTH = "1px";
 const DIVIDER_COUNT = 3;
 
@@ -225,14 +236,28 @@ const computedRgb = (hex) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
+/** WCAG relative luminance of a `#rrggbb` ink, for the day/night ordering. */
+const luminanceOf = (hex) => {
+  const clean = (hex ?? "").trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return Number.NaN;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const channel = parseInt(clean.slice(i, i + 2), 16) / 255;
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
 /**
  * The standard, per palette and mode: three separate lines, each exactly 1px,
- * each the app's medium gray, read from a token the skin did not write.
- * Returns the row the report prints as a table.
+ * each the app's mode ink (light by day, dark at night), read from a token the
+ * skin did not write. Returns the row the report prints as a table.
  */
 function checkDividers(skin, mode, state) {
   const label = `${mode}[${skin}]`;
-  const ink = computedRgb(DIVIDER_INK);
+  const expectedInk = DIVIDER_INK[mode];
+  const ink = computedRgb(expectedInk);
   const drawn = (state.dividers ?? []).filter(
     (divider) => divider.display !== "none" && divider.height > 0,
   );
@@ -257,15 +282,15 @@ function checkDividers(skin, mode, state) {
     `painted ${JSON.stringify(drawn.map((d) => d.height))}, computed ${JSON.stringify(drawn.map((d) => d.cssHeight))}`,
   );
   check(
-    `${label}: every grouping line paints the standard medium gray`,
+    `${label}: every grouping line paints the ${mode} ink`,
     drawn.every((divider) => divider.background === ink),
-    `inks ${JSON.stringify(drawn.map((d) => d.background))} vs ${ink}`,
+    `inks ${JSON.stringify(drawn.map((d) => d.background))} vs ${ink} (${expectedInk})`,
   );
   check(
     `${label}: the divider token is the app's own, not a skin ink`,
-    state.tokens?.divider === DIVIDER_INK &&
+    state.tokens?.divider === expectedInk &&
       state.tokens?.dividerWidth === DIVIDER_WIDTH,
-    `token ${JSON.stringify(state.tokens?.divider)} @ ${JSON.stringify(state.tokens?.dividerWidth)}`,
+    `token ${JSON.stringify(state.tokens?.divider)} @ ${JSON.stringify(state.tokens?.dividerWidth)}, expected ${expectedInk}`,
   );
   check(
     `${label}: every grouping line lives in the rail column`,
@@ -356,6 +381,17 @@ async function main() {
       }
     }
 
+    // The pair's ordering, stated once rather than only implied by the two exact
+    // hexes: the day ink must be lighter than the night ink, so a future edit
+    // cannot flatten the pair to one gray or invert the two.
+    const dayLuminance = luminanceOf(DIVIDER_INK.day);
+    const nightLuminance = luminanceOf(DIVIDER_INK.night);
+    check(
+      "the day ink is lighter than the night ink",
+      dayLuminance > nightLuminance,
+      `day ${DIVIDER_INK.day} (${dayLuminance.toFixed(4)}) vs night ${DIVIDER_INK.night} (${nightLuminance.toFixed(4)})`,
+    );
+
     // The operator's palette, 1:1: Forge by day, the rail column with its three
     // lines, plus the whole window for context.
     step = "capture the day rail";
@@ -365,8 +401,8 @@ async function main() {
     const dayShell = await win.webContents.capturePage();
     fs.writeFileSync(DAY_SHELL_PNG, dayShell.toPNG());
 
-    // And the same rail at night, so the standard is visibly the same ink on the
-    // dark mat rather than only a number in the report.
+    // And the same rail at night: the day ink's darker counterpart on the dark
+    // mat, so the pair is visible in the pictures and not only in the report.
     step = "capture the night rail";
     await applyTheme(win, "forge", "dark");
     const night = await sample(win);
@@ -378,8 +414,11 @@ async function main() {
       window: { ...WINDOW },
       vaultName,
       standard: {
-        ink: DIVIDER_INK,
-        rgb: DIVIDER_RGB,
+        ink: { ...DIVIDER_INK },
+        rgb: {
+          day: computedRgb(DIVIDER_INK.day),
+          night: computedRgb(DIVIDER_INK.night),
+        },
         width: DIVIDER_WIDTH,
         lines: DIVIDER_COUNT,
         token: "--divider",

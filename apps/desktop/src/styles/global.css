@@ -1416,11 +1416,11 @@ a {
 
 /* The sidebar's grouping lines: one standard, not a palette ink. The rail's
    sections are structure, so the app draws these itself — a crisp 1px of neutral
-   gray (`--divider`) in every theme and both modes — instead of deriving them
-   from the skin's border, which is how Forge's three lines came out ember
-   orange. Both halves come from tokens, so the three lines cannot drift apart:
-   `--divider-width` is the one thickness they all wear. `flex: 0 0 auto` keeps a
-   squeezed rail from shrinking one of them to a sub-pixel line. */
+   gray, lighter by day and darker at night (`--divider`) in every theme — instead
+   of deriving them from the skin's border, which is how Forge's three lines came
+   out ember orange. Both halves come from tokens, so the three lines cannot drift
+   apart: `--divider-width` is the one thickness they all wear. `flex: 0 0 auto`
+   keeps a squeezed rail from shrinking one of them to a sub-pixel line. */
 .nav-rail__divider {
   flex: 0 0 auto;
   height: var(--divider-width);

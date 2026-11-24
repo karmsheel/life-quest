@@ -88,8 +88,9 @@ itself to the fallback theme, **Nous**, in the requested mode. The day/night
 control in the title bar switches the palette; hovering or focusing it opens the
 starred-theme quick menu, which is the same list this page curates. A theme
 colours the app's surfaces and its own borders, but the sidebar's three section
-dividers are app chrome: they stay a 1px neutral gray in every theme, so changing
-theme never changes how the sidebar's groups are separated.
+dividers are app chrome: they stay 1px of neutral gray — a lighter gray in day and
+a darker one at night — in every theme, so changing theme never changes how the
+sidebar's groups are separated.
 
 Under the grid, **Install a theme** takes a Forge theme JSON file — *the shape this
 app and Hermes Desktop share* — with **Choose file…**. An installed theme arrives
