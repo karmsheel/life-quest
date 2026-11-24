@@ -96,9 +96,9 @@ type Row = {
 
 type Tab = {
   label: string;
-  /** The square's glyph; null on a normal tab. */
+  /** The leader glyph (retired with the square); always null now. */
   letter: string | null;
-  /** The tab's accessible name; the pinned square's names its chat. */
+  /** The tab's accessible name; a pinned tab's names its chat. */
   name: string;
   /** The kickoff mark's kind (`data-icon`), or null on a chat opened plainly. */
   icon: string | null;
@@ -132,7 +132,7 @@ type Tab = {
   box: Box | null;
 };
 
-/** The dock's tab band: its box, its sideways travel, and its sticky corner. */
+/** The dock's tab band: its box, its sideways travel, and its scroll geometry. */
 type Strip = {
   box: Box | null;
   scrollLeft: number;
@@ -140,8 +140,6 @@ type Strip = {
   clientWidth: number;
   /** The band has more tabs than fit: it must scroll, not squeeze past the floor. */
   overflow: boolean;
-  /** The sticky full-screen control covering the band's trailing edge. */
-  trailing: { box: Box | null; width: number } | null;
 };
 
 /** The wheel over the strip, as the driver's own dispatch measured it. */
@@ -368,7 +366,10 @@ describe("chat dock tabs and sidebar chats", () => {
       newChatTab,
       newChatKept,
       newChatActive,
-      equalTabs,
+      defaultTabs,
+      contentTabs,
+      cappedTabs,
+      restoredTabs,
       narrowTabs,
       longList,
       atFoot,
@@ -437,18 +438,18 @@ describe("chat dock tabs and sidebar chats", () => {
       false,
       "pin/archive are not hover-only: a row shows its actions at rest",
     );
-    // A pinned chat is a tab at boot — the pin is durable Hermes state — drawn
-    // as a square (letter + pin, no label, no close) ahead of the open chat.
+    // A pinned chat is a tab at boot — the pin is durable Hermes state — that
+    // leads with its pin, keeps its name and carries no close control, ahead of
+    // the open chat.
     assert.equal(
       landing.tabCount,
       2,
       "the landing did not draw the pinned tab beside the open chat",
     );
     assert.equal(landing.tabs[0]?.pinned, true, "the first tab is not the pinned one");
-    assert.equal(landing.tabs[0]?.letter, "P", "the pinned square does not carry the chat's letter");
-    assert.equal(landing.tabs[0]?.pin, true, "the pinned square carries no pin icon");
-    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned square has a close control");
-    assert.equal(landing.tabs[0]?.label, "", "the pinned square draws a text label");
+    assert.equal(landing.tabs[0]?.pin, true, "the pinned tab carries no pin icon");
+    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned tab has a close control");
+    assert.equal(landing.tabs[0]?.label, "Pinned note", "the pinned tab lost its name");
     assert.equal(landing.tabs[1]?.pinned, false, "the open chat's tab is marked pinned");
     assert.equal(landing.tabs[1]?.label, "Alpha planning");
     assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
@@ -796,7 +797,7 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(
       unpinned.tabs.every((tab) => tab.pinned === false),
       true,
-      "a tab is still drawn as a pinned square",
+      "a tab is still drawn as a pinned tab",
     );
     assert.equal(
       unpinned.tabs.find((tab) => tab.label === "Bravo budget")?.hasClose,
@@ -813,7 +814,7 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(
       unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose,
       true,
-      "the unpinned square did not become a normal tab with a close control",
+      "the unpinned tab did not become a normal tab with a close control",
     );
     assert.equal(baseline.tabCount, 1, "closing the extra tab did not leave one tab");
     assert.equal(
@@ -1221,40 +1222,87 @@ describe("chat dock tabs and sidebar chats", () => {
       "the new chat is not the active tab after clicking it",
     );
 
-    // Equal tabs while there is room: at the default dock width every tab is one
-    // share of the strip, whatever the length of its label, and at the dock's
-    // narrowest the shares have shrunk together and are still equal. The floor
-    // is the browser's rule on top of that: a share never shrinks below the room
-    // three characters of the label need beside its mark and close control, and
-    // once the tabs cannot fit at that floor the strip overflows and scrolls
-    // instead. A content-sized strip fails the first spread; a strip that keeps
-    // squeezing past the floor fails the label measurement; a strip that clips
-    // instead of scrolling fails the crowded state at the end of this test.
+    // Content-sized tabs: with room in the strip a tab takes the width of its
+    // name — capped at a few words — so a long fixture name holds a wider tab
+    // than a short one and every short name is written in full. Only when the row
+    // fills do the tabs compress, down to the shared floor; the labels truncate
+    // and then the strip scrolls. An equal share fails the spread; a tab that
+    // keeps its wide width fails the floor; a tab past the cap fails the cap.
     assert.equal(
-      equalTabs.tabCount,
+      defaultTabs.tabCount,
       3,
-      `the third chat did not open a tab: ${JSON.stringify(equalTabs.tabs.map((tab) => tab.label))}`,
+      `the third chat did not open a tab: ${JSON.stringify(defaultTabs.tabs.map((tab) => tab.label))}`,
     );
-    const equalLabels = equalTabs.tabs.map((tab) => tab.label);
+    const openLabels = defaultTabs.tabs.map((tab) => tab.label);
     assert.deepEqual(
-      equalLabels,
+      openLabels,
       ["Bravo budget", "New chat", "Delta automation"],
       "the three open chats are not the three tabs",
     );
     assert.ok(
-      new Set(equalLabels.map((label) => label.length)).size > 1,
+      new Set(openLabels.map((label) => label.length)).size > 1,
       "every tab label is the same length, so a content-sized strip would not show",
     );
     const spread = (widths: number[]) => Math.max(...widths) - Math.min(...widths);
-    const equalWidths = equalTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
-    assert.equal(equalWidths.length, 3, "not every tab was measured");
+    const widthOf = (state: typeof contentTabs, label: string) =>
+      state.tabs.find((tab) => tab.label === label)?.box?.width ?? Number.NaN;
     assert.ok(
-      equalWidths.every((width) => Number.isFinite(width)),
-      "a tab has no box to measure",
+      contentTabs.chatDivider !== null &&
+        (contentTabs.chatDivider.now ?? 0) > (defaultTabs.chatDivider?.now ?? 0),
+      `the dock never widened for the content-sized claim (${defaultTabs.chatDivider?.now}px → ${contentTabs.chatDivider?.now}px)`,
+    );
+    const contentWidths = contentTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    assert.equal(contentWidths.length, 3, "not every tab was measured at the wide dock");
+    assert.ok(
+      contentWidths.every((width) => Number.isFinite(width)),
+      "a tab has no box to measure at the wide dock",
     );
     assert.ok(
-      spread(equalWidths) <= 1,
-      `tabs are content-sized, not equal shares of the strip: ${JSON.stringify(equalWidths)}`,
+      spread(contentWidths) > 2,
+      `tabs are equal shares, not content-sized: ${JSON.stringify(contentWidths)}`,
+    );
+    assert.ok(
+      widthOf(contentTabs, "Delta automation") > widthOf(contentTabs, "New chat") &&
+        widthOf(contentTabs, "Bravo budget") > widthOf(contentTabs, "New chat"),
+      `a longer name did not hold a wider tab: ${JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width]))}`,
+    );
+    for (const tab of contentTabs.tabs) {
+      assert.equal(
+        tab.label,
+        tab.name.split(" — ")[0],
+        `"${tab.label}" is truncated while the wide strip has room for it (${tab.name})`,
+      );
+      assert.ok(
+        Number.isFinite(tab.maxWidth) &&
+          tab.maxWidth > 0 &&
+          (tab.box?.width ?? Number.POSITIVE_INFINITY) <= tab.maxWidth + 1,
+        `"${tab.label}" grows past its cap (${tab.box?.width}px vs ${tab.maxWidth}px)`,
+      );
+    }
+    // The cap holds a long title to a few words: the tab stops at its max-width,
+    // the label truncates inside it, and the full name stays in its tooltip and
+    // accessible name.
+    const capped = cappedTabs.tabs.find((tab) => tab.active) ?? null;
+    assert.ok(capped, "the long-named tab was not found");
+    assert.ok(
+      Number.isFinite(capped.maxWidth) &&
+        capped.maxWidth > 0 &&
+        (capped.box?.width ?? Number.POSITIVE_INFINITY) <= capped.maxWidth + 1,
+      `the long name grew the tab past its cap (${capped.box?.width}px vs ${capped.maxWidth}px)`,
+    );
+    assert.ok(
+      capped.labelWidth !== null &&
+        capped.textWidth !== null &&
+        capped.labelWidth + 1 < capped.textWidth,
+      `the long name is not truncated inside the tab (label ${capped.labelWidth}px, name ${capped.textWidth}px)`,
+    );
+    assert.ok(
+      capped.name.includes("A very long session name"),
+      `the long name left the tab's tooltip and accessible name (${capped.name})`,
+    );
+    assert.ok(
+      restoredTabs.tabs.some((tab) => tab.label === "Delta automation"),
+      `the fixture name was not restored: ${JSON.stringify(restoredTabs.tabs.map((tab) => tab.label))}`,
     );
 
     assert.notEqual(narrowTabs.chatDivider, null, "the dock has no resize handle");
@@ -1265,19 +1313,19 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.ok(
       (narrowTabs.chatDivider?.now ?? Number.POSITIVE_INFINITY) <
-        (equalTabs.chatDivider?.now ?? Number.NEGATIVE_INFINITY),
-      `the divider did not move between the two samples (${equalTabs.chatDivider?.now}px → ${narrowTabs.chatDivider?.now}px)`,
+        (defaultTabs.chatDivider?.now ?? Number.NEGATIVE_INFINITY),
+      `the divider did not move to the floor (${defaultTabs.chatDivider?.now}px → ${narrowTabs.chatDivider?.now}px)`,
     );
     assert.ok(
       (narrowTabs.panel?.width ?? Number.POSITIVE_INFINITY) <
-        (equalTabs.panel?.width ?? Number.NEGATIVE_INFINITY),
-      `the dock did not get narrower (${equalTabs.panel?.width}px → ${narrowTabs.panel?.width}px)`,
+        (defaultTabs.panel?.width ?? Number.NEGATIVE_INFINITY),
+      `the dock did not get narrower (${defaultTabs.panel?.width}px → ${narrowTabs.panel?.width}px)`,
     );
     const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
     assert.equal(narrowTabs.tabCount, 3, "the strip lost a tab while the dock narrowed");
     assert.deepEqual(
       narrowTabs.tabs.map((tab) => tab.label),
-      equalLabels,
+      openLabels,
       "the strip's chats changed while the dock narrowed",
     );
     assert.ok(
@@ -1286,13 +1334,14 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.ok(
       spread(narrowWidths) <= 1,
-      `the tabs are not equal at the dock's floor: ${JSON.stringify(narrowWidths)}`,
+      `the tabs are not held at the shared floor at the dock's narrowest: ${JSON.stringify(narrowWidths)}`,
     );
     assert.ok(
       narrowWidths.every(
-        (width, index) => width < (equalWidths[index] ?? Number.NEGATIVE_INFINITY),
+        (width, index) =>
+          width < (contentWidths[index] ?? Number.POSITIVE_INFINITY),
       ),
-      `the tabs did not shrink with the dock: ${JSON.stringify(equalWidths)} → ${JSON.stringify(narrowWidths)}`,
+      `the tabs did not compress with the dock: ${JSON.stringify(contentWidths)} → ${JSON.stringify(narrowWidths)}`,
     );
 
     // The floor itself, measured where it hurts most — the dock's narrowest and a
@@ -1722,7 +1771,7 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.equal(
       renameSwitched.patchCalls.some(
-        (call) => typeof call.patch.title === "string",
+        (call) => call.patch.title === "Wrong chat name",
       ),
       false,
       "a rename was written to the wrong chat",
@@ -1827,8 +1876,9 @@ describe("chat dock tabs and sidebar chats", () => {
     );
 
     // The tab in front is walked into the band: a chat appended at the far end is
-    // in front, and its tab ends inside the strip's visible edge — before the
-    // sticky full-screen corner, which covers that edge.
+    // in front, and its tab ends inside the strip's visible edge. Nothing rides
+    // that edge any more — the full-screen door is in the bottom action bar — so
+    // the band is tabs all the way to its own trailing edge.
     const revealedFront = revealed.tabs.find((tab) => tab.active) ?? null;
     assert.equal(
       revealed.tabCount,
@@ -1842,11 +1892,6 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.notEqual(revealed.strip, null, "the reveal state drew no tab strip");
     assert.notEqual(revealedFront?.box, null, "the tab in front has no box to measure");
-    const revealInset = revealed.strip?.trailing?.width ?? 0;
-    assert.ok(
-      revealInset > 0,
-      "the strip has no sticky trailing full-screen corner to inset the visible band by",
-    );
     assert.ok(
       (revealed.strip?.scrollLeft ?? 0) > 0,
       `the strip did not scroll to reach the appended tab (scrollLeft ${revealed.strip?.scrollLeft})`,
@@ -1858,8 +1903,8 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.ok(
       (revealedFront?.box?.right ?? Number.POSITIVE_INFINITY) <=
-        (revealed.strip?.box?.right ?? Number.NEGATIVE_INFINITY) - revealInset + 1,
-      `the tab in front runs under the sticky full-screen corner instead of ending inside the visible band: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}, corner ${revealInset}px`,
+        (revealed.strip?.box?.right ?? Number.NEGATIVE_INFINITY) + 1,
+      `the tab in front runs past the strip's visible edge instead of ending inside the band: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}`,
     );
 
     // The write path a page uses to start a task chat: the created chat's tab

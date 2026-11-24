@@ -82,7 +82,7 @@ It prints the size and SHA-256 of each, and writes `release/release-manifest.jso
 
 ### Who hears about a release
 
-The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the trailing end of the chat dock's bottom bar glows and an *Update available* caption appears beside it — including when the release lands while the app is open. Clicking the glowing number opens one dialog: both versions, the release's notes, and the installer, with an offer to download it and run it. There is no in-window pop-up for the news; after the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
+The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number in the rail's foot, under the Log, glows and an *Update available* caption appears beside it — including when the release lands while the app is open. Clicking the glowing number opens one dialog: both versions, the release's notes, and the installer, with an offer to download it and run it. There is no in-window pop-up for the news; after the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
 
 The release repository is public, so the check is one anonymous read and the app holds no token for it. With nothing to read, it reports that it could not check — it never claims to be up to date.
 

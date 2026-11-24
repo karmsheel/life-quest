@@ -21,9 +21,13 @@
  * painting, the dock takes the whole workspace right of the rail down to the
  * window's bottom, the divider leaves, and the rail keeps the window's leading
  * edge. The transcript and the composer band keep their readable measure while
- * the tab strip, the header and the bottom action bar stay full width. The
- * window strip carries no second door: its trailing cluster is the day/night
- * control and the gear.
+ * the tab strip and the header stay full width. The bottom action bar is a card
+ * in that column: it follows the composer box's measure, floats with a margin on
+ * every side and wears the composer's soft corner — in the mode and in the split
+ * dock alike — so it never reaches past the field it belongs to. The mode's one
+ * door sits in that bar, immediately after the Notebox; the top row (strip and
+ * header) carries no full-screen control, and the window strip is still the
+ * day/night control and the gear.
  *
  * NOT covered here: whether a real mouse can press the dock's control through
  * whatever is painted over it. The rig clicks it with `el.click()` (the same
@@ -47,6 +51,8 @@ const url =
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 /** `56rem` at the bench's 16px root: the contract's readable measure. */
 const MEASURE = 56 * 16;
+/** `--dock-actions-width`: the shipped 22.5rem dock's composer box, 20.55rem. */
+const ACTIONS_MEASURE = 20.55 * 16;
 
 const SAMPLE = `(() => {
   const box = (el) => {
@@ -116,53 +122,123 @@ const SAMPLE = `(() => {
   const footer = document.querySelector(".chat-panel__footer");
   const messages = document.querySelector(".chat-panel__messages");
   const composer = document.querySelector(".chat-panel__composer");
+  const composerBox = document.querySelector(".chat-panel__composer-box");
   const actions = document.querySelector(".chat-panel__actions");
   const trailing = document.querySelector(".window-titlebar__trailing");
   const dockCtl = document.querySelector('[data-testid="chat-fullscreen"]');
   const plus = document.querySelector(".chat-panel__tab-new");
 
-  const topRow = dockCtl
-    ? dockCtl.closest(".chat-panel__tabs, .chat-panel__header")
-    : (tabs || header);
-  const topLevel = topRow && dockCtl
-    ? Array.from(topRow.children).find((el) => el.contains(dockCtl))
-    : null;
-  const lastTop = topRow ? topRow.children[topRow.children.length - 1] : null;
-  // The plus is a sibling of the tabs in the strip's flow, directly after the
-  // last tab; the full-screen door keeps the band's trailing corner. Both facts
-  // are measured here, because "next to the last tab" and "at the end of the
-  // strip" are different arrangements that both look like a plus on screen.
-  const tabEls = topRow
-    ? Array.from(topRow.children).filter((el) =>
-        el.classList.contains("chat-panel__tab")
-      )
-    : [];
-  const lastTab = tabEls.length > 0 ? tabEls[tabEls.length - 1] : null;
+  // The mode's door lives in the dock's bottom action bar now, not in the top
+  // row. The top row is measured as the negative — the strip, the header, or
+  // both, with no full-screen control in either — and the bar is measured as
+  // the card it is, against the composer box it belongs to.
+  const topRow = tabs || header;
   const topRowInfo = topRow
     ? {
         className: String(topRow.className || ""),
         isTabs: topRow.classList.contains("chat-panel__tabs"),
         isHeader: topRow.classList.contains("chat-panel__header"),
         box: box(topRow),
-        controlIsTrailing: Boolean(topLevel && lastTop && topLevel === lastTop),
-        trailingGap: dockCtl ? box(topRow).right - box(dockCtl).right : null,
-        lastTabBox: lastTab ? box(lastTab) : null,
-        plusBox: plus ? box(plus) : null,
-        plusInTrailingGroup: Boolean(
-          plus && plus.closest(".chat-panel__tabs-trailing")
-        ),
-        plusAfterLastTab: Boolean(
-          plus && lastTab && box(plus).left >= box(lastTab).right
-        ),
-        plusGap: plus && lastTab ? box(plus).left - box(lastTab).right : null,
-        afterPlus: Boolean(
-          plus && dockCtl && box(dockCtl).left >= box(plus).right
-        ),
+        holdsControl: Boolean(dockCtl && topRow.contains(dockCtl)),
+        fullScreenControls: topRow.querySelectorAll(".chat-focus-toggle").length,
         children: Array.from(topRow.children).map((el) => ({
           classes: String(el.className || ""),
           box: box(el),
           holdsControl: Boolean(dockCtl && el.contains(dockCtl))
         }))
+      }
+    : null;
+
+  // The top row's negative: neither the strip nor the header carries the door
+  // any more, on any surface. Measured over both elements rather than only the
+  // one in front, because a header the run has not opened is still in the DOM.
+  const topRowCopy = {
+    tabs: tabs ? tabs.querySelectorAll(".chat-focus-toggle").length : 0,
+    header: header ? header.querySelectorAll(".chat-focus-toggle").length : 0
+  };
+
+  const barStyle = actions ? styleOf(actions) : null;
+  const barBox = actions ? box(actions) : null;
+  const noteboxSlot = actions
+    ? actions.querySelector('[aria-label="Notebox"]')
+    : null;
+  const newChatSlot = actions
+    ? actions.querySelector('[aria-label="New chat"]')
+    : null;
+  const shortcutsSlot = actions
+    ? actions.querySelector('[data-testid="chat-shortcuts-action"]')
+    : null;
+  const controlIndex =
+    actions && dockCtl ? Array.from(actions.children).indexOf(dockCtl) : -1;
+  const noteboxIndex =
+    actions && noteboxSlot
+      ? Array.from(actions.children).indexOf(noteboxSlot)
+      : -1;
+  const actionsInfo = actions
+    ? {
+        className: String(actions.className || ""),
+        box: barBox,
+        width: barStyle.width,
+        maxWidth: barStyle.maxWidth,
+        marginTop: px(barStyle.marginTop),
+        marginRight: px(barStyle.marginRight),
+        marginBottom: px(barStyle.marginBottom),
+        marginLeft: px(barStyle.marginLeft),
+        borderRadius: barStyle.borderRadius,
+        border: {
+          top: px(barStyle.borderTopWidth),
+          right: px(barStyle.borderRightWidth),
+          bottom: px(barStyle.borderBottomWidth),
+          left: px(barStyle.borderLeftWidth)
+        },
+        paddingLeft: px(barStyle.paddingLeft),
+        paddingRight: px(barStyle.paddingRight),
+        paddingTop: px(barStyle.paddingTop),
+        paddingBottom: px(barStyle.paddingBottom),
+        background: barStyle.backgroundColor,
+        overflow: {
+          scrollWidth: actions.scrollWidth,
+          clientWidth: actions.clientWidth
+        },
+        containsControl: Boolean(dockCtl && actions.contains(dockCtl)),
+        controlIndex,
+        noteboxIndex,
+        noteboxBox: noteboxSlot ? box(noteboxSlot) : null,
+        // A neighbouring action in its resting ink: the full-screen door must
+        // read exactly like it while the mode is on (the glyph says the state,
+        // the slot does not light up).
+        noteboxRest: noteboxSlot
+          ? {
+              background: styleOf(noteboxSlot).backgroundColor,
+              color: styleOf(noteboxSlot).color
+            }
+          : null,
+        newChatBox: newChatSlot ? box(newChatSlot) : null,
+        shortcutsBox: shortcutsSlot ? box(shortcutsSlot) : null,
+        labels: Array.from(actions.querySelectorAll(".chat-panel__action")).map(
+          (el) => el.getAttribute("aria-label")
+        ),
+        // The bar's own row: every action and the badge, so an overflow can be
+        // named rather than guessed at.
+        children: Array.from(actions.children).map((el) => ({
+          classes: String(el.className || ""),
+          label: el.getAttribute("aria-label"),
+          box: box(el),
+          inside:
+            Boolean(barBox) &&
+            box(el).left >= barBox.left &&
+            box(el).right <= barBox.right &&
+            box(el).top >= barBox.top &&
+            box(el).bottom <= barBox.bottom
+        }))
+      }
+    : null;
+
+  const composerBoxInfo = composerBox
+    ? {
+        box: box(composerBox),
+        maxWidth: styleOf(composerBox).maxWidth,
+        width: styleOf(composerBox).width
       }
     : null;
 
@@ -177,6 +253,8 @@ const SAMPLE = `(() => {
           title: el.getAttribute("title"),
           pressed: el.getAttribute("aria-pressed"),
           icon: iconClass(el),
+          background: styleOf(el).backgroundColor,
+          color: styleOf(el).color,
           box: box(el),
           display: styleOf(el).display,
           visibility: styleOf(el).visibility
@@ -195,11 +273,11 @@ const SAMPLE = `(() => {
     : [];
 
   /*
-   * The strip's negative reading: the mode has one door, in the dock's top row,
-   * so the strip must carry no full-screen control at all and no leftover words
-   * from the removed copy. Both are measured rather than assumed, because a
-   * control that has merely been moved out of sight is still a second door the
-   * operator can tab to.
+   * The strip's negative reading: the mode has one door, in the dock's bottom
+   * action bar, so the window strip must carry no full-screen control at all and
+   * no leftover words from the removed copy. Both are measured rather than
+   * assumed, because a control that has merely been moved out of sight is still
+   * a second door the operator can tab to.
    */
   const stripChatControls = trailing
     ? Array.from(trailing.querySelectorAll(".chat-focus-toggle"))
@@ -302,6 +380,9 @@ const SAMPLE = `(() => {
     divider: { present: Boolean(divider), box: divider ? box(divider) : null },
     dockControl: control(dockCtl),
     topRow: topRowInfo,
+    topRowCopy,
+    bar: actionsInfo,
+    composerBox: composerBoxInfo,
     strip,
     cluster,
     content: {
@@ -412,13 +493,13 @@ function checkUnfocused(label, state) {
 }
 
 /**
- * The window strip: the mode has one door, in the dock's top row, so nothing in
- * the trailing cluster opens the mode directly. The cluster is the layouts
- * control, the day/night control and the gear — in that order: the picker is the
- * window's arrangement, the palette is how it looks, the gear is where its
- * settings live. A full-screen control here would be the duplicate the change
- * removed, so it is asserted absent in every arrangement the run samples, not
- * only while the mode is on.
+ * The window strip: the mode has one door, in the dock's bottom action bar, so
+ * nothing in the trailing cluster opens the mode directly. The cluster is the
+ * layouts control, the day/night control and the gear — in that order: the
+ * picker is the window's arrangement, the palette is how it looks, the gear is
+ * where its settings live. A full-screen control here would be the duplicate the
+ * change removed, so it is asserted absent in every arrangement the run samples,
+ * not only while the mode is on.
  */
 function checkStrip(label, state) {
   const strip = state.strip;
@@ -474,9 +555,11 @@ function checkStrip(label, state) {
 }
 
 /**
- * The mode's one door: the dock's top-row control. A control that exists in the
- * wrong corner is not a control the operator finds, so placement and label are
- * asserted; the strip is checked for the duplicate that used to sit there.
+ * The mode's one door: the dock's bottom action bar. A control that exists in
+ * the wrong corner is not a control the operator finds, so placement and label
+ * are asserted — and the bar is checked as the card it now is: the composer
+ * box's width, a margin on every side, the composer's soft corner. The top row
+ * and the window strip are checked for the copies that used to sit there.
  */
 function checkDoors(label, state, focused) {
   const expectedDockLabel = focused ? "Exit full screen chat" : "Full screen chat";
@@ -484,14 +567,20 @@ function checkDoors(label, state, focused) {
   const expectedPressed = focused ? "true" : "false";
 
   const dock = state.dockControl;
+  const bar = state.bar;
+  const chatBox = state.chat?.box;
+  const composerBox = state.composerBox?.box;
+  const barBox = bar?.box;
+
   check(
-    `${label}: the dock's top row carries the full-screen control`,
-    dock.found === true,
-    "no [data-testid=chat-fullscreen] in the dock",
+    `${label}: the dock's bottom action bar carries the full-screen control`,
+    dock.found === true && bar?.containsControl === true,
+    "no [data-testid=chat-fullscreen] in .chat-panel__actions",
   );
   check(
     `${label}: the dock control is marked as the mode's control`,
-    String(dock.classes ?? "").includes("chat-focus-toggle"),
+    String(dock.classes ?? "").includes("chat-focus-toggle") &&
+      String(dock.classes ?? "").includes("chat-panel__action"),
     `dock control classes ${JSON.stringify(dock.classes)}`,
   );
   check(
@@ -510,6 +599,13 @@ function checkDoors(label, state, focused) {
     `icon ${JSON.stringify(dock.icon)}`,
   );
   check(
+    `${label}: the door rests like the bar's other actions — no selected fill`,
+    Boolean(dock.background && dock.color && bar?.noteboxRest) &&
+      dock.background === bar.noteboxRest.background &&
+      dock.color === bar.noteboxRest.color,
+    `door ${JSON.stringify({ background: dock.background, color: dock.color })} vs Notebox ${JSON.stringify(bar?.noteboxRest)}`,
+  );
+  check(
     `${label}: the dock control is painted`,
     Boolean(dock.box) &&
       dock.display !== "none" &&
@@ -519,49 +615,88 @@ function checkDoors(label, state, focused) {
     `dock control ${JSON.stringify(dock)}`,
   );
 
-  // The top row is the tab strip here (the harness seeds a pinned chat): the
-  // plus follows the last tab in the strip's flow, and the full-screen control
-  // holds the band's trailing corner after it.
-  const topRow = state.topRow;
+  // The leading group, in DOM order and on screen: New chat, then the Notebox,
+  // then the door. "Next to the Notebox" is measured as the slot immediately
+  // after it, not as "somewhere on the left".
   check(
-    `${label}: the dock's top row is the pinned chat's tab strip`,
-    Boolean(topRow) && topRow.isTabs === true,
-    `top row ${JSON.stringify(topRow?.className)}`,
+    `${label}: the door follows the Notebox in the bar's leading group`,
+    bar?.controlIndex === bar?.noteboxIndex + 1 &&
+      Boolean(bar?.noteboxBox && dock.box && bar?.newChatBox && bar?.shortcutsBox) &&
+      bar.noteboxBox.right <= dock.box.left &&
+      dock.box.left - bar.noteboxBox.right <= 8 &&
+      bar.newChatBox.left < bar.noteboxBox.left &&
+      dock.box.right < bar.shortcutsBox.left,
+    `slots ${JSON.stringify(bar?.labels)}, indices ${bar?.noteboxIndex}/${bar?.controlIndex}, notebox ${JSON.stringify(bar?.noteboxBox)}, door ${JSON.stringify(dock.box)}, new chat ${JSON.stringify(bar?.newChatBox)}, shortcuts ${JSON.stringify(bar?.shortcutsBox)}`,
+  );
+
+  // The top row is not a door any more: the strip (and the header, whether or
+  // not it is the row in front) carries no full-screen control.
+  check(
+    `${label}: the dock's top row carries no full-screen control`,
+    state.topRowCopy?.tabs === 0 &&
+      state.topRowCopy?.header === 0 &&
+      (state.topRow?.holdsControl ?? false) === false,
+    `top row copy ${JSON.stringify(state.topRowCopy)}, row holds control: ${state.topRow?.holdsControl}`,
+  );
+
+  // The card: it keeps its own measure — the composer box at the shipped dock —
+  // as the field grows, and it is centred on the field rather than sized by it.
+  // On a narrow dock the composer box caps the width, so the bar never reaches
+  // past the field it belongs to.
+  check(
+    `${label}: the bar keeps its own measure and is centred on the composer box`,
+    Boolean(barBox && composerBox) &&
+      near(
+        barBox.width,
+        Math.min(ACTIONS_MEASURE, composerBox.width),
+        2,
+      ) &&
+      near(barBox.left + barBox.right, composerBox.left + composerBox.right, 4) &&
+      barBox.left >= composerBox.left - 1 &&
+      barBox.right <= composerBox.right + 1,
+    `bar ${JSON.stringify(barBox)} vs composer box ${JSON.stringify(composerBox)} (own measure ${ACTIONS_MEASURE}px)`,
   );
   check(
-    `${label}: the dock control is the last item of the top row`,
-    topRow?.controlIsTrailing === true,
-    `control is trailing: ${topRow?.controlIsTrailing}, children ${JSON.stringify(topRow?.children)}`,
+    `${label}: a wider composer does not stretch the dock's chrome`,
+    Boolean(barBox && composerBox) &&
+      (composerBox.width <= ACTIONS_MEASURE + 2
+        ? true
+        : near(barBox.width, ACTIONS_MEASURE, 2) &&
+          barBox.width < composerBox.width - 12),
+    `bar ${JSON.stringify(barBox)} vs composer box ${JSON.stringify(composerBox)}`,
   );
   check(
-    `${label}: the new-chat plus sits directly after the last tab`,
-    Boolean(topRow?.lastTabBox && topRow?.plusBox) &&
-      topRow.plusAfterLastTab === true &&
-      (topRow.plusGap ?? -1) >= 0 &&
-      topRow.plusGap <= 12,
-    `last tab ${JSON.stringify(topRow?.lastTabBox)}, plus ${JSON.stringify(topRow?.plusBox)}, gap ${topRow?.plusGap}`,
+    `${label}: the bar never reaches past the dock's edges`,
+    Boolean(barBox && chatBox) &&
+      barBox.left >= chatBox.left + 4 &&
+      barBox.right <= chatBox.right - 4,
+    `bar ${JSON.stringify(barBox)} in dock ${JSON.stringify(chatBox)}`,
   );
   check(
-    `${label}: the new-chat plus rides the tab flow, not the trailing corner`,
-    topRow?.plusInTrailingGroup === false &&
-      Boolean(topRow?.plusBox && dock?.box) &&
-      dock.box.left >= topRow.plusBox.right,
-    `plus in trailing group ${topRow?.plusInTrailingGroup}, plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
+    `${label}: the bar floats with a margin on every side`,
+    Boolean(barBox && chatBox) &&
+      barBox.top > (state.measure?.footer?.box?.bottom ?? barBox.top) &&
+      barBox.bottom < chatBox.bottom &&
+      chatBox.bottom - barBox.bottom >= 4 &&
+      bar.marginTop > 0 &&
+      bar.marginBottom > 0,
+    `margins ${bar?.marginTop}/${bar?.marginBottom}, bar ${JSON.stringify(barBox)} under composer band ${JSON.stringify(state.measure?.footer?.box)} in dock ${JSON.stringify(chatBox)}`,
   );
   check(
-    `${label}: the dock control stands after the plus, in the row's trailing corner`,
-    topRow?.afterPlus === true,
-    `plus ${JSON.stringify(topRow?.plusBox)}, control ${JSON.stringify(dock.box)}`,
+    `${label}: the bar wears a full hairline and a soft corner`,
+    bar.border.top === 1 &&
+      bar.border.right === 1 &&
+      bar.border.bottom === 1 &&
+      bar.border.left === 1 &&
+      parseFloat(bar.borderRadius) > 2,
+    `border ${JSON.stringify(bar?.border)}, radius ${JSON.stringify(bar?.borderRadius)}`,
   );
   check(
-    `${label}: the dock control sits inside the top row's trailing edge`,
-    Boolean(topRow?.box && dock.box) &&
-      dock.box.right <= topRow.box.right &&
-      (topRow.trailingGap ?? -1) >= 0 &&
-      topRow.trailingGap <= 12 &&
-      dock.box.top >= topRow.box.top &&
-      dock.box.bottom <= topRow.box.bottom,
-    `control ${JSON.stringify(dock.box)} in row ${JSON.stringify(topRow?.box)}, gap ${topRow?.trailingGap}`,
+    `${label}: the bar's row stays inside the card`,
+    Boolean(barBox) &&
+      bar.overflow.scrollWidth <= bar.overflow.clientWidth + 1 &&
+      bar.children.every((child) => child.inside === true),
+    `overflow ${JSON.stringify(bar?.overflow)}, children ${JSON.stringify(bar?.children)}`,
   );
 
   checkStrip(label, state);
@@ -671,10 +806,13 @@ function checkFocused(label, state, base) {
     );
   }
   const chatBox = state.chat?.box;
+  // The strip and the header lead the dock full width, but the action bar is
+  // not chrome across the glass any more: it keeps its own measure, centred on
+  // the composer box, so the mode's wider field does not stretch it. checkDoors
+  // asserts that alignment; here the mode's own measure is the claim.
   for (const [name, rect] of [
     ["tab strip", state.content?.tabs],
     ["header", state.content?.header],
-    ["bottom action bar", state.content?.actions],
   ]) {
     check(
       `${label}: the ${name} stays full width`,
@@ -683,10 +821,17 @@ function checkFocused(label, state, base) {
     );
   }
   check(
-    `${label}: the bottom action bar holds the dock's bottom end`,
-    Boolean(state.content?.actions?.box && chatBox) &&
-      state.content.actions.box.bottom === chatBox.bottom,
-    `actions ${JSON.stringify(state.content?.actions?.box)} vs dock ${JSON.stringify(chatBox)}`,
+    `${label}: the action bar keeps its own measure, centred on the composer box`,
+    Boolean(state.bar?.box && state.composerBox?.box && chatBox) &&
+      state.bar.box.width < chatBox.width - 8 &&
+      near(state.bar.box.width, ACTIONS_MEASURE, 2) &&
+      state.bar.box.width < state.composerBox.box.width - 12 &&
+      near(
+        state.bar.box.left + state.bar.box.right,
+        state.composerBox.box.left + state.composerBox.box.right,
+        4,
+      ),
+    `bar ${JSON.stringify(state.bar?.box)} vs composer box ${JSON.stringify(state.composerBox?.box)} in dock ${JSON.stringify(chatBox)}`,
   );
 
   // The readable measure: `width: 100%`, `max-width: 56rem`, centred.
@@ -778,6 +923,12 @@ function checkRestored(label, before, after) {
       `${JSON.stringify(afterBox)} vs ${JSON.stringify(beforeBox)}`,
     );
   }
+  check(
+    `${label}: the action bar card is back on the box it started from`,
+    same(after.bar?.box, before.bar?.box) &&
+      same(after.composerBox?.box, before.composerBox?.box),
+    `bar ${JSON.stringify(after.bar?.box)} vs ${JSON.stringify(before.bar?.box)}; composer box ${JSON.stringify(after.composerBox?.box)} vs ${JSON.stringify(before.composerBox?.box)}`,
+  );
   check(
     `${label}: the divider is back on the seam`,
     after.divider.present === before.divider.present,
@@ -1142,6 +1293,15 @@ async function main() {
         width: Math.min(focusChat.width, DEFAULT_SIZE.width - focusChat.left),
         height: Math.min(420, DEFAULT_SIZE.height - focusChat.top),
       });
+      // The bottom of the dock, 1:1: the composer box, the action-bar card with
+      // its margin and corner, and the mode's door at the card's leading edge.
+      const barCropTop = Math.max(0, focusChat.bottom - 190);
+      await capture("chat-focus-actions.png", {
+        x: Math.max(0, focusChat.left),
+        y: barCropTop,
+        width: Math.min(focusChat.width, DEFAULT_SIZE.width - focusChat.left),
+        height: Math.min(190, DEFAULT_SIZE.height - barCropTop),
+      });
     }
 
     // 3 — the same door closes it, and the shell is exactly where it started.
@@ -1364,6 +1524,31 @@ async function main() {
     const finalRestored = record("finalRestored", await settle());
     checkRestored("final", initial, finalRestored);
     checkDoors("final", finalRestored, false);
+
+    // 9 — the dock at its floor: the card keeps the composer box's measure and
+    // its row still fits inside itself at the 300px dock, because a bar that
+    // spills out of its own rounded edge is the failure this shape invites.
+    at("narrow dock: the card at the floor");
+    beginScenario("narrow dock");
+    await run(`(() => {
+      document.querySelector(".shell")?.style.setProperty("--chatbar-width", "300px");
+      return true;
+    })()`);
+    const narrowDock = record("narrowDock", await settle(360));
+    check(
+      "narrow dock: the dock reached its 300px floor",
+      Boolean(narrowDock.chat?.box) && narrowDock.chat.box.width <= 312,
+      `dock ${JSON.stringify(narrowDock.chat?.box)}`,
+    );
+    checkDoors("narrow dock", narrowDock, false);
+    await capture("chat-focus-narrow.png");
+    await run(`(() => {
+      document.querySelector(".shell")?.style.removeProperty("--chatbar-width");
+      return true;
+    })()`);
+    const narrowRestored = record("narrowRestored", await settle(360));
+    checkRestored("narrow restore", initial, narrowRestored);
+    checkDoors("narrow restore", narrowRestored, false);
 
     report = {
       url,

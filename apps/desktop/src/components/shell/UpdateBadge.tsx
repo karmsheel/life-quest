@@ -3,8 +3,8 @@ import { useUpdate } from "@/state/UpdateProvider";
 import { UpdateDialog } from "./UpdateDialog";
 
 /**
- * The build number in the dock's bottom action bar, and the app's one manual
- * update affordance.
+ * The build number in the rail's caption row — the foot's second row, under the
+ * Log — and the app's one manual update affordance.
  *
  * It is a control at all times, so the operator can always ask. What it opens
  * depends on what is already known:

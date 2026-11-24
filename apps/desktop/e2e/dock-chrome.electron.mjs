@@ -230,11 +230,10 @@ const COMPOSER_NARROW_RATIO_MIN = 0.84;
 const COMPOSER_WIDE_RATIO_MAX = 0.8;
 const CHIP_TOP_PX = 1;
 /**
- * The row's trailing actions slot may be empty — the full-screen door only moves
- * down into it for a tabless thread — yet the row's 0.35rem gap still sits
- * between the name and that empty slot, so the name's centre lands half a gap
- * (2.8px) left of the dock's centre line. 4px accepts the slot's own gap while
- * still catching the regression this check exists for: a row left on
+ * The name row has no trailing actions slot any more — the full-screen door moved
+ * to the bottom action bar — so the name should sit on the dock's centre line.
+ * 4px accepts the sub-pixel disagreement between the name's box and the dock's
+ * while still catching the regression this check exists for: a row left on
  * `justify-content: flex-start` puts the name tens (or hundreds) of pixels out.
  */
 const CHIP_CENTRE_PX = 4;

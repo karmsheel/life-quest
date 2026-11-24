@@ -39,15 +39,16 @@ type Badge = {
   text: string;
   box: Box | null;
   visible: boolean;
-  inBar: boolean | null;
-  lastControlInBar: boolean | null;
+  inMeta: boolean | null;
+  inDockBar: boolean;
+  lastControlInMeta: boolean | null;
 } | null;
 type Caption = {
   tag: string;
   text: string;
   display: string;
   dataLabel: string | null;
-  inBar: boolean;
+  inMeta: boolean;
   immediatelyBeforeBadge: boolean;
   box: Box | null;
   visible: boolean;
@@ -71,11 +72,11 @@ type Sample = {
   route: string | null;
   surface: string | null;
   hasShell: boolean;
-  hasActionBar: boolean;
+  hasCaptionRow: boolean;
   companionSetup: boolean;
   badge: Badge;
   caption: Caption;
-  bar: {
+  meta: {
     box: Box | null;
     lastControlIsBadge: boolean | null;
     containsBadge: boolean;
@@ -191,13 +192,13 @@ describe("update watch", () => {
       assert.equal(sample.alertCount, 0, `${name}: an alert surface was raised`);
     }
 
-    // ── the dock the badge lives in ─────────────────────────────────────────
-    // The badge is in the dock's action bar, so reaching it is also the claim
+    // ── the rail the badge lives in ─────────────────────────────────────────
+    // The badge is in the rail's caption row, so reaching it is also the claim
     // that the real app opened a vault and reached the studio.
     assert.equal(states.launch.hasShell, true, "the real app never reached its shell");
-    assert.equal(states.launch.hasActionBar, true, "the dock's action bar never mounted");
-    assert.ok(states.launch.badge, "the dock rendered no build number");
-    assert.equal(states.launch.badge.inBar, true, "the build number left the action bar");
+    assert.equal(states.launch.hasCaptionRow, true, "the rail's caption row never mounted");
+    assert.ok(states.launch.badge, "the rail rendered no build number");
+    assert.equal(states.launch.badge.inMeta, true, "the build number left the rail's caption row");
 
     // The launch still costs exactly its one check; nothing about the watch
     // changes the cadence at startup.
@@ -228,9 +229,14 @@ describe("update watch", () => {
       "an up-to-date launch opened the dialog before the operator asked",
     );
     assert.equal(
-      states.launch.bar?.lastControlIsBadge,
+      states.launch.meta?.containsBadge,
       true,
-      `the build number is not the bar's trailing control: ${JSON.stringify(states.launch.bar?.controls)}`,
+      `the build number is not in the rail's caption row: ${JSON.stringify(states.launch.meta?.controls)}`,
+    );
+    assert.equal(
+      states.launch.badge?.inDockBar,
+      false,
+      "the build number is still in the dock's action bar",
     );
 
     // The push channel the watch reports on is the preload's.
@@ -265,8 +271,8 @@ describe("update watch", () => {
       OFFERED,
       `the glowing build number names ${states.arrived.badge?.dataVersion}, not ${OFFERED}`,
     );
-    // The caption is the element immediately before the badge, in the bar, and
-    // on screen: the glow's sentence is the replacement for the removed card.
+    // The caption is the element immediately before the badge, in the rail's
+    // caption row: the glow's sentence is the replacement for the removed card.
     assert.equal(states.arrived.captionCount, 1, "the offer drew no caption");
     assert.ok(states.arrived.caption, "the offer drew no caption beside the badge");
     assert.equal(
@@ -275,9 +281,9 @@ describe("update watch", () => {
       `the caption reads ${JSON.stringify(states.arrived.caption?.text)}`,
     );
     assert.equal(
-      states.arrived.caption?.inBar,
+      states.arrived.caption?.inMeta,
       true,
-      "the caption left the dock's action bar",
+      "the caption left the rail's caption row",
     );
     assert.equal(
       states.arrived.caption?.immediatelyBeforeBadge,
@@ -290,9 +296,14 @@ describe("update watch", () => {
       "the caption was rendered but not visible at the shipped window width",
     );
     assert.equal(
-      states.arrived.badge?.lastControlInBar,
+      states.arrived.badge?.inMeta,
       true,
-      `the glowing build number is not the bar's trailing control: ${JSON.stringify(states.arrived.bar?.controls)}`,
+      `the glowing build number left the rail's caption row: ${JSON.stringify(states.arrived.badge?.box)}`,
+    );
+    assert.equal(
+      states.arrived.badge?.inDockBar,
+      false,
+      "the glowing build number is in the dock's action bar",
     );
     assert.equal(
       states.arrived.dialog,
@@ -431,9 +442,9 @@ describe("update watch", () => {
       "closing the dialog lost the caption",
     );
     assert.equal(
-      states.closed.badge?.lastControlInBar,
+      states.closed.badge?.inMeta,
       true,
-      "the build number stopped being the bar's trailing control",
+      "the build number left the rail's caption row",
     );
 
     assert.ok(

@@ -4,21 +4,28 @@ import { useChatDock } from "@/state/ChatDockProvider";
 /**
  * The full-screen chat door.
  *
- * The dock's own control, drawn at the trailing end of its top row. It is the
- * window's one door to the mode (the title bar carries no second copy, and
- * Mod+Shift+F is the shortcut), so it names the mode from inside the chat:
- * "Full screen chat" → "Exit full screen chat".
+ * The dock's own control, drawn in the dock's bottom action bar beside the
+ * Notebox. It is the window's one door to the mode (the title bar carries no
+ * second copy, and Mod+Shift+F is the shortcut), so it names the mode from
+ * inside the chat: "Full screen chat" → "Exit full screen chat".
  *
  * The icon turns around rather than changing meaning: maximize while the mode is
  * off, minimize while it is on, the same arrow-pair language the rail's own
  * collapse control uses. The press is a state, not a one-way door, so the
- * control carries `aria-pressed` and stays put in both modes.
+ * control carries `aria-pressed` and stays put in both modes — announced to
+ * assistive technology, but not painted: the slot keeps the bar's resting look
+ * and the turned-around glyph is what says the mode is on (see the stylesheet's
+ * `.chat-panel__action.chat-focus-toggle[aria-pressed="true"]`).
+ *
+ * The glyph is sized by the slot it rides: the bar's action slots are 20px
+ * icons, while a smaller utility row may want a tighter mark.
  */
 export function ChatFocusToggle({
   className,
   testId,
   offLabel,
   onLabel,
+  iconSize = 15,
 }: {
   className?: string;
   /** The rigs tell this control apart by its test id. */
@@ -27,6 +34,8 @@ export function ChatFocusToggle({
   offLabel: string;
   /** The words said while the mode is on. */
   onLabel: string;
+  /** The glyph's pixel size; the action bar passes its own 20px slot size. */
+  iconSize?: number;
 }) {
   const { focus, toggleFocus } = useChatDock();
   const label = focus ? onLabel : offLabel;
@@ -42,9 +51,9 @@ export function ChatFocusToggle({
       onClick={toggleFocus}
     >
       {focus ? (
-        <Minimize2 size={15} aria-hidden />
+        <Minimize2 size={iconSize} aria-hidden />
       ) : (
-        <Maximize2 size={15} aria-hidden />
+        <Maximize2 size={iconSize} aria-hidden />
       )}
     </button>
   );

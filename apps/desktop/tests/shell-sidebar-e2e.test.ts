@@ -126,15 +126,29 @@ type State = {
   /** Negative regression claim: the titlebar must render no vault chip. */
   titlebarVault: { box: Box; text: string } | null;
   /**
-   * The rail's foot: the Log row, the vault chip and the collapse toggle. Wide it
-   * is one row, the Log and the chip splitting the room the toggle leaves; thin it
-   * is a column with the Log's icon, the initials and the expand control.
+   * The rail's foot: two stacked rows. The navigation row carries the Log and the
+   * vault chip; the caption row under it carries the build number and the
+   * collapse toggle. Thin, each row stacks.
    */
   foot: {
     box: Box;
     display: string;
     flexDirection: string;
     children: { tag: string; className: string; box: Box }[];
+    footRow: Box | null;
+    meta: {
+      box: Box;
+      display: string;
+      flexDirection: string;
+      children: { tag: string; className: string; box: Box }[];
+      version: {
+        box: Box;
+        text: string;
+        label: string | null;
+        display: string;
+      } | null;
+      toggle: { box: Box } | null;
+    } | null;
     logRow: Box | null;
     collapse: Box | null;
   } | null;
@@ -906,60 +920,66 @@ describe("shell sidebar (docked rail)", () => {
       "the app mark or wordmark is still in the titlebar",
     );
 
-    // The chip's new home: the rail's foot, on one row with the Log and the
-    // collapse toggle. Wide, the Log and the chip split the room the toggle leaves
-    // and the chip names the whole vault.
+    // The chip's new home: the rail's foot, on the navigation row with the Log.
+    // Wide, the Log and the chip split that row and the chip names the whole
+    // vault; the caption row under it carries the build number and the toggle.
     assert.ok(expanded.foot, "the rail rendered no footer group");
     assert.ok(expanded.vaultChip, "the rail rendered no vault chip");
     const foot = expanded.foot!;
     const chip = expanded.vaultChip!;
     assert.equal(
       foot.children.length,
-      3,
-      `the foot carries ${foot.children.length} children, expected the Log row, the chip and the toggle`,
+      2,
+      `the foot carries ${foot.children.length} children, expected the navigation row and the caption row`,
     );
     assert.match(
       foot.children[0].className,
-      /nav-rail__link/,
-      "the foot's first control is not the Log row",
+      /nav-rail__foot-row/,
+      "the foot's first row is not the navigation row",
     );
     assert.match(
       foot.children[1].className,
-      /nav-rail__vault/,
-      "the foot's second control is not the vault chip",
-    );
-    assert.match(
-      foot.children[2].className,
-      /nav-rail__collapse/,
-      "the foot's third control is not the collapse toggle",
+      /nav-rail__meta/,
+      "the foot's second row is not the caption row",
     );
     assert.equal(foot.display, "flex", `the wide foot is not flex (${foot.display})`);
     assert.equal(
       foot.flexDirection,
-      "row",
-      `the wide foot is ${foot.flexDirection}, not one row`,
+      "column",
+      `the wide foot is ${foot.flexDirection}, not two stacked rows`,
     );
-    assert.ok(foot.logRow, "the foot rendered no Log row");
+    assert.ok(foot.footRow, "the foot rendered no navigation row");
+    assert.ok(foot.meta?.box, "the foot rendered no caption row");
+    assert.ok(
+      foot.meta!.box.top >= foot.footRow!.bottom - 1,
+      `the caption row (${JSON.stringify(foot.meta!.box)}) does not sit under the navigation row (${JSON.stringify(foot.footRow)})`,
+    );
     assert.equal(chip.inRail, true, "the vault chip left the rail");
     assert.equal(chip.inFoot, true, "the vault chip left the rail's foot");
-    // Equal shares of what the toggle leaves: not "a row of three things" but two
-    // panes and a fixed square. The chip sits one toggle plus one gap left of the
-    // rail's trailing edge, which is the "shifted slightly left" this change makes.
+    // Equal shares of the navigation row.
     assert.ok(
       Math.abs(foot.logRow!.width - chip.box.width) <= 1,
-      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal panes of the foot`,
+      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal panes of the navigation row`,
     );
     assert.ok(
-      foot.logRow!.width >= foot.box.width * 0.33 &&
-        chip.box.width >= foot.box.width * 0.33,
-      `the foot's controls (${foot.logRow!.width}px / ${chip.box.width}px) do not split its ${foot.box.width}px width`,
+      foot.logRow!.width >= foot.footRow!.width * 0.4 &&
+        chip.box.width >= foot.footRow!.width * 0.4,
+      `the navigation row's controls (${foot.logRow!.width}px / ${chip.box.width}px) do not split its ${foot.footRow!.width}px width`,
+    );
+    // The caption row: the build number under the Log, the collapse toggle under
+    // the chip at the rail's trailing end.
+    assert.ok(
+      foot.meta!.version !== null &&
+        foot.meta!.version.display !== "none" &&
+        foot.meta!.version.text.startsWith("v") &&
+        Math.abs(foot.meta!.version.box.left - foot.footRow!.left) <= 6,
+      `the build number (${JSON.stringify(foot.meta?.version)}) is not under the Log (${JSON.stringify(foot.footRow)})`,
     );
     assert.ok(
-      foot.collapse !== null &&
-        chip.box.right < foot.collapse!.left &&
-        foot.collapse!.left - chip.box.right <= 8 &&
-        foot.collapse!.right >= foot.box.right - 1,
-      `the chip (${JSON.stringify(chip.box)}) is not one gap left of the toggle (${JSON.stringify(foot.collapse)}) at the foot's trailing edge (${JSON.stringify(foot.box)})`,
+      foot.meta!.toggle !== null &&
+        foot.meta!.toggle.box.top >= chip.box.bottom - 1 &&
+        foot.meta!.toggle.box.right >= foot.meta!.box.right - 6,
+      `the toggle (${JSON.stringify(foot.meta?.toggle?.box)}) is not under the chip (${JSON.stringify(chip.box)}) at the caption row's trailing end (${JSON.stringify(foot.meta!.box)})`,
     );
     // Same row: one vertical centre and one height.
     assert.ok(
@@ -1765,12 +1785,24 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.foot!.logRow!.bottom <= collapsed.vaultChip!.box.top + 1,
       `the Log row (${JSON.stringify(collapsed.foot!.logRow)}) is not above the chip (${JSON.stringify(collapsed.vaultChip!.box)})`,
     );
-    // The way back is not in the foot at this width: the square control left it,
-    // so the thin foot is the Log's icon and the vault's initials alone.
+    // The way back is not in the foot at this width: the square control left it.
+    // The thin foot stacks the Log's icon, the vault's initials, then the caption
+    // row with the build number.
     assert.equal(
       collapsed.foot!.collapse,
       null,
       `an expand control is still in the thin foot (${JSON.stringify(collapsed.foot!.collapse)})`,
+    );
+    assert.equal(
+      collapsed.foot!.meta?.display,
+      "none",
+      `the thin rail left the caption row in the layout (display: ${JSON.stringify(collapsed.foot!.meta?.display)})`,
+    );
+    assert.ok(
+      Boolean(collapsed.foot!.meta?.version?.box) &&
+        collapsed.foot!.meta!.version!.box.width === 0 &&
+        collapsed.foot!.meta!.version!.box.height === 0,
+      `the thin foot still paints its build number: ${JSON.stringify(collapsed.foot!.meta?.version?.box)}`,
     );
     // ... and it leads the column from the topband instead, above the wing tabs.
     assert.ok(
@@ -2090,8 +2122,13 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       restored.foot?.flexDirection,
-      "row",
-      `reopening left the foot in ${restored.foot?.flexDirection} instead of one row`,
+      "column",
+      `reopening left the foot in ${restored.foot?.flexDirection} instead of its two stacked rows`,
+    );
+    assert.equal(
+      restored.foot?.meta?.display,
+      "flex",
+      `reopening left the caption row ${JSON.stringify(restored.foot?.meta?.display)}`,
     );
     assert.equal(
       restored.vaultChip?.name?.display,

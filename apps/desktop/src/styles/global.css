@@ -831,9 +831,10 @@ a {
 
 /* A conversation is read, not stretched: with the page gone the dock can be most
    of a wide window, so the transcript and the composer sit in a centred measure
-   instead of running the full width of the glass. The tab strip, the name row
-   and the bottom action bar stay full width — they are chrome, and they are where
-   the doors are. */
+   instead of running the full width of the glass. The tab strip and the name row
+   stay full width — they are the chats, and they lead the dock. The bottom action
+   bar keeps its own measure (see `--dock-actions-width`), centred on the composer
+   box, so the mode's wider field never drags the dock's chrome out with it. */
 .shell--chat-focus .chat-panel__body,
 .shell--chat-focus .chat-panel__footer {
   width: 100%;
@@ -1280,31 +1281,74 @@ a {
   margin-top: auto;
 }
 
-/* The rail's foot: the Log closes the navigation, the vault chip names the
-   workspace, and the collapse toggle holds the row's trailing end — the sidebar's
-   bottom corner. One row, three controls: the Log and the chip share the space the
-   toggle leaves, so the chip sits one toggle plus one gap left of the rail's
-   trailing edge instead of flush against it. The toggle is the last thing in the
-   column, which is the point of moving it here. */
+/* The rail's foot: two rows, not one. The first closes the navigation — the Log
+   and the vault chip split it between them — and the second is the column's
+   caption line: the build number under the Log, the collapse toggle under the
+   chip at the sidebar's bottom corner. The number and the toggle share that row
+   so the version reads as small print under the navigation rather than as a
+   control in the dock's chrome, and so the toggle keeps the trailing corner of
+   the column. */
 .nav-rail__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* The navigation half of the foot: the Log and the chip split it equally. */
+.nav-rail__foot-row {
   display: flex;
   align-items: stretch;
   gap: 0.25rem;
 }
 
-.nav-rail__foot > .nav-rail__link {
+.nav-rail__foot-row > .nav-rail__link {
   flex: 1 1 0;
   min-width: 0;
 }
 
-/* The collapse toggle in the foot: a fixed square outside the Log/chip split, so
-   the row's two panes divide what the control leaves. It is the `.nav-toggle`
-   square at every width; only its place in the foot changes. Centred on the row
-   rather than stretched with it, so the square stays square beside the taller
-   Log and chip. */
-.nav-rail__collapse {
+/* The caption line: the build number leads it and the collapse toggle trails it.
+   It is also the caption's container — the words retreat on the thin rail rather
+   than squeezing the number out of the column. */
+.nav-rail__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline: 0.25rem;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: rail-meta;
+}
+
+/* The build number's quiet line in the rail: the pill keeps only the room its own
+   ink needs, so it sits under the Log rather than stretching across the row. */
+.nav-rail__meta .update-badge {
+  margin: 0;
+  padding: 0.15rem 0.3rem;
+}
+
+.nav-rail__meta .update-badge__label {
+  margin: 0 0.1rem 0 0;
+  text-align: left;
+}
+
+/* The thin rail cannot hold the words: the glow alone is the signal there, as it
+   is in any column too narrow for the sentence. The wide rail keeps them. */
+@container rail-meta (max-width: 11rem) {
+  .nav-rail__meta .update-badge__label {
+    display: none;
+  }
+}
+
+/* The collapse toggle in the caption row: a fixed square at the row's trailing
+   end, one step under the vault chip and level with the build number. It is the
+   `.nav-toggle` square at every width; only its place in the foot changes. */
+/* The `.nav-toggle` square sets `margin: 0` further down the sheet, so the
+   trailing push is restated at the row's own specificity rather than relying on
+   source order. */
+.nav-rail__meta .nav-rail__collapse {
   flex: 0 0 auto;
   align-self: center;
+  margin-left: auto;
 }
 
 /* The vault chip in the foot of the rail. A chip rather than the old square
@@ -1535,18 +1579,27 @@ a {
   justify-content: center;
 }
 
-/* The foot stacks in the thin rail: the Log's icon with the vault's initials
-   directly under it. Both centred in the column, and the chip no longer takes a
-   row share that does not exist. The expand emblem is not here — the square
-   control moved up into the header, where the way back belongs. */
-.shell--nav-collapsed .nav-rail__foot {
+/* The foot stacks in the thin rail: the Log's icon and the vault's initials,
+   centred in the column. The expand emblem moved up into the header, where the
+   way back belongs, and the caption row is retired with the words — the thin
+   column cannot hold the number as a target worth aiming at. */
+.shell--nav-collapsed .nav-rail__foot-row {
   flex-direction: column;
   align-items: stretch;
   gap: 0.2rem;
 }
 
-.shell--nav-collapsed .nav-rail__foot > .nav-rail__link {
+.shell--nav-collapsed .nav-rail__foot-row > .nav-rail__link {
   flex: 0 0 auto;
+}
+
+/* The thin column retires the caption row with the words: 56px cannot hold the
+   build number as a target the operator can hit, and the rail's own state has
+   never been the place to read the version. The Log and the vault's initials are
+   the thin foot; expanding the rail brings the number, the words and the toggle
+   back. */
+.shell--nav-collapsed .nav-rail__meta {
+  display: none;
 }
 
 .shell--nav-collapsed .nav-rail__vault {
@@ -1572,20 +1625,20 @@ a {
 }
 
 /* The words that come with the glow: `Update available`, beside the build number
-   and only while there is something to install. In the dock's one-line action bar
-   the caption takes the row's height rather than a row of its own, so it is set
-   small and uppercase — a state caption in the chrome, not prose.
+   and only while there is something to install. In the rail's caption row the
+   words ride inline to the number's left, so they take the row's height rather
+   than a row of their own and stay small and uppercase — a state caption in the
+   chrome, not prose.
 
    It wears the state ink for the same reason the pill does: this is not
    decoration, it is "there is something for you to do". Nothing is tabbable
    here; the pill beside it is the control, and the words are its reason.
 
-   The caption sits *on* the pill's shoulder rather than a gap away from it: the
-   row already carries five action controls and the build number, and the words
-   are the one thing in it that may retreat (the container query below hides them
-   when the bar cannot hold them at full width). The shrink is a last resort under
-   a wider font, so the caption can never push the pill out of the bar's padding —
-   the pill is the control and the halo needs that room. */
+   The words are the one thing in the row that may retreat: the container query
+   beside `.nav-rail__meta` hides them when the rail is too narrow to hold them
+   (the thin rail keeps the glow alone). The shrink is a last resort under a
+   wider font, so the caption can never push the pill out of the column's
+   padding — the pill is the control and the halo needs that room. */
 .update-badge__label {
   margin: 0 0 0 0.15rem;
   padding: 0;
@@ -1602,13 +1655,12 @@ a {
   text-overflow: ellipsis;
 }
 
-/* The build number at the trailing end of the dock's action bar, to the right of
-   the collapse control. It is the app's one manual way to ask GitHub whether
-   there is something newer: a control in every state — that is what makes the
-   check reachable at any time, not only at launch — but it is dressed as the
-   quiet text the chrome earns: no fill, no border, the bar's muted ink. Only the
-   affordances a control needs are added: a pointer, an ink change on hover, and
-   a focus ring for the keyboard. */
+/* The build number in the rail's caption row, under the Log. It is the app's one
+   manual way to ask GitHub whether there is something newer: a control in every
+   state — that is what makes the check reachable at any time, not only at
+   launch — but it is dressed as the quiet text the chrome earns: no fill, no
+   border, the rail's muted ink. Only the affordances a control needs are added:
+   a pointer, an ink change on hover, and a focus ring for the keyboard. */
 .update-badge {
   appearance: none;
   border: 0;
@@ -1616,10 +1668,7 @@ a {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  /* The trailing 0.1rem is the halo's room at the bar's edge; the leading 0.2rem
-     puts the pill on the caption's shoulder. Neither may be eaten by a flex
-     deficit — the caption gives way first, and the pill and its halo stay put. */
-  margin: 0 0.1rem 0 0.2rem;
+  margin: 0;
   padding: 0.2rem 0.35rem;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -1650,13 +1699,14 @@ a {
 }
 
 /* The build number once the feed has named a newer release. It is the one thing
-   in the bar that can appear out of nowhere, so it wears the state ink and a
-   halo — a *state*, not decoration: the accent here means "there is something for
-   you to do", the same thing it means on a nav badge.
+   in the rail's caption row that can appear out of nowhere, so it wears the state
+   ink and a halo — a *state*, not decoration: the accent here means "there is
+   something for you to do", the same thing it means on a nav badge.
 
-   Sized to its own label rather than stretched across the bar, so the halo has
-   the row's own slack to bloom into: the bar is taller than the pill and its
-   padding is the room, and the rig measures that room against the halo's reach. */
+   Sized to its own label rather than stretched across the column, so the halo has
+   the row's own slack to bloom into: the caption row is taller than the pill and
+   its padding is the room, and the rig measures that room against the halo's
+   reach. */
 .update-badge--available {
   background: var(--accent-fill);
   color: var(--accent);
@@ -1683,19 +1733,6 @@ a {
 
 .update-badge--available:hover {
   background: var(--accent-soft);
-}
-
-/* The bar is a container so the caption can be measured against the row it has
-   to fit in. Below this width the five action controls and the build number
-   already fill the row; the glow alone is the signal, and the words retreat
-   rather than squeezing the pill out of the bar's padding. The threshold is the
-   width at which the full caption fits with its spacing (the row's content box,
-   not the window): a dock at its shipped 22.5rem keeps the words, a dock dragged
-   down to its floor keeps the glow. */
-@container dock-actions (max-width: 21.75rem) {
-  .update-badge__label {
-    display: none;
-  }
 }
 
 /* A slow, shallow breath: enough that the eye finds it in the bar, never enough to
@@ -7678,6 +7715,12 @@ a.home-mini-list__link:hover {
   /* The text column's inset: the composer's on a wide dock, and never less than
      the transcript's own 0.875rem gutter on a narrow one. */
   --transcript-gutter: max(0.875rem, var(--composer-gutter));
+  /* The action bar's own measure: the composer box at the shipped 22.5rem dock
+     — 22.5rem + the 12px frame slack − 2 × 1.35rem gutter = 20.55rem. The bar
+     keeps this width when the dock grows, so a wider composer does not stretch
+     the dock's chrome; on a narrow dock the composer box itself caps it, and
+     either way the card is centred on the field. */
+  --dock-actions-width: 20.55rem;
   /* The app's scrollbar width (see the global `::-webkit-scrollbar` rule). */
   --dock-scrollbar: 0.5rem;
   /* The transcript's reading settings (Settings → Chat display, and the dock's
@@ -9209,33 +9252,46 @@ button.chat-panel__activity-line:hover {
   container-name: composer-band;
 }
 
-/* Bottom chrome of the bar: the dock's own actions, shared by both views. A
-   sibling band of the composer footer, with the hairline and the fill that
-   separate them, so the two read as stacked rows of one column rather than a
-   single mixed strip. It wears `--titlebar-bg`, the same fill as the window
-   strip above the dock, so the bar is capped top and bottom by one material. */
+/* The dock's bottom chrome: the action bar, shared by every surface. It is a
+   card inside the column rather than a full-width band under it, and it keeps its
+   own measure (`--dock-actions-width`) rather than stretching with the composer:
+   a field the operator widens for reading does not drag the dock's chrome out to
+   match. The card is centred on the composer box — the panel's inline auto
+   margins land on the same centre line the field is centred on — and the
+   composer box caps its width on a narrow dock, so the bar never reaches past the
+   field it belongs to. Its fill is the window strip's `--titlebar-bg`, and a
+   margin on every side lifts it off the dock's edges so it reads as one rounded
+   piece of chrome instead of a second floor. The hairline is on all four sides
+   for the same reason — a card needs its whole outline; the band it replaced only
+   needed the line that divided it from the composer. */
 .chat-panel__actions {
   display: flex;
   align-items: center;
   /* One step tighter than the dock's other gaps on purpose: the bar is the one
-     row that has to hold five navigation controls, the update caption and the
-     build number inside the dock's narrowest practical width. */
+     row that has to hold six navigation controls inside the card. */
   gap: 0.2rem;
   flex-shrink: 0;
+  width: min(
+    var(--dock-actions-width),
+    calc(100% - 2 * var(--composer-gutter))
+  );
+  margin: 0.3rem auto 0.6rem;
   padding: 0.35rem 0.5rem;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
   /* Deliberately NOT the composer's accent. The composer's accent is its own
      field's border, two elements up; this is neutral chrome below it. */
   background: var(--titlebar-bg);
-  /* The update caption measures itself against this row (see the container query
-     beside `.update-badge--available`). */
-  container-type: inline-size;
-  container-name: dock-actions;
 }
 
 /* Larger than the thread header's utilities (1.75rem/16px): the bar is primary
-   navigation and carries one action per slot, the header holds per-chat trivia. */
+   navigation and carries one action per slot, the header holds per-chat trivia.
+   The slots may give up width down to an icon-sized target — the dock's floor
+   squeezes the bar's row, and a control that spilled out of the card would be
+   worse than one a few pixels narrower. */
 .chat-panel__action {
+  flex: 0 1 auto;
+  min-width: 1.75rem;
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.45rem;
@@ -9259,6 +9315,17 @@ button.chat-panel__activity-line:hover {
 .chat-panel__action[aria-pressed="true"] {
   background: var(--selected-soft);
   color: var(--fg);
+}
+
+/* The full-screen door is the one pressed action that is not a selected surface:
+   its glyph turns around (maximize → minimize) while the mode is on, and that is
+   the whole statement. The slot keeps the bar's resting look — no selected fill,
+   no brightened ink — so the mode reads from the arrow rather than from a button
+   that looks active. Hover and keyboard focus still come from the shared action
+   rules, which is why this only overrides the resting state. */
+.chat-panel__action.chat-focus-toggle[aria-pressed="true"]:not(:hover) {
+  background: transparent;
+  color: var(--muted);
 }
 
 .chat-panel__action:disabled {
@@ -13339,11 +13406,11 @@ button.chat-panel__activity-line:hover {
  *
  * The strip leads with the pinned band. A pin is durable Hermes state, not a
  * strip decoration: a pinned chat is drawn as a tab on every launch, whether or
- * not this run opened it, which is what keeps the squares in front across a
- * restart. That is also why the strip can be up with a single pinned square and
- * no open unpinned tab, and stays up when every other tab is closed. The squares
- * never stretch: they are a fixed leading column, and the unpinned tabs (and the
- * plus after them) share what is left of the strip between them.
+ * not this run opened it, which is what keeps the pinned tabs in front across a
+ * restart. That is also why the strip can be up with a single pinned tab and no
+ * open unpinned tab, and stays up when every other tab is closed. A pinned tab
+ * leads with its pin and then wears the chat's name, like any other tab; it
+ * never stretches past its cap.
  *
  * Below its `min-width` a tab stops shrinking and the strip scrolls like a
  * browser's: the floor is about three characters of the chat's name beside its
@@ -13376,23 +13443,24 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * One tab is one share of the strip, never a share of its own label: a basis of
- * zero and `flex-grow: 1` make every tab the same width — capped at the same
- * `max-width` — so a long title cannot hold a wider tab than a short one, and
- * narrowing the dock shrinks them all by the same amount. The label truncates;
- * the tab does not. The `min-width` is the browser's floor: room for the leading
- * mark (a status dot, or a kickoff chat's icon — the slot is the same for both),
- * three characters AND the ellipsis that says the name continues, and the close
- * control. Past it the strip scrolls instead of squeezing the labels to one
- * letter. The ellipsis is not free — it costs about a character's width — so the
- * floor is the three characters plus that mark plus a whole character more.
+ * A tab is its own name, not a share of the band: it takes the width its content
+ * asks for, capped at twelve rem — about three or four words of a chat's name —
+ * so a long title cannot grow a tab indefinitely. With room to spare the slack
+ * falls after the plus rather than stretching short tabs into empty boxes; only
+ * when the strip runs out of room does the row compress the tabs (the labels
+ * truncate), and below the shared floor the strip scrolls like a browser's. The
+ * floor is room for the leading mark (a status dot, a kickoff chat's icon, or a
+ * pin), three characters AND the ellipsis that says the name continues, and the
+ * close control. The ellipsis is not free — it costs about a character's width —
+ * so the floor is the three characters plus that mark plus a whole character
+ * more.
  */
 .chat-panel__tab {
   display: flex;
   align-items: center;
   min-width: 5.5rem;
-  max-width: 11rem;
-  flex: 1 1 0;
+  max-width: 12rem;
+  flex: 0 1 auto;
   border-radius: 0.4rem;
 }
 
@@ -13405,34 +13473,14 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * A pinned tab is a square in the band, never a share of the strip: it does not
- * grow, so the pinned chats keep a fixed leading column however many unpinned
- * tabs follow them. Its height is the strip's — `align-items: stretch` sizes
- * every tab alike — so a square sits flush with the normal tabs beside it.
+ * A pinned tab is a tab, not a square: it leads with the pin and then wears the
+ * chat's name like any other tab. Its cap is a little narrower than a normal
+ * tab's because it spends no width on a close control, so its label keeps the
+ * same writing measure as an unpinned tab's. Pins still lead the strip, in pin
+ * order, and never stretch.
  */
 .chat-panel__tab--pinned {
-  flex: 0 0 auto;
-  width: 2.1rem;
-  /* The square is its own width: the unpinned tabs' three-character floor is
-     not a size a square can take. */
-  min-width: 2.1rem;
-  max-width: 2.1rem;
-  justify-content: center;
-}
-
-.chat-panel__tab--pinned .chat-panel__tab-main {
-  gap: 0.1rem;
-  justify-content: center;
-  padding: 0.3rem 0.1rem;
-}
-
-/* The one glyph a square can carry: the chat name's first letter. It is set at
-   the label's size and line box, so a square alone in the strip is exactly as
-   tall as a normal tab alone would be. */
-.chat-panel__tab-letter {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
+  max-width: 10rem;
 }
 
 .chat-panel__tab-pin {
@@ -13575,25 +13623,6 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
- * The strip's trailing corner: the full-screen door, and nothing else. It sticks
- * to the band's trailing edge, so a strip with more tabs than the dock is wide
- * still ends with the way to the whole workspace; the dock's canvas behind it
- * keeps a tab sliding under it from showing through. The plus is not in here: it
- * travels with the tabs, directly after the last one.
- */
-.chat-panel__tabs-trailing {
-  position: sticky;
-  right: 0;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding-left: 0.3rem;
-  background: var(--background);
-}
-
-/*
  * The strip's own door to a new chat: the browser's plus, set directly after the
  * last tab in the strip's flow — where the next tab will appear — rather than on
  * the band's trailing edge. It opens a conversation, it does not represent one,
@@ -13619,14 +13648,6 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-new:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
-}
-
-/* The strip's full-screen door, sized to the band rather than to the header's
-   utility row: 1.6rem, the same mark as the plus beside the tabs. */
-.chat-panel__tab-focus {
-  width: 1.6rem;
-  height: 1.6rem;
-  color: var(--muted);
 }
 
 /*

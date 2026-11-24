@@ -350,6 +350,7 @@ describe("keyboard shortcuts settings and runner", () => {
       [
         "New chat",
         "Notebox",
+        "Full screen chat",
         "Keyboard shortcuts",
         "Chat display settings",
         "Move chat to the left of the page",
@@ -364,8 +365,8 @@ describe("keyboard shortcuts settings and runner", () => {
     );
     const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
     // The strip's trailing cluster is the layouts control, the day/night control
-    // and the gear; the full-screen door rides the dock's own top row, not this
-    // band.
+    // and the gear; the full-screen door rides the dock's bottom action bar, not
+    // this band.
     const expectedTrailing = [
       "layouts-menu__trigger",
       "theme-mode-toggle",

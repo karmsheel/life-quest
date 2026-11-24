@@ -52,7 +52,9 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const ACTION_SLOTS = [
   "New chat",
   "Notebox",
+  "Full screen chat",
   "Keyboard shortcuts",
+  "Chat display settings",
   "Move chat to the left of the page",
   "Collapse chat"
 ];
@@ -213,6 +215,7 @@ const SAMPLE = `(() => {
       : { present: false },
     footer: footer ? { box: box(footer), hidden: footer.hidden } : null,
     actionsBar: box(document.querySelector(".chat-panel__actions")),
+    composerBox: box(document.querySelector(".chat-panel__composer-box")),
     actionsBarBackground: (() => {
       const el = document.querySelector(".chat-panel__actions");
       return el ? getComputedStyle(el).backgroundColor : null;
@@ -455,7 +458,7 @@ async function main() {
       `${landing.signalListCalls} list calls`,
     );
     check(
-      "the action bar holds its five slots, in order",
+      "the action bar holds its seven slots, in order",
       JSON.stringify(landing.actions.map((slot) => slot.label)) ===
         JSON.stringify(ACTION_SLOTS),
       `slots ${JSON.stringify(landing.actions.map((slot) => slot.label))}`,
@@ -466,7 +469,7 @@ async function main() {
       `disabled ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
     );
     check(
-      "the slots wear five distinct icons, all one size and undimmed",
+      "the slots wear seven distinct icons, all one size and undimmed",
       new Set(landing.actions.map((slot) => slot.icon)).size === ACTION_SLOTS.length &&
         new Set(landing.actions.map((slot) => slot.iconSize)).size === 1 &&
         (landing.actions[0]?.iconSize ?? 0) >= 18 &&
@@ -483,10 +486,23 @@ async function main() {
       `${landing.actions[0]?.iconSize}px in the bar vs ${landing.headerIconSize}px in the header`,
     );
     check(
-      "the action bar rides the bottom edge, clear of the composer",
-      Math.abs((landing.actionsBar?.bottom ?? 0) - (landing.panel?.bottom ?? -99)) <= 2 &&
-        (landing.actionsBar?.top ?? 0) >= (landing.footer?.box.bottom ?? 0) - 1,
+      "the action bar floats inside the dock's bottom, clear of the composer",
+      Boolean(landing.actionsBar && landing.panel) &&
+        landing.actionsBar.bottom < landing.panel.bottom &&
+        landing.actionsBar.bottom <= landing.panel.bottom - 4 &&
+        landing.actionsBar.top >= (landing.footer?.box.bottom ?? 0),
       `bar ${JSON.stringify(landing.actionsBar)} in panel ${JSON.stringify(landing.panel)}, composer ends ${landing.footer?.box.bottom}px`,
+    );
+    check(
+      "the action bar keeps the composer box's measure",
+      Boolean(
+        landing.actionsBar &&
+          landing.composerBox &&
+          Math.abs(landing.actionsBar.width - landing.composerBox.width) <= 1 &&
+          Math.abs(landing.actionsBar.left - landing.composerBox.left) <= 1 &&
+          Math.abs(landing.actionsBar.right - landing.composerBox.right) <= 1,
+      ),
+      `bar ${JSON.stringify(landing.actionsBar)} vs composer box ${JSON.stringify(landing.composerBox)}`,
     );
     check(
       "the chain slot is live on landing, and not marked active",
