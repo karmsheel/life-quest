@@ -372,11 +372,13 @@ const SAMPLE = `(() => {
             }
           : null,
         layout: rect(layoutEl),
-        // The page's own side padding: the pair is centred inside it, the same
-        // band on both sides.
+        // The layout grid's side padding: the header, the reading column and the
+        // rail are centred inside it, the same band on both sides.
         layoutPadding: (() => {
-          if (!layoutEl) return null;
-          const style = getComputedStyle(layoutEl);
+          const el =
+            document.querySelector(".review-page-layout__inner") ?? layoutEl;
+          if (!el) return null;
+          const style = getComputedStyle(el);
           return {
             left: Math.round(parseFloat(style.paddingLeft) || 0),
             right: Math.round(parseFloat(style.paddingRight) || 0),

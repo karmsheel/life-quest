@@ -949,7 +949,7 @@ function ReviewPageFor() {
       className={`review-page-layout${isDaily ? " review-page-layout--single" : ""}`}
       data-testid="review-layout"
     >
-      <div className="review-page">
+      <div className="review-page-layout__inner">
         <header className="review-page__header">
           {/* The page's name is the eyebrow, as on the Daily Journal: the period
               below is the page's one heading, so the cadence is not repeated as a
@@ -1009,243 +1009,247 @@ function ReviewPageFor() {
               <ChevronRight size={20} aria-hidden />
             </Button>
           </div>
+          {/* Why the page is on an earlier period than the calendar's: its window
+              has not opened. It rides in the header, above any error, because it
+              is context for the period on screen rather than a report about it. */}
+          {windowNote ? (
+            <p className="review-page__window" data-testid="review-window-note">
+              {windowNote}
+            </p>
+          ) : null}
+
+          {error ? (
+            <p className="form-error" role="alert" data-testid="review-error">
+              {error}
+            </p>
+          ) : null}
+
+          {notice ? (
+            <p className="review-page__notice" data-testid="review-notice" role="status">
+              {notice}
+            </p>
+          ) : null}
+
         </header>
 
-        {/* Why the page is on an earlier period than the calendar's: its window
-            has not opened. Kept under the header, above any error, because it is
-            context for what is on screen rather than a report about it. */}
-        {windowNote ? (
-          <p className="review-page__window" data-testid="review-window-note">
-            {windowNote}
-          </p>
-        ) : null}
+        <div className="review-page">
 
-        {error ? (
-          <p className="form-error" role="alert" data-testid="review-error">
-            {error}
-          </p>
-        ) : null}
-
-        {notice ? (
-          <p className="review-page__notice" data-testid="review-notice" role="status">
-            {notice}
-          </p>
-        ) : null}
-
-        {loading ? (
-          <p className="muted">Loading review…</p>
-        ) : !record ? (
-          // A period nobody has reviewed yet. There is no file to write into, so
-          // there is no box: the two ways to make one are the whole page.
-          <div className="review-page__empty" data-testid="review-empty">
-            <p className="muted">
-              {isDaily
-                ? "No review for this period yet."
-                : "No review for this period yet — pick an area in the checklist to start its review."}
-            </p>
-            <div className="review-page__actions">
-              <Button
-                variant="primary"
-                data-testid="review-start"
-                onClick={startFromEmpty}
-                disabled={busy}
-              >
-                {busy ? "Starting…" : emptyStartLabel}
-              </Button>
-              <Button
-                variant="outline"
-                data-testid="review-open-document"
-                onClick={onOpenDocument}
-                disabled={busy}
-              >
-                Write it myself
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* The box is the page: there is no second view of it to switch
-                between, so the row above the prose is only what the prose is —
-                the scope line — and whether it has reached the vault. */}
-            <div className="review-page__toolbar">
-              {isDaily ? null : (
-                <div className="review-page__scope" data-testid="review-scope">
-                  <span className="review-page__scope-label">Reviewing</span>
-                  <span
-                    className="review-page__scope-name"
-                    data-testid="review-scope-name"
-                  >
-                    {activeDomainName ?? "Life"}
-                  </span>
-                  {activeScope === "overall" ? null : (
-                    <button
-                      type="button"
-                      className="review-page__scope-link"
-                      data-testid="review-scope-life"
-                      onClick={onOpenLifeScope}
-                    >
-                      Whole-life review
-                    </button>
-                  )}
-                </div>
-              )}
-              <span className="muted review-page__status" data-testid="review-status">
-                {status}
-              </span>
-            </div>
-
-            <div
-              className="review-page__editor"
-                // The pointer leaving the box — for another pane, another app — is
-                // the operator stepping away, so the review is written then rather
-                // than at the end of the debounce. Moving between paragraphs stays
-                // inside.
-                onBlur={(event) => {
-                  if (event.currentTarget.contains(event.relatedTarget)) return;
-                  void flush();
-                }}
-              >
-                <LiveMarkdownEditor
-                  testId="review-editor"
-                  value={draft}
-                  onChange={onDraftChange}
-                  slug={`review-${cadence}-${period}`}
-                  ariaLabel={title}
-                  placeholder="Write this review."
-                  readOnly={locked}
-                />
-            </div>
-
-            <div className="review-page__actions">
-              <Button
-                variant="primary"
-                data-testid="review-start"
-                onClick={() => void runStart(activeScope)}
-                disabled={busy || lifeReviewGated}
-                title={lifeReviewGated ? lifeReviewGateHint : undefined}
-              >
-                {busy ? "Starting…" : "Start interview"}
-              </Button>
-              <Button
-                variant="outline"
-                data-testid="review-plan-next"
-                onClick={onPlanNext}
-                disabled={busy}
-              >
-                Plan next period
-              </Button>
-              {/* Only while the review is open. The companion marks the scope
-                  complete itself once the interview is answered, and on a locked
-                  review the button can only re-mark a file that is already final;
-                  the row keeps Unlock as the one way back in. */}
-              {locked ? null : (
+          {loading ? (
+            <p className="muted">Loading review…</p>
+          ) : !record ? (
+            // A period nobody has reviewed yet. There is no file to write into, so
+            // there is no box: the two ways to make one are the whole page.
+            <div className="review-page__empty" data-testid="review-empty">
+              <p className="muted">
+                {isDaily
+                  ? "No review for this period yet."
+                  : "No review for this period yet — pick an area in the checklist to start its review."}
+              </p>
+              <div className="review-page__actions">
                 <Button
-                  variant="outline"
-                  data-testid="review-mark-done"
-                  onClick={onMarkDone}
-                  disabled={busy || !record || lifeReviewGated}
-                  title={lifeReviewGated ? lifeReviewGateHint : undefined}
-                >
-                  {markDoneLabel}
-                </Button>
-              )}
-              {locked ? (
-                <Button
-                  variant="outline"
-                  data-testid="review-unlock"
-                  onClick={onUnlock}
+                  variant="primary"
+                  data-testid="review-start"
+                  onClick={startFromEmpty}
                   disabled={busy}
                 >
-                  Unlock
+                  {busy ? "Starting…" : emptyStartLabel}
                 </Button>
-              ) : null}
+                <Button
+                  variant="outline"
+                  data-testid="review-open-document"
+                  onClick={onOpenDocument}
+                  disabled={busy}
+                >
+                  Write it myself
+                </Button>
+              </div>
             </div>
-
-            {/* The cadence's standing rules: what every review of this cadence is
-                told, and the snapshot rules the app runs before the interview. The
-                operator can add a rule here directly, or ask the companion to. */}
-            <section className="review-page__skill">
-              <button
-                type="button"
-                className="review-page__skill-toggle"
-                data-testid="review-skill-toggle"
-                aria-expanded={skillOpen}
-                onClick={() => {
-                  const next = !skillOpen;
-                  setSkillOpen(next);
-                  if (next && !skill) void loadSkill();
-                }}
-              >
-                <span>Review rules</span>
-                <span className="muted">
-                  {skill
-                    ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
-                    : "what this review session is told"}
-                </span>
-              </button>
-              {skillOpen ? (
-                <div className="review-page__skill-body">
-                  <p className="muted review-page__skill-hint">
-                    Every line here is handed to this cadence&rsquo;s review session,
-                    and a <code>lifequest-snapshot</code> block is a figure the app
-                    fills into the review itself. Ask the companion to add a rule, or
-                    write one here.
-                  </p>
-                  <LiveMarkdownEditor
-                    testId="review-skill-editor"
-                    value={skillDraft}
-                    onChange={setSkillDraft}
-                    slug={`review-skill-${cadence}`}
-                    ariaLabel={`${cadence} review rules`}
-                  />
-                  {skill && skill.problems.length > 0 ? (
-                    <ul className="review-page__skill-problems">
-                      {skill.problems.map((problem) => (
-                        <li key={problem}>{problem}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="review-page__actions">
-                    <Button
-                      variant="primary"
-                      data-testid="review-skill-save"
-                      onClick={onSaveSkill}
-                      disabled={skillSaving || !skill}
+          ) : (
+            <>
+              {/* The box is the page: there is no second view of it to switch
+                  between, so the row above the prose is only what the prose is —
+                  the scope line — and whether it has reached the vault. */}
+              <div className="review-page__toolbar">
+                {isDaily ? null : (
+                  <div className="review-page__scope" data-testid="review-scope">
+                    <span className="review-page__scope-label">Reviewing</span>
+                    <span
+                      className="review-page__scope-name"
+                      data-testid="review-scope-name"
                     >
-                      {skillSaving ? "Saving…" : "Save rules"}
-                    </Button>
+                      {activeDomainName ?? "Life"}
+                    </span>
+                    {activeScope === "overall" ? null : (
+                      <button
+                        type="button"
+                        className="review-page__scope-link"
+                        data-testid="review-scope-life"
+                        onClick={onOpenLifeScope}
+                      >
+                        Whole-life review
+                      </button>
+                    )}
                   </div>
-                </div>
-              ) : null}
-            </section>
-          </>
+                )}
+                <span className="muted review-page__status" data-testid="review-status">
+                  {status}
+                </span>
+              </div>
+
+              <div
+                className="review-page__editor"
+                  // The pointer leaving the box — for another pane, another app — is
+                  // the operator stepping away, so the review is written then rather
+                  // than at the end of the debounce. Moving between paragraphs stays
+                  // inside.
+                  onBlur={(event) => {
+                    if (event.currentTarget.contains(event.relatedTarget)) return;
+                    void flush();
+                  }}
+                >
+                  <LiveMarkdownEditor
+                    testId="review-editor"
+                    value={draft}
+                    onChange={onDraftChange}
+                    slug={`review-${cadence}-${period}`}
+                    ariaLabel={title}
+                    placeholder="Write this review."
+                    readOnly={locked}
+                  />
+              </div>
+
+              <div className="review-page__actions">
+                <Button
+                  variant="primary"
+                  data-testid="review-start"
+                  onClick={() => void runStart(activeScope)}
+                  disabled={busy || lifeReviewGated}
+                  title={lifeReviewGated ? lifeReviewGateHint : undefined}
+                >
+                  {busy ? "Starting…" : "Start interview"}
+                </Button>
+                <Button
+                  variant="outline"
+                  data-testid="review-plan-next"
+                  onClick={onPlanNext}
+                  disabled={busy}
+                >
+                  Plan next period
+                </Button>
+                {/* Only while the review is open. The companion marks the scope
+                    complete itself once the interview is answered, and on a locked
+                    review the button can only re-mark a file that is already final;
+                    the row keeps Unlock as the one way back in. */}
+                {locked ? null : (
+                  <Button
+                    variant="outline"
+                    data-testid="review-mark-done"
+                    onClick={onMarkDone}
+                    disabled={busy || !record || lifeReviewGated}
+                    title={lifeReviewGated ? lifeReviewGateHint : undefined}
+                  >
+                    {markDoneLabel}
+                  </Button>
+                )}
+                {locked ? (
+                  <Button
+                    variant="outline"
+                    data-testid="review-unlock"
+                    onClick={onUnlock}
+                    disabled={busy}
+                  >
+                    Unlock
+                  </Button>
+                ) : null}
+              </div>
+
+              {/* The cadence's standing rules: what every review of this cadence is
+                  told, and the snapshot rules the app runs before the interview. The
+                  operator can add a rule here directly, or ask the companion to. */}
+              <section className="review-page__skill">
+                <button
+                  type="button"
+                  className="review-page__skill-toggle"
+                  data-testid="review-skill-toggle"
+                  aria-expanded={skillOpen}
+                  onClick={() => {
+                    const next = !skillOpen;
+                    setSkillOpen(next);
+                    if (next && !skill) void loadSkill();
+                  }}
+                >
+                  <span>Review rules</span>
+                  <span className="muted">
+                    {skill
+                      ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
+                      : "what this review session is told"}
+                  </span>
+                </button>
+                {skillOpen ? (
+                  <div className="review-page__skill-body">
+                    <p className="muted review-page__skill-hint">
+                      Every line here is handed to this cadence&rsquo;s review session,
+                      and a <code>lifequest-snapshot</code> block is a figure the app
+                      fills into the review itself. Ask the companion to add a rule, or
+                      write one here.
+                    </p>
+                    <LiveMarkdownEditor
+                      testId="review-skill-editor"
+                      value={skillDraft}
+                      onChange={setSkillDraft}
+                      slug={`review-skill-${cadence}`}
+                      ariaLabel={`${cadence} review rules`}
+                    />
+                    {skill && skill.problems.length > 0 ? (
+                      <ul className="review-page__skill-problems">
+                        {skill.problems.map((problem) => (
+                          <li key={problem}>{problem}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="review-page__actions">
+                      <Button
+                        variant="primary"
+                        data-testid="review-skill-save"
+                        onClick={onSaveSkill}
+                        disabled={skillSaving || !skill}
+                      >
+                        {skillSaving ? "Saving…" : "Save rules"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            </>
+          )}
+
+          {/* The days the operator wrote, under the review body and its controls:
+              the same notes the companion's period pack carries. Scope-independent
+              by design — a note belongs to no domain. */}
+          <DailyNotesPanel
+            cadence={cadence}
+            period={period}
+            weekStartDay={weekStartDay}
+          />
+
+        </div>
+
+        {/* The checklist is the page's second column on a weekly-or-longer
+            review, and the daily review has none: a day is one general review,
+            so there is nothing to tick off beside it. */}
+        {isDaily ? null : (
+          <AreaReviewsPanel
+            record={record}
+            liveAreas={liveAreas}
+            activeScope={activeScope}
+            busy={busy}
+            locked={locked}
+            onStart={(scope) => {
+              void startFromRail(scope);
+            }}
+          />
         )}
-
-        {/* The days the operator wrote, under the review body and its controls:
-            the same notes the companion's period pack carries. Scope-independent
-            by design — a note belongs to no domain. */}
-        <DailyNotesPanel
-          cadence={cadence}
-          period={period}
-          weekStartDay={weekStartDay}
-        />
       </div>
-
-      {/* The checklist is the page's second column on a weekly-or-longer
-          review, and the daily review has none: a day is one general review, so
-          there is nothing to tick off beside it. */}
-      {isDaily ? null : (
-        <AreaReviewsPanel
-          record={record}
-          liveAreas={liveAreas}
-          activeScope={activeScope}
-          busy={busy}
-          locked={locked}
-          onStart={(scope) => {
-            void startFromRail(scope);
-          }}
-        />
-      )}
     </div>
   );
 }

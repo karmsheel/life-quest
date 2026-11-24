@@ -1379,13 +1379,14 @@
 
    THE PAGE IS ONE CENTRED COLUMN. A review is prose, and prose has a measure:
    48rem, the width the shared note box is drawn for and the same column the
-   Daily Note keeps. The page *is* that column — the title and pager, the mode
-   row, the body, the actions, the rules panel and the daily-notes strip all take
-   its width — so the whole page reads as one block, centred in whatever room the
-   sheet gives it rather than run from its leading edge. On a wide window the
-   width the column does not use is empty page on both sides, split evenly; the
-   column only ever shrinks to fit, and the measure is declared here once so no
-   child has to restate it. */
+   Daily Note keeps. The page body *is* that column — the mode row, the body, the
+   actions, the rules panel and the daily-notes strip all take its width — and
+   the layout above draws the eyebrow, title and pager on the same column, so the
+   whole page reads as one block, centred in whatever room the sheet gives it
+   rather than run from its leading edge. On a wide window the width the column
+   does not use is empty page on both sides, split evenly; the column only ever
+   shrinks to fit, and the measure is declared here once so no child has to
+   restate it. */
 
 .review-page {
   display: flex;
@@ -1396,7 +1397,7 @@
   margin-inline: auto;
 }
 
-.review-page .btn {
+.review-page-layout .btn {
   border-radius: var(--radius-xs);
 }
 
@@ -1444,8 +1445,8 @@
    the column's own edges so they read as the page's margins rather than as more
    chrome. The primitive's padding is what gives them a target; the height matches
    the heading they flank. */
-.review-page .review-page__pager-prev,
-.review-page .review-page__pager-next {
+.review-page-layout .review-page__pager-prev,
+.review-page-layout .review-page__pager-next {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1456,8 +1457,8 @@
   background: transparent;
 }
 
-.review-page .review-page__pager-prev:hover:not(:disabled),
-.review-page .review-page__pager-next:hover:not(:disabled) {
+.review-page-layout .review-page__pager-prev:hover:not(:disabled),
+.review-page-layout .review-page__pager-next:hover:not(:disabled) {
   background: var(--selected-soft);
 }
 
@@ -1503,7 +1504,7 @@
   display: inline-flex;
 }
 
-.review-page .review-page__calendar {
+.review-page-layout .review-page__calendar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1515,8 +1516,8 @@
   color: var(--muted-foreground);
 }
 
-.review-page .review-page__calendar:hover:not(:disabled),
-.review-page .review-page__calendar[aria-expanded="true"] {
+.review-page-layout .review-page__calendar:hover:not(:disabled),
+.review-page-layout .review-page__calendar[aria-expanded="true"] {
   background: var(--selected-soft);
   color: var(--fg);
 }
@@ -1719,70 +1720,92 @@
    second column beside the reading column: the Review checklist, where each area
    is a button and the whole-life review waits behind them. The 48rem measure is
    unchanged — it is the reading column's own width, declared once on
-   `.review-page` above — and the pair is centred together in whatever room the
-   sheet gives it, so the workshop reads as one block rather than as a page with
-   a panel bolted to one edge.
+   `.review-page` above — and the header is the same column, so the workshop
+   reads as one block rather than as a page with a panel bolted to one edge.
+
+   THE HEADER OWNS THE TOP OF THE PAGE. The eyebrow and the period pager are the
+   one thing every cadence opens with, so they sit across the top of the layout
+   in the page's own column, and everything else comes under them. On a sheet
+   with room for the pair the reading column and the checklist stand side by side
+   under the header; on a cramped sheet the checklist takes its own row between
+   the header and the prose — the order of a review: which period, tick the
+   parts off, then write the whole.
 
    ROOM IS THE SHEET'S, NOT THE WINDOW'S. The rail and the dock take their width
    before the page sees any, so a wide window with the dock open is as cramped as
-   a narrow one. The row therefore WRAPS instead of shrinking the prose: while
-   the sheet can hold the 48rem measure and the rail together they sit side by
-   side; when it cannot, the rail wraps to a line of its own — and because the
-   wrap direction is reversed, that line sits ABOVE the reading column, the order
-   of a review (tick the parts off, then write the whole). The prose never gives
-   width to the checklist: it keeps its measure, or the room the sheet has plus
-   the same margin on either side.
-
-   The container query below is the other half of the same question — once the
-   rail has wrapped, it takes the page's column width and scrolls with the page
-   instead of sticking. It asks the layout's own content box, which is what the
-   sheet actually handed the page. The daily review is one general review and has
-   no checklist at all, which is what `--single` says. */
+   a narrow one. The grid asks the layout's own content box, which is what the
+   sheet actually handed the page. The prose never gives width to the checklist:
+   it keeps its measure, or the room the sheet has plus the same margin on
+   either side. The daily review is one general review and has no checklist at
+   all, which is what `--single` says. */
 .review-page-layout {
-  display: flex;
-  flex-direction: row;
-  /* The first line is the bottom one: a wrapped checklist lands ABOVE the page.
-     Cross-start is the bottom under `wrap-reverse`, so aligning to cross-END
-     (the top) keeps the rail at the top of the page while the two sit side by
-     side; aligning to cross-start would drop it to the line's foot. */
-  flex-wrap: wrap-reverse;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 1.5rem;
-  width: 100%;
-  box-sizing: border-box;
-  /* Symmetric side padding: the pair, and the page alone once the rail is
-     stacked above it, stays centred in the sheet with the same margin either
-     side. A deeper trailing band would pull the document off its own centre. */
-  padding-inline: clamp(0.75rem, 1.6vw, 1.5rem);
   container-type: inline-size;
+  width: 100%;
 }
 
-/* The reading column keeps its measure; it only shrinks when it has a line of
-   its own that is narrower than the measure (the sheet itself is cramped). */
-.review-page-layout > .review-page {
-  flex: 0 1 48rem;
-  min-width: 0;
-  margin-inline: 0;
-}
-
-/* The one-column daily review: the page is still the centred column it always
-   was, with nothing beside it. */
-.review-page-layout--single {
+/* The layout's grid: a 48rem reading column and a 17rem checklist under one
+   header. The header spans both columns but is drawn on the page's column, so
+   the eyebrow and the pager stay over the prose at every width. */
+.review-page-layout__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 48rem) 17rem;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "header header"
+    "page   rail";
+  align-items: start;
   justify-content: center;
+  column-gap: 1.5rem;
+  row-gap: 1rem;
+  box-sizing: border-box;
+  /* A fixed band, so the container threshold below is one number: the pair needs
+     48rem + 17rem + 1.5rem = 69.3rem of sheet, padding included. */
+  padding-inline: 1.4rem;
 }
 
-@container (max-width: 66.49rem) {
-  /* No room for a 17rem rail beside the 48rem measure: the rail has wrapped
-     above the page, so give it the page's own column and let it scroll with the
-     page rather than stick. */
-  .review-page-layout > .review-checklist {
+.review-page-layout__inner > .review-page__header {
+  grid-area: header;
+  justify-self: start;
+  width: 100%;
+  max-width: 48rem;
+  min-width: 0;
+}
+
+.review-page-layout__inner > .review-page {
+  grid-area: page;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The one-column daily review: no checklist, so the header and the page are the
+   only rows. */
+.review-page-layout--single .review-page-layout__inner {
+  grid-template-columns: minmax(0, 48rem);
+  grid-template-areas:
+    "header"
+    "page";
+}
+
+/* Too narrow for the 17rem rail beside the 48rem measure: the checklist takes
+   its own row UNDER the header, the page's column width, and scrolls with the
+   page instead of sticking. The reading column keeps the sheet's width with the
+   same margin either side; it is never narrowed to leave the rail beside it. */
+@container (max-width: 69.3rem) {
+  .review-page-layout__inner {
+    grid-template-columns: minmax(0, 48rem);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "header"
+      "rail"
+      "page";
+  }
+
+  .review-page-layout__inner > .review-checklist {
     position: static;
-    flex: 0 0 auto;
     width: 100%;
     max-width: 48rem;
-    /* In a column the rail's base flex-basis would become its HEIGHT: stacked it
-       is as tall as its rows, not a 17rem scroll box. */
+    /* In its own row the rail's base flex-basis is irrelevant; stacked it is as
+       tall as its rows, not a 17rem scroll box. */
     max-height: none;
     overflow: visible;
   }

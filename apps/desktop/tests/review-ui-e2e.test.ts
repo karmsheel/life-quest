@@ -611,8 +611,8 @@ describe("review ui e2e", () => {
       Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
       `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
     );
-    // The page has its own side padding, the same on both sides: the document is
-    // centred, not pulled off its centre by the rail.
+    // The layout's grid has its own side padding, the same on both sides: the
+    // document is centred, not pulled off its centre by the rail.
     assert.ok(
       Number(centred.layoutPadLeft) >= 8,
       `the page has only ${centred.layoutPadLeft}px of leading padding`,

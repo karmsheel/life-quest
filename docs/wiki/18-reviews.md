@@ -72,14 +72,15 @@ vertical column to the right of the report:
   pressing a checklist row moves the lens to that area. The checklist is the
   control; the lens shows what is selected.
 
-The report keeps the Daily Journal's 48rem measure. Where the sheet has room for
-the page and the checklist together they sit side by side, the pair centred in
-the page's own side padding with the same margin on both sides. Where it does
-not — an open chat dock beside the page, or a narrow window — the checklist
-moves above the reading column instead, and the document keeps its full measure
-(or the room the sheet has, with equal margins either side). The prose is never
-narrowed to make room for the checklist; when the sheet widens again, the
-checklist returns to the right.
+The page keeps the Daily Journal's 48rem measure. The eyebrow and the period
+pager sit across the top of the page in that measure, and the report and the
+checklist come under them. Where the sheet has room for the two together they
+sit side by side, the pair centred in the page's own side padding with the same
+margin on both sides. Where it does not — an open chat dock beside the page, or
+a narrow window — the checklist takes its own row between the header and the
+report, and the document keeps its full measure (or the room the sheet has, with
+equal margins either side). The prose is never narrowed to make room for the
+checklist; when the sheet widens again, the checklist returns to the side.
 
 Back to [Wiki home](./index.md).
 
@@ -215,7 +216,7 @@ notes in this period.** and offers **Write today's note**.
 | Part | What it does |
 |---|---|
 | Eyebrow, period heading and pager | The grey eyebrow naming the wing and cadence (for example **Review / Weekly**); the period as the page's one heading (for example `21-27 September '26 (W39)`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
-| **Review checklist** | Weekly and longer only; a vertical column beside the report where the sheet has room for the 48rem page and the rail together, and a full-width panel above the report where it does not — the reading column is never narrowed to make room for it. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
+| **Review checklist** | Weekly and longer only; a vertical column beside the report where the sheet has room for the 48rem page and the rail together, and a full-width row between the header and the report where it does not — the reading column is never narrowed to make room for it. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
 | Scope line | **Reviewing Health** (or **Reviewing Life**) above the body, with **Whole-life review** to move the lens back to Life without starting a session. |
 | Status text | **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. |
 | Editor | The Daily Journal's live markdown box at the journal's height, placeholder **Write this review.**, read-only while locked. |
