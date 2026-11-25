@@ -1077,13 +1077,14 @@ a {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.12rem;
+  gap: 0.45rem;
   flex: 0 0 auto;
-  /* One lockup row, one version line, and the inset above and below. Box-sizing
-     makes the content box exactly the pair's height, which is what pins the
-     mark's top edge to the inset rather than centring it in a leftover strip. */
+  /* One lockup row, the breath between it and the version line, one version
+     line, and the inset above and below. Box-sizing makes the content box
+     exactly the pair's height plus that breath, which is what pins the mark's
+     top edge to the inset rather than centring it in a leftover strip. */
   height: calc(
-    2.9rem + var(--rail-header-inset) + var(--rail-header-inset) -
+    3.25rem + var(--rail-header-inset) + var(--rail-header-inset) -
       var(--density-gap-rail)
   );
   /* The row spans the rail's box and takes its inset back out of the rail's
