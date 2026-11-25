@@ -47,6 +47,7 @@ import {
   formatSignalFileSize,
   formatSignalWhen,
   linkHost,
+  parseLink,
   projectDisplayLabel,
   signalPriorityLabel,
   signalRowDomainLabel,
@@ -87,30 +88,6 @@ type PendingFile = {
   name: string;
   size: number;
 };
-
-/**
- * Turn text the operator pasted into a link, or say why it is not one. A paste
- * that carries a sentence is not this: a URL glued to other words stays text,
- * and only a single whitespace-free absolute http(s) URL becomes the chip.
- */
-function parseLink(raw: string): { url: string } | { error: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { error: "Paste the link you want to keep." };
-  if (/\s/.test(trimmed)) {
-    return { error: "Links must be an absolute http or https URL." };
-  }
-  if (trimmed.length > 2048) return { error: "That link is too long to keep." };
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return { error: "Links must be an absolute http or https URL." };
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { error: "Links must be an absolute http or https URL." };
-  }
-  return { url: parsed.href };
-}
 
 /**
  * Notebox is the general capture surface: a thought, a picture, any file, or a
@@ -1191,15 +1168,25 @@ function SignalRow(props: {
           ))}
         </select>
         <div className="signal-row__actions">
+          {/*
+            The row's one act. A capture that becomes work is the reason the
+            row exists, so this is not another ghost text button beside Edit
+            and Delete: it wears a filled face and a small shadow, and the
+            press travels into the shadow the way a raised control does. When
+            the task already exists the same seat reads Open task, so the
+            action never moves under the operator's hand.
+          */}
           {props.linkedTaskId ? (
             <Button
               variant="ghost"
+              className="signal-row__make-task"
               to={"/act?task=" + encodeURIComponent(props.linkedTaskId)}
             >Open task</Button>
           ) : (
             <Button
               type="button"
               variant="ghost"
+              className="signal-row__make-task"
               onClick={props.onMakeTask}
               disabled={props.busy || !props.mapReady || !derivedTask.title}
             >Make task</Button>

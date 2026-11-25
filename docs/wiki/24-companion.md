@@ -498,8 +498,10 @@ the arrangement you left; leaving full-screen chat gives back the split.
   Hermes agent yet — **Agents in this vault** is where to add one.
 - **Receipts are for the ledger.** Attach a photo of a purchase only when the
   Finance kit exists and you want a transaction logged.
-- **The dock's Notebox surface is text-only.** It hosts the same records as the
-  Notebox page, with its own composer; see [Notebox](./15-quick-notes.md).
+- **The dock's Notebox surface takes text and pasted links.** It hosts the same
+  records as the Notebox page, with its own composer: a pasted absolute URL becomes
+  the same link chip as on the page, while pictures and other files are captured on
+  the page; see [Notebox](./15-quick-notes.md).
 - **A pinned chat leaves the strip only through Unpin.** The pinned tab has no
   close control and the row hides archive and delete while pinned.
 - **A tab is as wide as its name, until the strip fills.** With room, a tab

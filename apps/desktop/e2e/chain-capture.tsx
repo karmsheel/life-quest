@@ -442,7 +442,23 @@ const SNAPSHOT = {
   agents: [],
   decisions: [],
   log: [],
-  map: null,
+  // A loaded map, not a null one: the page's "Make task" act is only live when
+  // the vault has a map to write the task into. A null map left the whole act
+  // disabled in the harness, which hid its shipped fill and lift behind
+  // `:disabled` — the design this rig exists to judge could not be seen. An
+  // empty map is still a loaded one, so the control paints in its real state.
+  map: {
+    dayTypes: [],
+    defaultWeek: {
+      dayTypeByWeekday: [null, null, null, null, null, null, null],
+      weeklyItems: [],
+    },
+    years: [],
+    tasks: [],
+    recurring: [],
+    liveDays: {},
+    aboutMe: "",
+  },
   mapError: null,
   goals: [],
   goalsError: null,

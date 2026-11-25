@@ -418,6 +418,26 @@ async function main() {
     return Math.max(Math.abs(x[0] - y[0]), Math.abs(x[1] - y[1]), Math.abs(x[2] - y[2]));
   };
 
+  /**
+   * The alpha channel of a computed colour. A transparent surface is the
+   * redesign's claim (the row card is the page's card, not a tinted slab), and
+   * `rgba(...)`/`color(srgb ... / a)` are both what Chromium can answer with.
+   */
+  const alphaOf = (value) => {
+    const raw = String(value ?? "").trim();
+    const slash = raw.match(/\/\s*([\d.]+%?)\s*\)/);
+    if (slash) {
+      return slash[1].endsWith("%")
+        ? Number(slash[1].slice(0, -1)) / 100
+        : Number(slash[1]);
+    }
+    const legacy = raw.match(
+      /^rgba\(\s*[\d.]+[,\s]+[\d.]+[,\s]+[\d.]+\s*,\s*([\d.]+)\s*\)$/,
+    );
+    if (legacy) return Number(legacy[1]);
+    return 1;
+  };
+
   let report;
   const screenshots = [];
   const timeout = setTimeout(() => {
@@ -646,14 +666,26 @@ async function main() {
       `stamps ${JSON.stringify(chain.items.slice(0, 3).map((item) => [item.day, item.time]))}`,
     );
     check(
-      "the assignment picker sits under the message box, not under the rail",
+      "the row card is unpainted like the page card",
+      chain.items.every((item) => alphaOf(item.messageBackground) === 0),
+      `message backgrounds ${JSON.stringify(chain.items.slice(0, 3).map((item) => item.messageBackground))}`,
+    );
+    check(
+      "the assignment picker sits inside the card at its foot, half the card's width",
       chain.items.every(
         (item) =>
           item.assignBox !== null &&
-          item.assignBox.top >= item.message.bottom - 1 &&
-          Math.abs(item.assignBox.left - item.message.left) <= 1,
+          item.message !== null &&
+          item.assignBox.left >= item.message.left - 1 &&
+          item.assignBox.right <= item.message.right + 1 &&
+          item.assignBox.top >= item.message.top - 1 &&
+          item.assignBox.bottom <= item.message.bottom + 1 &&
+          item.assignBox.width >= item.message.width * 0.4 - 1 &&
+          item.assignBox.width <= item.message.width * 0.55 + 1 &&
+          item.message.bottom - item.assignBox.bottom >= 0 &&
+          item.message.bottom - item.assignBox.bottom <= 16,
       ),
-      `first row assign ${JSON.stringify(oldestRow.assignBox)} under message ${JSON.stringify(oldestRow.message)}`,
+      `first row assign ${JSON.stringify(oldestRow.assignBox)} in message ${JSON.stringify(oldestRow.message)}`,
     );
     check(
       "the picker offers unassigned and the live domains, and no archived one",

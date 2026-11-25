@@ -139,8 +139,10 @@ Full detail: [Reviews](./18-reviews.md), [Daily Journal](./16-daily-journal.md).
    to hide it. **Make task** creates a backlog task from it — an attachment-only
    capture is named from its picture or link — and the button then reads **Open
    task** and opens **Task Manager**.
-5. The dock's Notebox surface is text-only: its field says **Log a signal…**
-   and has no attachment controls.
+5. The dock's Notebox surface takes the same text and pasted-link gestures: its
+   field says **Log a signal…**, and a pasted absolute URL becomes the same link
+   chip there. It has no file controls, so pictures and other files are captured
+   on the page.
 
 Full detail: [Notebox](./15-quick-notes.md).
 
