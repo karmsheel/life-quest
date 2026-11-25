@@ -265,7 +265,32 @@ const SAMPLE = `(() => {
             tag: el.tagName.toLowerCase(),
             label: el.getAttribute("aria-label"),
             title: el.getAttribute("title")
-          }))
+          })),
+          // The build number's new home: a slot under the centred lockup, the
+          // header's second line. Wide it is on screen (the badge is the header's
+          // second control); thin the slot is display:none with it, and the
+          // emblem the collapsed footer puts in the header is the only control.
+          version: (() => {
+            const el = header.querySelector(".nav-rail__version");
+            if (!el) return null;
+            const badge = el.querySelector(".update-badge");
+            return {
+              box: box(el),
+              display: getComputedStyle(el).display,
+              flexDirection: getComputedStyle(el).flexDirection,
+              badge: badge
+                ? {
+                    tag: badge.tagName.toLowerCase(),
+                    box: box(badge),
+                    text: (badge.textContent || "").trim(),
+                    label: badge.getAttribute("aria-label"),
+                    display: getComputedStyle(badge).display,
+                    inHeader: Boolean(header.contains(badge)),
+                    inSlot: Boolean(el.contains(badge))
+                  }
+                : null
+            };
+          })()
         }
       : null,
     // The lockup's box: the reference for the header's equal-inset claims. The
@@ -337,9 +362,11 @@ const SAMPLE = `(() => {
     titlebarVault: titlebarVault
       ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
       : null,
-    // The rail's foot: two rows. The navigation row carries the Log and the
-    // vault chip; the caption row under it carries the build number and the
-    // collapse toggle. Thin, each row stacks.
+    // The rail's foot: one row now. The row carries the Log, the vault chip and
+    // — while the rail is wide — the square collapse toggle at its trailing end.
+    // The old caption row is gone from the DOM: the build number lives under the
+    // lockup in the header, so the foot's second row is sampled only to prove it
+    // renders nowhere. Thin, the same row stacks instead of gaining a row.
     foot: foot
       ? {
           box: box(foot),
@@ -354,38 +381,31 @@ const SAMPLE = `(() => {
             const el = foot.querySelector(".nav-rail__foot-row");
             return el ? box(el) : null;
           })(),
+          footRowDirection: (() => {
+            const el = foot.querySelector(".nav-rail__foot-row");
+            return el ? getComputedStyle(el).flexDirection : null;
+          })(),
+          // Negative claim: the caption row left the DOM with the build number.
+          // A foot that still renders one is the old arrangement, not this one.
           meta: (() => {
             const el = foot.querySelector(".nav-rail__meta");
+            return el
+              ? { box: box(el), display: getComputedStyle(el).display }
+              : null;
+          })(),
+          // The wide foot's square control: inside the foot row, to the right of
+          // the vault chip. Thin, NavRail renders no .nav-rail__collapse here
+          // (the expand emblem moves up to the header), so this is null.
+          collapse: (() => {
+            const el = foot.querySelector(".nav-rail__collapse");
             if (!el) return null;
             return {
               box: box(el),
-              display: getComputedStyle(el).display,
-              flexDirection: getComputedStyle(el).flexDirection,
-              children: Array.from(el.children).map((child) => ({
-                tag: child.tagName.toLowerCase(),
-                className:
-                  typeof child.className === "string" ? child.className : "",
-                box: box(child)
-              })),
-              version: (() => {
-                const badge = el.querySelector(".update-badge");
-                return badge
-                  ? {
-                      box: box(badge),
-                      text: (badge.textContent || "").trim(),
-                      label: badge.getAttribute("aria-label"),
-                      display: getComputedStyle(badge).display
-                    }
-                  : null;
-              })(),
-              toggle: (() => {
-                const control = el.querySelector(".nav-rail__collapse");
-                return control ? { box: box(control) } : null;
-              })()
+              label: el.getAttribute("aria-label"),
+              inFootRow: Boolean(el.closest(".nav-rail__foot-row"))
             };
           })(),
-          logRow: box(foot.querySelector(".nav-rail__link")),
-          collapse: box(foot.querySelector(".nav-rail__collapse"))
+          logRow: box(foot.querySelector(".nav-rail__link"))
         }
       : null,
     // The vault chip's new home. Every claim the titlebar chip used to carry is
@@ -1264,20 +1284,29 @@ async function main() {
         expanded.header?.box.bottom > titlebarHeight,
       `band ${JSON.stringify(expanded.header?.box)} vs titlebar height ${titlebarHeight}px`,
     );
-    // The header's one control is the mark itself: the lockup is a second door to
-    // the same collapse the foot's square control works, so the row's control count
-    // is one rather than none, and that one wears the lockup.
+    // The header now carries two visible controls: the lockup (a second door to
+    // the same collapse the foot's square control works) and the build number,
+    // which is the app's one manual update affordance. The caption row that used
+    // to hold the number is gone from the DOM, so reading it here — not in the
+    // foot — is the claim.
     check(
-      "the topband holds one control — the lockup",
-      expanded.header?.controls.length === 1 &&
+      "the topband holds the lockup and the build number",
+      expanded.header?.controls.length === 2 &&
+        expanded.header?.controls.some(
+          (control) => control.label === "Collapse sidebar"
+        ) &&
+        expanded.header?.controls.some((control) =>
+          (control.label ?? "").startsWith("Version ")
+        ) &&
         expanded.brandToggle?.hasLogo === true &&
         expanded.brandToggle?.label === "Collapse sidebar" &&
         // No `title`: the mark carries no tooltip. The pointer and the accessible
         // name are the control's whole affordance.
         expanded.brandToggle?.title === null &&
         expanded.brandToggle?.ariaExpanded === "true" &&
-        expanded.brandToggle?.ariaControls === "nav-rail",
-      `controls ${JSON.stringify(expanded.header?.controls)}, lockup button ${JSON.stringify(expanded.brandToggle)}`,
+        expanded.brandToggle?.ariaControls === "nav-rail" &&
+        expanded.header?.version?.badge?.tag === "button",
+      `controls ${JSON.stringify(expanded.header?.controls)}, lockup button ${JSON.stringify(expanded.brandToggle)}, version ${JSON.stringify(expanded.header?.version)}`,
     );
     check(
       "the lockup's control keeps the mark inside it, carved out of the drag band",
@@ -1292,9 +1321,9 @@ async function main() {
     );
     // The request this claims: the lockup is centred on the sidebar, not anchored
     // to its leading edge. The header's box spans the rail, so its centring line is
-    // the column's; the mark's painted (ink-tight) box must sit on it. The air
-    // above the mark and the gap down to the wing switcher are forked off the
-    // lockup's own box, so a drift in either one breaks the equality.
+    // the column's; the mark's painted (ink-tight) box must sit on it. The version
+    // line under it is centred on the same line, so both numbers answer to the
+    // rail's box rather than to one another.
     const brandBox = expanded.railBrand;
     const brandCentre =
       brandBox && expanded.rail
@@ -1305,9 +1334,14 @@ async function main() {
       : -1;
     const topInset =
       brandBox && expanded.rail ? brandBox.top - expanded.rail.box.top : -1;
-    const wingInset =
-      brandBox && expanded.wingSwitcher
-        ? expanded.wingSwitcher.box.top - brandBox.bottom
+    const versionBox = expanded.header?.version?.box ?? null;
+    const versionBadge = expanded.header?.version?.badge ?? null;
+    const versionCentre = versionBox
+      ? (versionBox.left + versionBox.right) / 2
+      : -1;
+    const versionToBand =
+      versionBox && expanded.wingSwitcher
+        ? expanded.wingSwitcher.box.top - versionBox.bottom
         : -1;
     check(
       "the lockup is centred on the rail's column",
@@ -1318,13 +1352,41 @@ async function main() {
         brandBox.right <= expanded.rail.box.right,
       `lockup centre ${brandCentre}px vs rail centre ${railCentre}px, lockup ${JSON.stringify(brandBox)} in rail ${JSON.stringify(expanded.rail?.box)}`,
     );
+    // The build number's home moved from the foot's caption row to the header's
+    // second line: directly under the centred lockup, centred on the column, with
+    // the badge as the header's second visible control. Measured as boxes, so the
+    // claim is where it paints rather than where the markup nests it.
     check(
-      "the lockup keeps one measure of air above it and under it",
-      brandBox !== null &&
+      "the build number sits under the lockup, centred on the column",
+      Boolean(versionBox && versionBadge && brandBox && expanded.header) &&
+        expanded.header?.version?.display === "flex" &&
+        (versionBadge?.text ?? "").startsWith("v") &&
+        (versionBadge?.label ?? "").startsWith("Version ") &&
+        versionBadge?.inHeader === true &&
+        versionBadge?.inSlot === true &&
+        versionBadge?.display !== "none" &&
+        Math.abs(versionCentre - railCentre) <= 1 &&
+        versionBox.top >= brandBox.bottom - 1 &&
+        versionBox.top - brandBox.bottom <= 8 &&
+        versionBox.bottom <= expanded.header.box.bottom &&
+        versionBadge.box.left >= versionBox.left - 1 &&
+        versionBadge.box.right <= versionBox.right + 1 &&
+        versionBadge.box.top >= versionBox.top - 1 &&
+        versionBadge.box.bottom <= versionBox.bottom + 1,
+      `version slot ${JSON.stringify(versionBox)} centre ${versionCentre}px vs rail centre ${railCentre}px, badge ${JSON.stringify(versionBadge)}, lockup ${JSON.stringify(brandBox)}`,
+    );
+    // The version line is what makes the header taller than the lockup's own row:
+    // the rail's inset still holds the mark off the window's top, the version sits
+    // under it, and the band below follows with its own breath. The old
+    // equal-top-and-bottom air no longer holds — the second line spends the space
+    // — so the claim is the order and the two gaps, not their equality.
+    check(
+      "the version line is the header's second line, with air above and below it",
+      Boolean(versionBox && brandBox && expanded.header) &&
         topInset >= 12 &&
-        wingInset >= 12 &&
-        Math.abs(wingInset - topInset) <= 1,
-      `top inset ${topInset}px vs wing gap ${wingInset}px, switcher ${JSON.stringify(expanded.wingSwitcher?.box)}, lockup ${JSON.stringify(brandBox)}`,
+        expanded.header.box.bottom >= versionBox.bottom &&
+        versionToBand >= 8,
+      `top inset ${topInset}px, version ${JSON.stringify(versionBox)}, band gap ${versionToBand}px, header ${JSON.stringify(expanded.header?.box)}`,
     );
     // 3 — the collapse toggle at the foot: the sidebar's bottom trailing corner,
     // level with the Log and the vault chip, and the last control in the column.
@@ -1587,21 +1649,39 @@ async function main() {
       expanded.vaultChip?.inRail === true && expanded.vaultChip?.inFoot === true,
       `in rail ${expanded.vaultChip?.inRail}, in foot ${expanded.vaultChip?.inFoot}`,
     );
+    // The foot is one row now, and no caption row stands under it: the build
+    // number moved up under the lockup. The row carries the Log, the chip and the
+    // square toggle at its trailing end, so the version is read in the header.
     check(
-      "the foot is two rows: the navigation row and the caption row",
+      "the foot is one row and renders no caption row",
       Boolean(expanded.foot) &&
-        expanded.foot.children.length === 2 &&
+        expanded.foot.children.length === 1 &&
         expanded.foot.children[0].className.includes("nav-rail__foot-row") &&
-        expanded.foot.children[1].className.includes("nav-rail__meta") &&
-        Boolean(expanded.foot.footRow && expanded.foot.meta?.box),
-      `foot children ${JSON.stringify(expanded.foot?.children)}`,
+        Boolean(expanded.foot.footRow) &&
+        expanded.foot.meta === null,
+      `foot children ${JSON.stringify(expanded.foot?.children)}, meta ${JSON.stringify(expanded.foot?.meta)}`,
     );
     check(
-      "the wide foot stacks the caption row under the navigation row",
-      expanded.foot?.display === "flex" &&
-        expanded.foot?.flexDirection === "column" &&
-        expanded.foot.meta.box.top >= (expanded.foot.footRow?.bottom ?? 0) - 1,
-      `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}, navigation ${JSON.stringify(expanded.foot?.footRow)}, caption ${JSON.stringify(expanded.foot?.meta?.box)}`,
+      "the wide foot row holds the Log, the chip and the toggle on one line",
+      Boolean(
+        expanded.foot?.footRow &&
+          expanded.vaultChip &&
+          expanded.foot?.collapse,
+      ) &&
+        expanded.foot.footRowDirection === "row" &&
+        expanded.foot.collapse.inFootRow === true &&
+        expanded.foot.collapse.label === "Collapse sidebar" &&
+        expanded.foot.collapse.box.left >= expanded.vaultChip.box.right - 1 &&
+        expanded.foot.collapse.box.right <= expanded.foot.footRow.right + 1 &&
+        // Same line, not under it: one vertical centre for the chip and the
+        // square control that closes the row.
+        Math.abs(
+          (expanded.foot.collapse.box.top +
+            expanded.foot.collapse.box.bottom) /
+            2 -
+            (expanded.vaultChip.box.top + expanded.vaultChip.box.bottom) / 2,
+        ) <= 1,
+      `toggle ${JSON.stringify(expanded.foot?.collapse?.box)} right of chip ${JSON.stringify(expanded.vaultChip?.box)}, row ${JSON.stringify(expanded.foot?.footRow)}`,
     );
     check(
       "the Log and the vault chip split the navigation row",
@@ -1610,25 +1690,6 @@ async function main() {
         Math.abs(expanded.foot.logRow.width - expanded.vaultChip.box.width) <= 1 &&
         expanded.foot.logRow.width >= expanded.foot.footRow.width * 0.4,
       `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} navigation row ${JSON.stringify(expanded.foot?.footRow)}`,
-    );
-    // The build number takes the caption row's leading end, under the Log; the
-    // collapse toggle holds its trailing end, under the vault chip.
-    check(
-      "the build number sits under the Log in the caption row",
-      Boolean(expanded.foot?.meta?.version && expanded.foot?.logRow && expanded.foot?.meta?.box) &&
-        expanded.foot.meta.version.display !== "none" &&
-        expanded.foot.meta.version.text.startsWith("v") &&
-        Math.abs(expanded.foot.meta.version.box.left - (expanded.foot.footRow?.left ?? 0)) <= 6,
-      `version ${JSON.stringify(expanded.foot?.meta?.version)}, navigation row ${JSON.stringify(expanded.foot?.footRow)}`,
-    );
-    check(
-      "the sidebar toggle sits under the vault chip in the caption row",
-      Boolean(expanded.foot?.meta?.toggle && expanded.vaultChip && expanded.foot?.meta?.box) &&
-        expanded.foot.meta.toggle.box.top >= expanded.vaultChip.box.bottom - 1 &&
-        expanded.foot.meta.toggle.box.right >= expanded.foot.meta.box.right - 6 &&
-        expanded.foot.meta.toggle.box.right >= expanded.vaultChip.box.right - 8 &&
-        expanded.foot.meta.toggle.box.left <= expanded.vaultChip.box.right,
-      `toggle ${JSON.stringify(expanded.foot?.meta?.toggle?.box)}, chip ${JSON.stringify(expanded.vaultChip?.box)}, caption row ${JSON.stringify(expanded.foot?.meta?.box)}`,
     );
     check(
       "the Log and the vault chip share the foot's row",
@@ -2324,24 +2385,27 @@ async function main() {
       `titlebar chip ${JSON.stringify(collapsed.titlebarVault)}, leading text ${JSON.stringify(collapsed.leadingText)}`,
     );
     check(
-      "the thin rail's foot stacks the Log above the chip",
-      Boolean(collapsed.foot?.logRow && collapsed.vaultChip) &&
+      "the thin rail's one foot row stacks the Log above the chip",
+      Boolean(collapsed.foot?.logRow && collapsed.vaultChip && collapsed.foot.footRow) &&
         collapsed.foot.display === "flex" &&
         collapsed.foot.flexDirection === "column" &&
-        collapsed.foot.children.length === 2 &&
+        collapsed.foot.children.length === 1 &&
+        collapsed.foot.footRowDirection === "column" &&
         collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
-      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, children ${collapsed.foot?.children.length}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
+      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)} row ${JSON.stringify(collapsed.foot?.footRowDirection)}, children ${collapsed.foot?.children.length}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
     );
-    // The caption row retires in the icon column: 56px cannot hold the build
-    // number as a target, so the thin foot is the Log and the vault's initials.
+    // The version retires with the words: 56px cannot hold the build number as a
+    // target, and the caption row it used to sit in no longer exists. The slot in
+    // the header is display:none with it, and the foot has neither a meta row nor
+    // the square toggle (the emblem in the topband is the way back).
     check(
-      "the thin rail hides the caption row and its build number",
-      Boolean(collapsed.foot?.meta) &&
-        collapsed.foot.meta.display === "none" &&
-        Boolean(collapsed.foot.meta.version?.box) &&
-        collapsed.foot.meta.version.box.width === 0 &&
-        collapsed.foot.meta.version.box.height === 0,
-      `caption row ${JSON.stringify(collapsed.foot?.meta?.display)}, version ${JSON.stringify(collapsed.foot?.meta?.version)}, box ${JSON.stringify(collapsed.foot?.meta?.box)}`,
+      "the thin rail hides the version and leaves no caption row or foot toggle",
+      collapsed.foot?.meta === null &&
+        collapsed.foot?.collapse === null &&
+        collapsed.header?.version?.display === "none" &&
+        collapsed.header?.version?.badge?.box.width === 0 &&
+        collapsed.header?.version?.badge?.box.height === 0,
+      `meta ${JSON.stringify(collapsed.foot?.meta)}, foot toggle ${JSON.stringify(collapsed.foot?.collapse)}, version display ${JSON.stringify(collapsed.header?.version?.display)}, badge ${JSON.stringify(collapsed.header?.version?.badge?.box)}`,
     );
     // The way back belongs at the top of the thin column: the square control sits
     // in the header, above the wing tabs, not buried under the rows at the foot.
@@ -2605,13 +2669,16 @@ async function main() {
       `label ${JSON.stringify(restored.railToggle?.label)}, aria-expanded ${JSON.stringify(restored.railToggle?.ariaExpanded)}, icon ${JSON.stringify(restored.railToggle?.icon)}`,
     );
     check(
-      "reopen restores the foot's two rows and the chip's full name",
+      "reopen restores the foot's one row, the version and the chip's full name",
       restored.foot?.flexDirection === "column" &&
-        restored.foot?.children.length === 2 &&
-        restored.foot?.meta?.display !== "none" &&
+        restored.foot?.children.length === 1 &&
+        restored.foot?.meta === null &&
+        restored.foot?.footRowDirection === "row" &&
+        restored.header?.version?.display !== "none" &&
+        (restored.header?.version?.badge?.text ?? "").startsWith("v") &&
         restored.vaultChip?.name?.display !== "none" &&
         restored.vaultChip?.initials?.display === "none",
-      `foot direction ${JSON.stringify(restored.foot?.flexDirection)}, children ${restored.foot?.children.length}, caption display ${JSON.stringify(restored.foot?.meta?.display)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
+      `foot direction ${JSON.stringify(restored.foot?.flexDirection)} row ${JSON.stringify(restored.foot?.footRowDirection)}, children ${JSON.stringify(restored.foot?.children?.length)}, meta ${JSON.stringify(restored.foot?.meta)}, version ${JSON.stringify(restored.header?.version?.display)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
     );
     check(
       "reopen restores the horizontal wing switcher",
@@ -2648,13 +2715,14 @@ async function main() {
     );
     const brandRestored = await settled();
     check(
-      "reopening brings the lockup's control back",
+      "reopening brings the lockup's control back beside the build number",
       brandRestored.shellNavCollapsed === false &&
         brandRestored.rail?.box.width === track &&
-        brandRestored.header?.controls.length === 1 &&
+        brandRestored.header?.controls.length === 2 &&
+        brandRestored.header?.version?.display !== "none" &&
         brandRestored.brandToggle?.label === "Collapse sidebar" &&
         brandRestored.brandToggle?.box.width > 0,
-      `rail ${JSON.stringify(brandRestored.rail?.box)}, band controls ${JSON.stringify(brandRestored.header?.controls)}, lockup button ${JSON.stringify(brandRestored.brandToggle)}`,
+      `rail ${JSON.stringify(brandRestored.rail?.box)}, band controls ${JSON.stringify(brandRestored.header?.controls)}, version ${JSON.stringify(brandRestored.header?.version?.display)}, lockup button ${JSON.stringify(brandRestored.brandToggle)}`,
     );
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat

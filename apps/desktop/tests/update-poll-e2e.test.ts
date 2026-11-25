@@ -39,16 +39,18 @@ type Badge = {
   text: string;
   box: Box | null;
   visible: boolean;
-  inMeta: boolean | null;
+  inVersion: boolean | null;
+  inHeader: boolean | null;
+  inFoot: boolean | null;
   inDockBar: boolean;
-  lastControlInMeta: boolean | null;
+  lastControlInVersion: boolean | null;
 } | null;
 type Caption = {
   tag: string;
   text: string;
   display: string;
   dataLabel: string | null;
-  inMeta: boolean;
+  inVersion: boolean;
   immediatelyBeforeBadge: boolean;
   box: Box | null;
   visible: boolean;
@@ -72,12 +74,13 @@ type Sample = {
   route: string | null;
   surface: string | null;
   hasShell: boolean;
-  hasCaptionRow: boolean;
+  hasVersionSlot: boolean;
   companionSetup: boolean;
   badge: Badge;
   caption: Caption;
-  meta: {
+  version: {
     box: Box | null;
+    inHeader: boolean;
     lastControlIsBadge: boolean | null;
     containsBadge: boolean;
     controls: string[];
@@ -141,7 +144,7 @@ function runDriver(): Promise<number> {
 /**
  * The update watch, end to end, in the card-less world: the real main process
  * reads a real feed on its own clock while the real renderer is running, and a
- * release that was not there at launch reaches the operator through the dock's
+ * release that was not there at launch reaches the operator through the rail's
  * build number — glow, caption and the dialog it opens — with no in-window
  * notice card anywhere.
  *
@@ -193,12 +196,13 @@ describe("update watch", () => {
     }
 
     // ── the rail the badge lives in ─────────────────────────────────────────
-    // The badge is in the rail's caption row, so reaching it is also the claim
-    // that the real app opened a vault and reached the studio.
+    // The badge is in the rail's version slot at the top of the column, so
+    // reaching it is also the claim that the real app opened a vault and reached
+    // the studio.
     assert.equal(states.launch.hasShell, true, "the real app never reached its shell");
-    assert.equal(states.launch.hasCaptionRow, true, "the rail's caption row never mounted");
+    assert.equal(states.launch.hasVersionSlot, true, "the rail's version slot never mounted");
     assert.ok(states.launch.badge, "the rail rendered no build number");
-    assert.equal(states.launch.badge.inMeta, true, "the build number left the rail's caption row");
+    assert.equal(states.launch.badge.inVersion, true, "the build number left the rail's version slot");
 
     // The launch still costs exactly its one check; nothing about the watch
     // changes the cadence at startup.
@@ -229,9 +233,19 @@ describe("update watch", () => {
       "an up-to-date launch opened the dialog before the operator asked",
     );
     assert.equal(
-      states.launch.meta?.containsBadge,
+      states.launch.version?.containsBadge,
       true,
-      `the build number is not in the rail's caption row: ${JSON.stringify(states.launch.meta?.controls)}`,
+      `the build number is not in the rail's version slot: ${JSON.stringify(states.launch.version?.controls)}`,
+    );
+    assert.equal(
+      states.launch.version?.inHeader,
+      true,
+      "the version slot is not inside the rail's header",
+    );
+    assert.equal(
+      states.launch.badge?.inFoot,
+      false,
+      "the build number is back in the rail's foot",
     );
     assert.equal(
       states.launch.badge?.inDockBar,
@@ -272,7 +286,7 @@ describe("update watch", () => {
       `the glowing build number names ${states.arrived.badge?.dataVersion}, not ${OFFERED}`,
     );
     // The caption is the element immediately before the badge, in the rail's
-    // caption row: the glow's sentence is the replacement for the removed card.
+    // version slot: the glow's sentence is the replacement for the removed card.
     assert.equal(states.arrived.captionCount, 1, "the offer drew no caption");
     assert.ok(states.arrived.caption, "the offer drew no caption beside the badge");
     assert.equal(
@@ -281,9 +295,9 @@ describe("update watch", () => {
       `the caption reads ${JSON.stringify(states.arrived.caption?.text)}`,
     );
     assert.equal(
-      states.arrived.caption?.inMeta,
+      states.arrived.caption?.inVersion,
       true,
-      "the caption left the rail's caption row",
+      "the caption left the rail's version slot",
     );
     assert.equal(
       states.arrived.caption?.immediatelyBeforeBadge,
@@ -296,9 +310,9 @@ describe("update watch", () => {
       "the caption was rendered but not visible at the shipped window width",
     );
     assert.equal(
-      states.arrived.badge?.inMeta,
+      states.arrived.badge?.inVersion,
       true,
-      `the glowing build number left the rail's caption row: ${JSON.stringify(states.arrived.badge?.box)}`,
+      `the glowing build number left the rail's version slot: ${JSON.stringify(states.arrived.badge?.box)}`,
     );
     assert.equal(
       states.arrived.badge?.inDockBar,
@@ -442,9 +456,9 @@ describe("update watch", () => {
       "closing the dialog lost the caption",
     );
     assert.equal(
-      states.closed.badge?.inMeta,
+      states.closed.badge?.inVersion,
       true,
-      "the build number left the rail's caption row",
+      "the build number left the rail's version slot",
     );
 
     assert.ok(

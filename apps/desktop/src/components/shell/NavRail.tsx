@@ -155,7 +155,7 @@ export function NavRail() {
   return (
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       {/*
-        The top line of the rail, in the window strip: the studio's lockup alone,
+        The top line of the rail, in the window strip: the studio's lockup,
         centred on the column, and it is a control now as well as a mark — a press
         on it collapses the rail, the same way the foot's square control does (see
         `NavBrandButton`). The lockup is the operator's pick of the four shipped
@@ -163,17 +163,22 @@ export function NavRail() {
         three inks — LIFE, the Q emblem, UEST — reach it. The air around the mark
         is still the window's drag handle.
 
-        The square collapse toggle used to close this row at its trailing edge. It
-        lives at the rail's foot now, so the mark is the row's only content and the
-        row's whole job is to centre it on the sidebar instead of anchoring it to
-        one edge. The thin rail cannot hold a word: the lockup leaves and this row
-        stays only as the window's drag handle and the column's top air (see "The
-        thin rail").
+        Under the lockup, centred on the column, sits the build number: the rail's
+        small print at the top rather than on the column's floor (see
+        `UpdateBadge`). The square collapse toggle does not close this row: it lives
+        in the rail's foot beside the vault chip, so the header is the mark and the
+        version it belongs to. The thin rail cannot hold a word: the lockup and the
+        version leave, the square control moves up here as the pure Q emblem, and
+        this row stays as the window's drag handle and the column's top air (see
+        "The thin rail").
       */}
       <div className="nav-rail__header">
         <NavBrandButton />
+        <div className="nav-rail__version">
+          <UpdateBadge />
+        </div>
         {/*
-          The square control lives at the foot while the rail is wide, but the
+          The square control lives in the foot while the rail is wide, but the
           thin column is too short to bury the way back under a stack of rows:
           collapsed, the same button moves up here and centres in the topband as
           the pure Q emblem (see `NavCollapseButton`). One control, two places.
@@ -244,16 +249,15 @@ export function NavRail() {
         foot, so the four pages that belong to no wing read as their own cordoned
         section at the foot of the sidebar.
 
-        The foot is two rows. The first closes the rail's navigation: the Log and
-        the chip that names the open vault split it between them. The second is
-        the column's caption line — the build number under the Log, and the
-        collapse toggle under the chip, at the sidebar's trailing corner. The
-        number and the toggle share that row so the toggle's hover square does
-        not sit beside the Log's label, and so the version reads as the small
-        print under the navigation rather than as a button in the dock's chrome.
-        In the thin rail the rows stack — the Log's icon, the vault's initials,
-        the build number — and the pure emblem that reopens the rail moves up to
-        the topband, where the way back belongs.
+        The foot is one row of three: the Log closes the rail's navigation, the
+        chip names the open vault, and the collapse toggle holds the row's
+        trailing end — the sidebar's bottom corner. The toggle sits beside the
+        picker rather than under it, so the column ends on the navigation it
+        belongs to and the version that used to share a caption row lives up under
+        the lockup instead. The Log and the chip split what the toggle leaves. In
+        the thin rail the two stack — the Log's icon with the vault's initials
+        under it — and the pure emblem that reopens the rail moves up to the
+        topband, where the way back belongs.
       */}
       <div className="nav-rail__section nav-rail__section--bottom">
         {bottomPinned.length > 0 ? (
@@ -271,9 +275,6 @@ export function NavRail() {
               <div className="nav-rail__foot-row">
                 {footerPinned.map(renderItem)}
                 <VaultChip />
-              </div>
-              <div className="nav-rail__meta">
-                <UpdateBadge />
                 {collapsed ? null : (
                   <NavCollapseButton className="nav-rail__collapse" />
                 )}

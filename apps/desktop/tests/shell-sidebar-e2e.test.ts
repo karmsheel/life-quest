@@ -80,17 +80,42 @@ type State = {
     clientHeight: number;
   } | null;
   railDisplay: string | null;
+  /**
+   * The header: the lockup, the build number under it, and (thin) the expand
+   * emblem. Wide it holds two visible controls — the lockup and the update
+   * badge; thin only the emblem is drawn.
+   */
   header: {
     box: Box;
     background: string;
     appRegion: string;
     controls: { tag: string; label: string | null }[];
+    /**
+     * The build number's slot, under the centred lockup. Wide it is on screen
+     * and its `.update-badge` is the header's second control; thin the slot is
+     * `display:none` and the badge's box collapses.
+     */
+    version: {
+      box: Box;
+      display: string;
+      flexDirection: string;
+      badge: {
+        tag: string;
+        box: Box;
+        text: string;
+        label: string | null;
+        display: string;
+        inHeader: boolean;
+        inSlot: boolean;
+      } | null;
+    } | null;
   } | null;
   /** The lockup's box: the reference for the header's centring claim. */
   railBrand: Box | null;
   /**
-   * The lockup's own button: the rail's second collapse control. Wide it is the
-   * header's one control; thin the button is hidden with the wordmark it wraps.
+   * The lockup's own button: the rail's second collapse control. Wide it shares
+   * the header with the build number; thin the button is hidden with the
+   * wordmark it wraps.
    */
   brandToggle: {
     label: string | null;
@@ -126,9 +151,10 @@ type State = {
   /** Negative regression claim: the titlebar must render no vault chip. */
   titlebarVault: { box: Box; text: string } | null;
   /**
-   * The rail's foot: two stacked rows. The navigation row carries the Log and the
-   * vault chip; the caption row under it carries the build number and the
-   * collapse toggle. Thin, each row stacks.
+   * The rail's foot: one row. The row carries the Log, the vault chip and — wide
+   * — the square collapse toggle at its trailing end. Thin, the same row stacks
+   * and the toggle is absent (the expand emblem lives in the header). `meta` is
+   * the retired caption row, sampled only to prove it renders nowhere.
    */
   foot: {
     box: Box;
@@ -136,21 +162,14 @@ type State = {
     flexDirection: string;
     children: { tag: string; className: string; box: Box }[];
     footRow: Box | null;
-    meta: {
+    footRowDirection: string | null;
+    meta: { box: Box; display: string } | null;
+    collapse: {
       box: Box;
-      display: string;
-      flexDirection: string;
-      children: { tag: string; className: string; box: Box }[];
-      version: {
-        box: Box;
-        text: string;
-        label: string | null;
-        display: string;
-      } | null;
-      toggle: { box: Box } | null;
+      label: string | null;
+      inFootRow: boolean;
     } | null;
     logRow: Box | null;
-    collapse: Box | null;
   } | null;
   /** The vault chip's home since round 2: the rail's foot, not the titlebar. */
   vaultChip: {
@@ -594,12 +613,26 @@ describe("shell sidebar (docked rail)", () => {
       expanded.header.box.bottom > titlebarHeight,
       `the rail's header ends at ${expanded.header.box.bottom}px, not below the ${titlebarHeight}px titlebar row`,
     );
-    // The topband is the lockup's, and the lockup is a control now: one button,
-    // wrapping the mark, doing the same collapse the foot's square control does.
+    // The topband carries the lockup and the build number now: two visible
+    // controls. The lockup is a second door to the same collapse the foot's
+    // square control works; the update badge is the app's manual update
+    // affordance, moved up from the retired caption row.
     assert.equal(
       expanded.header.controls.length,
-      1,
-      `topband holds ${expanded.header.controls.length} controls, expected the lockup's`,
+      2,
+      `topband holds ${expanded.header.controls.length} controls, expected the lockup and the build number`,
+    );
+    assert.ok(
+      expanded.header.controls.some(
+        (control) => control.label === "Collapse sidebar",
+      ),
+      `the topband's controls (${JSON.stringify(expanded.header.controls)}) do not include the lockup's collapse control`,
+    );
+    assert.ok(
+      expanded.header.controls.some((control) =>
+        (control.label ?? "").startsWith("Version "),
+      ),
+      `the topband's controls (${JSON.stringify(expanded.header.controls)}) do not include the build number`,
     );
     assert.ok(expanded.brandToggle, "the lockup is not wrapped in a collapse control");
     assert.equal(
@@ -657,7 +690,6 @@ describe("shell sidebar (docked rail)", () => {
     const lockupCentre = (lockupBox.left + lockupBox.right) / 2;
     const railCentre = (expanded.rail!.box.left + expanded.rail!.box.right) / 2;
     const topInset = lockupBox.top - expanded.rail!.box.top;
-    const wingInset = (expanded.wingSwitcher?.box.top ?? 0) - lockupBox.bottom;
     // The request: the mark is centred on the sidebar, not anchored to its leading
     // edge. Its painted (ink-tight) box must sit on the column's centre line.
     assert.ok(
@@ -666,9 +698,67 @@ describe("shell sidebar (docked rail)", () => {
         lockupBox.right <= expanded.rail!.box.right,
       `the lockup's centre is at ${lockupCentre}px, not the rail's ${railCentre}px centre line (lockup ${JSON.stringify(lockupBox)})`,
     );
+    // The build number's home is the header's second line now, under the centred
+    // lockup — not the foot's caption row. The slot and the badge are measured as
+    // boxes: the slot is centred on the column, sits directly under the lockup,
+    // and closes the header, and the badge is a control inside it.
+    const versionSlot = expanded.header!.version;
+    assert.ok(versionSlot, "the header rendered no .nav-rail__version slot");
+    assert.equal(
+      versionSlot!.display,
+      "flex",
+      `the version slot is ${versionSlot!.display}, not a laid-out line under the lockup`,
+    );
+    assert.ok(versionSlot!.badge, "the version slot rendered no update badge");
+    assert.match(
+      versionSlot!.badge!.text,
+      /^v\d/,
+      `the build number reads ${JSON.stringify(versionSlot!.badge!.text)}, not v<version>`,
+    );
     assert.ok(
-      topInset >= 12 && wingInset >= 12 && Math.abs(wingInset - topInset) <= 1,
-      `the wing switcher's gap under the lockup (${wingInset}px) is not the air above it (${topInset}px)`,
+      (versionSlot!.badge!.label ?? "").startsWith("Version "),
+      `the badge's accessible name is ${JSON.stringify(versionSlot!.badge!.label)}, not "Version …"`,
+    );
+    assert.equal(
+      versionSlot!.badge!.inHeader,
+      true,
+      "the update badge left the rail's header",
+    );
+    assert.equal(
+      versionSlot!.badge!.inSlot,
+      true,
+      "the update badge is not inside the version slot",
+    );
+    const versionCentre =
+      (versionSlot!.box.left + versionSlot!.box.right) / 2;
+    assert.ok(
+      Math.abs(versionCentre - railCentre) <= 1,
+      `the version slot's centre is at ${versionCentre}px, not the rail's ${railCentre}px centre line (slot ${JSON.stringify(versionSlot!.box)})`,
+    );
+    assert.ok(
+      versionSlot!.box.top >= lockupBox.bottom - 1 &&
+        versionSlot!.box.top - lockupBox.bottom <= 8,
+      `the version slot (${JSON.stringify(versionSlot!.box)}) is not directly under the lockup (${JSON.stringify(lockupBox)})`,
+    );
+    assert.ok(
+      versionSlot!.box.bottom <= expanded.header!.box.bottom,
+      `the version slot (${JSON.stringify(versionSlot!.box)}) leaves the header (${JSON.stringify(expanded.header!.box)})`,
+    );
+    assert.ok(
+      versionSlot!.badge!.box.left >= versionSlot!.box.left - 1 &&
+        versionSlot!.badge!.box.right <= versionSlot!.box.right + 1 &&
+        versionSlot!.badge!.box.top >= versionSlot!.box.top - 1 &&
+        versionSlot!.badge!.box.bottom <= versionSlot!.box.bottom + 1,
+      `the badge (${JSON.stringify(versionSlot!.badge!.box)}) is not inside the version slot (${JSON.stringify(versionSlot!.box)})`,
+    );
+    // The old equal-top-and-bottom air cannot hold now that the second line
+    // spends the space; what holds is the order: the rail's inset above the
+    // lockup, the version under it, then the band's own breath.
+    const versionToBand =
+      (expanded.wingSwitcher?.box.top ?? 0) - versionSlot!.box.bottom;
+    assert.ok(
+      topInset >= 12 && versionToBand >= 8,
+      `the air above the lockup (${topInset}px) or below the version (${versionToBand}px) collapsed (lockup ${JSON.stringify(lockupBox)}, version ${JSON.stringify(versionSlot!.box)}, switcher ${JSON.stringify(expanded.wingSwitcher?.box)})`,
     );
     // The toggle sits in the foot, at the sidebar's bottom trailing corner, level
     // with the Log and the chip — and it is the last control in the column.
@@ -920,66 +1010,73 @@ describe("shell sidebar (docked rail)", () => {
       "the app mark or wordmark is still in the titlebar",
     );
 
-    // The chip's new home: the rail's foot, on the navigation row with the Log.
-    // Wide, the Log and the chip split that row and the chip names the whole
-    // vault; the caption row under it carries the build number and the toggle.
+    // The chip's new home: the rail's foot. Wide, the foot is one row — the Log
+    // and the chip split the room the collapse toggle leaves — and the chip shows
+    // the vault's full name. The build number moved to the header, so the foot
+    // carries no second row and no `.nav-rail__meta`.
     assert.ok(expanded.foot, "the rail rendered no footer group");
     assert.ok(expanded.vaultChip, "the rail rendered no vault chip");
     const foot = expanded.foot!;
     const chip = expanded.vaultChip!;
     assert.equal(
       foot.children.length,
-      2,
-      `the foot carries ${foot.children.length} children, expected the navigation row and the caption row`,
+      1,
+      `the foot carries ${foot.children.length} children, expected the one foot row — the caption row is gone`,
     );
     assert.match(
       foot.children[0].className,
       /nav-rail__foot-row/,
-      "the foot's first row is not the navigation row",
-    );
-    assert.match(
-      foot.children[1].className,
-      /nav-rail__meta/,
-      "the foot's second row is not the caption row",
+      "the foot's only child is not the foot row",
     );
     assert.equal(foot.display, "flex", `the wide foot is not flex (${foot.display})`);
     assert.equal(
       foot.flexDirection,
       "column",
-      `the wide foot is ${foot.flexDirection}, not two stacked rows`,
+      `the wide foot is ${foot.flexDirection}, not a column of one row`,
     );
-    assert.ok(foot.footRow, "the foot rendered no navigation row");
-    assert.ok(foot.meta?.box, "the foot rendered no caption row");
+    assert.ok(foot.footRow, "the foot rendered no foot row");
+    assert.equal(
+      foot.meta,
+      null,
+      `the foot still renders the retired caption row (${JSON.stringify(foot.meta)})`,
+    );
+    assert.equal(
+      foot.footRowDirection,
+      "row",
+      `the wide foot row is ${foot.footRowDirection}, not one line`,
+    );
+    // The square toggle is in the row, to the RIGHT of the chip and on its line.
+    assert.ok(foot.collapse, "the wide foot row renders no collapse toggle");
+    assert.equal(
+      foot.collapse!.inFootRow,
+      true,
+      "the collapse toggle is not inside the foot row",
+    );
+    assert.equal(
+      foot.collapse!.label,
+      "Collapse sidebar",
+      `the foot row's toggle is named ${JSON.stringify(foot.collapse!.label)}, not the collapse control`,
+    );
     assert.ok(
-      foot.meta!.box.top >= foot.footRow!.bottom - 1,
-      `the caption row (${JSON.stringify(foot.meta!.box)}) does not sit under the navigation row (${JSON.stringify(foot.footRow)})`,
+      foot.collapse!.box.left >= chip.box.right - 1 &&
+        foot.collapse!.box.right <= foot.footRow!.right + 1 &&
+        Math.abs(
+          (foot.collapse!.box.top + foot.collapse!.box.bottom) / 2 -
+            (chip.box.top + chip.box.bottom) / 2,
+        ) <= 1,
+      `the toggle (${JSON.stringify(foot.collapse!.box)}) is not right of the chip (${JSON.stringify(chip.box)}) on the foot row (${JSON.stringify(foot.footRow)})`,
     );
     assert.equal(chip.inRail, true, "the vault chip left the rail");
     assert.equal(chip.inFoot, true, "the vault chip left the rail's foot");
-    // Equal shares of the navigation row.
+    // Equal shares of the foot row.
     assert.ok(
       Math.abs(foot.logRow!.width - chip.box.width) <= 1,
-      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal panes of the navigation row`,
+      `the Log (${foot.logRow!.width}px) and the chip (${chip.box.width}px) are not equal panes of the foot row`,
     );
     assert.ok(
       foot.logRow!.width >= foot.footRow!.width * 0.4 &&
         chip.box.width >= foot.footRow!.width * 0.4,
-      `the navigation row's controls (${foot.logRow!.width}px / ${chip.box.width}px) do not split its ${foot.footRow!.width}px width`,
-    );
-    // The caption row: the build number under the Log, the collapse toggle under
-    // the chip at the rail's trailing end.
-    assert.ok(
-      foot.meta!.version !== null &&
-        foot.meta!.version.display !== "none" &&
-        foot.meta!.version.text.startsWith("v") &&
-        Math.abs(foot.meta!.version.box.left - foot.footRow!.left) <= 6,
-      `the build number (${JSON.stringify(foot.meta?.version)}) is not under the Log (${JSON.stringify(foot.footRow)})`,
-    );
-    assert.ok(
-      foot.meta!.toggle !== null &&
-        foot.meta!.toggle.box.top >= chip.box.bottom - 1 &&
-        foot.meta!.toggle.box.right >= foot.meta!.box.right - 6,
-      `the toggle (${JSON.stringify(foot.meta?.toggle?.box)}) is not under the chip (${JSON.stringify(chip.box)}) at the caption row's trailing end (${JSON.stringify(foot.meta!.box)})`,
+      `the foot row's controls (${foot.logRow!.width}px / ${chip.box.width}px) do not split its ${foot.footRow!.width}px width`,
     );
     // Same row: one vertical centre and one height.
     assert.ok(
@@ -1781,28 +1878,43 @@ describe("shell sidebar (docked rail)", () => {
       `the thin foot is ${collapsed.foot!.flexDirection}, not a column`,
     );
     assert.ok(collapsed.foot!.logRow, "the thin foot lost the Log row");
+    assert.equal(
+      collapsed.foot!.children.length,
+      1,
+      `the thin foot carries ${collapsed.foot!.children.length} children, expected the one foot row`,
+    );
+    assert.equal(
+      collapsed.foot!.footRowDirection,
+      "column",
+      `the thin foot row is ${collapsed.foot!.footRowDirection}, not stacked`,
+    );
     assert.ok(
       collapsed.foot!.logRow!.bottom <= collapsed.vaultChip!.box.top + 1,
       `the Log row (${JSON.stringify(collapsed.foot!.logRow)}) is not above the chip (${JSON.stringify(collapsed.vaultChip!.box)})`,
     );
-    // The way back is not in the foot at this width: the square control left it.
-    // The thin foot stacks the Log's icon, the vault's initials, then the caption
-    // row with the build number.
+    // The way back is not in the foot at this width: the square control left it,
+    // and the foot has no caption row to hide. The build number's header slot is
+    // hidden with the words, so its badge paints no box.
     assert.equal(
       collapsed.foot!.collapse,
       null,
       `an expand control is still in the thin foot (${JSON.stringify(collapsed.foot!.collapse)})`,
     );
     assert.equal(
-      collapsed.foot!.meta?.display,
+      collapsed.foot!.meta,
+      null,
+      `the thin rail still renders the retired caption row (${JSON.stringify(collapsed.foot!.meta)})`,
+    );
+    assert.equal(
+      collapsed.header!.version?.display,
       "none",
-      `the thin rail left the caption row in the layout (display: ${JSON.stringify(collapsed.foot!.meta?.display)})`,
+      `the thin rail still shows the version slot (display: ${JSON.stringify(collapsed.header!.version?.display)})`,
     );
     assert.ok(
-      Boolean(collapsed.foot!.meta?.version?.box) &&
-        collapsed.foot!.meta!.version!.box.width === 0 &&
-        collapsed.foot!.meta!.version!.box.height === 0,
-      `the thin foot still paints its build number: ${JSON.stringify(collapsed.foot!.meta?.version?.box)}`,
+      Boolean(collapsed.header!.version?.badge) &&
+        collapsed.header!.version!.badge!.box.width === 0 &&
+        collapsed.header!.version!.badge!.box.height === 0,
+      `the thin rail still paints its build number: ${JSON.stringify(collapsed.header!.version?.badge?.box)}`,
     );
     // ... and it leads the column from the topband instead, above the wing tabs.
     assert.ok(
@@ -2123,12 +2235,32 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       restored.foot?.flexDirection,
       "column",
-      `reopening left the foot in ${restored.foot?.flexDirection} instead of its two stacked rows`,
+      `reopening left the foot in ${restored.foot?.flexDirection} instead of its one-row column`,
     );
     assert.equal(
-      restored.foot?.meta?.display,
-      "flex",
-      `reopening left the caption row ${JSON.stringify(restored.foot?.meta?.display)}`,
+      restored.foot?.children.length,
+      1,
+      `reopening left the foot with ${restored.foot?.children.length} children, expected the one foot row`,
+    );
+    assert.equal(
+      restored.foot?.meta,
+      null,
+      `reopening brought the retired caption row back (${JSON.stringify(restored.foot?.meta)})`,
+    );
+    assert.equal(
+      restored.foot?.footRowDirection,
+      "row",
+      `reopening left the foot row ${restored.foot?.footRowDirection}, not one line`,
+    );
+    assert.notEqual(
+      restored.header?.version?.display,
+      "none",
+      `reopening left the version slot ${JSON.stringify(restored.header?.version?.display)}`,
+    );
+    assert.match(
+      restored.header?.version?.badge?.text ?? "",
+      /^v\d/,
+      `reopening left the build number as ${JSON.stringify(restored.header?.version?.badge?.text)}`,
     );
     assert.equal(
       restored.vaultChip?.name?.display,
@@ -2203,10 +2335,17 @@ describe("shell sidebar (docked rail)", () => {
       false,
       "the foot did not reopen the lockup-collapsed rail",
     );
+    // Wide again, the header carries the lockup and the build number: two
+    // controls, the version slot back on screen.
     assert.equal(
       brandRestored.header?.controls.length,
-      1,
-      `reopening from the foot left the topband with ${brandRestored.header?.controls.length} controls`,
+      2,
+      `reopening from the foot left the topband with ${brandRestored.header?.controls.length} controls, expected the lockup and the build number`,
+    );
+    assert.notEqual(
+      brandRestored.header?.version?.display,
+      "none",
+      "reopening from the foot did not bring the build number back",
     );
     assert.equal(
       brandRestored.brandToggle?.label,

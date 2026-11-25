@@ -86,7 +86,11 @@ an installed theme, since every shipped one has both — is wearable in the pale
 it has; when the switch asks for the palette it does not have, the window hands
 itself to the fallback theme, **Nous**, in the requested mode. The day/night
 control in the title bar switches the palette; hovering or focusing it opens the
-starred-theme quick menu, which is the same list this page curates.
+starred-theme quick menu, which is the same list this page curates. A theme
+colours the app's surfaces and its own borders, but the sidebar's three section
+dividers are app chrome: they stay 1px of neutral gray — a lighter gray in day and
+a darker one at night — in every theme, so changing theme never changes how the
+sidebar's groups are separated.
 
 Under the grid, **Install a theme** takes a Forge theme JSON file — *the shape this
 app and Hermes Desktop share* — with **Choose file…**. An installed theme arrives
@@ -394,8 +398,8 @@ it could not check.
 
 **Check now** (shown as **Checking…**) re-reads the feed by hand instead of
 replaying the session's answer. The app asks at launch and then once an hour while
-it is open. The check is anonymous and stores nothing. The version badge in the
-rail's foot is the other manual check. See [Updates](./27-updates.md).
+it is open. The check is anonymous and stores nothing. The version badge at the
+top of the rail is the other manual check. See [Updates](./27-updates.md).
 
 ## About me
 
@@ -407,8 +411,8 @@ written to `.lifequest/about.md` and reaches the companion as context only.
 ## Developer
 
 **Developer** — *The bench: switches and the studio's own identity*. It holds one
-switch, **Preview the update badge**: *Makes the build number in the rail's foot
-glow, and opens the upgrade popup from it, as if a newer LifeQuest had been
+switch, **Preview the update badge**: *Makes the build number under the rail's
+lockup glow, and opens the upgrade popup from it, as if a newer LifeQuest had been
 published. Nothing is downloaded: the preview carries no installer, so the
 popup offers the release page instead.* The switch persists (it is stored locally)
 and is off to begin with. The note under it says which state you are seeing: the

@@ -25,13 +25,13 @@ function useCollapseControl() {
  * The sidebar's square collapse control. The same button sits in two places, one
  * per width, and both are the way in and the way back.
  *
- * Wide, it holds the trailing end of the rail's foot, level with the Log and the
- * vault chip — the last control in the column, where the sidebar ends. Thin, the
- * icon column is too short to hide the way back under the rows: the button moves
- * up to the centre of the topband and becomes the brand's Q emblem — the pure
- * mark, no wordmark — so reopening the rail is the first thing in the column,
- * where the operator left the way in. `NavRail` owns the move; this component is
- * the same button in either home.
+ * Wide, it holds the trailing end of the rail's foot row, beside the vault chip
+ * and level with the Log — the last control in the column, where the sidebar
+ * ends. Thin, the icon column is too short to hide the way back under the rows:
+ * the button moves up to the centre of the topband and becomes the brand's Q
+ * emblem — the pure mark, no wordmark — so reopening the rail is the first thing
+ * in the column, where the operator left the way in. `NavRail` owns the move;
+ * this component is the same button in either home.
  *
  * There is no second copy in the titlebar — the old one landed on top of the
  * vault chip once the column went away.

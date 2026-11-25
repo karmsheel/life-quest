@@ -109,8 +109,8 @@ const SAMPLE = `(() => {
   const launcher = document.querySelector(".chat-launcher");
   const actions = document.querySelector(".chat-panel__actions");
   const collapseAction = document.querySelector(".chat-panel__action--collapse");
-  // The build number now lives in the dock's bottom bar, right of the collapse
-  // control: the bar's last control holds the window's bottom-right end.
+  // The build number lives at the top of the rail, in the header under the
+  // lockup — not in the dock's bottom bar and not in the retired caption row.
   const versionBadge = document.querySelector(".update-badge");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
@@ -266,8 +266,10 @@ const SAMPLE = `(() => {
                 inRail: Boolean(
                   document.querySelector(".nav-rail")?.contains(versionBadge)
                 ),
-                inMeta: Boolean(
-                  document.querySelector(".nav-rail__meta")?.contains(versionBadge)
+                inHeader: Boolean(
+                  document
+                    .querySelector(".nav-rail__header")
+                    ?.contains(versionBadge)
                 )
               }
             : null
@@ -1226,10 +1228,10 @@ async function main() {
       `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
     );
     check(
-      "restored: the version badge lives in the rail's caption row, not the bar",
+      "restored: the version badge lives in the rail's header, not the bar",
       Boolean(restored.actions?.badge && badgeBox) &&
         restored.actions.badge.inRail === true &&
-        restored.actions.badge.inMeta === true &&
+        restored.actions.badge.inHeader === true &&
         restored.actions.badge.inBar === false,
       `badge ${JSON.stringify(restored.actions?.badge)}`,
     );

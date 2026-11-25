@@ -139,8 +139,8 @@ question scopes stay `execute`, so saved links and prompts keep working.
 
 **Notebox**, **Decisions**, **Daily Journal** and **Automations** are pinned
 above the **Log** because they are governance, not a wing: they belong to no area
-and are reachable from everywhere. The version badge lives at the foot of the
-rail, under the **Log**, not in the dock's chrome.
+and are reachable from everywhere. The version badge lives at the top of the
+rail, under the **LifeQuest lockup**, not in the dock's chrome.
 
 The chat dock holds the companion. Its strip carries the open chats as tabs —
 each sized to its name up to a few words — with pinned chats leading them by a
