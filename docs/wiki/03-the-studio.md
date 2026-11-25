@@ -182,7 +182,7 @@ The rail:
   sidebar**). The pointer is its only hover cue — no fill behind it and no
   tooltip. The air around the mark — and the rest of the strip beside it — stays
   the window's drag handle.
-- The **build number** (`v0.3.3`), centred directly under the lockup in the
+- The **build number** (`v0.3.4`), centred directly under the lockup in the
   header: the app's one manual update door. It glows when a newer release exists,
   with **Update available** beside it while the rail is wide enough for the
   words; clicking it opens the update dialog. The thin rail retires the number
