@@ -960,14 +960,20 @@ type LifequestApi = {
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string }>>;
   /**
-   * Stores one receipt in the finance file store and leaves the copy for the
-   * next turn waiting in main. The bytes never come back through this bridge.
+   * Promotes one picture already attached in the composer into the receipt the
+   * next turn carries: main reads the stored original, keeps the finance copy
+   * and the re-encoded model copy, and moves the picture to the receipt slot.
+   * The bytes never come back through this bridge.
    */
-  receiptAttach: (input: {
-    bytes: Uint8Array;
-    mime: string;
-    name: string;
+  receiptPromote: (input: {
+    id: string;
   }) => Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>>;
+  /**
+   * Whether the receipt store can take a picture now — the Finance kit
+   * installed and its area live. The composer offers "Use as receipt" only on a
+   * true answer; main owns the predicate so the offer and the press agree.
+   */
+  receiptReady: () => Promise<Result<boolean>>;
   /**
    * Stores one general attachment — any image, clip, recording or document — in
    * the vault and leaves it waiting in main for the next turn. The bytes never

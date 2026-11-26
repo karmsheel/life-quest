@@ -13,19 +13,19 @@
  *
  * The reported failure was a redundant offer: the companion proposed to build an
  * expense summary for a dashboard that was already showing one, because nothing
- * had told it what was on the screen. The fix is a pill beside the receipt
- * control that says which screen rides the next turn, and an instruction that
- * quotes that screen. This rig is about both halves and the join between them.
+ * had told it what was on the screen. The fix is a pill beside the add control
+ * that says which screen rides the next turn, and an instruction that quotes
+ * that screen. This rig is about both halves and the join between them.
  *
  * What each claim rests on, and what would falsify it:
  *
  *  1. `the-pill-is-on-by-default` — landing on the Dashboard draws one pill,
  *     pressed, naming the screen the rail names it, wearing the "seeing" glyph.
  *     A pill that only appears once clicked fails here.
- *  2. `the-pill-sits-beside-the-attach-control` — the receipt control is still
- *     the control before the pill inside the composer's receipts group, the
- *     pill is its immediate next sibling in that group, on the same row, and
- *     the attach control itself is untouched. Proven with
+ *  2. `the-pill-sits-beside-the-add-control` — the add control is still the
+ *     first gesture of the composer's control row, the pill opens the receipts
+ *     group immediately after it, the group is on the same row, and the add
+ *     control still opens the one file picker. Proven with
  *     `compareDocumentPosition` and measured boxes, so "beside" is a fact about
  *     the document and not about a screenshot.
  *  3. `the-pill-sits-inside-the-composer-box` — the pill is part of the one
@@ -91,9 +91,9 @@ const GOALS_TURN = "Where are the goals up to?";
 const DASHBOARD_TURN = "Add me an expense summary widget";
 
 /**
- * The pill, the control beside it, and the page, in one pass.
+ * The pill, the add control beside it, and the page, in one pass.
  *
- * `follows` is a document-order bit rather than an index: "beside the attach
+ * `follows` is a document-order bit rather than an index: "beside the add
  * control" is a fact about the document, and an index into a child list is a
  * fact about markup. The row claim compares the two boxes' vertical spans, so a
  * pill that wrapped onto its own line is not "on the same row". The composer
@@ -104,7 +104,7 @@ const SAMPLE = `(() => {
   const pill = document.querySelector('[data-testid="chat-page-context"]');
   const label = pill ? pill.querySelector('[data-testid="chat-page-context-label"]') : null;
   const kind = pill ? pill.querySelector('.chat-panel__page-kind') : null;
-  const attach = document.querySelector('.chat-panel__attach');
+  const plus = document.querySelector('.chat-panel__composer-plus');
   const line = document.querySelector('.chat-panel__receipts');
   const composerBox = document.querySelector('.chat-panel__composer-box');
   const field = document.querySelector('.chat-panel__composer-input');
@@ -116,7 +116,7 @@ const SAMPLE = `(() => {
     return svg ? [...svg.classList].join(' ') : null;
   };
   const pillBox = box(pill);
-  const attachBox = box(attach);
+  const plusBox = box(plus);
   const composerRect = box(composerBox);
   const fieldRect = box(field);
   const heading = root ? root.querySelector('h1, h2, .home-card__title, .view-card__title') : null;
@@ -134,16 +134,16 @@ const SAMPLE = `(() => {
       svgs: pill.querySelectorAll('svg').length,
       icon: glyph(pill),
     } : null,
-    attach: attach ? {
-      label: attach.getAttribute('aria-label'),
-      svgs: attach.querySelectorAll('svg').length,
-      icon: glyph(attach),
+    plus: plus ? {
+      label: plus.getAttribute('aria-label'),
+      svgs: plus.querySelectorAll('svg').length,
+      icon: glyph(plus),
     } : null,
     line: line ? { children: [...line.children].map((c) => c.className) } : null,
     inLine: Boolean(pill && line && pill.parentElement === line),
-    attachBeforePill: follows(attach, pill),
-    attachLeftOfPill: Boolean(pillBox && attachBox && pillBox.left >= attachBox.right - 1),
-    sameRow: Boolean(pillBox && attachBox && attachBox.top < pillBox.bottom && pillBox.top < attachBox.bottom),
+    plusBeforePill: follows(plus, pill),
+    plusLeftOfPill: Boolean(pillBox && plusBox && pillBox.left >= plusBox.right - 1),
+    sameRow: Boolean(pillBox && plusBox && plusBox.top < pillBox.bottom && pillBox.top < plusBox.bottom),
     // The pill is part of the composer box, inside its bottom edge, under the
     // field and on its left half.
     box: composerRect,
@@ -323,18 +323,18 @@ async function main() {
     `the landing pill read ${JSON.stringify(landing.pill)} on ${landing.path}`,
   );
 
-  // ── 2. beside the receipt control, in the composer's receipts group ───────
+  // ── 2. beside the add control, in the composer's receipts group ───────────
   check(
-    "the-pill-sits-beside-the-attach-control",
-    landing.attach !== null &&
-      isGlyph(landing.attach.icon, "lucide-image-plus") &&
-      landing.attach.label === "Attach a receipt" &&
+    "the-pill-sits-beside-the-add-control",
+    landing.plus !== null &&
+      isGlyph(landing.plus.icon, "lucide-plus") &&
+      landing.plus.label === "Attach a file" &&
       landing.inLine === true &&
-      landing.attachBeforePill === true &&
-      landing.attachLeftOfPill === true &&
+      landing.plusBeforePill === true &&
+      landing.plusLeftOfPill === true &&
       landing.sameRow === true,
-    `attach ${JSON.stringify(landing.attach)}, inLine=${landing.inLine}, ` +
-      `follows=${landing.attachBeforePill}, leftOf=${landing.attachLeftOfPill}, ` +
+    `plus ${JSON.stringify(landing.plus)}, inLine=${landing.inLine}, ` +
+      `follows=${landing.plusBeforePill}, leftOf=${landing.plusLeftOfPill}, ` +
       `sameRow=${landing.sameRow}, line ${JSON.stringify(landing.line)}`,
   );
 
@@ -362,7 +362,7 @@ async function main() {
       off.pill.label === "Dashboard" &&
       /^off$/i.test(off.pill.kind ?? "") &&
       off.inLine === true &&
-      off.attachBeforePill === true &&
+      off.plusBeforePill === true &&
       isGlyph(off.pill.icon, "lucide-eye-off"),
     `the pill read ${JSON.stringify(off.pill)} in line ${JSON.stringify(off.line)}`,
   );
@@ -548,7 +548,7 @@ async function main() {
 
   console.log(
     `pill: default=${landing.pill?.state} label=${JSON.stringify(landing.pill?.label)} ` +
-      `in-box=${landing.pillInBox} beside-attach=${landing.attachBeforePill} ` +
+      `in-box=${landing.pillInBox} beside-add=${landing.plusBeforePill} ` +
       `after-${afterTurns.calls}-turns=${afterTurns.pill?.state}`,
   );
   console.log(

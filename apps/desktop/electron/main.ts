@@ -795,13 +795,16 @@ function registerIpcHandlers() {
   ipcMain.handle("db:upsertRow", (_e, slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) => vault.dbUpsertRow(slug, dbId, input));
   ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
   ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
-  // The composer's receipt. The original is written here, before the turn that
-  // scans it is ever posted, so the row always points at bytes on disk.
-  ipcMain.handle(
-    "receipt:attach",
-    (_e, input: { bytes: Uint8Array; mime: string; name: string }) =>
-      vault.receiptAttach(input),
+  // The composer's receipt. The plus stores the picture as any other
+  // attachment; this press promotes it into the finance store, before the turn
+  // that scans it is ever posted, so the row always points at bytes on disk.
+  ipcMain.handle("receipt:promote", (_e, input: { id: string }) =>
+    vault.receiptPromoteAttachment(input),
   );
+  // Whether the receipt store exists at all: the kit installed and its area
+  // live. The composer offers "Use as receipt" only on a true answer, and main
+  // is the one place that decides it.
+  ipcMain.handle("receipt:ready", () => vault.receiptReady());
   // The composer's general attachment: any media or file. The original is
   // written here, before the turn that names it is ever posted, so the agent
   // always has bytes on disk to read.

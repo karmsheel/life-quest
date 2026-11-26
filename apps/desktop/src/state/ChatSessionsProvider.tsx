@@ -343,6 +343,19 @@ type ChatSessionsContextValue = {
   setAttachmentsFor: (id: string, attachments: ChatAttachment[]) => void;
   addAttachmentFor: (id: string, attachment: ChatAttachment) => void;
   removeAttachmentFor: (id: string, attachmentId: string) => void;
+  /**
+   * Move one waiting attachment into the receipt slot.
+   *
+   * The picture stops being a general file and becomes the one receipt the
+   * turn cites: its chip leaves the attachments row and the receipt chip takes
+   * the preview URL, which must keep working — so the URL is handed over
+   * rather than revoked with the chip that made it.
+   */
+  promoteAttachmentFor: (
+    id: string,
+    attachmentId: string,
+    receipt: ChatReceipt,
+  ) => void;
 
   runtimePins: Record<string, CompanionRuntimeOverride>;
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
@@ -623,6 +636,50 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       return { ...prev, [id]: receipt };
     });
   }, []);
+
+  /**
+   * Move one waiting attachment into the receipt slot.
+   *
+   * Main has already stored the finance copy when this runs; what is left is
+   * the renderer's chip. The preview URL travels from the attachment to the
+   * receipt instead of being minted again, because the chip must keep showing
+   * the operator's own picture and one object URL must have one owner — a
+   * revoke on the way out would break the receipt chip still on screen.
+   *
+   * The id may be stale by the time the answer lands: the operator can close
+   * the tab, delete the chat or switch vaults while the press is in flight, and
+   * those paths clear the receipt slot (and revoke its preview) before this
+   * callback runs. Writing the answer into a dead chat would make a receipt
+   * entry nothing draws and a URL nothing revokes, so a chat no longer on the
+   * strip or in the list is told no.
+   */
+  const promoteAttachmentFor = useCallback(
+    (id: string, attachmentId: string, receipt: ChatReceipt) => {
+      const known =
+        sessionsRef.current.some((session) => session.id === id) ||
+        openTabsRef.current.includes(id) ||
+        activeIdRef.current === id;
+      if (!known) {
+        if (receipt.previewUrl) URL.revokeObjectURL(receipt.previewUrl);
+        return;
+      }
+      const current = attachments[id] ?? [];
+      const moved = current.find((item) => item.id === attachmentId);
+      if (!moved) return;
+      if (moved.previewUrl) {
+        const previews = attachmentPreviews.current.get(id);
+        previews?.delete(moved.previewUrl);
+        if (previews?.size === 0) attachmentPreviews.current.delete(id);
+      }
+      setAttachments((prev) => {
+        const list = prev[id] ?? [];
+        if (!list.some((item) => item.id === attachmentId)) return prev;
+        return { ...prev, [id]: list.filter((item) => item.id !== attachmentId) };
+      });
+      setReceiptFor(id, receipt);
+    },
+    [attachments, setReceiptFor],
+  );
 
   const updateRuntimePick = useCallback(
     (id: string, next: CompanionRuntimeOverride) => {
@@ -2342,6 +2399,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setAttachmentsFor,
       addAttachmentFor,
       removeAttachmentFor,
+      promoteAttachmentFor,
       runtimePins,
       updateRuntimePick,
       setSessionModel,
@@ -2407,6 +2465,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setDraftFor,
       reportError,
       removeAttachmentFor,
+      promoteAttachmentFor,
       removeQueued,
       setErrorFor,
       setAttachmentsFor,

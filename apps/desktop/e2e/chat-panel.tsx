@@ -16,11 +16,11 @@
  *    it is the last thing measured and no later leg sees the other keyboard.
  *  - `chat-bubble-meta.electron.mjs` and `companion-paused.electron.mjs` — the
  *    message presentation and the paused-companion surface (their own files).
- *  - `receipt-attach.electron.mjs` — the receipt the composer attaches, and the
- *    turn it rides. Its composer leg ends at this page's stubbed bridge: a
- *    dev-server page has no preload, so the real `receipt:attach` handler is
- *    exercised in that rig's other leg, against a real vault. Failure modes
- *    listed there.
+ *  - `receipt-attach.electron.mjs` — the picture the composer's chip promotes
+ *    into a receipt, and the turn it rides. Its composer leg ends at this
+ *    page's stubbed bridge: a dev-server page has no preload, so the real
+ *    `receipt:promote` handler is exercised in that rig's other leg, against a
+ *    real vault. Failure modes listed there.
  *  - `turn-timeline.electron.mjs` — the whole turn: reasoning, tool rows,
  *    narration, answer, fold/footer and what history replays. It is the only
  *    rig that turns a capability descriptor on through `?caps=` and the only
@@ -136,14 +136,33 @@ type ChatCall = {
 };
 
 /**
- * What the stubbed `receipt:attach` answers with, and the case a driver asks
- * for with `?attachfail=1`: a refusal must show on the composer and leave no
- * chip behind. The path is the shape main mints, so a driver can assert the
- * panel put exactly that string on the turn.
+ * Where the stubbed `receipt:promote` says the finance store put the picture.
+ *
+ * The directory is the shape main mints and the file keeps the attachment's own
+ * name, so a driver can assert the panel put exactly that string on the turn.
+ * `?attachfail=1` is the refusal case: a promotion that fails must show on the
+ * composer and leave the attachment chip exactly where it was. `?attachfail=second`
+ * promotes the first picture, then refuses the next: the receipt slot already
+ * holds a picture the operator chose, and a later refusal must not clear it.
  */
-const ATTACHED_REL_PATH =
-  "domains/financial/data/files/11111111-2222-3333-4444-555555555555/receipt.jpg";
-const ATTACH_FAILS = new URLSearchParams(window.location.search).has("attachfail");
+const PROMOTED_DIR =
+  "domains/financial/data/files/11111111-2222-3333-4444-555555555555";
+const QUERY = new URLSearchParams(window.location.search);
+const ATTACH_FAIL_MODE = QUERY.get("attachfail");
+/** Every promotion on this page is refused (`?attachfail=1`). */
+const ATTACH_FAILS = ATTACH_FAIL_MODE !== null && ATTACH_FAIL_MODE !== "second";
+/** The first promotion succeeds; later ones are refused (`?attachfail=second`). */
+const ATTACH_FAILS_AFTER_FIRST = ATTACH_FAIL_MODE === "second";
+
+/**
+ * `?nokit=1` answers the receipt-readiness read `false`, which is a vault whose
+ * Finance kit is missing or whose Financial area is not live: a picture's chip
+ * must then offer no "Use as receipt", because there is no finance file store to
+ * cite. The default answer is ready, so the action is on screen in every rig
+ * that does not ask otherwise — the generic stub would answer `ok(null)`, which
+ * reads as not ready and would hide the action everywhere.
+ */
+const NO_KIT = QUERY.has("nokit");
 
 /**
  * The composer control row's fixture: the shape `GET /api/model/options` answers
@@ -531,10 +550,10 @@ type HarnessWindow = {
   __lqEmitSseFor?: (sessionId: string, raw: string) => unknown;
   /** The real SSE decoder, so a driver can prove a wire frame maps to an event. */
   __lqParseSse?: (raw: string) => unknown;
-  /** Every `receiptAttach` the panel made, in order. */
-  __lqAttachCalls?: { mime: string; name: string; bytes: number }[];
-  /** Every `attachmentAttach` the panel made, in order. */
-  __lqAttachmentCalls?: { mime: string; name: string; bytes: number }[];
+  /** Every `receiptPromote` the panel made, in order, with the id it named. */
+  __lqPromoteCalls?: { id: string }[];
+  /** Every `attachmentAttach` the panel made, in order, with the id it minted. */
+  __lqAttachmentCalls?: { id: string; mime: string; name: string; bytes: number }[];
   /**
    * Every `chatImageRead` the bubbles made, in order. The door itself is main's;
    * this page answers it from CHAT_IMAGE_BYTES, so the record is how a driver
@@ -568,7 +587,7 @@ harness.__lqEmitSseFor = (sessionId: string, raw: string) => {
   harness.__lqEmitFor(sessionId, evt);
   return evt;
 };
-harness.__lqAttachCalls = [];
+harness.__lqPromoteCalls = [];
 harness.__lqAttachmentCalls = [];
 harness.__lqChatImageCalls = [];
 harness.__lqSteerCalls = [];
@@ -580,6 +599,17 @@ harness.__lqPatchCalls = [];
  * so the harness's single-chat emitters use this to name the same one.
  */
 let openSessionId = SESSION.id;
+
+/**
+ * What each stored attachment was, by the id the panel was handed.
+ *
+ * The promote stub answers with the name and size of the attachment the panel
+ * named — the way main answers from the file it stored — so a rig that promotes
+ * the wrong id cannot pass on a name nobody checked. It is the page's own
+ * bookkeeping, kept out of `__lqAttachmentCalls` so that record stays the shape
+ * the older rigs read.
+ */
+const attachmentFacts = new Map<string, { name: string; size: number }>();
 
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
@@ -684,22 +714,38 @@ const bridge: Record<string, unknown> = {
     await new Promise((resolve) => setTimeout(resolve, harness.__lqChatDelay ?? 0));
     return ok(true);
   },
+  // The bridge's answer to main's receipt-store predicate (`receipt:ready`):
+  // the Finance kit installed AND the Financial area live. The panel asks this
+  // before a picture's chip may offer "Use as receipt"; a page whose vault has
+  // neither (`?nokit=1`) must answer false so the offer is absent, and every
+  // other page answers true. The generic stub's `ok(null)` would read as not
+  // ready for every rig, which would hide the action everywhere.
+  receiptReady: () => ok(!NO_KIT),
   // Answers the way main does: the stored path back, never the bytes. Records
-  // what the panel sent so a driver can prove the file it picked is the file it
-  // asked about.
-  receiptAttach: async (input: { bytes: Uint8Array; mime: string; name: string }) => {
-    harness.__lqAttachCalls = [
-      ...(harness.__lqAttachCalls ?? []),
-      { mime: input.mime, name: input.name, bytes: input.bytes?.byteLength ?? 0 },
-    ];
+  // the id the panel named and answers with the name and size of the attachment
+  // the page stored under it, so a driver can prove the chip's press names the
+  // file the operator attached. `?attachfail=1` refuses every press with the
+  // format message; `?attachfail=second` lets the first through and refuses the
+  // next with the pixel-ceiling message, the refusal a second picture must get
+  // while the receipt slot already holds the first.
+  receiptPromote: async (input: { id: string }) => {
+    harness.__lqPromoteCalls = [...(harness.__lqPromoteCalls ?? []), { id: input.id }];
+    const attempts = (harness.__lqPromoteCalls ?? []).length;
     if (ATTACH_FAILS) {
       return { ok: false as const, error: "Receipts must be JPEG or PNG images." };
     }
+    if (ATTACH_FAILS_AFTER_FIRST && attempts > 1) {
+      return { ok: false as const, error: "That picture has more pixels than a receipt can hold." };
+    }
+    const held = attachmentFacts.get(input.id);
+    if (!held) {
+      return { ok: false as const, error: "That attachment is no longer waiting." };
+    }
     return ok({
-      relPath: ATTACHED_REL_PATH,
+      relPath: `${PROMOTED_DIR}/${held.name}`,
       fileId: "11111111-2222-3333-4444-555555555555",
-      name: input.name,
-      size: input.bytes?.byteLength ?? 0,
+      name: held.name,
+      size: held.size,
     });
   },
   companionRunStop: async (runId: string) => {
@@ -707,13 +753,22 @@ const bridge: Record<string, unknown> = {
     return ok(true);
   },
   // The general attachment: any media or file, stored in main and named back
-  // by an id the turn can carry. The kind is decided by the mime, the way main
-  // decides it, so a rig that picks a clip gets a clip.
+  // by an id the turn can carry. This stub decides the kind from the DECLARED
+  // mime because the page already holds the operator's File and only needs the
+  // chip's shape. Real main sniffs the bytes instead, so a mislabeled file is
+  // classified by what it is — and that refusal is proved against the real
+  // store in receipt-attach's main leg, not against this page.
   attachmentAttach: async (input: { bytes: Uint8Array; mime: string; name: string }) => {
-    harness.__lqAttachmentCalls = [
+    const calls = [
       ...(harness.__lqAttachmentCalls ?? []),
-      { mime: input.mime, name: input.name, bytes: input.bytes?.byteLength ?? 0 },
+      { id: "", mime: input.mime, name: input.name, bytes: input.bytes?.byteLength ?? 0 },
     ];
+    // The id is minted here the way main mints one, and recorded with the call
+    // so a driver can check the id a promotion named is the id of the file it
+    // attached.
+    const id = `att-${calls.length}`;
+    calls[calls.length - 1].id = id;
+    harness.__lqAttachmentCalls = calls;
     const mime = input.mime ?? "";
     const kind = mime.startsWith("image/")
       ? "image"
@@ -722,13 +777,15 @@ const bridge: Record<string, unknown> = {
         : mime.startsWith("audio/")
           ? "audio"
           : "file";
+    const size = input.bytes?.byteLength ?? 0;
+    attachmentFacts.set(id, { name: input.name, size });
     return ok({
-      id: `att-${(harness.__lqAttachmentCalls ?? []).length}`,
+      id,
       kind,
       name: input.name,
-      size: input.bytes?.byteLength ?? 0,
+      size,
       mime,
-      relPath: `attachments/${input.name}`,
+      relPath: `attachments/files/${id}/${input.name}`,
     });
   },
   // The steer: the words go into the run that is already working.
