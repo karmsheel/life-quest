@@ -15,8 +15,9 @@ import { describe, it } from "node:test";
  * DOM contract: the quiet one-mark default, the menu roster it opens, the
  * one-click/one-invoke switch (counted at the main-process IPC seam), the
  * pending mark between click and settle, a theme that names `named-chip`, a
- * custom four-axis recipe, the Settings override that must not flatten the
- * mode, the Studio writing `quiet-stack` into a profile theme file, a refused
+ * custom four-axis recipe whose inline roster is a row UNDER the composer box,
+ * the Settings override that must not flatten the mode, the Studio writing
+ * `quiet-stack` into a profile theme file, a refused
  * `chrome.agentPicker.mode` value that names the field, and the old
  * `/extensions` address redirecting to `/customizations`.
  *
@@ -238,6 +239,48 @@ describe("agent picker modes", () => {
     assert.equal(menuSwitch.result.pendingSeen, true, "the menu switch never showed a pending mark");
     assert.equal(menuSwitch.result.disabledSamples, 0, "the menu switch disabled an option");
     assert.equal(menuSwitch.result.pendingAtEnd, 0, "the menu switch left something pending");
+
+    // The inline rosters (`quiet-stack` and the custom recipe) are a row UNDER
+    // the composer box, right-aligned to the box's trailing edge — not tokens in
+    // the control row anymore. Restate the geometry from the two check details,
+    // so a loosened check cannot hide behind the green flag.
+    type Placement = {
+      belowBox?: boolean;
+      rightAligned?: boolean;
+      insideDock?: boolean;
+      gap?: number;
+      rightDelta?: number;
+      composerBoxBottom?: number;
+      pickerTop?: number;
+    };
+    for (const name of ["theme-combines-axes", "studio-writes-the-file"] as const) {
+      const check = report.checks.find((entry) => entry.label === name);
+      assert.ok(check, `missing check ${name}`);
+      const detail = check.detail
+        ? (JSON.parse(check.detail) as { placement?: Placement })
+        : {};
+      const placement = detail.placement;
+      assert.ok(placement, `${name} records no placement detail for its inline roster`);
+      assert.equal(
+        placement.belowBox,
+        true,
+        `${name}: the inline roster is not below the composer box (gap ${placement.gap}px)`,
+      );
+      assert.equal(
+        placement.rightAligned,
+        true,
+        `${name}: the inline roster is ${placement.rightDelta}px off the box's trailing edge`,
+      );
+      assert.ok(
+        (placement.gap ?? 0) > 0 && (placement.gap ?? 0) < 40,
+        `${name}: the box→roster gap ${placement.gap}px is not a real row gap`,
+      );
+      assert.equal(placement.insideDock, true, `${name}: the inline roster left the dock column`);
+      assert.ok(
+        (placement.pickerTop ?? 0) >= (placement.composerBoxBottom ?? 0),
+        `${name}: the inline roster overlaps the composer box`,
+      );
+    }
 
     // The wide dock: the placement the operator's own wider column shows. The two
     // checks above prove the trigger stands in the composer's trailing gutter at

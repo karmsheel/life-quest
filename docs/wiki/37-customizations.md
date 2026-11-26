@@ -221,15 +221,16 @@ Three modes ship:
   a menu. A menu costs one click, which is why this is the quiet default.
 - **Named chip** — the same menu trigger, with the answering agent's name beside the mark: the
   picker says who answers instead of making you recognise the mark.
-- **Quiet stack** — both marks inline, no capsule: one hairline each, the active one marked,
-  one click to switch. The roster is always in sight, paid for with the composer's width.
+- **Quiet stack** — both marks on their own row under the composer, no capsule: one hairline
+  each, the active one marked, one click to switch. The roster is always in sight, paid for
+  with one line under the field rather than with the composer's own control row.
 
 **Custom** is your own combination of four closed axes, each a named step rather than a free
 value:
 
 | Axis | Values | What it decides |
 |---|---|---|
-| **Roster** | `Menu` / `Inline` | Whether the agents are folded into one trigger or laid out in the open. The only axis that changes behaviour, not just pixels. |
+| **Roster** | `Menu` / `Inline` | Whether the agents are folded into one floating trigger or laid out in the open on a row under the composer. The only axis that changes behaviour, not just pixels. |
 | **Labels** | `None` / `Agent` / `All` | How much of the agent is named: a mark, the answering agent, or every row. |
 | **Ring** | `Accent` / `Hairline` | How the active choice is marked — the brand ring, or a hairline that defers to the composer's own outline. |
 | **Size** | `Compact` / `Default` / `Large` | The mark's optical size, for a dense or an airy dock. |

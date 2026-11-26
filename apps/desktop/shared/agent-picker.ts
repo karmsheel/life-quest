@@ -11,7 +11,7 @@
  *
  *   one-mark     menu + no label + accent ring      the default, quietest
  *   named-chip   menu + the agent's name + accent   explicit about who answers
- *   quiet-stack  inline roster + no label + hairline  both marks, no capsule
+ *   quiet-stack  inline roster + no label + hairline  both marks, under the box
  *
  * A theme may name any of those, or `custom` and set the axes itself. That is
  * what "creating your own mechanism" means here, and it is deliberate that the
@@ -24,9 +24,10 @@
  *
  * Why the axes are these four:
  *
- *  - `roster`  whether the agents are laid out in the open (inline) or folded
- *              into one trigger that opens a menu. This is the one axis that
- *              changes behaviour, not just pixels: a menu costs a second click.
+ *  - `roster`  whether the agents are laid out in the open (inline, on a row
+ *              under the composer) or folded into one trigger that opens a menu.
+ *              This is the one axis that changes behaviour, not just pixels: a
+ *              menu costs a second click.
  *  - `labels`  how much of the agent is named. `none` is a mark; `agent` names
  *              the answering one; `all` names every row of an inline roster.
  *  - `ring`    how the active choice is marked: the accent (brand) ring, or a
@@ -149,7 +150,7 @@ export const AGENT_PICKER_MODE_BLURBS: Readonly<
   "named-chip":
     "The same trigger, with the agent's name beside it — the picker says who answers.",
   "quiet-stack":
-    "Both marks inline, no capsule: one hairline each, the active one marked. One click to switch.",
+    "Both marks on their own row under the composer, no capsule: one hairline each, the active one marked. One click to switch.",
   custom: "Your own combination of the four axes below.",
 };
 

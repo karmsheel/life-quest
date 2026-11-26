@@ -13988,19 +13988,22 @@ button.chat-panel__activity-line:hover {
  *                stays quiet and "who answers" is one click away when asked
  *   named-chip   the same trigger with the answering agent's name beside it —
  *                the mode for an operator who wants the answer legible at rest
- *   quiet-stack  both discs inline in the composer's leading cluster, one
- *                hairline each, so switching is one click and no capsule frames
- *                the row
+ *   quiet-stack  both discs on a row under the composer box, one hairline each,
+ *                so switching is one click and no capsule frames the row
  *
- * Width is why the menu modes need two placements. The one-mark trigger is
- * narrow enough to stand in the empty gutter the composer leaves on a wide dock;
- * below that the gutter cannot hold it, and the same block steps above the form.
- * `named-chip` cannot ride the same breakpoint — its width is the name's, not the
- * mark's — so it keeps the fallback until the gutter is genuinely wide (see the
- * labelled rule below). The geometry and both placements are otherwise the ones
- * the old two-badge capsule used: the form, not the band, is the anchor, because
- * the band also holds the interview card and the retired-model notice and a
- * control that drifted up over those would no longer be above the composer.
+ * Placement is per roster, not per mode. The menu trigger is narrow enough to
+ * stand in the empty gutter the composer leaves on a wide dock; below that the
+ * gutter cannot hold it, and the same block steps above the form. `named-chip`
+ * cannot ride the same breakpoint — its width is the name's, not the mark's — so
+ * it keeps the fallback until the gutter is genuinely wide (see the labelled
+ * rule below). The inline roster does not float at all: a roster in the open is
+ * a control the operator reads across, so it takes its own row UNDER the
+ * composer box (`.chat-panel__composer-under`), aligned to the edge the send
+ * control sits on. The menu geometry and both floating placements are otherwise
+ * the ones the old two-badge capsule used: the form, not the band, is the
+ * anchor, because the band also holds the interview card and the retired-model
+ * notice and a control that drifted up over those would no longer be above the
+ * composer.
  */
 .agent-switcher {
   /* The mark's optical size. The recipe's size axis is a word, so the ladder is
@@ -14135,35 +14138,36 @@ button.chat-panel__activity-line:hover {
 
 /* ── one option, drawn in either roster ─────────────────────────────────── */
 
-.agent-switcher[data-roster="inline"] {
-  display: inline-flex;
+/* The inline roster's row, under the composer box. It is a real row of the form
+   (the form's own flex gap separates it from the box), not a floating token: the
+   two marks are laid out to be read and clicked, so they get a line of their own
+   rather than borrowing the composer's width. It stays right-aligned to the box
+   edge the send control sits on — the agent is what the turn runs on, the same
+   trailing side as the runtime picks — and it wraps there instead of clipping
+   when the dock is at its 300px floor with names on. */
+.chat-panel__composer-under {
+  display: flex;
   align-items: center;
-  gap: 0.15rem;
-  /* The row gives up width before the composer's own controls do: at the 300px
-     dock the page pill ellipsizes first, and this stays whole. */
-  flex: 0 1 auto;
+  justify-content: flex-end;
+  gap: 0.35rem;
   min-width: 0;
 }
 
-/* At the dock's 300px floor the one control row has to hold the add control,
-   the receipt control, the page pill, both marks, the model picks and the send
-   control — more than the column can fit. The page pill already ellipsizes to
-   its icon, and the marks cannot shrink past a disc each, so the row takes a
-   second line instead of clipping the send control; the same floor can also
-   squeeze a labelled inline roster, so the leading cluster is allowed to break
-   between its controls too. Only an inline roster pays this: the shipped
-   `one-mark` default floats above the form and costs the row nothing. */
-@container composer-band (max-width: 24rem) {
-  .chat-panel__composer-dock:has(.agent-switcher[data-roster="inline"]) {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-  }
+/* The inline roster itself: one row of options, allowed to wrap when a labelled
+   roster meets the dock's 300px floor. Alignment is the row's (`.…-under`), so
+   this stays a plain flex line whether it is mounted under the composer or, by
+   some later surface, somewhere else. */
+.agent-switcher[data-roster="inline"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  row-gap: 0.3rem;
+  min-width: 0;
+}
 
-  .chat-panel__composer-dock:has(.agent-switcher[data-roster="inline"])
-    .chat-panel__composer-lead {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-  }
+.chat-panel__composer-under .agent-switcher[data-roster="inline"] {
+  justify-content: flex-end;
 }
 
 .agent-switcher__option {

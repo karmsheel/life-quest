@@ -6,8 +6,8 @@
  * but its *shape* is a theme-authored recipe of four closed axes — roster,
  * labels, ring, size (`shared/agent-picker.ts`). The app ships three preset
  * modes over those axes (`one-mark` the quiet default, `named-chip` the same
- * trigger plus the answering agent's name, `quiet-stack` both marks inline in
- * the composer row), accepts a theme's own `custom` combination, and lets the
+ * trigger plus the answering agent's name, `quiet-stack` both marks in a row
+ * under the composer box), accepts a theme's own `custom` combination, and lets
  * operator layer a Settings override on top without flattening the mode the
  * theme chose. Every one of those sentences is only true if the shipped
  * renderer, the theme parser, the Settings/Studio controls and the route rename
@@ -65,7 +65,7 @@
  *   e2e/artifacts/agent-picker-default.png             the quiet one-mark trigger (whole window)
  *   e2e/artifacts/agent-picker-menu.png                menu open, both names and blurbs (cropped)
  *   e2e/artifacts/agent-picker-named-chip.png          named-chip trigger (cropped)
- *   e2e/artifacts/agent-picker-quiet-stack.png         inline pair in the dock row (cropped)
+ *   e2e/artifacts/agent-picker-quiet-stack.png         inline pair under the composer box (cropped)
  *   e2e/artifacts/agent-picker-studio-components.png   studio → Components (cropped)
  *
  * Run by `tests/agent-picker-modes-e2e.test.ts`, through the shared bench wrapper
@@ -448,7 +448,7 @@ function writeHermesStub(binDir, callLog) {
 /**
  * Everything a check reads about the picker: the resolved recipe off the root,
  * the trigger, the roster rows (only present while a menu is open; inline modes
- * keep them in the dock row), the mark count, and the boxes the pictures crop.
+ * keep them under the composer box), the mark count, and the boxes the pictures crop.
  */
 const READ_PICKER = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
@@ -1015,6 +1015,66 @@ async function main() {
   const readPicker = () => js(READ_PICKER);
   const readSurface = () => js(READ_SURFACE);
 
+  /**
+   * Where the inline roster sits, in numbers.
+   *
+   * The inline rosters (`quiet-stack`, any `roster: "inline"` recipe) are a real
+   * row of the composer FORM, under the composer box — not a token in the
+   * control row. The claim this helper checks is geometric: the row starts below
+   * the box's bottom edge with the form's own gap between them, and its right
+   * edge lands on the box's trailing edge (the edge the send control sits on),
+   * within a rounding pixel. It also has to stay inside the dock column, which is
+   * the only thing that can clip it.
+   */
+  const inlinePlacement = (state) => {
+    const box = state.composerBoxRect;
+    const picker = state.pickerRect;
+    const column = state.dockRect;
+    if (!box || !picker || !column) {
+      return { ok: false, reason: "composerBoxRect/pickerRect/dockRect missing", problems: ["a rect is missing"] };
+    }
+    const numbers = {
+      composerBoxBottom: box.bottom,
+      composerBoxRight: box.right,
+      pickerTop: picker.top,
+      pickerRight: picker.right,
+      pickerBottom: picker.bottom,
+      gap: picker.top - box.bottom,
+      rightDelta: picker.right - box.right,
+      belowBox: picker.top >= box.bottom - 1,
+      notOverlappingBox: picker.top >= box.bottom,
+      rightAligned: Math.abs(picker.right - box.right) <= 2,
+      insideDock:
+        picker.left >= column.left &&
+        picker.right <= column.right &&
+        picker.top >= column.top &&
+        picker.bottom <= column.bottom,
+      realGap: picker.top - box.bottom > 0 && picker.top - box.bottom < 40,
+      column,
+      composerBox: box,
+      picker,
+    };
+    const problems = [];
+    if (!numbers.belowBox) {
+      problems.push(`picker top ${picker.top} is not below the box bottom ${box.bottom} (gap ${numbers.gap}px)`);
+    }
+    if (!numbers.notOverlappingBox) {
+      problems.push(`picker overlaps the composer box (picker top ${picker.top} < box bottom ${box.bottom})`);
+    }
+    if (!numbers.rightAligned) {
+      problems.push(`picker right ${picker.right} is ${numbers.rightDelta}px off the box right ${box.right}`);
+    }
+    if (!numbers.insideDock) {
+      problems.push(
+        `picker ${JSON.stringify(picker)} is outside the dock column ${JSON.stringify({ left: column.left, right: column.right, top: column.top, bottom: column.bottom })}`,
+      );
+    }
+    if (!numbers.realGap) {
+      problems.push(`the gap ${numbers.gap}px is not a real row gap (0 < gap < 40)`);
+    }
+    return { ok: problems.length === 0, problems, ...numbers };
+  };
+
   const reloadDocument = async () => {
     const loaded = new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
     win.webContents.reload();
@@ -1439,9 +1499,13 @@ async function main() {
   const combinedInvokes = switchInvokes.slice(combinedInvokesBefore);
   measured.switches.push({ roster: "inline", invokes: combinedInvokes, result: inlineSwitch });
   const combinedAfter = await readPicker();
+  // The recipe's inline roster is a row under the composer box, not in the
+  // control row: this is the geometry the mode is shipped with.
+  const combinedPlacement = inlinePlacement(combinedAfter);
   check(
     "theme-combines-axes",
     combinedKeep.kept === combinedFile &&
+      combinedPlacement.ok === true &&
       combinedPicker.mode === "custom" &&
       combinedPicker.roster === "inline" &&
       combinedPicker.labels === "all" &&
@@ -1473,6 +1537,7 @@ async function main() {
       switchMs: inlineSwitch.switchMs,
       invokes: combinedInvokes,
       disabledSamples: inlineSwitch.disabledSamples,
+      placement: combinedPlacement,
     },
   );
 
@@ -1738,9 +1803,21 @@ async function main() {
   await reloadDocument();
   const quietStackPicker = await waitForDockPicker("the quiet-stack picker after a reload", "quiet-stack");
   const quietStackKept = await readKept();
+  // The inline pair is a row of the composer form under the box, so the picture
+  // has to carry the box itself — "under" is only legible against it.
+  const quietStackPlacement = inlinePlacement(quietStackPicker);
   captures.quietStack = await shot(
     SHOT.quietStack,
-    cropAround([quietStackPicker.composerRect, quietStackPicker.pickerRect, quietStackPicker.dockRowRect], quietStackPicker.viewport, 14),
+    cropAround(
+      [
+        quietStackPicker.composerRect,
+        quietStackPicker.composerBoxRect,
+        quietStackPicker.pickerRect,
+        quietStackPicker.dockRowRect,
+      ],
+      quietStackPicker.viewport,
+      14,
+    ),
   );
   check(
     "studio-writes-the-file",
@@ -1763,7 +1840,8 @@ async function main() {
       quietStackPicker.triggerCount === 0 &&
       quietStackPicker.inlineRadios === 2 &&
       quietStackPicker.markCount === 2 &&
-      quietStackKept === studioSeedFile,
+      quietStackKept === studioSeedFile &&
+      quietStackPlacement.ok === true,
     {
       redirect: { requested: redirectToHome, landed: redirect.hash, page: redirect.customizationsPage },
       editClicked,
@@ -1785,6 +1863,7 @@ async function main() {
         inlineRadios: quietStackPicker.inlineRadios,
         markCount: quietStackPicker.markCount,
       },
+      placement: quietStackPlacement,
     },
   );
   measured.captures = captures;
