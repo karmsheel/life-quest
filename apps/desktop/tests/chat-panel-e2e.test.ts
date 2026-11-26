@@ -4,8 +4,9 @@
  * runtime row (`composer-model-pills.electron.mjs`), how tool activity is shown
  * (`tool-run.electron.mjs`), the whole turn timeline
  * (`turn-timeline.electron.mjs`), the general attachments and the steer verb, the
- * composer's keys, attachments and live-turn gestures, and the receipt the
- * composer attaches (`receipt-attach.electron.mjs`). They are wrapped together
+ * composer's keys, attachments and live-turn gestures, and the picture the
+ * composer promotes into a receipt (`receipt-attach.electron.mjs`). They are
+ * wrapped together
  * because they share one page, one dev-server probe and one shape of report read
  * back; each rig is still its own Electron process writing its own artifact, so
  * a failure names the concern it belongs to.
@@ -422,15 +423,14 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       rowBelowField: boolean;
       menuClosed: boolean;
       pills: Pill[];
-      /** The row inside the composer box's bottom edge: the dock, the add,
-       *  receipt and page controls leading it, and the runtime pick trailing
-       *  it. Null when any required control is missing. */
+      /** The row inside the composer box's bottom edge: the dock, the add
+       *  and page controls leading it, and the runtime pick trailing it. Null
+       *  when any required control is missing. */
       line: {
         fieldBottom: number;
         box: { left: number; right: number; top: number; bottom: number; width: number };
         dock: { left: number; right: number; top: number; bottom: number; width: number };
         plus: { left: number; right: number; top: number; bottom: number; width: number };
-        attach: { left: number; right: number; top: number; bottom: number; width: number };
         page: { left: number; right: number; top: number; bottom: number; width: number } | null;
         pick: { left: number; right: number; top: number; bottom: number; width: number };
         dockInsideBox: boolean;
@@ -438,13 +438,10 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         controlsInsideBox: boolean;
         controlsBelowField: boolean;
         sameRow: boolean;
-        plusLeftOfAttach: boolean;
-        attachLeftOfPage: boolean | null;
+        plusLeftOfPage: boolean | null;
         pageLeftOfPick: boolean | null;
         plusLeadsRow: boolean;
         pickRightGap: number;
-        attachGroup: boolean;
-        attachInReceipts: boolean;
       } | null;
     };
     defaultThinking: { rows: string[]; closedByEscape: boolean };
@@ -545,17 +542,17 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       assert.equal(
         report.initial.line!.controlsInsideBox && report.initial.line!.controlsBelowField,
         true,
-        "the add/receipt/pick controls are not inside the box below the field",
+        "the add/page/pick controls are not inside the box below the field",
       );
       assert.equal(
-        report.initial.line!.plusLeadsRow && report.initial.line!.plusLeftOfAttach,
+        report.initial.line!.plusLeadsRow && report.initial.line!.plusLeftOfPage,
         true,
-        `the add control does not lead the row: plus ${JSON.stringify(report.initial.line!.plus)} attach ${JSON.stringify(report.initial.line!.attach)}`,
+        `the add control does not lead the row: plus ${JSON.stringify(report.initial.line!.plus)} page ${JSON.stringify(report.initial.line!.page)}`,
       );
       assert.equal(
-        report.initial.line!.attachLeftOfPage,
+        report.initial.line!.pageLeftOfPick,
         true,
-        `the receipt control is not left of the page pill: attach ${JSON.stringify(report.initial.line!.attach)} page ${JSON.stringify(report.initial.line!.page)}`,
+        `the page pill is not left of the runtime pick: page ${JSON.stringify(report.initial.line!.page)} pick ${JSON.stringify(report.initial.line!.pick)}`,
       );
       assert.equal(
         report.initial.line!.pageLeftOfPick,
@@ -567,8 +564,6 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         report.initial.line!.pickRightGap >= 0 && report.initial.line!.pickRightGap <= 12,
         `the runtime pick is ${report.initial.line!.pickRightGap}px from the dock's right end`,
       );
-      assert.equal(report.initial.line!.attachGroup, true, "the attach control left its receipt group");
-      assert.equal(report.initial.line!.attachInReceipts, true, "the attach control is not inside the receipts group");
       assert.equal(report.initial.pills.length, 2, "expected exactly the model and thinking pills");
       assert.equal(report.initial.pills[0]?.label, "space-bunny-alpha", "the model pill lost the default label");
       assert.equal(report.initial.pills[0]?.override, "false", "an unpicked model pill claimed an override");
@@ -1507,8 +1502,8 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       attachmentAccept: string | null;
       attachmentMultiple: boolean;
       receiptInputPresent: boolean;
-      receiptAccept: string | null;
-      distinctPickers: boolean;
+      pickerCount: number;
+      legacyAttachControl: boolean;
     };
     afterEnter: { sends: number; before: string; after: string };
     afterRealEnter: { value: string; lines: number; sends: number };
@@ -1524,6 +1519,13 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         input?: string;
         attachments?: { id: string; kind: string; name: string }[] | null;
       };
+    };
+    imageOffer: {
+      chipKind: string | null;
+      offer: string | null;
+      actionText: string | null;
+      actionLabel: string | null;
+      visible: boolean;
     };
     live: {
       whileEmpty?: { disabled: boolean; steerButton: boolean };
@@ -1593,8 +1595,8 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       );
       assert.match(report.initial.plusLabel ?? "", /attach/i, "the add control names itself");
 
-      // Both attach flows survive, as two pickers: the add control takes any
-      // file; the receipt control takes one picture the ledger can cite.
+      // One attach flow, one picker: the add control takes any file, and the
+      // receipt is chosen afterwards on a picture's chip.
       assert.equal(report.initial.attachmentInputPresent, true, "the general attachment picker vanished");
       assert.equal(report.initial.attachmentAccept, null, "the general picker grew an accept filter");
       assert.equal(
@@ -1602,13 +1604,17 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         true,
         "the general picker stopped taking several files",
       );
-      assert.equal(report.initial.receiptInputPresent, true, "the receipt picker vanished");
+      assert.equal(report.initial.receiptInputPresent, false, "a second receipt picker grew back");
       assert.equal(
-        report.initial.receiptAccept,
-        "image/png,image/jpeg",
-        `the receipt picker is not image-only: ${report.initial.receiptAccept}`,
+        report.initial.pickerCount,
+        1,
+        `the composer holds ${report.initial.pickerCount} file picker(s)`,
       );
-      assert.equal(report.initial.distinctPickers, true, "the two attach flows share one picker");
+      assert.equal(
+        report.initial.legacyAttachControl,
+        false,
+        "the removed receipt control is still in the composer",
+      );
 
       // The keys: Enter breaks the line and sends nothing; Ctrl+Enter sends.
       assert.equal(report.afterEnter.sends, 0, "Enter sent the message");
@@ -1641,6 +1647,22 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         "video",
         "the turn did not carry the attachment's kind",
       );
+
+      // A picture's chip offers the receipt, because this page's vault has the
+      // Finance kit: the chip's action is the only route into the promotion.
+      assert.equal(report.imageOffer.chipKind, "image", "the picture's chip lost its kind");
+      assert.equal(report.imageOffer.offer, "true", "the picture's chip carried no receipt offer");
+      assert.equal(
+        report.imageOffer.actionText,
+        "Use as receipt",
+        `the chip's action reads ${JSON.stringify(report.imageOffer.actionText)}`,
+      );
+      assert.equal(
+        report.imageOffer.actionLabel,
+        "Use photo.jpg as a receipt",
+        `the chip's action names ${JSON.stringify(report.imageOffer.actionLabel)}`,
+      );
+      assert.equal(report.imageOffer.visible, true, "the chip's action was not visible");
 
       // While a turn runs: the composer stays open and grows the two gestures.
       assert.equal(report.live.during.disabled, false, "the composer closed during the turn");
@@ -1728,6 +1750,7 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
    * than a shorter green run.
    */
   const RECEIPT_SCENARIOS = [
+    // The ledger's own path, unchanged: a row cites the finance store's file.
     "posts a row citing the stored receipt",
     "refuses a path escape",
     "refuses another domain's store",
@@ -1737,28 +1760,45 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
     "one receipt backs two rows",
     "correction keeps the receipt",
     "undo leaves the file",
+    // The preparation path the promotion reuses.
     "stores the original in the finance file store",
     "keeps a PNG as stored and copies it to the model as JPEG",
     "re-encodes a busy original under the copy ceiling",
     "refuses bytes that are not an image",
     "refuses an original over 25 MB",
+    "refuses a canvas bigger than a receipt can hold",
     "refuses when the Finance kit is missing",
-    "holds the prepared receipt for the turn that follows",
+    // The promotion channel: attach the picture, then press "Use as receipt".
+    "attaches the picture as a general attachment first",
+    "promotes the attached picture into the finance store and the receipt slot",
+    "moves the picture out of the general-attachment store",
+    "a refusal leaves the waiting receipt untouched",
+    "posts a row citing the promoted receipt",
+    "hands the promoted receipt to the turn that follows",
+    "refuses a non-picture and leaves it waiting",
+    "refuses a file whose bytes are not a picture and leaves it waiting",
+    "refuses an attachment it is not holding",
+    "replaces the receipt instead of holding two",
     "will not hand over a receipt it does not hold",
+    // The turn the promoted receipt rides.
     "posts a text-only turn as a plain string",
     "posts a receipt turn as a text part and an image part",
     "names the stored path in the turn's instructions",
     "keeps a busy receipt turn under the body ceiling",
     "refuses a turn naming a receipt it does not hold",
-    "shows a chip when a receipt is picked",
-    "carries the stored path on the turn and clears the chip",
-    "shows a chip when a receipt is dropped",
-    "shows a chip when a receipt is pasted",
+    // The composer's chip: the pick, the press, and the one receipt per turn.
+    "shows an attachment chip with 'Use as receipt' when a JPEG is picked",
+    "moves the picture into the receipt chip on 'Use as receipt'",
+    "carries the promoted path on the turn and no attachment",
+    "drops a picture as an attachment, not a receipt",
+    "pastes a picture as an attachment, not a receipt",
     "replaces the pending receipt rather than adding one",
     "sends no receipt once the chip is removed",
     "clears the pending receipt when the chat changes",
-    "photographs the chip and the turn that carried it",
-    "shows the refusal and keeps no chip",
+    "photographs the chip with the action and the turn that carried a receipt",
+    "shows the refusal and keeps the attachment chip",
+    "offers no 'Use as receipt' in a vault without the Finance kit",
+    "keeps the receipt chip when a later promotion is refused",
   ];
 
   function runReceiptDriver(): Promise<number> {
@@ -1766,7 +1806,7 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       execFile(
         electron,
         [path.join(desktopRoot, "e2e/receipt-attach.electron.mjs")],
-        { cwd: desktopRoot, timeout: 120_000 },
+        { cwd: desktopRoot, timeout: 180_000 },
         (error) => {
           if (error && typeof error.code !== "number") {
             reject(error);
@@ -1785,8 +1825,8 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
     fixture?: { path: string; bytes: number };
   };
 
-  describe("receipt attach", () => {
-    it("stores an original and cites it on the row it produces", async (t) => {
+  describe("receipt promotion", () => {
+    it("promotes an attached picture and cites it on the row it produces", async (t) => {
       if (!(await devServerUp())) {
         t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
         return;

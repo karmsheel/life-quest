@@ -10,11 +10,18 @@
  *
  * This rig has no UI leg on purpose. Everything it checks lives in the main
  * process - the vault write, the pending store, the turn body, the
- * instructions - and the RENDERER half of the feature (the composer's chips,
- * the attach control, the drag and the paste) is the subject of
+ * instructions - and the RENDERER half of the feature (the composer's one add
+ * control, the chips, the drag and the paste) is the subject of
  * `composer-keys-attachments.electron.mjs`. Driving the composer here as well
  * would make this rig fail for a reason that has nothing to do with what it
  * proves.
+ *
+ * The composer has ONE file control now: a picture is attached here like any
+ * other file, and it only becomes a ledger receipt when the operator presses
+ * the chip's "Use as receipt", which is the promotion channel
+ * (`receipt-attach.electron.mjs`). This rig therefore owns the general path's
+ * own promises: storing, inlining, describing, and the pending store's
+ * add/remove/take bookkeeping the promotion leans on.
  *
  * Why it bundles: Electron's main process cannot import the app's TypeScript,
  * so the modules under test are bundled with the same esbuild call `dev.mjs`
@@ -44,7 +51,14 @@
  *     generalised. The receipt rides its own pending slot and keeps its own
  *     instruction wording, but the wire does not know that: the gateway sees
  *     one list of parts.
- *  8. A steer refusal that says "steer failed", which tells the operator
+ *  8. The pending store's one-by-one bookkeeping breaking because the
+ *     promotion added a `remove`. A picture leaves the pending set when it is
+ *     promoted, and the files waiting beside it must stay: a `remove` that
+ *     cleared the list would strand the other attachments of the same turn.
+ *  9. The general attach path quietly becoming a receipt path. Storing a
+ *     picture must create no finance store and hold no receipt: the promotion
+ *     is the only thing that does either, and only on an explicit press.
+ * 10. A steer refusal that says "steer failed", which tells the operator
  *     nothing about whether their message went anywhere.
  *
  * Exit code 0 = every invariant held.
@@ -80,6 +94,9 @@ const MODULES = [
   "packages/vault-core/src/index.ts",
   "apps/desktop/electron/attachment-store.ts",
   "apps/desktop/electron/pending-attachment.ts",
+  // The receipt slot is the thing the general path must never fill; it is here
+  // so the "a picture attached is not a receipt" claim reads the real slot.
+  "apps/desktop/electron/pending-receipt.ts",
   "apps/desktop/electron/companion-client.ts",
 ];
 
@@ -322,6 +339,17 @@ async function main() {
     );
   }
 
+  // 3b - an attached picture is not a receipt. The general path must not create
+  // the finance store or hold a receipt: the promotion is the only press that
+  // does either, and it is not what this rig exercised.
+  check(
+    "an attached picture creates no finance receipt",
+    fs.existsSync(path.join(VAULT, "domains/financial/data/files")) === false &&
+      mod.pendingReceipt.peek() === null,
+    `finance store ${fs.existsSync(path.join(VAULT, "domains/financial/data/files"))} / ` +
+      `receipt slot ${mod.pendingReceipt.peek()?.relPath ?? "empty"}`,
+  );
+
   // 4 - the turn body: one image part per image, no part for a video.
   const attachments = [
     {
@@ -485,6 +513,37 @@ async function main() {
     `${pending.peek().length} left`,
   );
   check("taking an unknown id yields nothing", pending.take(["nope"]).length === 0, "got one");
+
+  // 6b - the promotion's own bookkeeping: taking one picture out of the pending
+  // set leaves every attachment waiting beside it.
+  pending.clear();
+  pending.add({
+    id: "keep-me",
+    kind: "image",
+    name: "kept.jpg",
+    size: 10,
+    mime: "image/jpeg",
+    relPath: "attachments/files/x/kept.jpg",
+    dataUrl: "data:image/jpeg;base64,AAAA",
+  });
+  pending.add({
+    id: "promoted-away",
+    kind: "image",
+    name: "promoted.jpg",
+    size: 11,
+    mime: "image/jpeg",
+    relPath: "attachments/files/x/promoted.jpg",
+    dataUrl: "data:image/jpeg;base64,BBBB",
+  });
+  pending.remove("promoted-away");
+  check(
+    "removing one pending attachment leaves the others",
+    pending.find("promoted-away") === null &&
+      pending.find("keep-me") !== null &&
+      pending.peek().length === 1,
+    `${pending.peek().length} left: ${JSON.stringify(pending.peek().map((row) => row.id))}`,
+  );
+  pending.clear();
 
   // 7 - the steer refusal wording. The gateway is NOT called here: these are
   // our own sentences, and the gateway's status codes are mapped onto them.

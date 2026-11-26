@@ -130,6 +130,7 @@ import {
   setFxRateSource,
   fxSourceOf,
   listInstalledKits,
+  isReceiptStoreReady,
   getFinanceKitSettings,
   setFinanceCaptureAccount,
   budgetVsActual,
@@ -1096,26 +1097,83 @@ export async function dbFileSave(
 }
 
 /**
- * Take one receipt from the composer: store the original, re-encode the copy
- * Hermes will see, and leave that copy waiting for the next turn. The copy
- * never leaves this process — the renderer gets the display fields, and the
- * turn names the path.
+ * Turn one waiting attachment into the receipt the next turn carries.
+ *
+ * The composer has one file control: the plus takes anything, and a picture's
+ * chip offers "use as receipt". That press is the receipt's explicit intent —
+ * a receipt is a picture with a meaning, because the ledger cites it as a
+ * transaction's source and the model gets a re-encoded copy instead of the
+ * whole original. So this reads the bytes main already stored, prepares the
+ * finance-store original and the model copy the way the receipt path always
+ * has, and moves the picture from the attachment slot to the receipt slot.
+ *
+ * The stores are changed only after the preparation succeeds: a refusal leaves
+ * the attachment exactly where it was, with nothing stored and nothing held.
  */
-export async function receiptAttach(input: {
-  bytes: Uint8Array;
-  mime: string;
-  name: string;
+export async function receiptPromoteAttachment(input: {
+  id: string;
 }): Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>> {
   return withVault(async (root) => {
-    const prepared = await prepareReceipt(root, input);
+    const pending = pendingAttachments.find(input.id);
+    if (!pending) {
+      return { ok: false, error: "That attachment is no longer waiting." };
+    }
+    if (pending.kind !== "image") {
+      return { ok: false, error: "Only a picture can become a receipt." };
+    }
+
+    // The bytes are read out of the vault rather than handed back through the
+    // bridge: the path in the pending store is the only source of the file, so
+    // the receipt the ledger cites and the picture the operator picked cannot
+    // come from two different places.
+    let target: string;
+    let bytes: Uint8Array;
+    try {
+      target = await assertPhysicalContainment(
+        root,
+        path.resolve(root, ...pending.relPath.split("/")),
+      );
+      const stat = await fs.stat(target);
+      if (!stat.isFile()) {
+        return { ok: false, error: "Only a picture can become a receipt." };
+      }
+      bytes = new Uint8Array(await fs.readFile(target));
+    } catch (err) {
+      // A missing file is the stale-chip case — the pending store outlived the
+      // bytes. Anything else (a symlinked component, a permission that changed
+      // under the chip, a read that failed) is not the operator's pick being
+      // gone, and saying it is would send them to pick the file again with the
+      // chip still on screen failing the same way.
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      return {
+        ok: false,
+        error:
+          code === "ENOENT"
+            ? "That attachment is no longer waiting."
+            : "That attachment could not be read back.",
+      };
+    }
+
+    const prepared = await prepareReceipt(root, {
+      bytes,
+      mime: pending.mime,
+      name: pending.name,
+    });
     if (!prepared.ok) return prepared;
     const { relPath, fileId, name, size, modelCopy } = prepared.value;
+    pendingAttachments.remove(pending.id);
     pendingReceipt.set({
       relPath,
       name,
       dataUrl: `data:image/jpeg;base64,${Buffer.from(modelCopy).toString("base64")}`,
       bytes: modelCopy.byteLength,
     });
+    // The picture moved, not copied: the finance store holds the same original
+    // bytes now, so leaving the general-attachment copy behind would be the
+    // vault paying twice for one photo. This is last and best-effort — a file
+    // that cannot be removed leaves a harmless duplicate, never a receipt
+    // without its original.
+    await fs.unlink(target).catch(() => undefined);
     return { ok: true, value: { relPath, fileId, name, size } };
   });
 }
@@ -1123,11 +1181,11 @@ export async function receiptAttach(input: {
 /**
  * Attach any file to the chat.
  *
- * The general path, next to the receipt path and not instead of it: a receipt
- * is a picture with a meaning, re-encoded and cited by a finance-domain path,
- * and it keeps its own behaviour. This accepts anything - a video, a
+ * This is the composer's one file control: it accepts anything - a video, a
  * recording, a PDF, a photo - and stores the ORIGINAL bytes in the vault so
- * the agent can reach the file with its own tools.
+ * the agent can reach the file with its own tools. A picture attached here is
+ * a general attachment; the chip's "use as receipt" promotes it through the
+ * finance path when the operator means it as evidence for a transaction.
  *
  * The id minted here is the join key. The renderer sends it back with the
  * turn, and main resolves the stored path from the pending store, so the path
@@ -1349,6 +1407,19 @@ export async function kitInstallFinance(): Promise<Result<unknown>> {
 
 export async function kitList(slug: string): Promise<Result<string[]>> {
   return withVault((root) => listInstalledKits(root, slug));
+}
+
+/**
+ * Whether the receipt path can store and cite a picture right now.
+ *
+ * The composer asks this before offering "Use as receipt" on an attached
+ * picture. The answer has to be main's own (`isReceiptStoreReady`), not the
+ * kit registry's: the registry still lists a kit whose Financial area was
+ * archived, and that vault has no store the ledger may cite. One predicate in
+ * one place is what keeps the offer and the press from disagreeing.
+ */
+export async function receiptReady(): Promise<Result<boolean>> {
+  return withVault(async (root) => ({ ok: true, value: await isReceiptStoreReady(root) }));
 }
 
 export async function kitFinanceSettings(): Promise<Result<unknown>> {

@@ -107,11 +107,14 @@ happens.
 ### Log a purchase from chat
 
 1. In the chat dock, type what happened — "Bought food for R85 today" — and send.
-2. Or attach a photo: use **Attach a receipt** (the picture-plus control in the
-   composer's control row at the bottom left, beside the add control), drop one
-   image on the form, or paste one into the field. One receipt rides one turn; a
-   second attach replaces the first. The chip shows the file name and size, and
-   **Remove receipt** clears it.
+2. Or attach a photo: choose the plus (**Attach a file**) in the composer's
+   control row at the bottom left, drop one image on the form, or paste one into
+   the field — the same gesture attaches any file. The picture waits as a chip
+   above the field, and a JPEG or PNG chip carries **Use as receipt** while the
+   vault has the Finance kit installed and the Financial area live. Press it and
+   the picture moves into the receipt chip in the control row, showing its file
+   name and size; **Remove receipt** clears it. One receipt rides one turn;
+   promoting a second picture replaces the first.
 3. The companion reads the turn, including the image when one is attached, and
    calls its capture tool. A posted capture answers with a receipt line naming
    the amount, currency, date, account, category and payee — for example
@@ -187,7 +190,7 @@ confirmation. The mechanics — validation, backup, registry merge — are cover
 | Data **Exchange rate** panel | The rate source, the rate in force, the last read and the last error. |
 | Finance databases | Ordinary database pages; no separate finance screen. |
 | Starter pages | Ordinary page canvases with finance blocks: ledger table, spend metric and chart, budget vs actual, net worth, scenario compare. |
-| Chat composer | In the control row at the bottom left, beside the add control: **Attach a receipt**, the chip, **Remove receipt**; the posted receipt line in the reply. |
+| Chat composer | The plus (**Attach a file**) in the control row at the bottom left; **Use as receipt** on a JPEG or PNG chip while the kit and Financial area are live; the receipt chip (name, size, **Remove receipt**) in the control row beside the plus; the posted receipt line in the reply. |
 
 ## Rules and behaviour
 
@@ -250,18 +253,25 @@ account is chosen in this order: one named in the sentence, the default capture
 account, the sole transactional account in that currency; otherwise it asks. The
 provenance is the chat thread, which is what undo and correct key on.
 
-Receipt images. The attach control accepts one JPEG or PNG per turn, up to
-25 MB, sniffed from the bytes rather than trusted from the file name. The
-original goes into `domains/financial/data/files/<fileId>/<name>` exactly as it
-arrived, and the row cites that vault-relative path in `source_file`. The copy
-the agent sees is a re-encoded JPEG at the 1600 px / quality 80 rung, stepping
-down to 1600/60 and 1200/55 until it is at or under 2 MB; if none fits, the
-attach is refused with **This receipt could not be prepared for the agent.**
-and nothing is written. Refusals are specific: **Receipts must be JPEG or PNG
-images.**, **That receipt is larger than 25 MB.**, **Install the Finance kit
-first**. The agent may only cite a path that already exists in the finance file
-store; a made-up or escaping path refuses the whole capture. Undo deletes the
-row and leaves the file; correct preserves `source_file`.
+Receipt images. Attach the picture with the composer's plus (**Attach a file**) —
+the same control takes any file — then press **Use as receipt** on its chip. That
+press is what makes the picture a receipt: its original goes into
+`domains/financial/data/files/<fileId>/<name>` exactly as it arrived, and the row
+cites that vault-relative path in `source_file`. A receipt is one JPEG or PNG, up
+to 25 MB, by picker, drag-and-drop or a pasted screenshot, sniffed from the bytes
+rather than trusted from the file name. The copy the agent sees is a re-encoded
+JPEG at the 1600 px / quality 80 rung, stepping down to 1600/60 and 1200/55 until
+it is at or under 2 MB; if none fits, the press is refused with **This receipt
+could not be prepared for the agent.** and nothing is written. The offer cannot
+foresee the canvas, so a picture over 12,000 px a side or 40 MP is refused when
+you press, with **That picture has more pixels than a receipt can hold.** A chip
+that is not a JPEG or PNG carries no **Use as receipt**, and neither does any
+picture while the Finance kit is missing or the Financial area is archived, so
+the offer is absent rather than a dead-end press. A file over 25 MB is refused
+when you attach it, with **That file is larger than 25 MB.** The agent may only
+cite a path that already exists in the finance file store; a made-up or escaping
+path refuses the whole capture. Undo deletes the row and leaves the file; correct
+preserves `source_file`.
 
 The FX rate. Only USD→ZAR exists; the house currency is ZAR and USD amounts
 are converted at the stored rate. The default source is

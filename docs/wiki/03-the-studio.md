@@ -294,13 +294,14 @@ The chat dock:
   lives in the rail's **Chats** section.
 - The composer: one bordered box at the foot of the dock, the field
   (*Message Pi…* or *Message Hermes…*, depending on which companion answers) and
-  a control row inside its edges — attachments and the page pill at the leading
-  end, model and thinking pills and send/stop at the trailing end. Enter breaks
-  the line; **Ctrl/Cmd+Enter** sends, and Settings → **Composer** can hand the
-  send to plain Enter instead. The box keeps a margin on each side of the
-  dock, and that margin grows as the dock is dragged wider — at the dock's
-  narrowest the composer fills it edge to edge, and on a wide dock each side is
-  about an eighth of the width — so the composer never stretches the whole bar.
+  a control row inside its edges — the add control (**Attach a file**), the page
+  pill and a waiting receipt at the leading end, model and thinking pills and
+  send/stop at the trailing end. Enter breaks the line; **Ctrl/Cmd+Enter** sends,
+  and Settings → **Composer** can hand the send to plain Enter instead. The box
+  keeps a margin on each side of the dock, and that margin grows as the dock is
+  dragged wider — at the dock's narrowest the composer fills it edge to edge, and
+  on a wide dock each side is about an eighth of the width — so the composer
+  never stretches the whole bar.
   The message text keeps the same margins: the transcript's content box is the
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.

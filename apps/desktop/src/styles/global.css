@@ -9761,7 +9761,7 @@ button.chat-panel__activity-line:hover {
 /* The composer's surface: the field the operator writes in and the control row
    that belongs to it, inside one accent ring. The ring used to be the field's
    own border with the row one gap under it; now the box owns the ring, so the
-   model and thinking picks, the send control, the add/receipt controls and the
+   model and thinking picks, the send control, the add control and the
    page pill are all visibly part of the composer rather than a footer under it.
    `position: relative` is what anchors the pills' menus — they open upward over
    the transcript, because the composer is the bottom of the panel. */
@@ -9822,10 +9822,9 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
-/* The attach control and, when one is waiting, the receipt itself: the second
-   end of the composer's control row, beside the add control. `min-width: 0`
-   lets a long file name ellipsize rather than push the trailing cluster off the
-   row's right end. */
+/* What the composer carries beside the add control: the page pill and, when one
+   is waiting, the receipt itself. `min-width: 0` lets a long page name or file
+   name ellipsize rather than push the trailing cluster off the row's right end. */
 .chat-panel__receipts {
   display: flex;
   align-items: center;
@@ -9833,24 +9832,9 @@ button.chat-panel__activity-line:hover {
   min-width: 0;
 }
 
-/* The picker is driven by the button beside it; the input stays reachable to
-   assistive technology rather than being display:none. */
-.chat-panel__receipt-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* The general attachment picker: the same hidden input, for the add control at
-   the composer's bottom left. It has its own class because the receipt's picker
-   is a different thing with a different job, and one class for both would make
-   a query for one of them find the other. */
+/* The general attachment picker: the hidden input the add control at the
+   composer's bottom left opens. It stays reachable to assistive technology
+   rather than being display:none. */
 .chat-panel__attachment-input {
   position: absolute;
   width: 1px;
@@ -9863,35 +9847,7 @@ button.chat-panel__activity-line:hover {
   border: 0;
 }
 
-.chat-panel__attach {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-  transition:
-    color var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out);
-}
-
-.chat-panel__attach:not(:disabled):hover {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-}
-
-.chat-panel__attach:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* The page the next turn will quote, beside the attach control.
+/* The page the next turn will quote, beside the add control.
    It wears the receipt's shape and the footer line's proportions: one icon, the
    screen's own name, and a small word for the state. The line under the field is
    short, so the pill shrinks before it pushes the runtime pick off the right end
@@ -10312,6 +10268,49 @@ button.chat-panel__activity-line:hover {
 .chat-panel__attachment-remove:hover,
 .chat-panel__queued-remove:hover {
   color: var(--accent);
+}
+
+.chat-panel__attachment-remove:disabled,
+.chat-panel__queued-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The picture's one offered meaning, inside its chip: a press moves it into the
+   receipt slot the ledger cites. It is a word rather than a glyph because the
+   two attach flows used to be two glyphs side by side and the operator could not
+   tell them apart; this press says what it does. The chip takes the width for
+   it, and the file name gives it up. */
+.chat-panel__attachment[data-receipt-offer="true"] {
+  max-width: 17rem;
+}
+
+.chat-panel__attachment[data-receipt-offer="true"] .chat-panel__attachment-name {
+  max-width: 7rem;
+}
+
+.chat-panel__attachment-receipt {
+  flex: none;
+  height: 1.125rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-panel__attachment-receipt:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.chat-panel__attachment-receipt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* The two live-turn gestures, under the field while a turn runs: steer the
