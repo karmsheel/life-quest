@@ -1417,11 +1417,21 @@ a {
    of deriving them from the skin's border, which is how Forge's three lines came
    out ember orange. Both halves come from tokens, so the three lines cannot drift
    apart: `--divider-width` is the one thickness they all wear. `flex: 0 0 auto`
-   keeps a squeezed rail from shrinking one of them to a sub-pixel line. */
+   keeps a squeezed rail from shrinking one of them to a sub-pixel line.
+
+   The line is the box's `border-top`, not a `background` fill, because a border
+   is the paint the engine snaps: Chromium rounds a used border width down to
+   whole device pixels, while a 1px fill lies on the sub-pixel grid and covers one
+   or two device rows depending on where the box happens to sit. On a fractional
+   display scale (Windows at 125% or 150%) that difference read as lines of
+   different weight — the first and third at two device pixels, the middle at one.
+   As a border every line paints exactly `floor(devicePixelRatio)` device pixels,
+   so at those scales all three are one pixel, and at 100% nothing changes. The
+   box keeps its `--divider-width` height, so the rail's spacing is untouched. */
 .nav-rail__divider {
   flex: 0 0 auto;
   height: var(--divider-width);
-  background: var(--divider);
+  border-top: var(--divider-width) solid var(--divider);
   margin: 0.4rem 0.35rem;
 }
 

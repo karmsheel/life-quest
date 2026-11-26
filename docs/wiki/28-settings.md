@@ -90,7 +90,9 @@ starred-theme quick menu, which is the same list this page curates. A theme
 colours the app's surfaces and its own borders, but the sidebar's three section
 dividers are app chrome: they stay 1px of neutral gray — a lighter gray in day and
 a darker one at night — in every theme, so changing theme never changes how the
-sidebar's groups are separated.
+sidebar's groups are separated. They are drawn as hairline borders, so a display
+scale of 125% or 150% keeps each one a single device pixel instead of letting a
+fill spread over two.
 
 Under the grid, **Install a theme** takes a Forge theme JSON file — *the shape this
 app and Hermes Desktop share* — with **Choose file…**. An installed theme arrives
