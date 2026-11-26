@@ -1686,7 +1686,7 @@ function registerIpcHandlers() {
   });
 
   /*
-   * Read one theme file on the operator's behalf — the Extensions editor's load.
+   * Read one theme file on the operator's behalf — the Customizations editor's load.
    *
    * The write side lives below and in `theme-store.ts`: the parser, the atomic
    * write and the history snapshot are one path now, shared with the

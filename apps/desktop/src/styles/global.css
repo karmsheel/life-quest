@@ -7,7 +7,7 @@
 @import "./pages.css";
 @import "./projects.css";
 @import "./automations.css";
-@import "./extensions.css";
+@import "./customizations.css";
 @import "./studio.css";
 @import "./vault-switcher.css";
 @import "./images.css";
@@ -13974,47 +13974,76 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
-/* The agent switcher: one block per agent offered in the current domain, now in
-   the composer's margin rather than over the transcript. The active block wears
-   the accent ring, so the answering agent is legible without reading a label.
-
-   The block is a child of the composer form, which is the box it belongs to. Wide
-   dock: it stands in the right-hand gutter the composer leaves, its bottom edge
-   level with the composer box's and its centre on the gutter's own centre — the
-   one column of empty space the bar has, put to work. Narrow dock: that gutter is
-   too thin to hold it (the 300px floor leaves 12px a side), so the same block
-   steps up above the form and takes the corner over the transcript's
-   bottom-right, where it still reads as the dock's agent control. The form, not
-   the whole band, is the anchor on purpose: the band also holds the interview
-   card and the retired-model notice, and a switcher that drifted up over those
-   would no longer be above the composer at all.
-
-   The switch is the container query under this rule: the band's width is the
-   gutter's world, so the layout that cannot hold the block is the layout the
-   query names. */
+/* The agent switcher, drawn from a recipe rather than a fixed shape.
+ *
+ * The dock's agent control is the one piece of the composer an operator is
+ * allowed to disagree with, so its shape is four closed axes (see
+ * `shared/agent-picker.ts`): a roster (`menu`/`inline`), labels, a ring and a
+ * mark size. The renderer only sets `data-*` attributes; every pixel lives here,
+ * in one block that owns every mode. That split is what keeps a new mode a data
+ * change plus a few lines here rather than another component.
+ *
+ * The three shipped modes, and why they look the way they do:
+ *   one-mark     one disc + chevron; the roster is behind a menu, so the composer
+ *                stays quiet and "who answers" is one click away when asked
+ *   named-chip   the same trigger with the answering agent's name beside it —
+ *                the mode for an operator who wants the answer legible at rest
+ *   quiet-stack  both discs inline in the composer's leading cluster, one
+ *                hairline each, so switching is one click and no capsule frames
+ *                the row
+ *
+ * Width is why the menu modes need two placements. The one-mark trigger is
+ * narrow enough to stand in the empty gutter the composer leaves on a wide dock;
+ * below that the gutter cannot hold it, and the same block steps above the form.
+ * `named-chip` cannot ride the same breakpoint — its width is the name's, not the
+ * mark's — so it keeps the fallback until the gutter is genuinely wide (see the
+ * labelled rule below). The geometry and both placements are otherwise the ones
+ * the old two-badge capsule used: the form, not the band, is the anchor, because
+ * the band also holds the interview card and the retired-model notice and a
+ * control that drifted up over those would no longer be above the composer.
+ */
 .agent-switcher {
+  /* The mark's optical size. The recipe's size axis is a word, so the ladder is
+     one custom property and the disc, the trigger and the menu rows all follow
+     it; nothing else in the block hard-codes a mark dimension. */
+  --agent-mark-size: 1.9rem;
+}
+
+.agent-switcher[data-size="compact"] {
+  --agent-mark-size: 1.55rem;
+}
+
+.agent-switcher[data-size="large"] {
+  --agent-mark-size: 2.3rem;
+}
+
+/* ── the menu roster: the floating trigger ───────────────────────────────── */
+
+/* The trigger is a quiet corner of the composer, not a second capsule. The old
+   block painted a card around both badges; that frame is exactly what the
+   one-mark mode removes, so the root paints nothing here and only the mark's
+   disc carries a ring. The trigger stays the form's child because the form owns
+   the gutter the trigger stands in. */
+.agent-switcher[data-roster="menu"] {
   position: absolute;
-  /* The gutter's centre, measured from the form's trailing edge (the form stops
-     one 0.75rem inside the band, which is the band's own padding). `right` puts
-     the trailing edge at half the gutter inside that line, and the transform
-     lifts it by half its own width, so the block centres in the empty column
-     instead of touching either edge of it. */
+  /* The gutter's centre. The form's trailing edge is the band's content edge —
+     0.75rem inside the panel, the band's own padding — so the empty column runs
+     from the composer box out to the panel edge. `right` puts this block's
+     trailing edge half a gutter inside the form, less that 0.75rem inset, and
+     the transform lifts it by half its own width: the two halve to the column's
+     centre, so the block stands in the empty gutter instead of touching either
+     edge of it. */
   right: calc(var(--composer-gutter) / 2 - 0.75rem);
   bottom: 0;
   transform: translateX(50%);
-  /* Under the composer's own menus (they wear z-index 3), so a model or
-     thinking menu opened upward at the dock's floor paints over the floating
-     block instead of being covered by it. The whole composer band paints after
-     the transcript, so this still floats above the chat. */
+  /* Under the composer's own menus (they wear z-index 3) while closed; the
+     roster menu lifts above them when it is open (see below). The whole
+     composer band paints after the transcript, so this still floats above the
+     chat. */
   z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.28rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
+  align-items: center;
 }
 
 /* The narrow dock: no gutter to stand in, so the block steps up above the
@@ -14022,42 +14051,255 @@ button.chat-panel__activity-line:hover {
    trailing 0.75rem inset (the form is already that far inside the band). It
    floats over the chat rather than covering the composer's own controls. */
 @container composer-band (max-width: 34rem) {
-  .agent-switcher {
+  .agent-switcher[data-roster="menu"] {
     right: 0;
     bottom: calc(100% + 0.35rem);
     transform: none;
   }
 }
 
-.agent-switcher__pill {
-  width: 2.05rem;
-  height: 2.05rem;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 999px;
+/* The trigger is wider than a bare mark when it names the agent, and a marked
+   trigger is wider still at `large`. Those widths belong to the name and the
+   size, not to the default, so each holds a wider dock before it can stand in
+   the gutter — the same fallback geometry as the 34rem rule, just later. 35rem
+   covers `large` with no label; 52rem covers the labelled trigger, because the
+   gutter does not reach a name's width until the dock is about 820px. */
+@container composer-band (max-width: 35rem) {
+  .agent-switcher[data-roster="menu"][data-size="large"] {
+    right: 0;
+    bottom: calc(100% + 0.35rem);
+    transform: none;
+  }
+}
+
+@container composer-band (max-width: 52rem) {
+  .agent-switcher[data-roster="menu"]:not([data-labels="none"]) {
+    right: 0;
+    bottom: calc(100% + 0.35rem);
+    transform: none;
+  }
+}
+
+.agent-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-quick) var(--ease-out);
+}
+
+.agent-switcher__trigger:hover {
+  background: var(--selected-soft);
+}
+
+.agent-switcher__trigger:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.agent-switcher__chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.agent-switcher__trigger[aria-expanded="true"] .agent-switcher__chevron {
+  transform: rotate(180deg);
+}
+
+/* The roster menu opens upward because the composer is the bottom of the panel;
+   it is right-aligned to the trigger so it grows over the composer rather than
+   off the dock's trailing edge. */
+.agent-switcher__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 15rem;
+  max-width: calc(100vw - 1.5rem);
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── one option, drawn in either roster ─────────────────────────────────── */
+
+.agent-switcher[data-roster="inline"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  /* The row gives up width before the composer's own controls do: at the 300px
+     dock the page pill ellipsizes first, and this stays whole. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* At the dock's 300px floor the one control row has to hold the add control,
+   the receipt control, the page pill, both marks, the model picks and the send
+   control — more than the column can fit. The page pill already ellipsizes to
+   its icon, and the marks cannot shrink past a disc each, so the row takes a
+   second line instead of clipping the send control; the same floor can also
+   squeeze a labelled inline roster, so the leading cluster is allowed to break
+   between its controls too. Only an inline roster pays this: the shipped
+   `one-mark` default floats above the form and costs the row nothing. */
+@container composer-band (max-width: 24rem) {
+  .chat-panel__composer-dock:has(.agent-switcher[data-roster="inline"]) {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+
+  .chat-panel__composer-dock:has(.agent-switcher[data-roster="inline"])
+    .chat-panel__composer-lead {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+}
+
+.agent-switcher__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.12rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-quick) var(--ease-out);
+}
+
+.agent-switcher__option:hover {
+  background: var(--selected-soft);
+}
+
+.agent-switcher__option:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+/* In the menu a row is two lines — the name and what the agent is for — so the
+   roster is readable, not only a second set of marks. The inline roster keeps
+   the one-line option the composer's control row needs. */
+.agent-switcher__menu .agent-switcher__option {
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-xs);
+  text-align: left;
+}
+
+.agent-switcher__menu .agent-switcher__option[aria-checked="true"] {
+  background: var(--selected-soft);
+}
+
+.agent-switcher__option-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.05rem;
+}
+
+.agent-switcher__name {
+  min-width: 0;
   overflow: hidden;
+  color: var(--fg);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trigger's name is quieter than a menu row's and bounded: it is a label on
+   a control, not a heading, and a long agent name must not push the chevron out
+   of the gutter. */
+.agent-switcher__trigger .agent-switcher__name {
+  max-width: 7rem;
+  font-weight: 500;
+}
+
+.agent-switcher__blurb {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+/* The mark's disc. It is the clip the artwork needs: the portraits are drawn
+   full-bleed and Pi is scaled past its box (see below), so the circle is what
+   keeps both inside the ring. No fill capsule — the disc is the mark's own
+   frame, not a card around it. */
+.agent-switcher__disc {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
+  width: var(--agent-mark-size);
+  height: var(--agent-mark-size);
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 50%;
   background: var(--panel, var(--card));
   color: var(--fg);
-  cursor: pointer;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    opacity var(--dur-quick) var(--ease-out);
 }
 
-.agent-switcher__pill:hover {
-  border-color: var(--border-strong, var(--border));
-}
-
-.agent-switcher__pill--active {
+/* The accent ring: the answering mark wears the brand's own ring and the shell's
+   soft fill, the same pair the old capsule's active pill used. The trigger
+   always shows the answering agent, so it always wears it. */
+.agent-switcher[data-ring="accent"] [aria-checked="true"] > .agent-switcher__disc,
+.agent-switcher[data-ring="accent"] .agent-switcher__trigger > .agent-switcher__disc {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-fill);
 }
 
+/* The hairline ring defers to the composer's own accent outline: one 1px border
+   per mark and no glow, so `quiet-stack` reads as marks on the row rather than
+   two small cards. The active one still lifts — that is the only signal it
+   gets — and it lifts to the accent ink rather than a fill. */
+.agent-switcher[data-ring="hairline"] .agent-switcher__disc {
+  border-color: var(--border);
+}
+
+.agent-switcher[data-ring="hairline"] [aria-checked="true"] > .agent-switcher__disc,
+.agent-switcher[data-ring="hairline"] .agent-switcher__trigger > .agent-switcher__disc {
+  border-color: var(--accent);
+}
+
+/* In the inline roster the idle marks are present but not competing: the
+   answering one is the only one at full ink. */
+.agent-switcher[data-roster="inline"] [aria-checked="false"] > .agent-switcher__disc {
+  opacity: 0.75;
+}
+
+.agent-switcher[data-roster="inline"] [aria-checked="false"]:hover > .agent-switcher__disc {
+  opacity: 1;
+}
+
+.agent-switcher__mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* A switch that is still coming up. The ring is already on the target (the
    choice moved on the click); this is the quiet second signal that its ensure
-   has not answered yet. It never blocks the control — a pill that goes dead
+   has not answered yet. It never blocks the control — a mark that goes dead
    under the pointer is the jitter this surface exists to avoid. */
-.agent-switcher__pill--pending {
+.agent-switcher [data-pending="true"] > .agent-switcher__disc {
   border-color: var(--accent);
   animation: agent-switcher-breathe 1.1s ease-in-out infinite;
 }
@@ -14073,26 +14315,20 @@ button.chat-panel__activity-line:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-switcher__pill--pending {
+  .agent-switcher [data-pending="true"] > .agent-switcher__disc {
     animation: none;
     box-shadow: 0 0 0 3px var(--accent-fill);
   }
 }
 
-.agent-switcher__pill:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
-.agent-switcher__icon {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+.agent-switcher__trigger:focus-visible,
+.agent-switcher__option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* The Nous girl's artwork is one black ink on nothing — a black-and-white
-   treatment with no palette of its own. On night's block and in the Settings
+   treatment with no palette of its own. On night's disc and in the Settings
    roster that black sinks into the dark card it sits on, so at night the same
    artwork is inverted to its white version; the day themes keep the artwork's
    own black. Only a mark already drawn as one ink takes this: a brand-coloured
@@ -14108,17 +14344,20 @@ button.chat-panel__activity-line:hover {
 }
 
 /* Pi's mark is the press kit's primary logo drawn as one ink, and its 800-unit
-   canvas keeps the brand's own ~40% margins. Drawn at 110% in the block, the
+   canvas keeps the brand's own ~40% margins. Drawn at 110% inside the disc, the
    whole drawing stays inside the circle — its corners sit inside the ring with
-   a little air — and reads as a peer of the full-bleed portraits. The same
-   rule repeats on the Settings roster. */
-.agent-switcher__icon.agent-switcher__icon--pi {
+   a little air — and reads as a peer of the full-bleed portraits. The same rule
+   repeats on the Settings roster (`.settings-agent__mark-icon--pi`). */
+.agent-switcher__mark--pi {
   width: 110%;
   height: 110%;
 }
 
+/* A mark with no artwork yet draws the agent's initial. It follows the same
+   ladder as the disc, so the letter is never small in a `large` disc or cramped
+   in a `compact` one. */
 .agent-switcher__initial {
-  font-size: 0.82rem;
+  font-size: calc(var(--agent-mark-size) * 0.42);
   font-weight: 700;
 }
 
@@ -14163,7 +14402,7 @@ button.chat-panel__activity-line:hover {
   display: block;
 }
 
-/* See the Pi rule under `.agent-switcher__icon` above. */
+/* See the Pi rule under `.agent-switcher__mark--pi` above. */
 .settings-agent__mark .settings-agent__mark-icon--pi {
   width: 110%;
   height: 110%;

@@ -196,7 +196,7 @@ const SAMPLE = `(() => {
     };
   };
   // The governed shelf: Notebox, Decisions, Daily Journal, Automations,
-  // Extensions. It is
+  // Customizations. It is
   // the group with its own divider above it, at the foot of the rail, not the
   // wing's list above.
   const governed = document.querySelector('[data-nav-group="governance"]');
@@ -1531,11 +1531,11 @@ async function main() {
   const landing = await sample(win);
   checks.rail = landing.links;
   const labels = landing.links.map((entry) => entry.label);
-  if (labels[labels.length - 1] !== "Extensions") {
-    failure(`the governed shelf does not end with Extensions: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 1] !== "Customizations") {
+    failure(`the governed shelf does not end with Customizations: ${JSON.stringify(labels)}`);
   }
   if (labels[labels.length - 2] !== "Automations") {
-    failure(`Extensions is not directly under Automations: ${JSON.stringify(labels)}`);
+    failure(`Customizations is not directly under Automations: ${JSON.stringify(labels)}`);
   }
   if (labels[labels.length - 3] !== "Daily Journal") {
     failure(`Automations is not directly under Daily Journal: ${JSON.stringify(labels)}`);
@@ -1569,17 +1569,17 @@ async function main() {
     if (!automationsLink.icon) failure("the Automations entry drew no icon");
     if (automationsLink.active) failure("Automations is marked active on the Daily Journal route");
   }
-  const extensionsLink = landing.links.find((entry) => entry.label === "Extensions");
-  if (!extensionsLink) {
-    failure("the rail carries no Extensions entry at all");
+  const customizationsLink = landing.links.find((entry) => entry.label === "Customizations");
+  if (!customizationsLink) {
+    failure("the rail carries no Customizations entry at all");
   } else {
-    if (!(extensionsLink.href ?? "").endsWith("/extensions")) {
+    if (!(customizationsLink.href ?? "").endsWith("/customizations")) {
       failure(
-        `the Extensions entry points at ${JSON.stringify(extensionsLink.href)}, expected the extensions route`,
+        `the Customizations entry points at ${JSON.stringify(customizationsLink.href)}, expected the customizations route`,
       );
     }
-    if (!extensionsLink.icon) failure("the Extensions entry drew no icon");
-    if (extensionsLink.active) failure("Extensions is marked active on the Daily Journal route");
+    if (!customizationsLink.icon) failure("the Customizations entry drew no icon");
+    if (customizationsLink.active) failure("Customizations is marked active on the Daily Journal route");
   }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────

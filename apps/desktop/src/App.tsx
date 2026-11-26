@@ -12,7 +12,7 @@ import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
 import AutomationsPage from "@/pages/AutomationsPage";
-import ExtensionsPage from "@/pages/ExtensionsPage";
+import CustomizationsPage from "@/pages/CustomizationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import ArchitecturePage from "@/pages/ArchitecturePage";
@@ -143,7 +143,10 @@ function AppRoutes() {
           <Route path="/act" element={<ActPage />} />
           <Route path="/notes" element={<DailyNotePage />} />
           <Route path="/automations" element={<AutomationsPage />} />
-          <Route path="/extensions" element={<ExtensionsPage />} />
+          <Route path="/customizations" element={<CustomizationsPage />} />
+          {/* The old address. Pins and bookmarks kept /extensions alive; the
+              redirect keeps them working without keeping the old name in the UI. */}
+          <Route path="/extensions" element={<Navigate to="/customizations" replace />} />
           <Route path="/daily" element={<DailySchedulePage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />

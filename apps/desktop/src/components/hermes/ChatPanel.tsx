@@ -71,7 +71,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
-import { AgentSwitcher } from "@/components/hermes/AgentSwitcher";
+import { AgentSwitcher, useAgentPicker } from "@/components/hermes/AgentSwitcher";
 import {
   ChatSessionsProvider,
   useChatSessions,
@@ -224,6 +224,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const capabilities = normalizeCapabilities(
     knownHarnesses?.find((entry) => entry.active)?.capabilities,
   );
+  /*
+    Which picker recipe the dock wears, read again here because the roster axis
+    decides *where* the switcher mounts, not only how it looks: `menu` keeps it
+    as the composer's own child (the stylesheet floats it in the gutter), and
+    `inline` puts it in the leading cluster of the dock's control row, where
+    switching is one click. The swim lane is the panel's because the panel owns
+    the composer's markup; the switcher keeps its own copy of the same hook for
+    the pixels it draws. A harness page with no ThemeProvider gets the shipped
+    default from both reads, so the two can never disagree.
+  */
+  const agentPicker = useAgentPicker();
+  const inlineAgentPicker = agentPicker.recipe.roster === "inline";
   const sessions = chat.sessions;
   const sessionId = chat.activeId;
   /*
@@ -2658,6 +2670,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   </div>
                 ) : null}
+                {/*
+                  The inline roster on the chain's own composer. The chain has no
+                  dock row to lead — its field fills the form — so the same quiet
+                  row takes the line above the field: the chain's first control,
+                  where the menu trigger would otherwise have floated in the
+                  gutter. The menu roster keeps the form-child mount below.
+                */}
+                {inlineAgentPicker ? (
+                  <div className="chat-panel__composer-lead">
+                    <AgentSwitcher />
+                  </div>
+                ) : null}
                 <div
                   className={
                     chainControlVisible
@@ -2691,9 +2715,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
-                {/* The same switcher on the chain's own composer, anchored to
-                    the form it belongs to: see the thread composer's copy. */}
-                <AgentSwitcher />
+                {/*
+                  The menu roster's mount on the chain composer: the form is the
+                  anchor a floating trigger needs, and a pill can never submit
+                  the field above it because every control here is
+                  `type="button"`. Inline mode draws above the field instead.
+                */}
+                {inlineAgentPicker ? null : <AgentSwitcher />}
               </form>
             ) : (
               <form
@@ -3041,6 +3069,17 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                           </div>
                         ) : null}
                       </div>
+                      {/*
+                        The inline roster's mount: a quiet row at the end of the
+                        leading cluster, after the page pill and the receipt —
+                        the same cluster that is what the next turn carries. It
+                        sits inside the dock row rather than floating so
+                        `quiet-stack` is one click from the field. The menu
+                        roster keeps the form-child mount below, where the
+                        floating trigger is anchored to the composer it belongs
+                        to.
+                      */}
+                      {inlineAgentPicker ? <AgentSwitcher /> : null}
                     </div>
                     {/*
                       The turn's runtime pick and the send control: the trailing
@@ -3157,19 +3196,19 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </ul>
                 ) : null}
                 {/*
-                  The agent switcher lives on the composer, not over the
-                  transcript. The composer form is what owns the band's gutters,
-                  so the switcher can stand in the empty column the composer
-                  leaves on the dock's trailing side when the dock is wide, and
-                  ride just above the composer itself when the dock is too narrow
-                  to hold that column — the placement is the stylesheet's, keyed
-                  on the band's width. It is inside the form only for that
-                  anchor: every control in it is `type="button"`, so a pill can
-                  never submit the field above it. The chain surface draws the
-                  same switcher on its own composer, and the shortcuts reference,
-                  which has no composer, has none.
+                  The menu roster's mount. The agent switcher lives on the
+                  composer, not over the transcript: the composer form owns the
+                  band's gutters, so the trigger can stand in the empty column
+                  the composer leaves on the dock's trailing side when the dock
+                  is wide enough for it, and ride just above the composer when it
+                  is not — the placement is the stylesheet's, keyed on the band's
+                  width and the trigger's own width. It is inside the form only
+                  for that anchor: every control in it is `type="button"`, so a
+                  pill can never submit the field above it. The inline roster
+                  mounts inside the dock row instead (above), and the shortcuts
+                  reference, which has no composer, has none.
                 */}
-                <AgentSwitcher />
+                {inlineAgentPicker ? null : <AgentSwitcher />}
               </form>
             )}
           </div>

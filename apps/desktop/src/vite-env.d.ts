@@ -1098,7 +1098,7 @@ type LifequestApi = {
     file: string | null,
   ) => Promise<Result<{ keptFile: string | null }>>;
   themeDelete: (file: string) => Promise<Result<{ deleted: boolean }>>;
-  /** Read one theme file's raw JSON text — the Extensions editor's load. */
+  /** Read one theme file's raw JSON text — the Customizations editor's load. */
   themeRead: (file: string) => Promise<Result<string>>;
   /**
    * Write one theme file after main's own validation. The refusal names the

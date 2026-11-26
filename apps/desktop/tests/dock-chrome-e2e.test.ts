@@ -97,14 +97,27 @@ type Box = {
 type Switcher = {
   rect: Box;
   position: string;
+  /** The root wears a role only for the inline roster; the menu mode's control
+   *  is the trigger (see `trigger`). */
   role: string | null;
   ariaLabel: string | null;
+  /** The resolved recipe's mode name and its roster axis, as the root reports. */
+  mode: string | null;
+  rosterKind: string | null;
+  labels: string | null;
+  /** The answering agent: the trigger's `data-agent`, or the checked inline row. */
+  activeAgent: string | null;
+  trigger: {
+    agent: string | null;
+    expanded: boolean;
+    haspopup: string | null;
+    ariaLabel: string | null;
+    disabled: boolean;
+  } | null;
   /** True: the form is inside the band, so the band still contains it. */
   insideFooter: boolean;
   /** The claim: the switcher is a child of the composer form, not the band. */
   insideComposerForm: boolean;
-  pillCount: number;
-  pills: { name: string | null; active: string | null; disabled: boolean }[];
   centrePx: number;
   centreVsGutterCentrePx: number;
   leftOfComposerGapPx: number;
@@ -115,6 +128,20 @@ type Switcher = {
   intersectsComposerBox: boolean | null;
   bottomVsFooterTopPx: number | null;
   insidePanel: boolean;
+};
+
+/** The one open-and-list read of the picker's roster (`e2e/…:READ_ROSTER`). */
+type PickerRoster = {
+  shown: boolean;
+  inline?: boolean;
+  mode?: string | null;
+  rosterKind?: string | null;
+  opened: boolean;
+  menuOpen?: boolean;
+  names: string[];
+  options: { agent: string | null; name: string | null; active: boolean; disabled: boolean }[];
+  active: string | null;
+  reason?: string | null;
 };
 
 type Sample = {
@@ -419,11 +446,21 @@ type DockChromeReport = {
   } | null;
   agentSwitcher: {
     present: boolean;
+    mode: string | null;
+    rosterKind: string | null;
     role: string | null;
+    labels: string | null;
+    activeAgent: string | null;
+    trigger: {
+      agent: string | null;
+      expanded: boolean;
+      haspopup: string | null;
+      ariaLabel: string | null;
+      disabled: boolean;
+    } | null;
+    roster: PickerRoster;
     insideFooter: boolean | null;
     insideComposerForm: boolean | null;
-    pillCount: number;
-    pills: { name: string | null; active: string | null; disabled: boolean }[];
     wide: {
       width: number;
       present: boolean;
@@ -939,12 +976,17 @@ describe("dock chrome", () => {
         `${report.footer!.containerType}`,
     );
     assert.equal(report.footer!.isSizeContainer, true);
-    // S1, S9 — it renders, on the composer form, with both fixtures' companions.
+    // S1, S9 — it renders, on the composer form, with both fixtures' agents
+    // behind it (the default one-mark mode hides the roster in a menu; a theme
+    // that picks the inline roster draws the rows instead).
     assert.equal(report.agentSwitcher.present, true, "the agent switcher never rendered");
     assert.equal(
-      report.agentSwitcher.role,
-      "radiogroup",
-      `the switcher's role is ${report.agentSwitcher.role}`,
+      report.agentSwitcher.rosterKind === "inline"
+        ? report.agentSwitcher.role
+        : report.agentSwitcher.trigger?.haspopup,
+      report.agentSwitcher.rosterKind === "inline" ? "radiogroup" : "menu",
+      `the switcher is not one accessible control: roster ${report.agentSwitcher.rosterKind}, ` +
+        `role ${report.agentSwitcher.role}, trigger ${JSON.stringify(report.agentSwitcher.trigger)}`,
     );
     assert.equal(
       report.agentSwitcher.insideComposerForm,
@@ -952,14 +994,21 @@ describe("dock chrome", () => {
       "the switcher is not a child of the composer form — its fallback is anchored to the " +
         "band, where the interview card and retired-model notice can push it up the panel",
     );
-    assert.ok(
-      report.agentSwitcher.pillCount >= 2,
-      `only ${report.agentSwitcher.pillCount} agent pill(s) rendered`,
+    assert.deepEqual(
+      report.agentSwitcher.roster.names.slice().sort(),
+      ["Hermes", "Pi"],
+      `the picker's roster does not offer both agents: ${JSON.stringify(report.agentSwitcher.roster)}`,
     );
     assert.equal(
-      report.agentSwitcher.pills.filter((pill) => pill.active === "true").length,
+      report.agentSwitcher.roster.options.filter((option) => option.active).length,
       1,
-      `expected exactly one active agent, got ${JSON.stringify(report.agentSwitcher.pills)}`,
+      `expected exactly one active agent, got ${JSON.stringify(report.agentSwitcher.roster.options)}`,
+    );
+    assert.equal(
+      report.agentSwitcher.activeAgent,
+      report.agentSwitcher.roster.options.find((option) => option.active)?.agent,
+      `the trigger names ${report.agentSwitcher.activeAgent}, but the roster marks ` +
+        `${report.agentSwitcher.roster.options.find((option) => option.active)?.agent}`,
     );
     // S3–S6 — wide dock: in the right gutter, centred in it, bottom level with
     // the composer box, inside the dock, never over the composer.

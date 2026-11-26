@@ -44,7 +44,7 @@ import {
 } from "./composition-draft";
 
 /**
- * The Extensions studio's Fields view — slice S2: composition, without JSON.
+ * The Customizations studio's Fields view — slice S2: composition, without JSON.
  *
  * Two surfaces, one source of truth. The schematic draws the shell's five
  * regions and the chips on them; the form below edits the selected widget. The
@@ -188,7 +188,7 @@ export function CompositionStudio({
       {/* Schematic — a map of the shell's five regions. The chips are real
           buttons (a focusable control inside aria-hidden content is an
           accessibility defect), and the live summary reads the same state. */}
-      <div className="studio__schematic" data-testid="extension-studio-schematic">
+      <div className="studio__schematic" data-testid="customization-studio-schematic">
         <div className="studio__schematic-copy">
           <h3 className="studio__title">Composition</h3>
           <p className="studio__note">

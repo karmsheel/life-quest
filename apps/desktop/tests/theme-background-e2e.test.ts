@@ -91,7 +91,7 @@ function runRig(world: string): Promise<{ code: number; report: Report | null }>
  * URL and Fit/Position/Dim/Blur, marked "yours", kept across a reload, handed
  * back by Reset to theme. It then previews and keeps a theme file that carries
  * the picture, paints the two new procedural skies, authors a picture in the
- * Extensions studio (and reads the saved JSON back), and proves a missing
+ * Customizations studio (and reads the saved JSON back), and proves a missing
  * picture falls back to the drawn sky while an invalid one is refused by name.
  *
  * The report is `e2e/artifacts/theme-background.json`; the pictures are

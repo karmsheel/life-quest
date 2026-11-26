@@ -31,7 +31,7 @@
  *   e2e/artifacts/pi-companion-picker.png
  *   e2e/artifacts/pi-companion-turn.png          the live tool turn settled
  *   e2e/artifacts/pi-companion-turn-history.png  the same turn after a reload
- *   e2e/artifacts/pi-companion-switcher.png   a 1:1 crop of the agent blocks
+ *   e2e/artifacts/pi-companion-switcher.png   a 1:1 crop of the picker's roster
  *   e2e/artifacts/pi-companion-switcher-day.png  the same crop under the day theme
  */
 import fs from "node:fs";
@@ -685,6 +685,187 @@ function serveDist() {
   });
 }
 
+/**
+ * Read the dock's agent picker, opening its roster the way the operator does.
+ *
+ * The picker's shipped `one-mark` mode is a single trigger: the agents (and
+ * their marks) are in the menu it opens, so reaching them is two clicks
+ * (trigger, then a row). An inline-roster theme draws the rows in the composer's
+ * dock row instead and has no menu; both shapes are read here. The rows carry a
+ * circular disc — the clip the artwork is drawn inside — so the mark's fit
+ * claim is measured against the disc, not the row button.
+ *
+ * `keepOpen` leaves the menu up for a caller that wants a picture of it; every
+ * other read closes what it opened so the dock is left as the operator found it.
+ * The return shape keeps `marks`/`items` (the roster as marks and names) and adds
+ * the recipe's mode/roster and the answering agent.
+ */
+function readPickerScript({ keepOpen = false } = {}) {
+  return `(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
+    const root = () => document.querySelector('[data-testid="agent-picker"]');
+    const trigger = () => document.querySelector('[data-testid="agent-picker-trigger"]');
+    const menu = () => document.querySelector('[data-testid="agent-picker-menu"]');
+    const rows = () => [...document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]")];
+    const headingEl = document.querySelector(".chat-panel__heading--thread");
+    if (!root()) {
+      return {
+        shown: false,
+        mode: null,
+        rosterKind: null,
+        activeAgent: null,
+        opened: false,
+        reason: "no agent picker in the dock",
+        items: [],
+        options: [],
+        marks: [],
+        box: null,
+        heading: headingEl ? headingEl.textContent : null,
+      };
+    }
+    const inline = root().getAttribute("data-roster") === "inline";
+    let opened = false;
+    if (!inline && !menu()) {
+      const el = trigger();
+      if (!el) {
+        return {
+          shown: true,
+          inline,
+          mode: root().getAttribute("data-mode"),
+          rosterKind: root().getAttribute("data-roster"),
+          activeAgent: null,
+          opened: false,
+          reason: "no trigger and no inline roster",
+          items: [],
+          options: [],
+          marks: [],
+          box: null,
+          heading: headingEl ? headingEl.textContent : null,
+        };
+      }
+      el.click();
+      opened = true;
+      const deadline = performance.now() + 3000;
+      while (performance.now() < deadline && !menu()) await sleep(20);
+    }
+    const marks = [];
+    const options = [];
+    for (const el of rows()) {
+      const name =
+        text(el.querySelector(".agent-switcher__name")) || el.getAttribute("data-agent");
+      const disc = el.querySelector(".agent-switcher__disc");
+      const img = el.querySelector("img[data-agent-mark]");
+      const svg = el.querySelector("svg[data-agent-mark]");
+      // The disc is the mark's circle: its inner radius (minus the ring's own
+      // border) is the boundary the painted bounds must not cross.
+      const discBox = disc ? disc.getBoundingClientRect() : el.getBoundingClientRect();
+      const border = disc ? parseFloat(getComputedStyle(disc).borderTopWidth) || 0 : 0;
+      const radius = Math.min(discBox.width, discBox.height) / 2 - border;
+      const centerX = discBox.left + discBox.width / 2;
+      const centerY = discBox.top + discBox.height / 2;
+      let decoded = false;
+      if (img) {
+        try {
+          await img.decode();
+          decoded = true;
+        } catch {
+          decoded = false;
+        }
+      }
+      let rendered = null;
+      if (svg) {
+        const rects = [...svg.querySelectorAll("path")].map((path) =>
+          path.getBoundingClientRect(),
+        );
+        if (rects.length > 0) {
+          const left = Math.min(...rects.map((rect) => rect.left));
+          const right = Math.max(...rects.map((rect) => rect.right));
+          const top = Math.min(...rects.map((rect) => rect.top));
+          const bottom = Math.max(...rects.map((rect) => rect.bottom));
+          const corners = [
+            [left, top],
+            [right, top],
+            [left, bottom],
+            [right, bottom],
+          ];
+          rendered = {
+            width: right - left,
+            height: bottom - top,
+            centered:
+              Math.abs((left + right) / 2 - centerX) < 0.75 &&
+              Math.abs((top + bottom) / 2 - centerY) < 0.75,
+            fitsCircle: corners.every(
+              ([x, y]) => Math.hypot(x - centerX, y - centerY) <= radius + 0.5,
+            ),
+            sizeRatio: Math.max(right - left, bottom - top) / (radius * 2),
+          };
+        }
+      }
+      marks.push({
+        label: name,
+        agent: el.getAttribute("data-agent"),
+        kind: svg ? "glyph" : img ? "image" : "none",
+        src: img ? img.getAttribute("src") : null,
+        decoded,
+        viewBox: svg ? svg.getAttribute("viewBox") : null,
+        pathCount: svg ? svg.querySelectorAll("path").length : 0,
+        fills: svg
+          ? [...svg.querySelectorAll("path")].map((path) => getComputedStyle(path).fill)
+          : [],
+        ink: svg ? getComputedStyle(svg).color : null,
+        rendered,
+      });
+      options.push({
+        agent: el.getAttribute("data-agent"),
+        name,
+        active: el.getAttribute("aria-checked") === "true",
+        disabled: el.disabled === true,
+      });
+    }
+    // The picker's on-screen footprint: the trigger plus the open menu, so a
+    // crop of it shows every mark the read just measured.
+    const rootBox = root().getBoundingClientRect();
+    const menuBox = menu() ? menu().getBoundingClientRect() : null;
+    const box = menuBox
+      ? {
+          x: Math.min(rootBox.x, menuBox.x),
+          y: Math.min(rootBox.y, menuBox.y),
+          width:
+            Math.max(rootBox.right, menuBox.right) - Math.min(rootBox.x, menuBox.x),
+          height:
+            Math.max(rootBox.bottom, menuBox.bottom) - Math.min(rootBox.y, menuBox.y),
+        }
+      : { x: rootBox.x, y: rootBox.y, width: rootBox.width, height: rootBox.height };
+    const activeAgent =
+      (trigger() && trigger().getAttribute("data-agent")) ||
+      (options.find((option) => option.active) || {}).agent ||
+      null;
+    const result = {
+      shown: true,
+      inline,
+      mode: root().getAttribute("data-mode"),
+      rosterKind: root().getAttribute("data-roster"),
+      activeAgent,
+      opened,
+      menuOpen: Boolean(menu()),
+      reason: options.length > 0 ? null : "the roster listed no agents",
+      items: options.map((option) => option.name),
+      options,
+      marks,
+      box,
+      heading: headingEl ? headingEl.textContent : null,
+    };
+    // Leave the menu up only when asked (a picture is about to be taken);
+    // close only the menu this read opened, never a caller's.
+    if (!${keepOpen} && opened && !inline) {
+      const el = trigger();
+      if (el) el.click();
+    }
+    return result;
+  })()`;
+}
+
 async function main() {
   // The table the read-only tool will read. It is created through the real IPC
   // before the turns, and the endpoint fills `databaseId` from it, so the call
@@ -876,93 +1057,22 @@ async function main() {
   const threadImage = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-thread.png"), threadImage.toPNG());
 
-  // The switcher: a vertical pill of agent blocks in the dock's corner. Both
-  // agents are unscoped here, so both are offered on Overview. Each block's
-  // mark is read with it, because the block falls back to nothing but its
-  // initial when a mark is missing. An image mark is load-checked with
-  // `decode()`: an SVG with only a viewBox has no intrinsic pixel width to
-  // compare. A glyph mark is checked for one ink and for fitting whole inside
-  // the block's circle — every corner of its painted bounds must be inside the
-  // ring, or the picture is of a clipped logo.
-  const pickerShown = await js(`(async () => {
-    const switcher = document.querySelector(".agent-switcher");
-    const pills = [...document.querySelectorAll(".agent-switcher__pill")];
-    const box = switcher ? switcher.getBoundingClientRect() : null;
-    const marks = [];
-    for (const el of pills) {
-      const img = el.querySelector("img[data-agent-mark]");
-      const svg = el.querySelector("svg[data-agent-mark]");
-      const pill = el.getBoundingClientRect();
-      const border = parseFloat(getComputedStyle(el).borderTopWidth) || 0;
-      const radius = Math.min(pill.width, pill.height) / 2 - border;
-      const centerX = pill.left + pill.width / 2;
-      const centerY = pill.top + pill.height / 2;
-      let decoded = false;
-      if (img) {
-        try {
-          await img.decode();
-          decoded = true;
-        } catch {
-          decoded = false;
-        }
-      }
-      let rendered = null;
-      if (svg) {
-        const rects = [...svg.querySelectorAll("path")].map((path) =>
-          path.getBoundingClientRect(),
-        );
-        if (rects.length > 0) {
-          const left = Math.min(...rects.map((rect) => rect.left));
-          const right = Math.max(...rects.map((rect) => rect.right));
-          const top = Math.min(...rects.map((rect) => rect.top));
-          const bottom = Math.max(...rects.map((rect) => rect.bottom));
-          const corners = [
-            [left, top],
-            [right, top],
-            [left, bottom],
-            [right, bottom],
-          ];
-          rendered = {
-            width: right - left,
-            height: bottom - top,
-            centered:
-              Math.abs((left + right) / 2 - centerX) < 0.75 &&
-              Math.abs((top + bottom) / 2 - centerY) < 0.75,
-            fitsCircle: corners.every(
-              ([x, y]) => Math.hypot(x - centerX, y - centerY) <= radius + 0.5,
-            ),
-            sizeRatio: Math.max(right - left, bottom - top) / (radius * 2),
-          };
-        }
-      }
-      marks.push({
-        label: el.getAttribute("aria-label"),
-        kind: svg ? "glyph" : img ? "image" : "none",
-        src: img ? img.getAttribute("src") : null,
-        decoded,
-        viewBox: svg ? svg.getAttribute("viewBox") : null,
-        pathCount: svg ? svg.querySelectorAll("path").length : 0,
-        fills: svg
-          ? [...svg.querySelectorAll("path")].map(
-              (path) => getComputedStyle(path).fill,
-            )
-          : [],
-        ink: svg ? getComputedStyle(svg).color : null,
-        rendered,
-      });
-    }
-    return {
-      shown: Boolean(switcher),
-      items: pills.map((el) => el.getAttribute("aria-label")),
-      marks,
-      box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
-    };
-  })()`);
+  // The picker: one trigger in the composer's gutter, its roster behind a menu.
+  // Both agents are unscoped here, so both are offered on Overview. The read
+  // opens the menu (two clicks: trigger, then a row) and leaves it up for the
+  // pictures, then the crop closes it. Each agent's mark is read with its row,
+  // because a row falls back to nothing but the agent's initial when a mark is
+  // missing. An image mark is load-checked with `decode()`: an SVG with only a
+  // viewBox has no intrinsic pixel width to compare. A glyph mark is checked for
+  // one ink and for fitting whole inside the disc's circle — every corner of its
+  // painted bounds must be inside the ring, or the picture is of a clipped logo.
+  const pickerShown = await js(readPickerScript({ keepOpen: true }));
   const pickerImage = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-picker.png"), pickerImage.toPNG());
 
-  // A 1:1 crop of the blocks: at 33px a whole-window shot cannot show which
-  // mark an agent wears, and the icon is the thing this picture is evidence of.
+  // A 1:1 crop of the picker: at 30px a whole-window shot cannot show which mark
+  // an agent wears, and the icon is the thing this picture is evidence of. The
+  // box is the trigger plus the open menu, so both marks are in the crop.
   if (pickerShown.box && pickerShown.box.width > 0) {
     const pad = 12;
     const switcherShot = await win.webContents.capturePage({
@@ -976,6 +1086,13 @@ async function main() {
       switcherShot.toPNG(),
     );
   }
+  // The picture is taken; put the menu away so the rest of the run reads the
+  // resting dock.
+  await js(`(() => {
+    const trigger = document.querySelector('[data-testid="agent-picker-trigger"]');
+    if (trigger && trigger.getAttribute("aria-expanded") === "true") trigger.click();
+    return true;
+  })()`);
   // ——— the tool turn: the dock's work log, from real pi-harness events ———
   //
   // The first turn proved a reply. This one proves the TIMELINE: the fake model
@@ -1422,14 +1539,24 @@ async function main() {
     await sleep(100);
   }
 
-  const readSwitcher = () =>
-    js(`(() => ({
-      pills: [...document.querySelectorAll(".agent-switcher__pill")].map((el) => ({
-        name: el.getAttribute("aria-label"),
-        active: el.getAttribute("aria-checked") === "true",
+  // The scoping legs read the picker's roster, not a pill strip: each domain
+  // offers a set of agents, and which one is answering. `readPickerScript` opens
+  // the menu for the read and, with `keepOpen` off, closes it again, so the
+  // scope pictures below are of the resting dock.
+  const readSwitcher = async () => {
+    const roster = await js(readPickerScript());
+    return {
+      shown: roster.shown,
+      mode: roster.mode,
+      rosterKind: roster.rosterKind,
+      activeAgent: roster.activeAgent,
+      options: roster.options.map((option) => ({
+        name: option.name,
+        active: option.active,
       })),
-      heading: document.querySelector(".chat-panel__heading--thread")?.textContent ?? null,
-    }))()`);
+      heading: roster.heading,
+    };
+  };
   await sleep(700);
   const scopeOverview = await readSwitcher();
   fs.writeFileSync(
@@ -1546,13 +1673,13 @@ async function main() {
       defaultedPi === true &&
       Array.isArray(persisted) &&
       persisted.some((scope) => scope.agentId === "hermes" && scope.domains.includes("health")) &&
-      scopeOverview.pills.length === 1 &&
+      scopeOverview.options.length === 1 &&
       (healthGated.gated
         ? /hermes/i.test(healthGated.lead)
-        : scopeHealth.pills.length === 2 &&
-          scopeHealth.pills.some((pill) => pill.name === "Hermes" && pill.active)) &&
-      scopeFinancial.pills.length === 1 &&
-      scopeFinancial.pills.some((pill) => pill.name === "Pi" && pill.active) &&
+        : scopeHealth.options.length === 2 &&
+          scopeHealth.options.some((option) => option.name === "Hermes" && option.active)) &&
+      scopeFinancial.options.length === 1 &&
+      scopeFinancial.options.some((option) => option.name === "Pi" && option.active) &&
       Object.values(toolChecks).every((pass) => pass === true),
     configured,
     mounted,

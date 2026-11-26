@@ -41,7 +41,10 @@
  *     why the form and not the band is its anchor — and takes the corner over
  *     the transcript's bottom-right. `.chat-panel__footer` is a CSS container
  *     (`container-type: inline-size`) and the `@container` query is what makes
- *     the switch.
+ *     the switch. The block is the trigger of the shipped `one-mark` picker, so
+ *     the roster of agents is read by opening it once (`READ_ROSTER`), not from
+ *     two always-visible pills; the geometry is still measured on the closed
+ *     control, which is what the operator sees.
  *
  *  4. The TRANSCRIPT'S TEXT COLUMN keeps the composer's measure: on a wide dock
  *     the body's content box is exactly the composer box's width — the same
@@ -147,8 +150,11 @@
  *   S8. The footer is not a CSS container, so the `@container` query is inert
  *       and the narrow layout never happens — the reason the block overlaps at
  *       narrow widths even though the rule is written.
- *   S9. Only one pill renders, or none is marked active: the harness fixture
- *       stopped feeding the switcher both companions.
+ *   S9. The roster behind the picker no longer lists both companions, or none
+ *       is marked active: the harness fixture stopped feeding the switcher both
+ *       agents. (The shipped one-mark mode shows one trigger; both agents are in
+ *       the menu the trigger opens, so the rig opens it once and reads the
+ *       rows.)
  *  S10. The `?agents=1` page itself fails to mount (a provider order mistake —
  *       `AgentsProvider` reads the vault, so it must sit inside `VaultProvider`),
  *       taking the dock down with it.
@@ -343,6 +349,24 @@ const SAMPLE = `(() => {
   );
   const lastAssistantEl = assistantMessages[assistantMessages.length - 1] ?? null;
   const switcherEl = document.querySelector(".agent-switcher");
+  // The picker's own reads. The root carries the resolved recipe (data-mode,
+  // data-roster, ...); the *answering* agent comes from the trigger's
+  // data-agent in the shipped menu mode, or from the checked row when a theme
+  // chose the inline roster. readAt runs at every width, so it never opens the
+  // menu — the roster behind it is opened once by READ_ROSTER below.
+  const switcherTriggerEl = switcherEl
+    ? switcherEl.querySelector('[data-testid="agent-picker-trigger"]')
+    : null;
+  const switcherOptionEls = switcherEl
+    ? Array.from(switcherEl.querySelectorAll(".agent-switcher__option"))
+    : [];
+  const switcherCheckedEl = switcherOptionEls.find(
+    (el) => el.getAttribute("aria-checked") === "true",
+  );
+  const switcherAgent =
+    (switcherTriggerEl && switcherTriggerEl.getAttribute("data-agent")) ||
+    (switcherCheckedEl && switcherCheckedEl.getAttribute("data-agent")) ||
+    null;
   const tabLabelEl = document.querySelector(".chat-panel__tab--active .chat-panel__tab-label");
 
   const panel = rect(panelEl);
@@ -681,8 +705,33 @@ const SAMPLE = `(() => {
       ? {
           rect: switcher,
           position: switcherStyle.position,
+          // The root is a radiogroup only in the inline roster; the shipped
+          // one-mark mode paints no role on the wrapper and puts the control in
+          // the trigger (aria-haspopup="menu"). Both are reported so the drive
+          // can assert the control the mode actually ships.
           role: switcherEl.getAttribute("role"),
           ariaLabel: switcherEl.getAttribute("aria-label"),
+          mode: switcherEl.getAttribute("data-mode"),
+          rosterKind: switcherEl.getAttribute("data-roster"),
+          labels: switcherEl.getAttribute("data-labels"),
+          activeAgent: switcherAgent,
+          trigger: switcherTriggerEl
+            ? {
+                agent: switcherTriggerEl.getAttribute("data-agent"),
+                expanded: switcherTriggerEl.getAttribute("aria-expanded") === "true",
+                haspopup: switcherTriggerEl.getAttribute("aria-haspopup"),
+                ariaLabel: switcherTriggerEl.getAttribute("aria-label"),
+                disabled: switcherTriggerEl.disabled === true,
+              }
+            : null,
+          // Visible option rows only (the inline roster). In menu mode the rows
+          // are the open menu's, read by READ_ROSTER.
+          options: switcherOptionEls.map((el) => ({
+            agent: el.getAttribute("data-agent"),
+            name: (el.querySelector(".agent-switcher__name") || {}).textContent || null,
+            active: el.getAttribute("aria-checked") === "true",
+            disabled: el.disabled === true,
+          })),
           // The anchor is the composer form, not the band: the band also holds
           // the interview card and the retired-model notice, and a fallback
           // anchored to the band floats up over them. insideFooter stays for
@@ -690,12 +739,6 @@ const SAMPLE = `(() => {
           // claim.
           insideFooter: footerEl !== null && footerEl.contains(switcherEl),
           insideComposerForm: composerFormEl !== null && composerFormEl.contains(switcherEl),
-          pillCount: switcherEl.querySelectorAll(".agent-switcher__pill").length,
-          pills: Array.from(switcherEl.querySelectorAll(".agent-switcher__pill")).map((pill) => ({
-            name: pill.getAttribute("aria-label"),
-            active: pill.getAttribute("aria-checked"),
-            disabled: pill.disabled
-          })),
           centrePx: switcherCentre,
           centreVsGutterCentrePx:
             gutterCentre === null || switcherCentre === null
@@ -724,6 +767,70 @@ const failures = [];
 const marks = [];
 const startedAt = Date.now();
 const mark = (label) => marks.push({ ms: Date.now() - startedAt, label });
+
+/**
+ * Open the picker once and read the roster it offers.
+ *
+ * The shipped `one-mark` mode is a single trigger in the composer's gutter; the
+ * agents are in the menu that trigger opens, so reaching the roster is two
+ * clicks (trigger, then a row) rather than the old two always-visible pills.
+ * An inline-roster theme draws the rows in the dock row instead and there is no
+ * menu to open; both shapes are read here so this rig does not assume a mode.
+ * A read must not leave the menu standing over the composer, so what this opens
+ * it also closes (the Escape/click-outside idiom the component ships).
+ */
+const READ_ROSTER = `(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
+  const root = () => document.querySelector('[data-testid="agent-picker"]');
+  const trigger = () => document.querySelector('[data-testid="agent-picker-trigger"]');
+  const menu = () => document.querySelector('[data-testid="agent-picker-menu"]');
+  const rows = () => [...document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]")];
+  if (!root()) {
+    return { shown: false, reason: "no agent picker in the dock", opened: false, names: [], options: [] };
+  }
+  const inline = root().getAttribute("data-roster") === "inline";
+  let opened = false;
+  if (!inline && !menu()) {
+    const el = trigger();
+    if (!el) {
+      return { shown: true, inline, opened: false, reason: "no trigger and no inline roster", names: [], options: [] };
+    }
+    el.click();
+    opened = true;
+    const deadline = performance.now() + 3000;
+    while (performance.now() < deadline && !menu()) await sleep(20);
+  }
+  const options = rows().map((el) => ({
+    agent: el.getAttribute("data-agent"),
+    name: text(el.querySelector(".agent-switcher__name")) || el.getAttribute("data-agent"),
+    active: el.getAttribute("aria-checked") === "true",
+    disabled: el.disabled === true,
+  }));
+  const active =
+    (trigger() && trigger().getAttribute("data-agent")) ||
+    (options.find((option) => option.active) || {}).agent ||
+    null;
+  const result = {
+    shown: true,
+    inline,
+    mode: root().getAttribute("data-mode"),
+    rosterKind: root().getAttribute("data-roster"),
+    opened,
+    menuOpen: Boolean(menu()),
+    names: options.map((option) => option.name),
+    options,
+    active,
+    reason: options.length > 0 ? null : "the roster listed no agents",
+  };
+  // Close only what this read opened: an inline roster has nothing to close, and
+  // a menu that was already open belongs to the caller.
+  if (opened && !inline) {
+    const el = trigger();
+    if (el) el.click();
+  }
+  return result;
+})()`;
 
 const check = (label, condition, detail) => {
   if (!condition) failures.push(`${label}: ${detail}`);
@@ -989,15 +1096,29 @@ async function main() {
     // The switcher only draws once the agents provider has main's harness list
     // and the companion provider has the active harness. Give it the same
     // generous budget as the page's own providers, then report rather than hang.
+    // The shipped mode is one trigger (the roster is its menu); an inline theme
+    // would draw rows instead, so either counts as "the picker mounted".
     const switcherMounted = await waitFor(
-      `document.querySelectorAll(".agent-switcher__pill").length >= 2`,
+      `document.querySelector('[data-testid="agent-picker-trigger"]') !== null || ` +
+        `document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]").length >= 2`,
     );
     mark("switcher-mounted");
     if (!switcherMounted) {
       failures.push(
-        "switcher-present: the agent switcher never drew two pills on the ?agents=1 page",
+        "switcher-present: the agent picker never drew a trigger (or an inline roster) on the ?agents=1 page",
       );
     }
+    // S9 — the agents are behind the picker now: open it once and read the rows
+    // it lists, then close it again so the ladder measures the resting dock. The
+    // list can land in more than one provider render, so give both agents a
+    // moment while reporting what the roster actually said.
+    let roster = await run(READ_ROSTER);
+    const rosterDeadline = Date.now() + 10_000;
+    while (roster.names.length < 2 && Date.now() < rosterDeadline) {
+      await sleep(100);
+      roster = await run(READ_ROSTER);
+    }
+    mark("roster-read");
 
     // The name's resting ink is a hover-free claim: park the pointer before the
     // ladder reads it, so a real cursor left over the chip cannot turn the
@@ -1414,10 +1535,19 @@ async function main() {
     // ── S1–S8: where the agent switcher stands, in both layouts ─────────────
     check("switcher-present", wide.switcher !== null, "the agent switcher did not render");
     if (wide.switcher) {
+      // S1/S9 — the picker is one accessible control: a radiogroup when a theme
+      // asked for the inline roster, or the shipped one-mark trigger whose
+      // aria-haspopup says the roster lives in a menu. The old two-badge
+      // radiogroup is gone, so asserting radiogroup unconditionally would assert
+      // a mode the default no longer ships.
       check(
         "switcher-role",
-        wide.switcher.role === "radiogroup",
-        `switcher role is ${wide.switcher.role}`,
+        wide.switcher.rosterKind === "inline"
+          ? wide.switcher.role === "radiogroup"
+          : Boolean(wide.switcher.trigger && wide.switcher.trigger.haspopup === "menu"),
+        wide.switcher.rosterKind === "inline"
+          ? `inline switcher role is ${wide.switcher.role}`
+          : `menu switcher has no menu trigger: ${JSON.stringify(wide.switcher.trigger)}`,
       );
       check(
         "switcher-inside-composer-form",
@@ -1425,15 +1555,18 @@ async function main() {
         "the switcher is not a child of the composer form, so the band (and the " +
           "cards/notices in it) is what its fallback is anchored to",
       );
+      // S9 — the roster is behind the picker now: opening it lists both agents,
+      // exactly one marked active, and the trigger names that agent.
       check(
-        "switcher-pills",
-        wide.switcher.pillCount >= 2,
-        `only ${wide.switcher.pillCount} agent pill(s) rendered`,
+        "switcher-roster",
+        roster.shown === true && roster.names.length >= 2,
+        `the picker offered ${JSON.stringify(roster.names)} (${roster.reason ?? "no reason"})`,
       );
       check(
-        "switcher-active-pill",
-        wide.switcher.pills.filter((pill) => pill.active === "true").length === 1,
-        `pills ${JSON.stringify(wide.switcher.pills)}`,
+        "switcher-active-agent",
+        roster.options.filter((option) => option.active).length === 1 &&
+          roster.active === (roster.options.find((option) => option.active) || {}).agent,
+        `roster ${JSON.stringify(roster.options)}, trigger agent ${roster.active}`,
       );
     }
 
@@ -2127,11 +2260,18 @@ async function main() {
         : null,
       agentSwitcher: {
         present: wide.switcher !== null,
+        mode: wide.switcher ? wide.switcher.mode : null,
+        rosterKind: wide.switcher ? wide.switcher.rosterKind : null,
         role: wide.switcher ? wide.switcher.role : null,
+        labels: wide.switcher ? wide.switcher.labels : null,
+        activeAgent: wide.switcher ? wide.switcher.activeAgent : null,
+        trigger: wide.switcher ? wide.switcher.trigger : null,
+        // The one open-and-list read: both agents behind the picker, and which
+        // one is answering. This replaces the old pillCount/pills pair — the
+        // roster the default mode hides behind the trigger.
+        roster,
         insideFooter: wide.switcher ? wide.switcher.insideFooter : null,
         insideComposerForm: wide.switcher ? wide.switcher.insideComposerForm : null,
-        pillCount: wide.switcher ? wide.switcher.pillCount : 0,
-        pills: wide.switcher ? wide.switcher.pills : [],
         wide: wideModes,
         narrow: narrowModes,
       },
@@ -2237,9 +2377,10 @@ async function main() {
   }
   if (report.agentSwitcher) {
     console.log(
-      `agent switcher: ${report.agentSwitcher.pillCount} pills in the footer ` +
-        `(composer form: ${report.agentSwitcher.insideComposerForm}); ` +
-        `footer ${report.footer?.containerType}`,
+      `agent switcher: ${report.agentSwitcher.mode} / ${report.agentSwitcher.rosterKind}, ` +
+        `roster ${JSON.stringify(report.agentSwitcher.roster?.names ?? [])} ` +
+        `(active ${report.agentSwitcher.activeAgent}; composer form: ` +
+        `${report.agentSwitcher.insideComposerForm}); footer ${report.footer?.containerType}`,
     );
     for (const mode of report.agentSwitcher.wide) {
       console.log(

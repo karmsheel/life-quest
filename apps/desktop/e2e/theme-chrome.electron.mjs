@@ -102,12 +102,12 @@ const COMPOSITION_VOCABULARY_PNG = path.join(
   "themes-v2-composition-vocabulary.png",
 );
 const HELIOS_PNG = path.join(artifactsDir, "themes-v2-helios.png");
-const EXTENSIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
-const EXTENSIONS_ON_PNG = path.join(
+const CUSTOMIZATIONS_PNG = path.join(artifactsDir, "themes-v2-extensions.png");
+const CUSTOMIZATIONS_ON_PNG = path.join(
   artifactsDir,
   "themes-v2-extensions-on.png",
 );
-const EXTENSIONS_OFF_PNG = path.join(
+const CUSTOMIZATIONS_OFF_PNG = path.join(
   artifactsDir,
   "themes-v2-extensions-off.png",
 );
@@ -577,52 +577,52 @@ const SAMPLE = `(async () => {
       const rail = document.querySelector(".nav-rail");
       return rail ? Math.round(rail.getBoundingClientRect().width) : null;
     })(),
-    extensionsPage: Boolean(document.querySelector('[data-testid="extensions-page"]')),
-    extensionsRows: document.querySelectorAll(
-      '[data-testid="extensions-page"] li[data-testid^="extension-"]',
+    customizationsPage: Boolean(document.querySelector('[data-testid="customizations-page"]')),
+    customizationsRows: document.querySelectorAll(
+      '[data-testid="customizations-page"] li[data-testid^="customization-"]',
     ).length,
-    extensionsCountText:
-      document.querySelector('[data-testid="extensions-count"]')?.textContent?.trim() ?? null,
-    extensionsActive: Boolean(document.querySelector('[data-testid="extension-active"]')),
+    customizationsCountText:
+      document.querySelector('[data-testid="customizations-count"]')?.textContent?.trim() ?? null,
+    customizationsActive: Boolean(document.querySelector('[data-testid="customization-active"]')),
     // S1 Trust: the editor's version history and the page's import line.
     historyRows: (() => {
-      const section = document.querySelector('[data-testid="extension-history"]');
+      const section = document.querySelector('[data-testid="customization-history"]');
       if (!section) return null;
-      return [...section.querySelectorAll('[data-testid="extension-history-row"]')].map((row) => ({
+      return [...section.querySelectorAll('[data-testid="customization-history-row"]')].map((row) => ({
         id: row.getAttribute("data-version-id"),
         label: row.getAttribute("data-label"),
         text: (row.textContent || "").replace(/\\s+/g, " ").trim(),
-        restore: Boolean(row.querySelector('[data-testid="extension-history-restore"]')),
+        restore: Boolean(row.querySelector('[data-testid="customization-history-restore"]')),
       }));
     })(),
     historyEmpty: (() => {
-      const section = document.querySelector('[data-testid="extension-history"]');
+      const section = document.querySelector('[data-testid="customization-history"]');
       if (!section) return false;
-      const rows = section.querySelectorAll('[data-testid="extension-history-row"]');
+      const rows = section.querySelectorAll('[data-testid="customization-history-row"]');
       return rows.length === 0 && (section.textContent || "").includes("No saved versions yet");
     })(),
-    editorTabs: ["extension-editor-tab-fields", "extension-editor-tab-json"].filter((id) =>
+    editorTabs: ["customization-editor-tab-fields", "customization-editor-tab-json"].filter((id) =>
       Boolean(document.querySelector('[data-testid="' + id + '"]')),
     ),
     importStatus:
-      document.querySelector('[data-testid="extensions-status"]')?.textContent?.trim() ?? null,
+      document.querySelector('[data-testid="customizations-status"]')?.textContent?.trim() ?? null,
     // S2 Studio: the tab the editor opened on, and the composition editor's own
     // surface — chips, offers, draft paint and verdict.
     editorTab: (() => {
-      const fields = document.querySelector('[data-testid="extension-editor-tab-fields"]');
-      const json = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      const fields = document.querySelector('[data-testid="customization-editor-tab-fields"]');
+      const json = document.querySelector('[data-testid="customization-editor-tab-json"]');
       if (!fields || !json) return null;
       if (fields.getAttribute("aria-selected") === "true") return "fields";
       if (json.getAttribute("aria-selected") === "true") return "json";
       return null;
     })(),
     studioWidgetCount: (() => {
-      const studio = document.querySelector('[data-testid="extension-studio"]');
+      const studio = document.querySelector('[data-testid="customization-studio"]');
       if (!studio) return null;
       return studio.querySelectorAll('[data-testid="studio-widget-chip"]').length;
     })(),
     studioOffers: (() => {
-      const studio = document.querySelector('[data-testid="extension-studio"]');
+      const studio = document.querySelector('[data-testid="customization-studio"]');
       if (!studio) return null;
       const optionValues = (testId) => {
         const select = studio.querySelector('[data-testid="' + testId + '"]');
@@ -723,23 +723,23 @@ const SAMPLE = `(async () => {
     })(),
     // S4 Gallery: which cards wear the bundled-example chip, and its one line.
     galleryChips: (() => {
-      const page = document.querySelector('[data-testid="extensions-page"]');
+      const page = document.querySelector('[data-testid="customizations-page"]');
       if (!page) return null;
-      return [...page.querySelectorAll("li[data-testid^='extension-']")].map((card) => ({
-        file: (card.getAttribute("data-testid") ?? "").replace(/^extension-/, "") + ".json",
-        chip: Boolean(card.querySelector('[data-testid="extension-gallery-chip"]')),
+      return [...page.querySelectorAll("li[data-testid^='customization-']")].map((card) => ({
+        file: (card.getAttribute("data-testid") ?? "").replace(/^customization-/, "") + ".json",
+        chip: Boolean(card.querySelector('[data-testid="customization-gallery-chip"]')),
         chipText:
-          (card.querySelector('[data-testid="extension-gallery-chip"]')?.textContent ?? "").trim() ||
+          (card.querySelector('[data-testid="customization-gallery-chip"]')?.textContent ?? "").trim() ||
           null,
         note:
-          (card.querySelector('[data-testid="extension-gallery-note"]')?.textContent ?? "").trim() ||
+          (card.querySelector('[data-testid="customization-gallery-note"]')?.textContent ?? "").trim() ||
           null,
       }));
     })(),
     galleryNotes: (() => {
-      const page = document.querySelector('[data-testid="extensions-page"]');
+      const page = document.querySelector('[data-testid="customizations-page"]');
       if (!page) return null;
-      return [...page.querySelectorAll('[data-testid="extension-gallery-note"]')].map((note) =>
+      return [...page.querySelectorAll('[data-testid="customization-gallery-note"]')].map((note) =>
         (note.textContent ?? "").trim(),
       );
     })(),
@@ -4213,7 +4213,7 @@ async function main() {
     JSON.stringify({ isError: heliosSpoof.isError, error: heliosSpoofError }),
   );
 
-  // ── 12g: Extensions — the workshop, on the real page ─────────────────────
+  // ── 12g: Customizations — the workshop, on the real page ─────────────────────
   // The rail gains the row; the page must list the profile's files, create a new
   // one inside the app (not by the rig's pen on the folder), edit it, refuse
   // invalid JSON before anything reaches disk, switch it on and off, and remove
@@ -4228,55 +4228,55 @@ async function main() {
   };
   /**
    * S2: a parseable file now opens the editor on the Fields tab, so the raw
-   * JSON ids (`extension-editor-raw` / `-status` / `-save`) only exist once the
+   * JSON ids (`customization-editor-raw` / `-status` / `-save`) only exist once the
    * JSON tab is chosen. Every surviving check that drove the textarea takes
    * this step first; the History section stays visible on both tabs.
    */
   const openJsonTab = async () => {
     const clicked = await evaluate(`(() => {
-      const tab = document.querySelector('[data-testid="extension-editor-tab-json"]');
+      const tab = document.querySelector('[data-testid="customization-editor-tab-json"]');
       if (!tab) return false;
       tab.click();
       return true;
     })()`);
     if (!clicked) return false;
     return untilTrue(
-      `Boolean(document.querySelector('[data-testid="extension-editor-raw"]'))`,
+      `Boolean(document.querySelector('[data-testid="customization-editor-raw"]'))`,
       10_000,
     );
   };
   await evaluate(`(() => {
     const link = [...document.querySelectorAll(".nav-rail__link")].find((el) =>
-      (el.textContent ?? "").includes("Extensions"),
+      (el.textContent ?? "").includes("Customizations"),
     );
     if (link) link.click();
-    else location.hash = "#/extensions";
+    else location.hash = "#/customizations";
     return true;
   })()`);
-  const extensionsReady = await waitFor(
-    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) >= 6,
+  const customizationsReady = await waitFor(
+    (s) => s.customizationsPage === true && (s.customizationsRows ?? 0) >= 6,
     15_000,
   );
   check(
-    "the-extensions-page-lists-the-profile-extensions",
-    extensionsReady?.extensionsPage === true &&
-      (extensionsReady.extensionsRows ?? 0) >= 6 &&
-      (extensionsReady.extensionsCountText ?? "").includes("extension"),
+    "the-customizations-page-lists-the-profile-customizations",
+    customizationsReady?.customizationsPage === true &&
+      (customizationsReady.customizationsRows ?? 0) >= 6 &&
+      (customizationsReady.customizationsCountText ?? "").includes("customization"),
     JSON.stringify({
-      rows: extensionsReady?.extensionsRows,
-      count: extensionsReady?.extensionsCountText,
-      hash: extensionsReady?.hash,
+      rows: customizationsReady?.customizationsRows,
+      count: customizationsReady?.customizationsCountText,
+      hash: customizationsReady?.hash,
     }),
   );
 
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extensions-create"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customizations-create"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const panelOpen = await untilTrue(
-    `Boolean(document.querySelector('[data-testid="extension-create-panel"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-create-panel"]'))`,
   );
   const typedLabel = await evaluate(`(() => {
-    const input = document.querySelector('[data-testid="extension-create-label"]');
+    const input = document.querySelector('[data-testid="customization-create-label"]');
     if (!input) return false;
     const setter = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
@@ -4288,12 +4288,12 @@ async function main() {
   })()`);
   await sleep(120);
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-create-submit"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-create-submit"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const createdPreview = await waitFor(
     (s) =>
       (s.previewText ?? "").includes("rig-workshop.json") &&
-      (s.extensionsRows ?? 0) >= 7,
+      (s.customizationsRows ?? 0) >= 7,
     20_000,
   );
   const createdFile = path.join(themesDir, "rig-workshop.json");
@@ -4304,26 +4304,26 @@ async function main() {
     createdOnDisk = null;
   }
   const createdRow = await evaluate(
-    `Boolean(document.querySelector('[data-testid="extension-rig-workshop"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-rig-workshop"]'))`,
   );
 
   // Edit: open the file as text, prove the live verdict refuses bad JSON, then
   // save a real change and find it on disk. The invalid state must disable Save.
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-edit"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-rig-workshop"] [data-testid="customization-edit"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const editorOpen = await untilTrue(
-    `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-editor"]'))`,
   );
   // S2: the editor opens on Fields when the file parses; the textarea lives on
   // the JSON tab, so the existing text seam takes that tab first.
   const editorJsonTab = await openJsonTab();
   const validBefore = await untilTrue(
-    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension")`,
+    `(document.querySelector('[data-testid="customization-editor-status"]')?.textContent ?? "").includes("Valid customization")`,
   );
   const setEditorSource = async (text) =>
     evaluate(`(() => {
-      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      const area = document.querySelector('[data-testid="customization-editor-raw"]');
       if (!area) return false;
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -4335,10 +4335,10 @@ async function main() {
     })()`);
   await setEditorSource("{ not json");
   const refusedInvalid = await untilTrue(
-    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Not JSON")`,
+    `(document.querySelector('[data-testid="customization-editor-status"]')?.textContent ?? "").includes("Not JSON")`,
   );
   const saveDisabled = await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); return Boolean(b && b.disabled); })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-editor-save"]'); return Boolean(b && b.disabled); })()`,
   );
   await setEditorSource(
     createdOnDisk === null
@@ -4346,13 +4346,13 @@ async function main() {
       : JSON.stringify({ ...createdOnDisk, label: "Rig Workshop Edited" }, null, 2),
   );
   await untilTrue(
-    `(document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "").includes("Valid extension — Rig Workshop Edited")`,
+    `(document.querySelector('[data-testid="customization-editor-status"]')?.textContent ?? "").includes("Valid customization — Rig Workshop Edited")`,
   );
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-editor-save"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-editor-save"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const editorClosed = await untilTrue(
-    `!document.querySelector('[data-testid="extension-editor"]')`,
+    `!document.querySelector('[data-testid="customization-editor"]')`,
   );
   let editedOnDisk = null;
   try {
@@ -4361,7 +4361,7 @@ async function main() {
     editedOnDisk = null;
   }
   check(
-    "an-extension-can-be-created-and-edited-in-the-app",
+    "a-customization-can-be-created-and-edited-in-the-app",
     panelOpen === true &&
       typedLabel === true &&
       createdRow === true &&
@@ -4388,32 +4388,32 @@ async function main() {
     }),
   );
 
-  // Switch it on: the created file becomes the active extension, the preview
+  // Switch it on: the created file becomes the active customization, the preview
   // bar goes away because the choice is now kept. Then switch it off: the shell
   // returns to its default look.
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-rig-workshop"] [data-testid="customization-toggle"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const switchedOn = await waitFor(
     (s) =>
       s.kept === "rig-workshop.json" &&
       !s.preview &&
-      s.extensionsActive === true,
+      s.customizationsActive === true,
     20_000,
   );
-  const extensionsShot = await win.webContents.capturePage();
-  fs.writeFileSync(EXTENSIONS_PNG, extensionsShot.toPNG());
+  const customizationsShot = await win.webContents.capturePage();
+  fs.writeFileSync(CUSTOMIZATIONS_PNG, customizationsShot.toPNG());
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-toggle"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-rig-workshop"] [data-testid="customization-toggle"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const switchedOff = await waitFor(
-    (s) => s.kept === null && s.extensionsActive === false,
+    (s) => s.kept === null && s.customizationsActive === false,
     20_000,
   );
 
-  // ── 12h: switching an extension off hands the palette back ───────────────
+  // ── 12h: switching a customization off hands the palette back ───────────────
   // The switch is over *the window's look*, and the look includes the colours:
-  // an extension may carry a complete palette (the seeded Solar System does),
+  // a customization may carry a complete palette (the seeded Solar System does),
   // and the document's colour tokens must land back on the default look the
   // moment it goes off — not stay on the departing theme's colours until the
   // operator picks another skin in the titlebar. Read the tokens on the default
@@ -4432,7 +4432,7 @@ async function main() {
   })()`;
   const paletteOff = await evaluate(readPalette);
   const solarToggle = `(() => {
-    const b = document.querySelector('[data-testid="extension-showcase-solar-system"] [data-testid="extension-toggle"]');
+    const b = document.querySelector('[data-testid="customization-showcase-solar-system"] [data-testid="customization-toggle"]');
     if (!b) return false;
     b.click();
     return true;
@@ -4441,25 +4441,25 @@ async function main() {
   const solarWorn = await waitFor(
     (s) =>
       s.kept === "showcase-solar-system.json" &&
-      s.extensionsActive === true &&
+      s.customizationsActive === true &&
       ["#0a0e1f", "#070b17"].includes((s.bgVar ?? "").toLowerCase()),
     20_000,
   );
   await sleep(600);
   const solarShot = await win.webContents.capturePage();
-  fs.writeFileSync(EXTENSIONS_ON_PNG, solarShot.toPNG());
+  fs.writeFileSync(CUSTOMIZATIONS_ON_PNG, solarShot.toPNG());
   await evaluate(solarToggle);
   const solarOff = await waitFor(
     (s) =>
       s.kept === null &&
-      s.extensionsActive === false &&
+      s.customizationsActive === false &&
       (s.bgVar ?? "").toLowerCase() === (paletteOff?.background ?? "").toLowerCase(),
     20_000,
   );
   await sleep(600);
   const paletteBack = await evaluate(readPalette);
-  const extensionsOffShot = await win.webContents.capturePage();
-  fs.writeFileSync(EXTENSIONS_OFF_PNG, extensionsOffShot.toPNG());
+  const customizationsOffShot = await win.webContents.capturePage();
+  fs.writeFileSync(CUSTOMIZATIONS_OFF_PNG, customizationsOffShot.toPNG());
   const samePalette =
     paletteOff !== null &&
     paletteBack !== null &&
@@ -4469,11 +4469,11 @@ async function main() {
     paletteOff.accent === paletteBack.accent &&
     paletteOff.foreground === paletteBack.foreground;
   check(
-    "switching-an-extension-off-hands-the-palette-back",
+    "switching-a-customization-off-hands-the-palette-back",
     solarWorn?.kept === "showcase-solar-system.json" &&
       solarWorn?.bgVar?.toLowerCase() !== paletteOff?.background?.toLowerCase() &&
       solarOff?.kept === null &&
-      solarOff.extensionsActive === false &&
+      solarOff.customizationsActive === false &&
       samePalette,
     JSON.stringify({
       offBefore: paletteOff,
@@ -4486,29 +4486,29 @@ async function main() {
 
   // Remove: two presses, and the file leaves the profile.
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-rig-workshop"] [data-testid="customization-remove"]'); if (!b) return false; b.click(); return true; })()`,
   );
   await sleep(200);
   await evaluate(
-    `(() => { const b = document.querySelector('[data-testid="extension-rig-workshop"] [data-testid="extension-remove"]'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = document.querySelector('[data-testid="customization-rig-workshop"] [data-testid="customization-remove"]'); if (!b) return false; b.click(); return true; })()`,
   );
   const removedRow = await untilTrue(
-    `!document.querySelector('[data-testid="extension-rig-workshop"]')`,
+    `!document.querySelector('[data-testid="customization-rig-workshop"]')`,
     15_000,
   );
   check(
-    "an-extension-can-be-switched-on-off-and-removed",
+    "a-customization-can-be-switched-on-off-and-removed",
     switchedOn?.kept === "rig-workshop.json" &&
-      switchedOn.extensionsActive === true &&
+      switchedOn.customizationsActive === true &&
       switchedOff?.kept === null &&
-      switchedOff.extensionsActive === false &&
+      switchedOff.customizationsActive === false &&
       removedRow === true &&
       !fs.existsSync(createdFile),
     JSON.stringify({
       on: switchedOn?.kept,
-      onActive: switchedOn?.extensionsActive,
+      onActive: switchedOn?.customizationsActive,
       off: switchedOff?.kept,
-      offActive: switchedOff?.extensionsActive,
+      offActive: switchedOff?.customizationsActive,
       removedRow,
       fileGone: !fs.existsSync(createdFile),
     }),
@@ -4548,14 +4548,14 @@ async function main() {
   };
   const openTrustEditor = async () => {
     const clicked = await evaluate(`(() => {
-      const b = document.querySelector('[data-testid="extension-rig-trust"] [data-testid="extension-edit"]');
+      const b = document.querySelector('[data-testid="customization-rig-trust"] [data-testid="customization-edit"]');
       if (!b) return false;
       b.click();
       return true;
     })()`);
     if (!clicked) return false;
     const open = await untilTrue(
-      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      `Boolean(document.querySelector('[data-testid="customization-editor"]'))`,
       10_000,
     );
     if (!open) return false;
@@ -4565,7 +4565,7 @@ async function main() {
   };
   const setTrustRaw = async (text) =>
     evaluate(`(() => {
-      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      const area = document.querySelector('[data-testid="customization-editor-raw"]');
       if (!area) return false;
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -4578,21 +4578,21 @@ async function main() {
   const saveTrustEditor = async (label) => {
     const ready = await untilTrue(
       `(() => {
-        const status = document.querySelector('[data-testid="extension-editor-status"]')?.textContent ?? "";
-        const save = document.querySelector('[data-testid="extension-editor-save"]');
+        const status = document.querySelector('[data-testid="customization-editor-status"]')?.textContent ?? "";
+        const save = document.querySelector('[data-testid="customization-editor-save"]');
         return status.includes(${JSON.stringify(label)}) && Boolean(save && !save.disabled);
       })()`,
       10_000,
     );
     if (!ready) return false;
     await evaluate(`(() => {
-      const b = document.querySelector('[data-testid="extension-editor-save"]');
+      const b = document.querySelector('[data-testid="customization-editor-save"]');
       if (!b || b.disabled) return false;
       b.click();
       return true;
     })()`);
     return untilTrue(
-      `!document.querySelector('[data-testid="extension-editor"]')`,
+      `!document.querySelector('[data-testid="customization-editor"]')`,
       10_000,
     );
   };
@@ -4602,7 +4602,7 @@ async function main() {
     `${JSON.stringify(trustTheme("Trust Zero"), null, 2)}\n`,
   );
   const trustRow = await untilTrue(
-    `Boolean(document.querySelector('[data-testid="extension-rig-trust"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-rig-trust"]'))`,
     15_000,
   );
   const openedFirst = await openTrustEditor();
@@ -4657,10 +4657,10 @@ async function main() {
   // to name this file, and the bytes it replaced become a new version.
   const restoreClicked = reopenedForHistory
     ? await evaluate(`(() => {
-        const rows = [...document.querySelectorAll('[data-testid="extension-history-row"]')];
+        const rows = [...document.querySelectorAll('[data-testid="customization-history-row"]')];
         if (rows.length === 0) return false;
         const last = rows[rows.length - 1];
-        const b = last.querySelector('[data-testid="extension-history-restore"]');
+        const b = last.querySelector('[data-testid="customization-history-restore"]');
         if (!b) return false;
         b.click();
         return true;
@@ -4681,7 +4681,7 @@ async function main() {
   const restoredRows = restoredUi?.historyRows ?? [];
   const rawAfterRestore = restoreClicked
     ? await untilTrue(
-        `(document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? "").includes("Trust Zero")`,
+        `(document.querySelector('[data-testid="customization-editor-raw"]')?.value ?? "").includes("Trust Zero")`,
         10_000,
       )
     : false;
@@ -4692,7 +4692,7 @@ async function main() {
   // The artifact claims "the editor with the History list open after a
   // restore", so put that section in the middle of the 1280x800 frame.
   await evaluate(`(() => {
-    const section = document.querySelector('[data-testid="extension-history"]');
+    const section = document.querySelector('[data-testid="customization-history"]');
     if (section) section.scrollIntoView({ block: "center" });
     return true;
   })()`);
@@ -4732,9 +4732,9 @@ async function main() {
   // ── 12i.2: eleven more writes prune to the newest ten ────────────────────
   // The cap is a main-side fact, so it is judged through the IPC the page uses;
   // the editor is closed first so a re-render cannot race the answer.
-  await click("extension-editor-cancel");
+  await click("customization-editor-cancel");
   await untilTrue(
-    `!document.querySelector('[data-testid="extension-editor"]')`,
+    `!document.querySelector('[data-testid="customization-editor"]')`,
     8_000,
   );
   const retentionWrites = [];
@@ -4808,7 +4808,7 @@ async function main() {
   const namesBefore = listBefore?.ok
     ? listBefore.value.map((entry) => entry.file)
     : [];
-  const importClicked = await click("extensions-import");
+  const importClicked = await click("customizations-import");
   const importOne = importClicked
     ? await waitFor(
         (s) =>
@@ -4828,14 +4828,14 @@ async function main() {
   const namesAfterOne = listAfterOne?.ok
     ? listAfterOne.value.map((entry) => entry.file)
     : [];
-  const invalidClicked = await click("extensions-import");
+  const invalidClicked = await click("customizations-import");
   let invalidUi = "";
   if (invalidClicked) {
     const invalidDeadline = Date.now() + 15_000;
     while (Date.now() < invalidDeadline) {
       invalidUi = await evaluate(`(() => {
         const themeError = document.querySelector('[data-testid="theme-error"]')?.textContent ?? "";
-        const pageError = document.querySelector('[data-testid="extensions-error"]')?.textContent ?? "";
+        const pageError = document.querySelector('[data-testid="customizations-error"]')?.textContent ?? "";
         return themeError + " " + pageError;
       })()`);
       if (invalidUi.includes("chrome.wingSwitcher.place")) break;
@@ -4998,31 +4998,31 @@ async function main() {
   );
   const studioSeededBytes = fs.readFileSync(studioPath);
   const studioRow = await untilTrue(
-    `Boolean(document.querySelector('[data-testid="extension-rig-studio"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-rig-studio"]'))`,
     15_000,
   );
   const openStudioEditor = async () => {
     const clicked = await evaluate(`(() => {
-      const b = document.querySelector('[data-testid="extension-rig-studio"] [data-testid="extension-edit"]');
+      const b = document.querySelector('[data-testid="customization-rig-studio"] [data-testid="customization-edit"]');
       if (!b) return false;
       b.click();
       return true;
     })()`);
     if (!clicked) return false;
     const open = await untilTrue(
-      `Boolean(document.querySelector('[data-testid="extension-editor"]'))`,
+      `Boolean(document.querySelector('[data-testid="customization-editor"]'))`,
       10_000,
     );
     if (!open) return false;
     // A parseable file opens on Fields; make sure, then wait for the studio.
     // Entering Fields also cancels the watcher's preview of the seed write.
     await evaluate(`(() => {
-      const tab = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      const tab = document.querySelector('[data-testid="customization-editor-tab-fields"]');
       if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
       return true;
     })()`);
     return untilTrue(
-      `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+      `Boolean(document.querySelector('[data-testid="customization-studio"]'))`,
       10_000,
     );
   };
@@ -5147,8 +5147,8 @@ async function main() {
   // tab strip to the scroll-port top spends the frame on the claim; a centred
   // crop showed a mid-form sliver instead.
   await evaluate(`(() => {
-    const editor = document.querySelector('[data-testid="extension-editor"]');
-    const tabs = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+    const editor = document.querySelector('[data-testid="customization-editor"]');
+    const tabs = document.querySelector('[data-testid="customization-editor-tab-fields"]');
     if (!editor || !tabs) return false;
     const scroller = editor.closest(".shell__content");
     if (scroller) {
@@ -5194,10 +5194,10 @@ async function main() {
     : null;
   // Fields→JSON serialises the draft; capture that text as the draft of record,
   // then return to Fields and let Save write the draft through the same path.
-  await click("extension-editor-tab-json");
+  await click("customization-editor-tab-json");
   const draftRawReady = await untilTrue(
     `(() => {
-      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      const area = document.querySelector('[data-testid="customization-editor-raw"]');
       if (!area) return false;
       try {
         const parsed = JSON.parse(area.value);
@@ -5215,7 +5215,7 @@ async function main() {
   );
   const draftRaw = draftRawReady
     ? await evaluate(
-        `document.querySelector('[data-testid="extension-editor-raw"]')?.value ?? ""`,
+        `document.querySelector('[data-testid="customization-editor-raw"]')?.value ?? ""`,
       )
     : "";
   let draftTheme = null;
@@ -5224,10 +5224,10 @@ async function main() {
   } catch {
     draftTheme = null;
   }
-  const backToFields = await click("extension-editor-tab-fields");
+  const backToFields = await click("customization-editor-tab-fields");
   const fieldsAgain = backToFields
     ? await untilTrue(
-        `Boolean(document.querySelector('[data-testid="extension-studio"]'))`,
+        `Boolean(document.querySelector('[data-testid="customization-studio"]'))`,
         10_000,
       )
     : false;
@@ -5348,7 +5348,7 @@ async function main() {
   const cancelClicked = await click("studio-cancel");
   const cancelClosed = cancelClicked
     ? await untilTrue(
-        `!document.querySelector('[data-testid="extension-editor"]')`,
+        `!document.querySelector('[data-testid="customization-editor"]')`,
         10_000,
       )
     : false;
@@ -5502,7 +5502,7 @@ async function main() {
   const contractCancel = await click("studio-cancel");
   const contractClosed = contractCancel
     ? await untilTrue(
-        `!document.querySelector('[data-testid="extension-editor"]')`,
+        `!document.querySelector('[data-testid="customization-editor"]')`,
         10_000,
       )
     : false;
@@ -5743,7 +5743,7 @@ async function main() {
   // the verdict's floor just above the scroll port's, so the palette editor's
   // inputs and the named pair are both visible.
   await evaluate(`(() => {
-    const editor = document.querySelector('[data-testid="extension-editor"]');
+    const editor = document.querySelector('[data-testid="customization-editor"]');
     const verdict = document.querySelector('[data-testid="studio-palette-verdict"]');
     if (!editor || !verdict) return false;
     const scroller = editor.closest(".shell__content");
@@ -6121,7 +6121,7 @@ async function main() {
   // it is also the gallery artifact (the list scrolled to the showcase cards).
   const galleryReady = await waitFor(
     (s) =>
-      s.extensionsPage === true &&
+      s.customizationsPage === true &&
       Array.isArray(s.galleryChips) &&
       s.galleryChips.some(
         (card) => card.file === "showcase-control-room.json",
@@ -6154,7 +6154,7 @@ async function main() {
   });
   const galleryNotes = galleryReady?.galleryNotes ?? [];
   await evaluate(`(() => {
-    const card = document.querySelector('[data-testid="extension-showcase-control-room"]');
+    const card = document.querySelector('[data-testid="customization-showcase-control-room"]');
     if (!card) return false;
     card.scrollIntoView({ block: "start" });
     return true;
@@ -6164,14 +6164,14 @@ async function main() {
   fs.writeFileSync(GALLERY_PNG, galleryShot.toPNG());
   check(
     "the-gallery-chip-marks-the-bundled-examples",
-    galleryReady?.extensionsPage === true &&
+    galleryReady?.customizationsPage === true &&
       chipSetOk === true &&
       chipNotesOk === true &&
       chipLabelsOk === true &&
       operatorFilesClear === true &&
       galleryNotes.length === expectedGalleryFiles.length,
     JSON.stringify({
-      galleryPage: galleryReady?.extensionsPage,
+      galleryPage: galleryReady?.customizationsPage,
       chippedFiles,
       chipSetOk,
       chipNotesOk,
@@ -6182,11 +6182,11 @@ async function main() {
   );
 
   // ── 12l.3: removing a gallery theme is final ────────────────────────────
-  const controlRoomSelector = '[data-testid="extension-showcase-control-room"]';
+  const controlRoomSelector = '[data-testid="customization-showcase-control-room"]';
   const controlRoomPath = path.join(themesDir, "showcase-control-room.json");
   const removeGalleryCard = async () =>
     evaluate(`(() => {
-      const b = document.querySelector('${controlRoomSelector} [data-testid="extension-remove"]');
+      const b = document.querySelector('${controlRoomSelector} [data-testid="customization-remove"]');
       if (!b) return false;
       b.click();
       return true;
@@ -6221,11 +6221,11 @@ async function main() {
     await sleep(100);
   }
   await evaluate(`(() => {
-    if (location.hash !== "#/extensions") location.hash = "#/extensions";
+    if (location.hash !== "#/customizations") location.hash = "#/customizations";
     return true;
   })()`);
-  const extensionsBack = await waitFor(
-    (s) => s.extensionsPage === true && (s.extensionsRows ?? 0) > 0,
+  const customizationsBack = await waitFor(
+    (s) => s.customizationsPage === true && (s.customizationsRows ?? 0) > 0,
     20_000,
   );
   const absentAfterReload = await evaluate(
@@ -6236,7 +6236,7 @@ async function main() {
   const recordedAfterReload =
     Array.isArray(stateAfterReload?.seededShowcase) &&
     stateAfterReload.seededShowcase.includes("showcase-control-room");
-  const remainingChipFiles = (extensionsBack?.galleryChips ?? [])
+  const remainingChipFiles = (customizationsBack?.galleryChips ?? [])
     .filter((card) => card.chip === true)
     .map((card) => card.file)
     .sort();
@@ -6253,7 +6253,7 @@ async function main() {
       goneFromDisk === true &&
       recordedAfterRemoval === true &&
       galleryUp === true &&
-      extensionsBack?.extensionsPage === true &&
+      customizationsBack?.customizationsPage === true &&
       absentAfterReload === true &&
       stillGoneFromDisk === true &&
       recordedAfterReload === true &&
@@ -6265,7 +6265,7 @@ async function main() {
       goneFromDisk,
       recordedAfterRemoval,
       galleryUp,
-      extensionsPage: extensionsBack?.extensionsPage,
+      customizationsPage: customizationsBack?.customizationsPage,
       absentAfterReload,
       stillGoneFromDisk,
       recordedAfterReload,
@@ -6311,9 +6311,9 @@ async function main() {
         COMPOSITION_VOCABULARY_PNG,
       ),
       helios: path.relative(desktopRoot, HELIOS_PNG),
-      extensions: path.relative(desktopRoot, EXTENSIONS_PNG),
-      extensionsOn: path.relative(desktopRoot, EXTENSIONS_ON_PNG),
-      extensionsOff: path.relative(desktopRoot, EXTENSIONS_OFF_PNG),
+      customizations: path.relative(desktopRoot, CUSTOMIZATIONS_PNG),
+      customizationsOn: path.relative(desktopRoot, CUSTOMIZATIONS_ON_PNG),
+      customizationsOff: path.relative(desktopRoot, CUSTOMIZATIONS_OFF_PNG),
       trust: path.relative(desktopRoot, TRUST_PNG),
       studio: path.relative(desktopRoot, STUDIO_PNG),
       look: path.relative(desktopRoot, STUDIO_LOOK_PNG),
