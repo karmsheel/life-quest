@@ -170,8 +170,8 @@ changes. Refusals print in the alert banner and leave the row recording: a
 combination the app or system owns, a key another movement already answers to (the
 refusal names it), and a key that cannot be bound at all. The keyboard icon in the
 dock's bottom bar opens the same table as a dock surface, with a pencil on each row
-that records in place and **Back to chat** to return (a collapsed dock is reopened
-from its floating mark first).
+that records in place; **Back to chat**, or a second press of that dock-bar button,
+returns to the thread (a collapsed dock is reopened from its floating mark first).
 
 `Mod` is Ctrl on Windows and Cmd on a Mac. Only your changes are written, to
 `localStorage` under `lifequest-keyboard-shortcuts`; setting a movement back to
@@ -199,8 +199,16 @@ The same two values are reachable from the dock itself. **Ctrl/Cmd and the mouse
 wheel** over the dock step the size, and **Ctrl+=**, **Ctrl+-** and **Ctrl+0**
 step it (or reset it) from anywhere, including while this sheet is open, so the
 preview moves with the keys. The combinations are reserved in the keyboard table,
-so no movement can be bound over them. The dock's bottom bar carries a **Chat
-display settings** button (the Type mark) that opens this tab directly. See
+so no movement can be bound over them.
+
+The dock's bottom bar carries a **Chat display settings** button (the Type mark)
+that opens a **Chat display** page inside the dock with the same two controls —
+text size with **−** / percent / **+** / **Reset**, the line-spacing options and a
+live preview — without taking the operator off the page they are working on. It
+edits this tab's window-local pair, so a change made there is what this sheet
+shows the next time it opens, and one made here is what the dock page wears. A
+second press of the button, or **Back to chat**, returns the dock to the thread.
+This tab remains the full page and is still reachable from the Settings sheet. See
 [Companion](./24-companion.md) for the dock's own controls.
 
 ## Composer

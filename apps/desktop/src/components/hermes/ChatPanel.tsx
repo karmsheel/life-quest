@@ -65,6 +65,7 @@ import {
 } from "@/components/hermes/ComposerModelControls";
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
+import { ChatDisplayPage } from "@/components/hermes/ChatDisplayPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { useConfirm } from "@/components/ui/useConfirm";
@@ -756,16 +757,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * so a run's deltas re-rendering this panel cannot resume it a second time.
    *
    * A surface the operator asked for by name — the dock bar's shortcuts
-   * reference — is not a landing: opening the dock onto it must not have a chat
-   * resume over the top of it. The check reads a ref rather than a dependency:
-   * landing is "the dock opened", not "the surface changed", and re-running
-   * when the surface changes would make closing the last tab resume a chat
-   * again off a list that has not been re-read yet.
+   * reference or its chat display page — is not a landing: opening the dock onto
+   * one must not have a chat resume over the top of it. The check reads a ref
+   * rather than a dependency: landing is "the dock opened", not "the surface
+   * changed", and re-running when the surface changes would make closing the
+   * last tab resume a chat again off a list that has not been re-read yet.
    */
   const viewRef = useRef(view);
   viewRef.current = view;
   useEffect(() => {
-    if (!open || requestedSessionId || viewRef.current === "shortcuts") return;
+    if (
+      !open ||
+      requestedSessionId ||
+      viewRef.current === "shortcuts" ||
+      viewRef.current === "display"
+    ) {
+      return;
+    }
     void chatRef.current.resumeLast();
   }, [open, requestedSessionId]);
 
@@ -960,7 +968,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * between to see.
    */
   useEffect(() => {
-    if (!open || view === "shortcuts") return;
+    if (!open || view === "shortcuts" || view === "display") return;
     // Both bodies stay mounted — only the one in front is visible; the other is
     // `hidden` (`display: none`), so it has no height and nothing to keep. The
     // watch follows the visible one.
@@ -1017,7 +1025,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * it for a caret the operator has already given to the answer.
    */
   useEffect(() => {
-    if (!open || view === "shortcuts" || asking) return;
+    if (!open || view === "shortcuts" || view === "display" || asking) return;
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
@@ -2219,6 +2227,28 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 </Link>
               </div>
             </div>
+          ) : view === "display" ? (
+            /*
+              The chat display page wears the shortcuts page's header shape: a
+              way back, the page's name, and no composer or tab strip under it.
+              It keeps no door into Settings: every control the page owns is
+              here, and the button that opened it must not become a second way
+              out of the dock.
+            */
+            <div className="chat-panel__header chat-panel__header--display">
+              <button
+                type="button"
+                className="chat-panel__icon-btn"
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView("thread")}
+              >
+                <ArrowLeft size={16} aria-hidden />
+              </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Chat display
+              </p>
+            </div>
           ) : (
             <div
               className="chat-panel__header chat-panel__header--thread"
@@ -2589,16 +2619,34 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             {view === "shortcuts" ? <ChatShortcutsPage /> : null}
           </div>
 
+          {/*
+            The chat display settings, as the dock's fifth surface: the size and
+            line spacing the transcript is read at, edited on the pane that wears
+            them. It reads the same window-local pair Settings → Chat display
+            edits, so the two surfaces cannot disagree; the page has no composer
+            because there is nothing to send from a display setting.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--display"
+            hidden={view !== "display"}
+          >
+            {/* Mounted only while it is the surface, like the shortcuts page:
+                it reads the display provider, and a shell without one should
+                not pay for a page it cannot show. */}
+            {view === "display" ? <ChatDisplayPage /> : null}
+          </div>
+
           <div
             className="chat-panel__footer"
-            hidden={view === "shortcuts"}
+            hidden={view === "shortcuts" || view === "display"}
           >
             {/*
               The interview, above the composer rather than in the transcript:
               it is the app speaking, it must not scroll away with the
               conversation, and the thread's `aria-live` must not announce it as
-              if the companion had said it. Thread surface only — the chain and
-              the shortcuts reference have no interview to open.
+              if the companion had said it. Thread surface only — the chain, the
+              shortcuts reference and the chat display page have no interview to
+              open.
             */}
             {view === "thread" ? (
               <OnboardingCards
@@ -3225,7 +3273,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               group and beside the switch it now shares the corner with: it is a
               surface selector like the chain, and the dock is the only place it
               belongs now that the titlebar no longer carries it. Pressed while
-              the reference is the surface in front of the operator.
+              the reference is the surface in front of the operator, and a second
+              press puts it away again — a door that opens a surface should be
+              the same door that closes it.
             */}
             <button
               type="button"
@@ -3234,7 +3284,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               aria-label="Keyboard shortcuts"
               title="Keyboard shortcuts"
               aria-pressed={view === "shortcuts"}
-              onClick={() => setView("shortcuts")}
+              onClick={() =>
+                setView(view === "shortcuts" ? "thread" : "shortcuts")
+              }
             >
               <Keyboard size={20} aria-hidden />
             </button>
@@ -3242,17 +3294,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               The reading settings, beside the key reference they share a
               subject with: the dock's text size and line spacing have their own
               page, and the operator's hand is already in this bar when the
-              transcript's type is what they want to change.
+              transcript's type is what they want to change. It renders that page
+              on the pane rather than opening Settings over the work: the size
+              it changes is the size of the transcript behind it. A second press
+              closes it, exactly as the shortcut reference's does.
             */}
-            <Link
-              to="/settings?tab=reading"
+            <button
+              type="button"
               className="chat-panel__icon-btn chat-panel__action"
               data-testid="chat-display-settings"
               aria-label="Chat display settings"
               title="Chat display settings"
+              aria-pressed={view === "display"}
+              onClick={() => setView(view === "display" ? "thread" : "display")}
             >
               <Type size={20} aria-hidden />
-            </Link>
+            </button>
             {/*
               The switch-position control, beside the collapse it belongs with:
               one click trades the dock's column for the sheet's, so the chat

@@ -15,8 +15,10 @@ changed, cleared or put back, and only your changes are stored.
   not a page.
 - The dock's reference — the keyboard icon in the dock's bottom action bar,
   labelled **Keyboard shortcuts**. With the dock open, it puts the reference on
-  the pane; the page you are working on stays where it is. A collapsed dock is
-  brought back by its launcher first, which restores the bar.
+  the pane; the page you are working on stays where it is. It is a toggle: a
+  second press closes the reference and returns the dock to the thread, as does
+  **Back to chat**. A collapsed dock is brought back by its launcher first, which
+  restores the bar.
 - The bindings live in this installation's `localStorage`, not in the vault.
 
 Back to [Wiki home](./index.md).
@@ -54,8 +56,10 @@ page exists because the operator's hands are not the default operator's hands.
 ### Look a key up in the dock
 
 1. With the dock open, choose **Keyboard shortcuts** in its bottom action bar.
-   The reference takes the pane; no chat resumes over it and the composer is not
-   drawn.
+   The reference takes the pane; no chat resumes over it, and its tab strip and
+   composer are not drawn. The button stays pressed while the reference is in
+   front. Choose it again, or choose **Back to chat**, and the dock returns to the
+   thread it left.
 2. The reference lists the same movements and effective keys as Settings. Each
    row has a pencil: choose it and the row waits for keys exactly as the Settings
    row does, with the same refusals, **Escape** to cancel and **Backspace** to
@@ -87,7 +91,7 @@ The dock's reference
 
 | Part | What it does |
 |---|---|
-| Dock bar | The **Keyboard shortcuts** button, pressed while the reference is the surface. |
+| Dock bar | The **Keyboard shortcuts** button, pressed while the reference is the surface; a second press (or **Back to chat** in the header) returns the dock to the thread. |
 | Header | **Back to chat**, the heading **Keyboard shortcuts**, and the **Change in Settings** pencil. |
 | Hint | *Every movement and the keys it answers to.* plus the changed count and **Change in Settings**. |
 | Groups | The same four groups, in the same order. |
@@ -186,12 +190,17 @@ movement and cannot be rebound:
 | **Ctrl+0** (**Cmd+0** on macOS) | Back to the shipped reading: 100% text size and 1.5 line spacing |
 
 The keys work anywhere in the app, including while the Settings sheet is open, so
-the **Chat display** preview moves with them; the wheel only acts over the dock.
-The size runs from 80% to 200% in 10-percent steps and keeps whatever line spacing
-**Settings → Chat display** holds, the page that reports both values. They are
-window storage, under `lifequest-chat-display`, not vault storage, so the reading
-size follows the screen rather than the folder. The dock's bottom bar also carries
-a **Chat display settings** button (the Type mark) that opens that page.
+the **Chat display** preview — in the sheet or on the dock's own page — moves with
+them; the wheel only acts over the dock. The size runs from 80% to 200% in
+10-percent steps and keeps whatever line spacing **Settings → Chat display**
+holds, the page that reports both values. They are window storage, under
+`lifequest-chat-display`, not vault storage, so the reading size follows the
+screen rather than the folder. The dock's bottom bar also carries a **Chat
+display settings** button (the Type mark) that opens a **Chat display** page as a
+dock surface: the same text-size stepper with **Reset**, the line-spacing options
+and a live preview, editing the same pair without taking the operator off the
+page. A second press of the button, or **Back to chat**, returns the dock to the
+thread; Settings → **Chat display** remains the full page.
 
 **Storage.** Overrides live in `localStorage` under
 `lifequest-keyboard-shortcuts`, as
