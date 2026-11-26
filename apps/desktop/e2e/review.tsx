@@ -798,9 +798,12 @@ const bridge: Record<string, unknown> = {
         ...patch,
       });
     if (stored.locked) return Promise.resolve(value({}));
-    // The daily review has no area sections, so the app's finance rule has
-    // nowhere to go: it is reported as skipped rather than planting a section
-    // the design says must not exist.
+    // This stub answer stands for a review whose directive the pass cannot
+    // place — a section the review does not carry — not for the shipped daily
+    // review: after the core fix that directive resolves to the overall
+    // `## Look-back`, so a real daily Start writes. It is kept here because this
+    // is the only harness path that exercises the page's skip line, and the
+    // page must report a skip rather than a clean start.
     if (cadence === "daily") {
       return Promise.resolve(
         value({
