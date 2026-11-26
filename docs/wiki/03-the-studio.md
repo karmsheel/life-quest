@@ -226,8 +226,11 @@ The rail's three dividers — above **Chats**, above the governance shelf, and a
 the foot — are the app's own line rather than a theme ink: each is a crisp 1px of
 neutral gray, light by day (`#c8c8c8`) and darker at night (`#3a3a3a`), and the
 pair is identical in every theme, so the sidebar's groups are separated the same
-way whichever palette you wear. A theme's palette colours surfaces and its own
-borders; it cannot tint these.
+way whichever palette you wear. The line is drawn as a hairline border rather than
+a filled block, so it stays a single device pixel on a scaled display: at 125% or
+150% Windows scaling a fill could cover two rows on some lines and one on others,
+which is what made the three look uneven. A theme's palette colours surfaces and
+its own borders; it cannot tint these.
 
 The main pane is the page's own column, beginning directly under the title bar.
 It is the element the chat reads as the current page (`data-page-context-root`),

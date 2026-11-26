@@ -80,7 +80,10 @@
      theme file can tint them again. The ink is declared by *mode*, not by theme:
      the day value is a light neutral that sits quietly on the paper mat, and the
      dark blocks below sink it toward the night mat — one standard in every theme,
-     at each mode's own weight. */
+     at each mode's own weight. The width is drawn as a border (see
+     `.nav-rail__divider`), so the engine snaps it to whole device pixels: one
+     device pixel on a scaled display, where a background fill of the same 1px
+     could spread over two. */
   --divider: #c8c8c8;
   --divider-width: 1px;
 
