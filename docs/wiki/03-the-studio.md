@@ -264,7 +264,11 @@ The chat dock:
   thin scrollbar, and the tab that comes in front is scrolled into view. A **+** immediately after the last tab is **New chat tab** —
   the plus sits where the next tab will appear, not on the strip's trailing edge.
   A middle click closes a tab and **Ctrl/Cmd+W** closes the tab in front.
-  Right-clicking a tab opens **Pin**, **Rename**, **Archive** and **Delete**.
+  **Ctrl+Tab** steps to the next tab and **Ctrl+Shift+Tab** to the previous one,
+  in the order the strip draws them and wrapping at both ends; the keys work with
+  the caret in the composer, the way a browser's tab keys work wherever you are.
+  They are Ctrl on every platform, Cmd+Tab being the macOS app switcher. Right-clicking a tab opens **Pin**, **Rename**, **Archive**
+  and **Delete**.
 - **Pinned chats** lead the strip: a pinned tab leads with the pin in the slot a
   plain tab spends on its status mark, then wears the chat's name like any other
   tab, with no close control. A pinned chat is durable state, so it has a tab on

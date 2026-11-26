@@ -526,7 +526,9 @@ export function shortcutBindingsEqual(
 /**
  * Combinations the app or the operating system owns. A user binding that lands
  * on one is refused: Mod+W belongs to the chat dock's tab close (and, on macOS,
- * to the window), and stealing F12 would replace devtools with a wing jump.
+ * to the window), Ctrl+Tab and Ctrl+Shift+Tab belong to the dock's tab
+ * switching (Ctrl on every platform, because Cmd+Tab is the OS app switcher on
+ * macOS), and stealing F12 would replace devtools with a wing jump.
  */
 const RESERVED_BINDINGS = [
   "Escape",
@@ -537,6 +539,8 @@ const RESERVED_BINDINGS = [
   "F12",
   "Alt+F4",
   "Mod+W",
+  "Ctrl+Tab",
+  "Ctrl+Shift+Tab",
   "Mod+Q",
   "Mod+R",
   "Mod+Shift+R",
