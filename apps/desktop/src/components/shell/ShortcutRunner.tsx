@@ -6,11 +6,12 @@
  * is in (from `WingProvider`) and the page they are on (from the router). The
  * provider above it owns which keys mean what; this file owns what they do.
  *
- * One key here is not a movement: Mod+W closes the chat tab in front, the way
- * every browser closes a tab. It lives in this listener rather than the movement
- * table because browsers do not let that key be rebound, because `RESERVED_BINDINGS`
- * keeps it out of every movement, and because it must see the dock's strip and
- * the app's modals — two things only this place has in scope at once.
+ * Three keys here are not movements: Mod+W closes the chat tab in front and
+ * Ctrl+Tab / Ctrl+Shift+Tab walk the strip, the way every browser closes and
+ * switches its tabs. They live in this listener rather than the movement table
+ * because browsers do not let those keys be rebound, because `RESERVED_BINDINGS`
+ * keeps them out of every movement, and because they must see the dock's strip
+ * and the app's modals — two things only this place has in scope at once.
  *
  * The listener stands aside in four cases, and each is deliberate:
  *
@@ -91,6 +92,39 @@ function isChatTabCloseKey(event: KeyboardEvent): boolean {
 }
 
 /**
+ * The browser's tab-switch keys: Ctrl+Tab forward, Ctrl+Shift+Tab back.
+ *
+ * They are Mod+W's counterpart and live beside it for the same reasons: the
+ * platform gives these keys to the tab in front wherever tabs exist, so
+ * `RESERVED_BINDINGS` keeps them out of the movement table, and the dock owns
+ * the gesture. They are Ctrl on every platform rather than `Mod`: Cmd+Tab is the
+ * OS app switcher on macOS and never reaches a window, while Ctrl+Tab is what
+ * the browser on that platform uses to walk its tabs — the close key is Cmd+W
+ * there because the browser's close is Cmd, and here the browser's convention is
+ * Ctrl. `0` means the event is neither key.
+ */
+function chatTabCycleStep(event: KeyboardEvent): 0 | 1 | -1 {
+  if (event.altKey || event.metaKey || event.key !== "Tab") return 0;
+  if (!event.ctrlKey) return 0;
+  return event.shiftKey ? -1 : 1;
+}
+
+/**
+ * The tab one step from `activeId` in the strip's drawing order, wrapping at
+ * the ends. With no chat in front, forward enters at the leading tab and back at
+ * the trailing one, the way `page.next` enters the rail.
+ */
+function nextTabId(
+  ids: readonly string[],
+  activeId: string | null,
+  step: 1 | -1,
+): string {
+  const index = activeId ? ids.indexOf(activeId) : -1;
+  if (index < 0) return step > 0 ? ids[0] : ids[ids.length - 1];
+  return ids[(index + step + ids.length) % ids.length];
+}
+
+/**
  * A modal surface is up. The app's own dialogs declare `aria-modal`; the sheet
  * frame is one of them, and the update dialog and confirmations are the others.
  * While one is up the page behind it is not the page the operator is working on.
@@ -120,9 +154,10 @@ export function ShortcutRunner() {
     surface: chatSurface,
     toggleFocus,
   } = useChatDock();
-  // The dock's tab strip. The close key is a fact about what is on screen, so
-  // the runner reads the same two lists the strip draws from.
-  const { activeId, activeSession, closeTab, pinnedTabIds, tabIds } = useChatSessions();
+  // The dock's tab strip. The close and cycle keys are facts about what is on
+  // screen, so the runner reads the same two lists the strip draws from.
+  const { activeId, activeSession, closeTab, openChat, pinnedTabIds, tabIds } =
+    useChatSessions();
   /**
    * The tab Mod+W would close, or null when there is nothing to close.
    *
@@ -147,6 +182,27 @@ export function ShortcutRunner() {
     activeSession &&
     !activeSession.pinned
       ? { id: activeId, close: closeTab }
+      : null;
+
+  /**
+   * The strip the cycle keys walk, or null when they have nothing to offer.
+   *
+   * Same ref discipline as the close key above: the listener must not re-bind
+   * per streamed delta, while `openChat` is rebuilt whenever a run changes. The
+   * conditions are the strip's own — open dock, thread surface, at least two
+   * tabs; with one chat there is no other tab to switch to, so the key is left
+   * to the platform exactly as Mod+W is with nothing to close. The walk takes
+   * the strip's drawing order, pinned band first, which is the order `tabIds`
+   * already carries.
+   */
+  const tabCycleRef = useRef<{
+    ids: readonly string[];
+    activeId: string | null;
+    open: (id: string) => void;
+  } | null>(null);
+  tabCycleRef.current =
+    chatOpen && chatSurface === "thread" && tabIds.length > 1
+      ? { ids: tabIds, activeId, open: (id) => void openChat(id) }
       : null;
 
   const run = useCallback(
@@ -226,6 +282,18 @@ export function ShortcutRunner() {
       if (closableTab && isChatTabCloseKey(event)) {
         event.preventDefault();
         closableTab.close(closableTab.id);
+        return;
+      }
+      // The dock's other browser gesture, and for the same reasons ahead of the
+      // movement table: Ctrl+Tab is reserved, so it cannot shadow one, and the
+      // strip must hop between its tabs even while the caret is in the chat
+      // composer — which is where the operator is when the strip is what they
+      // are working with.
+      const tabCycle = tabCycleRef.current;
+      const step = tabCycle ? chatTabCycleStep(event) : 0;
+      if (tabCycle && step !== 0) {
+        event.preventDefault();
+        tabCycle.open(nextTabId(tabCycle.ids, tabCycle.activeId, step));
         return;
       }
       if (!bindings) return;

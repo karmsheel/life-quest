@@ -166,7 +166,10 @@ vault's own binding.
    close control. Right-click an ordinary tab for **Pin**, **Rename**, **Archive** and
    **Delete**; a pinned tab's **Tab actions** menu offers **Unpin** alone. Close
    an ordinary tab with its **×**, a middle click, or **Ctrl+W** (**Cmd+W** on
-   macOS).
+   macOS). **Ctrl+Tab** steps to the next tab and **Ctrl+Shift+Tab** to the
+   previous one, wrapping at the ends of the strip and working with the caret in
+   the composer. They are Ctrl on every platform too: Cmd+Tab is the macOS app
+   switcher.
 8. Archiving the chat in front closes its tab and brings its neighbour forward. If
    it was the last open chat, the dock stays on the thread and opens a blank
    **New chat**, so an archive never throws you out of the dock.
@@ -389,8 +392,9 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 3. The header's pencil (**Change in Settings**) opens the full **Settings →
    Keyboard** page, and **Back to chat** returns to the thread.
 4. The reference also names the dock's browser keys: **Ctrl+W** closes the tab in
-   front and a middle click closes the tab under the pointer. Bindings live in the
-   browser's local storage, not in the vault.
+   front, **Ctrl+Tab** steps to the next tab and **Ctrl+Shift+Tab** to the
+   previous one, and a middle click closes the tab under the pointer. Bindings live
+   in the browser's local storage, not in the vault.
 
 ### Focus mode and the dock
 

@@ -82,6 +82,12 @@
  *     accessible name or close label; or its slot steals the label's room and
  *     drops the tab under the three-characters-plus-ellipsis floor. A chat the
  *     operator opened from the list must stay plain: no icon, no `data-icon`.
+ * 23. Ctrl+Tab that is not the browser's tab-switch — it does not walk the strip
+ *     at all, walks it in the wrong direction, does not wrap at the ends, hops
+ *     while the dock is on another surface or collapsed, or drops the caret out
+ *     of the chat composer it was pressed from (the chatbar is where the
+ *     operator is when they reach for it). With no strip drawn, or only one tab
+ *     in it, there is no tab to reach and the platform keeps the key.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
