@@ -11,6 +11,7 @@ import {
   type PeriodPack,
   type Result,
   type ReviewCadence,
+  type ReviewRecord,
   type VaultSnapshot,
   type WeekStartDay,
 } from "@lifequest/vault-core";
@@ -134,7 +135,7 @@ export function boundKickoff(input: {
   }
   // The cadence's skill fills the figures; both cadences read them the same way.
   const figures =
-    "Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
+    "Read your page with get_review (pass this scope) — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
   if (input.cadence === "daily") {
     // One general review of the day: the daily cadence has no area scopes, and
     // a kickoff that implied them would send the companion looking for sections
@@ -148,10 +149,10 @@ export function boundKickoff(input: {
       typeof input.areaCount === "number" && input.areaCount > 0
         ? ` (${input.areaCount} areas)`
         : "";
-    return `Let's assemble the ${title}${suffix}. This is the whole-life review: every area review for this period is complete${count}. Read the file with get_review and go across each area's Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall sections only, synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+    return `Let's assemble the ${title}${suffix}. This is the whole-life review: every area review for this period is complete${count}. Read each area's page with get_review (one call per area scope) and go across their Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall page only (get_review with scope "overall", then write_review with that scope and its rev), synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   const name = (input.domainName ?? input.scope).trim() || input.scope;
-  return `Let's assemble the ${title}${suffix}. This is the ${name} review — this period's part of the life review. Write into the ## ${name} section only and leave the other sections alone. Interview me through the four ### headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
+  return `Let's assemble the ${title}${suffix}. This is the ${name} review — this period's part of the life review. Write only this page: get_review with scope "${input.scope}", then write_review with the same scope, your page body (one # title and the four ## headings) and its rev. Leave every other section and area alone. Interview me through the four headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
 }
 
 export function findBoundSession(
@@ -202,10 +203,10 @@ function reviewScopeLine(input: {
     return "Review scope: the day as a whole — the daily review has no area sections; do not create any.";
   }
   if (input.scope === "overall") {
-    return "Review scope: the whole life — the overall review. The area sections in this file are complete: read every one and synthesise across them rather than repeating a single area.";
+    return "Review scope: the whole life — the overall page. Every area page for this period is complete: read each one with get_review (pass its scope) and synthesise across them rather than repeating a single area.";
   }
   const name = (input.domainName ?? input.scope).trim() || input.scope;
-  return `Review scope: the ${name} area — write only the ## ${name} section and leave the other sections alone.`;
+  return `Review scope: the ${name} area page — call get_review with scope "${input.scope}", then write_review with that scope and its rev; leave every other section and area alone.`;
 }
 
 /**
@@ -253,7 +254,10 @@ export function formatReviewContext(input: {
     if (scopeLine) lines.push(scopeLine);
   }
   lines.push(
-    "Skeleton rules: overall uses ## Look-back / ## Keep / ## Change / ## Next-period intent; domain sections use the same four ### headings.",
+    "Skeleton rules: each page is one # title and the four ## Look-back / ## Keep / ## Change / ## Next-period intent headings. A page has no other headings; write only your own scope's page.",
+  );
+  lines.push(
+    "If write_review answers CONFLICT, the file moved under you: read your page again with get_review and re-apply your section — never resend the body you already had.",
   );
   if (input.kind === "review") {
     lines.push(
@@ -305,6 +309,12 @@ async function startOrResumeBoundSession(
       ? await ensureReview(root, input)
       : await ensurePlanningStub(root, input);
   if (!ensured.ok) return ensured;
+  // A locked review is a finished report. Starting an interview on it would bind
+  // a chat whose every write becomes a Decision against a document nobody
+  // intends to change; the page hides Start for the same reason.
+  if (kind === "review" && (ensured.value as ReviewRecord).locked) {
+    return { ok: false, error: "This review is locked. Unlock it before starting another interview." };
+  }
 
   // The document exists before the agent is asked for anything, so a gateway
   // that is down cannot take the review file down with it.

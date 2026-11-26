@@ -1,6 +1,6 @@
 /**
  * Drives the review harness in a real Electron window and turns what the Review
- * page actually renders into `e2e/artifacts/review.json` plus eleven pictures.
+ * page actually renders into `e2e/artifacts/review.json` plus twelve pictures.
  *
  * Run with the dev server up (`npm run dev`, or the repository's e2e runner):
  *
@@ -31,6 +31,9 @@
  *   review-daily-complete.png  the daily review the AGENT wrote and completed on
  *                         the open page: the report is in the box, the badge is
  *                         Locked, and the Mark-review-complete button is gone
+ *   review-conflict.png   the open page after another writer moved the file under
+ *                         it: the conflict banner, the operator's draft still in
+ *                         the box, and the companion's paragraph still in the file
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -2310,7 +2313,122 @@ async function main() {
   }
   if (!(await fileLocked(win))) failure("the previous week's file is not locked after the agent completed it");
 
-  // ── 13. nothing unexpected, nothing on fire ──────────────────────────────
+  // ── 13. a second writer lands under the open page: the draft is kept ─────
+  // The page's autosave is a whole-body write. If it does not carry the rev it
+  // loaded, it writes the operator's version over the companion's, and the
+  // companion's paragraph is gone while the page reports a successful save. The
+  // rig writes the file the way the agent's tool does — in the file and with
+  // main's change announcement — while the operator's sentence is unsaved in the
+  // box. Whichever path notices first (the background read or the autosave's
+  // compare-and-swap), the same three things must hold: the file keeps the
+  // companion's body, the box keeps the operator's draft, and the page says so.
+  //
+  // The page is on the previous week's locked review; go one further back, where
+  // the rig seeds an unlocked week, so the box is writable and no earlier leg's
+  // fixture claims can be disturbed by the write. Wait for the READ to land, not
+  // just the header: the old record's box is still on screen while the new file
+  // is in flight, and typing into it would be overwritten when the load lands.
+  const conflictGetsBefore = (await setHarness(win, "window.reviewRigCalls")).filter(
+    (call) => call.startsWith("reviewGet:"),
+  ).length;
+  await click(win, '[data-testid="review-prev"]');
+  await waitFor(
+    win,
+    `(window.reviewRigCalls ?? []).filter((call) => call.startsWith("reviewGet:")).length > ${conflictGetsBefore}`,
+    "the week before's review to be read",
+  );
+  await frames(win);
+  await frames(win);
+  const conflictPeriod = await setHarness(
+    win,
+    `document.querySelector('[data-testid="review-period"]')?.dataset.period ?? null`,
+  );
+  checks.conflictPeriod = conflictPeriod;
+  await openBlock(win, 2);
+  await type(win, "Operator sentence while the companion writes.");
+  const conflictWritesBefore = (await setHarness(win, "window.reviewRigWrites")).length;
+  const beforeRemote = await fileBody(win);
+  const remoteBody = beforeRemote.replace("## Keep\n", "## Keep\n\nREMOTE COMPANION SENTENCE.\n");
+  const remoteWrite = await setHarness(
+    win,
+    `window.reviewRigAgentWritesBody(${JSON.stringify(remoteBody)})`,
+  );
+  checks.conflictRemoteWrite = remoteWrite;
+  checks.conflictRemoteBody = remoteBody;
+  if (!remoteWrite || remoteWrite.ok !== true) {
+    failure(`the companion's write under the open page was refused: ${JSON.stringify(remoteWrite)}`);
+  }
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="review-conflict"]'))`,
+    "the conflict banner",
+  );
+  await frames(win);
+  const conflicted = await sample(win);
+  checks.conflicted = {
+    boxText: String(conflicted.boxText),
+    banner: await setHarness(
+      win,
+      `document.querySelector('[data-testid="review-conflict"]')?.textContent ?? null`,
+    ),
+    reloadPresent: await setHarness(
+      win,
+      `Boolean(document.querySelector('[data-testid="review-conflict-reload"]'))`,
+    ),
+    status: conflicted.status,
+  };
+  const fileAfterConflict = await fileBody(win);
+  checks.conflictFile = fileAfterConflict;
+  checks.conflictAutosaveAttempted =
+    (await setHarness(win, "window.reviewRigWrites")).length > conflictWritesBefore;
+  if (fileAfterConflict !== remoteBody) {
+    failure(
+      `the conflicted autosave overwrote the companion's body: ${JSON.stringify(fileAfterConflict.slice(0, 220))}`,
+    );
+  }
+  if (!String(checks.conflicted.boxText).includes("Operator sentence while the companion writes.")) {
+    failure("the conflict threw the operator's draft away");
+  }
+  if (!String(checks.conflicted.banner).includes("changed on disk")) {
+    failure(`the conflict banner does not say what happened: ${JSON.stringify(checks.conflicted.banner)}`);
+  }
+  // The pause is the guard: after the refusal, the box must stop trying to write
+  // its stale body on every keystroke tick.
+  const conflictWritesPaused = (await setHarness(win, "window.reviewRigWrites")).length;
+  await new Promise((resolve) => setTimeout(resolve, 1_400));
+  checks.conflictWritesPaused = [
+    conflictWritesPaused,
+    (await setHarness(win, "window.reviewRigWrites")).length,
+  ];
+  if (checks.conflictWritesPaused[1] !== checks.conflictWritesPaused[0]) {
+    failure(
+      `the conflicted box kept writing: ${checks.conflictWritesPaused[0]} then ${checks.conflictWritesPaused[1]} write(s)`,
+    );
+  }
+  // Reload adopts the file, which is the one resolution the banner offers: the
+  // operator re-reads the companion's paragraph and re-applies their own text on
+  // top of it rather than either side being silently picked.
+  await click(win, '[data-testid="review-conflict-reload"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="review-conflict"]')`,
+    "the conflict banner to clear on reload",
+  );
+  await waitFor(
+    win,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes("REMOTE COMPANION SENTENCE.")`,
+    "the file's body to reach the box after reload",
+  );
+  await frames(win);
+  const conflictReloaded = await sample(win);
+  checks.conflictReloaded = {
+    boxText: String(conflictReloaded.boxText),
+    writing: conflictReloaded.editing,
+    locked: conflictReloaded.lockedBadge,
+  };
+  await shot(win, "review-conflict.png");
+
+  // ── 14. nothing unexpected, nothing on fire ──────────────────────────────
   const finalStarts = await setHarness(win, "window.reviewRigStarts");
   checks.startsAll = finalStarts;
   const finalKickoffs = await setHarness(win, "window.reviewRigKickoffs");

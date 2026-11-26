@@ -1414,6 +1414,11 @@ async function applyApprovedBody(
         decision.target.cadence,
         decision.target.period,
         decision.proposedBodyMarkdown,
+        undefined,
+        // What the Decision was proposed against: the apply keeps a heading whose
+        // file content moved on since then (three-way merge), so approving a
+        // proposal cannot resurrect another area's stale prose.
+        decision.previousBodyMarkdown ?? undefined,
       );
       if (!res.ok) return { ok: false, error: res.error, terminal: false };
       return { ok: true, value: undefined };

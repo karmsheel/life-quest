@@ -517,7 +517,15 @@ async function executeConnectedTool(
     if (name === "get_review") {
       const review = (result as { review: ReviewRecord }).review;
       if (!connectedReviewVisible(review.scopes, grant)) return grantRefusal("NOT_FOUND");
-      return { review: projectConnectedReview(review, grant, headings) };
+      // A scoped read names the page it wants; a page outside the grant answers
+      // NOT_FOUND exactly like a missing one, so the agent cannot map the review.
+      const scope = typeof rec.scope === "string" ? rec.scope : null;
+      if (scope !== null && !granted(scope)) return grantRefusal("NOT_FOUND");
+      const projected = projectConnectedReview(review, grant, headings);
+      if (scope === null) return { review: projected };
+      const page = (result as { page?: unknown }).page;
+      if (page === undefined) return grantRefusal("NOT_FOUND");
+      return { review: projected, page };
     }
     const { reviews } = result as { reviews: ReviewIndexEntry[] };
     return {

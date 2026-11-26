@@ -136,6 +136,8 @@ type StoredReview = {
   body: string;
   scopes: Record<string, ScopeState>;
   locked: boolean;
+  /** The content version the real engine keeps; a write's baseRev is checked against it. */
+  rev: number;
 };
 
 const files = new Map<string, StoredReview>();
@@ -208,6 +210,7 @@ function seedReview(cadence: ReviewCadence, period: string): StoredReview {
     body: weekly
       ? weeklyBlocks(period).join("\n\n")
       : `# ${titleFor(cadence, period)}\n\n${overallSkeleton()}`,
+    rev: 7,
     scopes: weekly
       ? {
           // The engine plants the overall scope when it creates the file, which
@@ -278,6 +281,7 @@ function agentWritesBody(body: string): { ok: boolean; error?: string } {
   // real tool would refuse.
   if (stored.locked) return { ok: false, error: "LOCKED" };
   stored.body = body;
+  stored.rev += 1;
   announceDataChanged();
   return { ok: true };
 }
@@ -341,6 +345,7 @@ function recordOf(stored: StoredReview): ReviewRecord {
     locked: stored.locked,
     updatedAt: "2026-10-18T00:00:00.000Z",
     title: titleFor(stored.cadence, stored.period),
+    rev: stored.rev,
     scopes,
     bodyMarkdown: stored.body,
   };
@@ -770,15 +775,34 @@ const bridge: Record<string, unknown> = {
     }
     return Promise.resolve(ok(recordOf(stored)));
   },
-  reviewWrite: (cadence: string, period: string, next: string) => {
+  reviewWrite: (cadence: string, period: string, next: string, baseRev?: number) => {
     harness.reviewRigCalls?.push(`reviewWrite:${cadence}:${period}`);
     harness.reviewRigWrites?.push({ cadence, period, body: next });
     const stored = getOrSeed(cadence as ReviewCadence, period);
     // Locking means "this is finished": the engine refuses a write to a locked
     // file, and the rig models that so "marking the life review complete locks
     // it" is checked against the file rather than against a badge.
-    if (stored.locked) return Promise.resolve(fail("This review is locked."));
+    if (stored.locked) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "This review is locked.",
+        code: "LOCKED" as const,
+        current: recordOf(stored),
+      });
+    }
+    // The engine's compare-and-swap: a save from a body the file has moved past
+    // is refused with the file as it now stands, not applied.
+    if (typeof baseRev === "number" && baseRev !== stored.rev) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "CONFLICT",
+        code: "CONFLICT" as const,
+        current: recordOf(stored),
+      });
+    }
+    if (next === stored.body) return Promise.resolve(ok(recordOf(stored)));
     stored.body = next;
+    stored.rev += 1;
     return Promise.resolve(ok(recordOf(stored)));
   },
   reviewPrepopulate: (cadence: string, period: string, scope: string) => {

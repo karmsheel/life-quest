@@ -62,6 +62,7 @@ import type {
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
+  ReviewWriteOutcome,
   ScriptApplyResult,
   ScriptRunResult,
   SavedView,
@@ -793,7 +794,8 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
     body: string,
-  ) => Promise<Result<ReviewRecord>>;
+    baseRev?: number,
+  ) => Promise<ReviewWriteOutcome>;
   reviewMarkDone: (
     cadence: ReviewCadence,
     period: string,

@@ -204,6 +204,7 @@ import {
   type ReviewCadence,
   type ReviewPrepopulateResult,
   type ReviewRecord,
+  type ReviewWriteOutcome,
   type ReviewSkill,
   type SignalChainListResult,
   type SignalCreateInput,
@@ -1852,15 +1853,20 @@ export async function reviewWrite(
   cadence: ReviewCadence,
   period: string,
   body: string,
-): Promise<Result<ReviewRecord>> {
-  return withVault((root) =>
-    writeReview(root, {
+  baseRev?: number,
+): Promise<ReviewWriteOutcome> {
+  // The whole-body editor path: it carries the rev it loaded so a write that
+  // raced another writer comes back as CONFLICT instead of overwriting prose.
+  return enqueue(async () => {
+    if (!currentRoot) return { ok: false, error: "No vault is open", code: "MALFORMED" };
+    return writeReview(currentRoot, {
       cadence,
       period,
       bodyMarkdown: body,
       actor: USER_ACTOR,
-    }),
-  );
+      baseRev,
+    });
+  });
 }
 
 export async function reviewMarkDone(

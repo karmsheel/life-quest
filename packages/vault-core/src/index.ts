@@ -136,10 +136,13 @@ export {
 } from "./period.ts";
 export {
   DAILY_REVIEW_NO_AREAS,
+  composeReviewPageWrite,
   ensureReview,
   getReview,
   getReviewAreaChecklist,
+  getReviewPageBody,
   writeReview,
+  writeReviewPage,
   markReviewDone,
   unlockReview,
   setReviewSessionId,

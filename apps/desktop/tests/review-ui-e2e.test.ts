@@ -50,6 +50,7 @@ const SHOTS = [
   "review-daily.png",
   "review-live-checklist.png",
   "review-daily-complete.png",
+  "review-conflict.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 /** The four-overall-headings order the engine's skeleton uses. */
@@ -1422,6 +1423,50 @@ describe("review ui e2e", () => {
     );
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
+
+    // ── a second writer under the open page: the draft is kept ─────────────
+    // The page's autosave and the companion both write the whole review body.
+    // The autosave carries the rev it loaded, so a file that moved on under it is
+    // a CONFLICT: the comment is kept in the box, the file keeps the companion's
+    // paragraph, and the reload control is the only thing that resolves it.
+    const conflicted = report.checks.conflicted;
+    assert.ok(report.checks.conflictPeriod, "the conflict leg never reached a weekly review");
+    assert.equal(
+      report.checks.conflictRemoteWrite?.ok,
+      true,
+      "the rig refused the companion's write under the open page",
+    );
+    assert.equal(
+      report.checks.conflictFile,
+      report.checks.conflictRemoteBody,
+      "the conflicted autosave overwrote the companion's body instead of being refused",
+    );
+    assert.match(
+      String(conflicted?.boxText),
+      /Operator sentence while the companion writes\./,
+      "the conflict threw the operator's draft away",
+    );
+    assert.match(
+      String(conflicted?.banner),
+      /changed on disk/,
+      "the conflict banner does not say what happened",
+    );
+    assert.equal(conflicted?.reloadPresent, true, "the conflict banner offers no reload control");
+    assert.deepEqual(
+      report.checks.conflictWritesPaused,
+      [report.checks.conflictWritesPaused[0], report.checks.conflictWritesPaused[0]],
+      "the conflicted box kept autosaving its stale body",
+    );
+    assert.equal(
+      report.checks.conflictReloaded?.locked,
+      null,
+      "the conflict leg ran on a locked review",
+    );
+    assert.match(
+      String(report.checks.conflictReloaded?.boxText),
+      /REMOTE COMPANION SENTENCE\./,
+      "reloading after the conflict did not adopt the file's body",
+    );
 
     // ── the artifacts ──────────────────────────────────────────────────────
     assert.equal(report.checks.openedRail.rows.length, RAIL_ROWS.length);

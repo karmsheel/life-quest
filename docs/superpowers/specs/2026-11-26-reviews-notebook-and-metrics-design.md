@@ -233,6 +233,11 @@ It is a **read-only projection**: no writes go through it, and the new code path
 - `writeReviewPage` requires `baseRev` (the page `rev` the caller read). Inside the mutex the
   engine re-reads the page; if `page.rev !== baseRev` it returns `CONFLICT` with the current
   page (body, rev, status) and writes nothing.
+- **Phase 0 shape (today's one-file storage):** a page has no rev of its own yet, so scoped
+  writes merge the scope's headings under the mutex and ignore `baseRev` — cross-scope edits
+  are other people's work, not a conflict. The file `rev` is checked by the whole-body writers
+  (page autosave, snapshot pass, legacy `write_review`) and returned as `CONFLICT` with the
+  current record. Phase 1 moves the rev onto each page file and turns the scoped check on.
 - Two writes to **different** pages never contend (different files, different revs) — which
   is the reported concurrent-review case.
 - Two writes to the **same** page conflict and are surfaced, never silently merged in the
@@ -657,9 +662,13 @@ test is the one served.
 
 ## 16. Rollout
 
-1. **Phase 0 — write guards.** Scope-addressed `write_review`, per-page CAS, one engine mutex
-   shared by both doors, conflict surface. Ships alone; stops today's losses. UI unchanged
-   except the conflict banner.
+1. **Phase 0 — write guards.** Scope-addressed `write_review`, one engine mutex shared by
+   both doors, conflict surface, and a content `rev` on today's single-file review. In Phase 0
+   the CAS is on the **file** rev and is checked by whole-body writers (the page's autosave,
+   the snapshot pass, legacy `write_review`); the scoped `write_review` merges that scope's
+   headings under the mutex instead, so two area sessions never see a false cross-scope
+   CONFLICT before Phase 1 gives each page a file and a rev of its own (§5.2). Ships alone;
+   stops today's losses. UI unchanged except the conflict banner.
 2. **Phase 1 — notebook engine + migration.** Storage, index, lock/gating, Decisions, tools,
    IPC, compat projection, law + spec + wiki, migration with E2E on a copy.
 3. **Phase 2 — tabbed reviewer.** Tab row + lens binding, per-page editor/autosave/conflict,

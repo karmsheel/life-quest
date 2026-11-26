@@ -394,7 +394,61 @@ export type ReviewRecord = {
   title: string;
   scopes: Record<string, ReviewScopeState>;
   bodyMarkdown: string;
+  /**
+   * The file's own content version, for compare-and-swap. It counts real body
+   * changes only: status, lock and session-id writes leave it alone, so a
+   * concurrent "mark done" cannot make the operator's next autosave conflict.
+   *
+   * A file written before this field existed reads as 0, which is a version no
+   * write will produce, so a stale page still conflicts rather than overwriting
+   * a file it never saw.
+   */
+  rev: number;
 };
+
+/**
+ * One scope's page as the companion reads and writes it.
+ *
+ * A page is the operator's unit of work: the overall review, or one area's
+ * report. In today's single-file storage it is a projection of the file — the
+ * `overall` H2s for the overall page, one area's `###` headings for an area
+ * page — and the writer merges a page back into the file by scope, so two area
+ * sessions no longer replace each other's prose.
+ */
+export type ReviewPageBody = {
+  scope: string;
+  /** `missing` when the scope has no state yet (never started). */
+  status: "missing" | "draft" | "done";
+  sessionId: string | null;
+  /** The review file's rev at read time; pass it back to detect a stale write. */
+  rev: number;
+  locked: boolean;
+  bodyMarkdown: string;
+};
+
+/**
+ * Why a review write was refused. `CONFLICT` is the one a caller must handle
+ * rather than retry blindly: the page it read is no longer the page on disk.
+ */
+export type ReviewWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "NOT_OPEN"
+  | "MALFORMED"
+  | "NOT_FOUND";
+
+/**
+ * A review write's answer. A refusal carries the current file for `CONFLICT`,
+ * so the caller can show "this changed on disk" without a second read.
+ */
+export type ReviewWriteOutcome =
+  | { ok: true; value: ReviewRecord }
+  | {
+      ok: false;
+      error: string;
+      code: ReviewWriteCode;
+      current?: ReviewRecord;
+    };
 export type ReviewIndexEntry = {
   cadence: ReviewCadence;
   period: string;

@@ -180,6 +180,7 @@ function record(period: string, locked = false): ReviewRecord {
     locked,
     updatedAt: "2026-11-15T00:00:00.000Z",
     title,
+    rev: 0,
     scopes: { overall: { status: "draft", sessionId: null } },
     bodyMarkdown: bodyOf(period),
   };

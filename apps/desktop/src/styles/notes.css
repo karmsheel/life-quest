@@ -1552,6 +1552,27 @@
   color: var(--muted);
 }
 
+/* A write raced another writer (the companion's page write, another tab). The
+   draft is kept and autosave is paused, so this reads as an action: reload the
+   file, then re-apply the text — never as a save failure the page will retry. */
+.review-page__conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-raised, var(--surface));
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.review-page__conflict p {
+  margin: 0;
+}
+
 /* The autosave line, under the box it reports on: there is no second view of the
    document to switch to, and no chrome above the prose. */
 .review-page__status-row {

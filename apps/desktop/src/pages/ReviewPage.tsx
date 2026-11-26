@@ -250,6 +250,11 @@ function ReviewPageFor() {
   // outside any render.
   const unsaved = useRef<{ period: string; body: string } | null>(null);
   const refused = useRef<{ period: string; body: string } | null>(null);
+  // A write raced another writer. The draft is kept, autosave is paused until
+  // the operator reloads: the alternative — sending the freshly-loaded rev with
+  // the old draft — would land the clobber this whole guard exists to stop.
+  const conflictRef = useRef(false);
+  const [conflict, setConflict] = useState(false);
 
   const loadRecord = useCallback(
     async (targetPeriod: string) => {
@@ -277,6 +282,8 @@ function ReviewPageFor() {
           setRecord(null);
         }
         setLoadedPeriod(targetPeriod);
+        conflictRef.current = false;
+        setConflict(false);
       } catch (err) {
         if (token !== loadToken.current) return;
         setError(err instanceof Error ? err.message : String(err));
@@ -292,6 +299,8 @@ function ReviewPageFor() {
     setNotice(null);
     refused.current = null;
     unsaved.current = null;
+    conflictRef.current = false;
+    setConflict(false);
     void loadRecord(period);
   }, [loadRecord, period]);
 
@@ -341,6 +350,7 @@ function ReviewPageFor() {
         if (!result.ok) return;
         const next = result.value;
         const wasEmpty = recordRef.current === null;
+        const previousRev = recordRef.current?.rev ?? -1;
         // Read after the await: the operator may have typed while the read was
         // in flight, and their unsaved sentence outranks the agent's body.
         const boxIsClean = sameNote(draftRef.current, savedBodyRef.current);
@@ -355,6 +365,14 @@ function ReviewPageFor() {
           setLoadedPeriod(targetPeriod);
           // The file is what the box holds now; nothing is left to autosave.
           unsaved.current = null;
+          conflictRef.current = false;
+          setConflict(false);
+        } else if (previousRev !== next.rev) {
+          // The file moved on while the operator was typing. Keep the draft, but
+          // stop the next autosave from writing the old text over the new rev.
+          conflictRef.current = true;
+          setConflict(true);
+          refused.current = { period: targetPeriod, body: draftRef.current };
         }
       } catch {
         // A background read that fails changes nothing: the page keeps the
@@ -389,18 +407,36 @@ function ReviewPageFor() {
   const writeReview = useCallback(
     async (targetPeriod: string, body: string): Promise<"saved" | "refused" | "failed"> => {
       const run = async (): Promise<"saved" | "refused" | "failed"> => {
+        // A conflicted box stays paused until Reload: writing now would send the
+        // newly-read rev with the operator's old text and win the race.
+        if (conflictRef.current) {
+          refused.current = { period: targetPeriod, body };
+          return "refused";
+        }
         // This write is about to change the file: a background read already in
         // flight is now older than the page's own state.
         fileEpoch.current += 1;
         setSaving(true);
         try {
-          const result = await api().reviewWrite(cadence, targetPeriod, body);
+          const result = await api().reviewWrite(
+            cadence,
+            targetPeriod,
+            body,
+            recordRef.current?.rev ?? 0,
+          );
           if (!result.ok) {
-            setError(result.error);
+            if (result.code === "CONFLICT") {
+              conflictRef.current = true;
+              setConflict(true);
+            } else {
+              setError(result.error);
+            }
             refused.current = { period: targetPeriod, body };
             return "refused";
           }
           setError(null);
+          setConflict(false);
+          conflictRef.current = false;
           refused.current = null;
           setRecord(result.value);
           // The file is the truth, and the box takes the body the vault actually
@@ -430,6 +466,15 @@ function ReviewPageFor() {
     },
     [cadence],
   );
+
+  /** Adopt the file after a conflict — the operator's draft is given up. */
+  const reloadAfterConflict = useCallback(async () => {
+    conflictRef.current = false;
+    setConflict(false);
+    refused.current = null;
+    unsaved.current = null;
+    await loadRecord(period);
+  }, [loadRecord, period]);
 
   /** Write whatever is pending right now. */
   const flush = useCallback(async (): Promise<"saved" | "refused" | "failed"> => {
@@ -1073,6 +1118,22 @@ function ReviewPageFor() {
               {/* The box is the page: there is no second view of it to switch
                   between, and no chrome above the prose — the checklist marks
                   the scope and the autosave line sits under the box. */}
+              {conflict ? (
+                <div className="review-page__conflict" role="alert" data-testid="review-conflict">
+                  <p>
+                    This review changed on disk while you were writing. Reload to
+                    read the latest version, then re-apply your text.
+                  </p>
+                  <Button
+                    variant="outline"
+                    data-testid="review-conflict-reload"
+                    onClick={() => void reloadAfterConflict()}
+                  >
+                    Reload
+                  </Button>
+                </div>
+              ) : null}
+
               <div
                 className="review-page__editor"
                   // The pointer leaving the box — for another pane, another app — is

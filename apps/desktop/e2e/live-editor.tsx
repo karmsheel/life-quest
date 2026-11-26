@@ -157,6 +157,7 @@ let reviewRecord: ReviewRecord | null = {
   locked: false,
   updatedAt: "2026-10-18T00:00:00.000Z",
   title: "Week of 12 Oct 2026",
+  rev: 0,
   scopes: { overall: { status: "draft", sessionId: null } },
   bodyMarkdown: REVIEW_BODY,
 };
@@ -170,6 +171,13 @@ const bridge: Record<string, unknown> = {
   // signal, so the channel is modelled as a quiet watcher — this rig is about
   // the editor, and nothing on it writes the review.
   onVaultDataChanged: () => () => {},
+  // The shell's theme provider reads the profile's theme files on mount and
+  // watches them. This rig is about the editor, and a call it does not model is
+  // an unexpected bridge call — but the watcher's answer must be a function, or
+  // the provider's cleanup throws and takes the whole page down with it.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   companionSessionsList: () => ok([SESSION]),

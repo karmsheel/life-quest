@@ -385,6 +385,13 @@ log stays a record of changes rather than of Starts.
   error, or retry with Ctrl/Cmd+S, before paging away.
 - The file is the truth. Editing it outside the app is visible on the next load;
   the page reloads the body from disk when the period changes.
+- A review has more than one writer — the page, the companion's interview, the
+  snapshot pass. If the file changes while you have unsaved text in the box, the
+  page stops saving rather than overwrite the other writer: a **changed on disk**
+  banner offers **Reload**, which adopts the file's version; re-apply your text on
+  top of it. The draft stays in the box until you reload. Two area interviews on
+  the same period write only their own sections, so they no longer erase each
+  other.
 - An area **Mark … complete** is a status change, not a lock — the file stays
   editable until the overall scope is done.
 - Unlocking does not reset the overall scope's `done` status; it only makes the

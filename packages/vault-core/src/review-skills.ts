@@ -824,35 +824,14 @@ export async function prepopulateReview(
     reason: problem,
   }));
 
-  let body = record.bodyMarkdown;
-  let applied = 0;
+  // Run every view first. The query is the slow half of a Start, and a retry
+  // after a conflict must not run it again: only placement changes with the body.
+  const renderedById = new Map<string, { markdown: string; groups: number }>();
+  const failedById = new Map<string, string>();
   for (const directive of wanted) {
-    const domainName = names.get(directive.domain) ?? directive.domain;
-    // Resolve once, here, before the figure is read: a directive with nowhere to
-    // go is skipped without running its view, and the hit below is the span the
-    // block is placed into — the same resolution, not a second guess at it.
-    const found = findSnapshotSection(body, domainName, directive.section);
-    if (!found) {
-      outcomes.push({
-        id: directive.id,
-        domain: directive.domain,
-        section: directive.section,
-        title: directive.title,
-        status: "skipped",
-        reason: `this review has no "${directive.section}" section under ${domainName}`,
-      });
-      continue;
-    }
     const run = await runSnapshot(rootPath, directive, bounds.value);
     if (!run.ok) {
-      outcomes.push({
-        id: directive.id,
-        domain: directive.domain,
-        section: directive.section,
-        title: directive.title,
-        status: "failed",
-        reason: run.error,
-      });
+      failedById.set(directive.id, run.error);
       continue;
     }
     const rendered = renderSnapshotMarkdown(directive, run.value.run, {
@@ -863,62 +842,132 @@ export async function prepopulateReview(
       buckets: run.value.blocks.map((b) => b.timeBucket),
       groups: run.value.blocks.map((b) => b.groupBy),
     });
-    const upserted = upsertSnapshotAt(body, directive, domainName, found, rendered.markdown);
-    body = upserted.body;
-    // Unreachable now that the span above decided, but a placement that ever
-    // learns to refuse must not be reported as a write.
-    if (upserted.status === "skipped") {
-      outcomes.push({
+    renderedById.set(directive.id, { markdown: rendered.markdown, groups: rendered.groups });
+  }
+
+  /**
+   * Place the already-rendered blocks into one body. It is a pure function of
+   * the body and the rendered figures, which is what makes the write below
+   * retryable: a conflict re-reads the file and places the same figures into the
+   * newer body rather than replaying the queries.
+   */
+  const place = (sourceBody: string) => {
+    let body = sourceBody;
+    const placed: ReviewSnapshotOutcome[] = [];
+    for (const directive of wanted) {
+      const domainName = names.get(directive.domain) ?? directive.domain;
+      const failure = failedById.get(directive.id);
+      if (failure !== undefined) {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "failed",
+          reason: failure,
+        });
+        continue;
+      }
+      // Resolve the span once, here, before the figure is placed: a directive
+      // with nowhere to go is skipped without touching the body, and the hit
+      // below is the same resolution the plant check made above.
+      const found = findSnapshotSection(body, domainName, directive.section);
+      if (!found) {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "skipped",
+          reason: `this review has no "${directive.section}" section under ${domainName}`,
+        });
+        continue;
+      }
+      const prepared = renderedById.get(directive.id)!;
+      const upserted = upsertSnapshotAt(body, directive, domainName, found, prepared.markdown);
+      if (upserted.status === "skipped") {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "skipped",
+          reason: upserted.reason,
+        });
+        continue;
+      }
+      body = upserted.body;
+      placed.push({
         id: directive.id,
         domain: directive.domain,
         section: directive.section,
         title: directive.title,
-        status: "skipped",
-        reason: upserted.reason,
+        status: upserted.status,
+        groups: prepared.groups,
       });
-      continue;
     }
-    if (upserted.status === "written") applied += 1;
-    outcomes.push({
-      id: directive.id,
-      domain: directive.domain,
-      section: directive.section,
-      title: directive.title,
-      status: upserted.status,
-      groups: rendered.groups,
-    });
-  }
+    return { body, outcomes: placed };
+  };
 
-  const value = (bodyMarkdown: string): ReviewPrepopulateResult => ({
+  const value = (bodyMarkdown: string, placedOutcomes: ReviewSnapshotOutcome[]): ReviewPrepopulateResult => ({
     cadence: input.cadence,
     period: input.period,
     scope: input.scope,
-    outcomes,
-    applied,
+    outcomes: [...outcomes, ...placedOutcomes],
+    applied: placedOutcomes.filter((o) => o.status === "written").length,
     planted,
     locked: false,
     bodyMarkdown,
   });
 
-  if (applied === 0 && planted.length === 0) {
-    return { ok: true, value: value(record.bodyMarkdown) };
+  // A body write here is whole-file (the figure pass still owns the document),
+  // so it carries the rev it read and retries on a conflict: another writer who
+  // landed between the read and the write gets to keep their prose, and the
+  // figures are placed into the newer body instead of reverting it.
+  let lastRecord = record;
+  let placed = place(lastRecord.bodyMarkdown);
+  let resultBody = lastRecord.bodyMarkdown;
+  let wrote = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (placed.body === lastRecord.bodyMarkdown) {
+      resultBody = lastRecord.bodyMarkdown;
+      break;
+    }
+    const written = await writeReview(rootPath, {
+      cadence: input.cadence,
+      period: input.period,
+      bodyMarkdown: placed.body,
+      actor: input.actor,
+      baseRev: lastRecord.rev,
+    });
+    if (written.ok) {
+      wrote = true;
+      resultBody = written.value.bodyMarkdown;
+      break;
+    }
+    if (written.code !== "CONFLICT") {
+      return written;
+    }
+    const fresh = await getReview(rootPath, input.cadence, input.period);
+    if (!fresh.ok) return fresh;
+    lastRecord = fresh.value;
+    placed = place(lastRecord.bodyMarkdown);
   }
 
-  const before = record.bodyMarkdown;
-  const written = await writeReview(rootPath, {
-    cadence: input.cadence,
-    period: input.period,
-    bodyMarkdown: body,
-    actor: input.actor,
-  });
-  if (!written.ok) return written;
+  if (!wrote && placed.body !== lastRecord.bodyMarkdown) {
+    return {
+      ok: false,
+      error: "The review changed while its figures were being written; try Start again.",
+    };
+  }
+
   // The log is a record of changes, not of Starts: a pass whose write left the
   // file exactly as it found it — a second Start, a review none of whose rules
   // could be placed — appends nothing, so a line here means a figure landed.
-  if (written.value.bodyMarkdown !== before) {
-    await logSnapshotPass(rootPath, input, record.title, outcomes);
+  if (wrote && resultBody !== record.bodyMarkdown) {
+    await logSnapshotPass(rootPath, input, record.title, placed.outcomes);
   }
-  return { ok: true, value: value(written.value.bodyMarkdown) };
+  return { ok: true, value: value(resultBody, placed.outcomes) };
 }
 
 /**

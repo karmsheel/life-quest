@@ -614,9 +614,9 @@ const lifequest = {
     ipcRenderer.invoke("review:ensure", cadence, period, scope) as Promise<
       Result<unknown>
     >,
-  reviewWrite: (cadence: string, period: string, body: string) =>
-    ipcRenderer.invoke("review:write", cadence, period, body) as Promise<
-      Result<unknown>
+  reviewWrite: (cadence: string, period: string, body: string, baseRev?: number) =>
+    ipcRenderer.invoke("review:write", cadence, period, body, baseRev) as Promise<
+      unknown
     >,
   reviewMarkDone: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:markDone", cadence, period, scope) as Promise<

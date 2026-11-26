@@ -1343,7 +1343,8 @@ function registerIpcHandlers() {
       cadence: Parameters<typeof vault.reviewWrite>[0],
       period: string,
       body: string,
-    ) => vault.reviewWrite(cadence, period, body),
+      baseRev?: number,
+    ) => vault.reviewWrite(cadence, period, body, baseRev),
   );
   ipcMain.handle(
     "review:markDone",

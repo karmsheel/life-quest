@@ -437,9 +437,10 @@ describe("review areas e2e", () => {
         weekStartDay: "monday",
       });
       checks.areaKickoff = areaKickoff;
-      assert.match(areaKickoff, /## Health/, "the area kickoff does not name its own section");
-      assert.match(areaKickoff, /only/, "the area kickoff does not say to write only its section");
+      assert.match(areaKickoff, /scope "health"/, "the area kickoff does not name its own scope");
+      assert.match(areaKickoff, /only this page/i, "the area kickoff does not say to write only its page");
       assert.match(areaKickoff, /get_review/, "the area kickoff lost the get_review guidance");
+      assert.match(areaKickoff, /write_review/, "the area kickoff lost the write_review guidance");
 
       // The plan kickoff is untouched by all of this.
       const planKickoff = boundKickoff({
@@ -474,7 +475,7 @@ describe("review areas e2e", () => {
       checks.overallContext = overallContext;
       assert.match(
         overallContext,
-        /Review scope: the whole life — the overall review\./,
+        /Review scope: the whole life — the overall page\./,
         "the overall context does not name the whole-life scope",
       );
       assert.match(
@@ -504,7 +505,7 @@ describe("review areas e2e", () => {
       checks.areaContext = areaContext;
       assert.match(
         areaContext,
-        /Review scope: the Health area — write only the ## Health section and leave the other sections alone\./,
+        /Review scope: the Health area page — call get_review with scope "health", then write_review with that scope and its rev; leave every other section and area alone\./,
         "the area context does not name and bound the area section",
       );
       assert.match(
