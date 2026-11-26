@@ -518,21 +518,49 @@ export function renderSnapshotMarkdown(
 // ---------------------------------------------------------------------------
 
 type SectionSpan = {
-  /** The line index of the `###` heading the block belongs after. */
+  /** The line index of the heading the block belongs after — an H3 under a
+   *  domain, or the overall section's own H2. */
   headingIndex: number;
   /** The line index just past this section's own content. */
   endIndex: number;
 };
 
 /**
- * Where a directive's section is, if the review has one.
+ * Where a directive's block goes, in the order that is the contract.
  *
- * Addressed by the domain's DISPLAY name, because that is what the review file
- * carries: `## Financial`, not `## financial`. A review that has no such section
- * is left alone rather than given one — inventing a domain section would change
- * which scopes the review claims to cover, which is the operator's decision.
+ * 1. The area path — `findDomainSection`: `## Financial` then `### Look-back`.
+ * 2. The overall path — `findOverallSection`: the section's own name as an H2,
+ *    `## Look-back`, the general skeleton every review file carries, whether the
+ *    cadence has area sections or not.
+ *
+ * The area path is tried first so a review that carries both can never have its
+ * block drift out of the area section and into the general one: one shipped
+ * directive has to serve a weekly review (which has areas) and a daily one
+ * (which by design has none) with no per-cadence copy of the rule.
+ *
+ * Only a null from both is a review with nowhere to put the block. A review is
+ * not invented a section here — `prepopulateReview` owns that decision, and it
+ * asks the area path alone, because a plant can only add an area section.
  */
 function findSection(
+  lines: string[],
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return (
+    findDomainSection(lines, domainName, section) ??
+    findOverallSection(lines, section)
+  );
+}
+
+/**
+ * Step 1: the section under the domain's DISPLAY name.
+ *
+ * Display name because that is what the review file carries: `## Financial`, not
+ * `## financial`. The span runs from the `###` heading to the next `###` in the
+ * same domain, the next `##`, or the next `#`.
+ */
+function findDomainSection(
   lines: string[],
   domainName: string,
   section: string,
@@ -567,6 +595,51 @@ function findSection(
 }
 
 /**
+ * Step 2: the section as an H2, outside every domain section.
+ *
+ * A domain section is an H2 of its own, so the first H2 carrying the section's
+ * own name is the general skeleton's, and its span ends at the next H2, the next
+ * H1, or the end of the file.
+ */
+function findOverallSection(lines: string[], section: string): SectionSpan | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const h2 = /^##\s+(.+?)\s*$/.exec(lines[i]!);
+    if (!h2 || h2[1] !== section) continue;
+    let endIndex = lines.length;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (/^#{1,2}\s/.test(lines[j]!)) {
+        endIndex = j;
+        break;
+      }
+    }
+    return { headingIndex: i, endIndex };
+  }
+  return null;
+}
+
+/** `findSection` on a whole body, normalising line endings once. */
+function findSnapshotSection(
+  body: string,
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return findSection(body.replace(/\r\n/g, "\n").split("\n"), domainName, section);
+}
+
+/** The area path alone, on a whole body — what a plant decision asks. */
+function findDomainSnapshotSection(
+  body: string,
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return findDomainSection(
+    body.replace(/\r\n/g, "\n").split("\n"),
+    domainName,
+    section,
+  );
+}
+
+/**
  * Put one rendered snapshot where it belongs, replacing what a previous run put
  * there. Replacement is by the marker pair, not by section: the operator's own
  * prose in the same section is never touched, and running Start twice leaves one
@@ -576,6 +649,31 @@ export function upsertSnapshotBlock(
   body: string,
   directive: ReviewSnapshotDirective,
   domainName: string,
+  markdown: string,
+): { body: string; status: "written" | "unchanged" | "skipped"; reason?: string } {
+  return upsertSnapshotAt(
+    body,
+    directive,
+    domainName,
+    findSnapshotSection(body, domainName, directive.section),
+    markdown,
+  );
+}
+
+/**
+ * `upsertSnapshotBlock`, once the destination has already been resolved.
+ *
+ * Placement takes the span rather than looking for it again, so the decision to
+ * run and the decision where the block goes are one decision: `prepopulateReview`
+ * resolves each directive once, skips on null, and hands the hit here. The marker
+ * path needs no span — a block a previous run wrote is replaced where it stands,
+ * whatever the headings later say.
+ */
+function upsertSnapshotAt(
+  body: string,
+  directive: ReviewSnapshotDirective,
+  domainName: string,
+  found: SectionSpan | null,
   markdown: string,
 ): { body: string; status: "written" | "unchanged" | "skipped"; reason?: string } {
   const open = snapshotOpenMarker(directive.id);
@@ -595,7 +693,6 @@ export function upsertSnapshotBlock(
     };
   }
 
-  const found = findSection(lines, domainName, directive.section);
   if (!found) {
     return {
       body,
@@ -673,21 +770,31 @@ export async function prepopulateReview(
   }
 
   /**
-   * A rule names a domain, so the review gets that domain's section.
+   * A rule names a domain, so a review with areas that lacks that domain's
+   * section is owed it.
    *
-   * Without this the shipped weekly rule is inert on any review the operator has
-   * not already started a domain scope on — the directive would skip every week
-   * for want of a `## Financial` heading, which is not what "the week's spending
-   * belongs under Financial" means. Planting goes through `ensureReview` with
-   * that domain as its scope, which is the existing, tested way a section and
-   * its scope state appear together; nothing here invents structure of its own.
+   * The AREA path is what decides planting, because a plant can only add an area
+   * section: a weekly review that has no `## Financial` gets the Financial
+   * section planted even though the overall `## Look-back` could take the block,
+   * so the figure stays in the area it belongs to and the weekly file's shape
+   * does not change just because the operator has not started that area scope
+   * yet. Placement below resolves the same area path first, so the decision to
+   * plant and the decision where the block goes cannot disagree.
+   *
+   * The daily review has no area sections by design — `ensureReview` refuses an
+   * area scope with DAILY_REVIEW_NO_AREAS — so it is never given a plant to
+   * refuse: placement falls back to the overall `## Look-back` instead. Planting
+   * goes through `ensureReview` with that domain as its scope, which is the
+   * existing, tested way a section and its scope state appear together; nothing
+   * here invents structure of its own.
    */
   const planted: string[] = [];
   for (const directive of wanted) {
     const domainName = names.get(directive.domain) ?? directive.domain;
-    if (findSection(record.bodyMarkdown.split("\n"), domainName, directive.section)) {
+    if (findDomainSnapshotSection(record.bodyMarkdown, domainName, directive.section)) {
       continue;
     }
+    if (input.cadence === "daily") continue;
     if (planted.includes(directive.domain)) continue;
     const grown = await ensureReview(rootPath, {
       cadence: input.cadence,
@@ -721,7 +828,11 @@ export async function prepopulateReview(
   let applied = 0;
   for (const directive of wanted) {
     const domainName = names.get(directive.domain) ?? directive.domain;
-    if (!findSection(body.split("\n"), domainName, directive.section)) {
+    // Resolve once, here, before the figure is read: a directive with nowhere to
+    // go is skipped without running its view, and the hit below is the span the
+    // block is placed into — the same resolution, not a second guess at it.
+    const found = findSnapshotSection(body, domainName, directive.section);
+    if (!found) {
       outcomes.push({
         id: directive.id,
         domain: directive.domain,
@@ -752,8 +863,10 @@ export async function prepopulateReview(
       buckets: run.value.blocks.map((b) => b.timeBucket),
       groups: run.value.blocks.map((b) => b.groupBy),
     });
-    const upserted = upsertSnapshotBlock(body, directive, domainName, rendered.markdown);
+    const upserted = upsertSnapshotAt(body, directive, domainName, found, rendered.markdown);
     body = upserted.body;
+    // Unreachable now that the span above decided, but a placement that ever
+    // learns to refuse must not be reported as a write.
     if (upserted.status === "skipped") {
       outcomes.push({
         id: directive.id,
@@ -791,6 +904,7 @@ export async function prepopulateReview(
     return { ok: true, value: value(record.bodyMarkdown) };
   }
 
+  const before = record.bodyMarkdown;
   const written = await writeReview(rootPath, {
     cadence: input.cadence,
     period: input.period,
@@ -798,7 +912,52 @@ export async function prepopulateReview(
     actor: input.actor,
   });
   if (!written.ok) return written;
+  // The log is a record of changes, not of Starts: a pass whose write left the
+  // file exactly as it found it — a second Start, a review none of whose rules
+  // could be placed — appends nothing, so a line here means a figure landed.
+  if (written.value.bodyMarkdown !== before) {
+    await logSnapshotPass(rootPath, input, record.title, outcomes);
+  }
   return { ok: true, value: value(written.value.bodyMarkdown) };
+}
+
+/**
+ * The audit line for a pass that changed the review.
+ *
+ * Counts, not prose: the file holds the report itself, and the log's job is to
+ * say that a Start actually changed something, who caused it, and how the rules
+ * fared — `written`, `skipped`, `failed`. Before this a skip was invisible
+ * everywhere, which is how a shipped rule could serve every daily review for the
+ * length of a release and leave no trace. The event type is new, so a reader
+ * that ignores unknown types keeps working, and a logging failure must not fail
+ * the write that already landed: `appendLog` reports rather than throws.
+ */
+async function logSnapshotPass(
+  rootPath: string,
+  input: { cadence: ReviewCadence; period: string; scope: string; actor: Actor },
+  title: string,
+  outcomes: ReviewSnapshotOutcome[],
+): Promise<void> {
+  const count = (status: ReviewSnapshotOutcome["status"]): number =>
+    outcomes.filter((outcome) => outcome.status === status).length;
+  const written = count("written");
+  await appendLog(rootPath, {
+    domainSlug: null,
+    type: "review.snapshots",
+    summary:
+      written > 0
+        ? `Filled ${written} snapshot${written === 1 ? "" : "s"} in the ${title}`
+        : `Updated the ${title}`,
+    payload: {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      written,
+      skipped: count("skipped"),
+      failed: count("failed"),
+    },
+    actor: input.actor,
+  });
 }
 
 /**

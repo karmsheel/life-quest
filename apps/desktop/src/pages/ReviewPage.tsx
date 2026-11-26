@@ -542,6 +542,14 @@ function ReviewPageFor() {
       for (const outcome of failed) {
         parts.push(`${outcome.title} could not run: ${outcome.reason}`);
       }
+      // A skip is not a clean start: the rule was meant to write and had no
+      // section to write into, so the operator is told which rule found nothing
+      // and where it looked. Silence here would let a daily Start that filled
+      // nothing read as a review the app had already filled for them.
+      const skipped = result.outcomes.filter((o) => o.status === "skipped");
+      for (const outcome of skipped) {
+        parts.push(`Skipped: ${outcome.title} — ${outcome.reason}`);
+      }
       return parts.length > 0 ? parts.join(" · ") : null;
     },
     [],

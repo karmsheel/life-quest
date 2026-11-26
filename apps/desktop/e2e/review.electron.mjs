@@ -1770,9 +1770,24 @@ async function main() {
     `(window.reviewRigStarts ?? []).length === ${beforeDaily + 1}`,
     "the daily review session to be requested",
   );
+  // The prepopulate stub answers this daily review with a skipped snapshot — a
+  // directive the pass cannot place. The page must report that skip in its
+  // notice rather than let a Start that filled nothing read as a clean start.
+  const dailySkipLine =
+    'Skipped: Spending this period — this review has no "Look-back" section under Finance';
+  await waitFor(
+    win,
+    `(document.querySelector(".review-page__notice")?.textContent ?? "").includes(${JSON.stringify(dailySkipLine)})`,
+    "the daily Start notice to report the skipped snapshot",
+  );
   await frames(win);
   const dailyStarted = await sample(win);
   checks.dailyStarted = dailyStarted;
+  if (!String(dailyStarted.notice ?? "").includes(dailySkipLine)) {
+    failure(
+      `the daily Start notice did not report the skipped snapshot (expected ${JSON.stringify(dailySkipLine)}, got ${JSON.stringify(dailyStarted.notice)})`,
+    );
+  }
   const dailyStarts = await setHarness(win, "window.reviewRigStarts");
   const dailyStart = dailyStarts[dailyStarts.length - 1];
   checks.dailyStart = dailyStart;

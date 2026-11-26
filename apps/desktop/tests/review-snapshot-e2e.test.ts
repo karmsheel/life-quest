@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   createVault,
+  currentPeriod,
   ensureReview,
   executeReviewTool,
   getReview,
@@ -14,6 +15,8 @@ import {
   installFinanceKit,
   parseSnapshotDirectives,
   prepopulateReview,
+  readLog,
+  shiftLocalIsoDate,
   upsertSnapshotBlock,
   unlockDomain,
   writeReview,
@@ -63,6 +66,12 @@ import { formatReviewContext } from "../electron/review-sessions.ts";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ARTIFACT = path.join(desktopRoot, "e2e/artifacts/review-snapshot.json");
+// The daily case is a second, separately repeatable artifact so a failure in one
+// cadence cannot be read as a failure in the other.
+const DAILY_ARTIFACT = path.join(desktopRoot, "e2e/artifacts/review-snapshot-daily.json");
+// And a third: the plant decision is the one place the weekly and daily shapes
+// deliberately differ, so it gets its own evidence rather than a comment.
+const PLANT_ARTIFACT = path.join(desktopRoot, "e2e/artifacts/review-snapshot-plant.json");
 const ACTOR = { type: "user", id: "operator", name: "Operator" } as const;
 
 const PERIOD = "2026-10-12";
@@ -453,6 +462,409 @@ describe("review snapshot e2e", () => {
       };
       fs.writeFileSync(ARTIFACT, `${JSON.stringify(report, null, 2)}\n`);
       assert.equal(fs.existsSync(ARTIFACT), true, "the run wrote no artifact");
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fills a daily review's snapshot under the overall Look-back, once, and logs the pass", async () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-review-daily-"));
+    const vaultRoot = path.join(workDir, "vault");
+    const checks: Record<string, unknown> = {};
+
+    try {
+      // A daily review is one general review: `ensureReview` refuses an area
+      // scope on this cadence, so its file is `# Daily review · <date>` and the
+      // four overall H2s — no `## Finance`, no `### Look-back`. The shipped
+      // rule names the Financial Look-back, so on a daily review it has only
+      // the overall `## Look-back` to resolve against. That is the coverage
+      // this case adds: before the overall path existed the rule skipped every
+      // daily review, silently, and the figure the directive promises was never
+      // there.
+      const created = await createVault(vaultRoot, "Daily Review Rig");
+      assert.equal(created.ok, true, "the rig could not create a vault");
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
+
+      const kit = await installFinanceKit(vaultRoot, ACTOR);
+      assert.equal(kit.ok, true, `the finance kit did not install: ${kit.ok ? "" : kit.error}`);
+      const accounts = await insertRows(vaultRoot, "financial", "finance:accounts", [
+        { id: "acc-1", cells: { name: "Cheque", type: "checking", currency: "ZAR" } },
+      ]);
+      assert.equal(accounts.ok, true, "the rig could not create an account");
+      const categories = await insertRows(vaultRoot, "financial", "finance:categories", [
+        { id: "cat-groceries", cells: { name: "Groceries" } },
+        { id: "cat-transport", cells: { name: "Transport" } },
+      ]);
+      assert.equal(categories.ok, true, "the rig could not create the categories");
+
+      // A past day is always open on the daily cadence: its window opens on its
+      // own day at 18:00 and never closes, so yesterday opened yesterday
+      // evening whatever the wall clock says now. No settings edit and no
+      // dependence on the run happening after 18:00 today.
+      const today = currentPeriod("daily", "monday");
+      const period = shiftLocalIsoDate(today, -1);
+      assert.ok(period, "the rig could not name yesterday");
+      const outside = shiftLocalIsoDate(period, -1);
+      assert.ok(outside, "the rig could not name the day before");
+      checks.period = period;
+
+      // 42.50 is the day's spend; the 999 is two days earlier, so a pass that
+      // ignored its window would show 1,041.50 and a Transport row instead of
+      // merely a different number.
+      const inserted = await insertRows(vaultRoot, "financial", "finance:transactions", [
+        {
+          id: "t-day-in",
+          cells: {
+            date: period,
+            amount: 42.5,
+            payee: "Checkers",
+            account: "acc-1",
+            category: "cat-groceries",
+          },
+        },
+        {
+          id: "t-day-out",
+          cells: {
+            date: outside,
+            amount: 999,
+            payee: "Last week",
+            account: "acc-1",
+            category: "cat-transport",
+          },
+        },
+      ]);
+      assert.equal(inserted.ok, true, "the rig could not post the transactions");
+
+      const ensured = await ensureReview(vaultRoot, {
+        cadence: "daily",
+        period,
+        scope: "overall",
+      });
+      assert.equal(
+        ensured.ok,
+        true,
+        `the daily review was not planted: ${ensured.ok ? "" : ensured.error}`,
+      );
+      checks.plantedBody = ensured.ok ? ensured.value.bodyMarkdown : null;
+
+      // The operator's own writing: prose in Look-back, prose in Keep, and the
+      // four H2s of the daily skeleton. Write it the way the page autosaves —
+      // one markdown body — so the pass has to insert above the prose rather
+      // than replace the section.
+      const operatorWrote = [
+        `# Daily review · ${period}`,
+        "## Look-back",
+        "Walked in the morning, twice.",
+        "## Keep",
+        "Kept the evening screen-free.",
+        "## Change",
+        "## Next-period intent",
+      ].join("\n\n");
+      const seeded = await writeReview(vaultRoot, {
+        cadence: "daily",
+        period,
+        bodyMarkdown: operatorWrote,
+        actor: ACTOR,
+      });
+      assert.equal(seeded.ok, true, "the rig could not seed the operator's prose");
+      checks.seededBody = seeded.ok ? seeded.value.bodyMarkdown : null;
+
+      // ── 1. the pass fills the OVERALL Look-back ───────────────────────────
+      const first = await prepopulateReview(vaultRoot, {
+        cadence: "daily",
+        period,
+        scope: "overall",
+        actor: ACTOR,
+      });
+      assert.equal(first.ok, true, `the daily snapshot pass failed: ${first.ok ? "" : first.error}`);
+      const pass = first.ok ? first.value : null;
+      assert.ok(pass, "no daily pass");
+      checks.firstPass = {
+        applied: pass.applied,
+        planted: pass.planted,
+        outcomes: pass.outcomes,
+      };
+      assert.equal(pass.applied, 1, "the daily snapshot pass wrote nothing");
+      assert.deepEqual(
+        pass.planted,
+        [],
+        "the pass planted an area section the daily review cannot have",
+      );
+      assert.equal(pass.outcomes.length, 1, "the pass reported more than the one shipped rule");
+      const outcome = pass.outcomes[0]!;
+      assert.equal(outcome.id, "finance-spend", "the shipped rule was not the one that ran");
+      assert.equal(
+        outcome.status,
+        "written",
+        "the shipped rule was skipped on a daily review: the overall Look-back was not resolved",
+      );
+      const body = pass.bodyMarkdown;
+      checks.body = body;
+
+      // One block, opening the section above the operator's prose.
+      const lookback = body.indexOf("## Look-back");
+      const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+      const prose = body.indexOf("Walked in the morning, twice.");
+      assert.ok(
+        lookback !== -1 && marker > lookback,
+        "the snapshot is not under the overall Look-back",
+      );
+      assert.ok(
+        marker < prose,
+        "the snapshot landed under the operator's prose, not above it",
+      );
+      assert.equal(
+        body.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
+        1,
+        "the marker is in the file more than once",
+      );
+      // Both halves of the pair, once each: the block is delimited, not merely
+      // opened, which is what lets a second Start find and replace it in place.
+      assert.equal(
+        body.split("<!-- /lifequest:snapshot:finance-spend -->").length - 1,
+        1,
+        "the closing marker is missing or duplicated",
+      );
+      assert.ok(
+        body.indexOf("<!-- /lifequest:snapshot:finance-spend -->") > marker,
+        "the closing marker precedes the opening one",
+      );
+
+      assert.match(body, /(^|\n)42\.50 \(ZAR\)(\n|$)/, "the daily total is not the day's own total");
+      assert.doesNotMatch(body, /1,041/, "the snapshot read outside the daily period");
+      assert.match(body, /\| Groceries \| /, "the snapshot drew no category rows");
+      assert.doesNotMatch(
+        body,
+        /\| Transport \| /,
+        "the snapshot drew a category from outside the day",
+      );
+      assert.match(
+        body,
+        new RegExp(`${period} → ${period}`),
+        "the snapshot does not name the window it covers",
+      );
+
+      // A daily review has no area sections, and the pass must not invent one:
+      // a `## Finance` here would be a heading the page never shows.
+      assert.equal(body.includes("\n### "), false, "the daily review grew a ### section");
+      assert.equal(body.includes("## Finance"), false, "the daily review grew an area section");
+      assert.equal(body.includes("## Financial"), false, "the daily review grew an area section");
+
+      // ── 2. the pass left one audit line, naming the operator ──────────────
+      const logAfterFirst = await readLog(vaultRoot);
+      assert.equal(logAfterFirst.ok, true, "the vault's log could not be read");
+      const events = logAfterFirst.ok ? logAfterFirst.value : [];
+      const snapshotLines = events.filter((event) => event.type === "review.snapshots");
+      checks.firstLog = snapshotLines.map((event) => ({
+        payload: event.payload,
+        actor: event.actor,
+      }));
+      assert.equal(
+        snapshotLines.length,
+        1,
+        "a pass that changed the body appended no review.snapshots line, or more than one",
+      );
+      const line = snapshotLines[0]!;
+      assert.deepEqual(
+        line.payload,
+        { cadence: "daily", period, scope: "overall", written: 1, skipped: 0, failed: 0 },
+        "the audit line does not carry the pass's own counts",
+      );
+      assert.deepEqual(
+        line.actor,
+        { type: "user" },
+        "the audit line does not name the operator who ran the pass",
+      );
+
+      // ── 3. the pass is a fixed point, and a no-op appends nothing ──────────
+      const second = await prepopulateReview(vaultRoot, {
+        cadence: "daily",
+        period,
+        scope: "overall",
+        actor: ACTOR,
+      });
+      assert.equal(second.ok, true, "the second daily pass failed");
+      const twice = second.ok ? second.value : null;
+      assert.ok(twice, "no second daily pass");
+      checks.secondPass = { applied: twice.applied, identical: twice.bodyMarkdown === body };
+      assert.equal(twice.applied, 0, "a second Start wrote the daily snapshot again");
+      assert.equal(twice.bodyMarkdown, body, "a second Start changed the daily review's body");
+      assert.equal(
+        twice.bodyMarkdown.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
+        1,
+        "the second pass duplicated the marker",
+      );
+      assert.match(
+        twice.bodyMarkdown,
+        /Walked in the morning, twice\./,
+        "the second pass took the operator's prose",
+      );
+
+      const logAfterSecond = await readLog(vaultRoot);
+      assert.equal(logAfterSecond.ok, true, "the vault's log could not be read again");
+      const linesAfterSecond = (logAfterSecond.ok ? logAfterSecond.value : []).filter(
+        (event) => event.type === "review.snapshots",
+      );
+      checks.secondLogCount = linesAfterSecond.length;
+      assert.equal(
+        linesAfterSecond.length,
+        1,
+        "a pass that wrote nothing appended a review.snapshots line",
+      );
+
+      // ── the artifact ──────────────────────────────────────────────────────
+      fs.mkdirSync(path.dirname(DAILY_ARTIFACT), { recursive: true });
+      const report = {
+        pass: true,
+        what:
+          "a daily review — which has no area sections — gets the shipped finance snapshot " +
+          "under its overall Look-back, above the operator's prose, once, with one audit line",
+        command: "node --experimental-strip-types --test tests/review-snapshot-e2e.test.ts",
+        vault: vaultRoot,
+        checks,
+        generatedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(DAILY_ARTIFACT, `${JSON.stringify(report, null, 2)}\n`);
+      assert.equal(fs.existsSync(DAILY_ARTIFACT), true, "the run wrote no daily artifact");
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("plants the Financial section on a weekly review that has only the overall skeleton", async () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-review-plant-"));
+    const vaultRoot = path.join(workDir, "vault");
+    const checks: Record<string, unknown> = {};
+
+    try {
+      // The OTHER half of the resolution contract: a weekly review always carries
+      // the overall `## Look-back`, so the overall path could take the block, but
+      // a cadence with area sections keeps the figure under its area — the pass
+      // plants `## Finance` rather than letting the rule drift into the general
+      // section. The weekly case above seeds that section explicitly, so this is
+      // the only case that pins the plant itself.
+      const created = await createVault(vaultRoot, "Plant Rig");
+      assert.equal(created.ok, true, "the rig could not create a vault");
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
+      const kit = await installFinanceKit(vaultRoot, ACTOR);
+      assert.equal(kit.ok, true, `the finance kit did not install: ${kit.ok ? "" : kit.error}`);
+      await insertRows(vaultRoot, "financial", "finance:accounts", [
+        { id: "acc-1", cells: { name: "Cheque", type: "checking", currency: "ZAR" } },
+      ]);
+      await insertRows(vaultRoot, "financial", "finance:categories", [
+        { id: "cat-groceries", cells: { name: "Groceries" } },
+      ]);
+      const inserted = await insertRows(vaultRoot, "financial", "finance:transactions", [
+        {
+          id: "t-week",
+          cells: {
+            date: "2026-10-13",
+            amount: 120.5,
+            payee: "Checkers",
+            account: "acc-1",
+            category: "cat-groceries",
+          },
+        },
+      ]);
+      assert.equal(inserted.ok, true, "the rig could not post the transaction");
+
+      // Overall only: no Financial area scope has been started, so the file has
+      // the four overall H2s and no `## Finance`.
+      const ensured = await ensureReview(vaultRoot, {
+        cadence: "weekly",
+        period: PERIOD,
+        scope: "overall",
+      });
+      assert.equal(ensured.ok, true, "the weekly review was not planted");
+      const seeded = await writeReview(vaultRoot, {
+        cadence: "weekly",
+        period: PERIOD,
+        actor: ACTOR,
+        bodyMarkdown: [
+          "# Weekly review",
+          "## Look-back",
+          "The week in one line.",
+          "## Keep",
+          "## Change",
+          "## Next-period intent",
+        ].join("\n\n"),
+      });
+      assert.equal(seeded.ok, true, "the rig could not seed the operator's prose");
+      checks.seededHasFinance = seeded.ok
+        ? seeded.value.bodyMarkdown.includes("## Finance")
+        : null;
+
+      const pass = await prepopulateReview(vaultRoot, {
+        cadence: "weekly",
+        period: PERIOD,
+        scope: "overall",
+        actor: ACTOR,
+      });
+      assert.equal(pass.ok, true, `the snapshot pass failed: ${pass.ok ? "" : pass.error}`);
+      const value = pass.ok ? pass.value : null;
+      assert.ok(value, "no pass");
+      checks.planted = value.planted;
+      checks.outcomes = value.outcomes;
+      assert.equal(value.applied, 1, "the pass wrote no figure after planting");
+      assert.deepEqual(value.planted, ["financial"], "the pass did not plant the Financial section");
+
+      const body = value.bodyMarkdown;
+      checks.body = body;
+      const financeAt = body.indexOf("## Finance");
+      const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+      const keepAt = body.indexOf("### Keep");
+      assert.ok(financeAt !== -1, "the Financial section was planted but is not in the body");
+      assert.ok(
+        marker > financeAt && marker > body.indexOf("### Look-back"),
+        "the snapshot did not land under the planted Financial Look-back",
+      );
+      assert.ok(marker < keepAt, "the snapshot landed outside the planted Financial Look-back");
+      // The overall Look-back took the operator's prose and NOT the figure, even
+      // though it could have resolved the rule.
+      const overallLookback = body.slice(
+        body.indexOf("## Look-back"),
+        body.indexOf("## Keep"),
+      );
+      assert.match(overallLookback, /The week in one line\./, "the overall Look-back lost its prose");
+      assert.doesNotMatch(
+        overallLookback,
+        /lifequest:snapshot:finance-spend/,
+        "the figure drifted from the area section into the overall one",
+      );
+
+      // The planted section is a real area scope now, not just a heading.
+      const reread = await getReview(vaultRoot, "weekly", PERIOD);
+      assert.equal(reread.ok, true, "the review could not be read back");
+      checks.scopes = reread.ok ? reread.value.scopes : null;
+      assert.equal(
+        reread.ok && reread.value.scopes.financial?.status,
+        "draft",
+        "planting the section did not start the Financial area scope",
+      );
+
+      fs.mkdirSync(path.dirname(PLANT_ARTIFACT), { recursive: true });
+      const report = {
+        pass: true,
+        what:
+          "a weekly overall review with no Financial section gets that section planted " +
+          "and the figure written under it, not under the overall Look-back",
+        command: "node --experimental-strip-types --test tests/review-snapshot-e2e.test.ts",
+        vault: vaultRoot,
+        checks,
+        generatedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(PLANT_ARTIFACT, `${JSON.stringify(report, null, 2)}\n`);
+      assert.equal(fs.existsSync(PLANT_ARTIFACT), true, "the run wrote no plant artifact");
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }

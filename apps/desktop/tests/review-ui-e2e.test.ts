@@ -1113,6 +1113,15 @@ describe("review ui e2e", () => {
       false,
       "the daily review grew a checklist after its interview started",
     );
+    // The prepopulate stub answers this daily review with a skipped snapshot (a
+    // directive the pass cannot place). A Start that filled nothing must not
+    // read as a clean start: the notice has to name the rule and where it
+    // looked, which is also the only page surface that reports a genuine skip.
+    assert.match(
+      String(report.checks.dailyStarted.notice),
+      /Skipped: Spending this period — this review has no "Look-back" section under Finance/,
+      "the daily Start notice did not report the skipped snapshot",
+    );
 
     // ── the agent fills and completes the daily review ON THE OPEN PAGE ─────
     // The reported bug: the companion writes the report and marks the daily

@@ -293,10 +293,19 @@ Snapshots are filled by the app, not the model. A cadence's rules can carry
 fenced `lifequest-snapshot` directives naming a database view (`{id, domain,
 section, title, window: "period" | "all", spec}`). Before the interview starts,
 the app runs each directive and writes the figures inside marker comments under
-the named section, with `window: "period"` meaning this review's own dates. The
-shipped rules include the finance snapshot, so a Finance review already shows
-the period's spending under the Financial section whether or not the companion is
-running. A locked review is never touched by the snapshot pass.
+the named section, with `window: "period"` meaning this review's own dates. A
+directive's section is resolved in two steps: first the area's `## <Area name>`
+then `### <section>` (a Finance review's `## Financial` → `### Look-back`), and
+only when that area section is absent, the overall skeleton's `## <section>`.
+The order is the rule — a review that carries both never has the figure drift
+out of its area — and that one resolution is what lets the shipped finance
+snapshot serve an area review and a daily review, which is one general review
+with no area sections, without a per-cadence copy. On a weekly-or-longer review
+that lacks the area section, it is still added so the figure stays under the area
+it belongs to. A directive the pass cannot place is reported as **Skipped: …**
+in the Start notice rather than dropped in silence, so a review that filled
+nothing does not read as a clean start. A locked review is never touched by the
+snapshot pass.
 
 Review rules. The rules are read from `.lifequest/reviews/<cadence>.md` when
 that file exists and from the shipped defaults otherwise; the read does not
@@ -351,7 +360,10 @@ page itself never pastes the pack into the transcript.
 Every write is logged. Starting a review, writing one, marking a scope done,
 unlocking, and applying an approved locked-review change each append a life-log
 entry (`review.ensured`, `review.written`, `review.marked-done`,
-`review.unlocked`, `review.applied`) naming the actor.
+`review.unlocked`, `review.applied`) naming the actor. A snapshot pass that
+changes the body appends its own `review.snapshots` line carrying the `written`,
+`skipped` and `failed` counts; a Start that changed nothing appends none, so the
+log stays a record of changes rather than of Starts.
 
 ## Tips and edge cases
 
