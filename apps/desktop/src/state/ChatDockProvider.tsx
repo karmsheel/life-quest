@@ -106,20 +106,22 @@ export type LayoutId = "studio" | "page-agent" | "agent-page" | "agent";
 
 /**
  * What the dock is showing: the open thread, the Life-Chain the dock can carry,
- * or the keyboard-shortcuts reference.
+ * the keyboard-shortcuts reference, or the chat display settings.
  *
  * The all-chats list is not one of them: it lives in the sidebar, where the
  * whole history belongs and where it stays visible beside every page. The dock
  * keeps one chat in front of the operator rather than a second copy of the
  * history.
  *
- * It lives on the dock rather than in the chat store because the dock's own
- * bottom bar switches it between the surfaces, and a bar inside the panel is
- * the panel's business. The chat store still moves it — a chat opening or
- * closing lands the dock on its thread — but the fact itself is "what is this
- * pane showing".
+ * The display page is a surface for the same reason the shortcuts reference is:
+ * the dock's bottom bar opens it beside the transcript it changes, and the
+ * operator's hand is already there when the type is what they want to adjust.
+ * Every one of these is a way of looking at the pane, so the bar that switches
+ * them lives on the pane rather than in the chat store; the chat store still
+ * moves the surface when a chat opens or closes, because that lands the dock on
+ * its thread.
  */
-export type ChatSurface = "thread" | "chain" | "shortcuts";
+export type ChatSurface = "thread" | "chain" | "shortcuts" | "display";
 
 type ChatDockContextValue = {
   open: boolean;

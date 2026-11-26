@@ -289,9 +289,9 @@ The chat dock:
   the composer box — a wider field does not stretch it, and it never reaches past
   the field it belongs to — floating with a margin on every side and softly
   rounded, in the split dock and in full screen alike.
-- The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
-  The history is not a dock surface: the whole chat list lives in the rail's
-  **Chats** section.
+- The thread, a **Notebox** view, the **Keyboard shortcuts** reference, and a
+  **Chat display** page. The history is not a dock surface: the whole chat list
+  lives in the rail's **Chats** section.
 - The composer: one bordered box at the foot of the dock, the field
   (*Message Pi…* or *Message Hermes…*, depending on which companion answers) and
   a control row inside its edges — attachments and the page pill at the leading
@@ -309,10 +309,15 @@ The chat dock:
   chrome — floating with a margin on every side and softly rounded, and never
   wider than the field it belongs to, in the split dock and in full screen alike.
   In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
-  chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
-  display settings** (opens Settings → **Chat display**), the two-panes side
-  switch, and **Collapse chat**. The build number is not here: it lives at the
-  top of the rail, under the lockup.
+  chat**, **Keyboard shortcuts**, **Chat display settings** (the Type mark), the
+  two-panes side switch, and **Collapse chat**. **Keyboard shortcuts** and **Chat
+  display settings** each toggle a dock surface of their own: a press puts the
+  reference or the **Chat display** page on the pane, a second press — or that
+  page's **Back to chat** — returns the dock to the thread it left, and the
+  button wears the pressed fill while its surface is in front. Neither surface
+  draws the tab strip or the composer. The display page edits the same text size
+  and line spacing as Settings → **Chat display**. The build number is not here:
+  it lives at the top of the rail, under the lockup.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 
@@ -386,8 +391,9 @@ the dock and settings — are rebindable on Settings → Keyboard and listed in 
 dock's **Keyboard shortcuts** reference. That reference sits in the dock's bottom
 bar; it draws the same fifteen rows with a pencil on each that records a new key
 in place, the same refusals as the settings page, **Unassigned** for a cleared
-row, and **Back to chat** to return. The bindings and their refusals are
-catalogued in [Settings](./28-settings.md).
+row, and **Back to chat** to return — the bar's button is a toggle, so a second
+press closes the reference too. The bindings and their refusals are catalogued
+in [Settings](./28-settings.md).
 
 ## Tips and edge cases
 

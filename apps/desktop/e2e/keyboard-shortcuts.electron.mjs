@@ -12,7 +12,10 @@
  * moves, a refused conflict, a reserved combination, a cleared binding, a
  * per-row reset, Restore all defaults, the page after a window reload, the
  * typing guard, and the shipped movements (panels, page steps, direct wing jump,
- * settings surface).
+ * settings surface). It also proves the dock bar's shortcuts control is a real
+ * door in both directions: one press opens the reference, the next press puts it
+ * away and hands the thread (and its composer) back, and a third opens it again
+ * before the existing Back-to-chat leg runs.
  *
  * Every key is sent through `webContents.sendInputEvent` with its modifiers —
  * the same input pipeline an operator's keyboard uses — not a synthetic DOM
@@ -879,6 +882,65 @@ async function main() {
       "the shortcuts control reports itself pressed on the page",
       dockDefaults.shortcuts.pressed === "true",
       `pressed ${JSON.stringify(dockDefaults.shortcuts.pressed)}`,
+    );
+
+    // —— 1 (dock, both directions) — a door that opens a surface is the same
+    //        door that closes it: a second press puts the reference away and
+    //        lands the dock back on the thread with its composer; a third press
+    //        restores the reference for the Back-to-chat leg below.
+    at("a second press on the shortcuts control closes the reference");
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
+    const dockShortcutsClosed = await record(
+      "dockShortcutsClosed",
+      'document.querySelector(".chat-panel").getAttribute("data-chat-surface") === "thread"',
+    );
+    check(
+      "a second press on the bar's shortcuts control returns the dock to the thread",
+      dockShortcutsClosed.dock !== null &&
+        dockShortcutsClosed.dock.surface === "thread" &&
+        dockShortcutsClosed.dock.composerVisible === true,
+      `surface ${JSON.stringify(dockShortcutsClosed.dock && dockShortcutsClosed.dock.surface)}, composer ${JSON.stringify(dockShortcutsClosed.dock && dockShortcutsClosed.dock.composerVisible)}`,
+    );
+    check(
+      "the shortcuts control stops reporting pressed once it has closed its page",
+      dockShortcutsClosed.shortcuts.pressed === "false",
+      `pressed ${JSON.stringify(dockShortcutsClosed.shortcuts.pressed)}`,
+    );
+    check(
+      "the bar entry for the shortcuts control also reads not pressed",
+      (dockShortcutsClosed.dock?.bar ?? []).find(
+        (entry) => entry.label === "Keyboard shortcuts",
+      )?.pressed === "false",
+      `bar ${JSON.stringify(dockShortcutsClosed.dock.bar)}`,
+    );
+    check(
+      "the closed reference takes its body and table with it",
+      dockShortcutsClosed.dock.shortcutsRoot === false &&
+        dockShortcutsClosed.dock.bodyVisible === false &&
+        dockShortcutsClosed.dock.footerHidden === false,
+      `root ${dockShortcutsClosed.dock.shortcutsRoot}, body ${dockShortcutsClosed.dock.bodyVisible}, footer hidden ${dockShortcutsClosed.dock.footerHidden}`,
+    );
+
+    at("a third press on the shortcuts control restores the reference");
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
+    const dockShortcutsReopened = await record(
+      "dockShortcutsReopened",
+      'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
+    );
+    check(
+      "a third press puts the reference back in front of the thread",
+      dockShortcutsReopened.dock !== null &&
+        dockShortcutsReopened.dock.surface === "shortcuts" &&
+        dockShortcutsReopened.shortcuts.pressed === "true",
+      `surface ${JSON.stringify(dockShortcutsReopened.dock && dockShortcutsReopened.dock.surface)}, pressed ${JSON.stringify(dockShortcutsReopened.shortcuts.pressed)}`,
+    );
+    check(
+      "the restored reference is again the composer-less page it was",
+      dockShortcutsReopened.dock.composerVisible === false &&
+        dockShortcutsReopened.dock.footerHidden === true &&
+        dockShortcutsReopened.dock.bodyVisible === true &&
+        dockShortcutsReopened.dock.rows.length === 15,
+      `composer ${dockShortcutsReopened.dock.composerVisible}, footer hidden ${dockShortcutsReopened.dock.footerHidden}, body ${dockShortcutsReopened.dock.bodyVisible}, rows ${dockShortcutsReopened.dock.rows.length}`,
     );
 
     at("dock Back returns to the thread");
