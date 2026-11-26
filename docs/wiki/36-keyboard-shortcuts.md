@@ -136,8 +136,9 @@ page's alert banner, and the row stays open so you can press another combination
 without walking back to the button:
 
 - Reserved by the app or the OS. Escape, Tab, Enter, F5, F11, F12, Alt+F4,
-  and the Ctrl/Cmd combinations for close, quit, reload, print, devtools and the
-  dock's chat text zoom (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are not bindable. The
+  and the Ctrl/Cmd combinations for close, quit, reload, print, devtools, the
+  dock's tab switching (`Ctrl+Tab`, `Ctrl+Shift+Tab`) and the dock's chat text
+  zoom (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are not bindable. The
   message reads **That combination is reserved by the app or the operating
   system. Pick another one.**
 - Already used by another movement. The refusal names it: **Already used by
@@ -167,6 +168,15 @@ in **Keyboard**:
   operator can see is drawn: the dock open on the thread surface, at least one tab
   (a pinned band counts), a chat in front, and that chat not pinned. With nothing
   to close the key is left to the platform.
+- **Ctrl+Tab** steps to the next chat tab and **Ctrl+Shift+Tab** to the previous
+  one, in the order the strip draws them — the pinned band first — and wrapping at
+  both ends. They act only while the strip is drawn and holds at least two tabs;
+  with one tab there is no other tab to switch to, so the key is left to the
+  platform. They work with the caret in the chat composer, which is where the
+  operator is when they reach for the strip, and the caret stays in the field
+  across the hop. These two are Ctrl on every platform, macOS included: Cmd+Tab
+  there belongs to the system's app switcher, while Ctrl+Tab is the browser's own
+  way to walk its tabs.
 - **Ctrl/Cmd+Enter** is the composer's send key by default (Enter breaks the
   line). It is a preference rather than a movement: Settings → **Composer** can
   hand sending to plain Enter, and Ctrl/Cmd+Enter keeps sending in either mode.

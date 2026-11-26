@@ -1143,6 +1143,20 @@ async function main() {
       return "sent";
     })()`);
 
+  /**
+   * Put the caret in the chat composer, the way clicking the field does. The
+   * cycle keys are the chatbar's own gesture, so the press after this one is
+   * made from the field the operator is working in.
+   */
+  const focusComposer = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__composer-input");
+      if (!el || el.disabled) return false;
+      el.focus();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return document.activeElement === el;
+    })()`);
+
   const emit = (sessionId, event) =>
     run(`window.__lqEmit(${JSON.stringify(sessionId)}, ${JSON.stringify(event)})`);
 
@@ -1171,7 +1185,7 @@ async function main() {
    * request that never reached the dock cannot pass on a plausible-looking
    * page sample alone.
    */
-  const probes = { wheel: null, task: null };
+  const probes = { wheel: null, task: null, tabKeys: null };
   /**
    * Where the run had got to, in order, for the report a watchdog has to write
    * when it kills a driver that never reaches the end: a timeout with no artifact
@@ -1500,6 +1514,23 @@ async function main() {
         noStripKey.heading === "Chat",
       JSON.stringify({ swallowedWithoutStrip, heading: noStripKey.heading, tabs: noStripKey.tabCount }),
     );
+    // The cycle keys are declined by the same rule: with no strip drawn there
+    // is no other tab to reach, so the platform keeps Ctrl+Tab.
+    const swallowedCycleWithoutStrip = await dispatchKeyDown({ key: "Tab", ctrlKey: true });
+    probes.tabKeys = { withoutStrip: swallowedCycleWithoutStrip, withOneTab: null };
+    const noStripCycle = await settle();
+    check(
+      "Ctrl+Tab is left alone on the blank slate",
+      swallowedCycleWithoutStrip === false &&
+        noStripCycle.tabCount === 0 &&
+        noStripCycle.strip === null &&
+        noStripCycle.heading === "Chat",
+      JSON.stringify({
+        swallowed: swallowedCycleWithoutStrip,
+        heading: noStripCycle.heading,
+        tabs: noStripCycle.tabCount,
+      }),
+    );
 
     // 2 — a plain click is navigation: the clicked chat takes over the main chat
     // and no tab is added.
@@ -1526,6 +1557,25 @@ async function main() {
       "the clicked chat is the active row",
       opened.rows.find((row) => row.label === "Bravo budget")?.active === true,
       JSON.stringify(opened.rows),
+    );
+    // One tab is still no second tab to switch to: the cycle key is declined
+    // and the strip stays where it is. (A real press is unsafe here for the same
+    // reason it is for Mod+W — an unhandled Ctrl+Tab belongs to the platform.)
+    const swallowedCycleWithOneTab = await dispatchKeyDown({ key: "Tab", ctrlKey: true });
+    if (probes.tabKeys) probes.tabKeys.withOneTab = swallowedCycleWithOneTab;
+    const oneTabCycle = await settle();
+    check(
+      "Ctrl+Tab is left alone with a single tab",
+      swallowedCycleWithOneTab === false &&
+        oneTabCycle.tabCount === 1 &&
+        oneTabCycle.tabs[0]?.label === "Bravo budget" &&
+        oneTabCycle.tabs[0]?.active === true &&
+        oneTabCycle.heading === "Bravo budget",
+      JSON.stringify({
+        swallowed: swallowedCycleWithOneTab,
+        tabs: oneTabCycle.tabs,
+        heading: oneTabCycle.heading,
+      }),
     );
 
     // 3 — a middle click keeps the chat in front and gives the clicked chat its
@@ -1576,6 +1626,63 @@ async function main() {
         reopenedAfterKey.heading === "Alpha planning",
       JSON.stringify({ tabs: reopenedAfterKey.tabs, heading: reopenedAfterKey.heading }),
     );
+
+    // 3c — Ctrl+Tab is the browser's tab-switch key, the counterpart of Mod+W:
+    // it walks the strip to its next tab in the order the strip draws, and
+    // Ctrl+Shift+Tab walks back, wrapping at both ends. The caret is put in the
+    // chat composer first: this is the key the operator reaches for while
+    // working in the chatbar, and the field must keep focus across the hop.
+    // Both are real presses through the window's input pipeline, so the proof is
+    // the operator's own keyboard, not a synthetic DOM event.
+    check("focused the chat composer before the cycle keys", await focusComposer(), "no composer");
+    const beforeCycle = await settle();
+    check(
+      "the composer holds the caret before the cycle keys",
+      beforeCycle.composer?.focused === true && beforeCycle.heading === "Alpha planning",
+      JSON.stringify({ composer: beforeCycle.composer, heading: beforeCycle.heading }),
+    );
+    // Alpha planning is the last tab; the forward step wraps to the first.
+    await pressKey("Tab", ["control"]);
+    const tabCycledForward = await settle();
+    check(
+      "Ctrl+Tab steps the strip to the next tab, wrapping to the first",
+      tabCycledForward.tabCount === 2 &&
+        tabCycledForward.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning" &&
+        tabCycledForward.tabs[0]?.active === true &&
+        tabCycledForward.tabs[1]?.active === false &&
+        tabCycledForward.heading === "Bravo budget" &&
+        tabCycledForward.surface === "thread" &&
+        tabCycledForward.composer?.focused === true &&
+        tabCycledForward.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify({
+        tabs: tabCycledForward.tabs,
+        heading: tabCycledForward.heading,
+        composer: tabCycledForward.composer,
+      }),
+    );
+    // Bravo budget is the first tab; the backward step wraps to the last.
+    await pressKey("Tab", ["control", "shift"]);
+    const tabCycledBack = await settle();
+    check(
+      "Ctrl+Shift+Tab steps the strip back to the previous tab, wrapping to the last",
+      tabCycledBack.tabCount === 2 &&
+        tabCycledBack.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning" &&
+        tabCycledBack.tabs[0]?.active === false &&
+        tabCycledBack.tabs[1]?.active === true &&
+        tabCycledBack.heading === "Alpha planning" &&
+        tabCycledBack.surface === "thread" &&
+        tabCycledBack.composer?.focused === true &&
+        tabCycledBack.rows.find((row) => row.label === "Alpha planning")?.active === true,
+      JSON.stringify({
+        tabs: tabCycledBack.tabs,
+        heading: tabCycledBack.heading,
+        composer: tabCycledBack.composer,
+      }),
+    );
+    screenshots.push(await shot("tab-cycle-keys"));
+    mark("tab-cycle-keys");
 
     // 4 — the row menu offers the same gesture in words.
     check("opened Delta's menu", await openSidebarMenu("Delta automation"), "no menu control");
@@ -3397,6 +3504,8 @@ async function main() {
         unpinnedPinnedNote,
         baseline,
         hoveredAlpha,
+        tabCycledForward,
+        tabCycledBack,
         archived,
         asked,
         declined,
@@ -3503,6 +3612,24 @@ async function main() {
         state.unpinnedPinnedNote.patchCalls.length,
       ],
       ["baseline", state.baseline.rowCount, state.baseline.tabCount, "", state.baseline.heading, "", ""],
+      [
+        "tab cycle →",
+        state.tabCycledForward.rowCount,
+        state.tabCycledForward.tabCount,
+        "",
+        state.tabCycledForward.heading,
+        "",
+        `tabs ${JSON.stringify(state.tabCycledForward.tabs.map((tab) => [tab.label, tab.active]))}`,
+      ],
+      [
+        "tab cycle ←",
+        state.tabCycledBack.rowCount,
+        state.tabCycledBack.tabCount,
+        "",
+        state.tabCycledBack.heading,
+        "",
+        `tabs ${JSON.stringify(state.tabCycledBack.tabs.map((tab) => [tab.label, tab.active]))}`,
+      ],
       ["archived", state.archived.rowCount, state.archived.tabCount, "", state.archived.heading, "", state.archived.patchCalls.length],
       ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],

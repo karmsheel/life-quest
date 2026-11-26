@@ -259,13 +259,21 @@ type Report = {
   screenshots: string[];
   states: Record<string, State>;
   /**
-   * The gesture readings a page sample cannot carry: the wheel's own numbers and
-   * the id of the chat the write-path probe created. A silent wheel or a request
-   * that never reached the dock cannot pass on a plausible page sample alone.
+   * The gesture readings a page sample cannot carry: the wheel's own numbers,
+   * the id of the chat the write-path probe created and whether the cycle keys
+   * were left to the platform where the dock had nothing to switch to. A silent
+   * wheel, a request that never reached the dock or a cycled key cannot pass on a
+   * plausible-looking page sample alone.
    */
   probes?: {
     wheel: WheelProbe | null;
     task: { id: string } | null;
+    tabKeys: {
+      /** The synthetic keydown's `defaultPrevented` with no strip drawn. */
+      withoutStrip: boolean | null;
+      /** The same with one tab in the strip: no second tab to switch to. */
+      withOneTab: boolean | null;
+    } | null;
   };
 };
 
@@ -342,6 +350,8 @@ describe("chat dock tabs and sidebar chats", () => {
       unpinnedPinnedNote,
       baseline,
       hoveredAlpha,
+      tabCycledForward,
+      tabCycledBack,
       archived,
       asked,
       declined,
@@ -644,6 +654,67 @@ describe("chat dock tabs and sidebar chats", () => {
     );
     assert.equal(middleOpened.tabs[1]?.active, true, "the new tab is not the active one");
     assert.equal(middleOpened.heading, "Alpha planning");
+
+    // Ctrl+Tab and Ctrl+Shift+Tab are the browser's tab-switch keys, the
+    // counterpart of Mod+W: a real press from the chat composer walks the strip
+    // in its drawing order, wraps at both ends, hands the thread and the sidebar
+    // to the tab it lands on, and leaves the caret in the field it was pressed
+    // from. With no strip drawn, or only one tab in it, the platform keeps the
+    // key instead.
+    assert.equal(
+      report.probes?.tabKeys?.withoutStrip,
+      false,
+      `Ctrl+Tab was swallowed on the blank slate: ${JSON.stringify(report.probes?.tabKeys)}`,
+    );
+    assert.equal(
+      report.probes?.tabKeys?.withOneTab,
+      false,
+      `Ctrl+Tab was swallowed with a single tab: ${JSON.stringify(report.probes?.tabKeys)}`,
+    );
+    assert.deepEqual(
+      tabCycledForward.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "Ctrl+Tab reordered the strip instead of walking it",
+    );
+    assert.equal(
+      tabCycledForward.tabs[0]?.active,
+      true,
+      "Ctrl+Tab did not step forward from the last tab, wrapping to the first",
+    );
+    assert.equal(tabCycledForward.tabs[1]?.active, false, "two tabs are active after Ctrl+Tab");
+    assert.equal(tabCycledForward.heading, "Bravo budget", "Ctrl+Tab loaded the wrong chat");
+    assert.equal(
+      tabCycledForward.composer?.focused,
+      true,
+      "Ctrl+Tab dropped the caret out of the chat composer",
+    );
+    assert.equal(
+      tabCycledForward.rows.find((row) => row.label === "Bravo budget")?.active,
+      true,
+      "Ctrl+Tab left the sidebar on another chat",
+    );
+    assert.deepEqual(
+      tabCycledBack.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "Ctrl+Shift+Tab reordered the strip instead of walking it",
+    );
+    assert.equal(
+      tabCycledBack.tabs[1]?.active,
+      true,
+      "Ctrl+Shift+Tab did not step back from the first tab, wrapping to the last",
+    );
+    assert.equal(tabCycledBack.tabs[0]?.active, false, "two tabs are active after Ctrl+Shift+Tab");
+    assert.equal(tabCycledBack.heading, "Alpha planning", "Ctrl+Shift+Tab loaded the wrong chat");
+    assert.equal(
+      tabCycledBack.composer?.focused,
+      true,
+      "Ctrl+Shift+Tab dropped the caret out of the chat composer",
+    );
+    assert.equal(
+      tabCycledBack.rows.find((row) => row.label === "Alpha planning")?.active,
+      true,
+      "Ctrl+Shift+Tab left the sidebar on another chat",
+    );
 
     // The row menu offers the same gesture.
     assert.deepEqual(

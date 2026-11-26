@@ -229,7 +229,8 @@ export function ChatShortcutsPage() {
         data-chat-shortcuts-browser-keys=""
       >
         Browser keys in the dock: {mac ? "Cmd" : "Ctrl"}+W closes the tab in
-        front, and a middle click closes the tab under the pointer. A pinned tab
+        front, Ctrl+Tab steps to the next tab and Ctrl+Shift+Tab to the previous
+        one, and a middle click closes the tab under the pointer. A pinned tab
         leaves the strip only through Unpin.
       </p>
     </div>
