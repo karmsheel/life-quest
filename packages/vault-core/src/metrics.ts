@@ -1,19 +1,32 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
-import { isDomainLive, getDatabase } from "./domain-databases.ts";
-import { applyViewDefaults, validateViewSpecForVault } from "./views.ts";
+import {
+  addDatabaseColumn,
+  createDatabase,
+  getDatabase,
+  insertRows,
+  isDomainLive,
+  listDatabases,
+} from "./domain-databases.ts";
+import { todayLocalIso } from "./map/dates.ts";
+import { isValidLocalIsoDate, periodBounds, previousPeriod } from "./period.ts";
+import { applyViewDefaults, runView, validateViewSpecForVault } from "./views.ts";
 import {
   USER_ACTOR,
   type Actor,
+  type DatabaseMeta,
   type MetricDefinition,
   type MetricDefinitionProblem,
   type MetricFormatting,
   type MetricMagnitude,
-  type Result,
+  type MetricSummary,
+  type ReviewCadence,
   type ViewSpec,
+  type WeekStartDay,
 } from "./types.ts";
 
 /**
@@ -364,22 +377,19 @@ async function validateDerivedSpec(
       error: "A metric answers one value, not a ranked list: drop the spec's limit.",
     };
   }
-  if (written.timeWindow !== undefined && written.timeWindow !== null) {
-    // A metric is always read over a review period (and the one before it), so
-    // its window is rewritten at read time; a date column is what that rewrite
-    // needs. Refusing here means a spec cannot be saved that will fail at the
-    // first figure instead.
-    const windowed =
-      typeof written.timeWindow !== "string" || written.timeWindow !== "all";
-    if (windowed && (written.timeColumnId === undefined || written.timeColumnId === null)) {
-      return {
-        ok: false,
-        code: "MALFORMED",
-        error:
-          "A metric is read over a period, so its spec needs a timeColumnId (the date column the " +
-          "period window acts on).",
-      };
-    }
+  // A metric is always read over a review period (and the one before it), so
+  // its window is rewritten at read time; a date column is what that rewrite
+  // needs. Refusing here means a spec cannot be saved that will fail at the
+  // first figure instead. It is required even when the spec says `all`,
+  // because a metric summary without a period is not a metric summary.
+  if (written.timeColumnId === undefined || written.timeColumnId === null) {
+    return {
+      ok: false,
+      code: "MALFORMED",
+      error:
+        "A metric is read over a period, so its spec needs a timeColumnId (the date column the " +
+        "period window acts on).",
+    };
   }
   let spec: Omit<ViewSpec, "schemaVersion">;
   try {
@@ -638,4 +648,451 @@ export async function defineMetric(
       return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// The events source: one dated row per logged event
+// ---------------------------------------------------------------------------
+
+/**
+ * The event table's columns, in the order §10.2 names them.
+ *
+ * `metric` is TEXT rather than a relation on purpose: it is the definition's
+ * `eventKey`, so two definitions ("Training sessions", "Training minutes") read
+ * the same rows and the table stays readable and exportable without the
+ * definition files beside it.
+ */
+const METRIC_EVENT_COLUMNS: Array<{ name: string; type: "date" | "text" | "number" }> = [
+  { name: "date", type: "date" },
+  { name: "metric", type: "text" },
+  { name: "value", type: "number" },
+  { name: "note", type: "text" },
+];
+
+/**
+ * In-process serialisation per area's events database.
+ *
+ * Two first `log_metric` calls in one process would otherwise both see no
+ * `metrics` database and both create one — a duplicate registry entry, or a
+ * failed second create. A promise chain keyed by area (the same shape as the
+ * registry lock) makes the second call re-read and reuse the first call's
+ * database instead.
+ */
+const metricsDbLocks = new Map<string, Promise<unknown>>();
+
+async function withMetricsDbLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = metricsDbLocks.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  metricsDbLocks.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  try {
+    return await run;
+  } finally {
+    if (metricsDbLocks.get(key) === undefined) metricsDbLocks.delete(key);
+  }
+}
+
+/**
+ * The area's `metrics` database, created on first use and reused afterwards.
+ *
+ * Idempotent in the strongest sense available here: an existing database is
+ * reused by id, its columns are only ADDED when a name is missing, and an
+ * operator's own column edits are never rewritten. Creating it happens only in
+ * a live area — an archived area must not grow a table.
+ */
+export async function ensureMetricsDatabase(
+  root: string,
+  slug: string,
+): Promise<MetricResult<DatabaseMeta>> {
+  return withMetricsDbLock(`${root}::${slug}`, async () => {
+    try {
+      if (!(await isDomainLive(root, slug))) {
+        return { ok: false, code: "NOT_FOUND", error: `Domain not found or archived: ${slug}` };
+      }
+      const listed = await listDatabases(root, slug);
+      const existing = listed.ok
+        ? listed.value.find((entry) => entry.database.id === METRICS_DATABASE_ID)?.database
+        : undefined;
+      let db: DatabaseMeta;
+      if (existing) {
+        db = existing;
+      } else {
+        const created = await createDatabase(root, slug, {
+          id: METRICS_DATABASE_ID,
+          name: METRICS_DATABASE_NAME,
+        });
+        if (!created.ok) {
+          return { ok: false, code: "FAILED", error: created.error };
+        }
+        db = created.value;
+      }
+      for (const column of METRIC_EVENT_COLUMNS) {
+        if (db.columns.some((c) => c.name === column.name)) continue;
+        const added = await addDatabaseColumn(root, slug, METRICS_DATABASE_ID, {
+          name: column.name,
+          type: column.type,
+        });
+        if (!added.ok) return { ok: false, code: "FAILED", error: added.error };
+        db = added.value;
+      }
+      return { ok: true, value: db };
+    } catch (e) {
+      return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+}
+
+/** The event table's column ids, resolved by NAME so a minted id never matters. */
+function eventColumnIds(db: DatabaseMeta): Record<string, string> | null {
+  const byName = new Map(db.columns.map((c) => [c.name, c.id]));
+  const out: Record<string, string> = {};
+  for (const column of METRIC_EVENT_COLUMNS) {
+    const id = byName.get(column.name);
+    if (!id) return null;
+    out[column.name] = id;
+  }
+  return out;
+}
+
+export type LogMetricInput = {
+  /** Local calendar date; defaults to today. */
+  date?: string;
+  /** The row's value; defaults to 1, so a pure count logs one row per event. */
+  value?: number;
+  note?: string;
+};
+
+export type LoggedMetricEvent = {
+  definition: MetricDefinition;
+  rowId: string;
+  date: string;
+  value: number;
+  note: string | null;
+  databaseId: string;
+};
+
+/**
+ * Log one dated event. Applies immediately (adding a row is the companion's
+ * own rule for database data) and names the actor in the log.
+ *
+ * `metric` cell = the definition's `eventKey`, so "training sessions" (count)
+ * and "training minutes" (sum) are two definitions over the same rows, with no
+ * roll-up vocabulary and no attribution rule: the event's date is the truth.
+ */
+export async function logMetric(
+  root: string,
+  slug: string,
+  metricId: string,
+  input: LogMetricInput,
+  actor: Actor = USER_ACTOR,
+): Promise<MetricResult<LoggedMetricEvent>> {
+  try {
+    const read = await getMetric(root, slug, metricId);
+    if (!read.ok) return read;
+    const definition = read.value;
+    if (definition.source !== "events") {
+      return {
+        ok: false,
+        code: "MALFORMED",
+        error: `"${definition.label}" is a derived metric: it reads its own database and cannot be logged. Log an event on an events metric.`,
+      };
+    }
+    const date = input.date ?? todayLocalIso();
+    if (typeof date !== "string" || !isValidLocalIsoDate(date)) {
+      return {
+        ok: false,
+        code: "MALFORMED",
+        error: `Invalid event date: ${String(input.date)} — use YYYY-MM-DD`,
+      };
+    }
+    const value = input.value ?? 1;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return { ok: false, code: "MALFORMED", error: "An event value must be a finite number" };
+    }
+    let note: string | null = null;
+    if (input.note !== undefined && input.note !== null) {
+      if (typeof input.note !== "string") {
+        return { ok: false, code: "MALFORMED", error: "An event note must be a string" };
+      }
+      const trimmed = input.note.trim();
+      note = trimmed ? trimmed : null;
+    }
+    if (definition.eventKey === undefined) {
+      return { ok: false, code: "FAILED", error: "The events metric has no eventKey" };
+    }
+
+    const ensured = await ensureMetricsDatabase(root, slug);
+    if (!ensured.ok) return ensured;
+    const columns = eventColumnIds(ensured.value);
+    if (!columns) {
+      return {
+        ok: false,
+        code: "FAILED",
+        error:
+          "The metrics database is missing one of its columns (date, metric, value, note); " +
+          "restore the database before logging.",
+      };
+    }
+    const rowId = randomUUID();
+    const inserted = await insertRows(root, slug, METRICS_DATABASE_ID, [
+      {
+        id: rowId,
+        cells: {
+          [columns.date!]: date,
+          [columns.metric!]: definition.eventKey,
+          [columns.value!]: value,
+          ...(note !== null ? { [columns.note!]: note } : {}),
+        },
+      },
+    ]);
+    if (!inserted.ok) return { ok: false, code: "FAILED", error: inserted.error };
+
+    await appendLog(root, {
+      domainSlug: slug,
+      type: "metric.logged",
+      summary: `Logged ${value} ${definition.unit} on "${definition.label}" in ${slug}`,
+      payload: { metricId: definition.id, eventKey: definition.eventKey, date, value },
+      actor,
+    });
+    return {
+      ok: true,
+      value: { definition, rowId, date, value, note, databaseId: METRICS_DATABASE_ID },
+    };
+  } catch (e) {
+    return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reading a metric over a period
+// ---------------------------------------------------------------------------
+
+/** `{ start, end }` bounds one metric run reads. */
+export type MetricBounds = { start: string; end: string };
+
+/**
+ * A definition as the ONE view spec that answers it over `bounds`.
+ *
+ * An events definition compiles its query here (spec §10.2): the `metrics`
+ * database, the `date` time column, a filter on the `metric` cell, the
+ * definition's aggregation, and the period rewritten as a custom window —
+ * exactly the rewrite `prepopulateReview` already does to a directive's window,
+ * so there is no second window vocabulary. A derived definition's spec is its
+ * query; only the window is rewritten, so the same saved spec answers the
+ * review period, the previous one, or an Analytics column.
+ *
+ * The presentation is `table`, not `metric`, for one reason: the engine's
+ * `metric` presentation answers 0 for an empty sum/count window (a card must
+ * read R0 for a quiet day), and a metric summary must be able to tell "no
+ * events" from "a real zero". The table shape draws the same engine-computed
+ * fold and leaves `rows` empty when nothing matched, which is how the summary
+ * answers null.
+ */
+export function compileMetricSpec(
+  definition: MetricDefinition,
+  bounds: MetricBounds,
+): ViewSpec {
+  const window = { kind: "custom", start: bounds.start, end: bounds.end } as const;
+  if (definition.source === "events") {
+    return {
+      schemaVersion: 1,
+      databaseId: METRICS_DATABASE_ID,
+      title: definition.label,
+      presentation: "table",
+      groupBy: null,
+      timeBucket: null,
+      timeColumnId: "date",
+      timeWindow: window,
+      filters: [{ columnId: "metric", op: "eq", value: definition.eventKey ?? "" }],
+      measure: definition.aggregation,
+      measureColumnId: definition.aggregation === "count" ? null : "value",
+      per: null,
+      sort: { by: "value", dir: "desc" },
+      limit: 12,
+      convertToZar: false,
+      columns: [],
+    };
+  }
+  if (!definition.spec) {
+    throw new Error(`Metric ${definition.id} is derived but carries no spec`);
+  }
+  return {
+    ...(definition.spec as Omit<ViewSpec, "schemaVersion">),
+    schemaVersion: 1,
+    title: definition.label,
+    timeWindow: window,
+  } as ViewSpec;
+}
+
+/**
+ * The week start the review windows are measured from.
+ *
+ * Read tolerantly, like the period pack: a settings file mid-repair still
+ * answers the shipped default rather than failing a summary.
+ */
+async function readWeekStartDay(root: string): Promise<WeekStartDay> {
+  try {
+    const raw = await fs.readFile(vaultPaths(root).settingsJson, "utf8");
+    const parsed = JSON.parse(raw) as { weekStartDay?: unknown };
+    return parsed.weekStartDay === "sunday" ? "sunday" : "monday";
+  } catch {
+    return "monday";
+  }
+}
+
+/**
+ * One definition's value over one window, as the view engine computes it.
+ *
+ * `presentation: "table"` keeps an empty window distinguishable from a real
+ * zero; every number here is the engine's own aggregate, never a fold computed
+ * in this file. An `avg-per` spec keeps its required `metric` presentation — a
+ * period average of nothing is 0 per period by the engine's own rule — so it is
+ * the one measure whose empty answer is 0 rather than null.
+ */
+async function runMetricOverWindow(
+  root: string,
+  slug: string,
+  definition: MetricDefinition,
+  bounds: MetricBounds,
+  now: Date,
+): Promise<MetricResult<number | null>> {
+  let spec: ViewSpec;
+  try {
+    spec = compileMetricSpec(definition, bounds);
+  } catch (e) {
+    return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+  }
+  const runSpec: ViewSpec =
+    spec.measure === "avg-per"
+      ? spec
+      : ({ ...spec, presentation: "table" } as ViewSpec);
+  const run = await runView(root, slug, runSpec, now);
+  if (!run.ok) return { ok: false, code: "FAILED", error: run.error };
+  const summary = run.value.summary;
+  if (summary && typeof summary.value === "number") return { ok: true, value: summary.value };
+  const only = run.value.rows[0];
+  if (only && typeof only[1] === "number") return { ok: true, value: only[1] };
+  // No rows in the window: the honest answer is "not tracked", not 0.
+  return { ok: true, value: null };
+}
+
+export type GetMetricsSummaryInput = {
+  cadence: ReviewCadence;
+  period: string;
+  /** Null or absent reads every definition in the area. */
+  metricIds?: string[] | null;
+};
+
+export type MetricsSummaryResult = {
+  metrics: MetricSummary[];
+  /** Definitions whose file could not be read; reported, never thrown. */
+  problems: MetricDefinitionProblem[];
+  window: MetricBounds;
+  previousWindow: MetricBounds;
+  asOf: string;
+};
+
+/**
+ * The period comparison Phase 5 figures and Phase 6 Analytics call.
+ *
+ * One run per definition over the review period and one over the previous
+ * period of the same cadence, on the same view path the review snapshots use.
+ * A window with no rows answers `value: null` (and `delta: null`) — a metric
+ * that was not tracked and one that was genuinely zero are different
+ * statements, and the matrix shows "no data" for the first. `delta` is the
+ * change between the two DISPLAYED values (the magnitude rule applied), so
+ * Cash out reads "3,000, up 1,000" rather than flipping sign.
+ */
+export async function getMetricsSummary(
+  root: string,
+  slug: string,
+  input: GetMetricsSummaryInput,
+): Promise<MetricResult<MetricsSummaryResult>> {
+  try {
+    if (!(await isDomainLive(root, slug))) {
+      return { ok: false, code: "NOT_FOUND", error: `Domain not found or archived: ${slug}` };
+    }
+    const weekStartDay = await readWeekStartDay(root);
+    const bounds = periodBounds(input.cadence, input.period, weekStartDay);
+    if (!bounds.ok) return { ok: false, code: "MALFORMED", error: bounds.error };
+    const previousPeriodValue = previousPeriod(input.cadence, input.period, weekStartDay);
+    if (!previousPeriodValue.ok) {
+      return { ok: false, code: "MALFORMED", error: previousPeriodValue.error };
+    }
+    const previousBounds = periodBounds(
+      input.cadence,
+      previousPeriodValue.value,
+      weekStartDay,
+    );
+    if (!previousBounds.ok) {
+      return { ok: false, code: "MALFORMED", error: previousBounds.error };
+    }
+
+    const listed = await listMetricDefinitions(root, slug);
+    if (!listed.ok) return listed;
+    const wanted = input.metricIds && input.metricIds.length > 0
+      ? new Set(input.metricIds)
+      : null;
+    const defs = wanted
+      ? listed.value.metrics.filter((metric) => wanted.has(metric.id))
+      : listed.value.metrics;
+
+    const now = new Date();
+    const asOf = now.toISOString();
+    const summaries: MetricSummary[] = [];
+    for (const definition of defs) {
+      const current = await runMetricOverWindow(root, slug, definition, bounds.value, now);
+      if (!current.ok) return current;
+      const previous = await runMetricOverWindow(
+        root,
+        slug,
+        definition,
+        previousBounds.value,
+        now,
+      );
+      if (!previous.ok) return previous;
+      const formatting = definition.formatting ?? null;
+      const shownCurrent = metricDisplayValue(current.value, formatting);
+      const shownPrevious = metricDisplayValue(previous.value, formatting);
+      summaries.push({
+        id: definition.id,
+        label: definition.label,
+        unit: definition.unit,
+        source: definition.source,
+        value: current.value,
+        previousValue: previous.value,
+        delta:
+          shownCurrent !== null && shownPrevious !== null
+            ? shownCurrent - shownPrevious
+            : null,
+        direction: definition.direction ?? null,
+        target: definition.target ?? null,
+        formatting,
+        window: bounds.value,
+        previousWindow: previousBounds.value,
+        asOf,
+        provenance:
+          definition.source === "events"
+            ? { databaseId: METRICS_DATABASE_ID, eventKey: definition.eventKey }
+            : { databaseId: (definition.spec?.databaseId as string) ?? "" },
+      });
+    }
+    return {
+      ok: true,
+      value: {
+        metrics: summaries,
+        problems: listed.value.problems,
+        window: bounds.value,
+        previousWindow: previousBounds.value,
+        asOf,
+      },
+    };
+  } catch (e) {
+    return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+  }
 }

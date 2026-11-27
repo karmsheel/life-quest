@@ -183,13 +183,26 @@ export {
   METRIC_ID_PATTERN,
   METRICS_DATABASE_ID,
   METRICS_DATABASE_NAME,
+  compileMetricSpec,
   defineMetric,
+  ensureMetricsDatabase,
   getMetric,
+  getMetricsSummary,
   listMetricDefinitions,
+  logMetric,
   metricDisplayValue,
   metricMagnitude,
 } from "./metrics.ts";
-export type { DefineMetricInput, MetricErrorCode, MetricResult } from "./metrics.ts";
+export type {
+  DefineMetricInput,
+  GetMetricsSummaryInput,
+  LogMetricInput,
+  LoggedMetricEvent,
+  MetricBounds,
+  MetricErrorCode,
+  MetricResult,
+  MetricsSummaryResult,
+} from "./metrics.ts";
 export {
   ensurePlanningStub,
   getPlanningStub,
