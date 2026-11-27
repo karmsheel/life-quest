@@ -1398,18 +1398,28 @@ async function main() {
       upToDate.label === null,
       `caption ${JSON.stringify(upToDate.label)}, chip ${JSON.stringify(upToDate.chip?.text)}`,
     );
-    // The chip is a quiet line in the header's band, not something that changes
-    // the rail's size: the available state adds ink and the words, never a taller
-    // line or a taller header. The slot's own width follows its content — the
-    // words make it wider — so the claim is the header's box and the line's
-    // height, which is what the retired caption row's fixed box used to carry.
+    // The caption is a second line under the number, so the version line and
+    // the header band grow while an offer is up. The rail's column does not:
+    // the band keeps its place and its width, and it never grows by more than
+    // the extra line (the quiet header's floor absorbs the rest).
+    const offerHeader = resting.railHeader?.box;
+    const quietHeader = upToDate.railHeader?.box;
+    const offerLine = resting.version?.box;
+    const quietLine = upToDate.version?.box;
+    const headerGrowth =
+      offerHeader && quietHeader ? offerHeader.height - quietHeader.height : 0;
+    const lineGrowth = offerLine && quietLine ? offerLine.height - quietLine.height : 0;
     check(
-      "the available state did not change the header's band or the line's height",
-      sameBox(resting.railHeader?.box, upToDate.railHeader?.box) &&
-        Boolean(resting.version?.box && upToDate.version?.box) &&
-        resting.version.box.height === upToDate.version.box.height &&
+      "the caption grows the version line and the header, and the rail's column stays put",
+      Boolean(offerHeader && quietHeader && offerLine && quietLine) &&
+        Math.abs(offerHeader.left - quietHeader.left) <= 1 &&
+        Math.abs(offerHeader.width - quietHeader.width) <= 1 &&
+        Math.abs(offerHeader.top - quietHeader.top) <= 1 &&
+        headerGrowth > 0 &&
+        lineGrowth > 0 &&
+        headerGrowth <= lineGrowth + 1 &&
         sameBox(resting.rail?.box, upToDate.rail?.box),
-      `header available ${JSON.stringify(resting.railHeader?.box)} vs up-to-date ${JSON.stringify(upToDate.railHeader?.box)}, line height ${resting.version?.box?.height} vs ${upToDate.version?.box?.height}`,
+      `header available ${JSON.stringify(offerHeader)} vs up-to-date ${JSON.stringify(quietHeader)}, line height ${offerLine?.height} vs ${quietLine?.height}`,
     );
     check(
       "an up-to-date build still asks the feed once",

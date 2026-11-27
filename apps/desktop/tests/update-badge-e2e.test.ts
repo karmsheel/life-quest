@@ -277,17 +277,6 @@ function rgbKey(color: string): string | null {
   return null;
 }
 
-/** Two measured boxes as the same box, to within a rounding pixel. */
-function sameBox(
-  a: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null | undefined,
-  b: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null | undefined,
-): boolean {
-  if (!a || !b) return false;
-  return (["left", "top", "right", "bottom", "width", "height"] as const).every(
-    (key) => Math.abs(a[key] - b[key]) <= 1,
-  );
-}
-
 /**
  * The badge rig drives the real shell in a real Electron window, so it needs the
  * Vite dev server. With the server down the test skips; `npm run dev` in another
@@ -359,8 +348,8 @@ describe("auto-update badge", () => {
     } = report.states;
 
     // The badge's home is the rail's version slot: the div inside the header,
-    // directly under the centred lockup, holding the words and the number as one
-    // centred inline row. The foot below is one row now — the Log, the vault chip
+    // directly under the centred lockup, with the number and then the caption
+    // stacked and centred. The foot below is one row now — the Log, the vault chip
     // and the collapse toggle — and the old caption row (`.nav-rail__meta`) is
     // gone from the DOM.
     const version = available.version;
@@ -465,8 +454,8 @@ describe("auto-update badge", () => {
         version.box.right <= available.rail.box.right,
       `the version line left the rail's column: line ${JSON.stringify(version?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
     );
-    // And the chip is shorter than the line it lives in: the line's height is the
-    // words' or the pill's own, never a taller row grown for the badge.
+    // The chip sits inside the version line. The line is the taller of the two
+    // once the caption is stacked under the number.
     assert.ok(
       available.chip &&
         version &&
@@ -512,14 +501,23 @@ describe("auto-update badge", () => {
       null,
       `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
     );
-    // The glow and its words are a state, not a size: the header's band and the
-    // version line's height are the same with the offer as without it. (The
-    // slot's own width follows its content, so the claim is the band it lives in,
-    // which is what the retired caption row's fixed box used to carry.)
+    // The caption is a second line, so the version line and the header band are
+    // taller while an offer is up. The band keeps its place and its width, and
+    // it grows by no more than the extra line.
+    const headerGrowth =
+      (available.railHeader?.box.height ?? 0) - (upToDate.railHeader?.box.height ?? 0);
+    const lineGrowth =
+      (available.version?.box.height ?? 0) - (upToDate.version?.box.height ?? 0);
     assert.ok(
-      sameBox(available.railHeader?.box, upToDate.railHeader?.box) &&
-        available.version?.box.height === upToDate.version?.box.height,
-      `the available state resized the header's band: available ${JSON.stringify(available.railHeader?.box)} / line ${available.version?.box.height}px, up-to-date ${JSON.stringify(upToDate.railHeader?.box)} / line ${upToDate.version?.box.height}px`,
+      available.railHeader?.box &&
+        upToDate.railHeader?.box &&
+        Math.abs(available.railHeader.box.left - upToDate.railHeader.box.left) <= 1 &&
+        Math.abs(available.railHeader.box.width - upToDate.railHeader.box.width) <= 1 &&
+        Math.abs(available.railHeader.box.top - upToDate.railHeader.box.top) <= 1 &&
+        headerGrowth > 0 &&
+        lineGrowth > 0 &&
+        headerGrowth <= lineGrowth + 1,
+      `the caption did not grow the header under the version: available ${JSON.stringify(available.railHeader?.box)} / line ${available.version?.box.height}px, up-to-date ${JSON.stringify(upToDate.railHeader?.box)} / line ${upToDate.version?.box.height}px`,
     );
 
     // The manual check at rest: one launch check, then the operator's click
