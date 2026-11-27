@@ -3,6 +3,8 @@ import {
   ensureReview,
   getPeriodPack,
   getReviewAreaChecklist,
+  getReviewNotebook,
+  getReviewPageTemplate,
   getReviewSkill,
   openVault,
   periodTitle,
@@ -11,6 +13,7 @@ import {
   type PeriodPack,
   type Result,
   type ReviewCadence,
+  type ReviewPageSummary,
   type ReviewRecord,
   type VaultSnapshot,
   type WeekStartDay,
@@ -114,6 +117,24 @@ export function boundSessionTitle(input: {
   return `${head} · ${cadenceWord} · ${clause}`;
 }
 
+/** The bound page's contract extras, quoted for a session that must keep them. */
+function templateClause(extras: readonly string[] | undefined): string {
+  if (!extras || extras.length === 0) {
+    return " This area has no page template, so its page carries the four common headings only.";
+  }
+  const quoted = extras.map((extra) => `"${extra}"`).join(", ");
+  return ` This area's page template names its own sections ${quoted}; keep them, in that order, after the four common headings.`;
+}
+
+/** Every page of the notebook, named so the life review can read each one first. */
+function notebookPagesClause(pages: readonly ReviewPageSummary[] | undefined): string {
+  if (!pages || pages.length === 0) return "";
+  const named = pages
+    .map((page) => `${page.title} (${page.scope}, ${page.status})`)
+    .join("; ");
+  return ` The notebook's pages: ${named}.`;
+}
+
 export function boundKickoff(input: {
   kind: BoundSessionKind;
   cadence: ReviewCadence;
@@ -127,6 +148,10 @@ export function boundKickoff(input: {
    * it is summarising N sections rather than one.
    */
   areaCount?: number | null;
+  /** The bound area's template extras, in template order. */
+  templateExtras?: readonly string[];
+  /** Every page in the notebook, for the life review's cross-page synthesis. */
+  pages?: readonly ReviewPageSummary[];
 }): string {
   const title = periodTitle(input.cadence, input.period, input.weekStartDay);
   const suffix = scopeSuffix(input.scope, input.domainName);
@@ -143,16 +168,16 @@ export function boundKickoff(input: {
     return `Let's assemble the ${title}${suffix}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   if (input.scope === "overall") {
-    // The life review is the summary pass: it reads every area's section and
+    // The life review is the summary pass: it reads every area's page and
     // speaks across them, so its kickoff is not the generic one.
     const count =
       typeof input.areaCount === "number" && input.areaCount > 0
         ? ` (${input.areaCount} areas)`
         : "";
-    return `Let's assemble the ${title}${suffix}. This is the whole-life review: every area review for this period is complete${count}. Read each area's page with get_review (one call per area scope) and go across their Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall page only (get_review with scope "overall", then write_review with that scope and its rev), synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+    return `Let's assemble the ${title}${suffix}. This is the whole-life review: every area review for this period is complete${count}. Read every area page with get_review first (one call per area scope).${notebookPagesClause(input.pages)} The overall page has no area sections: synthesise the area pages under the four common headings — Look-back, Keep, Change, Next-period intent — without copying an area's own extra sections, and never rewrite an area page. Write the overall page only (get_review with scope "overall", then write_review with that scope and its rev), synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   const name = (input.domainName ?? input.scope).trim() || input.scope;
-  return `Let's assemble the ${title}${suffix}. This is the ${name} review — this period's part of the life review. Write only this page: get_review with scope "${input.scope}", then write_review with the same scope, your page body (one # title and the four ## headings) and its rev. Leave every other section and area alone. Interview me through the four headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
+  return `Let's assemble the ${title}${suffix}. This is the ${name} review — this period's part of the life review. Your page is get_review with scope "${input.scope}" → write_review with the same scope, the page body (one # title, the four common ## headings, and this area's own sections) and the rev it returned.${templateClause(input.templateExtras)} Leave every other page alone. Interview me through the four common headings and this area's own sections. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
 }
 
 export function findBoundSession(
@@ -226,11 +251,14 @@ export function formatReviewContext(input: {
   scope?: "overall" | string;
   /** The scope's display name, for the `## <Name>` section line. */
   domainName?: string | null;
-  /**
-   * The bound cadence. Optional because the pack carries it when the pack
+  /** The bound cadence. Optional because the pack carries it when the pack
    * read succeeded; daily needs it to describe itself as the day as a whole.
    */
   cadence?: ReviewCadence;
+  /** The bound area's page template extras, in template order. */
+  templateExtras?: readonly string[];
+  /** Every page of the notebook, for the overall page's cross-page contract. */
+  pages?: readonly ReviewPageSummary[];
 }): string {
   const lines = [`Bound session kind: ${input.kind}`];
   if (input.kind === "review" && input.skill) {
@@ -254,8 +282,26 @@ export function formatReviewContext(input: {
     if (scopeLine) lines.push(scopeLine);
   }
   lines.push(
-    "Skeleton rules: each page is one # title and the four ## Look-back / ## Keep / ## Change / ## Next-period intent headings. A page has no other headings; write only your own scope's page.",
+    "Page contract: every page needs the four common ## headings — Look-back, Keep, Change, Next-period intent. A live area's page template names that area's own sections as extra ## headings: they come after the four, and the page keeps them in template order. The overall page has no area sections: synthesise the area pages under the four common headings without copying an area's extras, and never rewrite an area page.",
   );
+  if (input.kind === "review") {
+    const cadence = input.cadence ?? (input.pack.ok ? input.pack.value.cadence : undefined);
+    if (cadence !== "daily" && input.scope !== undefined && input.scope !== "overall") {
+      lines.push(
+        input.templateExtras && input.templateExtras.length > 0
+          ? `This page's area sections, in template order: ${input.templateExtras.map((extra) => `"${extra}"`).join(", ")}. Keep them after the four common headings.`
+          : "This area has no page template: its page carries only the four common headings unless you add a section of the area's own.",
+      );
+    }
+    if (input.scope === "overall" && input.pages && input.pages.length > 0) {
+      const named = input.pages
+        .map((page) => `${page.title} (${page.scope}, ${page.status})`)
+        .join("; ");
+      lines.push(
+        `Pages in this notebook: ${named}. Read every area page with get_review before you synthesise them on the overall page.`,
+      );
+    }
+  }
   lines.push(
     "If write_review answers CONFLICT, the file moved under you: read your page again with get_review and re-apply your section — never resend the body you already had.",
   );
@@ -278,6 +324,29 @@ export function formatReviewContext(input: {
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * The page-contract facts a session's prompts quote: the bound area's template
+ * extras, and — for the overall page — every page of the notebook. A failed read
+ * is an empty contract, not a failed session: the prompt then simply makes no
+ * claim the engine cannot back.
+ */
+async function resolvePageContract(
+  root: string,
+  input: { cadence: ReviewCadence; period: string; scope: "overall" | string },
+): Promise<{ templateExtras: string[]; pages: ReviewPageSummary[] }> {
+  const templateExtras: string[] = [];
+  const pages: ReviewPageSummary[] = [];
+  if (input.cadence === "daily") return { templateExtras, pages };
+  if (input.scope === "overall") {
+    const notebook = await getReviewNotebook(root, input.cadence, input.period);
+    if (notebook.ok) pages.push(...notebook.value.pages);
+    return { templateExtras, pages };
+  }
+  const template = await getReviewPageTemplate(root, input.scope);
+  if (template.ok) templateExtras.push(...template.value.extras);
+  return { templateExtras, pages };
 }
 
 async function resolveDomainName(
@@ -340,6 +409,10 @@ async function startOrResumeBoundSession(
     const checklist = await getReviewAreaChecklist(root, input.cadence, input.period);
     if (checklist.ok) areaCount = checklist.value.total;
   }
+  const contract =
+    kind === "review"
+      ? await resolvePageContract(root, input)
+      : { templateExtras: [], pages: [] };
   const kickoff = boundKickoff({
     kind,
     cadence: input.cadence,
@@ -348,6 +421,8 @@ async function startOrResumeBoundSession(
     domainName,
     weekStartDay,
     areaCount,
+    templateExtras: contract.templateExtras,
+    pages: contract.pages,
   });
 
   const storedId = ensured.value.scopes[input.scope]?.sessionId ?? null;
@@ -428,6 +503,11 @@ export async function buildBoundReviewContext(
   // and the page do, so resolve the display name here rather than letting the
   // companion infer it from a slug.
   const { domainName } = await resolveDomainName(root, bound.scope);
+  const contract = await resolvePageContract(root, {
+    cadence: bound.cadence,
+    period: bound.period,
+    scope: bound.scope,
+  });
   return formatReviewContext({
     kind: bound.kind,
     pack,
@@ -437,5 +517,7 @@ export async function buildBoundReviewContext(
     scope: bound.scope,
     domainName,
     cadence: bound.cadence,
+    templateExtras: contract.templateExtras,
+    pages: contract.pages,
   });
 }
