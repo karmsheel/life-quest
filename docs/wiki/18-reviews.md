@@ -271,6 +271,63 @@ The review page has no list of past reviews. You reach a period with the pager;
 the vault index of all review files exists for the companion and the snapshot,
 not as a screen.
 
+## Page contracts
+
+Every page carries the same four common headings — **Look-back**, **Keep**,
+**Change**, **Next-period intent** — in that order. They are the Life review's
+synthesis contract: the overall page reads them from every area page, so they are
+required on every page and are never tailored.
+
+Beyond them, a live area's page can carry its own sections, and its **page
+contract** says which. The contract lives in the vault at
+`.lifequest/reviews/pages/<area-slug>.md` — one file per area, beside the cadence
+rules and outside `reviews/`, so a scan of the periods never sees it. The format
+is an optional `# title` line, then one `##` heading per section, in the order
+the page keeps them. A Health contract, for example:
+
+```markdown
+# Health page contract
+
+## Training
+
+## Sleep
+
+## Energy
+```
+
+What the engine enforces:
+
+- The four common headings are always required on every page and are never
+  listed in a contract. A contract naming one is refused.
+- Headings must be `##`; an H3 or deeper is refused.
+- A heading may appear once, a duplicate is refused, and a contract that names
+  no extra section is refused. The most a contract may name is 12.
+- A contract belongs to a live area: `overall` has no contract, and an archived
+  or locked area's contract is refused.
+- A new page of the area is **seeded** with the four common headings, then the
+  contract's sections, empty and in contract order. An area with no contract is
+  seeded with the four common headings only.
+- A save **orders** the extras a page already holds: the four common headings
+  first, then the contract's sections in contract order, then any other section
+  in the order you wrote it. The contract only seeds and orders — it never
+  rejects a heading you added, and the prose under every heading is preserved.
+
+To tailor an area, ask the companion to change that area's page contract (the
+`get_review_template` and `write_review_template` tools), or edit
+`.lifequest/reviews/pages/<area-slug>.md` directly. This is a different file from
+the cadence's **Review rules**, which hold the standing rules and figures for
+every review of that cadence.
+
+**A contract change never rewrites an existing page.** It seeds pages created
+after it, and the new order applies the next time a page is written; a finished
+report stays exactly as it was until someone changes it.
+
+**The Life synthesis contract.** The overall page has no area sections of its
+own. Its interview reads every area page — the four common headings on each —
+and synthesises them under the four common headings, without copying an area's
+own extra sections, and never rewrites an area page. The interview's kickoff
+lists every page in the notebook with its status, so none is missed.
+
 ## Rules and behaviour
 
 A notebook per cadence and period. The laws are short and enforced by the
@@ -300,8 +357,10 @@ that moves only when pages are added or the lock changes. `overall.md` and each
 `rev` that increments on every accepted body write; a write quotes the rev it
 read, so two interviews on two pages never fight and a write to the same page
 that missed a change is refused rather than overwriting it. Extra headings you
-type are kept after the required blocks, and a save canonicalises this skeleton
-and preserves the prose under each heading.
+type are kept after the required blocks — a save canonicalises this skeleton
+(the four common headings, then the area's page-contract sections in contract
+order, then any other extra heading in the order you typed it) and preserves the
+prose under each heading. See [Page contracts](#page-contracts).
 
 The page the app shows is assembled from the notebook's pages, which is also how
 the editor works for this release: the overall page and each area page are laid

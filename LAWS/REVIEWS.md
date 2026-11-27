@@ -37,3 +37,33 @@ Week start is a vault setting and cannot change while weekly review or planning 
   `.lifequest/migrations/reviews-notebook-v1.json`.
 - Planning stubs MUST live under `planning/` and MUST NOT hold a plan body.
 - Week start MUST NOT change while weekly review or planning files exist.
+
+## Page contract
+
+- Every page MUST carry the four common H2 headings `Look-back`, `Keep`,
+  `Change`, `Next-period intent`, in that fixed order. They are the Life
+  review's synthesis contract and MUST NOT be tailored away or reordered.
+- A live area MAY have a page contract at
+  `.lifequest/reviews/pages/{area-slug}.md`: an optional single `#` title, then
+  one `##` heading per extra section, in the order the page keeps them. A
+  contract names the area's own sections only; the four common headings MUST
+  NOT appear in it.
+- A new area page MUST be seeded with the four common headings, then the
+  contract's sections, empty and in contract order. An area with no contract
+  MUST be seeded with the four common headings only.
+- A page write MUST emit, in order: the four common headings; the contract's
+  sections the page already holds, in contract order; then any other extra
+  heading in the order the page held it. Extras are first-class — a heading no
+  contract names MUST be preserved — and prose under every heading MUST be
+  preserved.
+- Writing or changing a contract MUST NOT rewrite an existing page. The contract
+  seeds pages created after it, and its order applies at that page's next
+  accepted write.
+- A contract write MUST refuse an H3-or-deeper heading, a duplicate heading, one
+  of the four common headings, a contract naming no extra heading, more than 12
+  extras, `overall`, and any area that is not live.
+- The overall page MUST have no area sections. The Life review MUST read every
+  area page's four common headings and synthesise them under the four common
+  headings, MUST NOT copy an area's extras, and MUST NOT rewrite an area page.
+- A contract write MUST append one `review.template-written` life-log line
+  naming the actor.
