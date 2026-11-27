@@ -172,16 +172,24 @@ async function readTemplateFile(
   try {
     const raw = await fs.readFile(vaultPaths(rootPath).reviewPageTemplateMd(scope), "utf8");
     const parsed = canonicalizeReviewPageTemplate(raw);
+    // The write path refuses these, but a hand-edited file can still hold them:
+    // report what is out of contract rather than either throwing (the page would
+    // become unreadable) or silently accepting it (the tool says the most is 12).
+    const problems = [...parsed.problems];
+    if (parsed.extras.length === 0) {
+      problems.push("it names no extra headings");
+    } else if (parsed.extras.length > REVIEW_PAGE_TEMPLATE_MAX_EXTRAS) {
+      problems.push(
+        `it names ${parsed.extras.length} extra headings; the most is ${REVIEW_PAGE_TEMPLATE_MAX_EXTRAS}`,
+      );
+    }
     return {
       ok: true,
       value: {
         scope,
         extras: parsed.extras,
         exists: true,
-        problems:
-          parsed.extras.length === 0
-            ? [...parsed.problems, "it names no extra headings"]
-            : parsed.problems,
+        problems,
       },
     };
   } catch (e) {
