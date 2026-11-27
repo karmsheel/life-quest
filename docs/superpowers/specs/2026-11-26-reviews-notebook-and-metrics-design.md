@@ -626,6 +626,34 @@ is local minute precision, so a repeat Start in the same minute is a no-op and a
 refreshes the as-of line (no byte-idempotence across minutes by design). The `review-figures`
 engine rig and the rewritten `review-ui` rig are the phase artifacts.
 
+**Phase 6 note (shipped).** Analytics is `/review/analytics`, the Review wing's sixth rail row
+(after Yearly), a static route ranked above `/review/:cadence`. It is a matrix, not a dashboard:
+rows are metric definitions grouped by area (Life lens: every live area in vault order; an area
+lens: that area only; archived areas never appear), columns are the last eight periods of the
+page's own cadence selector (weekly default; monthly, quarterly, yearly), and each cell prints the
+definition's formatted value and unit or `—` for a window with no rows, with the signed change
+from the previous column. There is no composite score, streak or colour judgement; a target and
+direction appear in the row label only. `getAnalyticsMatrix` reuses the review figures'
+compile-and-run path — one run per definition per window, eight plus the extra older window that
+gives the oldest column its delta — reports malformed or unanswerable definitions while healthy
+rows still answer, and never creates the events database on a read. Period headers link to
+`/review/<cadence>?period=<period>[&scope=<area>]`; `ReviewPage` gained a one-shot `?period=`
+deep link (validated against the cadence, applied before the first load, stripped with `replace`,
+`?scope=` unchanged). An events-metric cell opens that period's events with `Log event`
+(today/1 defaults), per-row edit and delete through the ordinary database row path
+(`db:upsertRow` / `db:deleteRow` on the area's `metrics` book, column ids from the events read),
+and a link to the period's review; a derived cell opens its source database (the Data page has no
+period filter, so it opens unpinned in time, as the wiki says). `New metric` offers the prepared
+companion chat (`companionSessionCreate` + `requestSession`, kickoff "Define a metric for …")
+plus a small form that creates an events metric (area, label, unit, aggregation, target;
+id/eventKey slugged from the label); database-derived definitions go through the companion. The
+four IPC doors (`analytics:matrix`, `metrics:events`, `metrics:logEvent`, `metrics:define`) are in
+the preload bridge, `metrics:define` and `metrics:logEvent` are mutation channels, and the page
+caches a matrix per (cadence, lens) for the session, refetching on its own mutations and on the
+vault's change signal. The page owns its cadence selector, which resolves the second open
+question (§17.2). The `analytics` renderer rig and the `analytics-engine` rig are the phase
+artifacts.
+
 ---
 
 ## 11. Migration
@@ -778,7 +806,8 @@ test is the one served.
 6. **Phase 5 — review figures:** per-page figure blocks + overall cross-domain table, window
    and as-of, frozen at lock. Shipped 2026-11-27; see the Phase 5 note in §10.4 and the
    `review-figures` + `review-ui` rigs.
-7. **Phase 6 — Analytics page:** route, rail row, matrix, logging, wiki/docs-check.
+7. **Phase 6 — Analytics page:** route, rail row, matrix, logging, wiki/docs-check. Shipped
+   2026-11-27; see the Phase 6 note in §10.5 and the `analytics` + `analytics-engine` rigs.
 
 Each phase is a branch from master, E2E-verified against its own checkout, and handed over
 with an artifact; merge only on the operator's word. The bench opens the real vault, so the
@@ -793,7 +822,7 @@ migration branch is tested against a copy before it is put there.
    `define_metric` refuses an existing id with `EXISTS`; updating or deleting a definition
    remains Decision-governed and unbuilt.
 2. **Analytics cadence** — own selector on the page (recommended) vs follows the last review
-   cadence opened.
+   cadence opened. Resolved (Phase 6): the page owns its selector (weekly default).
 
 ---
 
