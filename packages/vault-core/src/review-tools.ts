@@ -13,6 +13,10 @@ import {
   writeReviewPage,
 } from "./reviews.ts";
 import { getReviewSkill, writeReviewSkill } from "./review-skills.ts";
+import {
+  getReviewPageTemplate,
+  writeReviewPageTemplate,
+} from "./review-templates.ts";
 
 export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
@@ -107,6 +111,29 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
         markdown: { type: "string" },
       },
       required: ["cadence", "markdown"],
+    },
+  },
+  {
+    name: "get_review_template",
+    description:
+      "Read a live area's page template: the extra ## headings its review pages seed with and keep in this order. The four common headings (Look-back, Keep, Change, Next-period intent) are required on every page and are never listed in a template — a template names only the area's own sections. No file means the area's pages are exactly the four common headings.",
+    parameters: {
+      type: "object",
+      properties: { scope: { type: "string" } },
+      required: ["scope"],
+    },
+  },
+  {
+    name: "write_review_template",
+    description:
+      "Replace one live area's page template: an optional # title and one or more ## headings naming the area's own sections, in the order a page keeps them. The four common headings are always required on every page and must not be listed here; an H3, a duplicate, or a template with no extras is refused, as is scope \"overall\". A new page of the area is seeded with the four common headings then these extras in order; existing pages are only reordered the next time they are written, never rewritten by this tool.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: { type: "string" },
+        markdown: { type: "string" },
+      },
+      required: ["scope", "markdown"],
     },
   },
 ];
@@ -399,6 +426,56 @@ export async function executeReviewTool(
             title: d.title,
             window: d.window,
           })),
+          problems: written.value.problems,
+          fileWritten: true,
+        },
+      };
+    }
+
+    case "get_review_template": {
+      const scope = args.scope;
+      if (typeof scope !== "string" || !scope.trim()) {
+        return {
+          error: {
+            code: "MALFORMED",
+            message: 'scope is required — pass the area slug whose page contract you are reading',
+          },
+        };
+      }
+      const template = await getReviewPageTemplate(root, scope);
+      if (!template.ok) return vaultError(template.error);
+      return {
+        template: {
+          scope: template.value.scope,
+          extras: template.value.extras,
+          exists: template.value.exists,
+          problems: template.value.problems,
+          fileWritten: template.value.exists,
+        },
+      };
+    }
+
+    case "write_review_template": {
+      const scope = args.scope;
+      if (typeof scope !== "string" || !scope.trim()) {
+        return {
+          error: {
+            code: "MALFORMED",
+            message: 'scope is required — pass the area slug whose page contract you are replacing',
+          },
+        };
+      }
+      const markdown = args.markdown;
+      if (typeof markdown !== "string" || !markdown.trim()) {
+        return { error: { code: "MALFORMED", message: "markdown is required" } };
+      }
+      const written = await writeReviewPageTemplate(root, scope, markdown, actor);
+      if (!written.ok) return vaultError(written.error);
+      return {
+        template: {
+          scope: written.value.scope,
+          extras: written.value.extras,
+          exists: written.value.exists,
           problems: written.value.problems,
           fileWritten: true,
         },
