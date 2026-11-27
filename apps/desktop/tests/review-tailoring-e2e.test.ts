@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
+  REVIEW_TOOL_DEFS,
   archiveDomain,
   createVault,
   ensureReviewPage,
@@ -44,17 +45,21 @@ import {
  *     the four common headings first, then the extras in template order.
  *  3. A page written out of order and with an unknown heading: canonicalising
  *     must order the template extras, keep the unknown one after them, and
- *     preserve every prose block verbatim (S4 — extras are first-class).
+ *     preserve every prose block verbatim (S4 — extras are first-class). A
+ *     deeper heading written under one of the four common H2s must stay inside
+ *     that section, never be moved to the end of the page.
  *  4. A bad contract accepted: an H3, a duplicate, one of the four common names,
- *     a template with no extras, `overall`, or an archived area must all be
- *     refused with a sentence the operator can act on.
+ *     a template with no extras, more than 12 extras in a hand-edited file,
+ *     `overall`, or an archived area must all be refused or reported with a
+ *     sentence the operator can act on.
  *  5. A locked notebook's page written anyway: the lock is the finished report.
  *  6. Seeding twice duplicating headings, or a template change rewriting an
  *     existing page: the contract seeds new pages and orders pages when they are
  *     written, never retroactively.
- *  7. The prompt telling the companion something the engine does not support:
- *     the area kickoff must name its page and quote its extras, and the overall
- *     page's context must list every page and carry the synthesis rule.
+ *  7. The prompt or tool telling the companion something the engine does not
+ *     support: the area kickoff must name its page and quote its extras, the
+ *     overall page's context must list every page and carry the synthesis rule,
+ *     and write_review must say the body is the whole page as read.
  *  8. An artifact written by a failing run. Every assertion throws, so the
  *     artifact only exists for a run that held.
  */
@@ -217,6 +222,7 @@ describe("review page tailoring e2e", () => {
       const baseRev = beforeWrite.ok ? beforeWrite.value.rev : 0;
       const prose = {
         lookback: "Two runs and a late night.",
+        subsection: "The Tuesday run was the one that stuck.",
         energy: "Energy dipped after lunch.",
         training: "Three sessions, one skipped.",
         sleep: "Six hours average, one long night.",
@@ -226,6 +232,8 @@ describe("review page tailoring e2e", () => {
         "# Health",
         "## Look-back",
         prose.lookback,
+        "### What I actually did",
+        prose.subsection,
         "## Energy",
         prose.energy,
         "## Other",
@@ -253,6 +261,20 @@ describe("review page tailoring e2e", () => {
         h2s(writtenBody),
         [...COMMON, "Training", "Sleep", "Energy", "Other"],
         "canonicalisation did not put the four common headings first, then template extras in order, then the unknown extra",
+      );
+      // A deeper heading stays inside the section it was written under.
+      const lookbackAt = writtenBody.indexOf("## Look-back");
+      const subsectionAt = writtenBody.indexOf("### What I actually did");
+      const keepAt = writtenBody.indexOf("## Keep");
+      checks.h3InPlace = { lookbackAt, subsectionAt, keepAt };
+      assert.ok(
+        lookbackAt !== -1 && subsectionAt > lookbackAt && subsectionAt < keepAt,
+        "a ### written under Look-back was moved out of its section",
+      );
+      const subsectionProseAt = writtenBody.indexOf(prose.subsection);
+      assert.ok(
+        subsectionProseAt > subsectionAt && subsectionProseAt < keepAt,
+        "the prose under ### What I actually did did not stay inside Look-back",
       );
       const onDisk = bodyOf(fs.readFileSync(pagePath(vaultRoot, "health"), "utf8"));
       assert.equal(onDisk, writtenBody, "the canonical body on disk differs from the write's answer");
@@ -387,6 +409,23 @@ describe("review page tailoring e2e", () => {
       assert.ok(
         (tolerant.ok ? tolerant.value.problems.length : 0) >= 2,
         "a malformed template was not reported",
+      );
+      // A hand-edited template over the cap is reported on read, extras kept.
+      const manyExtras = Array.from({ length: 13 }, (_, i) => `## Extra ${i + 1}`).join("\n\n");
+      fs.writeFileSync(templateFile, manyExtras);
+      const overCap = await getReviewPageTemplate(vaultRoot, "health");
+      checks.templateOverCap = {
+        extras: overCap.ok ? overCap.value.extras.length : -1,
+        problems: overCap.ok ? overCap.value.problems : [],
+      };
+      assert.equal(
+        overCap.ok ? overCap.value.extras.length : -1,
+        13,
+        "a hand-edited template over the cap lost its extras on read",
+      );
+      assert.ok(
+        overCap.ok && overCap.value.problems.some((problem) => /the most is 12/.test(problem)),
+        "a template naming more than 12 extras was not reported on read",
       );
       const restored = await executeReviewTool(vaultRoot, ACTOR, "write_review_template", {
         scope: "health",
@@ -598,6 +637,35 @@ describe("review page tailoring e2e", () => {
         "the template log line does not name what it wrote",
       );
 
+      // ── the tool contract names the page's extra sections ─────────────────
+      const writeDef = REVIEW_TOOL_DEFS.find((def) => def.name === "write_review");
+      const readDef = REVIEW_TOOL_DEFS.find((def) => def.name === "get_review");
+      assert.ok(writeDef && readDef, "the review tools are not registered");
+      checks.toolDescriptions = {
+        write: writeDef!.description,
+        read: readDef!.description,
+      };
+      assert.match(
+        writeDef!.description,
+        /every extra section the page holds/i,
+        "write_review's description does not name the page's extra sections",
+      );
+      assert.match(
+        writeDef!.description,
+        /body replaces the whole page/i,
+        "write_review's description does not warn that the body replaces the page",
+      );
+      assert.doesNotMatch(
+        writeDef!.description,
+        /one # title and the four ## headings/,
+        "write_review's description still says the body is only the four common headings",
+      );
+      assert.match(
+        readDef!.description,
+        /every extra section it holds/i,
+        "get_review's description does not name the page's extra sections",
+      );
+
       // ── the artifact, written only once every check held ──────────────────
       fs.mkdirSync(path.dirname(ARTIFACT), { recursive: true });
       const report = {
@@ -605,9 +673,11 @@ describe("review page tailoring e2e", () => {
         what:
           "a live area's page template seeds a new page with the four common headings then the area's own " +
           "sections in template order; a page written out of order canonicalises to that order with an unknown " +
-          "extra preserved after it and every prose block intact; bad templates, overall and archived areas are " +
-          "refused; a locked page stays LOCKED; seeding twice is idempotent; the prompts quote the contract; and " +
-          "a template change never rewrites an existing page",
+          "extra preserved after it, a deeper heading kept inside the section it was written under, and every " +
+          "prose block intact; bad templates (including a hand-edited one over the cap reported on read), overall " +
+          "and archived areas are refused; a locked page stays LOCKED; seeding twice is idempotent; the prompts " +
+          "quote the contract and the review tool descriptions name every extra section a page holds; and a " +
+          "template change never rewrites an existing page",
         command:
           "cd apps/desktop && env -u ELECTRON_RUN_AS_NODE node --experimental-strip-types --test tests/review-tailoring-e2e.test.ts",
         vault: vaultRoot,
