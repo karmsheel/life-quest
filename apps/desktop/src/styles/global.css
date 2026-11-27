@@ -2079,7 +2079,7 @@ a {
 .act-page__section {
   max-width: 56rem;
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
+  border-radius: 2px;
   padding: 0.9rem 1rem;
   display: flex;
   flex-direction: column;
@@ -2170,8 +2170,9 @@ a {
 
 .act-page__title {
   margin: 0.1rem 0 0;
-  font-size: 1.6rem;
-  font-weight: 800;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .act-run__agent-field,
@@ -3137,21 +3138,172 @@ a {
 }
 
 /* —— Update notice —— */
-/* —— Documents page cards —— */
+/* —— Documents page: file tree and one editor —— */
 .documents-page {
-  max-width: 48rem;
+  --doc-radius: 2px;
+  width: 100%;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-board-gap);
 }
 
 .documents-page__header {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem 1.25rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.documents-page__split {
+  flex: 1;
+  min-height: 28rem;
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--doc-radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.doc-tree {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding: 0.65rem 0.55rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--bg-subtle);
+}
+
+.doc-tree__bar {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.doc-tree__query {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--doc-radius);
+  background: var(--bg-panel);
+  color: var(--foreground);
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.doc-tree__new {
+  width: 2rem;
+  padding: 0;
+  border-radius: var(--doc-radius);
+}
+
+.doc-tree__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.doc-tree__label,
+.doc-tree__area-name {
+  margin: 0;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.doc-tree__area-name {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  color: var(--foreground);
+}
+
+.doc-tree__files {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-tree__file {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: var(--doc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.32rem 0.4rem;
+  cursor: pointer;
+}
+
+.doc-tree__file:hover,
+.doc-tree__file.is-selected {
+  background: var(--selected-soft);
+}
+
+.doc-tree__file.is-selected {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.doc-tree__empty,
+.doc-editor__blank {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.doc-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.doc-editor__title {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: 0.15rem 0 0.4rem;
+}
+
+.doc-editor__title:read-only {
+  color: var(--foreground);
+}
+
+.doc-editor .note-live {
+  min-height: 16rem;
+}
+
+@media (max-width: 52rem) {
+  .documents-page__split {
+    grid-template-columns: 1fr;
+  }
+
+  .doc-tree {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    max-height: 16rem;
+  }
 }
 
 /* The intro is a flex item with a basis, so the page's corner shares its line:
@@ -4376,10 +4528,21 @@ a {
 
 /* —— Life log feed —— */
 .life-log-feed {
-  max-width: 48rem;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.life-log-feed__panel {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-panel);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .life-log-feed__header {
@@ -4424,9 +4587,10 @@ a {
   grid-template-columns: minmax(8rem, auto) minmax(7rem, auto) 1fr minmax(5rem, auto);
   gap: 0.35rem 0.75rem;
   align-items: baseline;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 0.55rem 0.15rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   font-size: 0.875rem;
 }
 
@@ -4434,6 +4598,10 @@ a {
   .life-log-event {
     grid-template-columns: 1fr;
   }
+}
+
+.life-log-event:last-child {
+  border-bottom: 0;
 }
 
 .life-log-event__when {
@@ -7590,10 +7758,32 @@ a.home-mini-list__link:hover {
 
 /* —— Personnel studio —— */
 .personnel-studio {
-  max-width: 40rem;
+  --agents-radius: 2px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-board-gap);
+}
+
+.personnel-studio__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: var(--space-board-gap);
+  align-items: start;
+}
+
+.personnel-studio__main,
+.personnel-studio__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-board-gap);
+  min-width: 0;
+}
+
+@media (max-width: 52rem) {
+  .personnel-studio__layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .personnel-studio__header {
@@ -7604,7 +7794,7 @@ a.home-mini-list__link:hover {
 
 .personnel-studio__section {
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
+  border-radius: var(--agents-radius);
   padding: 0.9rem 1rem;
   display: flex;
   flex-direction: column;
@@ -7672,7 +7862,7 @@ a.home-mini-list__link:hover {
   gap: 0.75rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--agents-radius);
 }
 
 .personnel-card__body {
@@ -12286,8 +12476,16 @@ button.chat-panel__activity-line:hover {
 /* The wing eyebrow opens the page, so it reads as the title's own label
    rather than as another block of the page: it sits right above the title.
    The column's own gap is what the rule below pulls back. */
+.doctrine-page__header .wing-eyebrow,
 .doctrine-page > .wing-eyebrow {
-  margin-bottom: -0.6rem;
+  margin-bottom: 0.15rem;
+}
+
+.doctrine-page h1,
+.doctrine-page .stub-page__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .doctrine-index {
@@ -12304,7 +12502,11 @@ button.chat-panel__activity-line:hover {
 
 .doctrine-index__heading {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .doctrine-index__list {
@@ -12323,7 +12525,7 @@ button.chat-panel__activity-line:hover {
   gap: 0.5rem;
   padding: 0.45rem 0.55rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 2px;
 }
 
 .doctrine-index__label {
@@ -12352,7 +12554,7 @@ button.chat-panel__activity-line:hover {
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 2px;
   background: var(--card);
   color: inherit;
   text-decoration: none;

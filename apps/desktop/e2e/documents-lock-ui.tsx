@@ -144,6 +144,8 @@ function bridge(): Record<string, (...args: unknown[]) => unknown> {
     domainSetActive: async () => ok(null),
     onVaultFileChanged: () => () => {},
     // The library the page reads.
+    idealStateList: async () => ok([]),
+    projectsList: async () => ok({ records: [], skipped: 0 }),
     libraryList: async () => {
       harness.documentsLockListCalls = (harness.documentsLockListCalls ?? 0) + 1;
       return ok({ records: records.map((note) => ({ ...note })), skipped: 0 });

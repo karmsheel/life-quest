@@ -4,6 +4,7 @@ import {
   actorDisplayName,
   recordVisible,
 } from "@lifequest/vault-core/pure";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 import { displayEventType } from "@/lib/log-event-copy";
 import {
@@ -59,12 +60,14 @@ export function LifeLogFeed() {
   return (
     <div className="life-log-feed">
       <header className="life-log-feed__header">
-        <h1 className="stub-page__title">Life log</h1>
+        <WingEyebrow page="Log" />
+        <h1 className="stub-page__title">Log</h1>
         <p className="stub-page__desc muted">
           Append-only feed of area, document, decision, and agent events.
         </p>
       </header>
 
+      <section className="life-log-feed__panel" aria-label="Events">
       <div className="life-log-feed__toolbar">
         <span className="muted life-log-feed__scope">
           {lens.kind === "overview"
@@ -121,6 +124,7 @@ export function LifeLogFeed() {
           ))}
         </ul>
       )}
+      </section>
     </div>
   );
 }

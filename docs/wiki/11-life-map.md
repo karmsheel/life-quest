@@ -37,7 +37,7 @@ With no events, the panel says **No events this year.** on **Life** or **No even
 
 ## The screen
 
-**Year dashboard.** The header has the **Life Map** eyebrow, the **Life Map** heading, the **Year** selector, and the year's buttons. Below it, the **Vision & Desire** strip appears when an area lens is active. The dashboard is headed `{year} Dashboard (Macro Scope)` and holds four quarter blocks — **Q1** through **Q4** — each with a month-name button and a compact day-number grid where event colour marks stack under the day. An **Events** panel sits beside the quarters.
+**Year dashboard.** The header has the **Life Map** eyebrow, the **Life Map** heading, the line *The year, its months, and the events that mark them.*, the **Year** selector, and the year's buttons. Below it, the **Vision & Desire** strip appears when an area lens is active. The dashboard is headed `{year} Dashboard (Macro Scope)` and holds four quarter blocks — **Q1** through **Q4** — each with a month-name button and a compact day-number grid where event colour marks stack under the day. An **Events** panel sits beside the quarters.
 
 **Month page.** **Back to dashboard** and the heading `{Month} {year}`; then a Monday–Sunday grid. Each in-month cell has the day number, its event marks, and a text field. Below the grid: the month's **Events** list, **Main Objectives**, and **Notes**.
 

@@ -129,10 +129,10 @@ const ROUTES = [
     route: "/documents",
     slug: "documents",
     root: ".documents-page",
-    container: ".library-list",
-    card: ".doc-card",
+    container: ".doc-tree__files",
+    card: ".doc-tree__file",
     minCards: 2,
-    spacing: "cards",
+    spacing: "ruled",
   },
   {
     route: "/personnel",

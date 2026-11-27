@@ -15,12 +15,14 @@ schedule, and it is the schedule the Dashboard reads when it says what is due.
 - Wing: **Act** (the wing id is still `execute`).
 - Rail: third row of the Act wing, icon **Zap**, label **Task Manager**.
 - Header: the grey **Task Manager** page eyebrow above the page title, which is the active
-  area's name, or **Life** on the whole-vault view.
+  area's name, or **Life** on the whole-vault view, and the line *Six horizons. Drag a task to move it, or open its menu to edit it.*
 - Route: `/act`. A task link from elsewhere arrives as `/act?task=<task-id>`, and the
   Dashboard's **Manage recurring →** arrives as `/act?manage=recurring`, which opens the page
   on its **Recurring tasks** section.
-- Surface: a full page in the centre pane: the board, then **Recurring tasks**, then
-  **Run an agent**, then **Recent activity**.
+- Surface: a page in the centre pane: the board, then **Recurring tasks**, then
+  **Run an agent**, then **Recent activity**. The board keeps its own width and
+  scrolls sideways when the window is narrow. The three sections under it stay a
+  reading width.
 
 This page is part of the [Wiki home](./index.md).
 

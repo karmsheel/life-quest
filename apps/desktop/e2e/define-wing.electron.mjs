@@ -115,7 +115,7 @@ const SAMPLE = `(() => {
     editorReadOnly: editorBox ? editorBox.getAttribute("data-read-only") === "true" : null,
     editorBackHref: back ? back.getAttribute("href") : null,
     documentsHeading: text(document.querySelector(".documents-page h1")),
-    documentsComposer: Boolean(document.querySelector(".documents-page .library-composer")),
+    documentsComposer: Boolean(document.querySelector(".documents-page .doc-tree")),
     calls: (window.defineWingCalls ?? []).slice(),
     errors: (window.defineWingErrors ?? []).slice(),
     overflow: {

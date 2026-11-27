@@ -8,16 +8,21 @@ rewrites — by you or by the companion.
 
 ## Where it lives
 
-**Home** wing → **Documents** (route `/documents`). It opens in the centre pane
-as a page with the composer at the top and the library below it.
+**Home** wing → **Documents** (route `/documents`). The page is a file tree on
+the left and one editor on the right.
 
-- The **area lens** in the window title bar filters the list: **Life** shows every
-  note; an area's chip shows the notes tagged with that area. A note with no tags
-  appears only on **Life**.
-- There is no per-note route. Clicking a note opens it in the composer on the
-  same page.
-- When a note is open, the note's own actions live in one three-dot menu at the
-  page's top right, labelled **Note actions**, with the lock badge beside it.
+- The tree groups **Notes**, **Ideal State**, **Projects**, and **Doctrine**.
+  Doctrine is nested by area, and each file keeps the kind name (Beliefs &
+  Premise, Vision & Desire, Purpose, Strategy (How)).
+- The **area lens** filters notes, projects, and doctrine. Ideal State stays on
+  every lens. A note with no tags appears only on **Life**.
+- **+** creates a library note titled **Untitled**. Ideal State, projects, and
+  doctrine appear here when they are created on their own pages. Opening one
+  edits that same file.
+- There is no per-note route. Daily Journal and review periods are not in the tree.
+- When a note or a doctrine file is open, its actions live in one three-dot menu
+  at the page's top right, with the lock badge beside it. A note's menu is
+  labelled **Note actions**.
 
 Back to [Wiki home](./index.md).
 
@@ -34,24 +39,20 @@ vault-wide material.
 
 ### Create a note
 
-1. Open **Documents**. The top panel is the composer: **Title**, **Body**,
-   **Areas**, and the actions.
-2. Type a title and a body. The **Note preview** under the body renders the
-   markdown as you type.
-3. Tick one or more **Areas**, or tick none to keep the note in **Life** only.
-   The picker is pre-set to the active area when an area lens is on. If no area is
-   unlocked the picker says **No live areas. Leave unassigned to keep this note in
-   Life**.
-4. Choose **Create**. The note is written to `documents/<id>.md` and appears in
-   the list.
-5. In the list, click a note to open it in the composer; edit it and choose
-   **Save**. **Cancel** clears the composer without writing.
+1. Open **Documents**. The tree is on the left. **Filter** narrows it by title.
+2. Choose **+**. A note titled **Untitled** opens in the editor, tagged with the
+   area lens when one is on.
+3. Edit the title and the body in the one editor. The markdown renders as you
+   leave a paragraph. There is no second preview and no **Save** button: the
+   file writes itself shortly after you stop typing. An empty title is not written.
+4. Tick **Areas** under the title, or tick none to keep the note in **Life**
+   only. If no area is unlocked the picker says **No live areas. Leave unassigned
+   to keep this note in Life**.
+5. Click any other file in the tree to open it in the same editor.
 
-The list is ordered most recently updated first. Each card shows the title, its
-area tags (or **Unassigned**) and the update time. Empty states: **No notes
-yet. Create one above.**, **No notes in this area. Unassigned notes stay in
-Life.**, and `<N> note file(s) could not be read.` for files the reader had to
-skip.
+Empty states: **No notes yet. Create one with +.**, **No notes in this area.
+Unassigned notes stay in Life.**, and `<N> note file(s) could not be read.` for
+files the reader had to skip.
 
 ### Render markdown and link notes
 
@@ -73,10 +74,10 @@ A wiki link resolves two ways:
 - `[[<area>/<kind>]]` or `[[<Area name>/<Doctrine label>]]` — a doctrine
   document. `kind` is `premise`, `what`, `why` or `how`, and the label form accepts
   **Beliefs & Premise**, **Vision & Desire**, **Purpose** and **Strategy (How)**.
-  Clicking it opens the doctrine page.
+  Clicking it opens that file in this page's editor.
 - `[[<note title>]]` — a library note, matched case-insensitively against the
   titles. It resolves only when exactly one note has that title; clicking it opens
-  that note in the composer.
+  that note in the editor.
 
 A doctrine link resolves only for an unlocked, unarchived area. A `[[target]]`
 that resolves to nothing stays literal text. External links in the preview are
@@ -89,10 +90,10 @@ foreign page.
    **Note actions** menu leads with **Lock** — a switch whose label is **Lock
    this note** / **Unlock this note**.
 2. Turn the switch on. Locking is the operator's mark that the note is finished;
-   the badge turns amber and the composer becomes read-only.
-3. A locked note is read-only in place: the title and body are not editable, the
-   areas are disabled, and **Save** is unavailable. The composer says **Unlock to
-   edit, or propose a change.**
+   the badge turns amber and the editor becomes read-only. Edits already typed
+   are written first.
+3. A locked note is read-only in place: the title and body are not editable and
+   the areas are disabled. The editor says **Unlock to edit, or propose a change.**
 4. Turn the switch back off to edit in place again, or choose **Propose change**
    from the same menu to send a proposed revision to
    [Decisions](./23-decisions.md) while the note stays locked.
@@ -121,13 +122,11 @@ is not erased.
 
 | Part | What it does |
 |---|---|
-| Header | Title **Documents**, one line: *Markdown notes. Tag an area, or leave unassigned to keep them in Life only.* |
-| **Title** / **Body** | The note's fields. Read-only while locked. |
-| **Note preview** | The rendered markdown, updated as the body changes. |
-| **Areas** | Checkboxes for each unlocked area; none means Life-only. Disabled while locked. |
-| Actions | **Create** for a new note; **Save** and **Cancel** when one is open. Lock, propose and delete live in the **Note actions** menu, not in the form. |
-| **Note actions** | Three-dot menu at the top right: the **Lock** switch first, then **Propose change** while locked, then **Delete note**. |
-| Library list | Note cards with title, area tags or **Unassigned**, and update time. Click to open. |
+| Header | Title **Documents**, one line: *Notes, Ideal State, projects, and doctrine. One file, edited here.* |
+| Tree | **Filter**, **+** for a new library note, then Notes, Ideal State, Projects, and Doctrine. |
+| Editor | The open file's title and body. The body renders as you leave a paragraph. Edits save themselves. Read-only while locked. |
+| **Areas** | On a library note: checkboxes for each unlocked area; none means Life-only. Disabled while locked. |
+| **Note actions** | Three-dot menu at the top right while a note is open: the **Lock** switch first, then **Propose change** while locked, then **Delete note**. Doctrine uses **Document actions** and has no delete. |
 
 ## Rules and behaviour
 
@@ -182,13 +181,10 @@ areas before and after — for example "Health" → "Health, Mind". Approving it
 writes the new area list into the note's frontmatter; unlocking the note does not
 settle it, and an approval does not unlock the note.
 
-Media. The library composer has no image insert control, and the **Note
-preview** does not resolve vault media: an `![alt](media/<name>)` reference is
-stored as written but has no image behind it on this page. Vault media
-(`domains/<slug>/media/`, PNG/JPEG/GIF/WebP up to 8 MB) is inserted by the
-doctrine document editor and resolved by the shared markdown view there. Receipt
-photos are a Finance-kit feature, not a library-note feature — see
-[Finance kit](./20-finance-kit.md).
+Media. This page has no image insert control. A doctrine file opened here uses
+that area's media, the same way its own page does. A library note stores an
+`![alt](media/<name>)` reference as written. Receipt photos are a Finance-kit
+feature, not a library-note feature — see [Finance kit](./20-finance-kit.md).
 
 External links are contained. A markdown link to an `https://` page opens in a
 new window, and the main process decides whether that window opens. Any other
@@ -197,12 +193,11 @@ window that carries the app bridge.
 
 ## Tips and edge cases
 
-- There is no autosave. A body typed into the composer is lost if you click
-  another note or leave the page without **Save** or **Create**.
-- You can lock a note with unsaved edits: locking the stored file does not save
-  your draft, and the composer becomes read-only. Save first, then lock.
-- A **Title** is required. **Create** and **Save** are disabled until it is
-  non-empty, and the engine refuses an empty title.
+- Edits save themselves about a second after you stop typing, including when you
+  open another file or leave the page. An empty title is not written.
+- Locking writes the edits already typed, then the editor becomes read-only.
+- A **Title** is required. **+** starts from **Untitled**, and the engine refuses
+  an empty title.
 - Renaming a note does not break `[[old title]]` links in other notes: a link
   resolves only on an exact current title, so a rename turns older links into
   literal text.
@@ -216,9 +211,10 @@ window that carries the app bridge.
 - A locked note can still be deleted; deletion is not an in-place edit.
 - A proposal approved later still writes that proposal's body — the last
   approval wins. Unlocking does not settle a pending proposal.
-- The library is not the place for goals, tasks, projects or doctrine; those have
-  their own files and pages. If a note starts wanting structure, a database or a
-  page is usually the better surface.
+- Projects and doctrine also open from their own pages. Documents edits the same
+  files. Goals, tasks, the Daily Journal, and review periods stay on their own
+  pages. If a note starts wanting structure, a database or a page is usually the
+  better surface.
 
 ## Related
 

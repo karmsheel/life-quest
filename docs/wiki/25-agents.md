@@ -51,9 +51,8 @@ whole vault; a hire is a record, not a grant.
 
 ### Invite an agent over MCP
 
-1. Choose **Invite an agent** in the **Connected agents** section. A one-time code
-   appears in the panel: "Send this code to the agent. It is shown once and
-   expires <time>."
+1. Choose **Invite an agent** on the **Invite** rail. A one-time code appears
+   there: "Send this code to the agent. It is shown once and expires <time>."
 2. Give the code to the agent's operator. It is 128 bits, single-use, and expires
    24 hours after it was minted; unused codes are listed under **Unused invites**
    and can be removed with **Drop**.
@@ -128,10 +127,8 @@ memory is shared. The dock's agent switcher shows only the agents that vault has
 | Part | What it does |
 |---|---|
 | Header | Wing eyebrow **Agents**, title **Agents**, and the one-line description of the three kinds of agent. |
-| **Companion** | One fixed card: **Hermes**, "Full access · this vault". |
-| **Connected agents** | **Invite an agent**, **Refresh**; cards for pending and active MCP callers with **Areas**, **Write**, **Schedule**, **Revoke**; **Unused invites** with **Drop**. |
-| **Scan** | **Scan Hermes agents** and the results list with **Hire** / **Hired**. |
-| **Active hires** | **Refresh** and the hire cards with **Dismiss**. |
+| Roster | **Companion** (one fixed card: **Hermes**, "Full access · this vault"), **Connected agents** (**Refresh**; cards for pending and active MCP callers with **Areas**, **Write**, **Schedule**, **Revoke**; **Unused invites** with **Drop**), and **Active hires** (**Refresh** and **Dismiss**). |
+| Rail | **Invite** (**Invite an agent** and the one-time code, with **Drop**) and **Scan** (**Scan Hermes agents**, then **Hire** / **Hired**). |
 | Error banner | A red message with the reason; when Hermes looks unreachable it adds an **Open Settings →** link and a banner with **Go to Settings**. |
 
 ## Rules and behaviour

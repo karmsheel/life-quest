@@ -82,7 +82,7 @@ checklist with no rows, and **No weekly items.** under Weekly-only items.
 
 | Part | What it is |
 |---|---|
-| Heading and **Year** selector | The page name and the year every panel below reads |
+| Heading and **Year** selector | The page name, the line *Strategy, day types, and the week this year actually runs.*, and the year every panel below reads |
 | **Read-only archive** banner | Shown for an archived year; every edit control is disabled and the panels read that year's frozen snapshot |
 | Strategy (How) list | One row per unlocked area, filtered by the area lens, linking to the doctrine editor |
 | **Day types** | The shared library: name, colour, checklist, delete |

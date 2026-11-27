@@ -904,28 +904,8 @@
    page has that room only after the rail and the dock have taken theirs. The
    layout is a separate element because a container cannot style itself. */
 .ideal-state {
-  container-type: inline-size;
+  --ideal-radius: 2px;
   width: 100%;
-}
-
-/* A collapsed dock hands its column back to the sheet, and the page does not
-   take it: the same insets the dock stood in are kept here, so the library, the
-   prose and the title stay exactly where they were and the reclaimed width
-   opens as empty page past the box. The insets are the dock's drawn column — the
-   same range clamp the shell's grid uses, not just its requested width — plus
-   the seam the sheet stops drawing; the trailing pane carries the window frame,
-   the leading one does not. */
-.shell--chat-collapsed.shell--chat-right .ideal-state {
-  padding-right: calc(
-    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) +
-      var(--shell-frame) + 1px
-  );
-}
-
-.shell--chat-collapsed.shell--chat-left .ideal-state {
-  padding-left: calc(
-    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) + 1px
-  );
 }
 
 .ideal-state__layout {
@@ -935,16 +915,25 @@
   gap: var(--space-board-gap);
 }
 
-.ideal-state .btn {
-  border-radius: var(--radius-xs);
+.ideal-state .btn,
+.ideal-state__title,
+.ideal-state__history-row {
+  border-radius: var(--ideal-radius);
 }
 
-.ideal-state__header,
+.ideal-state__header {
+  width: 100%;
+}
+
 .ideal-state__compose,
 .ideal-state__history {
   width: 100%;
-  max-width: 48rem;
-  margin-inline: auto;
+  max-width: none;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--ideal-radius);
+  background: var(--bg-panel);
+  padding: 0.85rem 1rem;
 }
 
 .ideal-state__header h1 {
@@ -961,10 +950,16 @@
 
 .ideal-state__workspace {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  align-items: start;
   gap: var(--space-board-gap);
+}
+
+@media (max-width: 52rem) {
+  .ideal-state__workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ideal-state__compose {
@@ -985,7 +980,7 @@
   width: 100%;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
+  border-radius: var(--ideal-radius);
   background: var(--card);
   color: var(--fg);
   font: inherit;
@@ -1095,7 +1090,7 @@
    the list's bullets. */
 .ideal-state__history-row {
   width: 100%;
-  border-radius: var(--radius-xs);
+  border-radius: var(--ideal-radius);
   background: none;
   color: var(--fg);
   font: inherit;
@@ -1280,13 +1275,13 @@
 
   .ideal-state__header h1 {
     width: 100%;
-    max-width: 46rem;
-    margin-inline: auto;
+    max-width: none;
+    margin-inline: 0;
   }
 
   .ideal-state__layout > .form-error {
     grid-column: 2;
-    width: min(100%, 46rem);
+    width: 100%;
     margin-left: 1.5rem;
     justify-self: center;
   }
@@ -1312,8 +1307,8 @@
      space left after the edge gutter. */
   .ideal-state__compose > * {
     width: 100%;
-    max-width: 46rem;
-    margin-inline: auto;
+    max-width: none;
+    margin-inline: 0;
   }
 
   .ideal-state__history {
