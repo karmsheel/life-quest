@@ -1,13 +1,13 @@
 {
   "name": "lifequest-landing-e2e",
   "reportVersion": 1,
-  "generatedAt": "2026-11-27T20:30:28.289Z",
+  "generatedAt": "2026-11-27T20:31:35.592Z",
   "command": "node apps/landing/scripts/e2e.mjs",
   "result": "PASS",
-  "baseUrl": "http://127.0.0.1:35721/",
+  "baseUrl": "http://127.0.0.1:44631/",
   "server": {
     "mode": "owned static server",
-    "port": 35721
+    "port": 44631
   },
   "browser": {
     "path": "/usr/bin/chromium-browser",
@@ -51,7 +51,7 @@
     "passed": 47,
     "failed": 0,
     "passRate": 100,
-    "runtimeMs": 47143,
+    "runtimeMs": 35331,
     "result": "PASS"
   },
   "checks": [
@@ -68,7 +68,7 @@
         "revealCount": 10,
         "revealOnLoadCount": 6
       },
-      "durationMs": 8
+      "durationMs": 4
     },
     {
       "id": "1.1",
@@ -81,7 +81,7 @@
         "contentType": "text/html; charset=utf-8",
         "bytes": 48460
       },
-      "durationMs": 25
+      "durationMs": 6
     },
     {
       "id": "1.2",
@@ -92,7 +92,7 @@
       "actual": {
         "title": "LifeQuest: own the axis of your life"
       },
-      "durationMs": 6
+      "durationMs": 4
     },
     {
       "id": "1.3",
@@ -104,7 +104,7 @@
         "length": 154,
         "content": "Local-first life studio. Open a vault folder on your desktop, run agents around your life, and keep your context, decisions, and data on disk. No account."
       },
-      "durationMs": 4
+      "durationMs": 2
     },
     {
       "id": "1.4",
@@ -123,7 +123,7 @@
         ],
         "errors": []
       },
-      "durationMs": 13
+      "durationMs": 2
     },
     {
       "id": "3.1",
@@ -135,7 +135,7 @@
         "status": "loaded",
         "size": 5
       },
-      "durationMs": 12
+      "durationMs": 6
     },
     {
       "id": "3.2",
@@ -147,7 +147,7 @@
         "family": "\"Instrument Serif\", \"Iowan Old Style\", \"Palatino Linotype\", Georgia, serif",
         "loaded": true
       },
-      "durationMs": 31
+      "durationMs": 4
     },
     {
       "id": "3.3",
@@ -159,7 +159,7 @@
         "family": "\"Instrument Sans\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
         "loaded": true
       },
-      "durationMs": 17
+      "durationMs": 3
     },
     {
       "id": "2.1",
@@ -170,7 +170,7 @@
       "actual": {
         "text": "Own the axis of your life."
       },
-      "durationMs": 6
+      "durationMs": 2
     },
     {
       "id": "6.1",
@@ -185,7 +185,7 @@
         "previewTitle": "You",
         "previewIndex": "01 / 06"
       },
-      "durationMs": 7
+      "durationMs": 2
     },
     {
       "id": "5.1",
@@ -217,7 +217,7 @@
           "Own the\n              axis of\n              your life."
         ]
       },
-      "durationMs": 2
+      "durationMs": 4
     },
     {
       "id": "10.2",
@@ -254,7 +254,7 @@
           "resolves": true
         }
       ],
-      "durationMs": 4
+      "durationMs": 2
     },
     {
       "id": "10.4",
@@ -269,7 +269,7 @@
         "mainExists": true,
         "focusVisible": true
       },
-      "durationMs": 172
+      "durationMs": 219
     },
     {
       "id": "10.5",
@@ -281,7 +281,7 @@
         "positive": [],
         "all": 10
       },
-      "durationMs": 2
+      "durationMs": 11
     },
     {
       "id": "10.6",
@@ -295,7 +295,7 @@
           "Your email"
         ]
       },
-      "durationMs": 2
+      "durationMs": 15
     },
     {
       "id": "10.7",
@@ -306,7 +306,7 @@
       "actual": {
         "content": "dark"
       },
-      "durationMs": 1
+      "durationMs": 20
     },
     {
       "id": "2.2",
@@ -321,7 +321,7 @@
           "found": true,
           "naturalWidth": 64,
           "complete": true,
-          "src": "http://127.0.0.1:35721/brand/lq-mark-64.png"
+          "src": "http://127.0.0.1:44631/brand/lq-mark-64.png"
         },
         {
           "name": "hero mark",
@@ -329,7 +329,7 @@
           "found": true,
           "naturalWidth": 512,
           "complete": true,
-          "src": "http://127.0.0.1:35721/brand/lq-mark-512.png"
+          "src": "http://127.0.0.1:44631/brand/lq-mark-512.png"
         },
         {
           "name": "harness mark",
@@ -337,7 +337,7 @@
           "found": true,
           "naturalWidth": 32,
           "complete": true,
-          "src": "http://127.0.0.1:35721/brand/lq-mark-32.png"
+          "src": "http://127.0.0.1:44631/brand/lq-mark-32.png"
         },
         {
           "name": "access mark",
@@ -345,7 +345,7 @@
           "found": true,
           "naturalWidth": 512,
           "complete": true,
-          "src": "http://127.0.0.1:35721/brand/lq-mark-512.png"
+          "src": "http://127.0.0.1:44631/brand/lq-mark-512.png"
         },
         {
           "name": "footer mark",
@@ -353,10 +353,10 @@
           "found": true,
           "naturalWidth": 64,
           "complete": true,
-          "src": "http://127.0.0.1:35721/brand/lq-mark-64.png"
+          "src": "http://127.0.0.1:44631/brand/lq-mark-64.png"
         }
       ],
-      "durationMs": 10
+      "durationMs": 9
     },
     {
       "id": "4.1",
@@ -370,7 +370,7 @@
         "sectionTop": 97.58,
         "scrollMarginTop": 98
       },
-      "durationMs": 210
+      "durationMs": 247
     },
     {
       "id": "4.2",
@@ -384,7 +384,7 @@
         "sectionTop": 97.95,
         "scrollMarginTop": 98
       },
-      "durationMs": 313
+      "durationMs": 227
     },
     {
       "id": "4.3",
@@ -398,7 +398,7 @@
         "sectionTop": 97.91,
         "scrollMarginTop": 98
       },
-      "durationMs": 267
+      "durationMs": 171
     },
     {
       "id": "4.4",
@@ -412,7 +412,7 @@
         "sectionTop": 97.7,
         "scrollMarginTop": 98
       },
-      "durationMs": 267
+      "durationMs": 280
     },
     {
       "id": "4.5",
@@ -426,7 +426,7 @@
         "sectionTop": 97.95,
         "scrollMarginTop": 98
       },
-      "durationMs": 187
+      "durationMs": 189
     },
     {
       "id": "5.2",
@@ -443,7 +443,7 @@
         "decisionsDisplay": "flex",
         "decisionsHeight": 438
       },
-      "durationMs": 3
+      "durationMs": 5
     },
     {
       "id": "5.3",
@@ -459,7 +459,7 @@
         "contextHidden": false,
         "decisionsHidden": true
       },
-      "durationMs": 32
+      "durationMs": 2
     },
     {
       "id": "5.4",
@@ -475,7 +475,7 @@
         "contextDisplay": "flex",
         "contextHeight": 438
       },
-      "durationMs": 19
+      "durationMs": 4
     },
     {
       "id": "6.2",
@@ -490,7 +490,7 @@
         "focusedRow": 2,
         "rowTitle": "Agents"
       },
-      "durationMs": 249
+      "durationMs": 162
     },
     {
       "id": "7.1",
@@ -505,7 +505,7 @@
         "formHeight": 106,
         "focused": true
       },
-      "durationMs": 41
+      "durationMs": 1
     },
     {
       "id": "7.2",
@@ -519,7 +519,7 @@
         "status": "Please enter a valid email address, like you@yourdomain.com.",
         "formHidden": false
       },
-      "durationMs": 85
+      "durationMs": 4
     },
     {
       "id": "7.3",
@@ -534,7 +534,7 @@
         "successHeight": 173,
         "successDisplay": "block"
       },
-      "durationMs": 26
+      "durationMs": 3
     },
     {
       "id": "7.4",
@@ -560,7 +560,7 @@
         "ready": true,
         "fontsStatus": "loaded"
       },
-      "durationMs": 5
+      "durationMs": 2
     },
     {
       "id": "8.2",
@@ -573,7 +573,7 @@
         "badCount": 0,
         "bad": []
       },
-      "durationMs": 7
+      "durationMs": 2
     },
     {
       "id": "8.3",
@@ -586,7 +586,7 @@
         "badCount": 0,
         "bad": []
       },
-      "durationMs": 5
+      "durationMs": 1
     },
     {
       "id": "8.4",
@@ -648,7 +648,7 @@
           }
         ]
       },
-      "durationMs": 5
+      "durationMs": 2
     },
     {
       "id": "9.1",
@@ -691,7 +691,7 @@
         ],
         "bodyLocked": true
       },
-      "durationMs": 193
+      "durationMs": 171
     },
     {
       "id": "9.2",
@@ -706,7 +706,7 @@
         "focusReturned": true,
         "bodyLocked": false
       },
-      "durationMs": 2
+      "durationMs": 1
     },
     {
       "id": "9.3",
@@ -769,7 +769,7 @@
           }
         ]
       },
-      "durationMs": 34
+      "durationMs": 8
     },
     {
       "id": "9.4",
@@ -797,37 +797,37 @@
           {
             "tag": "DIV",
             "className": "ticker__track",
-            "left": -103,
-            "right": 4796
+            "left": -102,
+            "right": 4797
           },
           {
             "tag": "SPAN",
             "className": "ticker__item",
-            "left": -103,
-            "right": 100
+            "left": -102,
+            "right": 101
           },
           {
             "tag": "SPAN",
             "className": "ticker__item",
-            "left": 1021,
-            "right": 1296
+            "left": 1022,
+            "right": 1297
           },
           {
             "tag": "SPAN",
             "className": "ticker__item",
-            "left": 1296,
-            "right": 1514
+            "left": 1297,
+            "right": 1515
           },
           {
             "tag": "SPAN",
             "className": "ticker__item",
-            "left": 1514,
-            "right": 1782
+            "left": 1515,
+            "right": 1783
           },
           {
             "tag": "SPAN",
             "className": "ticker__item",
-            "left": 1782,
+            "left": 1783,
             "right": 2036
           }
         ]
@@ -895,7 +895,7 @@
           }
         ]
       },
-      "durationMs": 7
+      "durationMs": 5
     },
     {
       "id": "9.6",
@@ -958,7 +958,7 @@
           }
         ]
       },
-      "durationMs": 8
+      "durationMs": 6
     },
     {
       "id": "2.3",
@@ -972,7 +972,7 @@
         "failedDetails": [],
         "ignored": 0
       },
-      "durationMs": 1
+      "durationMs": 0
     },
     {
       "id": "2.4",
@@ -1024,7 +1024,7 @@
           "pass": true,
           "width": 1440,
           "height": 900,
-          "bytes": 1003290
+          "bytes": 1003036
         },
         {
           "name": "e2e-full-desktop.png",
@@ -1032,7 +1032,7 @@
           "pass": true,
           "width": 1440,
           "height": 9927,
-          "bytes": 2500128
+          "bytes": 2499556
         },
         {
           "name": "e2e-full-mobile.png",
@@ -1040,7 +1040,7 @@
           "pass": true,
           "width": 390,
           "height": 10317,
-          "bytes": 1130409
+          "bytes": 1131420
         },
         {
           "name": "e2e-harness-tab.png",
@@ -1048,7 +1048,7 @@
           "pass": true,
           "width": 1440,
           "height": 1462,
-          "bytes": 225553
+          "bytes": 225538
         },
         {
           "name": "e2e-alignment-agents.png",
@@ -1056,7 +1056,7 @@
           "pass": true,
           "width": 1440,
           "height": 1436,
-          "bytes": 202908
+          "bytes": 202937
         },
         {
           "name": "e2e-access-success.png",
@@ -1064,7 +1064,7 @@
           "pass": true,
           "width": 1440,
           "height": 1144,
-          "bytes": 502170
+          "bytes": 501728
         },
         {
           "name": "e2e-mobile-menu.png",
@@ -1072,10 +1072,10 @@
           "pass": true,
           "width": 390,
           "height": 844,
-          "bytes": 74626
+          "bytes": 74624
         }
       ],
-      "durationMs": 15
+      "durationMs": 10
     }
   ],
   "screenshots": [
@@ -1085,8 +1085,8 @@
       "phase": "screenshot:hero",
       "width": 1440,
       "height": 900,
-      "bytes": 1003290,
-      "capturedAt": "2026-11-27T20:29:50.354Z"
+      "bytes": 1003036,
+      "capturedAt": "2026-11-27T20:31:07.248Z"
     },
     {
       "name": "e2e-full-desktop.png",
@@ -1094,8 +1094,8 @@
       "phase": "screenshot:full-desktop",
       "width": 1440,
       "height": 9927,
-      "bytes": 2500128,
-      "capturedAt": "2026-11-27T20:29:56.048Z"
+      "bytes": 2499556,
+      "capturedAt": "2026-11-27T20:31:12.713Z"
     },
     {
       "name": "e2e-harness-tab.png",
@@ -1103,8 +1103,8 @@
       "phase": "screenshot:harness",
       "width": 1440,
       "height": 1462,
-      "bytes": 225553,
-      "capturedAt": "2026-11-27T20:29:58.951Z"
+      "bytes": 225538,
+      "capturedAt": "2026-11-27T20:31:14.794Z"
     },
     {
       "name": "e2e-alignment-agents.png",
@@ -1112,8 +1112,8 @@
       "phase": "screenshot:alignment",
       "width": 1440,
       "height": 1436,
-      "bytes": 202908,
-      "capturedAt": "2026-11-27T20:30:01.621Z"
+      "bytes": 202937,
+      "capturedAt": "2026-11-27T20:31:15.953Z"
     },
     {
       "name": "e2e-access-success.png",
@@ -1121,8 +1121,8 @@
       "phase": "screenshot:access",
       "width": 1440,
       "height": 1144,
-      "bytes": 502170,
-      "capturedAt": "2026-11-27T20:30:07.863Z"
+      "bytes": 501728,
+      "capturedAt": "2026-11-27T20:31:17.784Z"
     },
     {
       "name": "e2e-mobile-menu.png",
@@ -1130,8 +1130,8 @@
       "phase": "screenshot:mobile-menu",
       "width": 390,
       "height": 844,
-      "bytes": 74626,
-      "capturedAt": "2026-11-27T20:30:12.381Z"
+      "bytes": 74624,
+      "capturedAt": "2026-11-27T20:31:21.604Z"
     },
     {
       "name": "e2e-full-mobile.png",
@@ -1139,8 +1139,8 @@
       "phase": "screenshot:full-mobile",
       "width": 390,
       "height": 10317,
-      "bytes": 1130409,
-      "capturedAt": "2026-11-27T20:30:16.048Z"
+      "bytes": 1131420,
+      "capturedAt": "2026-11-27T20:31:24.798Z"
     }
   ],
   "console": {
