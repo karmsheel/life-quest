@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-11-27 · branch `docs/plan-pack`
+Last updated: 2026-11-27 · master `e124a34`
 
 The live queue. One **Now** per person or agent; **Next** is ordered but may be worked in
 parallel when each has its own worktree; **Blocked** says why and who can unblock it. Close an
@@ -12,31 +12,26 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Now
 
-- [ ] **Reviews: the review notebook, per-domain metrics and Analytics.**
-      branch: `feat/reviews-notebook` (merged up to master `c7b3310`, verified, awaiting the
-      operator's word) · scope: the review vertical — notebook storage and pages, metric
-      definitions and dated events, figures, Analytics page, their IPC doors, rigs, law and wiki ·
-      proof: `lifequest-e2e` review + analytics rigs, reports and pictures
-      (`e2e/artifacts/analytics.json` + `analytics.png`, `review.json`) · plan: the Review spec
-      [`docs/superpowers/specs/2026-11-26-reviews-notebook-and-metrics-design.md`](docs/superpowers/specs/2026-11-26-reviews-notebook-and-metrics-design.md).
+- [ ] **Release 0.3.5.**
+      The review notebook, per-domain metrics, figures and Analytics are on `master` (merge
+      `e124a34`); the pack and the notebook are both in, so this is the release the queue has
+      been waiting for. branch: `master` · scope: version in `apps/desktop/package.json`, wiki
+      "Version covered", release notes in `PROGRESS.md` · proof: `npm run release`,
+      `packaged-smoke.mjs`, `update-live-feed.mjs`, `gh release create` · plan:
+      [`docs/wiki/31-development.md`](docs/wiki/31-development.md) release section.
 
 ## Next
 
-1. **Release 0.3.5.**
-   branch: `master` after the pack and the notebook land · scope: version in
-   `apps/desktop/package.json`, wiki "Version covered", release notes · proof:
-   `npm run release`, `packaged-smoke.mjs`, `update-live-feed.mjs`, `gh release create` ·
-   plan: [`docs/wiki/31-development.md`](docs/wiki/31-development.md) release section.
-2. **Phone client spec: decide its fate.**
+1. **Phone client spec: decide its fate.**
    branch: `docs/phone-client-spec` (2 commits, 548 behind master) · scope: two spec/plan
    commits only · decision needed: rebase onto master and keep the plan, or fold the decision
    into `docs/superpowers/` and delete the branch · proof: a spec a fresh agent can execute.
-3. **Encrypted context layer: decide its fate.**
+2. **Encrypted context layer: decide its fate.**
    branch: `docs/encrypted-context-layer` (1 commit, 509 behind master) · scope: one research
    decision commit · decision needed: promote to a spec + plan, or park it with a one-line
    status in [`PROGRESS.md`](PROGRESS.md) · proof: the decision names what ships and what does
    not.
-4. **Prune the empty audit worktree.**
+3. **Prune the empty audit worktree.**
    branch: `audit/implicit-invariants` (0 commits ahead, 309 behind master) · it holds no work;
    either start the audit it was made for or remove the worktree so `git worktree list` is the
    real queue again.
@@ -50,6 +45,7 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 | When | What | Where |
 |---|---|---|
+| 2026-11-27 | The review notebook, per-domain metrics, figures and Analytics: tabbed notebook pages with per-domain contracts, metric definitions and dated events, app-written figures and the overall table, the Analytics matrix with logging/editing/new-metric doors, definition edits through Decisions, the whole review/metrics/analytics IPC surface, law/spec/wiki and ten engine rigs + three renderer rigs | merge `e124a34` · `e2e/artifacts/{analytics,review,database-period}.json` |
 | 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
 | 2026-11-27 | The Plan page's identifiers follow its name: `BlueprintsPage`, `components/blueprints/`, the `.blueprints` class, and route `/blueprints` with the old `/track` address redirecting | merge `840781b` |
 | 2026-11-25 | v0.3.4 shipped (Review page, background picture, layouts picker, Notebox dock links, rail dividers, recurring due-today) | tag `v0.3.4` |

@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-27 · master `5c6ee13`
+Last updated: 2026-11-27 · master `e124a34`
 
 What shipped, what broke, and what is next. This is the in-clone record: the detailed release
 notes are assembled in `.scratch/` (gitignored) into GitHub Releases, and the published
@@ -14,7 +14,7 @@ does. It is short on purpose: one section per release, plus the current state at
 | Current release | **0.3.4**, tagged 2026-11-25 |
 | Released since | 0.3.0 (11-16), 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22) |
 | Master | unreleased, commits past `v0.3.4` (`git log --oneline v0.3.4..HEAD`) — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs, the six-file plan pack, and the Plan page renamed **Blueprints** (now at `/blueprints`, with `/track` redirecting) |
-| Next | **0.3.5** after [`TASKS.md`](TASKS.md) items 1–2 land |
+| Next | **0.3.5** now that the pack and the notebook have landed |
 | Open gates | `npm run typecheck` and `npm run docs:check` green on master; the packaged smoke and live update feed run at release, not in CI |
 
 ## Release history
