@@ -280,6 +280,45 @@ describe("review page tailoring e2e", () => {
       );
       checks.fixedPoint = true;
 
+      // A page born from write_review (not ensure) is seeded exactly the same way.
+      const unlockedFinance = await unlockDomain(vaultRoot, "financial");
+      assert.equal(unlockedFinance.ok, true, "unlockDomain(financial) failed");
+      const financeTemplate = await executeReviewTool(
+        vaultRoot,
+        ACTOR,
+        "write_review_template",
+        { scope: "financial", markdown: "## Income\n\n## Expenses" },
+      );
+      assert.equal(
+        (financeTemplate as { error?: unknown }).error,
+        undefined,
+        "the Finance template was refused",
+      );
+      const direct = await writeReviewPage(vaultRoot, {
+        cadence: "weekly",
+        period: PERIOD,
+        scope: "financial",
+        bodyMarkdown: [
+          "# Finance",
+          "## Look-back",
+          "## Keep",
+          "## Change",
+          "## Next-period intent",
+        ].join("\n\n"),
+        baseRev: 0,
+        actor: ACTOR,
+      });
+      assert.equal(direct.ok, true, "a page created by write_review failed");
+      checks.writeReviewSeeding = direct.ok ? h2s(direct.page.bodyMarkdown) : [];
+      assert.deepEqual(
+        direct.ok ? h2s(direct.page.bodyMarkdown) : [],
+        [...COMMON, "Income", "Expenses"],
+        "a page created by write_review was not seeded with its area's contract",
+      );
+      // Keep the gate simple later: Finance is not one of the areas under test.
+      const archivedFinance = await archiveDomain(vaultRoot, "financial");
+      assert.equal(archivedFinance.ok, true, "the rig could not archive Finance");
+
       // ── (e) seeding twice is idempotent ───────────────────────────────────
       const healthBefore = fs.readFileSync(pagePath(vaultRoot, "health"), "utf8");
       await ensureReviewPage(vaultRoot, { cadence: "weekly", period: PERIOD, scope: "health" });

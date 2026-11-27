@@ -1363,6 +1363,27 @@ type PreparedPage = {
 };
 
 /**
+ * Add the template extras a page being created does not already carry, so a page
+ * born from `write_review` is seeded exactly like one born from `ensure`. An
+ * existing page never takes a section this way — the contract seeds new pages
+ * only, and a contract change must not add headings to a page already written.
+ */
+function seedTemplateExtras(
+  page: ParsedPage,
+  templateExtras: readonly string[],
+): ParsedPage {
+  if (templateExtras.length === 0) return page;
+  const present = new Set(
+    page.extras.filter((section) => section.level === 2).map((section) => section.text),
+  );
+  const missing: BodySection[] = templateExtras
+    .filter((name) => !present.has(name))
+    .map((text) => ({ level: 2, text, content: [], parentH2: null }));
+  if (missing.length === 0) return page;
+  return { ...page, extras: [...missing, ...page.extras] };
+}
+
+/**
  * Validate and canonicalise a page body against the page's title, returning the
  * page file it would write. The area's template extras order the extras the page
  * already holds; a template never adds a section to an existing page.
@@ -1378,7 +1399,8 @@ function preparePageWrite(
   const parsed = parsePageBody(bodyMarkdown);
   const validated = validatePage(parsed);
   if (!validated.ok) return validated;
-  const body = emitPageBody(title, validated.value, templateExtras);
+  const page = current === null ? seedTemplateExtras(validated.value, templateExtras) : validated.value;
+  const body = emitPageBody(title, page, templateExtras);
   if (current && current.bodyMarkdown === body) {
     return { ok: true, value: { page: current, created: false } };
   }
