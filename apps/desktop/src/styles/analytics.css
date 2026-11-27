@@ -255,6 +255,65 @@
   line-height: 1.3;
 }
 
+/* The label keeps the row's identity; Edit/Delete ride beside it and stay quiet
+   until the row is hovered or focused, so the matrix still reads as numbers. */
+.analytics-matrix__metric-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.analytics-matrix__metric-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 0.1rem;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.analytics-matrix__row:hover .analytics-matrix__metric-actions,
+.analytics-matrix__row:focus-within .analytics-matrix__metric-actions {
+  opacity: 1;
+}
+
+.analytics-proposal-status {
+  color: var(--foreground);
+}
+
+/* The delete confirm: a small inline card under the matrix, not a dialog. */
+.analytics-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+}
+
+.analytics-confirm__text {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.analytics-confirm__text strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.analytics-confirm__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
 .analytics-matrix__cell {
   padding: 0;
 }
@@ -583,6 +642,12 @@
   color: var(--muted-foreground);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.analytics-metric-form__link {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .analytics-metric-form__fields {

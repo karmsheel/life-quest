@@ -6,9 +6,13 @@ import {
   type AnalyticsCell,
   type AnalyticsMatrix,
   type AnalyticsMetricRow,
+  type DatabaseColumn,
+  type DatabaseListEntry,
   type MetricAggregation,
+  type MetricDefinitionDraft,
   type MetricDirection,
   type MetricEvents,
+  type MetricSource,
   type ReviewCadence,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
@@ -35,8 +39,16 @@ import { Button } from "@/components/ui/Button";
  * The page is deliberately live, not a report: a click on an events cell opens
  * that column's period beside the matrix, where the operator can log one dated
  * event and edit or delete the rows already there through the ordinary database
- * row path. A click on a derived cell opens the database the metric reads. A
+ * row path. A click on a derived cell opens the database the metric reads,
+ * filtered to the cell's period when the definition names a date column. A
  * period header is a door into that period's review.
+ *
+ * A definition can be created from this page — an events metric, or a database-
+ * derived one whose spec the engine builds from the database/columns chosen
+ * here. Creating one applies immediately; editing or deleting an existing
+ * definition is proposed in Decisions instead, because it changes what a review
+ * measures. Either path reloads the matrix, which therefore keeps showing the
+ * old definition until the Decision is approved.
  *
  * Matrix reads are cached for the session, keyed by cadence and lens, so
  * flipping back to a cadence already read does not re-run every definition's
@@ -80,6 +92,34 @@ type PanelSelection = {
   cell: AnalyticsCell;
   periodLabel: string;
 };
+
+/**
+ * The definition the form is editing: its area and id are the stable names the
+ * proposal carries, and an events metric's event key must survive an edit or the
+ * rows already logged under it would leave the metric.
+ */
+type EditingMetric = {
+  area: string;
+  metricId: string;
+  eventKey: string | null;
+};
+
+/**
+ * What the page says after a proposal lands. Editing or deleting a definition
+ * does not change the file — the Decision does — so the sentence has to say both
+ * that it was sent and why the matrix still looks the same.
+ */
+const PROPOSAL_SENT =
+  "Sent to Decisions — applying it changes what this metric measures.";
+
+/** The columns a derived spec can measure and window on, from the registry. */
+function numericColumns(columns: readonly DatabaseColumn[]): DatabaseColumn[] {
+  return columns.filter((column) => column.type === "number");
+}
+
+function dateColumns(columns: readonly DatabaseColumn[]): DatabaseColumn[] {
+  return columns.filter((column) => column.type === "date");
+}
 
 /**
  * A metric id from its label: lowercase, every run of non-alphanumerics to one
@@ -165,20 +205,95 @@ export default function AnalyticsPage() {
   const [editStatus, setEditStatus] = useState<string | null>(null);
 
   const [metricFormOpen, setMetricFormOpen] = useState(false);
+  const [editingMetric, setEditingMetric] = useState<EditingMetric | null>(null);
   const [metricArea, setMetricArea] = useState("");
+  const [metricSource, setMetricSource] = useState<MetricSource>("events");
   const [metricLabel, setMetricLabel] = useState("");
   const [metricUnit, setMetricUnit] = useState("");
   const [metricAggregation, setMetricAggregation] =
     useState<MetricAggregation>("sum");
   const [metricTarget, setMetricTarget] = useState("");
+  const [metricDirection, setMetricDirection] = useState<MetricDirection | null>(
+    null,
+  );
+  const [metricDatabaseId, setMetricDatabaseId] = useState("");
+  const [metricMeasureColumnId, setMetricMeasureColumnId] = useState("");
+  const [metricTimeColumnId, setMetricTimeColumnId] = useState("");
+  const [metricDatabases, setMetricDatabases] = useState<DatabaseListEntry[]>(
+    [],
+  );
+  const [metricDatabasesLoading, setMetricDatabasesLoading] = useState(false);
+  const [metricDatabasesError, setMetricDatabasesError] = useState<
+    string | null
+  >(null);
   const [metricStatus, setMetricStatus] = useState<string | null>(null);
   const [metricSaving, setMetricSaving] = useState(false);
+  const [proposalStatus, setProposalStatus] = useState<string | null>(null);
+  const [proposing, setProposing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AnalyticsMetricRow | null>(
+    null,
+  );
   const [companionStatus, setCompanionStatus] = useState<string | null>(null);
 
   const areaChoices = useMemo(
     () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
+
+  // The derived form's columns, from the database the operator picked. A new
+  // database is a new measure and window, so the picks reset when it changes.
+  const selectedDatabase = useMemo(
+    () =>
+      metricDatabases.find(
+        (entry) => entry.database.id === metricDatabaseId,
+      ) ?? null,
+    [metricDatabaseId, metricDatabases],
+  );
+  const measureChoices = useMemo(
+    () =>
+      selectedDatabase
+        ? numericColumns(selectedDatabase.database.columns)
+        : [],
+    [selectedDatabase],
+  );
+  const timeChoices = useMemo(
+    () =>
+      selectedDatabase ? dateColumns(selectedDatabase.database.columns) : [],
+    [selectedDatabase],
+  );
+
+  /**
+   * The sentence for a derived form that cannot be completed: no database in
+   * the area, or a database without the number and date columns a metric needs.
+   * It points at Data because that is where the operator fixes it.
+   */
+  const derivedHint = useMemo((): string | null => {
+    if (metricSource !== "derived") return null;
+    if (!metricArea.trim()) {
+      return "Choose an area, then pick one of its databases.";
+    }
+    if (metricDatabasesLoading) return "Reading the area's databases…";
+    if (metricDatabasesError) return metricDatabasesError;
+    if (metricDatabases.length === 0) {
+      return "This area has no databases yet. Create one in Data, then define a database-derived metric here.";
+    }
+    if (
+      selectedDatabase &&
+      (measureChoices.length === 0 || timeChoices.length === 0)
+    ) {
+      return "The selected database needs at least one number column and one date column. Add them in Data, then come back.";
+    }
+    return null;
+  }, [
+    metricArea,
+    metricDatabases.length,
+    metricDatabasesError,
+    metricDatabasesLoading,
+    metricSource,
+    measureChoices.length,
+    selectedDatabase,
+    timeChoices.length,
+  ]);
 
   // The matrix read. A cached key paints without a fetch; an uncached one
   // fetches with the loading line visible while the promise is pending.
@@ -313,6 +428,45 @@ export default function AnalyticsPage() {
     setEditStatus(null);
   }, [panel]);
 
+  // The derived form needs the area's databases (and their columns) to offer a
+  // measure and a date column. This is a read of the registry, not of rows, so
+  // it is safe to ask for it whenever the form is open on the area.
+  useEffect(() => {
+    if (!metricFormOpen || metricSource !== "derived") return;
+    const area = metricArea.trim();
+    if (!area) {
+      setMetricDatabases([]);
+      setMetricDatabasesError(null);
+      setMetricDatabasesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMetricDatabasesLoading(true);
+    setMetricDatabasesError(null);
+    void (async () => {
+      try {
+        const result = await api().dbList(area);
+        if (cancelled) return;
+        if (!result.ok) {
+          setMetricDatabases([]);
+          setMetricDatabasesError(result.error);
+          return;
+        }
+        setMetricDatabases(result.value);
+      } catch (err) {
+        if (!cancelled) {
+          setMetricDatabases([]);
+          setMetricDatabasesError(errorText(err));
+        }
+      } finally {
+        if (!cancelled) setMetricDatabasesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [metricArea, metricFormOpen, metricSource]);
+
   const reviewHref = useCallback(
     (period: string, areaSlug?: string) => {
       const params = new URLSearchParams();
@@ -326,17 +480,29 @@ export default function AnalyticsPage() {
 
   /**
    * A cell is a door. A derived metric has no rows to log here, so its cell
-   * opens the source database in Data; an events metric opens the period's
-   * logged rows in the panel under the matrix.
+   * opens the source database in Data, pinned to the cell's own period when the
+   * definition names a date column (DatabasePage reads the three params once);
+   * without a date column it opens the database unpinned. An events metric opens
+   * the period's logged rows in the panel under the matrix.
    */
   const onCellClick = useCallback(
     (row: AnalyticsMetricRow, cell: AnalyticsCell, periodLabel: string) => {
       if (row.source === "derived") {
-        navigate(
-          row.databaseId
-            ? `/data/${row.areaSlug}/${row.databaseId}`
-            : `/data/${row.areaSlug}`,
-        );
+        if (!row.databaseId) {
+          navigate(`/data/${row.areaSlug}`);
+          return;
+        }
+        if (row.timeColumnId) {
+          const params = new URLSearchParams();
+          params.set("from", cell.start);
+          params.set("to", cell.end);
+          params.set("columnId", row.timeColumnId);
+          navigate(
+            `/data/${row.areaSlug}/${row.databaseId}?${params.toString()}`,
+          );
+          return;
+        }
+        navigate(`/data/${row.areaSlug}/${row.databaseId}`);
         return;
       }
       setPanel({ row, cell, periodLabel });
@@ -505,20 +671,128 @@ export default function AnalyticsPage() {
     }
   }, [chatDock, lensName]);
 
+  /** Start a new metric: the events source is the one that applies immediately. */
   const openMetricForm = useCallback(() => {
+    setEditingMetric(null);
     setMetricArea(lensSlug ?? "");
+    setMetricSource("events");
+    setMetricLabel("");
+    setMetricUnit("");
+    setMetricAggregation("sum");
+    setMetricTarget("");
+    setMetricDirection(null);
+    setMetricDatabaseId("");
+    setMetricMeasureColumnId("");
+    setMetricTimeColumnId("");
+    setMetricDatabases([]);
+    setMetricDatabasesError(null);
     setMetricStatus(null);
+    setProposalStatus(null);
+    setDeleteTarget(null);
     setMetricFormOpen(true);
   }, [lensSlug]);
 
+  const closeMetricForm = useCallback(() => {
+    setMetricFormOpen(false);
+    setEditingMetric(null);
+    setMetricSaving(false);
+    setMetricStatus(null);
+  }, []);
+
   /**
-   * The form fallback: an events metric the operator can define without the
-   * companion. Its id and event key are the label slugged, because both are the
-   * stable names the rows carry; a duplicate id is refused by the engine, which
-   * is the right place for that rule.
+   * Edit prefills from the definition itself, not just the matrix row: the row
+   * knows the source and the display fields, while the measure column and (for
+   * an events metric) the event key only the definition carries. The row's
+   * values paint first so the form is never blank, then the read corrects them.
+   */
+  const beginMetricEdit = useCallback(async (row: AnalyticsMetricRow) => {
+    setDeleteTarget(null);
+    setProposalStatus(null);
+    setMetricStatus(null);
+    setEditingMetric({
+      area: row.areaSlug,
+      metricId: row.metricId,
+      eventKey: row.source === "events" ? row.metricId : null,
+    });
+    setMetricArea(row.areaSlug);
+    setMetricSource(row.source);
+    setMetricLabel(row.label);
+    setMetricUnit(row.unit);
+    setMetricAggregation(row.aggregation);
+    setMetricTarget(row.target === null ? "" : String(row.target));
+    setMetricDirection(row.direction);
+    setMetricDatabaseId(row.databaseId ?? "");
+    setMetricMeasureColumnId("");
+    setMetricTimeColumnId(row.timeColumnId ?? "");
+    setMetricDatabases([]);
+    setMetricDatabasesError(null);
+    setMetricFormOpen(true);
+    try {
+      const result = await api().metricGet({
+        area: row.areaSlug,
+        metricId: row.metricId,
+      });
+      if (!result.ok) {
+        setMetricStatus(result.error);
+        return;
+      }
+      const definition = result.value;
+      setMetricLabel(definition.label);
+      setMetricUnit(definition.unit);
+      setMetricAggregation(definition.aggregation);
+      setMetricTarget(
+        definition.target === null || definition.target === undefined
+          ? ""
+          : String(definition.target),
+      );
+      setMetricDirection(definition.direction ?? null);
+      setMetricSource(definition.source);
+      if (definition.source === "derived") {
+        setEditingMetric({
+          area: row.areaSlug,
+          metricId: row.metricId,
+          eventKey: null,
+        });
+        setMetricDatabaseId(definition.spec?.databaseId ?? "");
+        setMetricMeasureColumnId(definition.spec?.measureColumnId ?? "");
+        setMetricTimeColumnId(definition.spec?.timeColumnId ?? "");
+      } else {
+        setEditingMetric({
+          area: row.areaSlug,
+          metricId: row.metricId,
+          eventKey: definition.eventKey ?? row.metricId,
+        });
+      }
+    } catch (err) {
+      setMetricStatus(errorText(err));
+    }
+  }, []);
+
+  /** Picking a database preselects its first number and date column. */
+  const onPickMetricDatabase = useCallback(
+    (databaseId: string) => {
+      setMetricDatabaseId(databaseId);
+      const entry = metricDatabases.find(
+        (candidate) => candidate.database.id === databaseId,
+      );
+      setMetricMeasureColumnId(
+        entry ? (numericColumns(entry.database.columns)[0]?.id ?? "") : "",
+      );
+      setMetricTimeColumnId(
+        entry ? (dateColumns(entry.database.columns)[0]?.id ?? "") : "",
+      );
+    },
+    [metricDatabases],
+  );
+
+  /**
+   * The form's save. A new definition is created immediately (`metricDefine`);
+   * an edit is proposed (`metricPropose`), because it changes what a review
+   * measures. A derived draft carries the database and columns — the engine
+   * builds the one-number spec — never a renderer-built ViewSpec.
    */
   const onSaveMetric = useCallback(async () => {
-    if (metricSaving) return;
+    if (metricSaving || proposing) return;
     const area = metricArea.trim();
     const label = metricLabel.trim();
     if (!area) {
@@ -529,7 +803,7 @@ export default function AnalyticsPage() {
       setMetricStatus("Give the metric a label.");
       return;
     }
-    const id = metricIdFromLabel(label);
+    const id = editingMetric?.metricId ?? metricIdFromLabel(label);
     if (!id) {
       setMetricStatus("The label needs at least one letter or number.");
       return;
@@ -543,22 +817,67 @@ export default function AnalyticsPage() {
       }
       target = parsed;
     }
+    let definition: MetricDefinitionDraft;
+    if (metricSource === "derived") {
+      if (!metricDatabaseId) {
+        setMetricStatus("Choose the database the metric reads.");
+        return;
+      }
+      if (!metricMeasureColumnId) {
+        setMetricStatus("Choose the number column this metric measures.");
+        return;
+      }
+      if (!metricTimeColumnId) {
+        setMetricStatus("Choose the date column the periods use.");
+        return;
+      }
+      definition = {
+        id,
+        label,
+        unit: metricUnit.trim(),
+        source: "derived",
+        aggregation: metricAggregation,
+        databaseId: metricDatabaseId,
+        measureColumnId: metricMeasureColumnId,
+        timeColumnId: metricTimeColumnId,
+        target,
+        ...(metricDirection ? { direction: metricDirection } : {}),
+      };
+    } else {
+      definition = {
+        id,
+        label,
+        unit: metricUnit.trim(),
+        source: "events",
+        aggregation: metricAggregation,
+        eventKey: editingMetric?.eventKey ?? id,
+        target,
+        ...(metricDirection ? { direction: metricDirection } : {}),
+      };
+    }
     setMetricSaving(true);
     setMetricStatus(null);
     mutatingRef.current = true;
     try {
-      const result = await api().metricDefine({
-        area,
-        definition: {
-          id,
-          label,
-          unit: metricUnit.trim(),
-          source: "events",
-          aggregation: metricAggregation,
-          eventKey: id,
-          target,
-        },
-      });
+      if (editingMetric) {
+        const result = await api().metricPropose({
+          area: editingMetric.area,
+          metricId: editingMetric.metricId,
+          action: "update",
+          definition,
+        });
+        if (!result.ok) {
+          setMetricStatus(result.error);
+          return;
+        }
+        lastMutationAt.current = Date.now();
+        setProposalStatus(PROPOSAL_SENT);
+        setMetricFormOpen(false);
+        setEditingMetric(null);
+        refreshMatrix();
+        return;
+      }
+      const result = await api().metricDefine({ area, definition });
       if (!result.ok) {
         setMetricStatus(result.error);
         return;
@@ -577,14 +896,52 @@ export default function AnalyticsPage() {
       mutatingRef.current = false;
     }
   }, [
+    editingMetric,
     metricAggregation,
     metricArea,
+    metricDatabaseId,
+    metricDirection,
     metricLabel,
+    metricMeasureColumnId,
     metricSaving,
+    metricSource,
     metricTarget,
+    metricTimeColumnId,
     metricUnit,
+    proposing,
     refreshMatrix,
   ]);
+
+  /**
+   * Deleting a definition is a proposal too: the file — and every figure and
+   * cell that reads it — stays until the Decision is approved.
+   */
+  const onConfirmDelete = useCallback(async () => {
+    if (!deleteTarget || proposing) return;
+    setProposing(true);
+    setProposalStatus(null);
+    mutatingRef.current = true;
+    try {
+      const result = await api().metricPropose({
+        area: deleteTarget.areaSlug,
+        metricId: deleteTarget.metricId,
+        action: "delete",
+      });
+      if (!result.ok) {
+        setProposalStatus(result.error);
+        return;
+      }
+      lastMutationAt.current = Date.now();
+      setProposalStatus(PROPOSAL_SENT);
+      setDeleteTarget(null);
+      refreshMatrix();
+    } catch (err) {
+      setProposalStatus(errorText(err));
+    } finally {
+      setProposing(false);
+      mutatingRef.current = false;
+    }
+  }, [deleteTarget, proposing, refreshMatrix]);
 
   // Grouped by area, in the order the engine answered: under Life that is the
   // vault's area order; under an area lens there is one group.
@@ -625,7 +982,8 @@ export default function AnalyticsPage() {
               : "Every live area's metrics, period by period."}{" "}
             A column is a period and a cell is one metric's value with its
             change from the period before. Click an events cell to read or log
-            that period's entries; a period header opens that review.
+            that period's entries; a derived cell opens its source rows for that
+            period; a period header opens that review.
           </p>
         </div>
         <div className="analytics-page__actions">
@@ -684,6 +1042,16 @@ export default function AnalyticsPage() {
         </p>
       ) : null}
 
+      {proposalStatus ? (
+        <p
+          className="analytics-page__notice analytics-proposal-status"
+          data-testid="analytics-proposal-status"
+          role="status"
+        >
+          {proposalStatus}
+        </p>
+      ) : null}
+
       {error ? (
         <p
           className="analytics-page__error"
@@ -710,8 +1078,9 @@ export default function AnalyticsPage() {
             No metrics defined for {lensName} yet.
           </p>
           <p className="analytics-empty__hint">
-            Ask the companion to define one, or create an events metric with the
-            New metric button — its entries are logged from this page.
+            Ask the companion to define one, or create an events metric or a
+            database-derived one with the New metric button — events are logged
+            from this page, derived values come from a database.
           </p>
         </section>
       ) : null}
@@ -769,9 +1138,34 @@ export default function AnalyticsPage() {
                       data-testid={`analytics-row-${row.areaSlug}-${row.metricId}`}
                     >
                       <th scope="row" className="analytics-matrix__metric">
-                        <span className="analytics-matrix__label">
-                          {row.label}
-                        </span>
+                        <div className="analytics-matrix__metric-head">
+                          <span className="analytics-matrix__label">
+                            {row.label}
+                          </span>
+                          <span className="analytics-matrix__metric-actions">
+                            <button
+                              type="button"
+                              className="analytics-events__action"
+                              data-testid={`analytics-metric-edit-${row.areaSlug}-${row.metricId}`}
+                              title={`Edit ${row.label} (proposed in Decisions)`}
+                              onClick={() => void beginMetricEdit(row)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="analytics-events__action is-danger"
+                              data-testid={`analytics-metric-delete-${row.areaSlug}-${row.metricId}`}
+                              title={`Delete ${row.label} (proposed in Decisions)`}
+                              onClick={() => {
+                                setProposalStatus(null);
+                                setDeleteTarget(row);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </span>
+                        </div>
                         <span className="analytics-matrix__meta">
                           {rowMeta(row)}
                         </span>
@@ -807,12 +1201,16 @@ export default function AnalyticsPage() {
                               }
                               title={
                                 row.source === "derived"
-                                  ? `${label}: open the source database`
+                                  ? row.timeColumnId
+                                    ? `${label}: open the source database filtered to this period`
+                                    : `${label}: open the source database`
                                   : `${label}: show the logged events`
                               }
                               aria-label={
                                 row.source === "derived"
-                                  ? `${label}: ${cell.valueText ?? "no data"}. Open the source database.`
+                                  ? row.timeColumnId
+                                    ? `${label}: ${cell.valueText ?? "no data"}. Open the source database filtered to this period.`
+                                    : `${label}: ${cell.valueText ?? "no data"}. Open the source database.`
                                   : `${label}: ${cell.valueText ?? "no data"}. Show the logged events.`
                               }
                             >
@@ -842,6 +1240,40 @@ export default function AnalyticsPage() {
               — means no rows in the window
             </span>
           </footer>
+        </section>
+      ) : null}
+
+      {deleteTarget ? (
+        <section
+          className="analytics-confirm"
+          data-testid="analytics-metric-delete-panel"
+          aria-label={`Delete ${deleteTarget.label}`}
+        >
+          <p className="analytics-confirm__text">
+            Delete <strong>{deleteTarget.label}</strong>? It is sent to
+            Decisions; the definition stays — and this metric keeps measuring —
+            until you approve it.
+          </p>
+          <div className="analytics-confirm__actions">
+            <button
+              type="button"
+              className="analytics-events__action is-danger"
+              data-testid="analytics-metric-delete-confirm"
+              disabled={proposing}
+              onClick={() => void onConfirmDelete()}
+            >
+              {proposing ? "Sending…" : "Send to Decisions"}
+            </button>
+            <button
+              type="button"
+              className="analytics-events__action"
+              data-testid="analytics-metric-delete-cancel"
+              disabled={proposing}
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -1118,13 +1550,17 @@ export default function AnalyticsPage() {
         <section
           className="analytics-metric-form"
           data-testid="analytics-metric-form"
-          aria-label="New events metric"
+          data-mode={editingMetric ? "edit" : "create"}
+          aria-label={editingMetric ? "Edit metric" : "New metric"}
         >
           <header className="analytics-metric-form__header">
-            <h2 className="analytics-metric-form__title">New metric</h2>
+            <h2 className="analytics-metric-form__title">
+              {editingMetric ? "Edit metric" : "New metric"}
+            </h2>
             <p className="analytics-metric-form__hint">
-              An events metric stores one dated row per entry, logged from this
-              page. Database-derived metrics: ask the companion.
+              {editingMetric
+                ? "Saving sends this change to Decisions. The definition — and what this metric measures — changes only once you approve it."
+                : "An events metric stores one dated row per entry, logged from this page. A database-derived metric is computed from a database's rows: pick the database, the number to measure and the date column its periods use."}
             </p>
           </header>
           <div className="analytics-metric-form__fields">
@@ -1134,6 +1570,7 @@ export default function AnalyticsPage() {
                 className="input-field"
                 data-testid="analytics-metric-area"
                 value={metricArea}
+                disabled={editingMetric !== null}
                 onChange={(event) => setMetricArea(event.target.value)}
               >
                 <option value="">Select area…</option>
@@ -1142,6 +1579,23 @@ export default function AnalyticsPage() {
                     {area.meta.name}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="analytics-toolbar__field">
+              <span className="analytics-toolbar__label">Source</span>
+              <select
+                className="input-field"
+                data-testid="analytics-metric-source"
+                value={metricSource}
+                onChange={(event) => {
+                  setMetricSource(event.target.value as MetricSource);
+                  setMetricStatus(null);
+                }}
+              >
+                <option value="events">Events — logged from this page</option>
+                <option value="derived">
+                  Database — computed from rows
+                </option>
               </select>
             </label>
             <label className="analytics-toolbar__field">
@@ -1166,6 +1620,67 @@ export default function AnalyticsPage() {
                 onChange={(event) => setMetricUnit(event.target.value)}
               />
             </label>
+            {metricSource === "derived" ? (
+              <>
+                <label className="analytics-toolbar__field">
+                  <span className="analytics-toolbar__label">Database</span>
+                  <select
+                    className="input-field"
+                    data-testid="analytics-metric-database"
+                    value={metricDatabaseId}
+                    onChange={(event) =>
+                      onPickMetricDatabase(event.target.value)
+                    }
+                  >
+                    <option value="">Select database…</option>
+                    {metricDatabases.map((entry) => (
+                      <option
+                        key={`${entry.domainSlug}:${entry.database.id}`}
+                        value={entry.database.id}
+                      >
+                        {entry.database.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="analytics-toolbar__field">
+                  <span className="analytics-toolbar__label">Measure</span>
+                  <select
+                    className="input-field"
+                    data-testid="analytics-metric-measure"
+                    value={metricMeasureColumnId}
+                    onChange={(event) =>
+                      setMetricMeasureColumnId(event.target.value)
+                    }
+                  >
+                    <option value="">Select number column…</option>
+                    {measureChoices.map((column) => (
+                      <option key={column.id} value={column.id}>
+                        {column.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="analytics-toolbar__field">
+                  <span className="analytics-toolbar__label">Date column</span>
+                  <select
+                    className="input-field"
+                    data-testid="analytics-metric-date"
+                    value={metricTimeColumnId}
+                    onChange={(event) =>
+                      setMetricTimeColumnId(event.target.value)
+                    }
+                  >
+                    <option value="">Select date column…</option>
+                    {timeChoices.map((column) => (
+                      <option key={column.id} value={column.id}>
+                        {column.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
             <label className="analytics-toolbar__field">
               <span className="analytics-toolbar__label">Aggregation</span>
               <select
@@ -1198,12 +1713,50 @@ export default function AnalyticsPage() {
               type="button"
               className="analytics-log-form__submit"
               data-testid="analytics-metric-save"
-              disabled={metricSaving}
+              disabled={metricSaving || proposing}
               onClick={() => void onSaveMetric()}
             >
-              {metricSaving ? "Saving…" : "Save metric"}
+              {metricSaving
+                ? "Saving…"
+                : editingMetric
+                  ? "Propose change"
+                  : "Save metric"}
             </button>
+            {editingMetric ? (
+              <button
+                type="button"
+                className="analytics-events__action"
+                data-testid="analytics-metric-cancel"
+                onClick={closeMetricForm}
+              >
+                Cancel
+              </button>
+            ) : null}
           </div>
+          {metricSource === "derived" && derivedHint ? (
+            <p
+              className="analytics-metric-form__hint"
+              data-testid="analytics-metric-derived-hint"
+            >
+              {derivedHint}
+              {!metricDatabasesLoading &&
+              !metricDatabasesError &&
+              (metricDatabases.length === 0 ||
+                (selectedDatabase !== null &&
+                  (measureChoices.length === 0 ||
+                    timeChoices.length === 0))) ? (
+                <>
+                  {" "}
+                  <Link
+                    className="analytics-metric-form__link"
+                    to="/data"
+                  >
+                    Open Data
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          ) : null}
           <p
             className="analytics-metric-form__status"
             data-testid="analytics-metric-status"
