@@ -46,6 +46,7 @@ export type EyebrowPage =
   | "Monthly"
   | "Quarterly"
   | "Yearly"
+  | "Analytics"
   // The bottom shelf — governance pages, which belong to no wing
   | "Daily Journal";
 

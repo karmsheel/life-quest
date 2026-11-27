@@ -2,7 +2,8 @@
 
 A review is a look back over a period you have actually lived, written down in
 the vault, ending in what the next period is for. The Review wing gives
-each cadence its own page. **Daily** is one general review of the day. Every
+each cadence its own page, and one **Analytics** page that sets the periods
+against each other. **Daily** is one general review of the day. Every
 other cadence — **Weekly**, **Monthly**, **Quarterly**, **Yearly** — is a
 **review notebook**: a set of pages, one tab per review, with the overall
 **Overall** page first and then one page per live life area. The notebook is a
@@ -20,22 +21,27 @@ day of the quarter; yearly in the last week of the year. All five are editable i
 ## Where it lives
 
 The Review wing is the last wing in the rail's wing switcher, after **Act**. Its
-rail has five rows, each a page at its own route:
+rail has six rows: the five cadence pages, then **Analytics** — the period ×
+metric matrix described [below](#analytics), which compares periods rather than
+opening one.
 
-| Rail label | Route | Period it covers |
+| Rail label | Route | What it shows |
 |---|---|---|
 | **Daily** | `/review/daily` | One local calendar date |
 | **Weekly** | `/review/weekly` | A week, starting Monday or Sunday |
 | **Monthly** | `/review/monthly` | One calendar month |
 | **Quarterly** | `/review/quarterly` | A calendar quarter |
 | **Yearly** | `/review/yearly` | A calendar year |
+| **Analytics** | `/review/analytics` | Every metric of the lens area, period by period |
 
-Each opens in the centre pane as a page, not a sheet. Any other cadence segment
-under `/review/` redirects to `/review/weekly`. The header is the Daily
+Each cadence page opens in the centre pane as a page, not a sheet. Any other
+cadence segment under `/review/` redirects to `/review/weekly`; `/review/analytics`
+is its own page, not a cadence. The header is the Daily
 Journal's, at a period's scale: the grey eyebrow names the wing and the cadence
 — **Review / Daily**, **Review / Weekly**, **Review / Monthly**,
-**Review / Quarterly** or **Review / Yearly** — and the period itself is the
-page's one heading, centred over the prose. A week's heading names both of its
+**Review / Quarterly** or **Review / Yearly**, and **Review / Analytics** on the
+matrix — and the period itself is the page's one heading, centred over the
+prose. A week's heading names both of its
 ends and its calendar-week number, for example
 `21-27 Sep '26 (W39)`. A calendar key beside the heading
 jumps to another period, and wordless arrow keys on the column's edges step one
@@ -166,6 +172,69 @@ Custom figures still work. A cadence's rules file may keep hand-written
 `lifequest-snapshot` fences for anything a definition does not cover; Start runs
 those too, refreshes them in place beside the figures, and resolves them against
 the same four sections (`Look-back`, `Keep`, `Change`, `Next-period intent`).
+
+## Analytics
+
+**Analytics** is the Review wing's sixth rail row, at `/review/analytics`. It is
+a matrix, not a dashboard: one row per metric definition, one column per period,
+and a cell is that metric's value with its change from the period before. There
+is no composite score, no streak and no colour judgement — the only target and
+direction it prints are the ones you set on the definition itself.
+
+**What it covers.** The page follows the app-wide area lens. Under **Health** it
+lists only Health's metrics; under **Life** it lists every live area's metrics,
+grouped by area. A locked or archived area never appears. A **Cadence** selector
+on the page drives the columns — **Weekly** (the default), **Monthly**,
+**Quarterly** or **Yearly** — and the matrix shows the last **eight** periods of
+that cadence, oldest on the left, labelled as the Review page labels them
+(`21-27 Sep '26 (W39)`, `Nov 2026`, `2026 Q4`, `2026`).
+
+**Reading a cell.** The bold number is the metric's value for that period, with
+the definition's unit and display formatting; beneath it is the change from the
+period before. A cell with no rows in its window reads **—** rather than a
+fabricated zero, and has no change beside it. The row label carries the metric's
+label and unit and, when the definition sets them, its target and direction in
+small print.
+
+**Clicking an events cell** opens that period's entries under the matrix — the
+dated events the metric was logged from, each with its date, value and note.
+From there you can:
+
+- **Log an event.** Today's date and value 1 are filled in; the note is
+  optional. A logged event is an ordinary row in the area's **Metrics**
+  database, so it is the same data whether it was entered here, by an interview,
+  or by the companion.
+- **Edit** a row's date, value or note, or **delete** it. Both go through the
+  standard database row path, so they are governed exactly as any other row
+  edit or delete in [Data and databases](./19-data-and-databases.md).
+- **Open that period's review.** The page jumps to the review for that period
+  and area, ready to write the review the numbers belong to.
+
+A **derived** metric — one computed from a database, like **Cash out** — has no
+entries to log, so its cell opens the source database in Data instead (for
+example `/data/financial/finance:transactions`). Data has no period filter, so
+the database opens unpinned in time; the period's rows are the ones its own date
+column marks.
+
+**Period headers are links too.** A column header opens that period's review on
+the current cadence (`/review/weekly?period=2026-11-09`), carrying the area lens
+as `&scope=<area>` when one is active, so the Review page opens on the same area
+you were reading. The link is one-shot: the period applies, then the address bar
+drops back to the plain review route.
+
+**New metric.** Above the matrix, **New metric** opens a small form that defines
+an **events** metric directly — area (under Life), label, unit, aggregation
+(sum, count, last or average) and an optional target. Its id and event key are
+the label slugged, so the rows it logs stay tied to the definition. For a
+database-derived metric, or anything that needs a view spec, **Ask the
+companion** opens a prepared chat briefed to define a metric for the lens area;
+definitions are the same vault objects either way. Creating one applies
+immediately and the matrix re-reads.
+
+The page is **live**, not a report: it re-reads after you log, edit, delete or
+define something, and when the companion changes a metric elsewhere. Flipping
+back to a cadence or lens you have already read reuses the page's session cache
+rather than re-running every definition's window.
 
 ## When a review opens
 

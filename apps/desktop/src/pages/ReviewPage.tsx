@@ -12,6 +12,7 @@ import {
   nextPeriod,
   openReviewPeriod,
   previousPeriod,
+  periodBounds,
   periodLabel,
   periodTitle,
   periodTodayLocalIso,
@@ -174,9 +175,28 @@ function ReviewPageFor() {
     [cadence, weekStartDay, availability],
   );
 
-  const [period, setPeriod] = useState(basePeriod);
+  // A `?period=` on the URL is a deep link into one period — the Analytics
+  // matrix's column headers are the door. It is read once, here, so the first
+  // load is the asked-for period rather than the latest period followed by a
+  // second fetch. An invalid period, or one whose review window has not opened,
+  // is ignored: the page lands where it would have without the link.
+  const linkedPeriod = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("period");
+    if (!raw) return null;
+    const bounds = periodBounds(cadence, raw, weekStartDay);
+    if (!bounds.ok || raw > basePeriod) return null;
+    return raw;
+  }, [basePeriod, cadence, location.search, weekStartDay]);
 
+  const [period, setPeriod] = useState(linkedPeriod ?? basePeriod);
+
+  // The base period is where the page lands when the vault's review windows
+  // move under it (a Settings change). It is not re-applied on mount, or the
+  // deep link read above would be overwritten a moment after it was applied.
+  const previousBasePeriod = useRef(basePeriod);
   useEffect(() => {
+    if (previousBasePeriod.current === basePeriod) return;
+    previousBasePeriod.current = basePeriod;
     setPeriod(basePeriod);
   }, [basePeriod]);
 
@@ -1001,27 +1021,47 @@ function ReviewPageFor() {
     [goToPeriod, period],
   );
 
-  // A `?scope=` on mount is how an external link addresses a page: apply it
-  // once, then strip it so no other URL state exists.
+  // A `?scope=` and/or `?period=` on the URL is how an external link addresses
+  // a page: the scope selects a page, the period selects which review. Both are
+  // applied once, then stripped with `replace` so no other URL state exists and
+  // a back press does not re-apply them. On a cold open the period is already
+  // in state from `linkedPeriod`; this lays it down for a link that lands while
+  // the page is mounted (a second click on an Analytics period header).
   useEffect(() => {
-    if (isDaily || !snapshot) return;
+    if (!snapshot) return;
     const params = new URLSearchParams(location.search);
-    const requested = params.get("scope");
-    if (!requested) return;
-    const valid =
-      requested === "overall" || liveAreas.some((area) => area.slug === requested);
-    if (valid) {
-      void setActiveSlug(requested === "overall" ? null : requested);
+    const rawPeriod = params.get("period");
+    const requestedScope = isDaily ? null : params.get("scope");
+    if (!rawPeriod && !requestedScope) return;
+    if (rawPeriod) {
+      const bounds = periodBounds(cadence, rawPeriod, weekStartDay);
+      if (bounds.ok && rawPeriod <= basePeriod) setPeriod(rawPeriod);
+    }
+    if (requestedScope) {
+      const valid =
+        requestedScope === "overall" ||
+        liveAreas.some((area) => area.slug === requestedScope);
+      const alreadyActive =
+        requestedScope === "overall"
+          ? lens.kind === "overview"
+          : lens.kind === "domain" && lens.slug === requestedScope;
+      if (valid && !alreadyActive) {
+        void setActiveSlug(requestedScope === "overall" ? null : requestedScope);
+      }
     }
     navigate({ pathname: location.pathname, search: "" }, { replace: true });
   }, [
+    basePeriod,
+    cadence,
     isDaily,
+    lens,
     liveAreas,
     location.pathname,
     location.search,
     navigate,
     setActiveSlug,
     snapshot,
+    weekStartDay,
   ]);
 
   const isOnBasePeriod = period === basePeriod;

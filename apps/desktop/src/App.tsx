@@ -11,6 +11,7 @@ import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 import AutomationsPage from "@/pages/AutomationsPage";
 import ExtensionsPage from "@/pages/ExtensionsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
@@ -145,6 +146,10 @@ function AppRoutes() {
           <Route path="/automations" element={<AutomationsPage />} />
           <Route path="/extensions" element={<ExtensionsPage />} />
           <Route path="/daily" element={<DailySchedulePage />} />
+          {/* The literal route sits beside the cadence parameter; React Router
+              ranks the static segment higher, so /review/analytics is the
+              matrix and never the "analytics" cadence. */}
+          <Route path="/review/analytics" element={<AnalyticsPage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />

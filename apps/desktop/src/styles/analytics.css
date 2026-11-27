@@ -1,0 +1,618 @@
+/* Analytics — the Review wing's period × metric matrix.
+   A table surface, not a dashboard: one row per metric, one column per period,
+   each cell a value with its change from the period before. Corner radius 2px,
+   the same as Data's tables; the first column stays put while the periods
+   scroll sideways at a narrow sheet. */
+
+.analytics-page {
+  --analytics-radius: 2px;
+  container-type: inline-size;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.05rem;
+}
+
+.analytics-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.analytics-page__heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.analytics-page__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.analytics-page__lead {
+  margin: 0;
+  max-width: 48rem;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.analytics-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.analytics-page__notice,
+.analytics-page__loading {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.analytics-page__error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.analytics-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.analytics-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.analytics-toolbar__label {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.analytics-toolbar__field select,
+.analytics-toolbar__field input {
+  min-width: 9rem;
+}
+
+.analytics-toolbar__note {
+  margin: 0 0 0.1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Form fields wear the same quiet box as Data's row editors: the page renders
+   outside `.data-studio`, so the shared class has to be dressed here. */
+.analytics-page .input-field {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--input);
+  border-radius: var(--analytics-radius);
+  background-color: var(--background);
+  color: var(--foreground);
+  padding: 0.42rem 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.analytics-page select.input-field {
+  padding-right: 1.75rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 55%,
+    calc(100% - 9px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.analytics-page .input-field:focus-visible {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.analytics-page .btn {
+  border-radius: var(--analytics-radius);
+}
+
+/* —— The matrix ———————————————————————————————————————————————————————————— */
+
+.analytics-matrix-card {
+  border: 1px solid var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.analytics-matrix-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.analytics-matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.analytics-matrix th,
+.analytics-matrix td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: right;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.analytics-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.analytics-matrix__corner {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 13rem;
+  background: var(--bg-panel);
+}
+
+.analytics-matrix__period-head {
+  min-width: 6.5rem;
+}
+
+.analytics-matrix__period-link {
+  color: var(--muted-foreground);
+  text-decoration: none;
+  border-bottom: 1px dotted transparent;
+}
+
+.analytics-matrix__period-link:hover,
+.analytics-matrix__period-link:focus-visible {
+  color: var(--foreground);
+  border-bottom-color: var(--border);
+}
+
+.analytics-matrix__area-row th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.analytics-matrix__row:hover .analytics-matrix__metric,
+.analytics-matrix__row:hover .analytics-cell {
+  background: color-mix(in srgb, var(--muted-surface) 55%, transparent);
+}
+
+.analytics-matrix__metric {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 13rem;
+  max-width: 18rem;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-soft);
+  text-align: left;
+  white-space: normal;
+}
+
+.analytics-matrix__label {
+  display: block;
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.analytics-matrix__meta {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.analytics-matrix__cell {
+  padding: 0;
+}
+
+.analytics-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: right;
+  cursor: pointer;
+}
+
+.analytics-cell:hover,
+.analytics-cell:focus-visible {
+  background: var(--bg-subtle);
+}
+
+.analytics-cell__value {
+  font-weight: 600;
+}
+
+.analytics-cell__delta {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.analytics-matrix__cell.is-nodata .analytics-cell__value {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.analytics-cell:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.analytics-matrix-card__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.7rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-matrix-card__legend {
+  opacity: 0.85;
+}
+
+/* —— Empty, problems ———————————————————————————————————————————————————————— */
+
+.analytics-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+  padding: 1.4rem 1.1rem;
+}
+
+.analytics-empty__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.analytics-empty__hint {
+  margin: 0.3rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.analytics-problems {
+  border: 1px solid var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+  padding: 0.7rem 0.85rem;
+}
+
+.analytics-problems__title {
+  margin: 0 0 0.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.analytics-problems ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+/* —— The cell panel: one metric, one period, its events ——————————————————— */
+
+.analytics-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  padding: 0.85rem 0.95rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.analytics-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  flex-wrap: wrap;
+}
+
+.analytics-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.analytics-panel__meta {
+  margin: 0.15rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.analytics-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.analytics-panel__review-link {
+  color: var(--primary);
+  font-size: 0.82rem;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.analytics-panel__review-link:hover,
+.analytics-panel__review-link:focus-visible {
+  border-bottom-color: currentColor;
+}
+
+.analytics-events {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-events th,
+.analytics-events td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.analytics-events thead th {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.analytics-events__date,
+.analytics-events__value {
+  white-space: nowrap;
+}
+
+.analytics-events__note {
+  color: var(--muted-foreground);
+}
+
+.analytics-events__actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.analytics-events__action {
+  padding: 0.15rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--analytics-radius);
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.analytics-events__action:hover {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.analytics-events__action.is-danger:hover {
+  border-color: color-mix(in srgb, var(--destructive) 40%, var(--border));
+  color: var(--destructive);
+}
+
+.analytics-events__action.is-primary {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.analytics-events__input {
+  width: 100%;
+  min-width: 6rem;
+}
+
+.analytics-events__empty {
+  color: var(--muted-foreground);
+}
+
+.analytics-log-form {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analytics-log-form__title {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.analytics-log-form__fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.analytics-log-form__note {
+  flex: 1 1 12rem;
+}
+
+.analytics-log-form__note input {
+  min-width: 0;
+  width: 100%;
+}
+
+.analytics-log-form__submit {
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--primary);
+  border-radius: var(--analytics-radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.analytics-log-form__submit:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.analytics-log-form__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.analytics-log-form__status {
+  margin: 0;
+  min-height: 1.1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+/* —— The new-metric form fallback —————————————————————————————————————————— */
+
+.analytics-metric-form {
+  border: 1px solid var(--border);
+  border-radius: var(--analytics-radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  padding: 0.85rem 0.95rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.analytics-metric-form__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.analytics-metric-form__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.analytics-metric-form__hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.analytics-metric-form__fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.analytics-metric-form__fields .analytics-toolbar__field input,
+.analytics-metric-form__fields .analytics-toolbar__field select {
+  min-width: 8.5rem;
+}
+
+.analytics-metric-form__status {
+  margin: 0;
+  min-height: 1.1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+/* A narrow sheet: the header stacks so the buttons never crowd the title, and
+   the matrix keeps its own sideways scroller rather than squeezing columns. */
+@container (max-width: 46rem) {
+  .analytics-page__actions {
+    margin-left: 0;
+  }
+
+  .analytics-matrix__corner,
+  .analytics-matrix__metric {
+    min-width: 10.5rem;
+  }
+}

@@ -52,6 +52,10 @@ const PATH_WING: Record<string, WingId> = {
   "/review/monthly": "review",
   "/review/quarterly": "review",
   "/review/yearly": "review",
+  // The Review wing's one non-cadence page: the period × metric matrix. It is
+  // period comparison, so it belongs to Review, and the rail names it sixth
+  // after the cadence ladder.
+  "/review/analytics": "review",
 };
 
 export type WingSession = {
