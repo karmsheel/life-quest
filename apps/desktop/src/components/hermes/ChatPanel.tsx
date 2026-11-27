@@ -87,6 +87,7 @@ import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import {
   onPhoneQueueChanged,
+  phoneBridge,
   readPhoneQueue,
 } from "@/lib/phone-queue";
 import { SESSION_ICON } from "@/lib/session-icon";
@@ -347,6 +348,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const [phoneDrafts, setPhoneDrafts] = useState<PhoneDraftView[]>([]);
 
   useEffect(() => {
+    // No phone bridge means this page never had a phone surface (a harness that
+    // models only what it tests). Do not add bridge traffic to it: the dock must
+    // behave exactly as it did before the strip existed.
+    if (!phoneBridge()) return;
     let live = true;
     const refresh = () => {
       void readPhoneQueue().then((drafts) => {
