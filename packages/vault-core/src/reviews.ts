@@ -13,6 +13,10 @@ import {
   reviewOpensAt,
 } from "./review-availability.ts";
 import {
+  REVIEW_PAGE_COMMON_HEADINGS,
+  getReviewPageTemplate,
+} from "./review-templates.ts";
+import {
   USER_ACTOR,
   type Actor,
   type Result,
@@ -60,8 +64,11 @@ async function logReview(
 }
 
 const OVERALL = "overall";
-const DOMAIN_HEADINGS = ["Look-back", "Keep", "Change", "Next-period intent"] as const;
-type RequiredHeading = (typeof DOMAIN_HEADINGS)[number];
+// The four common H2s are the synthesis contract every page carries, so they are
+// defined once in the page-template module and reused here for validation and
+// emission. An area's template may only add headings after them.
+const DOMAIN_HEADINGS = REVIEW_PAGE_COMMON_HEADINGS;
+type RequiredHeading = (typeof REVIEW_PAGE_COMMON_HEADINGS)[number];
 
 const NOTEBOOK_SCHEMA_VERSION = 1;
 const PAGE_SCHEMA_VERSION = 1;
@@ -399,16 +406,65 @@ function headingLine(level: number, text: string): string {
   return `${"#".repeat(level)} ${text}`;
 }
 
-/** Emit a canonical page: H1 title, the four required H2s in fixed order, extras after. */
-function emitPageBody(title: string, page: ParsedPage): string {
+/**
+ * Group extras into heading blocks: each H2 with the H3+ sections that follow
+ * it. A page's own sections are groups, so ordering one can never detach the
+ * sub-headings an operator wrote under it.
+ */
+function groupExtras(extras: BodySection[]): BodySection[][] {
+  const groups: BodySection[][] = [];
+  for (const section of extras) {
+    if (section.level <= 2 || groups.length === 0) groups.push([section]);
+    else groups[groups.length - 1]!.push(section);
+  }
+  return groups;
+}
+
+/**
+ * A page's extras in contract order: the headings the area's template names
+ * first, in template order, then every other extra in the order the page had it.
+ *
+ * The template only orders and seeds — it never rejects an unknown heading, so
+ * an operator's own section is still first-class and still preserved.
+ */
+function orderExtras(
+  extras: BodySection[],
+  templateExtras: readonly string[],
+): BodySection[][] {
+  const remaining = groupExtras(extras);
+  const ordered: BodySection[][] = [];
+  for (const name of templateExtras) {
+    const at = remaining.findIndex(
+      (group) => group[0]!.level === 2 && group[0]!.text === name,
+    );
+    if (at === -1) continue;
+    ordered.push(remaining.splice(at, 1)[0]!);
+  }
+  return [...ordered, ...remaining];
+}
+
+/**
+ * Emit a canonical page: H1 title, the four required H2s in fixed order, then
+ * the area's template extras it holds (template order), then any other extras in
+ * page order. A missing template leaves the extras exactly as they were.
+ */
+function emitPageBody(
+  title: string,
+  page: ParsedPage,
+  templateExtras: readonly string[] = [],
+): string {
   const blocks: string[] = [`# ${title}`];
   const withContent = (heading: string, content: string[]): string =>
     content.length > 0 ? `${heading}\n\n${content.join("\n")}` : heading;
   for (const h of DOMAIN_HEADINGS) {
     blocks.push(withContent(`## ${h}`, page.required.get(h) ?? []));
   }
-  for (const section of page.extras) {
-    blocks.push(withContent(headingLine(section.level, section.text), trimBlankEdges(section.content)));
+  for (const group of orderExtras(page.extras, templateExtras)) {
+    for (const section of group) {
+      blocks.push(
+        withContent(headingLine(section.level, section.text), trimBlankEdges(section.content)),
+      );
+    }
   }
   return blocks.join("\n\n");
 }
@@ -424,9 +480,33 @@ function pageTitleFor(
   return recordedTitle ?? domainNames.get(scope) ?? scope;
 }
 
-/** An empty page skeleton — what a freshly created page and a not-started page read as. */
-function emptyPageBody(title: string): string {
-  return emitPageBody(title, { title, required: new Map(), extras: [] });
+/**
+ * An empty page skeleton — what a freshly created page and a not-started page
+ * read as. A live area's template extras follow the four common headings, empty
+ * and in template order; the overall page never takes them.
+ */
+function emptyPageBody(title: string, extras: readonly string[] = []): string {
+  const page: ParsedPage = {
+    title,
+    required: new Map(),
+    extras: extras.map((text) => ({ level: 2, text, content: [], parentH2: null })),
+  };
+  return emitPageBody(title, page, extras);
+}
+
+/**
+ * A live area's template extras, in template order. A missing or unreadable
+ * template is simply no template: reading a page must never fail because its
+ * area's contract could not be read, and a broken file is reported by
+ * `getReviewPageTemplate` rather than here.
+ */
+async function readTemplateExtras(
+  rootPath: string,
+  scope: string,
+): Promise<string[]> {
+  if (isOverall(scope)) return [];
+  const template = await getReviewPageTemplate(rootPath, scope);
+  return template.ok ? template.value.extras : [];
 }
 
 // ── manifest and page files ──────────────────────────────────────────────────
@@ -768,7 +848,7 @@ export async function getReviewPageBody(
         rev: 0,
         updatedAt: null,
         locked: disk.manifest.locked,
-        bodyMarkdown: emptyPageBody(title),
+        bodyMarkdown: emptyPageBody(title, await readTemplateExtras(rootPath, scope)),
       },
     };
   } catch (e) {
@@ -1120,6 +1200,7 @@ function blankPage(
   scope: string,
   title: string,
   now: string,
+  templateExtras: readonly string[] = [],
 ): ReviewPageFile {
   return {
     schemaVersion: PAGE_SCHEMA_VERSION,
@@ -1129,7 +1210,7 @@ function blankPage(
     sessionId: null,
     rev: 1,
     updatedAt: now,
-    bodyMarkdown: emptyPageBody(title),
+    bodyMarkdown: emptyPageBody(title, templateExtras),
   };
 }
 
@@ -1152,7 +1233,12 @@ async function createNotebook(
   const pages = new Map<string, ReviewPageFile>([[OVERALL, overall]]);
   const order = [OVERALL];
   if (!isOverall(scope)) {
-    const page = blankPage(scope, pageTitleFor(scope, title, domainNames), now);
+    const page = blankPage(
+      scope,
+      pageTitleFor(scope, title, domainNames),
+      now,
+      await readTemplateExtras(rootPath, scope),
+    );
     pages.set(scope, page);
     order.push(scope);
   } else if (live.length === 0) {
@@ -1243,7 +1329,12 @@ export async function ensureReviewPage(
       }
       const live = await readLiveAreas(rootPath);
       const now = todayIso();
-      const page = blankPage(input.scope, pageTitleFor(input.scope, disk.manifest.title, domainNames), now);
+      const page = blankPage(
+        input.scope,
+        pageTitleFor(input.scope, disk.manifest.title, domainNames),
+        now,
+        await readTemplateExtras(rootPath, input.scope),
+      );
       disk.manifest.order = insertScope(disk.manifest.order, input.scope, live);
       disk.manifest.rev += 1;
       disk.manifest.updatedAt = now;
@@ -1273,7 +1364,8 @@ type PreparedPage = {
 
 /**
  * Validate and canonicalise a page body against the page's title, returning the
- * page file it would write.
+ * page file it would write. The area's template extras order the extras the page
+ * already holds; a template never adds a section to an existing page.
  */
 function preparePageWrite(
   current: ReviewPageFile | null,
@@ -1281,11 +1373,12 @@ function preparePageWrite(
   title: string,
   bodyMarkdown: string,
   now: string,
+  templateExtras: readonly string[] = [],
 ): Result<PreparedPage> {
   const parsed = parsePageBody(bodyMarkdown);
   const validated = validatePage(parsed);
   if (!validated.ok) return validated;
-  const body = emitPageBody(title, validated.value);
+  const body = emitPageBody(title, validated.value, templateExtras);
   if (current && current.bodyMarkdown === body) {
     return { ok: true, value: { page: current, created: false } };
   }
@@ -1364,7 +1457,14 @@ export async function writeReviewPage(
       const title = existing
         ? existing.title
         : pageTitleFor(input.scope, disk.manifest.title, domainNames);
-      const prepared = preparePageWrite(existing, input.scope, title, input.bodyMarkdown, todayIso());
+      const prepared = preparePageWrite(
+        existing,
+        input.scope,
+        title,
+        input.bodyMarkdown,
+        todayIso(),
+        await readTemplateExtras(rootPath, input.scope),
+      );
       if (!prepared.ok) {
         return pageFailure("MALFORMED", prepared.error, currentPage);
       }
@@ -1453,7 +1553,14 @@ export async function applyReviewPageBody(
       if (page.rev !== input.baseRev) {
         return pageFailure("CONFLICT", "STALE", pageBodyFromFile(disk, page));
       }
-      const prepared = preparePageWrite(page, input.scope, page.title, input.bodyMarkdown, todayIso());
+      const prepared = preparePageWrite(
+        page,
+        input.scope,
+        page.title,
+        input.bodyMarkdown,
+        todayIso(),
+        await readTemplateExtras(rootPath, input.scope),
+      );
       if (!prepared.ok) return pageFailure("MALFORMED", prepared.error, pageBodyFromFile(disk, page));
       if (prepared.value.page === page) {
         return { ok: true, page: pageBodyFromFile(disk, page), notebookRev: notebookContentRev(disk) };
@@ -1630,6 +1737,7 @@ export async function setReviewSessionId(
           input.scope,
           pageTitleFor(input.scope, disk.manifest.title, domainNames),
           todayIso(),
+          await readTemplateExtras(rootPath, input.scope),
         );
         if (!isOverall(page.scope)) {
           disk.manifest.order = insertScope(disk.manifest.order, page.scope, live);
@@ -1834,7 +1942,11 @@ async function writeSplitPages(
     const title = existing?.title ?? (isOverall(scope) ? disk.manifest.title : parsed.title ?? scope);
     const validated = validatePage(parsed);
     if (!validated.ok) return validated;
-    const body = emitPageBody(title, validated.value);
+    const body = emitPageBody(
+      title,
+      validated.value,
+      await readTemplateExtras(rootPath, scope),
+    );
     if (existing && existing.bodyMarkdown === body) continue;
     const page: ReviewPageFile = {
       schemaVersion: PAGE_SCHEMA_VERSION,
