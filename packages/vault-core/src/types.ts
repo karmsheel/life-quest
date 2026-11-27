@@ -647,12 +647,74 @@ export type ReviewSkill = {
   exists: boolean;
 };
 
+/**
+ * One app-written metric figure, as the pass plans it.
+ *
+ * A figure is NOT a snapshot directive: an operator's fence carries a view spec
+ * the app executes, while a figure is written from the area's metric definition
+ * (Phase 4) through `getMetricsSummary`. The two share the marker-placement
+ * machinery and the outcome vocabulary, not the query source — a snapshot is a
+ * rule the operator wrote, a figure is a number the app already knows how to
+ * read. `kind` is what tells the two apart in a pass's outcomes.
+ */
+export type ReviewMetricFigureDirective = {
+  kind: "metric";
+  /** The stable marker id, `metric:<definitionId>`. */
+  id: string;
+  /** The metric definition the figure reads, without the marker prefix. */
+  definitionId: string;
+  /** The area whose page the figure lands on. */
+  domain: string;
+  /** Figures live under the area page's own Look-back. */
+  section: "Look-back";
+  /** The definition's label, printed bold above the value. */
+  title: string;
+  /** The definition's unit, display only: `ZAR` prints in parentheses. */
+  unit: string;
+  /** The definition's display formatting; the figure never changes the query. */
+  formatting: MetricFormatting | null;
+};
+
+/**
+ * The overall page's cross-domain block. It is one app-rendered table over one
+ * run per definition — a `ViewSpec` answers one domain per call, so this cannot
+ * be a directive, and a fake "overall domain" spec would be a second engine.
+ */
+export type ReviewMetricsOverallDirective = {
+  kind: "overall";
+  id: "metrics:overall";
+  domain: "";
+  section: "Look-back";
+  title: "Metrics this period";
+};
+
+export type ReviewFigureDirective =
+  | ReviewMetricFigureDirective
+  | ReviewMetricsOverallDirective;
+
+/** How one app-written figure ended up, in the same words a snapshot outcome uses. */
+export type ReviewFigureOutcome = {
+  kind: "metric" | "overall";
+  id: string;
+  /** The definition behind a metric figure (absent for the overall block). */
+  definitionId?: string;
+  domain: string;
+  section: string;
+  title: string;
+  status: "written" | "unchanged" | "failed";
+  /** Why it failed, or why a stale figure was removed. */
+  reason?: string;
+};
+
+/** One pass's outcome: an operator fence's snapshot, or an app-written figure. */
+export type ReviewPrepopulateOutcome = ReviewSnapshotOutcome | ReviewFigureOutcome;
+
 /** What one pre-population pass did to a review, and why for each part. */
 export type ReviewPrepopulateResult = {
   cadence: ReviewCadence;
   period: string;
   scope: string;
-  outcomes: ReviewSnapshotOutcome[];
+  outcomes: ReviewPrepopulateOutcome[];
   /** How many directives ended up written or refreshed. */
   applied: number;
   /**

@@ -172,6 +172,7 @@ export {
   getReviewSkill,
   parseSnapshotDirectives,
   prepopulateReview,
+  previousPhase4DefaultReviewSkill,
   previousShippedDefaultReviewSkill,
   renderSnapshotMarkdown,
   snapshotCloseMarker,
@@ -179,6 +180,35 @@ export {
   upsertSnapshotBlock,
   writeReviewSkill,
 } from "./review-skills.ts";
+export {
+  FIGURE_SECTION,
+  METRICS_OVERALL_ID,
+  formatMetricAsOf,
+  formatMetricNumber,
+  isPeriodToDate,
+  metricCloseMarker,
+  metricFigureId,
+  metricOpenMarker,
+  metricProvenanceText,
+  metricUnitSuffix,
+  metricValueText,
+  metricWindowLabel,
+  metricsOverallCloseMarker,
+  metricsOverallOpenMarker,
+  planAreaFigures,
+  planOverallFigures,
+  removeMetricsOverallBlock,
+  removeStaleMetricFigures,
+  renderMetricFigure,
+  renderMetricsOverall,
+  upsertFigureBlock,
+} from "./review-figures.ts";
+export type {
+  MetricFigurePlan,
+  MetricOverviewRow,
+  PlannedMetricFigure,
+  PlannedOverallBlock,
+} from "./review-figures.ts";
 export {
   METRIC_ID_PATTERN,
   METRICS_DATABASE_ID,
