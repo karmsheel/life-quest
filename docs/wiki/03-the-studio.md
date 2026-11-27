@@ -186,7 +186,7 @@ The rail:
   the window's drag handle.
 - The **build number** (`v0.3.5`), centred directly under the lockup in the
   header: the app's one manual update door. It glows when a newer release exists,
-  with **Update available** beside it while the rail is wide enough for the
+  with **Update available** centred under it while the rail is wide enough for the
   words; clicking it opens the update dialog. The thin rail retires the number
   with the words — expand the sidebar to read it.
 - A collapse toggle (**Collapse sidebar** / **Expand sidebar**), with

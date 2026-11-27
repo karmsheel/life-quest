@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+# LifeQuest landing page. There is nothing to index but the page itself.

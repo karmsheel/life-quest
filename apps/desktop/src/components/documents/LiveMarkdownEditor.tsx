@@ -10,6 +10,7 @@ import {
   type DragEvent as ReactDragEvent,
 } from "react";
 import { MarkdownView } from "./MarkdownView";
+import type { WikiResolver } from "@/lib/wiki-links";
 
 /**
  * One box, live preview — the Obsidian model, without the second pane.
@@ -439,6 +440,8 @@ export type LiveMarkdownEditorProps = {
   onInsertFile?: (file: File) => Promise<string | null>;
   /** Layout the host wants on the box itself. */
   className?: string;
+  /** Resolve `[[target]]` while a block is shown. Omitted, the token stays text. */
+  resolveWiki?: WikiResolver;
 };
 
 export function LiveMarkdownEditor({
@@ -453,6 +456,7 @@ export function LiveMarkdownEditor({
   readOnly = false,
   onInsertFile,
   className,
+  resolveWiki,
 }: LiveMarkdownEditorProps) {
   const [blocks, setBlocks] = useState<string[]>(() => parseBlocks(value));
   const [editing, setEditing] = useState<number | null>(null);
@@ -848,7 +852,7 @@ export function LiveMarkdownEditor({
                   <p className="note-live__blank" aria-hidden="true" />
                 )
               ) : (
-                <MarkdownView markdown={block} slug={slug} />
+                <MarkdownView markdown={block} slug={slug} resolveWiki={resolveWiki} />
               )}
             </div>
           ),

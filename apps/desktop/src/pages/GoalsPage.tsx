@@ -332,6 +332,8 @@ export default function GoalsPage() {
         </p>
       ) : null}
 
+      <div className="goals-page__split">
+      <section className="goals-page__board">
       <div
         className="ui-segmented goals-page__filters"
         role="radiogroup"
@@ -356,153 +358,6 @@ export default function GoalsPage() {
           </button>
         ))}
       </div>
-
-      {!goalsError ? (
-        <form className="goals-page__composer" onSubmit={(e) => void onSubmit(e)}>
-          <label className="field">
-            Name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            Notes
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-            />
-          </label>
-          <label className="field">
-            Area
-            <select
-              value={domainValue}
-              onChange={(e) => {
-                setDomainDirty(true);
-                setDomainValue(e.target.value);
-              }}
-            >
-              <option value="">Unassigned</option>
-              {pickerDomains.map((d) => (
-                <option key={d.slug} value={d.slug}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Deadline
-            <input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-            />
-          </label>
-          <div
-            className="ui-segmented goals-page__shape"
-            role="radiogroup"
-            aria-label="Goal measure"
-          >
-            {(
-              [
-                ["numeric", "Metric"],
-                ["done", "Definition of done"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={shape === value}
-                className={`ui-segmented__option${shape === value ? " is-active" : ""}`}
-                onClick={() => setShape(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {shape === "numeric" ? (
-                      <div className="goals-page__measure">
-                        <label className="field">
-                          Metric
-                          <input
-                            value={metric}
-                            onChange={(e) => setMetric(e.target.value)}
-                            placeholder="km, pages, sessions"
-                          />
-                        </label>
-                        <label className="field">
-                          Current
-                          <input
-                            type="number"
-                            value={current}
-                            onChange={(e) => setCurrent(e.target.value)}
-                            placeholder="0"
-                          />
-                        </label>
-                        <label className="field">
-                          Target
-                          <input
-                            type="number"
-                            value={target}
-                            onChange={(e) => setTarget(e.target.value)}
-                          />
-                        </label>
-                      </div>
-                    ) : (
-            <label className="field">
-              Definition of done
-              <textarea
-                value={definitionOfDone}
-                onChange={(e) => setDefinitionOfDone(e.target.value)}
-                rows={3}
-              />
-            </label>
-          )}
-          {editingId ? (
-            <label className="field">
-              Status
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as GoalStatus)}
-              >
-                <option value="open">Open</option>
-                <option value="done">Done</option>
-              </select>
-            </label>
-          ) : null}
-          <div className="goals-page__actions">
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={busy || !name.trim()}
-            >
-              {editingId ? "Save" : "Add"}
-            </Button>
-            {editingId ? (
-              <>
-                <Button
-                  type="button"
-                  onClick={resetComposer}
-                  disabled={busy}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  destructive
-                  onClick={() => void onDelete()}
-                  disabled={busy}
-                >
-                  Delete
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </form>
-      ) : null}
 
       {error ? (
         <p className="form-error" role="alert">
@@ -562,6 +417,118 @@ export default function GoalsPage() {
           })}
         </ul>
       )}
+      </section>
+      {!goalsError ? (
+        <form className="goals-page__composer" onSubmit={(e) => void onSubmit(e)}>
+          <label className="field">
+            Name
+            <input value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label className="field">
+            Notes
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
+          </label>
+          <label className="field">
+            Area
+            <select
+              value={domainValue}
+              onChange={(e) => {
+                setDomainDirty(true);
+                setDomainValue(e.target.value);
+              }}
+            >
+              <option value="">Unassigned</option>
+              {pickerDomains.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Deadline
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </label>
+          <div className="ui-segmented goals-page__shape" role="radiogroup" aria-label="Goal measure">
+            {(
+              [
+                ["numeric", "Metric"],
+                ["done", "Definition of done"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shape === value}
+                className={`ui-segmented__option${shape === value ? " is-active" : ""}`}
+                onClick={() => setShape(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {shape === "numeric" ? (
+            <div className="goals-page__measure">
+              <label className="field">
+                Metric
+                <input
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value)}
+                  placeholder="km, pages, sessions"
+                />
+              </label>
+              <label className="field">
+                Current
+                <input
+                  type="number"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+              <label className="field">
+                Target
+                <input type="number" value={target} onChange={(e) => setTarget(e.target.value)} />
+              </label>
+            </div>
+          ) : (
+            <label className="field">
+              Definition of done
+              <textarea
+                value={definitionOfDone}
+                onChange={(e) => setDefinitionOfDone(e.target.value)}
+                rows={3}
+              />
+            </label>
+          )}
+          {editingId ? (
+            <label className="field">
+              Status
+              <select value={status} onChange={(e) => setStatus(e.target.value as GoalStatus)}>
+                <option value="open">Open</option>
+                <option value="done">Done</option>
+              </select>
+            </label>
+          ) : null}
+          <div className="goals-page__actions">
+            <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+              {editingId ? "Save" : "Add"}
+            </Button>
+            {editingId ? (
+              <>
+                <Button type="button" onClick={resetComposer} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button type="button" destructive onClick={() => void onDelete()} disabled={busy}>
+                  Delete
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
+      </div>
       {dialog}
     </div>
   );

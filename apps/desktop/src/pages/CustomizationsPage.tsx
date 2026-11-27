@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Blocks, FolderOpen, Pencil, Plus, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import {
   useTheme,
   type ThemeHistoryVersion,
@@ -527,13 +528,10 @@ export default function CustomizationsPage() {
     <div className="customizations-page" data-testid="customizations-page">
       <header className="customizations-page__header">
         <div>
+          <WingEyebrow page="Customizations" />
           <h1 className="stub-page__title">Customizations</h1>
           <p className="stub-page__desc muted">
-            Data files that change how LifeQuest looks and behaves. Today that is
-            themes — palette, material, chrome, scene, page widgets and the
-            agent picker's own mode — written here or by the companion. Nothing
-            here is code: every save is re-validated by the main process, and a
-            refusal names the field.
+            Data files that change how LifeQuest looks and behaves.
           </p>
         </div>
         <div className="customizations-page__header-actions">

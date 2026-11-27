@@ -138,10 +138,10 @@ const SAMPLE = `(() => {
     };
   };
 
-  const titleInput = q(".library-composer > label.field > input");
-  const bodyTextarea = q(".library-composer > label.field > textarea");
+  const titleInput = q(".doc-editor__title");
+  const editor = q('[data-testid="doc-editor"]');
   const domainCheckbox = q(
-    '.library-composer .library-tag-picker input[type="checkbox"]',
+    '.doc-editor .library-tag-picker input[type="checkbox"]',
   );
   const actions = q(".library-actions");
   const actionButtons = actions
@@ -197,10 +197,12 @@ const SAMPLE = `(() => {
         }
       : null,
     composer: {
-      titleValue: titleInput ? titleInput.value : null,
+      titleValue: titleInput ? titleInput.value : "",
       titleReadOnly: titleInput ? titleInput.readOnly : null,
-      bodyValue: bodyTextarea ? bodyTextarea.value : null,
-      bodyReadOnly: bodyTextarea ? bodyTextarea.readOnly : null,
+      bodyValue: editor ? editor.getAttribute("data-readonly") : null,
+      bodyReadOnly: editor
+        ? editor.getAttribute("data-readonly") === "true"
+        : null,
       domainDisabled: domainCheckbox ? domainCheckbox.disabled : null,
       domainChecked: domainCheckbox ? domainCheckbox.checked : null,
       saveDisabled: (() => {
@@ -210,14 +212,14 @@ const SAMPLE = `(() => {
       actionLabels: actionButtons.map((b) => (b.textContent || "").trim()),
       dangerButtons: actions
         ? actions.querySelectorAll(".btn-danger").length
-        : null,
+        : 0,
       proposeButtons: actionButtons.filter(
         (b) => (b.textContent || "").trim() === "Propose change",
       ).length,
       lockHint: text(q(".library-lock-hint")),
     },
-    cards: document.querySelectorAll(".library-list .doc-card").length,
-    selectedCards: document.querySelectorAll(".library-list .doc-card.is-selected")
+    cards: document.querySelectorAll('.doc-tree__file[data-kind="library"]').length,
+    selectedCards: document.querySelectorAll(".doc-tree__file.is-selected")
       .length,
     emptyMessage: text(q(".documents-page > p.muted")),
     proposeDialog: proposeDialog
@@ -438,7 +440,7 @@ async function main() {
   // ── 1. landing: one note in the library, no note open ─────────────────────
   await waitFor(
     win,
-    "document.querySelectorAll('.library-list .doc-card').length === 1",
+    "document.querySelectorAll('.doc-tree__file[data-kind=\"library\"]').length === 1",
     "the seeded note card",
   );
   const landing = await sample(win);
@@ -470,7 +472,7 @@ async function main() {
 
   // ── 2. open the seeded note: the corner appears, the menu is closed ───────
   const getsBefore = (await getCalls(win)).length;
-  await click(win, ".library-list .doc-card");
+  await click(win, '.doc-tree__file[data-kind="library"]');
   await waitFor(
     win,
     `Boolean(document.querySelector('[data-testid="note-page-menu"]'))`,
@@ -479,7 +481,7 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-       const i = document.querySelector('.library-composer > label.field > input');
+       const i = document.querySelector('.doc-editor__title');
        return i && i.value === ${JSON.stringify(NOTE_TITLE)};
      })()`,
     "the composer to load the note",
@@ -615,13 +617,13 @@ async function main() {
   if (opened.composer.proposeButtons !== 0) {
     failure("the composer's bottom row still offers Propose change");
   }
-  if (!opened.composer.actionLabels.includes("Save")) {
+  if (opened.composer.actionLabels.length !== 0) {
     failure(
-      `the composer's actions are ${JSON.stringify(opened.composer.actionLabels)}, expected Save`,
+      `the editor still has actions ${JSON.stringify(opened.composer.actionLabels)}; edits save themselves`,
     );
   }
-  if (!opened.composer.actionLabels.includes("Cancel")) {
-    failure("the open note's composer offered no Cancel");
+  if (opened.composer.saveDisabled !== null) {
+    failure("the open note still has a Save button");
   }
 
   // ── 3. the open menu: the lock leads it, Delete is last ───────────────────
@@ -758,7 +760,7 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-       const i = document.querySelector('.library-composer > label.field > input');
+       const i = document.querySelector('.doc-editor__title');
        return i && i.readOnly === true;
      })()`,
     "the composer to become read-only",
@@ -835,8 +837,8 @@ async function main() {
   if (lockedMenu.composer.domainDisabled !== true) {
     failure("the locked note's domain picker is still enabled");
   }
-  if (lockedMenu.composer.saveDisabled !== true) {
-    failure("the locked note's Save is still enabled");
+  if (lockedMenu.composer.saveDisabled !== null) {
+    failure("the locked note still has a Save button");
   }
   if (!(lockedMenu.composer.lockHint ?? "").includes("Unlock to edit")) {
     failure(
@@ -905,7 +907,7 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-       const i = document.querySelector('.library-composer > label.field > input');
+       const i = document.querySelector('.doc-editor__title');
        return i && i.readOnly === false;
      })()`,
     "the composer to become editable again",
@@ -1193,8 +1195,8 @@ async function main() {
   await waitFor(
     win,
     `(() => {
-       const i = document.querySelector('.library-composer > label.field > input');
-       return i && i.value === '';
+       const i = document.querySelector('.doc-editor__title');
+       return !i || i.value === '';
      })()`,
     "the composer to clear",
   );

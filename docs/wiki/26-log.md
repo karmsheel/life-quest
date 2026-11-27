@@ -13,8 +13,10 @@ appends. See also [Wiki home](./index.md).
 - It is a page, not a sheet. Its rows are filtered by the lens in the window
   strip, which reads **LIFE** until a second area is unlocked and becomes the
   area band after that.
-- The page is headed **Life log**, with the line "Append-only feed of area,
-  document, decision, and agent events."
+- The page is headed **Log**, under the **Log** eyebrow, with the line
+  "Append-only feed of area, document, decision, and agent events." The rows
+  sit in one Events panel that uses the content pane. On a narrow window each
+  row stacks into a single column.
 - On disk the feed is `.lifequest/log.jsonl` — one JSON object per line, inside
   the vault.
 

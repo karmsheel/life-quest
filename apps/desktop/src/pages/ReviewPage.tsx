@@ -63,6 +63,18 @@ function statusLabel(status: PageStatus): string {
       : "Not started";
 }
 
+/**
+ * The page before it exists. These are the four headings every review carries,
+ * shown as the shape of the sheet so the tab row has a page to sit on. They are
+ * not the file: nothing is written until Start or Write it myself.
+ */
+const PLACEHOLDER_SECTIONS = [
+  { heading: "Look-back", prompt: "What happened." },
+  { heading: "Keep", prompt: "What to keep." },
+  { heading: "Change", prompt: "What to change." },
+  { heading: "Next-period intent", prompt: "What the next period is for." },
+] as const;
+
 function resolveCadence(param: string | undefined): ReviewCadence | null {
   if (param && VALID_CADENCES.includes(param as ReviewCadence)) {
     return param as ReviewCadence;
@@ -111,8 +123,8 @@ function withPageSummary(
  *
  * THE CHECKLIST IS RETIRED. Its progress line survives above the tabs, the Start
  * / Mark complete / Unlock actions moved under the editor and act on the active
- * page, and an area with no page yet shows a page-scoped empty state instead of
- * quietly pre-creating every area.
+ * page, and an area with no page yet shows that page's unwritten sheet — the
+ * four headings, as prompts — instead of quietly pre-creating every area.
  *
  * AUTOSAVE IS PER PAGE. The timer and the write queue belong to the page in the
  * box; switching tabs flushes the page being left first (a write that cannot land
@@ -1159,12 +1171,6 @@ function ReviewPageFor() {
       ? "Start the life review"
       : `Start the ${activeDomainName ?? "area"} review`;
 
-  const emptyPageText = !notebook
-    ? "No review for this period yet."
-    : activeScope === "overall"
-      ? "No review for this period yet."
-      : `No ${activeDomainName ?? "area"} review for this period yet.`;
-
   const selectTab = useCallback(
     async (scope: string) => {
       if (scope === activeScope) return;
@@ -1372,10 +1378,33 @@ function ReviewPageFor() {
             {loading || !pageReady ? (
               <p className="muted">Loading review…</p>
             ) : showEmpty ? (
-              // A period nobody has reviewed yet, or an area page nobody started:
-              // there is no box, so the two ways to make one are the page.
+              // A period nobody has reviewed yet, or an area page nobody started.
+              // The sheet is the same page the editor will become: the four
+              // headings, as prompts, so the tab row has a document to sit on.
+              // Nothing here is the file.
               <div className="review-page__empty" data-testid="review-empty">
-                <p className="muted">{emptyPageText}</p>
+                <div
+                  className="review-page__placeholder"
+                  data-testid="review-placeholder"
+                >
+                  {PLACEHOLDER_SECTIONS.map((section) => (
+                    <section
+                      key={section.heading}
+                      className="review-page__placeholder-section"
+                    >
+                      <h2>{section.heading}</h2>
+                      <p>{section.prompt}</p>
+                    </section>
+                  ))}
+                </div>
+                <div className="review-page__status-row">
+                  <span
+                    className="muted review-page__status"
+                    data-testid="review-status"
+                  >
+                    {statusLabel("missing")}
+                  </span>
+                </div>
                 <div className="review-page__actions">
                   <Button
                     variant="primary"

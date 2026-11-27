@@ -1,0 +1,1158 @@
+{
+  "name": "lifequest-landing-e2e",
+  "reportVersion": 1,
+  "generatedAt": "2026-11-27T20:31:35.592Z",
+  "command": "node apps/landing/scripts/e2e.mjs",
+  "result": "PASS",
+  "baseUrl": "http://127.0.0.1:44631/",
+  "server": {
+    "mode": "owned static server",
+    "port": 44631
+  },
+  "browser": {
+    "path": "/usr/bin/chromium-browser",
+    "version": "Chrome/158.0.8127.36",
+    "headless": true,
+    "flags": [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      "--hide-scrollbars",
+      "--force-device-scale-factor=1",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-extensions",
+      "--mute-audio",
+      "about:blank"
+    ],
+    "profile": "throwaway (removed on exit)"
+  },
+  "environment": {
+    "node": "v24.22.3",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "product": {
+    "files": {
+      "index.html": "197ba21af39cd9e69af2af011588be7a55c75e1a943be960d5d07453b403ddc5",
+      "styles.css": "08b7422fb9b30b80bcaf4ce29c6c6c2edef4482bc7159566f814b8fd25fc9005",
+      "main.js": "2396ad857168daa8e476919de2d1449843fd82af4791f5f4a44cb33b57ada71e"
+    },
+    "filesAfterRun": {
+      "index.html": "197ba21af39cd9e69af2af011588be7a55c75e1a943be960d5d07453b403ddc5",
+      "styles.css": "08b7422fb9b30b80bcaf4ce29c6c6c2edef4482bc7159566f814b8fd25fc9005",
+      "main.js": "2396ad857168daa8e476919de2d1449843fd82af4791f5f4a44cb33b57ada71e"
+    },
+    "changedDuringRun": false
+  },
+  "summary": {
+    "total": 47,
+    "passed": 47,
+    "failed": 0,
+    "passRate": 100,
+    "runtimeMs": 35331,
+    "result": "PASS"
+  },
+  "checks": [
+    {
+      "id": "0.1",
+      "group": "Readiness",
+      "name": "page signals ready after fonts and first paint",
+      "pass": true,
+      "summary": "flag=true data-ready=true fonts=loaded",
+      "actual": {
+        "flag": true,
+        "dataReady": true,
+        "fontsStatus": "loaded",
+        "revealCount": 10,
+        "revealOnLoadCount": 6
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "1.1",
+      "group": "Document",
+      "name": "server responds 200 with an HTML document",
+      "pass": true,
+      "summary": "status=200 type=text/html; charset=utf-8 bytes=48460",
+      "actual": {
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "bytes": 48460
+      },
+      "durationMs": 6
+    },
+    {
+      "id": "1.2",
+      "group": "Document",
+      "name": "document title is set and names LifeQuest",
+      "pass": true,
+      "summary": "title=\"LifeQuest: own the axis of your life\"",
+      "actual": {
+        "title": "LifeQuest: own the axis of your life"
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "1.3",
+      "group": "Document",
+      "name": "meta description is non-empty",
+      "pass": true,
+      "summary": "length=154",
+      "actual": {
+        "length": 154,
+        "content": "Local-first life studio. Open a vault folder on your desktop, run agents around your life, and keep your context, decisions, and data on disk. No account."
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "1.4",
+      "group": "Document",
+      "name": "JSON-LD blocks parse and describe the app",
+      "pass": true,
+      "summary": "blocks=1 errors=0",
+      "actual": {
+        "blocks": 1,
+        "parsed": [
+          {
+            "type": "SoftwareApplication",
+            "name": "LifeQuest",
+            "context": "https://schema.org"
+          }
+        ],
+        "errors": []
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "3.1",
+      "group": "Fonts",
+      "name": "document.fonts is loaded",
+      "pass": true,
+      "summary": "status=loaded faces=5",
+      "actual": {
+        "status": "loaded",
+        "size": 5
+      },
+      "durationMs": 6
+    },
+    {
+      "id": "3.2",
+      "group": "Fonts",
+      "name": "h1 uses Instrument Serif and the face is loaded",
+      "pass": true,
+      "summary": "family=\"Instrument Serif\", \"Iowan Old Style\", \"Palatino Linotype\", Georgia, serif loaded=true",
+      "actual": {
+        "family": "\"Instrument Serif\", \"Iowan Old Style\", \"Palatino Linotype\", Georgia, serif",
+        "loaded": true
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "3.3",
+      "group": "Fonts",
+      "name": "body uses Instrument Sans and the face is loaded",
+      "pass": true,
+      "summary": "family=\"Instrument Sans\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif loaded=true",
+      "actual": {
+        "family": "\"Instrument Sans\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+        "loaded": true
+      },
+      "durationMs": 3
+    },
+    {
+      "id": "2.1",
+      "group": "Hero",
+      "name": "hero h1 contains \"Own the\" and \"axis\"",
+      "pass": true,
+      "summary": "h1=\"Own the axis of your life.\"",
+      "actual": {
+        "text": "Own the axis of your life."
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "6.1",
+      "group": "Alignment",
+      "name": "six stack rows and row 1 active by default",
+      "pass": true,
+      "summary": "rows=6 active=0 preview=You 01 / 06",
+      "actual": {
+        "rows": 6,
+        "buttons": 6,
+        "active": 0,
+        "previewTitle": "You",
+        "previewIndex": "01 / 06"
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "5.1",
+      "group": "Harness tabs",
+      "name": "three tabs exist with Today selected and matching panels",
+      "pass": true,
+      "summary": "tabs=3 selected=tab-today",
+      "actual": {
+        "tabs": 3,
+        "panels": 3,
+        "selected": [
+          "tab-today"
+        ],
+        "todayHidden": false,
+        "decisionsHidden": true,
+        "contextHidden": true
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "10.1",
+      "group": "Accessibility",
+      "name": "exactly one h1",
+      "pass": true,
+      "summary": "h1 count=1",
+      "actual": {
+        "count": 1,
+        "texts": [
+          "Own the\n              axis of\n              your life."
+        ]
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "10.2",
+      "group": "Accessibility",
+      "name": "every img has an alt attribute",
+      "pass": true,
+      "summary": "images=5 missing-alt=0",
+      "actual": {
+        "images": 5,
+        "missing": []
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "10.3",
+      "group": "Accessibility",
+      "name": "every role=tab aria-controls resolves to a panel",
+      "pass": true,
+      "summary": "3/3 controls resolve",
+      "actual": [
+        {
+          "id": "tab-today",
+          "controls": "mock-today",
+          "resolves": true
+        },
+        {
+          "id": "tab-decisions",
+          "controls": "mock-decisions",
+          "resolves": true
+        },
+        {
+          "id": "tab-context",
+          "controls": "mock-context",
+          "resolves": true
+        }
+      ],
+      "durationMs": 2
+    },
+    {
+      "id": "10.4",
+      "group": "Accessibility",
+      "name": "skip link is the first tab stop and targets #main",
+      "pass": true,
+      "summary": "first tab stop=A.skip-link href=#main",
+      "actual": {
+        "tag": "A",
+        "className": "skip-link",
+        "href": "#main",
+        "mainExists": true,
+        "focusVisible": true
+      },
+      "durationMs": 219
+    },
+    {
+      "id": "10.5",
+      "group": "Accessibility",
+      "name": "no element has a positive tabindex",
+      "pass": true,
+      "summary": "positive=0",
+      "actual": {
+        "positive": [],
+        "all": 10
+      },
+      "durationMs": 11
+    },
+    {
+      "id": "10.6",
+      "group": "Accessibility",
+      "name": "access email input has an associated label",
+      "pass": true,
+      "summary": "labels=[\"Your email\"]",
+      "actual": {
+        "id": "access-email",
+        "labels": [
+          "Your email"
+        ]
+      },
+      "durationMs": 15
+    },
+    {
+      "id": "10.7",
+      "group": "Accessibility",
+      "name": "color-scheme meta is declared",
+      "pass": true,
+      "summary": "color-scheme=dark",
+      "actual": {
+        "content": "dark"
+      },
+      "durationMs": 20
+    },
+    {
+      "id": "2.2",
+      "group": "Hero",
+      "name": "all five brand marks decoded (naturalWidth > 0)",
+      "pass": true,
+      "summary": "header mark=64 hero mark=512 harness mark=32 access mark=512 footer mark=64",
+      "actual": [
+        {
+          "name": "header mark",
+          "selector": "[data-testid=\"site-header\"] .brand__mark",
+          "found": true,
+          "naturalWidth": 64,
+          "complete": true,
+          "src": "http://127.0.0.1:44631/brand/lq-mark-64.png"
+        },
+        {
+          "name": "hero mark",
+          "selector": ".axis__mark",
+          "found": true,
+          "naturalWidth": 512,
+          "complete": true,
+          "src": "http://127.0.0.1:44631/brand/lq-mark-512.png"
+        },
+        {
+          "name": "harness mark",
+          "selector": ".window__brand img",
+          "found": true,
+          "naturalWidth": 32,
+          "complete": true,
+          "src": "http://127.0.0.1:44631/brand/lq-mark-32.png"
+        },
+        {
+          "name": "access mark",
+          "selector": ".access__orbits img",
+          "found": true,
+          "naturalWidth": 512,
+          "complete": true,
+          "src": "http://127.0.0.1:44631/brand/lq-mark-512.png"
+        },
+        {
+          "name": "footer mark",
+          "selector": "[data-testid=\"site-footer\"] .brand__mark",
+          "found": true,
+          "naturalWidth": 64,
+          "complete": true,
+          "src": "http://127.0.0.1:44631/brand/lq-mark-64.png"
+        }
+      ],
+      "durationMs": 9
+    },
+    {
+      "id": "4.1",
+      "group": "Navigation",
+      "name": "nav link \"Manifesto\" scrolls to #premise",
+      "pass": true,
+      "summary": "hash=#premise scrollY=846 top=97.58 margin=98",
+      "actual": {
+        "hash": "#premise",
+        "scrollY": 846,
+        "sectionTop": 97.58,
+        "scrollMarginTop": 98
+      },
+      "durationMs": 247
+    },
+    {
+      "id": "4.2",
+      "group": "Navigation",
+      "name": "nav link \"The Harness\" scrolls to #harness",
+      "pass": true,
+      "summary": "hash=#harness scrollY=2418 top=97.95 margin=98",
+      "actual": {
+        "hash": "#harness",
+        "scrollY": 2418,
+        "sectionTop": 97.95,
+        "scrollMarginTop": 98
+      },
+      "durationMs": 227
+    },
+    {
+      "id": "4.3",
+      "group": "Navigation",
+      "name": "nav link \"Alignment\" scrolls to #alignment",
+      "pass": true,
+      "summary": "hash=#alignment scrollY=3880 top=97.91 margin=98",
+      "actual": {
+        "hash": "#alignment",
+        "scrollY": 3880,
+        "sectionTop": 97.91,
+        "scrollMarginTop": 98
+      },
+      "durationMs": 171
+    },
+    {
+      "id": "4.4",
+      "group": "Navigation",
+      "name": "nav link \"Sovereignty\" scrolls to #sovereignty",
+      "pass": true,
+      "summary": "hash=#sovereignty scrollY=5316 top=97.7 margin=98",
+      "actual": {
+        "hash": "#sovereignty",
+        "scrollY": 5316,
+        "sectionTop": 97.7,
+        "scrollMarginTop": 98
+      },
+      "durationMs": 280
+    },
+    {
+      "id": "4.5",
+      "group": "Navigation",
+      "name": "nav link \"The System\" scrolls to #system",
+      "pass": true,
+      "summary": "hash=#system scrollY=6542 top=97.95 margin=98",
+      "actual": {
+        "hash": "#system",
+        "scrollY": 6542,
+        "sectionTop": 97.95,
+        "scrollMarginTop": 98
+      },
+      "durationMs": 189
+    },
+    {
+      "id": "5.2",
+      "group": "Harness tabs",
+      "name": "clicking Decisions shows its panel and updates aria-selected",
+      "pass": true,
+      "summary": "selected=tab-decisions todayHidden=true decisionsHidden=false",
+      "actual": {
+        "selected": [
+          "tab-decisions"
+        ],
+        "todayHidden": true,
+        "decisionsHidden": false,
+        "decisionsDisplay": "flex",
+        "decisionsHeight": 438
+      },
+      "durationMs": 5
+    },
+    {
+      "id": "5.3",
+      "group": "Harness tabs",
+      "name": "ArrowRight moves tab selection (and focus) to Context",
+      "pass": true,
+      "summary": "selected=tab-context focus=tab-context",
+      "actual": {
+        "selected": [
+          "tab-context"
+        ],
+        "activeElement": "tab-context",
+        "contextHidden": false,
+        "decisionsHidden": true
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "5.4",
+      "group": "Harness tabs",
+      "name": "clicking Context shows the context panel",
+      "pass": true,
+      "summary": "selected=tab-context contextHidden=false",
+      "actual": {
+        "selected": [
+          "tab-context"
+        ],
+        "contextHidden": false,
+        "contextDisplay": "flex",
+        "contextHeight": 438
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "6.2",
+      "group": "Alignment",
+      "name": "focusing row 3 (Agents) drives the preview title and index",
+      "pass": true,
+      "summary": "preview=Agents 03 / 06 active=2",
+      "actual": {
+        "previewTitle": "Agents",
+        "previewIndex": "03 / 06",
+        "activeRow": 2,
+        "focusedRow": 2,
+        "rowTitle": "Agents"
+      },
+      "durationMs": 162
+    },
+    {
+      "id": "7.1",
+      "group": "Access form",
+      "name": "empty submit marks the input invalid and keeps the form",
+      "pass": true,
+      "summary": "aria-invalid=true status=\"Please enter a valid email address, like you@yourdomain.com.\"",
+      "actual": {
+        "ariaInvalid": "true",
+        "status": "Please enter a valid email address, like you@yourdomain.com.",
+        "formHidden": false,
+        "formHeight": 106,
+        "focused": true
+      },
+      "durationMs": 1
+    },
+    {
+      "id": "7.2",
+      "group": "Access form",
+      "name": "invalid email is rejected with a validation message",
+      "pass": true,
+      "summary": "value=not-an-email aria-invalid=true",
+      "actual": {
+        "value": "not-an-email",
+        "ariaInvalid": "true",
+        "status": "Please enter a valid email address, like you@yourdomain.com.",
+        "formHidden": false
+      },
+      "durationMs": 4
+    },
+    {
+      "id": "7.3",
+      "group": "Access form",
+      "name": "valid email hides the form and shows the success state",
+      "pass": true,
+      "summary": "formHidden=true success=\"✦ You're on the list. One message when a seat opens. No newsletter, no drip camp\"",
+      "actual": {
+        "formHidden": true,
+        "successHidden": false,
+        "successText": "✦ You're on the list. One message when a seat opens. No newsletter, no drip campaign, no tracking pixel.",
+        "successHeight": 173,
+        "successDisplay": "block"
+      },
+      "durationMs": 3
+    },
+    {
+      "id": "7.4",
+      "group": "Access form",
+      "name": "no console errors during the form flow",
+      "pass": true,
+      "summary": "new console errors/exceptions=0",
+      "actual": {
+        "delta": 0,
+        "consoleErrors": [],
+        "exceptions": []
+      },
+      "durationMs": 0
+    },
+    {
+      "id": "8.1",
+      "group": "Reduced motion",
+      "name": "prefers-reduced-motion: reduce is active after reload",
+      "pass": true,
+      "summary": "matches=true ready=true",
+      "actual": {
+        "matches": true,
+        "ready": true,
+        "fontsStatus": "loaded"
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "8.2",
+      "group": "Reduced motion",
+      "name": "every .reveal is fully visible with no transform",
+      "pass": true,
+      "summary": "reveals=10 broken=0",
+      "actual": {
+        "count": 10,
+        "badCount": 0,
+        "bad": []
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "8.3",
+      "group": "Reduced motion",
+      "name": "every .reveal-on-load is fully visible with no transform",
+      "pass": true,
+      "summary": "reveal-on-load=6 broken=0",
+      "actual": {
+        "count": 6,
+        "badCount": 0,
+        "bad": []
+      },
+      "durationMs": 1
+    },
+    {
+      "id": "8.4",
+      "group": "Reduced motion",
+      "name": "ticker, hero lines and all section content stay visible",
+      "pass": true,
+      "summary": "ticker=42px sections=7 lines-ok=true",
+      "actual": {
+        "ticker": {
+          "animationName": "none",
+          "height": 42,
+          "opacity": "1",
+          "items": 20
+        },
+        "heroLines": [
+          "none",
+          "none",
+          "none"
+        ],
+        "premiseLines": [
+          "none",
+          "none"
+        ],
+        "sections": [
+          {
+            "id": "top",
+            "height": 900,
+            "opacity": "1"
+          },
+          {
+            "id": "premise",
+            "height": 1572,
+            "opacity": "1"
+          },
+          {
+            "id": "harness",
+            "height": 1462,
+            "opacity": "1"
+          },
+          {
+            "id": "alignment",
+            "height": 1436,
+            "opacity": "1"
+          },
+          {
+            "id": "sovereignty",
+            "height": 1226,
+            "opacity": "1"
+          },
+          {
+            "id": "system",
+            "height": 1634,
+            "opacity": "1"
+          },
+          {
+            "id": "access",
+            "height": 1077,
+            "opacity": "1"
+          }
+        ]
+      },
+      "durationMs": 2
+    },
+    {
+      "id": "9.1",
+      "group": "Mobile",
+      "name": "menu toggle opens a full-screen menu with six links",
+      "pass": true,
+      "summary": "expanded=true size=390x844 links=6",
+      "actual": {
+        "toggleDisplay": "block",
+        "expanded": "true",
+        "hidden": false,
+        "display": "flex",
+        "width": 390,
+        "height": 844,
+        "links": [
+          {
+            "text": "01Manifesto",
+            "visible": true
+          },
+          {
+            "text": "02The Harness",
+            "visible": true
+          },
+          {
+            "text": "03Alignment",
+            "visible": true
+          },
+          {
+            "text": "04Sovereignty",
+            "visible": true
+          },
+          {
+            "text": "05The System",
+            "visible": true
+          },
+          {
+            "text": "06Request access",
+            "visible": true
+          }
+        ],
+        "bodyLocked": true
+      },
+      "durationMs": 171
+    },
+    {
+      "id": "9.2",
+      "group": "Mobile",
+      "name": "Escape closes the menu and restores the toggle",
+      "pass": true,
+      "summary": "hidden=true expanded=false focusReturned=true",
+      "actual": {
+        "hidden": true,
+        "display": "none",
+        "expanded": "false",
+        "focusReturned": true,
+        "bodyLocked": false
+      },
+      "durationMs": 1
+    },
+    {
+      "id": "9.3",
+      "group": "Mobile",
+      "name": "no horizontal overflow at 1440px",
+      "pass": true,
+      "summary": "inner=1440 doc=1440 body=1440",
+      "actual": {
+        "innerWidth": 1440,
+        "documentScrollWidth": 1440,
+        "bodyScrollWidth": 1440,
+        "offenders": [
+          {
+            "tag": "SPAN",
+            "className": "cursor__dot",
+            "left": -2,
+            "right": 3
+          },
+          {
+            "tag": "SPAN",
+            "className": "cursor__ring",
+            "left": -17,
+            "right": 17
+          },
+          {
+            "tag": "DIV",
+            "className": "ticker__track",
+            "left": -103,
+            "right": 4796
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": -103,
+            "right": 100
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1296,
+            "right": 1514
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1514,
+            "right": 1782
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1782,
+            "right": 2036
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 2036,
+            "right": 2347
+          }
+        ]
+      },
+      "durationMs": 8
+    },
+    {
+      "id": "9.4",
+      "group": "Mobile",
+      "name": "no horizontal overflow at 1024px",
+      "pass": true,
+      "summary": "inner=1024 doc=1024 body=1024",
+      "actual": {
+        "innerWidth": 1024,
+        "documentScrollWidth": 1024,
+        "bodyScrollWidth": 1024,
+        "offenders": [
+          {
+            "tag": "SPAN",
+            "className": "cursor__dot",
+            "left": -2,
+            "right": 3
+          },
+          {
+            "tag": "SPAN",
+            "className": "cursor__ring",
+            "left": -17,
+            "right": 17
+          },
+          {
+            "tag": "DIV",
+            "className": "ticker__track",
+            "left": -102,
+            "right": 4797
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": -102,
+            "right": 101
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1022,
+            "right": 1297
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1297,
+            "right": 1515
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1515,
+            "right": 1783
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1783,
+            "right": 2036
+          }
+        ]
+      },
+      "durationMs": 8
+    },
+    {
+      "id": "9.5",
+      "group": "Mobile",
+      "name": "no horizontal overflow at 768px",
+      "pass": true,
+      "summary": "inner=768 doc=768 body=768",
+      "actual": {
+        "innerWidth": 768,
+        "documentScrollWidth": 768,
+        "bodyScrollWidth": 768,
+        "offenders": [
+          {
+            "tag": "SPAN",
+            "className": "cursor__dot",
+            "left": -2,
+            "right": 3
+          },
+          {
+            "tag": "SPAN",
+            "className": "cursor__ring",
+            "left": -17,
+            "right": 17
+          },
+          {
+            "tag": "DIV",
+            "className": "ticker__track",
+            "left": -102,
+            "right": 4797
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": -102,
+            "right": 101
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 551,
+            "right": 790
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 790,
+            "right": 1022
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1022,
+            "right": 1297
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1297,
+            "right": 1515
+          }
+        ]
+      },
+      "durationMs": 5
+    },
+    {
+      "id": "9.6",
+      "group": "Mobile",
+      "name": "no horizontal overflow at 390px",
+      "pass": true,
+      "summary": "inner=390 doc=390 body=390",
+      "actual": {
+        "innerWidth": 390,
+        "documentScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "offenders": [
+          {
+            "tag": "SPAN",
+            "className": "cursor__dot",
+            "left": -2,
+            "right": 3
+          },
+          {
+            "tag": "SPAN",
+            "className": "cursor__ring",
+            "left": -17,
+            "right": 17
+          },
+          {
+            "tag": "DIV",
+            "className": "ticker__track",
+            "left": -102,
+            "right": 4797
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": -102,
+            "right": 101
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 355,
+            "right": 551
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 551,
+            "right": 790
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 790,
+            "right": 1022
+          },
+          {
+            "tag": "SPAN",
+            "className": "ticker__item",
+            "left": 1022,
+            "right": 1297
+          }
+        ]
+      },
+      "durationMs": 6
+    },
+    {
+      "id": "2.3",
+      "group": "Assets",
+      "name": "no failed network requests (cancelled/favicon ignored)",
+      "pass": true,
+      "summary": "requests=105 failed=0 ignored=0",
+      "actual": {
+        "requests": 105,
+        "failed": 0,
+        "failedDetails": [],
+        "ignored": 0
+      },
+      "durationMs": 0
+    },
+    {
+      "id": "2.4",
+      "group": "Assets",
+      "name": "no HTTP responses with status >= 400",
+      "pass": true,
+      "summary": "http>=400=0 ignored=0",
+      "actual": {
+        "errors": 0,
+        "details": [],
+        "ignored": 0
+      },
+      "durationMs": 1
+    },
+    {
+      "id": "11.1",
+      "group": "Console",
+      "name": "no uncaught exceptions during the run",
+      "pass": true,
+      "summary": "exceptions=0",
+      "actual": {
+        "count": 0,
+        "exceptions": []
+      },
+      "durationMs": 0
+    },
+    {
+      "id": "11.2",
+      "group": "Console",
+      "name": "no console.error calls during the run",
+      "pass": true,
+      "summary": "console errors=0",
+      "actual": {
+        "count": 0,
+        "errors": []
+      },
+      "durationMs": 0
+    },
+    {
+      "id": "0.2",
+      "group": "Artifacts",
+      "name": "all seven named screenshots exist at the expected sizes",
+      "pass": true,
+      "summary": "7/7 screenshots valid",
+      "actual": [
+        {
+          "name": "e2e-hero-desktop.png",
+          "expected": "1440x900",
+          "pass": true,
+          "width": 1440,
+          "height": 900,
+          "bytes": 1003036
+        },
+        {
+          "name": "e2e-full-desktop.png",
+          "expected": "1440x3000+",
+          "pass": true,
+          "width": 1440,
+          "height": 9927,
+          "bytes": 2499556
+        },
+        {
+          "name": "e2e-full-mobile.png",
+          "expected": "390x3000+",
+          "pass": true,
+          "width": 390,
+          "height": 10317,
+          "bytes": 1131420
+        },
+        {
+          "name": "e2e-harness-tab.png",
+          "expected": "1440x800+",
+          "pass": true,
+          "width": 1440,
+          "height": 1462,
+          "bytes": 225538
+        },
+        {
+          "name": "e2e-alignment-agents.png",
+          "expected": "1440x800+",
+          "pass": true,
+          "width": 1440,
+          "height": 1436,
+          "bytes": 202937
+        },
+        {
+          "name": "e2e-access-success.png",
+          "expected": "1440x600+",
+          "pass": true,
+          "width": 1440,
+          "height": 1144,
+          "bytes": 501728
+        },
+        {
+          "name": "e2e-mobile-menu.png",
+          "expected": "390x844",
+          "pass": true,
+          "width": 390,
+          "height": 844,
+          "bytes": 74624
+        }
+      ],
+      "durationMs": 10
+    }
+  ],
+  "screenshots": [
+    {
+      "name": "e2e-hero-desktop.png",
+      "path": "apps/landing/e2e/artifacts/e2e-hero-desktop.png",
+      "phase": "screenshot:hero",
+      "width": 1440,
+      "height": 900,
+      "bytes": 1003036,
+      "capturedAt": "2026-11-27T20:31:07.248Z"
+    },
+    {
+      "name": "e2e-full-desktop.png",
+      "path": "apps/landing/e2e/artifacts/e2e-full-desktop.png",
+      "phase": "screenshot:full-desktop",
+      "width": 1440,
+      "height": 9927,
+      "bytes": 2499556,
+      "capturedAt": "2026-11-27T20:31:12.713Z"
+    },
+    {
+      "name": "e2e-harness-tab.png",
+      "path": "apps/landing/e2e/artifacts/e2e-harness-tab.png",
+      "phase": "screenshot:harness",
+      "width": 1440,
+      "height": 1462,
+      "bytes": 225538,
+      "capturedAt": "2026-11-27T20:31:14.794Z"
+    },
+    {
+      "name": "e2e-alignment-agents.png",
+      "path": "apps/landing/e2e/artifacts/e2e-alignment-agents.png",
+      "phase": "screenshot:alignment",
+      "width": 1440,
+      "height": 1436,
+      "bytes": 202937,
+      "capturedAt": "2026-11-27T20:31:15.953Z"
+    },
+    {
+      "name": "e2e-access-success.png",
+      "path": "apps/landing/e2e/artifacts/e2e-access-success.png",
+      "phase": "screenshot:access",
+      "width": 1440,
+      "height": 1144,
+      "bytes": 501728,
+      "capturedAt": "2026-11-27T20:31:17.784Z"
+    },
+    {
+      "name": "e2e-mobile-menu.png",
+      "path": "apps/landing/e2e/artifacts/e2e-mobile-menu.png",
+      "phase": "screenshot:mobile-menu",
+      "width": 390,
+      "height": 844,
+      "bytes": 74624,
+      "capturedAt": "2026-11-27T20:31:21.604Z"
+    },
+    {
+      "name": "e2e-full-mobile.png",
+      "path": "apps/landing/e2e/artifacts/e2e-full-mobile.png",
+      "phase": "screenshot:full-mobile",
+      "width": 390,
+      "height": 10317,
+      "bytes": 1131420,
+      "capturedAt": "2026-11-27T20:31:24.798Z"
+    }
+  ],
+  "console": {
+    "errors": [],
+    "exceptions": []
+  },
+  "network": {
+    "requestCount": 105,
+    "failed": [],
+    "httpErrors": [],
+    "ignored": []
+  },
+  "warnings": [],
+  "fatal": null
+}

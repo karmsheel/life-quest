@@ -257,9 +257,6 @@ export default function ProjectsPage() {
           <h1 className="act-page__title">Projects</h1>
         </div>
         <div className="projects-page__header-actions">
-          <span className="muted projects-page__count">
-            {visible.length === 1 ? "1 project" : `${visible.length} projects`}
-          </span>
           <button
             ref={newButtonRef}
             type="button"
@@ -285,6 +282,13 @@ export default function ProjectsPage() {
         </p>
       ) : null}
 
+      <section className="projects-page__register">
+        <div className="projects-page__register-head">
+          <h2>Register</h2>
+          <span className="muted projects-page__count">
+            {visible.length === 1 ? "1 project" : `${visible.length} projects`}
+          </span>
+        </div>
       <div className="projects-page__toolbar">
         <div
           className="ui-segmented projects-page__filters"
@@ -397,6 +401,7 @@ export default function ProjectsPage() {
           ))}
         </ul>
       )}
+      </section>
 
       {creating ? (
         <div

@@ -5,7 +5,7 @@
  *
  * There is no in-window notice card any more. The operator asked for it gone:
  * the watch's news surfaces through the dock action bar's build number — its
- * glow, the "Update available" caption beside it, and the real dialog that
+ * glow, the "Update available" caption centred under it, and the real dialog that
  * number opens — plus the OS notification main raises. This rig proves that
  * world, and the absence of the card is a measurement in every sample:
  * `noticeCount` is the number of `.update-notice` elements in the page, and it
@@ -42,7 +42,7 @@
  *     `recent.json`/endpoint seed, or the companion gate stuck on its setup
  *     screen. The rig names the screen it actually landed on.
  *  2. The launch check offers nothing, yet the build number glows (or carries
- *     `data-update-state="available"`), or a caption is already beside it.
+ *     `data-update-state="available"`), or a caption is already under it.
  *  3. The popup comes back: `.update-notice` is in the DOM, or a dialog is open
  *     before the operator clicked anything.
  *  4. The watch's news never reaches the renderer, so a release published while
@@ -50,7 +50,7 @@
  *  5. The news arrives but the badge does not turn state: no
  *     `.update-badge--available`, the wrong `data-update-version`, or no caption
  *     (in the bar, even if the shipped dock's card retires the words).
- *  6. The caption is not the rail's version slot's own element immediately before
+ *  6. The caption is not the rail's version slot's own element centred under
  *     the badge, or the number leaves the version slot for the dock's bar.
  *  7. The same release on later ticks raises a second surface — an alert, a
  *     dialog, a notice, or a second caption — instead of the badge simply
@@ -109,7 +109,7 @@ const POLL_MS = 400;
 /** The built-in companion's fake endpoint: one model, known to the app. */
 const PI_MODEL = "e2e-update-poll-model";
 
-/** The caption the shipped bar draws beside a glowing build number. */
+/** The caption the shipped bar draws under a glowing build number. */
 const CAPTION_TEXT = "Update available";
 
 const failures = [];
@@ -275,7 +275,7 @@ const SAMPLE = `(() => {
     }));
   const badge = document.querySelector('.update-badge');
   const captions = Array.from(document.querySelectorAll('.update-badge__label'));
-  const caption = badge ? badge.previousElementSibling : captions[0] ?? null;
+  const caption = badge ? badge.nextElementSibling : captions[0] ?? null;
   const captionEl =
     caption && caption.classList && caption.classList.contains('update-badge__label')
       ? caption
@@ -337,8 +337,19 @@ const SAMPLE = `(() => {
           display: getComputedStyle(captionEl).display,
           dataLabel: captionEl.getAttribute('data-update-label'),
           inVersion: Boolean(versionSlot && versionSlot.contains(captionEl)),
-          immediatelyBeforeBadge:
-            Boolean(badge) && captionEl.nextElementSibling === badge,
+          centeredUnderBadge: (() => {
+            if (!badge || captionEl.previousElementSibling !== badge) return false;
+            const badgeBox = box(badge);
+            const captionBox = box(captionEl);
+            if (!badgeBox || !captionBox) return false;
+            return (
+              captionBox.top >= badgeBox.bottom - 1 &&
+              Math.abs(
+                (captionBox.left + captionBox.right) / 2 -
+                  (badgeBox.left + badgeBox.right) / 2,
+              ) <= 2
+            );
+          })(),
           box: box(captionEl),
           visible: visible(captionEl),
         }
@@ -707,14 +718,14 @@ async function main() {
     `dialog ${JSON.stringify(arrived.dialog)}, alerts ${arrived.alertCount}`,
   );
   // The badge is at the top of the rail, in the version slot under the lockup:
-  // the glow and its sentence are the whole surface, and the caption sits inline
-  // before the number whenever the offer is up.
+  // the glow and its sentence are the whole surface, and the caption sits
+  // centred under the number whenever the offer is up.
   check(
-    "the offer puts a caption immediately before the build number",
+    "the offer puts a caption centred under the build number",
     arrived.captionCount === 1 &&
       arrived.caption?.text === CAPTION_TEXT &&
       arrived.caption?.inVersion === true &&
-      arrived.caption?.immediatelyBeforeBadge === true &&
+      arrived.caption?.centeredUnderBadge === true &&
       arrived.caption?.visible === true,
     `caption ${JSON.stringify(arrived.caption)} (count ${arrived.captionCount})`,
   );

@@ -29,10 +29,13 @@ the profile's `backgrounds/`), `validate_theme`, `write_theme` and `store_backgr
   address moved while every operator's saved arrangement stayed put.
 - Route: `/customizations`; the page's former address `/extensions` redirects here, so old
   bookmarks and pins keep working.
-- Surface: a full page in the centre pane — a count line, a list of customization cards, an
-  inline create panel, an **Import from file** action in the page header, and an inline
-  editor with a visual **Fields** tab (whose **Components** section picks the area lens's
-  shape and the agent picker's mode, below) and a **JSON** tab, whose panel also keeps the file's saved versions.
+- Surface: a page in the centre pane, held to a reading width that becomes one column when
+  the window is narrow. The **Customizations** eyebrow sits above the title and the line
+  "Data files that change how LifeQuest looks and behaves." Under that: a count line, the
+  files as rows in one panel, an inline create panel, an **Import from file** action in the
+  page header, and an inline editor with a visual **Fields** tab (whose **Components**
+  section picks the area lens's shape and the agent picker's mode, below) and a **JSON**
+  tab, whose panel also keeps the file's saved versions.
 
 This page is part of the [Wiki home](./index.md).
 

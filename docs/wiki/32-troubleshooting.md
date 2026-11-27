@@ -311,7 +311,7 @@ and **Try again** (or **Check again** when you are up to date).
 ### The build number starts glowing while you work
 
 That is the hourly watch finding a release: the rail's version chip gains the
-accent glow and, when the rail is wide enough, an **Update available** caption.
+accent glow and, when the rail is wide enough, an **Update available** caption centred under the number.
 There is no in-window pop-up — click the glowing number to see the offer — and a
 release the feed stops offering clears the glow. If the window is not focused you
 also get a native notification. A collapsed sidebar hides the build number with
