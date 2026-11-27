@@ -71,6 +71,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type {
   ReviewCadence,
+  ReviewNotebook,
+  ReviewPageBody,
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
@@ -136,8 +138,12 @@ type StoredReview = {
   body: string;
   scopes: Record<string, ScopeState>;
   locked: boolean;
-  /** The content version the real engine keeps; a write's baseRev is checked against it. */
+  /** The content version the real engine keeps; a whole-body baseRev is checked against it. */
   rev: number;
+  /** The pages this notebook has created, overall first, then in creation order. */
+  pages: string[];
+  /** Each page's own rev; a page write's baseRev is checked against its page. */
+  pageRevs: Record<string, number>;
 };
 
 const files = new Map<string, StoredReview>();
@@ -211,6 +217,10 @@ function seedReview(cadence: ReviewCadence, period: string): StoredReview {
       ? weeklyBlocks(period).join("\n\n")
       : `# ${titleFor(cadence, period)}\n\n${overallSkeleton()}`,
     rev: 7,
+    pages: weekly ? ["overall", "health", "financial"] : ["overall"],
+    pageRevs: weekly
+      ? { overall: 5, health: 6, financial: 3 }
+      : { overall: 5 },
     scopes: weekly
       ? {
           // The engine plants the overall scope when it creates the file, which
@@ -282,6 +292,11 @@ function agentWritesBody(body: string): { ok: boolean; error?: string } {
   if (stored.locked) return { ok: false, error: "LOCKED" };
   stored.body = body;
   stored.rev += 1;
+  // The agent wrote the whole file, so every page it can see has moved: a page
+  // write issued from the draft the operator loaded before this is stale.
+  for (const scope of stored.pages) {
+    stored.pageRevs[scope] = (stored.pageRevs[scope] ?? 0) + 1;
+  }
   announceDataChanged();
   return { ok: true };
 }
@@ -353,6 +368,184 @@ function recordOf(stored: StoredReview): ReviewRecord {
 
 function hasAreaSection(body: string, name: string): boolean {
   return body.split("\n").some((line) => line.trim() === `## ${name}`);
+}
+
+/**
+ * One page's body, projected out of the in-memory whole file.
+ *
+ * The real engine stores a page per scope; the rig keeps the same fixture it
+ * always had and projects the page the way the engine's compatibility view does
+ * the opposite (page bodies demote to area sections). That keeps the fixture
+ * readable while the page API is what the page under test actually calls.
+ */
+function pageTitle(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? titleFor(stored.cadence, stored.period)
+    : (AREA_NAME.get(scope) ?? scope);
+}
+
+function areaNames(): Set<string> {
+  return new Set(AREAS.map((area) => area.name));
+}
+
+function pageSkeletonFor(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? `# ${pageTitle(stored, scope)}\n\n${overallSkeleton()}`
+    : `# ${pageTitle(stored, scope)}\n\n${OVERALL_HEADINGS.map((heading) => `## ${heading}`).join("\n\n")}`;
+}
+
+/** The overall page: the H1, the non-area H2 blocks (the four headings and any extras). */
+function overallPageBody(stored: StoredReview): string {
+  const lines = stored.body.split("\n");
+  const blocks: string[] = [];
+  const areas = areaNames();
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const match = /^##\s+(.*)$/.exec(line);
+    if (!match) {
+      i += 1;
+      continue;
+    }
+    const name = match[1]!.trim();
+    const start = i;
+    i += 1;
+    while (i < lines.length && !/^##\s/.test(lines[i]!)) i += 1;
+    if (!areas.has(name)) blocks.push(lines.slice(start, i).join("\n").trimEnd());
+  }
+  return [`# ${pageTitle(stored, "overall")}`, ...blocks].join("\n\n");
+}
+
+/** One area page: H1 = the area's name, then its four headings as H2. */
+function areaPageBody(stored: StoredReview, scope: string): string {
+  const name = pageTitle(stored, scope);
+  const lines = stored.body.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `## ${name}`);
+  if (start === -1) return pageSkeletonFor(stored, scope);
+  let end = start + 1;
+  while (end < lines.length && !/^##\s/.test(lines[end]!)) end += 1;
+  const body = lines
+    .slice(start + 1, end)
+    .map((line) => (/^###\s/.test(line) ? line.slice(1) : line))
+    .join("\n")
+    .trim();
+  return body ? `# ${name}\n\n${body}` : pageSkeletonFor(stored, scope);
+}
+
+function pageBodyOf(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? overallPageBody(stored)
+    : areaPageBody(stored, scope);
+}
+
+/** Split whole-file blocks: the H1, each H2 block, in order. */
+function h2Blocks(body: string): Array<{ name: string; text: string }> {
+  const lines = body.split("\n");
+  const blocks: Array<{ name: string; text: string }> = [];
+  let i = 0;
+  while (i < lines.length) {
+    const match = /^##\s+(.*)$/.exec(lines[i]!);
+    if (!match) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    i += 1;
+    while (i < lines.length && !/^##\s/.test(lines[i]!)) i += 1;
+    blocks.push({ name: match[1]!.trim(), text: lines.slice(start, i).join("\n").trimEnd() });
+  }
+  return blocks;
+}
+
+/**
+ * Write one page's body back into the whole fixture file.
+ *
+ * An area page's H2s become the area section's H3s under `## <Area>`; the overall
+ * page's H2s replace the file's non-area H2s and keep every area block as it was.
+ */
+function writePageInto(stored: StoredReview, scope: string, pageBody: string): void {
+  const lines = pageBody.split("\n");
+  const firstH2 = lines.findIndex((line) => /^##\s/.test(line));
+  const pageBlocks = firstH2 === -1 ? [] : h2Blocks(lines.slice(firstH2).join("\n"));
+  const areas = areaNames();
+  const existing = h2Blocks(stored.body);
+  const areaBlocks = existing.filter((block) => areas.has(block.name));
+  if (scope === "overall") {
+    const overallBlocks = pageBlocks.filter((block) => !areas.has(block.name));
+    stored.body = [
+      `# ${titleFor(stored.cadence, stored.period)}`,
+      ...overallBlocks.map((block) => block.text),
+      ...areaBlocks.map((block) => block.text),
+    ].join("\n\n");
+    return;
+  }
+  const name = pageTitle(stored, scope);
+  const areaBlock = [
+    `## ${name}`,
+    ...pageBlocks.map((block) =>
+      block.text
+        .split("\n")
+        .map((line) => (/^##\s/.test(line) ? `#${line}` : line))
+        .join("\n"),
+    ),
+  ].join("\n\n");
+  const others = areaBlocks.filter((block) => block.name !== name);
+  const overallBlocks = existing.filter((block) => !areas.has(block.name));
+  const replaced = [...others, areaBlock];
+  // Keep the vault's area order (AREAS), then any other area blocks after it.
+  const ordered = [
+    ...AREAS.flatMap((area) => replaced.filter((block) => block.name === area.name)),
+    ...replaced.filter((block) => !AREAS.some((area) => area.name === block.name)),
+  ];
+  stored.body = [
+    `# ${titleFor(stored.cadence, stored.period)}`,
+    ...overallBlocks.map((block) => block.text),
+    ...ordered.map((block) => block.text),
+  ].join("\n\n");
+}
+
+/** The notebook summary the tabs read. */
+function notebookOf(stored: StoredReview): ReviewNotebook {
+  const pages = stored.pages.map((scope) => ({
+    scope,
+    title: pageTitle(stored, scope),
+    status: (stored.scopes[scope]?.status ?? "draft") as "draft" | "done",
+    sessionId: stored.scopes[scope]?.sessionId ?? null,
+    rev: stored.pageRevs[scope] ?? 1,
+    updatedAt: "2026-10-18T00:00:00.000Z",
+    chars: pageBodyOf(stored, scope).length,
+  }));
+  return {
+    cadence: stored.cadence,
+    period: stored.period,
+    title: titleFor(stored.cadence, stored.period),
+    weekStartDay: WEEK_START_DAY,
+    locked: stored.locked,
+    order: stored.pages,
+    rev: stored.rev,
+    pages,
+    path: "C:\\harness\\vault\\reviews",
+    legacy: false,
+  };
+}
+
+/** One page as the page API answers it. */
+function pageOf(stored: StoredReview, scope: string): ReviewPageBody {
+  const exists = stored.pages.includes(scope);
+  return {
+    scope,
+    title: pageTitle(stored, scope),
+    status: exists
+      ? ((stored.scopes[scope]?.status ?? "draft") as "draft" | "done")
+      : "missing",
+    sessionId: exists ? (stored.scopes[scope]?.sessionId ?? null) : null,
+    rev: exists ? (stored.pageRevs[scope] ?? 1) : 0,
+    updatedAt: exists ? "2026-10-18T00:00:00.000Z" : null,
+    locked: stored.locked,
+    bodyMarkdown: exists
+      ? pageBodyOf(stored, scope)
+      : pageSkeletonFor(stored, scope),
+  };
 }
 
 /** What the app's snapshot pass writes into Finance's Look-back. */
@@ -500,8 +693,12 @@ type HarnessWindow = Window & {
   reviewRigReleaseTurns?: () => void;
   /** The chats the gateway holds, so the driver can find the one a start made. */
   reviewRigSessions?: () => HermesSession[];
-  /** The review body as the file holds it, for the driver to assert against. */
+  /** The review body as the whole file holds it, for the driver to assert against. */
   reviewRigBody?: () => string;
+  /** One page's body as the engine would serve it, for page-level assertions. */
+  reviewRigPageBody?: (scope: string) => string;
+  /** The pages the notebook holds, in order. */
+  reviewRigPages?: () => string[];
   /** The loaded file's scope states, so "the rail said Done" can be cross-checked. */
   reviewRigScopes?: () => Record<string, ScopeState>;
   /** The loaded file's lock, so the lock claim is about the file, not just a badge. */
@@ -534,6 +731,14 @@ harness.reviewRigReleaseTurns = () => {
 harness.reviewRigSessions = () => gatewaySessions.map((row) => ({ ...row }));
 
 harness.reviewRigBody = () => (activeKey ? (files.get(activeKey)?.body ?? "") : "");
+harness.reviewRigPageBody = (scope: string) => {
+  const stored = activeKey ? files.get(activeKey) : undefined;
+  return stored ? pageOf(stored, scope).bodyMarkdown : "";
+};
+harness.reviewRigPages = () => {
+  const stored = activeKey ? files.get(activeKey) : undefined;
+  return stored ? [...stored.pages] : [];
+};
 harness.reviewRigScopes = () => {
   const stored = activeKey ? files.get(activeKey) : undefined;
   return stored ? { ...stored.scopes } : {};
@@ -755,6 +960,106 @@ const bridge: Record<string, unknown> = {
     activeKey = key;
     return Promise.resolve(ok(recordOf(found)));
   },
+  reviewNotebookGet: (cadence: string, period: string) => {
+    harness.reviewRigCalls?.push(`reviewNotebookGet:${cadence}:${period}`);
+    const key = fileKey(cadence, period);
+    const stored =
+      files.get(key) ??
+      (cadence === "daily" ? undefined : getOrSeed(cadence as ReviewCadence, period));
+    if (!stored) return Promise.resolve(fail("Review file not found"));
+    activeKey = key;
+    return Promise.resolve(ok(notebookOf(stored)));
+  },
+  reviewPageGet: (cadence: string, period: string, scope: string) => {
+    harness.reviewRigCalls?.push(`reviewPageGet:${cadence}:${period}:${scope}`);
+    const key = fileKey(cadence, period);
+    const stored =
+      files.get(key) ??
+      (cadence === "daily" ? undefined : getOrSeed(cadence as ReviewCadence, period));
+    if (!stored) return Promise.resolve(fail("Review file not found"));
+    if (scope !== "overall" && !AREA_NAME.has(scope)) {
+      return Promise.resolve(fail(`Area not found: ${scope}`));
+    }
+    activeKey = key;
+    return Promise.resolve(ok(pageOf(stored, scope)));
+  },
+  reviewPageEnsure: (cadence: string, period: string, scope: string) => {
+    harness.reviewRigCalls?.push(`reviewPageEnsure:${cadence}:${period}:${scope}`);
+    if (cadence === "daily" && scope !== "overall") {
+      return Promise.resolve(fail(DAILY_NO_AREAS));
+    }
+    if (scope !== "overall" && !AREA_NAME.has(scope)) {
+      return Promise.resolve(fail(`Area not found: ${scope}`));
+    }
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    if (!stored.scopes[scope]) {
+      stored.scopes[scope] = { status: "draft", sessionId: null };
+    }
+    if (!stored.pages.includes(scope)) {
+      stored.pages.push(scope);
+      stored.pageRevs[scope] = 1;
+      if (scope !== "overall") {
+        const name = pageTitle(stored, scope);
+        if (!hasAreaSection(stored.body, name)) {
+          stored.body = `${stored.body}\n\n${areaSkeleton(name)}`;
+        }
+      }
+    }
+    return Promise.resolve(ok(notebookOf(stored)));
+  },
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    baseRev: number,
+  ) => {
+    harness.reviewRigCalls?.push(`reviewPageWrite:${cadence}:${period}:${scope}`);
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    harness.reviewRigWrites?.push({ cadence, period, body });
+    if (stored.locked) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "LOCKED",
+        message: "This review is locked.",
+        code: "LOCKED" as const,
+        current: pageOf(stored, scope),
+      });
+    }
+    const current = pageOf(stored, scope);
+    if (baseRev !== current.rev) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "CONFLICT",
+        message: "This page changed on disk. Reload it and re-apply your text.",
+        code: "CONFLICT" as const,
+        current,
+      });
+    }
+    if (body === current.bodyMarkdown) {
+      return Promise.resolve({
+        ok: true as const,
+        page: current,
+        notebookRev: stored.rev,
+      });
+    }
+    if (!stored.pages.includes(scope)) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "NOT_FOUND",
+        message: "Review page not found",
+        code: "NOT_FOUND" as const,
+      });
+    }
+    writePageInto(stored, scope, body);
+    stored.pageRevs[scope] = (stored.pageRevs[scope] ?? 0) + 1;
+    stored.rev += 1;
+    return Promise.resolve({
+      ok: true as const,
+      page: pageOf(stored, scope),
+      notebookRev: stored.rev,
+    });
+  },
   reviewEnsure: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewEnsure:${cadence}:${period}:${scope}`);
     if (cadence === "daily" && scope !== "overall") {
@@ -764,6 +1069,7 @@ const bridge: Record<string, unknown> = {
     if (!stored.scopes.overall) {
       stored.scopes.overall = { status: "draft", sessionId: null };
     }
+    if (!stored.pages.includes("overall")) stored.pages.unshift("overall");
     if (scope !== "overall") {
       const name = AREA_NAME.get(scope) ?? scope;
       if (!hasAreaSection(stored.body, name)) {
@@ -771,6 +1077,10 @@ const bridge: Record<string, unknown> = {
       }
       if (!stored.scopes[scope]) {
         stored.scopes[scope] = { status: "draft", sessionId: null };
+      }
+      if (!stored.pages.includes(scope)) {
+        stored.pages.push(scope);
+        stored.pageRevs[scope] = 1;
       }
     }
     return Promise.resolve(ok(recordOf(stored)));
@@ -1066,8 +1376,9 @@ harness.reviewRigSkin = skinName;
 const waitForPage = () => {
   const rail = document.querySelector(".nav-rail");
   const box = document.querySelector(".note-live");
-  const checklist = document.querySelector('[data-testid="review-area-rail"]');
-  if (!rail || !box || !checklist) {
+  const tabs = document.querySelector('[data-testid="review-tabs"]');
+  const daily = document.querySelector('[data-testid="review-layout"]');
+  if (!rail || !box || (!tabs && !daily)) {
     requestAnimationFrame(waitForPage);
     return;
   }

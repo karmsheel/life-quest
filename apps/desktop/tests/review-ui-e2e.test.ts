@@ -12,7 +12,7 @@ import {
 } from "../electron/data-revision.ts";
 
 /**
- * The Review page: the document and the Review checklist beside it, the per-area
+ * The Review page: the tabbed notebook, one page per tab, the per-area
  * reviews, the life review they unlock, and the daily review that has none of
  * them.
  *
@@ -45,10 +45,10 @@ const SHOTS = [
   "review-calendar.png",
   "review-rules.png",
   "review-wide.png",
-  "review-checklist.png",
+  "review-tabs.png",
   "review-life-ready.png",
   "review-daily.png",
-  "review-live-checklist.png",
+  "review-live-tabs.png",
   "review-daily-complete.png",
   "review-conflict.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
@@ -63,8 +63,8 @@ const AREAS = [
 ] as const;
 const TOTAL_AREAS = AREAS.length;
 const RAIL_ROWS = [
-  "review-area-overall",
-  ...AREAS.map((area) => `review-area-${area.slug}`),
+  "review-tab-overall",
+  ...AREAS.map((area) => `review-tab-${area.slug}`),
 ];
 
 function devServerUp(): Promise<boolean> {
@@ -84,7 +84,7 @@ function runDriver(): Promise<number> {
     execFile(
       electron,
       [path.join(desktopRoot, "e2e/review.electron.mjs")],
-      { cwd: desktopRoot, timeout: 180_000 },
+      { cwd: desktopRoot, timeout: 180_000, maxBuffer: 20 * 1024 * 1024 },
       (error) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -437,7 +437,7 @@ function railText(page: Page, slug: string): string | null {
 }
 
 describe("review ui e2e", () => {
-  it("draws the review checklist beside the document, gates the life review behind the areas, and keeps the daily review one general review", async (t) => {
+  it("draws a tabbed review notebook, gates the Overall page behind the areas, and keeps the daily review one general page", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -480,7 +480,7 @@ describe("review ui e2e", () => {
     // ── the review IS the document, with the checklist beside it ────────────
     const opened = report.checks.opened;
     assert.equal(opened.boxes, 1, "the review page does not draw exactly one editor box");
-    assert.equal(opened.blockCount, 35, "the review did not render its own file");
+    assert.equal(opened.blockCount, 10, "the review did not render the page it opened");
     assert.equal(opened.editing, false, "the review opened a writing line on arrival");
     assert.equal(opened.blanks, 1, "the blank line the operator typed is not drawn");
     // The header is the Daily Journal's shape: the wing and cadence are the
@@ -556,11 +556,10 @@ describe("review ui e2e", () => {
       "raw markdown markers are painted in the review box",
     );
 
-    // ── the checklist is the LIVE areas, Life first, with the file's statuses ─
+    // ── the tab row is the LIVE pages, Overall first, with their statuses ────
     assert.equal(opened.layoutPresent, true, "the review-page-layout wrapper is missing");
-    assert.equal(opened.layoutSingle, false, "a weekly review was rendered as a single column");
-    assert.equal(opened.railPresent, true, "the weekly review has no Review checklist");
-    assert.equal(opened.railLabel, "Review checklist", "the checklist is not labelled as one");
+    assert.equal(opened.railPresent, true, "the weekly review has no Review pages tab row");
+    assert.equal(opened.railLabel, "Review pages", "the tab row is not labelled as one");
     assert.deepEqual(
       opened.railButtons,
       RAIL_ROWS,
@@ -569,13 +568,13 @@ describe("review ui e2e", () => {
     // The fixture also has a locked `spirit` area on disk: a rail built from every
     // domain file would offer a review for an area the operator cannot see.
     assert.equal(
-      opened.railButtons.includes("review-area-spirit"),
+      opened.railButtons.includes("review-tab-spirit"),
       false,
       "the checklist offers a review for the locked spirit area",
     );
-    assert.equal(
-      opened.progress,
-      `1 of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(opened.progress),
+      new RegExp(`^1 of ${TOTAL_AREAS} areas done · Life review unlocks when every area is done$`),
       "the progress line does not count the fixture's one done area",
     );
     assert.equal(opened.healthStatus, "Done", "the done area does not read Done");
@@ -597,13 +596,41 @@ describe("review ui e2e", () => {
       true,
       "the Life review is pressable before the areas are done",
     );
-    // The reviewing line above the box is gone: the checklist's selected row
-    // says which review the page is on, and nothing sits between the pager and
-    // the prose.
+    // The reviewing line above the box is gone: the selected tab says which
+    // page the operator is on, and nothing sits between the pager and the tabs.
     assert.equal(opened.scopeName, null, "the retired scope line is still on the page");
     assert.equal(opened.scopeLine, null, "the retired scope line is still on the page");
     assert.equal(opened.scopeWholeLifeLink, false, "the retired whole-life link came back");
-    assert.equal(activeScope(opened), "overall", "the Life row is not the selected row on arrival");
+    assert.equal(activeScope(opened), "overall", "the Overall tab is not the selected tab on arrival");
+
+    // ── the tabs are one selection: keyboard and the lens move the same page ─
+    const keyboard = report.checks.tabsKeyboard;
+    assert.equal(keyboard.length, 4, "the keyboard walk did not record four steps");
+    assert.deepEqual(
+      keyboard.map((step) => step.scope),
+      ["overall", "health", "relationships", "overall"],
+      "Arrow/Home/End did not move the selected page",
+    );
+    assert.deepEqual(
+      keyboard[0]?.tabStops,
+      ["overall"],
+      "the tab row does not keep a single tab stop on the selected tab",
+    );
+    assert.equal(
+      keyboard[3]?.focused,
+      "review-tab-overall",
+      "Home did not leave the keyboard on the selected tab",
+    );
+    assert.equal(
+      report.checks.lensToTab?.scope,
+      "financial",
+      "choosing Finance in the area lens did not bring the Finance page up",
+    );
+    assert.equal(
+      report.checks.tabBack?.scope,
+      "overall",
+      "choosing Life in the area lens did not bring the Overall page back",
+    );
     // The document is a page, not a card: its own week-first title, square
     // corners, and the autosave line under the box it reports on.
     assert.match(
@@ -624,7 +651,7 @@ describe("review ui e2e", () => {
       "the mark-done button is not the life review's form",
     );
 
-    // ── the page is one centred pair: 48rem column + checklist to its right ──
+    // ── the page is one centred column: 48rem of prose, the same margin both sides
     const centred = report.checks.centering;
     assert.ok(centred.pageLeft !== null, "the reading column's leading edge could not be read");
     assert.ok(centred.pageWidth !== null, "the reading column's width could not be read");
@@ -637,21 +664,6 @@ describe("review ui e2e", () => {
       Number(centred.pageWidth) >= 48 * 16 - 1,
       `the reading column narrowed to ${centred.pageWidth}px although the sheet had room for 48rem`,
     );
-    assert.ok(centred.railWidth !== null, "the checklist's width could not be read");
-    assert.ok(
-      Number(centred.railWidth) >= 180 && Number(centred.railWidth) <= 420,
-      `the checklist is ${centred.railWidth}px wide, not the ~17rem column the page is drawn for`,
-    );
-    assert.ok(
-      centred.gap !== null && centred.gap >= 16,
-      `the checklist is not to the right of the column with a gap: ${centred.gap}px`,
-    );
-    assert.ok(
-      Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
-      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
-    );
-    // The layout's grid has its own side padding, the same on both sides: the
-    // document is centred, not pulled off its centre by the rail.
     assert.ok(
       Number(centred.layoutPadLeft) >= 8,
       `the page has only ${centred.layoutPadLeft}px of leading padding`,
@@ -663,6 +675,12 @@ describe("review ui e2e", () => {
     assert.ok(
       Math.abs(Number(centred.layoutPadLeft) - Number(centred.layoutPadRight)) <= 2,
       `the page's side padding is lopsided: ${centred.layoutPadLeft}px leading, ${centred.layoutPadRight}px trailing`,
+    );
+    const centredBefore = Number(centred.pageLeft) - Number(centred.innerLeft);
+    const centredAfter = Number(centred.innerRight) - Number(centred.pageRight);
+    assert.ok(
+      Math.abs(centredBefore - centredAfter) <= 2,
+      `the column's margins are lopsided — ${centredBefore}px before it, ${centredAfter}px after it`,
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
@@ -676,44 +694,27 @@ describe("review ui e2e", () => {
       );
     }
 
-    // ── a wide window: the same measure, the pair centred with room ─────────
+    // ── a wide window: the same measure, still centred with room ────────────
     const wide = report.checks.wideCentering;
     assert.ok(wide.pageLeft !== null, "the wide page column's leading edge could not be read");
     assert.ok(wide.pageWidth !== null, "the wide page column's width could not be read");
     assert.ok(wide.contentCentre !== null, "the wide sheet's centre could not be read");
     assert.ok(
-      Math.abs((wide.groupCentre ?? NaN) - (wide.innerCentre ?? NaN)) <= 2,
-      "in a wide window the page+checklist group is not centred inside the page padding",
-    );
-    assert.ok(
       Number(wide.pageWidth) >= 48 * 16 - 1 && Number(wide.pageWidth) <= 48 * 16 + 1,
       `in a wide window the reading column is ${wide.pageWidth}px wide, not its 48rem measure`,
     );
+    const wideBefore = Number(wide.pageLeft) - Number(wide.innerLeft);
+    const wideAfter = Number(wide.innerRight) - Number(wide.pageRight);
     assert.ok(
-      wide.railLeft !== null &&
-        wide.pageRight !== null &&
-        wide.railLeft >= wide.pageRight + 16,
-      "in a wide window the checklist is not a real column to the right of the page",
+      Math.abs(wideBefore - wideAfter) <= 2,
+      `in a wide window the column's margins are lopsided — ${wideBefore}px before it, ${wideAfter}px after it`,
     );
 
-    // ── the dock open: the sheet is cramped, so the rail stacks ABOVE ──────
+    // ── the dock open: the sheet is cramped, so the column narrows ──────────
     // The dock takes its column before the page sees any width, so the same
-    // window is cramped while it is open. The checklist must move above the
-    // document rather than sit beside it and squeeze the prose, and the document
-    // must keep the same margin on both sides while it does.
+    // window is cramped while it is open. The page stays one column, takes the
+    // room it has, and keeps the same margin on both sides.
     const cramped = report.checks.crampedColumns;
-    assert.ok(
-      cramped.railTop !== null && cramped.pageTop !== null,
-      "with the dock open the stacked layout could not be read",
-    );
-    assert.ok(
-      Number(cramped.railTop) < Number(cramped.pageTop),
-      "with the dock open the checklist is not above the reading column",
-    );
-    assert.ok(
-      Number(cramped.railBottom) <= Number(cramped.pageTop) + 1,
-      "with the dock open the checklist overlaps the reading column",
-    );
     const crampedInner =
       cramped.innerRight !== null && cramped.innerLeft !== null
         ? cramped.innerRight - cramped.innerLeft
@@ -729,31 +730,18 @@ describe("review ui e2e", () => {
       Math.abs(crampedBefore - crampedAfter) <= 2,
       `with the dock open the document's margins are lopsided — ${crampedBefore}px before it, ${crampedAfter}px after it`,
     );
-    assert.ok(
-      cramped.pageRight !== null &&
-        cramped.pageLeft !== null &&
-        cramped.railLeft !== null &&
-        cramped.railRight !== null &&
-        Math.abs(cramped.railLeft - cramped.pageLeft) <= 2 &&
-        Math.abs(cramped.railRight - cramped.pageRight) <= 2,
-      "with the dock open the checklist does not span the reading column's width",
-    );
 
-    // ── a narrow window: no room beside the column, so the rail stacks above ─
+    // ── a narrow window: the one column takes the room it has ───────────────
     const narrow = report.checks.narrowColumns;
-    assert.ok(narrow.railTop !== null && narrow.pageTop !== null, "the narrow layout could not be read");
+    assert.ok(narrow.pageLeft !== null && narrow.pageWidth !== null, "the narrow layout could not be read");
     assert.ok(
-      Number(narrow.railTop) < Number(narrow.pageTop),
-      "in a narrow window the checklist is not above the reading column",
-    );
-    assert.ok(
-      Number(narrow.railBottom) <= Number(narrow.pageTop) + 1,
-      "in a narrow window the checklist overlaps the reading column",
+      Number(narrow.pageWidth) <= 48 * 16 + 1,
+      `in a narrow window the column is ${narrow.pageWidth}px wide, past its measure`,
     );
     assert.equal(
       report.checks.narrow.railPresent,
       true,
-      "the narrow window lost the checklist instead of stacking it",
+      "the narrow window lost the tab row instead of wrapping it",
     );
 
     // ── a blank line the operator typed reaches the file ────────────────────
@@ -964,9 +952,9 @@ describe("review ui e2e", () => {
       "Done",
       "finishing Finance did not flip its row to Done",
     );
-    assert.equal(
-      report.checks.financeDone.progress,
-      `2 of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(report.checks.financeDone.progress),
+      new RegExp(`^2 of ${TOTAL_AREAS} areas done · `),
       "the progress line did not count the second area",
     );
     assert.match(
@@ -1011,26 +999,28 @@ describe("review ui e2e", () => {
       );
       assert.equal(railText(completed, area.slug), "Done", `the ${area.name} row did not flip to Done`);
       const doneCount = remaining.findIndex((r) => r.slug === area.slug) + 3;
-      assert.equal(
-        completed.progress,
-        `${doneCount} of ${TOTAL_AREAS} areas done`,
+      assert.match(
+        String(completed.progress),
+        doneCount === TOTAL_AREAS
+          ? /Every area is reviewed/
+          : new RegExp(`^${doneCount} of ${TOTAL_AREAS} areas done · `),
         `the progress line after ${area.name} is wrong`,
       );
       if (area.slug === "relationships") {
         assert.match(
           String(completed.notice),
+          /Relationships review complete/,
+          "finishing the last area did not say it completed",
+        );
+        assert.match(
+          String(completed.progress),
           /Every area is reviewed/,
-          "finishing the last area did not say every area is reviewed",
+          "the progress line does not say every area is reviewed",
         );
         assert.match(
           String(completed.hint),
-          /All areas are reviewed/i,
-          "the checklist hint does not say all areas are reviewed",
-        );
-        assert.equal(
-          completed.lifeItem !== null && completed.lifeItem.disabled,
-          false,
-          "the Life review is still disabled after the last area was completed",
+          /Every area is reviewed/i,
+          "the progress line does not say every area is reviewed",
         );
         assert.equal(
           completed.lifeStatus,
@@ -1046,9 +1036,9 @@ describe("review ui e2e", () => {
       }
     }
     const allDone = report.checks.allDone;
-    assert.equal(
-      allDone.progress,
-      `${TOTAL_AREAS} of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(allDone.progress),
+      /Every area is reviewed/,
       "every area is done but the progress line does not say so",
     );
     for (const area of AREAS) {
@@ -1063,9 +1053,9 @@ describe("review ui e2e", () => {
     assert.equal(dailyOpen.scopeName, null, "the daily review drew a scope name");
     assert.equal(dailyOpen.layoutPresent, true, "the daily review has no review-page-layout wrapper");
     assert.equal(
-      dailyOpen.layoutSingle,
+      report.checks.dailyColumns.pageWidth !== null,
       true,
-      "the daily review is not rendered as the single-column review-page-layout",
+      "the daily review has no measurable reading column",
     );
     assert.equal(
       dailyOpen.startLabel,
@@ -1212,9 +1202,9 @@ describe("review ui e2e", () => {
       "the weekly mark-done button is not the area's form",
     );
     assert.equal(
-      back.lifeItem !== null && back.lifeItem.disabled,
-      false,
-      "the Life review is not enabled on the weekly review with every area done",
+      back.lifeStatus,
+      "In progress",
+      "the Life review does not read In progress with every area done",
     );
 
     // ── the cadence's rules, read and written from the page ────────────────
@@ -1234,13 +1224,16 @@ describe("review ui e2e", () => {
     assert.deepEqual(report.checks.modeButtons, [], "the review page still has Document/Preview buttons");
     assert.deepEqual(back.modes, [], "the review page still draws a view switch");
     assert.equal(back.previewShown, false, "the review page still draws a Preview surface");
+    // The operator-written parts live on the Overall page, so read that page
+    // before claiming the box kept them.
+    const overallBack = report.checks.overallBack;
     assert.match(
-      String(back.boxText),
+      String(overallBack.boxText),
       /A note outside the skeleton\./,
       "the one box dropped a section the operator wrote",
     );
     assert.match(
-      String(back.boxText),
+      String(overallBack.boxText),
       /alpha beta gamma/,
       "the one box dropped the heading the operator wrote",
     );
@@ -1269,14 +1262,18 @@ describe("review ui e2e", () => {
     assert.equal(locked.lockedBadge, "Locked", "the locked review does not show its Locked badge");
     assert.equal(locked.status, "Locked", "the page's status line is not Locked");
     assert.equal(railText(locked, "overall"), "Done", "the Life row does not read Done after completion");
-    for (const area of [...AREAS, { slug: "overall", name: "Life" }]) {
-      const item = railItem(locked, area.slug);
-      assert.equal(
-        item !== null && item.disabled,
-        true,
-        `the ${area.name} row is still pressable on a locked review`,
-      );
-    }
+    // Reading still works on a locked review: every page tab is there and can
+    // be pressed; only the authoring controls are gone.
+    assert.equal(
+      locked.railButtons.length,
+      RAIL_ROWS.length,
+      "the locked review does not offer every page tab",
+    );
+    assert.equal(
+      locked.actions.includes("Start interview"),
+      false,
+      "the locked review still offers Start interview",
+    );
     assert.equal(locked.unlockPresent, true, "the locked review offers no way to unlock it");
     assert.equal(
       locked.markDoneLabel,
@@ -1340,10 +1337,10 @@ describe("review ui e2e", () => {
       "Not started",
       "the agent's Finance mark also changed an area it did not touch",
     );
-    assert.equal(
-      live.liveFinance.progress,
-      `2 of ${TOTAL_AREAS} areas done`,
-      "the checklist's progress did not count the agent's mark",
+    assert.match(
+      String(live.liveFinance.progress),
+      new RegExp(`^2 of ${TOTAL_AREAS} areas done · `),
+      "the progress line did not count the agent's mark",
     );
     assert.ok(
       live.liveReReads >= 1,
@@ -1359,13 +1356,8 @@ describe("review ui e2e", () => {
     // agent's last area and the row becoming usable.
     assert.match(
       String(live.liveGated.hint),
-      /All areas are reviewed/i,
-      "the checklist still gates the Life review after the agent finished every area",
-    );
-    assert.equal(
-      live.liveGated.lifeItem !== null && live.liveGated.lifeItem.disabled,
-      false,
-      "the Life review is still disabled after the agent finished every area live",
+      /Every area is reviewed/i,
+      "the progress line still gates the Life review after the agent finished every area",
     );
     assert.equal(
       railText(live.liveGated, "overall"),

@@ -59,6 +59,9 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type {
+  ReviewNotebook,
+  ReviewPageBody,
+  ReviewPageWriteOutcome,
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
@@ -183,6 +186,62 @@ function record(period: string, locked = false): ReviewRecord {
     rev: 0,
     scopes: { overall: { status: "draft", sessionId: null } },
     bodyMarkdown: bodyOf(period),
+  };
+}
+
+/** The areas this rig's vault has open: one, so a weekly review has two tabs. */
+const AREA_PAGE = { slug: "financial", name: "Financial" };
+
+/** A page body's skeleton: the same four headings every review page starts with. */
+function pageSkeleton(period: string, scope: string): string {
+  const title = scope === "overall" ? periodTitle(cadence, period, weekStartDay) : AREA_PAGE.name;
+  return [`# ${title}`, "## Look-back", "", "## Keep", "", "## Change", "", "## Next-period intent", ""].join(
+    "\n",
+  );
+}
+
+/** One page's body: the overall page IS the record's body; the area page is its skeleton. */
+function pageBodyOf(period: string, scope: string): string {
+  return scope === "overall" ? bodyOf(period) : pageSkeleton(period, scope);
+}
+
+/** The notebook the page API answers with: Overall first, then the open area. */
+function notebookOf(period: string): ReviewNotebook {
+  const pages = ["overall", AREA_PAGE.slug].map((scope) => ({
+    scope,
+    title: scope === "overall" ? periodTitle(cadence, period, weekStartDay) : AREA_PAGE.name,
+    status: (scope === "overall" ? "draft" : "missing") as "draft" | "missing",
+    sessionId: null,
+    rev: 1,
+    updatedAt: "2026-11-15T00:00:00.000Z",
+    chars: pageBodyOf(period, scope).length,
+  }));
+  return {
+    cadence,
+    period,
+    title: periodTitle(cadence, period, weekStartDay),
+    weekStartDay,
+    locked: false,
+    order: pages.map((page) => page.scope),
+    rev: 1,
+    pages,
+    path: "C:\\harness\\vault\\reviews",
+    legacy: false,
+  };
+}
+
+/** One page as the page API answers it. */
+function pageOf(period: string, scope: string): ReviewPageBody {
+  const exists = scope === "overall";
+  return {
+    scope,
+    title: scope === "overall" ? periodTitle(cadence, period, weekStartDay) : AREA_PAGE.name,
+    status: exists ? "draft" : "missing",
+    sessionId: null,
+    rev: exists ? 1 : 0,
+    updatedAt: exists ? "2026-11-15T00:00:00.000Z" : null,
+    locked: false,
+    bodyMarkdown: pageBodyOf(period, scope),
   };
 }
 
@@ -323,6 +382,34 @@ const bridge: Record<string, unknown> = {
   reviewGet: (_cadence: string, period: string) => {
     rig().calls.push(`reviewGet:${cadence}:${period}`);
     return Promise.resolve(ok(record(period)));
+  },
+  reviewNotebookGet: (_cadence: string, period: string) => {
+    rig().calls.push(`reviewNotebookGet:${cadence}:${period}`);
+    return Promise.resolve(ok(notebookOf(period)));
+  },
+  reviewPageGet: (_cadence: string, period: string, scope: string) => {
+    rig().calls.push(`reviewPageGet:${cadence}:${period}:${scope}`);
+    return Promise.resolve(ok(pageOf(period, scope)));
+  },
+  reviewPageEnsure: (_cadence: string, period: string, scope: string) => {
+    rig().calls.push(`reviewPageEnsure:${cadence}:${period}:${scope}`);
+    return Promise.resolve(ok(notebookOf(period)));
+  },
+  reviewPageWrite: (
+    _cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    _baseRev: number,
+  ) => {
+    rig().calls.push(`reviewPageWrite:${cadence}:${period}:${scope}`);
+    const next = bodyOf(period);
+    const page = pageOf(period, scope);
+    return Promise.resolve({
+      ok: true,
+      page: { ...page, bodyMarkdown: scope === "overall" ? next : body },
+      notebookRev: 2,
+    } satisfies ReviewPageWriteOutcome);
   },
   reviewEnsure: (_cadence: string, period: string) => {
     rig().calls.push(`reviewEnsure:${cadence}:${period}`);

@@ -37,6 +37,9 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type {
   DoctrineDocument,
+  ReviewNotebook,
+  ReviewPageBody,
+  ReviewPageWriteOutcome,
   ReviewRecord,
   VaultSnapshot,
 } from "@lifequest/vault-core";
@@ -162,6 +165,48 @@ let reviewRecord: ReviewRecord | null = {
   bodyMarkdown: REVIEW_BODY,
 };
 
+/** The notebook the Review page opens: the overall page this rig's review has. */
+function notebookOf(): ReviewNotebook {
+  const record = reviewRecord;
+  return {
+    cadence: "weekly",
+    period: record?.period ?? "2026-10-12",
+    title: record?.title ?? "Week of 12 Oct 2026",
+    weekStartDay: "monday",
+    locked: record?.locked ?? false,
+    order: ["overall"],
+    rev: record?.rev ?? 0,
+    pages: [
+      {
+        scope: "overall",
+        title: record?.title ?? "Week of 12 Oct 2026",
+        status: "draft",
+        sessionId: null,
+        rev: 1,
+        updatedAt: record?.updatedAt ?? "2026-10-18T00:00:00.000Z",
+        chars: (record?.bodyMarkdown ?? REVIEW_BODY).length,
+      },
+    ],
+    path: "C:\\harness\\vault\\reviews",
+    legacy: false,
+  };
+}
+
+/** The overall page as the page API answers it. */
+function reviewPageBody(): ReviewPageBody {
+  const record = reviewRecord;
+  return {
+    scope: "overall",
+    title: record?.title ?? "Week of 12 Oct 2026",
+    status: "draft",
+    sessionId: null,
+    rev: 1,
+    updatedAt: record?.updatedAt ?? "2026-10-18T00:00:00.000Z",
+    locked: record?.locked ?? false,
+    bodyMarkdown: record?.bodyMarkdown ?? REVIEW_BODY,
+  };
+}
+
 /** Every bridge method the pages are allowed to reach. Anything else is named. */
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
@@ -234,6 +279,37 @@ const bridge: Record<string, unknown> = {
     return Promise.resolve(
       reviewRecord ? ok(reviewRecord) : fail("Review file not found"),
     );
+  },
+  reviewNotebookGet: (cadence: string, period: string) => {
+    harness.liveEditorCalls?.push(`reviewNotebookGet:${cadence}:${period}`);
+    if (!reviewRecord) return Promise.resolve(fail("Review file not found"));
+    return Promise.resolve(ok(notebookOf()));
+  },
+  reviewPageGet: (cadence: string, period: string, scope: string) => {
+    harness.liveEditorCalls?.push(`reviewPageGet:${cadence}:${period}:${scope}`);
+    if (!reviewRecord) return Promise.resolve(fail("Review file not found"));
+    if (scope !== "overall") return Promise.resolve(fail("Review page not found"));
+    return Promise.resolve(ok(reviewPageBody()));
+  },
+  reviewPageEnsure: (cadence: string, period: string, scope: string) => {
+    harness.liveEditorCalls?.push(`reviewPageEnsure:${cadence}:${period}:${scope}`);
+    return Promise.resolve(ok(notebookOf()));
+  },
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    next: string,
+    _baseRev: number,
+  ) => {
+    harness.liveEditorCalls?.push(`reviewPageWrite:${cadence}:${period}:${scope}`);
+    harness.liveEditorReviewWrites?.push({ cadence, period, body: next });
+    if (reviewRecord) reviewRecord = { ...reviewRecord, bodyMarkdown: next };
+    return Promise.resolve({
+      ok: true,
+      page: reviewPageBody(),
+      notebookRev: (reviewRecord?.rev ?? 0) + 1,
+    } satisfies ReviewPageWriteOutcome);
   },
   reviewEnsure: (cadence: string, period: string) => {
     harness.liveEditorCalls?.push(`reviewEnsure:${cadence}:${period}`);
