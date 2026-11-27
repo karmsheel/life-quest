@@ -62,13 +62,28 @@
  *     refuses any read whose cadence and period do not belong together.
  * 13. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
+ * 14. The Analytics period header's `?period=<period>&scope=<area>` link is not
+ *     a one-shot deep link: it is read only on a cold mount, or its params are
+ *     left on the URL, or it is applied when the period is not one the cadence
+ *     has / not open yet. The rig seeds a second weekly notebook (an earlier,
+ *     finished week with prose of its own), lands on it through the router both
+ *     on the mounted page and as a cold mount, and reads the document: the
+ *     period, the selected tab, the earlier week's prose and the now-empty
+ *     search all have to agree, while an invalid or not-yet-open period leaves
+ *     the page where it was.
  *
  * The driver waits on `reviewRigReady`, set after the shell, the page and the
  * checklist have committed, so it never samples a half-rendered page.
  */
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import type {
   ReviewCadence,
   ReviewNotebook,
@@ -80,6 +95,7 @@ import type {
 } from "@lifequest/vault-core";
 import {
   DEFAULT_REVIEW_AVAILABILITY,
+  periodLabel,
   periodTitle,
 } from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
@@ -233,6 +249,76 @@ function seedReview(cadence: ReviewCadence, period: string): StoredReview {
         }
       : { overall: { status: "draft", sessionId: null } },
     locked: false,
+  };
+}
+
+/**
+ * The second weekly notebook: the earlier, already-finished week the Analytics
+ * period link lands on.
+ *
+ * It carries a title and prose of its own so "the link moved the page to THAT
+ * review" is read off the document — the prose only this file holds — rather
+ * than inferred from the period heading the page computes from state anyway.
+ * The engine-shaped record is `seedReview`'s; only the period, the prose and the
+ * lock differ, because a finished week is read-only.
+ */
+const SEALED_WEEK_PROSE =
+  "A sealed earlier week: two runs, one early night, and a finished report.";
+const SEALED_HEALTH_PROSE =
+  "The sealed week's Health note — the earlier report, not the open week's.";
+const SEALED_AREA_PROSE = "The sealed week's note for this area.";
+
+/** That week's whole-file body: the H1, the four overall headings, each area's section. */
+function sealedWeeklyBlocks(period: string): string[] {
+  return [
+    `# ${titleFor("weekly", period)}`,
+    "## Look-back",
+    SEALED_WEEK_PROSE,
+    "## Keep",
+    "## Change",
+    "## Next-period intent",
+    ...AREAS.flatMap((area) => [
+      `## ${area.name}`,
+      "### Look-back",
+      area.slug === "health" ? SEALED_HEALTH_PROSE : SEALED_AREA_PROSE,
+      "### Keep",
+      "### Change",
+      "### Next-period intent",
+    ]),
+  ];
+}
+
+/**
+ * Seed that earlier week on request.
+ *
+ * The driver picks the period (the suite's clock owns the open week, and this
+ * rig does not pin one), the rig builds the engine-shaped record, marks its
+ * pages done and locks it, and answers what the page must show on arrival: the
+ * heading and the prose only this review holds. Seeding before the navigation
+ * means the deep link reads a review the vault already had, not one created by
+ * the read it is being tested on.
+ */
+function seedSealedWeek(period: string): {
+  period: string;
+  title: string;
+  prose: string;
+  healthProse: string;
+} {
+  const stored = seedReview("weekly", period);
+  stored.body = sealedWeeklyBlocks(period).join("\n\n");
+  stored.locked = true;
+  stored.rev = 3;
+  for (const scope of stored.pages) {
+    stored.scopes[scope] = { status: "done", sessionId: null };
+  }
+  files.set(fileKey("weekly", period), stored);
+  return {
+    period,
+    // The page's heading is `periodLabel` ("9-15 Nov '26 (W46)"); `periodTitle`
+    // ("W46 Review: …") is the file's own H1, which `sealedWeeklyBlocks` keeps.
+    title: periodLabel("weekly", period, WEEK_START_DAY),
+    prose: SEALED_WEEK_PROSE,
+    healthProse: SEALED_HEALTH_PROSE,
   };
 }
 
@@ -881,7 +967,26 @@ type StartCall = {
 type HarnessWindow = Window & {
   reviewRigReady?: boolean;
   reviewRigSkin?: string;
+  /** Land a pathname with its search on the router, as a cross-page link does. */
   reviewRigGoto?: (path: string) => void;
+  /** The router's current pathname and search, for "the link's params are gone". */
+  reviewRigLocation?: () => { pathname: string; search: string };
+  /**
+   * How many times the router's location has changed. A deep link is proven
+   * APPLIED (not merely ignored) by the driver seeing two changes: the URL with
+   * the params, then the stripped one.
+   */
+  reviewRigLocationChanges?: () => number;
+  /**
+   * Seed the earlier, finished week the `?period=` leg lands on, and answer what
+   * the page must show when it gets there.
+   */
+  reviewRigSeedSealedWeek?: (period: string) => {
+    period: string;
+    title: string;
+    prose: string;
+    healthProse: string;
+  };
   reviewRigCalls?: string[];
   reviewRigUnexpectedCalls?: string[];
   reviewRigWrites?: ReviewWrite[];
@@ -926,6 +1031,8 @@ type HarnessWindow = Window & {
 };
 
 const harness = window as HarnessWindow;
+/** Every router location change since load, so a link can be proven applied. */
+let locationChanges = 0;
 harness.reviewRigCalls = [];
 harness.reviewRigUnexpectedCalls = [];
 harness.reviewRigWrites = [];
@@ -958,6 +1065,8 @@ harness.reviewRigDataListenerCount = () => dataChangeListeners.size;
 harness.reviewRigAnnounceDataChange = () => announceDataChanged();
 harness.reviewRigAgentWritesBody = (body: string) => agentWritesBody(body);
 harness.reviewRigAgentMarksDone = (scope: string) => agentMarksDone(scope);
+harness.reviewRigLocationChanges = () => locationChanges;
+harness.reviewRigSeedSealedWeek = (period: string) => seedSealedWeek(period);
 
 /**
  * One chat row, as the gateway hands it back.
@@ -1511,9 +1620,27 @@ const stubbed = new Proxy(bridge, {
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from review.html");
 
+/**
+ * The driver's two doors onto the router.
+ *
+ * `reviewRigGoto` lands a pathname WITH its search — the way a cross-page link
+ * arrives as `/review/weekly?period=…&scope=…` — on the page that is already
+ * mounted; the MemoryRouter keeps the URL in memory, so `reviewRigLocation`
+ * publishes it back for "the link's params were stripped" and
+ * `reviewRigLocationChanges` counts the changes so an ignored link (where
+ * nothing on screen moves) can still be proven to have been read.
+ */
 function RouterControl() {
   const navigate = useNavigate();
+  const location = useLocation();
   harness.reviewRigGoto = (path: string) => navigate(path);
+  useEffect(() => {
+    locationChanges += 1;
+    harness.reviewRigLocation = () => ({
+      pathname: location.pathname,
+      search: location.search,
+    });
+  }, [location.pathname, location.search]);
   return null;
 }
 

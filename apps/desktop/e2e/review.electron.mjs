@@ -1,6 +1,6 @@
 /**
  * Drives the review harness in a real Electron window and turns what the Review
- * page actually renders into `e2e/artifacts/review.json` plus twelve pictures.
+ * page actually renders into `e2e/artifacts/review.json` plus thirteen pictures.
  *
  * Run with the dev server up (`npm run dev`, or the repository's e2e runner):
  *
@@ -33,6 +33,9 @@
  *   review-conflict.png   the open page after another writer moved the page under
  *                         it: the conflict banner, the operator's draft still in
  *                         the box, and the companion's paragraph still in the file
+ *   review-period-link.png  the earlier, finished week the Analytics period link
+ *                         names: its own period heading, the Health tab selected
+ *                         in the tab row, and the link's params gone from the URL
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -117,6 +120,14 @@
  *     "back on the weekly review" leg used to fail on. The driver checks every
  *     notebook read's cadence/period pair, so the stale-period read is named
  *     even if a sample happens to miss the wrong paint.
+ * 17. The Analytics period header's link is a ONE-SHOT deep link:
+ *     `/review/weekly?period=<earlier week>&scope=health` applies the period it
+ *     names (read off that week's own prose in the box, not just the heading),
+ *     selects the Health tab, and strips both params with a replace so no URL
+ *     state is left. It holds both when it lands on the already-mounted page and
+ *     as a cold mount, which is how the link arrives from Analytics. A period
+ *     the cadence does not have, one that has not opened yet, leaves the page
+ *     where it was — and `?scope=` on its own still selects its page.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-areas-e2e.test.ts` and `tests/review-snapshot-e2e.test.ts`) and
@@ -618,6 +629,13 @@ function weekStartOnOrBefore(iso) {
   const date = new Date(`${iso}T00:00:00Z`);
   const dayOfWeek = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+/** A weekly period `weeks` from a week start: the page's own period keys. */
+function shiftWeeks(iso, weeks) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + weeks * 7);
   return date.toISOString().slice(0, 10);
 }
 
@@ -2862,7 +2880,249 @@ async function main() {
   };
   await shot(win, "review-conflict.png");
 
-  // ── 14. nothing unexpected, nothing on fire ──────────────────────────────
+  // ── 14. the Analytics period link: one period, one page, no params left ──
+  // The Analytics matrix's column headers link to
+  // `/review/<cadence>?period=<period>[&scope=<area>]`; the Review page is the
+  // receiver. It reads that one-shot link once — applies the period it names and
+  // the page it names — and then strips both params with a replace, so a back
+  // press cannot re-apply them and no other URL state is added. The rig seeds a
+  // SECOND weekly notebook, an earlier finished week with prose of its own, so
+  // "the page moved to THAT review" is read off the document rather than off a
+  // heading the page computes from its own state. The link lands twice, because
+  // both doors exist: on the page already mounted (a second click on an Analytics
+  // period header) and as a cold mount from another route (the first click, where
+  // ReviewPage mounts with the link's period as its first load).
+  const beforeLink = await sample(win);
+  checks.periodLinkBefore = {
+    period: beforeLink.periodData,
+    scope: activeScope(beforeLink),
+  };
+  if (!beforeLink.periodData || checks.periodLinkBefore.scope !== "overall") {
+    failure(
+      `the deep-link leg did not start on the page the conflict leg left open (the Overall page of an earlier week): ${JSON.stringify(checks.periodLinkBefore)}`,
+    );
+  }
+  // Three weeks back: clear of the two previous weeks the live and conflict legs
+  // own, and an earlier period of this same cadence.
+  const sealedWeek = shiftWeeks(String(baseWeek), -3);
+  const sealed = await setHarness(
+    win,
+    `window.reviewRigSeedSealedWeek(${JSON.stringify(sealedWeek)})`,
+  );
+  checks.periodLinkSealed = sealed;
+  if (!sealed || sealed.period !== sealedWeek) {
+    failure(
+      `the rig did not seed the earlier week ${JSON.stringify(sealedWeek)}: ${JSON.stringify(sealed)}`,
+    );
+  }
+  const linkPath = `/review/weekly?period=${sealedWeek}&scope=health`;
+
+  /**
+   * Land a pathname+search on the router and wait for the page to strip it.
+   *
+   * Two location changes are required, not merely an empty search at the end:
+   * the URL WITH the params has to have been read and then replaced by the bare
+   * path. A link that never applied would leave the search already empty and
+   * would otherwise pass for "stripped".
+   */
+  const landLink = async (path, label) => {
+    const before = await setHarness(win, "window.reviewRigLocationChanges?.() ?? 0");
+    await setHarness(win, `window.reviewRigGoto(${JSON.stringify(path)})`);
+    await waitFor(
+      win,
+      `(window.reviewRigLocation?.().search ?? null) === "" &&
+        (window.reviewRigLocationChanges?.() ?? 0) >= ${before + 2}`,
+      `${label} to be applied and its params stripped`,
+    );
+    const after = await setHarness(win, "window.reviewRigLocationChanges?.() ?? 0");
+    const location = await setHarness(win, "window.reviewRigLocation?.() ?? null");
+    return { before, after, location };
+  };
+
+  /** The page as the deep link left it, read by the same DOM contract as every other leg. */
+  const readLinkedPage = async () => {
+    await waitFor(
+      win,
+      `(document.querySelector('[data-testid="review-period"]')?.dataset.period ?? "") === ${JSON.stringify(sealedWeek)}`,
+      "the deep link's period",
+    );
+    await waitForTab(win, "health", "the deep link's Health tab");
+    await waitFor(
+      win,
+      `(document.querySelector(".note-live")?.textContent ?? "").includes(${JSON.stringify(sealed.healthProse)})`,
+      "the earlier week's Health page",
+    );
+    await frames(win);
+    const page = await sample(win);
+    return {
+      period: page.periodData,
+      title: page.title,
+      scope: activeScope(page),
+      locked: page.lockedBadge,
+      boxText: String(page.boxText),
+    };
+  };
+  const assertLinked = (label, linked, router) => {
+    if (linked.period !== sealedWeek) {
+      failure(`the ${label} landed on ${JSON.stringify(linked.period)}, not the week it named`);
+    }
+    if (linked.title !== sealed.title) {
+      failure(
+        `the ${label} shows ${JSON.stringify(linked.title)}, not the earlier week's heading ${JSON.stringify(sealed.title)}`,
+      );
+    }
+    if (linked.scope !== "health") {
+      failure(`the ${label} selected ${JSON.stringify(linked.scope)}, not the Health page`);
+    }
+    if (!linked.boxText.includes(sealed.healthProse)) {
+      failure(`the ${label} did not load the earlier week's document`);
+    }
+    if (router.location?.search !== "") {
+      failure(
+        `the ${label} left its params on the URL: ${JSON.stringify(router.location?.search)}`,
+      );
+    }
+    if (router.location?.pathname !== "/review/weekly") {
+      failure(
+        `the ${label} left the router on ${JSON.stringify(router.location?.pathname)}`,
+      );
+    }
+  };
+
+  const inPlaceRouter = await landLink(linkPath, "the deep link on the mounted page");
+  const linkedInPlace = await readLinkedPage();
+  checks.periodLinkInPlace = { ...linkedInPlace, router: inPlaceRouter };
+  assertLinked("deep link on the mounted page", linkedInPlace, inPlaceRouter);
+  await shot(win, "review-period-link.png");
+
+  // The link as Analytics really sends it: the Review page is not the page that
+  // was open. On the way, read that same earlier week's Overall page: it is the
+  // second page of the same sealed notebook, and its prose is the fixture's own
+  // too, so the week the link opened is a whole review, not a single body.
+  await click(win, '[data-testid="review-tab-overall"]');
+  await waitForTab(win, "overall", "the Overall tab of the earlier week");
+  await waitFor(
+    win,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes(${JSON.stringify(sealed.prose)})`,
+    "the earlier week's Overall page",
+  );
+  await frames(win);
+  const sealedOverall = await sample(win);
+  checks.periodLinkSealedOverall = {
+    period: sealedOverall.periodData,
+    boxText: String(sealedOverall.boxText),
+  };
+  if (checks.periodLinkSealedOverall.period !== sealedWeek) {
+    failure(
+      `the earlier week's Overall page reads period ${JSON.stringify(checks.periodLinkSealedOverall.period)}`,
+    );
+  }
+  if (!checks.periodLinkSealedOverall.boxText.includes(sealed.prose)) {
+    failure("the earlier week's Overall page did not load its own prose");
+  }
+  // Now leave for another route and come back to the link from there: that is
+  // the cold mount, the way the link really arrives from Analytics. The lens is
+  // on Overall now, so `?scope=health` has to select its page on mount.
+  await setHarness(win, 'window.reviewRigGoto("/review/daily")');
+  await waitFor(
+    win,
+    `(() => { const el = document.querySelector('[data-testid="wing-eyebrow"]'); return Boolean(el) && el.textContent.trim() === "Review / Daily"; })()`,
+    "the daily route before the cold mount",
+  );
+  const coldRouter = await landLink(linkPath, "the deep link as a cold mount");
+  const linkedCold = await readLinkedPage();
+  checks.periodLinkCold = { ...linkedCold, router: coldRouter };
+  assertLinked("deep link as a cold mount", linkedCold, coldRouter);
+
+  // A period the cadence does not have is ignored: the URL is read and stripped,
+  // and the page keeps the period it was on.
+  const invalidRouter = await landLink(
+    "/review/weekly?period=9999-13-99",
+    "an invalid period link",
+  );
+  await frames(win);
+  const invalidPage = await sample(win);
+  checks.periodLinkInvalid = {
+    requested: "9999-13-99",
+    period: invalidPage.periodData,
+    search: invalidRouter.location?.search ?? null,
+    router: invalidRouter,
+  };
+  if (checks.periodLinkInvalid.period !== sealedWeek) {
+    failure(
+      `an invalid ?period= moved the page to ${JSON.stringify(checks.periodLinkInvalid.period)}`,
+    );
+  }
+  if (checks.periodLinkInvalid.search !== "") {
+    failure(
+      `an invalid ?period= left its param on the URL: ${JSON.stringify(checks.periodLinkInvalid.search)}`,
+    );
+  }
+
+  // A period whose review window has not opened yet is ignored the same way: it
+  // is a period of this cadence (a Monday), so only the "not open" rule stops it.
+  const futureWeek = shiftWeeks(String(baseWeek), 8);
+  const futureRouter = await landLink(
+    `/review/weekly?period=${futureWeek}`,
+    "a not-yet-open period link",
+  );
+  await frames(win);
+  const futurePage = await sample(win);
+  checks.periodLinkFuture = {
+    requested: futureWeek,
+    period: futurePage.periodData,
+    search: futureRouter.location?.search ?? null,
+    router: futureRouter,
+  };
+  if (checks.periodLinkFuture.requested <= String(baseWeek)) {
+    failure(
+      `the not-yet-open leg asked for ${JSON.stringify(checks.periodLinkFuture.requested)}, not a period after the open week`,
+    );
+  }
+  if (checks.periodLinkFuture.period !== sealedWeek) {
+    failure(
+      `a not-yet-open ?period= moved the page to ${JSON.stringify(checks.periodLinkFuture.period)}`,
+    );
+  }
+  if (checks.periodLinkFuture.search !== "") {
+    failure(
+      `a not-yet-open ?period= left its param on the URL: ${JSON.stringify(checks.periodLinkFuture.search)}`,
+    );
+  }
+
+  // `?scope=` on its own is the older door external links and the companion use;
+  // it must still select its page, on the period the page is already on.
+  const scopeRouter = await landLink(
+    "/review/weekly?scope=mind",
+    "a scope-only link",
+  );
+  await waitForTab(win, "mind", "the scope-only link's Mind tab");
+  await frames(win);
+  const scopePage = await sample(win);
+  checks.periodLinkScopeOnly = {
+    requested: "/review/weekly?scope=mind",
+    period: scopePage.periodData,
+    scope: activeScope(scopePage),
+    search: scopeRouter.location?.search ?? null,
+    router: scopeRouter,
+  };
+  if (checks.periodLinkScopeOnly.period !== sealedWeek) {
+    failure(
+      `?scope= alone moved the page to ${JSON.stringify(checks.periodLinkScopeOnly.period)}`,
+    );
+  }
+  if (checks.periodLinkScopeOnly.scope !== "mind") {
+    failure(
+      `?scope= alone selected ${JSON.stringify(checks.periodLinkScopeOnly.scope)}, not the Mind page`,
+    );
+  }
+  if (checks.periodLinkScopeOnly.search !== "") {
+    failure(
+      `?scope= alone left its param on the URL: ${JSON.stringify(checks.periodLinkScopeOnly.search)}`,
+    );
+  }
+
+  // ── 15. nothing unexpected, nothing on fire ──────────────────────────────
   const finalStarts = await setHarness(win, "window.reviewRigStarts");
   checks.startsAll = finalStarts;
   const finalKickoffs = await setHarness(win, "window.reviewRigKickoffs");

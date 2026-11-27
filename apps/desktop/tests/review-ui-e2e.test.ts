@@ -25,7 +25,7 @@ import {
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the eleven `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the thirteen `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -51,6 +51,7 @@ const SHOTS = [
   "review-live-tabs.png",
   "review-daily-complete.png",
   "review-conflict.png",
+  "review-period-link.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 /** The four-overall-headings order the engine's skeleton uses. */
@@ -291,6 +292,23 @@ type StartCall = {
 
 type ScopeState = { status: "draft" | "done"; sessionId: string | null };
 
+/** The router while a `?period=`/`?scope=` link was landing. */
+type LinkRouter = {
+  before: number;
+  after: number;
+  location: { pathname: string; search: string } | null;
+};
+
+/** The page a one-shot `?period=`/`?scope=` link left the Review page on. */
+type LinkedPage = {
+  period: string | null;
+  title: string | null;
+  scope: string | null;
+  locked: string | null;
+  boxText: string;
+  router: LinkRouter;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -405,6 +423,43 @@ type Report = {
     /** Reads that named a period of another cadence: [channel, cadence, period]. */
     crossCadenceReads: string[][];
     failedFinanceStarts: number;
+    /** The page the `?period=` leg started from: the page the conflict leg left open. */
+    periodLinkBefore: { period: string | null; scope: string | null };
+    /** The second weekly notebook the leg seeds: an earlier, finished week. */
+    periodLinkSealed: {
+      period: string;
+      title: string;
+      prose: string;
+      healthProse: string;
+    } | null;
+    /** That earlier week's Overall page, read on the way to the cold mount. */
+    periodLinkSealedOverall: { period: string | null; boxText: string };
+    /** `/review/weekly?period=<earlier week>&scope=health` on the mounted page. */
+    periodLinkInPlace: LinkedPage;
+    /** The same link as a cold mount, which is how it arrives from Analytics. */
+    periodLinkCold: LinkedPage;
+    /** A period the cadence does not have: the URL is read, the page stays put. */
+    periodLinkInvalid: {
+      requested: string;
+      period: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
+    /** A period of the cadence whose review window has not opened yet. */
+    periodLinkFuture: {
+      requested: string;
+      period: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
+    /** `?scope=` on its own: still selects its page, on the current period. */
+    periodLinkScopeOnly: {
+      requested: string;
+      period: string | null;
+      scope: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -1730,6 +1785,111 @@ describe("review ui e2e", () => {
       String(report.checks.conflictReloaded?.boxText),
       /REMOTE COMPANION SENTENCE\./,
       "reloading after the conflict did not adopt the file's body",
+    );
+
+    // ── the Analytics period link is a one-shot deep link ──────────────────
+    // The sender side is `analytics-e2e.test.ts`; this is the receiver.
+    // `/review/weekly?period=<earlier week>&scope=health` must apply the period
+    // it names (read off that week's own prose) and the page it names, then strip
+    // both params — on the mounted page and as a cold mount, which is how the
+    // link really arrives from Analytics. An invalid or not-yet-open period must
+    // leave the page where it was, and `?scope=` on its own must still work.
+    const linkBefore = report.checks.periodLinkBefore;
+    const sealed = report.checks.periodLinkSealed;
+    assert.ok(sealed, "the deep-link leg never seeded the earlier weekly review");
+    assert.equal(
+      linkBefore.scope,
+      "overall",
+      "the deep-link leg did not start on the page the conflict leg left open",
+    );
+    assert.notEqual(
+      linkBefore.period,
+      sealed.period,
+      "the seeded 'earlier' week is the week the page was already on, so the leg proves no period switch",
+    );
+    assert.equal(
+      report.checks.periodLinkSealedOverall.period,
+      sealed.period,
+      "the earlier week's Overall page is not that week",
+    );
+    assert.ok(
+      report.checks.periodLinkSealedOverall.boxText.includes(sealed.prose),
+      "the earlier week's Overall page does not hold its own prose",
+    );
+    for (const [label, landed] of [
+      ["the link landing on the mounted page", report.checks.periodLinkInPlace],
+      ["the link arriving as a cold mount", report.checks.periodLinkCold],
+    ] as const) {
+      assert.equal(landed.period, sealed.period, `${label} did not apply the link's period`);
+      assert.equal(landed.title, sealed.title, `${label} shows another week's heading`);
+      assert.equal(landed.scope, "health", `${label} did not select the Health tab`);
+      assert.ok(
+        landed.boxText.includes(sealed.healthProse),
+        `${label} did not load the earlier week's document`,
+      );
+      assert.equal(
+        landed.locked,
+        "Locked",
+        `${label} did not read the earlier week as the finished review it is`,
+      );
+      assert.equal(
+        landed.router.location?.search,
+        "",
+        `${label} left the link's params on the URL`,
+      );
+      assert.equal(
+        landed.router.location?.pathname,
+        "/review/weekly",
+        `${label} left the router on another path`,
+      );
+      assert.ok(
+        landed.router.after >= landed.router.before + 2,
+        `${label} was never actually applied — the router saw no URL to strip`,
+      );
+    }
+    const invalidLink = report.checks.periodLinkInvalid;
+    assert.equal(invalidLink.requested, "9999-13-99");
+    assert.equal(invalidLink.period, sealed.period, "an invalid ?period= moved the review page");
+    assert.equal(
+      invalidLink.search,
+      "",
+      "an invalid ?period= left its param on the URL",
+    );
+    assert.ok(
+      invalidLink.router.after >= invalidLink.router.before + 2,
+      "the invalid link was never actually put on the URL",
+    );
+    const futureLink = report.checks.periodLinkFuture;
+    assert.ok(
+      futureLink.requested > String(report.checks.opened.periodData),
+      "the not-yet-open leg did not ask for a period after the open week",
+    );
+    assert.equal(
+      futureLink.period,
+      sealed.period,
+      "a not-yet-open ?period= moved the review page",
+    );
+    assert.equal(
+      futureLink.search,
+      "",
+      "a not-yet-open ?period= left its param on the URL",
+    );
+    assert.ok(
+      futureLink.router.after >= futureLink.router.before + 2,
+      "the not-yet-open link was never actually put on the URL",
+    );
+    const scopeOnly = report.checks.periodLinkScopeOnly;
+    assert.equal(scopeOnly.requested, "/review/weekly?scope=mind");
+    assert.equal(
+      scopeOnly.period,
+      sealed.period,
+      "?scope= alone moved the review page to another period",
+    );
+    assert.equal(scopeOnly.scope, "mind", "?scope= alone did not select its page");
+    assert.equal(scopeOnly.search, "", "?scope= alone left its param on the URL");
+    assert.ok(
+      scopeOnly.router.after >= scopeOnly.router.before + 2,
+      "the scope-only link was never actually put on the URL",
     );
 
     // ── the artifacts ──────────────────────────────────────────────────────
