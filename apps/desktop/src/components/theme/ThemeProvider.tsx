@@ -75,6 +75,8 @@ import {
   SHADOWS,
   TITLEBAR_SIZES,
   TYPE_SCALES,
+  mergeAgentPickerOverride,
+  parseAgentPickerChoice,
   WING_PLACES,
   WING_VARIANTS,
   type CompositionOverride,
@@ -213,6 +215,18 @@ function readStoredChromeOverride(): ThemeChromeOverride {
           ...(width ? { width } : {}),
         };
       }
+    }
+    /*
+     * The picker's branch is the one stored value that is not a flat bag of
+     * enums, so it goes back through the same parser a theme file does: the
+     * stored JSON is a previous version's word, and a stale or hand-edited mode
+     * name must be dropped rather than trusted into the dock. A refusal here is
+     * silence, not an error surface — localStorage is not a file the operator
+     * edits, so the honest recovery is the default look.
+     */
+    if (isRecord(raw.agentPicker)) {
+      const parsed = parseAgentPickerChoice(raw.agentPicker, "agentPicker");
+      if (parsed.ok) override.agentPicker = parsed.value;
     }
     return override;
   } catch {
@@ -514,7 +528,7 @@ interface ThemeContextValue {
   revertThemePreview: () => void;
   /**
    * Paint a draft theme without writing, keeping or previewing it — the
-   * Extensions studio's live look while the operator edits. `null` ends draft
+   * Customizations studio's live look while the operator edits. `null` ends draft
    * mode and hands the window back the kept theme; when a save has just left a
    * preview running, that preview keeps the window instead.
    */
@@ -544,7 +558,7 @@ interface ThemeContextValue {
    * and chrome. Returns the saved path, null when the operator cancelled.
    */
   exportCurrentTheme: () => Promise<{ path: string } | null>;
-  /** Read one theme file's raw JSON text — the Extensions editor's load. */
+  /** Read one theme file's raw JSON text — the Customizations editor's load. */
   readThemeFile: (file: string) => Promise<string | null>;
   /**
    * Save an edited theme file. Main parses it with the same shared rules, so a
@@ -717,9 +731,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
    * three colours and inherit the rest, which is what makes a small theme file
    * possible at all. It is also repainted when the theme names *no* colours —
    * including when the window wears no theme at all, which is where the
-   * Extensions "Active" switch-off lands. Without that paint the last theme's
+   * Customizations "Active" switch-off lands. Without that paint the last theme's
    * palette stayed on the document until the operator picked another skin, so
-   * switching an extension off looked like nothing had happened.
+   * switching a customization off looked like nothing had happened.
    */
   const paintTheme = useCallback(
     (next: ThemeFile | null) => {
@@ -1022,6 +1036,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         navRail: { ...chromeOverrideRef.current.navRail, ...patch.navRail },
         chatDock: { ...chromeOverrideRef.current.chatDock, ...patch.chatDock },
         titlebar: { ...chromeOverrideRef.current.titlebar, ...patch.titlebar },
+        // A patch log, not a resolution (see `mergeAgentPickerOverride`): the
+        // mode is stored only when the operator chose one, so an axis-only pick
+        // leaves the theme's mode in charge — otherwise Settings' Size row
+        // would flatten a theme's `named-chip` to the default `one-mark`.
+        agentPicker: mergeAgentPickerOverride(
+          chromeOverrideRef.current.agentPicker,
+          patch.agentPicker,
+        ),
       };
       // Drop empty branches so "no overrides" stays a clean empty object.
       for (const key of Object.keys(next) as (keyof ThemeChromeOverride)[]) {
@@ -1320,7 +1342,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     themeFile,
   ]);
 
-  /** Read one file for the Extensions editor. */
+  /** Read one file for the Customizations editor. */
   const readThemeFile = useCallback(async (file: string) => {
     const answer = await window.lifequest?.themeRead?.(file);
     if (!answer || !answer.ok) {
@@ -1405,7 +1427,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return imported;
   }, [loadThemeFiles]);
 
-  /** Hand the window back its default look — the Extensions page's off switch. */
+  /** Hand the window back its default look — the Customizations page's off switch. */
   const clearKeptTheme = useCallback(async () => {
     await window.lifequest?.themeSetKept?.(null);
     keptFileRef.current = null;
@@ -1696,4 +1718,18 @@ export function useTheme() {
     throw new Error("useTheme must be used within ThemeProvider");
   }
   return ctx;
+}
+
+/**
+ * The theme, or `null` where there is no provider.
+ *
+ * The E2E harness pages mount real surfaces with no shell around them — the
+ * dock's `ChatPanel` is one — and a component that also lives there must still
+ * draw. The rule is the same one `useOptionalCompanion` follows for pages that
+ * mount a surface before its provider: read the context if it is there, and let
+ * the caller decide what the honest fallback is. Shell-only components keep
+ * using `useTheme`, which is loud when the provider is missing.
+ */
+export function useOptionalTheme(): ThemeContextValue | null {
+  return useContext(ThemeContext);
 }

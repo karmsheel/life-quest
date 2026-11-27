@@ -19,7 +19,7 @@ import type {
  * The section only appears for a worn (or previewed) theme that carries a
  * composition: a theme with no widgets has nothing here to disagree with.
  *
- * Optional controlled props (D9) let the Extensions studio drive the same
+ * Optional controlled props (D9) let the Customizations studio drive the same
  * toggle against a draft: pass `composition` (the widgets being described) and
  * `value` (the operator's pick) plus `onChange`. With no props this is exactly
  * the override-bound Settings component it has always been.

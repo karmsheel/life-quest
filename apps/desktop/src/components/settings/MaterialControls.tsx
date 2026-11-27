@@ -22,7 +22,7 @@ import {
  * are told apart at a glance, and persisted per window. Reset hands every axis
  * back to the theme the window is wearing, including a preview it has not kept.
  *
- * Optional controlled props (D9) let the Extensions studio reuse the same rows
+ * Optional controlled props (D9) let the Customizations studio reuse the same rows
  * without changing any of that: with `value` the section renders the draft's
  * material and reports picks to `onChange`, writing no override and marking
  * nothing "yours". Settings renders it with no props and keeps today's

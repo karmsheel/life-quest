@@ -131,7 +131,11 @@ type Report = {
   threadHasReply: boolean;
   picker: {
     shown: boolean;
+    mode?: string | null;
+    rosterKind?: string | null;
+    activeAgent?: string | null;
     items?: string[];
+    options?: { agent: string | null; name: string; active: boolean; disabled: boolean }[];
     marks?: {
       label: string;
       kind: "glyph" | "image" | "none";
@@ -201,10 +205,10 @@ type Report = {
     defaultedHermes: boolean;
     defaultedPi: boolean;
     persisted: { agentId: string; domains: string[]; defaultFor: string[] }[];
-    overview: { pills: { name: string; active: boolean }[] };
-    health: { pills: { name: string; active: boolean }[] };
+    overview: { options: { name: string; active: boolean }[] };
+    health: { options: { name: string; active: boolean }[] };
     healthGated: { gated: boolean; lead: string };
-    financial: { pills: { name: string; active: boolean }[] };
+    financial: { options: { name: string; active: boolean }[] };
   };
   screenshots: string[];
 };
@@ -457,21 +461,21 @@ describe("built-in companion (Pi)", () => {
       )}`,
     );
 
-    assert.equal(report.picker.shown, true, "the dock offers no agent switcher");
+    assert.equal(report.picker.shown, true, "the dock offers no agent picker");
     assert.deepEqual(
       (report.picker.items ?? []).sort(),
       ["Hermes", "Pi"],
-      "the switcher does not offer both agents",
+      "the picker does not offer both agents",
     );
 
-    // Pi's block wears the press kit's mark as a black-and-white glyph: the
-    // same three blocks, one ink, drawn whole inside the circular block. A
-    // block whose mark failed to load would fall back to its initial, and one
-    // drawn too large would be clipped by the circle — both are pictures of
-    // the wrong thing, so both are asserted here rather than left to the eye.
+    // Pi's row wears the press kit's mark as a black-and-white glyph: the same
+    // three blocks, one ink, drawn whole inside the picker's circular disc. A
+    // row whose mark failed to load would fall back to its initial, and one
+    // drawn too large would be clipped by the circle — both are pictures of the
+    // wrong thing, so both are asserted here rather than left to the eye.
     const piMark = (report.picker.marks ?? []).find((mark) => mark.label === "Pi");
     assert.ok(piMark, "the switcher drew no mark for Pi");
-    assert.equal(piMark.kind, "glyph", "Pi's block does not wear the glyph mark");
+    assert.equal(piMark.kind, "glyph", "Pi's picker row does not wear the glyph mark");
     assert.equal(piMark.viewBox, "0 0 800 800", "Pi's mark is not the official logo");
     assert.equal(piMark.pathCount, 3, "Pi's mark lost a block of the logo");
     assert.deepEqual(
@@ -481,17 +485,17 @@ describe("built-in companion (Pi)", () => {
     );
     assert.equal(piMark.fills[0], piMark.ink, "Pi's mark is not drawn in the theme's ink");
     assert.ok(piMark.rendered, "Pi's mark painted nothing");
-    assert.equal(piMark.rendered.centered, true, "Pi's mark is not centered in its block");
-    assert.equal(piMark.rendered.fitsCircle, true, "Pi's mark is clipped by its block");
+    assert.equal(piMark.rendered.centered, true, "Pi's mark is not centered in its disc");
+    assert.equal(piMark.rendered.fitsCircle, true, "Pi's mark is clipped by its disc");
     assert.ok(
       piMark.rendered.sizeRatio > 0.5 && piMark.rendered.sizeRatio < 0.95,
-      `Pi's mark fills ${piMark.rendered.sizeRatio.toFixed(2)} of its block`,
+      `Pi's mark fills ${piMark.rendered.sizeRatio.toFixed(2)} of its disc`,
     );
 
     const hermesMark = (report.picker.marks ?? []).find(
       (mark) => mark.label === "Hermes",
     );
-    assert.equal(hermesMark?.kind, "image", "Hermes' block lost its artwork");
+    assert.equal(hermesMark?.kind, "image", "Hermes' picker row lost its artwork");
     assert.equal(hermesMark?.decoded, true, "Hermes' artwork did not load");
 
     // One ink, two values: the mark is black on the day page and white at
@@ -513,7 +517,7 @@ describe("built-in companion (Pi)", () => {
       `the scope did not reach the vault: ${JSON.stringify(report.scopes.persisted)}`,
     );
     assert.deepEqual(
-      report.scopes.overview.pills.map((pill) => pill.name),
+      report.scopes.overview.options.map((option) => option.name),
       ["Pi"],
       "Overview offered an agent scoped to another domain",
     );
@@ -527,23 +531,23 @@ describe("built-in companion (Pi)", () => {
       );
     } else {
       assert.deepEqual(
-        report.scopes.health.pills.map((pill) => pill.name).sort(),
+        report.scopes.health.options.map((option) => option.name).sort(),
         ["Hermes", "Pi"],
         "the Health domain did not offer both agents",
       );
       assert.equal(
-        report.scopes.health.pills.find((pill) => pill.name === "Hermes")?.active,
+        report.scopes.health.options.find((option) => option.name === "Hermes")?.active,
         true,
         "entering Health did not select its default agent",
       );
     }
     assert.deepEqual(
-      report.scopes.financial.pills.map((pill) => pill.name),
+      report.scopes.financial.options.map((option) => option.name),
       ["Pi"],
       "the Financial domain offered an agent scoped away from it",
     );
     assert.equal(
-      report.scopes.financial.pills.find((pill) => pill.name === "Pi")?.active,
+      report.scopes.financial.options.find((option) => option.name === "Pi")?.active,
       true,
       "entering Financial did not return to its default agent",
     );

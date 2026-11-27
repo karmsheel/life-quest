@@ -50,9 +50,9 @@ type Report = {
     compositionGrid: string;
     compositionVocabulary: string;
     helios: string;
-    extensions: string;
-    extensionsOn: string;
-    extensionsOff: string;
+    customizations: string;
+    customizationsOn: string;
+    customizationsOff: string;
     trust: string;
     studio: string;
     look: string;
@@ -171,9 +171,9 @@ describe("theme files v2", () => {
         report.artifacts.compositionGrid,
         report.artifacts.compositionVocabulary,
         report.artifacts.helios,
-        report.artifacts.extensions,
-        report.artifacts.extensionsOn,
-        report.artifacts.extensionsOff,
+        report.artifacts.customizations,
+        report.artifacts.customizationsOn,
+        report.artifacts.customizationsOff,
         report.artifacts.trust,
         report.artifacts.studio,
         report.artifacts.look,

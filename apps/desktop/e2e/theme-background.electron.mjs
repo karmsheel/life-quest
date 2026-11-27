@@ -4,7 +4,7 @@
  * The contract (docs/superpowers/specs/2026-11-22-app-background.md) says the
  * page can wear a picture the operator picked, that the picture is copied into
  * the app profile rather than linked, that scene themes may carry one, and that
- * the Extensions studio can author one. This rig falsifies each claim on the
+ * the Customizations studio can author one. This rig falsifies each claim on the
  * shipped shell:
  *
  *  1. `the-appearance-page-shows-the-background-section` — Settings →
@@ -30,7 +30,7 @@
  *  9. `the-horizon-sky-paints` + `the-mesh-sky-paints` +
  *     `settings-offers-both-new-skies` — the two new procedural presets paint
  *     their own layers and Settings' Sky row lists them.
- * 10. `the-studio-authors-the-picture-and-saves-it` — Extensions → Edit → Fields
+ * 10. `the-studio-authors-the-picture-and-saves-it` — Customizations → Edit → Fields
  *     → Scene shows the studio picture rows, choosing updates the draft, and
  *     Save writes `scene.background.image` to the profile file (read back).
  * 11. `a-missing-picture-falls-back-to-the-drawn-sky` — a theme naming a file
@@ -325,12 +325,12 @@ const SAMPLE = `(async () => {
   const section = document.querySelector('[data-testid="theme-background"]');
   const previewBar = document.querySelector('[data-testid="theme-preview-bar"]');
   const errorBar = document.querySelector('[data-testid="theme-error"]');
-  const editor = document.querySelector('[data-testid="extension-editor"]');
+  const editor = document.querySelector('[data-testid="customization-editor"]');
   const editorStatus =
-    document.querySelector('[data-testid="extension-editor-status"]') ||
+    document.querySelector('[data-testid="customization-editor-status"]') ||
     document.querySelector('[data-testid="studio-status"]');
   const editorSave =
-    document.querySelector('[data-testid="extension-editor-save"]') ||
+    document.querySelector('[data-testid="customization-editor-save"]') ||
     document.querySelector('[data-testid="studio-save"]');
   const presetHost = document.querySelector('[data-testid="scene-background"]');
   const presetPrefix = "scene-option-";
@@ -463,7 +463,7 @@ const SAMPLE = `(async () => {
         ? (active.getAttribute("data-testid") || "").replace("studio-section-tab-", "")
         : null;
     })(),
-    extensionsPage: Boolean(document.querySelector('[data-testid="extensions-page"]')),
+    customizationsPage: Boolean(document.querySelector('[data-testid="customizations-page"]')),
   };
 })()`;
 
@@ -1549,10 +1549,10 @@ async function main() {
   );
   await leaveSettings();
 
-  // ── 9: the Extensions studio authors the picture ────────────────────────
-  await evaluate(`(() => { location.hash = "#/extensions"; return location.hash; })()`);
-  const extensionsPage = await until(
-    `Boolean(document.querySelector('[data-testid="extensions-page"]'))`,
+  // ── 9: the Customizations studio authors the picture ────────────────────────
+  await evaluate(`(() => { location.hash = "#/customizations"; return location.hash; })()`);
+  const customizationsPage = await until(
+    `Boolean(document.querySelector('[data-testid="customizations-page"]'))`,
     20_000,
   );
   const studioFile = "rig-background.json";
@@ -1566,26 +1566,26 @@ async function main() {
     )}\n`,
   );
   const studioRow = await until(
-    `Boolean(document.querySelector('[data-testid="extension-rig-background"]'))`,
+    `Boolean(document.querySelector('[data-testid="customization-rig-background"]'))`,
     15_000,
   );
   const openStudioEditor = async () => {
     const clicked = await evaluate(`(() => {
-      const el = document.querySelector('[data-testid="extension-rig-background"] [data-testid="extension-edit"]');
+      const el = document.querySelector('[data-testid="customization-rig-background"] [data-testid="customization-edit"]');
       if (!el) return false;
       el.click();
       return true;
     })()`);
     if (!clicked) return false;
-    if (!(await until(`Boolean(document.querySelector('[data-testid="extension-editor"]'))`, 10_000))) {
+    if (!(await until(`Boolean(document.querySelector('[data-testid="customization-editor"]'))`, 10_000))) {
       return false;
     }
     await evaluate(`(() => {
-      const tab = document.querySelector('[data-testid="extension-editor-tab-fields"]');
+      const tab = document.querySelector('[data-testid="customization-editor-tab-fields"]');
       if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
       return true;
     })()`);
-    return until(`Boolean(document.querySelector('[data-testid="extension-studio"]'))`, 10_000);
+    return until(`Boolean(document.querySelector('[data-testid="customization-studio"]'))`, 10_000);
   };
   const studioOpened = await openStudioEditor();
   const sceneTab = studioOpened
@@ -1728,7 +1728,7 @@ async function main() {
   const savedPanels = savedStudio?.scene?.background?.panels ?? null;
   check(
     "the-studio-authors-the-picture-and-saves-it",
-    extensionsPage === true &&
+    customizationsPage === true &&
       studioRow === true &&
       studioOpened === true &&
       sceneTab === true &&
@@ -1753,7 +1753,7 @@ async function main() {
       savedImage?.dim === "soft" &&
       savedImage?.blur === "none",
     JSON.stringify({
-      extensionsPage,
+      customizationsPage,
       studioRow,
       studioOpened,
       sceneTab,
@@ -1875,17 +1875,17 @@ async function main() {
   const invalidOpened = await openStudioEditor();
   const invalidJsonTab = invalidOpened
     ? await (async () => {
-        const clicked = await click("extension-editor-tab-json");
+        const clicked = await click("customization-editor-tab-json");
         if (!clicked) return false;
         return until(
-          `Boolean(document.querySelector('[data-testid="extension-editor-raw"]'))`,
+          `Boolean(document.querySelector('[data-testid="customization-editor-raw"]'))`,
           10_000,
         );
       })()
     : false;
   const setEditorSource = async (text) =>
     evaluate(`(() => {
-      const area = document.querySelector('[data-testid="extension-editor-raw"]');
+      const area = document.querySelector('[data-testid="customization-editor-raw"]');
       if (!area) return false;
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -1931,9 +1931,9 @@ async function main() {
     12_000,
   );
   // Close the editor; the draft (and its preview) must not have reached disk.
-  const cancelEditor = await click("extension-editor-cancel");
+  const cancelEditor = await click("customization-editor-cancel");
   const editorClosed = cancelEditor
-    ? await until(`!document.querySelector('[data-testid="extension-editor"]')`, 10_000)
+    ? await until(`!document.querySelector('[data-testid="customization-editor"]')`, 10_000)
     : false;
   const diskAfterRefusal = JSON.parse(fs.readFileSync(studioPath, "utf8"));
   check(

@@ -27,7 +27,7 @@ import {
  * **Reset to theme** hands every component back to the theme the window is
  * wearing.
  *
- * Optional controlled props (D9) let the Extensions studio reuse these rows
+ * Optional controlled props (D9) let the Customizations studio reuse these rows
  * against a draft theme: `value` is the resolved chrome to show and `onChange`
  * receives patches instead of the provider writing an override. With no props
  * Settings keeps exactly the old behaviour and test ids.

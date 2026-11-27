@@ -1,9 +1,11 @@
 /**
  * The agent-switch rig: does changing agent tear the studio down?
  *
- * Why this exists. The chat dock carries an agent switcher: one pill per agent
- * ("Hermes", the external sidekick, and "Pi", the built-in one). Clicking the
- * other pill is a change of *chat store*, not a new launch — but the reported
+ * Why this exists. The chat dock carries an agent picker: one control that says
+ * who answers next ("Hermes", the external sidekick, or "Pi", the built-in
+ * one). Its default mode is a single mark that opens a roster menu, so a switch
+ * is two clicks — the picker, then the agent. Choosing the other agent is a
+ * change of *chat store*, not a new launch — but the reported
  * failure was that it looked like a reconnection: the whole studio flashed,
  * `CompanionSetupScreen` (the `.welcome` pane with the `.welcome-card` and
  * "Connecting to your LifeQuest companion…") took the page, the dashboard
@@ -28,20 +30,21 @@
  * Both agents get two chats with unmistakable names, then the renderer is
  * reloaded so the world boots on Hermes with those chats. Two Hermes tabs are
  * opened (one chat, then the other with "Open in new tab"), a probe is
- * installed over `#root`, and the Pi pill is clicked.
+ * installed over `#root`, the picker is opened, and Pi's row is clicked.
  *
  * The probe is the primary evidence, because the bug is a transient: a
  * MutationObserver records, after every batch, whether the `.welcome-card`
  * appeared, whether the marked `.home-dashboard` node was detached, whether the
  * splash became visible again, and whether `.chat-panel` was present. Those
  * counters are zero on a pass and cannot be zero if the studio was replaced.
- * The click-to-paint latency, the rail swap, the active pill, and the restored
+ * The click-to-paint latency, the rail swap, the active agent, and the restored
  * tab strip are measured separately; the ceiling on the switch is 2000 ms and
  * the actual number is always reported (the world is not tuned to hide slowness).
  *
  * Beyond that teardown, the rig holds the switch's own race conditions:
- *   A. exactly one `companion:switchHarness` invoke per pill click (counted at
- *      the IPC seam; the page-wrap attempt is reported too), and no pill left
+ *   A. exactly one `companion:switchHarness` invoke per *choice* (counted at
+ *      the IPC seam; the page-wrap attempt is reported too) — opening the
+ *      roster is not a switch — and no agent left
  *      with `--pending`/`aria-busy`;
  *   B. the chat rail is never an empty column — sampled every 50 ms, a sample
  *      with no rows and no empty-state text and no error notice fails the run;
@@ -49,7 +52,7 @@
  *   D. both agents have their own stored strip (`openTabs.hermes`/`.pi`), and a
  *      reload of the document restores the two Hermes tabs and the same tab in
  *      front;
- *   E. the switch never disables the target pill.
+ *   E. the switch never disables the target row or its trigger.
  *
  * Artifacts:
  *   e2e/artifacts/agent-switch.json          the report
@@ -80,10 +83,12 @@ const MODEL = "rig-model";
 const PROBE_PROFILE = "lq-agent-switch";
 const DEV_SERVER_URL = "http://127.0.0.1:5173";
 
-/** The pass/fail ceiling for click → rail+pill settled. The actual is reported. */
+/** The pass/fail ceiling for click → rail+agent settled. The actual is reported. */
 const SWITCH_CEILING_MS = 2000;
 /** How long the page waits for the switch to land before recording a timeout. */
 const SWITCH_WAIT_MS = 20_000;
+/** How long the page waits for the picker's roster to render after opening it. */
+const ROSTER_WAIT_MS = 5_000;
 /** How long the page waits for the previous agent's tabs to come back. */
 const RESTORE_WAIT_MS = 20_000;
 /** Driver watchdog: never leave the wrapper with a hung Electron process. */
@@ -155,7 +160,7 @@ app.commandLine.appendSwitch("disable-background-timer-throttling");
  * but `window.lifequest` is a contextBridge object and contextBridge freezes it,
  * so that wrap cannot be relied on (the page attempt reports whether it took).
  * This seam is the one the app's click actually crosses, so counting here is the
- * authoritative answer to "how many switch invokes did one pill click make".
+ * authoritative answer to "how many switch invokes did one choice make".
  * Installed before the main process registers its handlers (they register in
  * `bootForE2e`), the same latch the startup rig uses to time channels.
  */
@@ -396,7 +401,7 @@ function writeHermesStub(binDir, callLog) {
 // Page scripts
 // ---------------------------------------------------------------------------
 
-/** Everything the report calls a "state": rail, tabs, pills, gates. */
+/** Everything the report calls a "state": rail, tabs, the picker, gates. */
 const READ_STATE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
   const railRows = [...document.querySelectorAll(".chats-rail__rows .chats-rail__row")].map((li) => ({
@@ -408,13 +413,49 @@ const READ_STATE = `(() => {
     active: tab.classList.contains("chat-panel__tab--active"),
     pinned: tab.hasAttribute("data-pinned"),
   }));
-  const pills = [...document.querySelectorAll(".agent-switcher__pill")].map((el) => ({
-    name: el.getAttribute("aria-label"),
-    active: el.getAttribute("aria-checked") === "true",
+  /*
+   * The picker, as a rig reads it. In its default one-mark mode the roster is
+   * behind a menu, so "which agent is active" comes from the trigger's own
+   * data-agent; the option rows only exist while the menu is open, and the
+   * inline modes put them in the dock row instead. Both are reported so a mode
+   * change is visible here, not just on screen.
+   */
+  const pickerEl = document.querySelector('[data-testid="agent-picker"]');
+  const triggerEl = document.querySelector('[data-testid="agent-picker-trigger"]');
+  const menuEl = document.querySelector('[data-testid="agent-picker-menu"]');
+  const rows = [...document.querySelectorAll('.agent-switcher__option[data-agent]')].map((el) => ({
+    agent: el.getAttribute("data-agent"),
+    checked: el.getAttribute("aria-checked") === "true",
     disabled: el.disabled === true,
-    pending: el.classList.contains("agent-switcher__pill--pending"),
+    pending: el.getAttribute("data-pending") === "true",
     busy: el.getAttribute("aria-busy") === "true",
   }));
+  const picker = pickerEl
+    ? {
+        mode: pickerEl.getAttribute("data-mode"),
+        roster: pickerEl.getAttribute("data-roster"),
+        labels: pickerEl.getAttribute("data-labels"),
+        ring: pickerEl.getAttribute("data-ring"),
+        size: pickerEl.getAttribute("data-size"),
+        triggerAgent: triggerEl ? triggerEl.getAttribute("data-agent") : null,
+        triggerDisabled: triggerEl ? triggerEl.disabled === true : false,
+        triggerPending: triggerEl ? triggerEl.getAttribute("data-pending") === "true" : false,
+        triggerBusy: triggerEl ? triggerEl.getAttribute("aria-busy") === "true" : false,
+        menuOpen: Boolean(menuEl),
+        rows,
+      }
+    : null;
+  const activeAgent = picker
+    ? picker.triggerAgent ?? (rows.find((row) => row.checked) || {}).agent ?? null
+    : null;
+  const pendingAgents = [];
+  const busyAgents = [];
+  for (const row of rows) {
+    if (row.pending) pendingAgents.push(row.agent);
+    if (row.busy) busyAgents.push(row.agent);
+  }
+  if (picker && picker.triggerPending && picker.triggerAgent) pendingAgents.push(picker.triggerAgent);
+  if (picker && picker.triggerBusy && picker.triggerAgent) busyAgents.push(picker.triggerAgent);
   const splash = document.getElementById("splash");
   const splashHidden =
     !splash || splash.hasAttribute("hidden") || getComputedStyle(splash).display === "none";
@@ -424,10 +465,10 @@ const READ_STATE = `(() => {
     tabLabels: tabs.map((tab) => tab.label),
     activeTabLabel: (tabs.find((tab) => tab.active) || {}).label || null,
     tabCount: tabs.length,
-    pills,
-    activePill: (pills.find((pill) => pill.active) || {}).name || null,
-    pendingPills: pills.filter((pill) => pill.pending).map((pill) => pill.name),
-    busyPills: pills.filter((pill) => pill.busy).map((pill) => pill.name),
+    picker,
+    activeAgent,
+    pendingAgents,
+    busyAgents,
     dashboard: Boolean(document.querySelector(".home-dashboard")),
     markedDashboard: Boolean(document.querySelector('.home-dashboard[data-lq-probe="before"]')),
     welcomeCard: Boolean(document.querySelector(".welcome-card")),
@@ -450,7 +491,8 @@ const INSTALL_PROBE = `(() => {
     dashboardGone: 0,
     splashSeen: 0,
     chatPanelMissing: 0,
-    pillDisabledSamples: 0,
+    switchTargetDisabledSamples: 0,
+    pendingSightings: 0,
     railSamples: [],
     railBlankSamples: 0,
     railBlankDetails: [],
@@ -505,6 +547,24 @@ const INSTALL_PROBE = `(() => {
   const root = document.getElementById("root") || document.body;
   const observer = new MutationObserver(sample);
   observer.observe(root, { childList: true, subtree: true, attributes: true });
+  /*
+   * The picker's pending mark is a transient the 20ms switch sampler can step
+   * over: it lives from the click until the target's ensure answers, and on a
+   * fast local switch that is one or two commits. A MutationObserver on the
+   * attribute is the same instrument the teardown probe above uses for the same
+   * reason — it counts the paint, not a coincidence of timing.
+   */
+  const pickerObserver = new MutationObserver(() => {
+    if (document.querySelector('.agent-switcher [data-pending="true"]')) {
+      probe.pendingSightings += 1;
+    }
+  });
+  pickerObserver.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-pending", "aria-busy", "data-agent"],
+  });
   sample();
   const markedNode = document.querySelector(".home-dashboard");
   if (markedNode) markedNode.setAttribute("data-lq-probe", "before");
@@ -559,9 +619,38 @@ const INSTALL_PROBE = `(() => {
 })()`;
 
 /**
- * Click the Pi pill and wait for the switch to be visible: the pill active and
- * the rail holding Pi's chats and not Hermes's. Latency and the probe counters
- * ride back in one answer.
+ * Open the picker's roster if it is not already open.
+ *
+ * The shipped default is a mark that opens a menu, so reaching Pi is two
+ * clicks. In an inline mode the row is already in the dock and this is a no-op.
+ * The page reports which happened, so a run against a themed/inline picker does
+ * not look like a failure to open a menu.
+ */
+const OPEN_PICKER = `(async () => {
+  const trigger = () =>
+    document.querySelector('[data-testid="agent-picker-trigger"]');
+  const menu = () => document.querySelector('[data-testid="agent-picker-menu"]');
+  const row = () => document.querySelector('[data-testid="agent-picker-option-pi"]');
+  if (row()) return { opened: false, alreadyOpen: true, reason: null };
+  const el = trigger();
+  if (!el) return { opened: false, alreadyOpen: false, reason: "no picker trigger in the dock" };
+  el.click();
+  const deadline = performance.now() + ${ROSTER_WAIT_MS};
+  while (performance.now() < deadline) {
+    if (row()) return { opened: true, alreadyOpen: false, reason: null };
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return {
+    opened: false,
+    alreadyOpen: false,
+    reason: menu() ? "the roster opened but did not list Pi" : "the roster did not open",
+  };
+})()`;
+
+/**
+ * Choose Pi and wait for the switch to be visible: the trigger naming Pi and the
+ * rail holding Pi's chats and not Hermes's. Latency, the roster rows and the
+ * probe counters ride back in one answer.
  */
 const SWITCH_TO_PI = `(async () => {
   const probe = window.__lqSwitchProbe;
@@ -578,34 +667,57 @@ const SWITCH_TO_PI = `(async () => {
     const tab = document.querySelector(".chat-panel__tab--active");
     return tab ? text(tab.querySelector(".chat-panel__tab-label")) : null;
   };
-  const activePill = () => {
-    const pill = [...document.querySelectorAll(".agent-switcher__pill")].find(
-      (el) => el.getAttribute("aria-checked") === "true",
-    );
-    return pill ? pill.getAttribute("aria-label") : null;
+  const trigger = () =>
+    document.querySelector('[data-testid="agent-picker-trigger"]');
+  const menu = () => document.querySelector('[data-testid="agent-picker-menu"]');
+  const piRow = () =>
+    document.querySelector('[data-testid="agent-picker-option-pi"]');
+  const activeAgent = () => {
+    if (trigger()) return trigger().getAttribute("data-agent");
+    const checked = document.querySelector('.agent-switcher__option[aria-checked="true"]');
+    return checked ? checked.getAttribute("data-agent") : null;
   };
-  const piPill = () =>
-    document.querySelector('.agent-switcher__pill[aria-label="Pi"]');
-  const pill = piPill();
-  if (!pill) {
-    return { clicked: false, reason: "no Pi pill in the dock", rail: rail() };
+
+  const opened = await (${OPEN_PICKER});
+  const rosterRows = menu()
+    ? [...menu().querySelectorAll('[role="menuitemradio"]')].map((el) => el.getAttribute("data-agent"))
+    : [...document.querySelectorAll('.agent-switcher__option[data-agent]')].map((el) => el.getAttribute("data-agent"));
+  const row = piRow();
+  if (!row) {
+    return {
+      clicked: false,
+      timedOut: false,
+      reason: opened.reason || "no Pi row in the picker",
+      rosterOpened: opened.opened,
+      rosterRows,
+      rail: rail(),
+    };
   }
   probe.switchStartMs = Math.round(performance.now() - probe.installedAt);
-  probe.pillDisabledSamples = 0;
+  probe.switchTargetDisabledSamples = 0;
+  const pendingSightingsBefore = probe.pendingSightings;
+  // The row and the trigger are the target's two faces; a switch that greys
+  // either one out under the pointer is the jitter this rig exists to catch.
+  if (row.disabled === true) probe.switchTargetDisabledSamples += 1;
+  let pendingSeen =
+    row.getAttribute("data-pending") === "true" ||
+    Boolean(trigger() && trigger().getAttribute("data-pending") === "true");
   const started = performance.now();
-  pill.click();
+  row.click();
   const deadline = performance.now() + ${SWITCH_WAIT_MS};
   let lastRail = [];
   let lastTabs = [];
   let active = null;
   while (performance.now() < deadline) {
-    const currentPill = piPill();
-    if (currentPill && currentPill.disabled === true) probe.pillDisabledSamples += 1;
-    active = activePill();
+    const current = trigger();
+    if (current && current.disabled === true) probe.switchTargetDisabledSamples += 1;
+    if (current && current.getAttribute("data-pending") === "true") pendingSeen = true;
+    if (current && current.getAttribute("aria-busy") === "true") pendingSeen = true;
+    active = activeAgent();
     lastRail = rail();
     lastTabs = tabs();
     if (
-      active === "Pi" &&
+      active === "pi" &&
       lastRail.includes("Pi alpha") &&
       lastRail.includes("Pi beta") &&
       !lastRail.includes("Hermes alpha")
@@ -614,12 +726,17 @@ const SWITCH_TO_PI = `(async () => {
         clicked: true,
         timedOut: false,
         switchMs: Math.round(performance.now() - started),
-        activePill: active,
+        activeAgent: active,
+        rosterOpened: opened.opened,
+        rosterRows,
+        menuClosedAfterChoice: !menu(),
+        targetPendingSeen:
+          pendingSeen || probe.pendingSightings > pendingSightingsBefore,
+        targetDisabledAtEnd: Boolean(trigger() && trigger().disabled === true),
+        targetDisabledSamples: probe.switchTargetDisabledSamples,
         railTitles: lastRail,
         tabLabels: lastTabs,
         activeTabLabel: activeTab(),
-        pillDisabledAtEnd: Boolean(piPill() && piPill().disabled === true),
-        pillDisabledSamples: probe.pillDisabledSamples,
         welcomeCardAbsent: !document.querySelector(".welcome-card"),
         markedDashboardPresent: Boolean(
           document.querySelector('.home-dashboard[data-lq-probe="before"]'),
@@ -633,12 +750,17 @@ const SWITCH_TO_PI = `(async () => {
     clicked: true,
     timedOut: true,
     switchMs: Math.round(performance.now() - started),
-    activePill: activePill(),
+    activeAgent: activeAgent(),
+    rosterOpened: opened.opened,
+    rosterRows,
+    menuClosedAfterChoice: !menu(),
+    targetPendingSeen:
+      pendingSeen || probe.pendingSightings > pendingSightingsBefore,
+    targetDisabledAtEnd: Boolean(trigger() && trigger().disabled === true),
+    targetDisabledSamples: probe.switchTargetDisabledSamples,
     railTitles: rail(),
     tabLabels: tabs(),
     activeTabLabel: activeTab(),
-    pillDisabledAtEnd: Boolean(piPill() && piPill().disabled === true),
-    pillDisabledSamples: probe.pillDisabledSamples,
     welcomeCardAbsent: !document.querySelector(".welcome-card"),
     markedDashboardPresent: Boolean(
       document.querySelector('.home-dashboard[data-lq-probe="before"]'),
@@ -648,8 +770,8 @@ const SWITCH_TO_PI = `(async () => {
 })()`;
 
 /**
- * Click the Hermes pill and wait for the previous agent's world to come back:
- * Hermes chats in the rail, and both Hermes tabs in the dock's strip.
+ * Choose Hermes and wait for the previous agent's world to come back: Hermes
+ * chats in the rail, and both Hermes tabs in the dock's strip.
  */
 const SWITCH_BACK = `(async () => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
@@ -662,28 +784,40 @@ const SWITCH_BACK = `(async () => {
       label: text(tab.querySelector(".chat-panel__tab-label")),
       active: tab.classList.contains("chat-panel__tab--active"),
     }));
-  const activePill = () => {
-    const pill = [...document.querySelectorAll(".agent-switcher__pill")].find(
-      (el) => el.getAttribute("aria-checked") === "true",
-    );
-    return pill ? pill.getAttribute("aria-label") : null;
+  const trigger = () =>
+    document.querySelector('[data-testid="agent-picker-trigger"]');
+  const activeAgent = () => {
+    if (trigger()) return trigger().getAttribute("data-agent");
+    const checked = document.querySelector('.agent-switcher__option[aria-checked="true"]');
+    return checked ? checked.getAttribute("data-agent") : null;
   };
-  const hermesPill = () =>
-    document.querySelector('.agent-switcher__pill[aria-label="Hermes"]');
-  const pill = hermesPill();
-  if (!pill) {
-    return { clicked: false, reason: "no Hermes pill in the dock", rail: rail() };
-  }
-  const wasActive = pill.getAttribute("aria-checked") === "true";
+  const hermesRow = () =>
+    document.querySelector('[data-testid="agent-picker-option-hermes"]');
+  const wasActive = activeAgent() === "hermes";
   const started = performance.now();
-  if (!wasActive) pill.click();
+  let rosterOpened = false;
+  if (!wasActive) {
+    if (!hermesRow()) {
+      const el = trigger();
+      if (!el) return { clicked: false, reason: "no picker trigger in the dock", rail: rail() };
+      el.click();
+      const rosterDeadline = performance.now() + ${ROSTER_WAIT_MS};
+      while (performance.now() < rosterDeadline && !hermesRow()) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      rosterOpened = true;
+    }
+    const row = hermesRow();
+    if (!row) return { clicked: false, reason: "no Hermes row in the picker", rail: rail() };
+    row.click();
+  }
   const deadline = performance.now() + ${RESTORE_WAIT_MS};
   while (performance.now() < deadline) {
     const labels = rail();
     const items = tabItems();
     const labelsOfTabs = items.map((item) => item.label);
     if (
-      activePill() === "Hermes" &&
+      activeAgent() === "hermes" &&
       labels.includes("Hermes alpha") &&
       labels.includes("Hermes beta") &&
       labelsOfTabs.includes("Hermes alpha") &&
@@ -692,9 +826,10 @@ const SWITCH_BACK = `(async () => {
       return {
         clicked: true,
         wasActive,
+        rosterOpened,
         timedOut: false,
         restoreMs: Math.round(performance.now() - started),
-        activePill: activePill(),
+        activeAgent: activeAgent(),
         railTitles: labels,
         tabLabels: labelsOfTabs,
         activeTabLabel: (items.find((item) => item.active) || {}).label || null,
@@ -709,9 +844,10 @@ const SWITCH_BACK = `(async () => {
   return {
     clicked: true,
     wasActive,
+    rosterOpened,
     timedOut: true,
     restoreMs: Math.round(performance.now() - started),
-    activePill: activePill(),
+    activeAgent: activeAgent(),
     railTitles: rail(),
     tabLabels: tabItems().map((item) => item.label),
     activeTabLabel: (tabItems().find((item) => item.active) || {}).label || null,
@@ -735,7 +871,8 @@ const READ_PROBE = `(() => {
     dashboardGone: probe.dashboardGone,
     splashSeen: probe.splashSeen,
     chatPanelMissing: probe.chatPanelMissing,
-    pillDisabledSamples: probe.pillDisabledSamples,
+    switchTargetDisabledSamples: probe.switchTargetDisabledSamples,
+    pendingSightings: probe.pendingSightings,
     switchStartMs: probe.switchStartMs,
     sampleCount: probe.samples.length,
     duringSwitchSamples: during.length,
@@ -1299,8 +1436,8 @@ async function main() {
 
   check(
     "world: the app booted on Hermes with both seeded chats",
-    seedOk && before.activePill === "Hermes",
-    JSON.stringify({ seed, activePill: before.activePill, railTitles: before.railTitles }),
+    seedOk && before.activeAgent === "hermes",
+    JSON.stringify({ seed, activeAgent: before.activeAgent, picker: before.picker, railTitles: before.railTitles }),
   );
   check("world: the surface is the dashboard, not a connect screen", before.dashboard && before.chatPanel, JSON.stringify({ dashboard: before.dashboard, chatPanel: before.chatPanel }));
   check(
@@ -1345,15 +1482,42 @@ async function main() {
     !afterSwitchRaw.tabLabels.some((label) => HERMES_TITLES.includes(label)),
     JSON.stringify(afterSwitchRaw.tabLabels),
   );
-  // 5. The active pill is the one that was clicked, and it is not stuck disabled.
+  // 5. The active agent is the one that was chosen, and it is not stuck disabled.
   check(
-    "the active pill is Pi",
-    afterSwitchRaw.activePill === "Pi" && afterSwitchRaw.pillDisabledAtEnd === false,
+    "the active agent is Pi",
+    afterSwitchRaw.activeAgent === "pi" && afterSwitchRaw.targetDisabledAtEnd === false,
     JSON.stringify({
-      activePill: afterSwitchRaw.activePill,
-      pillDisabledAtEnd: afterSwitchRaw.pillDisabledAtEnd,
-      pillDisabledSamples: afterSwitchRaw.pillDisabledSamples,
+      activeAgent: afterSwitchRaw.activeAgent,
+      targetDisabledAtEnd: afterSwitchRaw.targetDisabledAtEnd,
+      targetDisabledSamples: afterSwitchRaw.targetDisabledSamples,
     }),
+  );
+  // 5b. The default picker is a menu: the roster had to be opened, and the pick
+  // closed it. An inline (themed) picker reports opened=false and says so, so a
+  // mode change never reads as a broken rig.
+  check(
+    "the picker's roster opened, listed both agents and closed on the choice",
+    afterSwitchRaw.rosterOpened === true &&
+      Array.isArray(afterSwitchRaw.rosterRows) &&
+      afterSwitchRaw.rosterRows.includes("hermes") &&
+      afterSwitchRaw.rosterRows.includes("pi") &&
+      afterSwitchRaw.menuClosedAfterChoice === true,
+    JSON.stringify({
+      rosterOpened: afterSwitchRaw.rosterOpened,
+      rosterRows: afterSwitchRaw.rosterRows,
+      menuClosedAfterChoice: afterSwitchRaw.menuClosedAfterChoice,
+      picker: before.picker && {
+        mode: before.picker.mode,
+        roster: before.picker.roster,
+      },
+    }),
+  );
+  // 5c. The pending mark was actually shown (a switch that never breathes may
+  // still work, but the operator gets no feedback that the click landed).
+  check(
+    "the pending mark showed on the way to Pi",
+    afterSwitchRaw.targetPendingSeen === true,
+    `targetPendingSeen=${afterSwitchRaw.targetPendingSeen}`,
   );
   // 6. The switch was quick enough, and the number is reported either way.
   check(
@@ -1416,11 +1580,11 @@ async function main() {
     }),
   );
 
-  // ── A. Exactly one switch invoke per pill click; the pending mark clears ──
+  // ── A. Exactly one switch invoke per choice; the pending mark clears ──────
   const switchCallsDuringSwitch = switchInvokesAfterSwitch - switchInvokesBefore;
   const switchCallsDuringRestore = switchInvokesAfterRestore - switchInvokesAfterSwitch;
   check(
-    "each pill click sent exactly one companion:switchHarness invoke",
+    "each choice sent exactly one companion:switchHarness invoke",
     switchCallsDuringSwitch === 1 && switchCallsDuringRestore === 1,
     JSON.stringify({
       duringSwitch: switchCallsDuringSwitch,
@@ -1432,13 +1596,13 @@ async function main() {
     }),
   );
   check(
-    "the pending pill mark cleared",
-    stateRestored.pendingPills.length === 0 && stateRestored.busyPills.length === 0,
+    "the pending mark cleared",
+    stateRestored.pendingAgents.length === 0 && stateRestored.busyAgents.length === 0,
     JSON.stringify({
-      pendingAtEnd: stateRestored.pendingPills,
-      busyAtEnd: stateRestored.busyPills,
-      pendingAfterSwitch: stateAfterSwitch.pendingPills,
-      busyAfterSwitch: stateAfterSwitch.busyPills,
+      pendingAtEnd: stateRestored.pendingAgents,
+      busyAtEnd: stateRestored.busyAgents,
+      pendingAfterSwitch: stateAfterSwitch.pendingAgents,
+      busyAfterSwitch: stateAfterSwitch.busyAgents,
     }),
   );
   // ── B. The rail never went blank ─────────────────────────────────────────
@@ -1483,11 +1647,11 @@ async function main() {
       reloadWelcomeCardSamples,
     }),
   );
-  // ── E. The switch never disabled the target pill ─────────────────────────
+  // ── E. The switch never disabled the target row or trigger ────────────────
   check(
-    "the switch never disabled the target pill",
-    afterSwitchRaw.pillDisabledSamples === 0,
-    `pillDisabledSamples=${afterSwitchRaw.pillDisabledSamples}`,
+    "the switch never disabled the target or its trigger",
+    afterSwitchRaw.targetDisabledSamples === 0,
+    `targetDisabledSamples=${afterSwitchRaw.targetDisabledSamples}`,
   );
 
   const ok = failures.length === 0;
@@ -1516,7 +1680,8 @@ async function main() {
       tabLabels: before.tabLabels,
       tabCount: before.tabCount,
       activeTabLabel: before.activeTabLabel,
-      activePill: before.activePill,
+      activeAgent: before.activeAgent,
+      picker: before.picker,
       dashboard: before.dashboard,
       chatPanel: before.chatPanel,
     },
@@ -1549,12 +1714,20 @@ async function main() {
       sampleCount: probeAtEnd.railSampleCount,
       blankDetails: probeAtEnd.railBlankDetails,
     },
-    pill: {
-      disabledSamples: afterSwitchRaw.pillDisabledSamples,
-      pendingAfterSwitch: stateAfterSwitch.pendingPills,
-      busyAfterSwitch: stateAfterSwitch.busyPills,
-      pendingAtEnd: stateRestored.pendingPills,
-      busyAtEnd: stateRestored.busyPills,
+    picker: {
+      modeOnBoot: before.picker ? before.picker.mode : null,
+      rosterOnBoot: before.picker ? before.picker.roster : null,
+      rosterOpened: afterSwitchRaw.rosterOpened,
+      rosterRows: afterSwitchRaw.rosterRows,
+      menuClosedAfterChoice: afterSwitchRaw.menuClosedAfterChoice,
+      targetPendingSeen: afterSwitchRaw.targetPendingSeen,
+      targetDisabledSamples: afterSwitchRaw.targetDisabledSamples,
+      pendingAfterSwitch: stateAfterSwitch.pendingAgents,
+      busyAfterSwitch: stateAfterSwitch.busyAgents,
+      pendingAtEnd: stateRestored.pendingAgents,
+      busyAtEnd: stateRestored.busyAgents,
+      stateAfterSwitch: stateAfterSwitch.picker,
+      stateRestored: stateRestored.picker,
     },
     draft: {
       text: DRAFT,
@@ -1613,8 +1786,10 @@ async function main() {
           pageWrap: switchCounter,
         },
         railBlankSamples: probeAtEnd.railBlankSamples,
-        pillDisabledSamples: afterSwitchRaw.pillDisabledSamples,
-        pendingAtEnd: stateRestored.pendingPills,
+        pickerMode: before.picker ? before.picker.mode : null,
+        rosterRows: afterSwitchRaw.rosterRows,
+        targetDisabledSamples: afterSwitchRaw.targetDisabledSamples,
+        pendingAtEnd: stateRestored.pendingAgents,
         draftRestored: draftRestored.value,
         storedStrips: {
           hermes: storageBeforeReload.hermesRaw !== null,

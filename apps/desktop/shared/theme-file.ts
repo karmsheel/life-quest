@@ -26,8 +26,15 @@ import {
   parseComposition,
   type ThemeComposition,
 } from "./composition.ts";
+import {
+  DEFAULT_AGENT_PICKER,
+  layerAgentPicker,
+  parseAgentPickerChoice,
+  type AgentPickerChoice,
+} from "./agent-picker.ts";
 
 export * from "./composition.ts";
+export * from "./agent-picker.ts";
 
 export type WingSwitcherPlace =
   | "rail-top"
@@ -64,6 +71,12 @@ export type ThemeChrome = {
   chatDock: { side: ChatDockSide };
   /** The window strip's height: how much of the top the chrome takes. */
   titlebar: { size: TitlebarSize };
+  /**
+   * The chat dock's agent picker: which shipped mode it wears, or the author's
+   * own combination of the four axes (see `agent-picker.ts`). Defaults to
+   * `one-mark`, so a theme that never mentions it still ships the quiet picker.
+   */
+  agentPicker: AgentPickerChoice;
 };
 
 /**
@@ -78,6 +91,11 @@ export type ThemeChromeOverride = {
   navRail?: Partial<ThemeChrome["navRail"]>;
   chatDock?: Partial<ThemeChrome["chatDock"]>;
   titlebar?: Partial<ThemeChrome["titlebar"]>;
+  /**
+   * The picker's own pick. Its axes layer one by one, so an operator who only
+   * prefers the named chip keeps the theme's size, ring and roster.
+   */
+  agentPicker?: Partial<AgentPickerChoice>;
 };
 
 export type SceneBackdropPreset =
@@ -215,6 +233,13 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
   navRail: { place: "left", width: "default" },
   chatDock: { side: "right" },
   titlebar: { size: "default" },
+  /*
+   * One mark, by default. The picker's job is to be found when looked for, not
+   * to compete with the composer's own accent outline; a theme that wants the
+   * agent named wears `named-chip`, and one that wants both marks inline wears
+   * `quiet-stack`.
+   */
+  agentPicker: DEFAULT_AGENT_PICKER,
 };
 
 /** A picture's sitting defaults: fit the whole page, softened so text reads. */
@@ -805,6 +830,12 @@ export function parseThemeFile(raw: unknown): ParseResult {
         };
       }
     }
+    const agentPicker = raw.chrome.agentPicker;
+    if (agentPicker !== undefined) {
+      const parsed = parseAgentPickerChoice(agentPicker, "chrome.agentPicker");
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+      chrome.agentPicker = parsed.value;
+    }
   }
 
   const scene: ThemeSceneFile = {};
@@ -970,6 +1001,10 @@ export function resolveChrome(chrome?: Partial<ThemeChrome>): ThemeChrome {
       ...DEFAULT_THEME_CHROME.titlebar,
       ...chrome?.titlebar,
     },
+    // The picker layers by axis rather than by component: a theme that names
+    // only `{ mode: "named-chip" }` and an operator who only prefers a large
+    // mark must both survive the merge.
+    agentPicker: layerAgentPicker(DEFAULT_AGENT_PICKER, chrome?.agentPicker),
   };
 }
 
@@ -984,6 +1019,7 @@ export function layerChrome(
     navRail: { ...theme?.navRail, ...override?.navRail },
     chatDock: { ...theme?.chatDock, ...override?.chatDock },
     titlebar: { ...theme?.titlebar, ...override?.titlebar },
+    agentPicker: layerAgentPicker(theme?.agentPicker, override?.agentPicker),
   } as Partial<ThemeChrome>);
 }
 
@@ -1052,6 +1088,7 @@ export const THEME_VOCABULARY = [
   "Shape: { name (slug), label, description?, chrome?, material?, scene?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
   "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill | icons | list; frame pill | bare — bare drops the dock's container so the rows are the whole control).",
+  "chrome.agentPicker: the chat dock's agent picker, as data. mode: one-mark (default — only the answering agent's mark, roster in a menu) | named-chip (same trigger, the agent named beside it) | quiet-stack (both marks inline, no capsule, one click to switch) | custom (the operator's own combination). Optional chrome.agentPicker.recipe layers over the mode: roster menu | inline, labels none | agent | all, ring accent | hairline, size compact | default | large. It is a shape the renderer already knows, never code or CSS: an unknown value is refused naming the field.",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "scene.background.preset: plain | starfield | orbit | aurora | horizon | mesh (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the whole shell — sidebar, page and dock — behind a scrim, and stops dead under prefers-reduced-motion.",
   "scene.background.image: { file, fit, position, dim, blur } — a picture already stored in the app profile's backgrounds/ directory, which the operator picks; a theme names the stored file, never a path or URL. fit: cover | contain | tile; position: center | top | bottom; dim: none | soft | strong; blur: none | soft | deep. It replaces the drawn sky while set, and a missing file falls back to it.",

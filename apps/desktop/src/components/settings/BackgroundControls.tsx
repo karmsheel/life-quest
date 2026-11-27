@@ -36,7 +36,7 @@ import {
  * Appearance stack reads as one family. The Picture row is the one custom row:
  * it carries a file name, two actions and a refusal line.
  *
- * Optional controlled props (D9) let the Extensions studio edit the same picks
+ * Optional controlled props (D9) let the Customizations studio edit the same picks
  * as a draft theme: `value` is the resolved scene, `onChange` receives the
  * patch, and no override is written. Settings renders it with no props and keeps
  * the ids the rigs know.

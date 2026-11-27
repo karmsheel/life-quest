@@ -108,6 +108,8 @@ refused with the reason naming the field that failed.
 
 **Layout** sits under the skin grid: where the wing switcher (`Rail top`, `Titlebar left`, `Floating left`, `Hidden`) and the area lens (`Titlebar centre`, `Sidebar rail`, `Below titlebar`, `Bottom centre`, `Floating bottom right`, `Hidden`) live, what they look like (`Labels` / `Icons` / `Compact`; `Segmented` / `Pill` / `Icons` / `List`, plus a frame choice `Pill` / `Bare` for the area lens — bare drops the dock's pill, and its border and shadow with it, so the rows are the whole control) how wide the sidebar is (`Narrow` / `Default` / `Wide`), which edge it holds (`Left` / `Right` / `Floating` — a rounded card riding above the page, with the page keeping the window's full width underneath), where the chat dock sits (`Left` / `Right`) and how tall the window strip is (`Compact` / `Default` / `Tall`; on Windows and Linux `Compact` cannot go below the caption strip the system draws). A theme file proposes all of it; your pick here wins, is marked as yours, and **Reset to theme** hands it back. `Hidden` is real — the preview bar, the Settings entry and the window controls are never hidden by a theme, so there is always a way out. Full-screen chat (`Ctrl+Shift+F`, or the dock's bottom-bar control, or the layouts picker's **Full agent** card) works in every placement: with the rail floating it starts at the card's trailing edge, with the rail on the right it takes the leading side, and leaving it puts the rail and the dock back on the exact boxes they had.
 
+**Agent picker** sits beside Layout: the chat dock's who-answers control is a component a theme can shape, and this row is your own pick of its shape. **One mark** (the default) is the answering agent's mark and a chevron, its roster in a menu; **Named chip** is the same trigger with the agent named; **Quiet stack** puts both marks on a row under the composer, one hairline each, one click to switch; **Custom** is your own combination of four closed axes — **Roster** (`Menu` / `Inline`), **Labels** (`None` / `Agent` / `All`), **Ring** (`Accent` / `Hairline`) and **Size** (`Compact` / `Default` / `Large`). It writes the same `chrome.agentPicker` a theme file can — a mode name, plus the axes for a custom recipe — and it is data, never code: the app reacts only to modes and values it already knows how to draw, so a theme can never ship a component. Your pick here outranks the theme's, is marked as yours, and survives the file being kept, swapped or removed; **Reset to theme** hands it back. The [Customizations](./37-customizations.md) page describes the modes, the axes and the studio's **Components** section in full.
+
 **Material** sits directly under the theme grid: six segmented controls — Radius, Elevation, Type scale, Density, Motion and Backdrop — that pick the named steps the shell was built against. Density is a real spacing ladder: page margins, the rail's rows and the dock's transcript all move with it, because the shell reads one set of spacing tokens and no panel sets its own padding. A theme file proposes its own steps, but your pick here always wins, is marked as yours, and survives swapping, keeping or removing the theme. **Reset to theme** hands the axes back to whatever theme is worn.
 
 **Theme files** are a narrower, more structural thing than a skin. A theme file
@@ -124,7 +126,8 @@ of three more: *Paper Trail* (daylight, editorial), *Night Shift* (night, calm)
 and *Control Room* (instrument panel) — copied into the folder on first run so you
 can see the whole ladder without asking an agent for anything. Each carries a
 **Gallery** chip; they are normal files from then on, and if you Remove one, it
-stays removed. The **Extensions** page (route `/extensions`) is the workshop for those same
+stays removed. The **Customizations** page (route `/customizations`; its former
+`/extensions` address redirects there) is the workshop for those same
 files — select, switch active or off, edit the JSON with live validation or build the look in
 the **Fields** studio, or create a new one. The **Theme files** list on this page shows every file the app
 could read, with **Try** (enter the preview again), **Keep** (wear it from now
@@ -133,13 +136,14 @@ Remove?). **Open folder** opens the profile's `themes/` folder and **Export
 current theme** saves the palette, material and chrome you are wearing as one
 JSON file you can share. A file whose placement is not one of the declared
 values, or whose palette fails WCAG AA contrast, is refused with the field — or
-the failing colour pair — named. Every save made from the **Extensions** page can
+the failing colour pair — named. Every save made from the **Customizations** page can
 be stepped back through that file's **History** there, and a file can be brought
 in from disk with **Import from file**. The division between the two surfaces is
 deliberate: **Appearance is your own override layer** — a pick made here outranks
 the theme, is marked as yours, and survives the file being kept, swapped or
-removed — while the **Extensions studio authors the file** itself (its chrome,
-material, scene, palette and composition). The two stack; they are not unified.
+removed — while the **Customizations studio authors the file** itself (its chrome,
+material, scene, palette, composition and the agent picker's mode). The two stack;
+they are not unified.
 
 Theme, skin, starred list and installed themes are stored in the window's local
 storage, not in the vault: they are this installation's look, and they do not

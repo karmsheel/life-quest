@@ -115,7 +115,7 @@ wants to know what is on disk and what runs where.
 | [33 · Glossary](./33-glossary.md) | Every product term, defined once |
 | [34 · Common workflows](./34-common-workflows.md) | End-to-end recipes for the things you will actually do |
 | [36 · Keyboard shortcuts](./36-keyboard-shortcuts.md) | The movements, their defaults, and how to rebind them |
-| [37 · Extensions](./37-extensions.md) | The workshop for theme files: select, switch, edit, create |
+| [37 · Customizations](./37-customizations.md) | The workshop for the shell's data files: select, switch, edit, create — and the agent picker's own mode |
 | [Releases](https://karmsheel.github.io/life-quest/releases/) | Every published release, generated from the GitHub Releases feed |
 
 ## Conventions

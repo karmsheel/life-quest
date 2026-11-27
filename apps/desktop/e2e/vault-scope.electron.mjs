@@ -19,10 +19,10 @@
  *      switch goes through the operator's own path — the rail-foot vault chip's
  *      "Switch vault" dialog, which drives `openRecent` and so the real
  *      `VaultProvider` snapshot change and the renderer's vault-epoch reset.
- *      Beta's rail is empty, its tab strip is empty, and its switcher draws Pi
+ *      Beta's rail is empty, its tab strip is empty, and its picker offers Pi
  *      only.
- *   3. Fresh agent. Settings adds a Hermes agent to Beta: the Hermes pill
- *      appears, the binding names the new profile, a Beta Hermes chat can be
+ *   3. Fresh agent. Settings adds a Hermes agent to Beta: the picker offers
+ *      Hermes, the binding names the new profile, a Beta Hermes chat can be
  *      made, and a reload keeps it. Alpha sees none of it.
  *   4. Return. Switching back restores each vault's own chats, tab strip and
  *      agent; neither vault's titles leak into the other.
@@ -437,7 +437,7 @@ function writeHermesStub(binDir, callLog) {
 // Page scripts
 // ---------------------------------------------------------------------------
 
-/** Everything the report calls a "state": rail, tabs, pills, gates, chrome. */
+/** Everything the report calls a "state": rail, tabs, the picker, gates, chrome. */
 const READ_STATE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
   const railRows = [...document.querySelectorAll(".chats-rail__rows .chats-rail__row")].map((li) => ({
@@ -448,13 +448,22 @@ const READ_STATE = `(() => {
     label: text(tab.querySelector(".chat-panel__tab-label")),
     active: tab.classList.contains("chat-panel__tab--active"),
   }));
-  const pills = [...document.querySelectorAll(".agent-switcher__pill")].map((el) => ({
-    name: el.getAttribute("aria-label"),
-    active: el.getAttribute("aria-checked") === "true",
-    disabled: el.disabled === true,
-    pending: el.classList.contains("agent-switcher__pill--pending"),
-    busy: el.getAttribute("aria-busy") === "true",
-  }));
+  /*
+   * The picker, as far as a passive read can see it. The shipped one-mark
+   * mode is one trigger, so the offered agents live in the menu it opens and
+   * only READ_ROSTER can list them; this snapshot records the recipe and the
+   * answering agent (the trigger's own data-agent, or the checked row in an
+   * inline roster) without opening anything.
+   */
+  const pickerEl = document.querySelector('[data-testid="agent-picker"]');
+  const triggerEl = document.querySelector('[data-testid="agent-picker-trigger"]');
+  const checkedOption = document.querySelector(
+    '.agent-switcher .agent-switcher__option[aria-checked="true"]',
+  );
+  const pickerAgent =
+    (triggerEl && triggerEl.getAttribute("data-agent")) ||
+    (checkedOption && checkedOption.getAttribute("data-agent")) ||
+    null;
   const railEmpty = document.querySelector(".chats-rail__list .chats-rail__empty");
   const railError = document.querySelector(".chats-rail__error");
   const splash = document.getElementById("splash");
@@ -467,9 +476,10 @@ const READ_STATE = `(() => {
     tabLabels: tabs.map((tab) => tab.label),
     activeTabLabel: (tabs.find((tab) => tab.active) || {}).label || null,
     tabCount: tabs.length,
-    pills,
-    pillNames: pills.map((pill) => pill.name),
-    activePill: (pills.find((pill) => pill.active) || {}).name || null,
+    pickerShown: Boolean(pickerEl),
+    pickerMode: pickerEl ? pickerEl.getAttribute("data-mode") : null,
+    rosterKind: pickerEl ? pickerEl.getAttribute("data-roster") : null,
+    activeAgent: pickerAgent,
     dashboard: Boolean(document.querySelector(".home-dashboard")),
     chatPanel: Boolean(document.querySelector(".chat-panel")),
     welcomeCard: Boolean(document.querySelector(".welcome-card")),
@@ -480,6 +490,119 @@ const READ_STATE = `(() => {
     splashHidden: !splash || splash.hasAttribute("hidden") || getComputedStyle(splash).display === "none",
   };
 })()`;
+
+/**
+ * The picker's offered agents, read by opening it once.
+ *
+ * The shipped `one-mark` mode shows a single trigger whose roster is a menu, so
+ * the offered set — and which one answers — exists only while that menu is
+ * open. This is the read half of the operator's two-click flow: open the
+ * trigger, list the rows, close the menu the read opened. An inline-roster
+ * theme draws the rows in the dock row and needs no open. Every state read that
+ * asserts on the offered agents calls this next to READ_STATE.
+ */
+const READ_ROSTER = `(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const text = (el) => (el && el.textContent ? el.textContent.trim() : "");
+  const root = () => document.querySelector('[data-testid="agent-picker"]');
+  const trigger = () => document.querySelector('[data-testid="agent-picker-trigger"]');
+  const menu = () => document.querySelector('[data-testid="agent-picker-menu"]');
+  const rows = () => [...document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]")];
+  if (!root()) {
+    return { shown: false, mode: null, rosterKind: null, active: null, names: [], options: [], reason: "no agent picker in the dock" };
+  }
+  const inline = root().getAttribute("data-roster") === "inline";
+  let opened = false;
+  if (!inline && !menu()) {
+    const el = trigger();
+    if (!el) {
+      return {
+        shown: true,
+        inline,
+        mode: root().getAttribute("data-mode"),
+        rosterKind: root().getAttribute("data-roster"),
+        active: null,
+        names: [],
+        options: [],
+        reason: "no trigger and no inline roster",
+      };
+    }
+    el.click();
+    opened = true;
+    const deadline = performance.now() + 3000;
+    while (performance.now() < deadline && !menu()) await sleep(20);
+  }
+  const options = rows().map((el) => ({
+    agent: el.getAttribute("data-agent"),
+    name: text(el.querySelector(".agent-switcher__name")) || el.getAttribute("data-agent"),
+    active: el.getAttribute("aria-checked") === "true",
+    disabled: el.disabled === true,
+    pending: el.getAttribute("data-pending") === "true",
+    busy: el.getAttribute("aria-busy") === "true",
+  }));
+  const active =
+    (trigger() && trigger().getAttribute("data-agent")) ||
+    (options.find((option) => option.active) || {}).agent ||
+    null;
+  const result = {
+    shown: true,
+    inline,
+    mode: root().getAttribute("data-mode"),
+    rosterKind: root().getAttribute("data-roster"),
+    active,
+    names: options.map((option) => option.name),
+    options,
+    reason: options.length ? null : "the roster listed no agents",
+  };
+  if (opened && !inline) {
+    const el = trigger();
+    if (el) el.click();
+  }
+  return result;
+})()`;
+
+/**
+ * Choose an agent from the dock's picker, the way the operator does now: open
+ * the trigger (the shipped one-mark mode's roster is its menu) and click the
+ * agent's row. An inline roster needs only the row. Clicking the row already
+ * marked active only dismisses the menu, which is reported as `alreadyActive`.
+ */
+function selectAgentScript(agent) {
+  return `(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const root = () => document.querySelector('[data-testid="agent-picker"]');
+    const trigger = () => document.querySelector('[data-testid="agent-picker-trigger"]');
+    const options = () =>
+      [...document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]")];
+    const row = () =>
+      options().find((el) => el.getAttribute("data-agent") === ${JSON.stringify(agent)}) || null;
+    if (!root()) return { ok: false, reason: "no agent picker in the dock" };
+    const inline = root().getAttribute("data-roster") === "inline";
+    let openedMenu = false;
+    if (!inline && !row()) {
+      const el = trigger();
+      if (!el) return { ok: false, reason: "no picker trigger in the dock" };
+      el.click();
+      openedMenu = true;
+      const deadline = performance.now() + 3000;
+      while (performance.now() < deadline && !row()) await sleep(20);
+    }
+    const el = row();
+    if (!el) {
+      return {
+        ok: false,
+        reason: "the picker's roster does not offer the agent",
+        offered: options().map((node) => node.getAttribute("data-agent")),
+      };
+    }
+    const alreadyActive = el.getAttribute("aria-checked") === "true";
+    el.click();
+    return { ok: true, alreadyActive, openedMenu, wasDisabled: el.disabled === true };
+  })()`;
+}
+
+/** The Hermes choice through the picker, used wherever the rig must activate it. */
+const SELECT_HERMES = selectAgentScript("hermes");
 
 /**
  * Switch vaults the way the operator does: click the rail-foot vault chip, then
@@ -900,15 +1023,6 @@ const CLICK_USE_HERMES_SETTINGS = `(() => {
   return { ok: true, label: (button.textContent || "").trim() };
 })()`;
 
-/** Click the dock's Hermes pill. */
-const CLICK_HERMES_PILL = `(() => {
-  const pill = document.querySelector('.agent-switcher__pill[aria-label="Hermes"]');
-  if (!pill) return { ok: false, reason: "no Hermes pill in the dock" };
-  if (pill.getAttribute("aria-checked") === "true") return { ok: true, alreadyActive: true };
-  pill.click();
-  return { ok: true, alreadyActive: false };
-})()`;
-
 /** Per-vault, per-agent tab memory, as the app stored it. */
 function readStorageScript(alphaId, betaId) {
   return `(() => {
@@ -1125,7 +1239,26 @@ async function main() {
     );
   };
 
-  const readState = () => js(READ_STATE);
+  const readState = async () => {
+    const state = await js(READ_STATE);
+    // The offered agents are behind the trigger; one open-and-close read next
+    // to the passive snapshot gives every caller the offered-agent set an
+    // always-visible strip used to answer. `activeAgent` is the answering
+    // agent's *name* - the vocabulary this report has always used (the old
+    // strip read it from aria-label); READ_STATE keeps the raw data-agent id in
+    // `activeAgentId` for anyone who wants the id rather than the name.
+    const roster = await js(READ_ROSTER);
+    const answering = roster.options.find((option) => option.agent === roster.active) || null;
+    return {
+      ...state,
+      roster,
+      rosterNames: roster.names,
+      rosterOptions: roster.options,
+      activeAgent: answering ? answering.name : null,
+      activeAgentId: roster.active ?? state.activeAgent,
+      pickerShown: roster.shown || state.pickerShown,
+    };
+  };
   const readAgentsState = () => js(READ_AGENTS_STATE);
   const readStorage = () => js(readStorageScript(alphaId, betaId));
   /** The two vaults' bindings as they stand on disk, with the invoke counts. */
@@ -1237,8 +1370,8 @@ async function main() {
     alphaBucketHasLegacy: fs.existsSync(path.join(alphaBucketDir, `${LEGACY_PI_ID}.json`)),
     betaBucketJson: listJson(betaBucketDir),
     railTitles: bootState.railTitles,
-    pillNames: bootState.pillNames,
-    activePill: bootState.activePill,
+    rosterNames: bootState.rosterNames,
+    activeAgent: bootState.activeAgent,
     tabLabels: bootState.tabLabels,
     storage: bootStorage,
   };
@@ -1261,8 +1394,8 @@ async function main() {
       state.switchDialogOpen === false &&
       state.railTitles.length === 0 &&
       state.tabCount === 0 &&
-      state.pillNames.length === 1 &&
-      state.pillNames[0] === "Pi",
+      state.rosterNames.length === 1 &&
+      state.rosterNames[0] === "Pi",
     60_000,
   );
   await sleep(500);
@@ -1340,14 +1473,14 @@ async function main() {
 
   // Bring Hermes up: the add binds it, but a vault can also be bound without
   // being active (the product rule). The shipped control for that is the card's
-  // own "Use Hermes"; the dock's pill is the same switch and is the fallback.
+  // own "Use Hermes"; the dock's picker is the same switch and is the fallback.
   // Every fallback step is recorded: a silent path change here would hide a
   // broken Settings action behind a passing rig.
   let activation = "already-active";
   let activationState = await readState();
   let settingsUse = null;
-  let pill = null;
-  if (activationState.activePill !== "Hermes") {
+  let pickerChoice = null;
+  if (activationState.activeAgent !== "Hermes") {
     settingsUse = await js(CLICK_USE_HERMES_SETTINGS);
     if (settingsUse.ok) {
       activation = "settings-use-hermes";
@@ -1355,15 +1488,15 @@ async function main() {
       const closed = await js(CLOSE_SETTINGS);
       if (!closed.ok) await js('window.location.hash = "#/home"');
       // The dock's harness list may still be catching up with the add's
-      // refetch; give the pill a few seconds to appear before falling back.
-      const pillDeadline = Date.now() + 8000;
-      while (Date.now() < pillDeadline) {
-        pill = await js(CLICK_HERMES_PILL);
-        if (pill.ok) break;
+      // refetch; give the picker a few seconds to appear before falling back.
+      const choiceDeadline = Date.now() + 8000;
+      while (Date.now() < choiceDeadline) {
+        pickerChoice = await js(SELECT_HERMES);
+        if (pickerChoice.ok) break;
         await sleep(250);
       }
-      if (pill.ok) {
-        activation = pill.alreadyActive ? "already-active" : "pill";
+      if (pickerChoice.ok) {
+        activation = pickerChoice.alreadyActive ? "already-active" : "picker";
       } else {
         // A reload is a cold renderer: never reload onto the Settings sheet,
         // or the dashboard is not behind it and the wait can never settle.
@@ -1373,15 +1506,15 @@ async function main() {
         win.webContents.reload();
         await loaded;
         await waitFor("the dashboard after the add reload", async () => (await readState()).dashboard === true, 90_000, 100);
-        pill = await js(CLICK_HERMES_PILL);
-        activation = pill.ok ? "reload+pill" : "unavailable";
+        pickerChoice = await js(SELECT_HERMES);
+        activation = pickerChoice.ok ? "reload+picker" : "unavailable";
       }
     }
   }
   markPrefs("after-use-hermes");
   const hermesActive = await waitState(
     "Beta on Hermes",
-    (state) => state.activePill === "Hermes" && state.pillNames.includes("Hermes"),
+    (state) => state.activeAgent === "Hermes" && state.rosterNames.includes("Hermes"),
     60_000,
   );
   const afterActivationAgents = await readAgentsState();
@@ -1406,12 +1539,12 @@ async function main() {
   const betaHermesChat = await js(createChatAndRenameScript(BETA_CHAT_TITLE));
   const betaHermesState = await waitState(
     "Beta's Hermes chat in the rail",
-    (state) => state.railTitles.includes(BETA_CHAT_TITLE) && state.pillNames.includes("Hermes"),
+    (state) => state.railTitles.includes(BETA_CHAT_TITLE) && state.rosterNames.includes("Hermes"),
     40_000,
   );
   const betaHermesStorage = await readStorage();
 
-  // ── 3b. A reload keeps Beta's Hermes chat, pill and binding ──────────────
+  // ── 3b. A reload keeps Beta's Hermes chat, picker and binding ────────────
   const reloadStartedAt = Date.now();
   const reloadLoaded = new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
   win.webContents.reload();
@@ -1423,7 +1556,7 @@ async function main() {
       state.chatPanel === true &&
       state.vaultChipName === BETA_NAME &&
       state.railTitles.includes(BETA_CHAT_TITLE) &&
-      state.pillNames.includes("Hermes"),
+      state.rosterNames.includes("Hermes"),
     90_000,
   );
   await sleep(600);
@@ -1444,7 +1577,7 @@ async function main() {
     switchHarnessInvokes: switchHarnessInvokes.map((entry) => ({ ...entry })),
     prefsTimeline,
     activation,
-    activationDetail: { settingsUse, pill },
+    activationDetail: { settingsUse, pickerChoice },
     activationState,
     hermesActive: hermesActive.state,
     profile: freshProfile,
@@ -1477,8 +1610,8 @@ async function main() {
       state.switchDialogOpen === false &&
       state.railTitles.includes(LEGACY_PI_TITLE) &&
       state.railTitles.includes(ALPHA_CHAT_TITLE) &&
-      state.pillNames.length === 1 &&
-      state.pillNames[0] === "Pi",
+      state.rosterNames.length === 1 &&
+      state.rosterNames[0] === "Pi",
     60_000,
   );
   await sleep(600);
@@ -1498,7 +1631,7 @@ async function main() {
     betaTabsInAlpha: alphaReturnState.tabLabels.filter((title) => title === BETA_CHAT_TITLE),
   };
 
-  // ── 4b. Back to Beta: its Hermes chats return with both pills ────────────
+  // ── 4b. Back to Beta: its Hermes chats return with both agents offered ───
   markPrefs("before-return-beta");
   const betaBindingBeforeReturn = prefsNow().beta;
   const switchBackToBeta = await doSwitch(BETA_NAME, betaDir);
@@ -1509,8 +1642,8 @@ async function main() {
       state.vaultChipName === BETA_NAME &&
       state.switchDialogOpen === false &&
       state.railTitles.includes(BETA_CHAT_TITLE) &&
-      state.pillNames.includes("Hermes") &&
-      state.activePill === "Hermes",
+      state.rosterNames.includes("Hermes") &&
+      state.activeAgent === "Hermes",
     60_000,
   );
   await sleep(600);
@@ -1525,8 +1658,8 @@ async function main() {
     (state) =>
       state.vaultChipName === ALPHA_NAME &&
       state.railTitles.includes(ALPHA_CHAT_TITLE) &&
-      state.pillNames.length === 1 &&
-      state.pillNames[0] === "Pi",
+      state.rosterNames.length === 1 &&
+      state.rosterNames[0] === "Pi",
     60_000,
   );
   const bindingBeforeReuse = (await readAgentsState())?.state?.binding ?? null;
@@ -1601,26 +1734,26 @@ async function main() {
   const settingsAfterReuse = reuseSettingsSettled.state;
 
   // Bring the newly bound Hermes up on Alpha, the same way as on Beta: the
-  // card's own "Use Hermes", with the dock's pill as the fallback.
+  // card's own "Use Hermes", with the dock's picker as the fallback.
   let reuseActivation = "already-active";
   let reuseState = await readState();
   let reuseSettingsUse = null;
-  let reusePill = null;
-  if (reuseState.activePill !== "Hermes") {
+  let reuseChoice = null;
+  if (reuseState.activeAgent !== "Hermes") {
     reuseSettingsUse = await js(CLICK_USE_HERMES_SETTINGS);
     if (reuseSettingsUse.ok) {
       reuseActivation = "settings-use-hermes";
     } else {
       const closed = await js(CLOSE_SETTINGS);
       if (!closed.ok) await js('window.location.hash = "#/home"');
-      const pillDeadline = Date.now() + 8000;
-      while (Date.now() < pillDeadline) {
-        reusePill = await js(CLICK_HERMES_PILL);
-        if (reusePill.ok) break;
+      const choiceDeadline = Date.now() + 8000;
+      while (Date.now() < choiceDeadline) {
+        reuseChoice = await js(SELECT_HERMES);
+        if (reuseChoice.ok) break;
         await sleep(250);
       }
-      if (reusePill.ok) {
-        reuseActivation = reusePill.alreadyActive ? "already-active" : "pill";
+      if (reuseChoice.ok) {
+        reuseActivation = reuseChoice.alreadyActive ? "already-active" : "picker";
       } else {
         await js('window.location.hash = "#/home"');
         await sleep(400);
@@ -1628,8 +1761,8 @@ async function main() {
         win.webContents.reload();
         await loaded;
         await waitFor("the dashboard after the reuse reload", async () => (await readState()).dashboard === true, 90_000, 100);
-        reusePill = await js(CLICK_HERMES_PILL);
-        reuseActivation = reusePill.ok ? "reload+pill" : "unavailable";
+        reuseChoice = await js(SELECT_HERMES);
+        reuseActivation = reuseChoice.ok ? "reload+picker" : "unavailable";
       }
     }
   }
@@ -1647,8 +1780,8 @@ async function main() {
   const alphaShared = await waitState(
     "Alpha on the shared profile",
     (state) =>
-      state.pillNames.includes("Hermes") &&
-      state.activePill === "Hermes" &&
+      state.rosterNames.includes("Hermes") &&
+      state.activeAgent === "Hermes" &&
       state.railTitles.includes(BETA_CHAT_TITLE),
     60_000,
   );
@@ -1704,12 +1837,12 @@ async function main() {
     bootState.dashboard === true &&
       bootState.vaultChipName === ALPHA_NAME &&
       bootState.railTitles.includes(LEGACY_PI_TITLE) &&
-      bootState.activePill === "Pi",
+      bootState.activeAgent === "Pi",
     JSON.stringify({
       dashboard: bootState.dashboard,
       vaultChipName: bootState.vaultChipName,
       railTitles: bootState.railTitles,
-      activePill: bootState.activePill,
+      activeAgent: bootState.activeAgent,
       settled: adoptionSettled.ok,
     }),
   );
@@ -1753,8 +1886,8 @@ async function main() {
   );
   check(
     "adoption: Alpha draws only Pi",
-    adoption.pillNames.length === 1 && adoption.pillNames[0] === "Pi",
-    JSON.stringify({ pillNames: adoption.pillNames, activePill: adoption.activePill }),
+    adoption.rosterNames.length === 1 && adoption.rosterNames[0] === "Pi",
+    JSON.stringify({ rosterNames: adoption.rosterNames, activeAgent: adoption.activeAgent }),
   );
 
   // 2. Grouping.
@@ -1815,8 +1948,8 @@ async function main() {
   );
   check(
     "grouping: Beta's switcher draws only Pi",
-    betaCleanState.pillNames.length === 1 && betaCleanState.pillNames[0] === "Pi",
-    JSON.stringify({ pillNames: betaCleanState.pillNames, activePill: betaCleanState.activePill }),
+    betaCleanState.rosterNames.length === 1 && betaCleanState.rosterNames[0] === "Pi",
+    JSON.stringify({ rosterNames: betaCleanState.rosterNames, activeAgent: betaCleanState.activeAgent }),
   );
   check(
     "grouping: Alpha's remembered strip survived while Beta is open",
@@ -1837,16 +1970,16 @@ async function main() {
     "fresh agent: the add made Hermes available without switching Beta off Pi",
     afterAddAgents?.state?.binding?.hermesProfile === freshProfile &&
       afterAddAgents?.state?.binding?.harness === "pi" &&
-      afterAddState.activePill === "Pi",
+      afterAddState.activeAgent === "Pi",
     JSON.stringify({
       bindingAfterAdd: afterAddAgents?.state?.binding ?? null,
       stateAfterAdd: afterAddState,
     }),
   );
   check(
-    "fresh agent: Beta draws the Hermes pill and Use Hermes makes it the active agent",
+    "fresh agent: the picker offers Hermes and Use Hermes makes it the active agent",
     hermesActive.ok === true &&
-      hermesActive.state.pillNames.includes("Hermes") &&
+      hermesActive.state.rosterNames.includes("Hermes") &&
       afterActivationAgents?.state?.binding?.harness === "hermes" &&
       afterActivationAgents?.state?.binding?.hermesProfile === freshProfile,
     JSON.stringify({
@@ -1874,16 +2007,16 @@ async function main() {
     JSON.stringify({ chat: betaHermesChat, state: betaHermesState.state }),
   );
   check(
-    "fresh agent: a reload kept Beta's Hermes chat, pill and binding",
+    "fresh agent: a reload kept Beta's Hermes chat, picker roster and binding",
     reloadSettled.ok === true &&
       reloadState.railTitles.includes(BETA_CHAT_TITLE) &&
-      reloadState.pillNames.includes("Hermes") &&
+      reloadState.rosterNames.includes("Hermes") &&
       reloadAgents?.state?.binding?.hermesProfile === freshProfile,
     JSON.stringify({
       bootMs: reloadBootMs,
       railTitles: reloadState.railTitles,
-      pillNames: reloadState.pillNames,
-      activePill: reloadState.activePill,
+      rosterNames: reloadState.rosterNames,
+      activeAgent: reloadState.activeAgent,
       binding: reloadAgents?.state?.binding ?? null,
       settled: reloadSettled.ok,
     }),
@@ -1915,9 +2048,9 @@ async function main() {
     }),
   );
   check(
-    "isolation: Alpha draws no Hermes pill",
-    alphaReturnState.pillNames.length === 1 && alphaReturnState.pillNames[0] === "Pi",
-    JSON.stringify({ pillNames: alphaReturnState.pillNames, activePill: alphaReturnState.activePill }),
+    "isolation: Alpha offers no Hermes agent",
+    alphaReturnState.rosterNames.length === 1 && alphaReturnState.rosterNames[0] === "Pi",
+    JSON.stringify({ rosterNames: alphaReturnState.rosterNames, activeAgent: alphaReturnState.activeAgent }),
   );
   check(
     "isolation: Alpha's binding is still the clean Pi default",
@@ -1937,17 +2070,17 @@ async function main() {
     JSON.stringify({ tabLabels: alphaReturnState.tabLabels, activeTabLabel: alphaReturnState.activeTabLabel }),
   );
   check(
-    "return: Beta's Hermes chats came back with both pills",
+    "return: Beta's Hermes chats came back with both agents offered",
     betaReturn.ok === true &&
       betaReturnState.railTitles.includes(BETA_CHAT_TITLE) &&
-      betaReturnState.pillNames.includes("Hermes") &&
-      betaReturnState.pillNames.includes("Pi") &&
-      betaReturnState.activePill === "Hermes",
+      betaReturnState.rosterNames.includes("Hermes") &&
+      betaReturnState.rosterNames.includes("Pi") &&
+      betaReturnState.activeAgent === "Hermes",
     JSON.stringify({
       railTitles: betaReturnState.railTitles,
       tabLabels: betaReturnState.tabLabels,
-      pillNames: betaReturnState.pillNames,
-      activePill: betaReturnState.activePill,
+      rosterNames: betaReturnState.rosterNames,
+      activeAgent: betaReturnState.activeAgent,
       settled: betaReturn.ok,
     }),
   );
@@ -1988,7 +2121,7 @@ async function main() {
     "reuse: Alpha took the shared profile without switching off Pi",
     bindingAfterReuse?.hermesProfile === freshProfile &&
       bindingAfterReuse?.harness === "pi" &&
-      stateAfterReuse.activePill === "Pi",
+      stateAfterReuse.activeAgent === "Pi",
     JSON.stringify({
       bindingAfterReuse,
       stateAfterReuse,
@@ -1999,8 +2132,8 @@ async function main() {
     bindingAfterReuseActivation?.harness === "hermes" &&
       bindingAfterReuseActivation?.hermesProfile === freshProfile &&
       alphaShared.ok === true &&
-      alphaSharedState.pillNames.includes("Hermes") &&
-      alphaSharedState.activePill === "Hermes",
+      alphaSharedState.rosterNames.includes("Hermes") &&
+      alphaSharedState.activeAgent === "Hermes",
     JSON.stringify({
       bindingAfterReuseActivation,
       reuseActivation,
@@ -2142,7 +2275,7 @@ async function main() {
       settingsAfterReuse,
       settingsAfterReuseActivation,
       activation: reuseActivation,
-      activationDetail: { settingsUse: reuseSettingsUse, pill: reusePill },
+      activationDetail: { settingsUse: reuseSettingsUse, pickerChoice: reuseChoice },
       state: alphaSharedState,
       agents: alphaSharedAgents?.state ?? null,
       fallback: reuseUi,
@@ -2176,13 +2309,13 @@ async function main() {
           railTitles: betaCleanState.railTitles,
           railEmptyText: betaCleanState.railEmptyText,
           tabCount: betaCleanState.tabCount,
-          pillNames: betaCleanState.pillNames,
+          rosterNames: betaCleanState.rosterNames,
         },
         freshProfile,
         addPath,
         betaReloadRail: reloadState.railTitles,
         alphaReturnRail: alphaReturnState.railTitles,
-        betaReturnPills: betaReturnState.pillNames,
+        betaReturnRoster: betaReturnState.rosterNames,
         reuseWarning: reuseWarning.text.slice(0, 400),
         reuseBinding: bindingAfterReuse,
         disk,

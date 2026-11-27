@@ -13,7 +13,7 @@ import {
 import type { SkinColors } from "@/lib/themes/types";
 
 /**
- * The Extensions studio's palette editor — S3.
+ * The Customizations studio's palette editor — S3.
  *
  * A theme file may carry two complete palettes: `colors` (the day look) and
  * `darkColors` (the night one). Either may be absent, which is the honest way

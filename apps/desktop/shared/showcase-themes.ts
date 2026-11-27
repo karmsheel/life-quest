@@ -304,6 +304,9 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
       navRail: { place: "floating", width: "narrow" },
       chatDock: { side: "right" },
       titlebar: { size: "compact" },
+      // A night watch is long: the agent's name beside its mark answers "who
+      // has the floor" without opening anything.
+      agentPicker: { mode: "named-chip" },
     },
     material: {
       radius: "round",
@@ -384,6 +387,10 @@ export const SHOWCASE_THEMES: readonly ThemeFile[] = [
       navRail: { place: "left", width: "narrow" },
       chatDock: { side: "right" },
       titlebar: { size: "tall" },
+      // The instrument panel keeps every readout in the open: both agents sit
+      // in the dock row as compact hairline marks, no menu between the operator
+      // and the switch.
+      agentPicker: { mode: "custom", recipe: { roster: "inline", ring: "hairline", size: "compact" } },
     },
     material: {
       radius: "sharp",

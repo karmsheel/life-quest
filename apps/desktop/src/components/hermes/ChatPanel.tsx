@@ -71,7 +71,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
-import { AgentSwitcher } from "@/components/hermes/AgentSwitcher";
+import { AgentSwitcher, useAgentPicker } from "@/components/hermes/AgentSwitcher";
 import {
   ChatSessionsProvider,
   useChatSessions,
@@ -232,6 +232,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const capabilities = normalizeCapabilities(
     knownHarnesses?.find((entry) => entry.active)?.capabilities,
   );
+  /*
+    Which picker recipe the dock wears, read again here because the roster axis
+    decides *where* the switcher mounts, not only how it looks: `menu` keeps it
+    as the composer's own child (the stylesheet floats it in the gutter), and
+    `inline` puts it in the leading cluster of the dock's control row, where
+    switching is one click. The swim lane is the panel's because the panel owns
+    the composer's markup; the switcher keeps its own copy of the same hook for
+    the pixels it draws. A harness page with no ThemeProvider gets the shipped
+    default from both reads, so the two can never disagree.
+  */
+  const agentPicker = useAgentPicker();
+  const inlineAgentPicker = agentPicker.recipe.roster === "inline";
   const sessions = chat.sessions;
   const sessionId = chat.activeId;
   /*
@@ -2831,9 +2843,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
-                {/* The same switcher on the chain's own composer, anchored to
-                    the form it belongs to: see the thread composer's copy. */}
-                <AgentSwitcher />
+                {/*
+                  The chain composer's picker, on the same rule as the thread's:
+                  the menu trigger floats in the gutter the form leaves, the
+                  inline roster is a row under the field's own row. The chain has
+                  no dock row to lead, so the under-row is the only place a
+                  roster in the open can sit here — and it is the same place as
+                  the thread's, which is the point.
+                */}
+                {inlineAgentPicker ? (
+                  <div className="chat-panel__composer-under">
+                    <AgentSwitcher />
+                  </div>
+                ) : (
+                  <AgentSwitcher />
+                )}
               </form>
             ) : (
               <form
@@ -3287,19 +3311,25 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </ul>
                 ) : null}
                 {/*
-                  The agent switcher lives on the composer, not over the
-                  transcript. The composer form is what owns the band's gutters,
-                  so the switcher can stand in the empty column the composer
-                  leaves on the dock's trailing side when the dock is wide, and
-                  ride just above the composer itself when the dock is too narrow
-                  to hold that column — the placement is the stylesheet's, keyed
-                  on the band's width. It is inside the form only for that
-                  anchor: every control in it is `type="button"`, so a pill can
-                  never submit the field above it. The chain surface draws the
-                  same switcher on its own composer, and the shortcuts reference,
-                  which has no composer, has none.
+                  The picker's one mount, under the composer box. Both rosters
+                  end the form: the menu roster's trigger floats in the gutter
+                  the composer's own padding leaves (or just above the field on a
+                  narrow dock), because for a quiet mode "who answers" should not
+                  take a line of the composer's own; the inline roster is a real
+                  row under the box, right-aligned to the edge the send control
+                  sits on, because a roster in the open is a control the operator
+                  reads across, not a floating token. The form is the anchor
+                  either way: every control here is `type="button"`, so nothing
+                  in the picker can submit the field above it. The shortcuts
+                  reference, which has no composer, has none.
                 */}
-                <AgentSwitcher />
+                {inlineAgentPicker ? (
+                  <div className="chat-panel__composer-under">
+                    <AgentSwitcher />
+                  </div>
+                ) : (
+                  <AgentSwitcher />
+                )}
               </form>
             )}
           </div>

@@ -11,14 +11,14 @@ import { describe, it } from "node:test";
  * The Nous girl's ink, end to end.
  *
  * The rig boots the real app against a throwaway profile and vault and measures
- * the one mark Hermes wears in two places — the agent switcher's block and the
+ * the one mark Hermes wears in two places — the agent picker's roster and the
  * collapsed dock's floating launcher — in the night palette, the day palette and
  * under the `system` preference. The colour is read off the rendered window, not
  * off the stylesheet alone: each mark is cropped 1:1 and its ink pixels counted,
  * because a mark that is painted the field's own colour is exactly the bug.
  *
  * The assertions below restate the report's important fields by name:
- *   - night: the artwork is inverted to its white version and the block/launcher
+ *   - night: the artwork is inverted to its white version and the picker mark/launcher
  *     paint bright ink instead of disappearing into the dark field;
  *   - day: the shipped black artwork and the launcher's dark-gray mask are
  *     unchanged — the day themes were already right;
@@ -188,8 +188,8 @@ describe("the Nous girl's mark follows the palette", () => {
     );
 
     const hermesOn = (state: MarkState) => {
-      assert.deepEqual(state.switcher.items, ["Hermes", "Pi"], "the block strip changed");
-      assert.ok(state.switcher.hermes, "Hermes' block wore no mark");
+      assert.deepEqual(state.switcher.items, ["Hermes", "Pi"], "the picker's roster changed");
+      assert.ok(state.switcher.hermes, "the picker wore no Hermes mark");
       return state.switcher.hermes;
     };
 
@@ -205,11 +205,11 @@ describe("the Nous girl's mark follows the palette", () => {
     );
     assert.ok(
       night.ink.brightPixels >= MIN_INK_PIXELS,
-      `the night block paints no white ink: ${JSON.stringify(night.ink)}`,
+      `the night picker mark paints no white ink: ${JSON.stringify(night.ink)}`,
     );
     assert.ok(
       night.ink.maxLuma > 200,
-      `the night block tops out below white: ${JSON.stringify(night.ink)}`,
+      `the night picker mark tops out below white: ${JSON.stringify(night.ink)}`,
     );
     assert.equal(
       night.launcher.state.launcher?.color,
@@ -234,7 +234,7 @@ describe("the Nous girl's mark follows the palette", () => {
     assert.equal(dayMark.filter, "none", "the day artwork lost its shipped black");
     assert.ok(
       day.ink.darkPixels >= MIN_INK_PIXELS,
-      `the day block paints no dark ink: ${JSON.stringify(day.ink)}`,
+      `the day picker mark paints no dark ink: ${JSON.stringify(day.ink)}`,
     );
     assert.equal(
       day.launcher.state.launcher?.color,

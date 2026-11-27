@@ -34,6 +34,7 @@ import {
   resolveMaterial,
   resolveScene,
   THEME_VOCABULARY,
+  type AgentPickerChoice,
   type ThemeBackgroundImage,
   type ThemeFile,
   type ThemeScene,
@@ -45,7 +46,7 @@ export const THEME_TOOL_DEFS: MapToolDef[] = [
   {
     name: "get_theme",
     description:
-      "Read the app's theme files, the one currently kept, and the pictures stored in the profile. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the kept file, each theme's resolved scene (preset, intensity, frames, picture and panel shades), the kept theme's resolved chrome placement and material, any composition widgets it carries, and the backgrounds/ inventory (file, bytes, mime) you may name in scene.background.image.file.",
+      "Read the app's theme files, the one currently kept, and the pictures stored in the profile. Use it before writing so you iterate from what the operator is wearing instead of guessing. Returns the kept file, each theme's resolved scene (preset, intensity, frames, picture and panel shades), the kept theme's resolved chrome placement (including the agent picker's mode and recipe) and material, any composition widgets it carries, and the backgrounds/ inventory (file, bytes, mime) you may name in scene.background.image.file.",
     parameters: { type: "object", properties: {}, required: [] },
   },
   {
@@ -136,7 +137,12 @@ type ThemeSummary = {
   label: string;
   valid: boolean;
   description?: string;
-  chrome?: { wingSwitcher: { place: string; variant: string }; domainSwitcher: { place: string; variant: string } };
+  chrome?: {
+    wingSwitcher: { place: string; variant: string };
+    domainSwitcher: { place: string; variant: string };
+    /** The dock's agent picker as worn: a shipped mode plus its resolved axes. */
+    agentPicker: AgentPickerChoice;
+  };
   material?: { radius: string; density: string; motion: string };
   /** The scene as worn: defaults filled in, so the agent reads real values. */
   scene?: ThemeScene;
@@ -236,7 +242,7 @@ async function writeTheme(args: Record<string, unknown>): Promise<unknown> {
       "file must be a lowercase slug ending in .json (a-z, 0-9, dash; 2–40 chars before .json)",
     );
   }
-  // The one write path, shared with the Extensions editor: validation, the
+  // The one write path, shared with the Customizations editor: validation, the
   // history snapshot and the atomic rename all happen inside the store, so a
   // companion write is undoable in exactly the way an operator's Save is.
   const written = await saveThemeFile(file, JSON.stringify(theme, null, 2));

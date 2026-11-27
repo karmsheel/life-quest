@@ -13,7 +13,9 @@
  * default.
  */
 import {
+  layerAgentPicker,
   resolveChrome,
+  type AgentPickerChoice,
   type ThemeChrome,
   type ThemeChromeOverride,
   type ThemeFile,
@@ -30,22 +32,40 @@ import {
  * exists, so a branch built from only the field the operator touched (say the
  * wing variant, before any place) would be refused. Seeding keeps the draft
  * valid without the studio ever writing a half-branch.
+ *
+ * The picker is the one branch that is not a flat bag of enums — it carries
+ * `mode` plus a nested `recipe` — so it merges through `layerAgentPicker` rather
+ * than a spread. A shallow merge of `{ recipe }` would drop the draft's other
+ * axes every time an operator changed one, and writing the mode *and* all four
+ * axes on every pick would flatten a shipped mode into a `custom`-shaped recipe
+ * the author never asked for. `layerAgentPicker` keeps the mode the file
+ * carries and merges only the axes the pick names; seeding from the resolved
+ * choice gives a pick made before the branch existed a mode the parser accepts.
  */
 export function withChromePatch(
   theme: ThemeFile,
   patch: ThemeChromeOverride,
 ): ThemeFile {
   const resolved = resolveChrome(theme.chrome);
-  const chrome = { ...(theme.chrome ?? {}) } as Record<
-    string,
-    Record<string, string>
-  >;
+  // Loose bag rather than `Partial<ThemeChrome>`: the branches differ in shape,
+  // and the loop below is the one place that knows each branch's merge rule.
+  const chrome = { ...(theme.chrome ?? {}) } as Record<string, unknown>;
   for (const [component, values] of Object.entries(patch)) {
     if (!values) continue;
+    if (component === "agentPicker") {
+      chrome.agentPicker = layerAgentPicker(
+        (chrome.agentPicker as AgentPickerChoice | undefined) ??
+          resolved.agentPicker,
+        values as Partial<AgentPickerChoice>,
+      );
+      continue;
+    }
     const base =
-      chrome[component] ??
-      ({ ...resolved[component as keyof ThemeChrome] } as Record<string, string>);
-    chrome[component] = { ...base, ...values };
+      (chrome[component] as Record<string, unknown> | undefined) ??
+      ({
+        ...resolved[component as keyof ThemeChrome],
+      } as unknown as Record<string, unknown>);
+    chrome[component] = { ...base, ...(values as Record<string, unknown>) };
   }
   return { ...theme, chrome: chrome as Partial<ThemeChrome> };
 }

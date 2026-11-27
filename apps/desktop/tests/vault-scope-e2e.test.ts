@@ -25,10 +25,10 @@ import { describe, it } from "node:test";
  *     bucket (the legacy companionProfile pref must NOT be adopted);
  *   - the vault switch went through the dialog and opened exactly one vault;
  *   - Beta starts with an empty rail, an empty tab strip and Pi only;
- *   - the fresh Hermes agent is bound to Beta, draws the Hermes pill, keeps its
- *     chat across a reload, and is shared with no other vault;
- *   - Alpha never sees a Beta chat or a Hermes pill, and its own chats and strip
- *     come back on return;
+ *   - the fresh Hermes agent is bound to Beta, is offered by the picker, keeps
+ *     its chat across a reload, and is shared with no other vault;
+ *   - Alpha never sees a Beta chat or offers a Hermes agent, and its own chats
+ *     and strip come back on return;
  *   - the reuse warning names Beta and says memory, skills and knowledge are
  *     shared; only then does Alpha gain Hermes on that profile;
  *   - the stores on disk and on the host are per vault / per profile.
@@ -63,7 +63,7 @@ const LEGACY_PI_TITLE = "Legacy flat chat";
 const ALPHA_CHAT_TITLE = "Alpha own chat";
 const BETA_CHAT_TITLE = "Beta Hermes chat";
 
-type Pill = { name: string | null; active: boolean; disabled: boolean; pending: boolean; busy: boolean };
+type PickerOption = { name: string | null; active: boolean; disabled: boolean; pending: boolean; busy: boolean };
 
 type State = {
   railTitles: string[];
@@ -74,9 +74,20 @@ type State = {
   tabLabels: string[];
   activeTabLabel: string | null;
   tabCount: number;
-  pills: Pill[];
-  pillNames: string[];
-  activePill: string | null;
+  /** The offered agents, as the rig read them by opening the picker. */
+  roster: {
+    shown: boolean;
+    mode: string | null;
+    rosterKind: string | null;
+    active: string | null;
+    names: string[];
+    options: PickerOption[];
+    reason: string | null;
+  };
+  rosterNames: string[];
+  rosterOptions: PickerOption[];
+  /** The answering agent: the trigger's own data-agent (or the checked row). */
+  activeAgent: string | null;
   dashboard: boolean;
   chatPanel: boolean;
   welcomeCard: boolean;
@@ -147,8 +158,8 @@ type Report = {
     alphaBucketHasLegacy: boolean;
     betaBucketJson: string[];
     railTitles: string[];
-    pillNames: string[];
-    activePill: string | null;
+    rosterNames: string[];
+    activeAgent: string | null;
     tabLabels: string[];
     storage: StorageShape;
   };
@@ -376,8 +387,8 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       report.adoption.railTitles.includes(LEGACY_PI_TITLE),
       `Alpha did not show the pre-vault chat: ${JSON.stringify(report.adoption.railTitles)}`,
     );
-    assert.deepEqual(report.adoption.pillNames, ["Pi"], "Alpha did not start on Pi only");
-    assert.equal(report.adoption.activePill, "Pi", "the Pi pill is not active on the adopting vault");
+    assert.deepEqual(report.adoption.rosterNames, ["Pi"], "Alpha did not start with only Pi offered");
+    assert.equal(report.adoption.activeAgent, "Pi", "Pi is not the active agent on the adopting vault");
 
     // ── Alpha's own chat ───────────────────────────────────────────────────
     assert.equal(report.alpha.chat.ok, true, `the Alpha chat was not created: ${JSON.stringify(report.alpha.chat)}`);
@@ -406,7 +417,7 @@ describe("vault scope (chats and agents belong to their vault)", () => {
     assert.notEqual(report.grouping.state.railEmptyText, null, "Beta's empty rail shows no empty state");
     assert.equal(report.grouping.state.tabCount, 0, `Beta's tab strip has ${report.grouping.state.tabCount} tabs`);
     assert.deepEqual(report.grouping.state.tabLabels, [], `Beta's tab strip is not empty: ${JSON.stringify(report.grouping.state.tabLabels)}`);
-    assert.deepEqual(report.grouping.state.pillNames, ["Pi"], `Beta's switcher does not draw Pi only: ${JSON.stringify(report.grouping.state.pillNames)}`);
+    assert.deepEqual(report.grouping.state.rosterNames, ["Pi"], `Beta's picker does not offer Pi only: ${JSON.stringify(report.grouping.state.rosterNames)}`);
     assert.deepEqual(report.grouping.alphaTitlesSeen, [], `Beta's rail showed Alpha's chats: ${JSON.stringify(report.grouping.alphaTitlesSeen)}`);
     assert.equal(
       report.grouping.storage.alphaPi,
@@ -432,15 +443,15 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       `adding the agent switched Beta's answering agent: ${JSON.stringify(report.freshAgent.binding)}`,
     );
     assert.equal(
-      report.freshAgent.stateAfterAdd.activePill,
+      report.freshAgent.stateAfterAdd.activeAgent,
       "Pi",
       "adding the Hermes agent switched Beta off Pi instead of only making Hermes available",
     );
     assert.ok(
-      report.freshAgent.hermesActive.pillNames.includes("Hermes"),
-      `Beta does not draw the Hermes pill: ${JSON.stringify(report.freshAgent.hermesActive.pillNames)}`,
+      report.freshAgent.hermesActive.rosterNames.includes("Hermes"),
+      `Beta's picker does not offer Hermes: ${JSON.stringify(report.freshAgent.hermesActive.rosterNames)}`,
     );
-    assert.equal(report.freshAgent.hermesActive.activePill, "Hermes", "Use Hermes did not make Hermes the active agent");
+    assert.equal(report.freshAgent.hermesActive.activeAgent, "Hermes", "Use Hermes did not make Hermes the answering agent");
     assert.equal(
       report.freshAgent.bindingAfterActivation?.harness,
       "hermes",
@@ -456,8 +467,8 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       `the reload lost Beta's Hermes chat: ${JSON.stringify(report.freshAgent.reload.state.railTitles)}`,
     );
     assert.ok(
-      report.freshAgent.reload.state.pillNames.includes("Hermes"),
-      `the reload lost Beta's Hermes pill: ${JSON.stringify(report.freshAgent.reload.state.pillNames)}`,
+      report.freshAgent.reload.state.rosterNames.includes("Hermes"),
+      `the reload lost Beta's Hermes agent: ${JSON.stringify(report.freshAgent.reload.state.rosterNames)}`,
     );
     assert.equal(
       report.freshAgent.reload.agents?.binding.hermesProfile,
@@ -484,9 +495,9 @@ describe("vault scope (chats and agents belong to their vault)", () => {
     assert.deepEqual(report.isolation.betaTitlesInAlpha, [], "Beta's Hermes chat leaked into Alpha's rail");
     assert.deepEqual(report.isolation.betaTabsInAlpha, [], "Beta's Hermes tab leaked into Alpha's strip");
     assert.deepEqual(
-      report.isolation.state.pillNames,
+      report.isolation.state.rosterNames,
       ["Pi"],
-      `Alpha draws a Hermes pill it never added: ${JSON.stringify(report.isolation.state.pillNames)}`,
+      `Alpha offers a Hermes agent it never added: ${JSON.stringify(report.isolation.state.rosterNames)}`,
     );
     assert.deepEqual(
       report.isolation.agents?.binding,
@@ -507,11 +518,11 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       `Beta's Hermes chat did not come back: ${JSON.stringify(report.returnBeta.state.railTitles)}`,
     );
     assert.deepEqual(
-      report.returnBeta.state.pillNames.slice().sort(),
+      report.returnBeta.state.rosterNames.slice().sort(),
       ["Hermes", "Pi"],
-      `Beta does not draw both pills on return: ${JSON.stringify(report.returnBeta.state.pillNames)}`,
+      `Beta does not offer both agents on return: ${JSON.stringify(report.returnBeta.state.rosterNames)}`,
     );
-    assert.equal(report.returnBeta.state.activePill, "Hermes", "Beta did not return on its Hermes agent");
+    assert.equal(report.returnBeta.state.activeAgent, "Hermes", "Beta did not return on its Hermes agent");
 
     // ── 5. Reuse is explicit ───────────────────────────────────────────────
     assert.deepEqual(
@@ -541,7 +552,7 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       `reusing the profile switched Alpha's answering agent: ${JSON.stringify(report.reuse.bindingAfter)}`,
     );
     assert.equal(
-      report.reuse.stateAfterReuse.activePill,
+      report.reuse.stateAfterReuse.activeAgent,
       "Pi",
       "reusing the profile switched Alpha off Pi instead of only making Hermes available",
     );
@@ -551,10 +562,10 @@ describe("vault scope (chats and agents belong to their vault)", () => {
       `Use Hermes did not record the active agent: ${JSON.stringify(report.reuse.bindingAfterActivation)}`,
     );
     assert.ok(
-      report.reuse.state.pillNames.includes("Hermes"),
-      `Alpha does not draw Hermes after reuse: ${JSON.stringify(report.reuse.state.pillNames)}`,
+      report.reuse.state.rosterNames.includes("Hermes"),
+      `Alpha does not offer Hermes after reuse: ${JSON.stringify(report.reuse.state.rosterNames)}`,
     );
-    assert.equal(report.reuse.state.activePill, "Hermes", "Use Hermes did not activate Alpha's reused agent");
+    assert.equal(report.reuse.state.activeAgent, "Hermes", "Use Hermes did not activate Alpha's reused agent");
     assert.ok(
       report.reuse.state.railTitles.includes(BETA_CHAT_TITLE),
       `Alpha does not see the shared profile's chat: ${JSON.stringify(report.reuse.state.railTitles)}`,
@@ -606,7 +617,7 @@ describe("vault scope (chats and agents belong to their vault)", () => {
     t.diagnostic(`artifact: ${REPORT}`);
     t.diagnostic(`fresh profile: ${report.freshAgent.profile}`);
     t.diagnostic(`alpha rail: ${JSON.stringify(report.returnAlpha.state.railTitles)}`);
-    t.diagnostic(`beta pills: ${JSON.stringify(report.returnBeta.state.pillNames)}`);
+    t.diagnostic(`beta roster: ${JSON.stringify(report.returnBeta.state.rosterNames)}`);
     t.diagnostic(`vault opens: ${JSON.stringify(report.vaultOpens.entries.map((entry) => entry.path))}`);
   });
 });

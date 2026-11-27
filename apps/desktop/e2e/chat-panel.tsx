@@ -47,6 +47,12 @@
  *    other rig's page answers exactly what it answered before. Failure modes
  *    listed there.
  *
+ * The agent picker's recipe modes are opt-in through `?picker=<mode>` (see the
+ * flag itself below): the mode is the theme's chrome, so that page — and only
+ * that page — mounts the real `ThemeProvider` and forces the pick through
+ * `setChromeOverride`, the same door Settings → Appearance uses. Pair it with
+ * `?agents=1`, because the switcher reads the agents provider.
+ *
  * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
  * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
  * stubbed (there is no Electron preload on a dev-server page). The bridge
@@ -75,7 +81,7 @@
  *     a driver can prove the name chip's field really committed the name it
  *     held, rather than reading the panel's own optimistic copy.
  */
-import { StrictMode, useState, type ReactNode } from "react";
+import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
@@ -89,6 +95,20 @@ import {
 import { AgentsProvider } from "@/state/AgentsProvider";
 import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { VaultProvider } from "@/state/VaultProvider";
+import {
+  ThemeProvider,
+  useTheme,
+} from "@/components/theme/ThemeProvider";
+import {
+  AGENT_PICKER_CHOICES,
+  AGENT_PICKER_LABELS,
+  AGENT_PICKER_RINGS,
+  AGENT_PICKER_ROSTERS,
+  AGENT_PICKER_SIZES,
+  type AgentPickerChoice,
+  type AgentPickerChoiceMode,
+  type AgentPickerRecipe,
+} from "../shared/agent-picker.ts";
 import type {
   ChatStreamEvent,
   CompanionStreamFrame,
@@ -332,6 +352,78 @@ const AGENTS_MODE = new URLSearchParams(window.location.search).has("agents");
  * only one that asks.
  */
 const READING_MODE = new URLSearchParams(window.location.search).has("reading");
+
+/**
+ * `?picker=<mode>` wears one of the agent picker's recipes on the dock, so a rig
+ * can measure every mode the theme contract names instead of only the default.
+ *
+ * The picker's shape *is* the worn theme's chrome, so a page that shows anything
+ * other than the shipped `one-mark` needs the real `ThemeProvider` above the
+ * dock. It is opt-in for the same reason `?agents=` is: the provider repaints the
+ * document with a skin and writes the shell's chrome onto `<html>`, and every
+ * older rig was written against the page without it. Mount it together with
+ * `?agents=1` — without the agents provider the switcher draws nothing.
+ *
+ * The mode is applied through the provider's own `setChromeOverride`, the door
+ * Settings → Appearance uses, so the page proves the recipe path the operator
+ * gets rather than a harness-only shortcut. `custom` takes the four axes as
+ * extra params: `?picker=custom&roster=inline&labels=all&ring=hairline&size=large`.
+ * A shipped mode accepts axes too (a mode is a preset, and a choice may layer
+ * one axis over it) — the same shape a theme file is parsed into.
+ */
+const PICKER_QUERY = new URLSearchParams(window.location.search);
+const PICKER_MODE = PICKER_QUERY.get("picker");
+const WITH_PICKER_THEME = PICKER_MODE !== null;
+
+/** One axis from the URL, or `undefined` for "the preset's own value". */
+function pickerAxis<T extends string>(name: string, allowed: readonly T[]): T | undefined {
+  const raw = PICKER_QUERY.get(name);
+  return raw !== null && (allowed as readonly string[]).includes(raw)
+    ? (raw as T)
+    : undefined;
+}
+
+/**
+ * The choice a `?picker=` page forces, validated against the closed vocabulary
+ * the theme parser uses. A typo is a loud failure rather than a page that
+ * silently measures the default mode — the whole point of the flag is to prove
+ * the *other* modes.
+ */
+const FORCED_PICKER: AgentPickerChoice = (() => {
+  const raw = PICKER_MODE ?? "one-mark";
+  if (!(AGENT_PICKER_CHOICES as readonly string[]).includes(raw)) {
+    throw new Error(
+      `?picker=${raw} is not one of ${AGENT_PICKER_CHOICES.join(", ")}`,
+    );
+  }
+  const mode = raw as AgentPickerChoiceMode;
+  const recipe: Partial<AgentPickerRecipe> = {};
+  const roster = pickerAxis("roster", AGENT_PICKER_ROSTERS);
+  if (roster) recipe.roster = roster;
+  const labels = pickerAxis("labels", AGENT_PICKER_LABELS);
+  if (labels) recipe.labels = labels;
+  const ring = pickerAxis("ring", AGENT_PICKER_RINGS);
+  if (ring) recipe.ring = ring;
+  const size = pickerAxis("size", AGENT_PICKER_SIZES);
+  if (size) recipe.size = size;
+  return Object.keys(recipe).length > 0 ? { mode, recipe } : { mode };
+})();
+
+/**
+ * Paint the forced pick through the theme provider, once, on mount.
+ *
+ * `setChromeOverride` is the real Settings door (`layerAgentPicker` in
+ * `ThemeProvider`), so a rig can prove the same path the operator's own pick
+ * takes. The pick is constant for the page's lifetime; a `?picker=` page that
+ * could change it would be a second feature, and the reload is cheap.
+ */
+function ForcedPicker() {
+  const { setChromeOverride } = useTheme();
+  useEffect(() => {
+    setChromeOverride({ agentPicker: FORCED_PICKER });
+  }, [setChromeOverride]);
+  return null;
+}
 
 /**
  * The two companions main's registry publishes, with this page's descriptor on
@@ -614,6 +706,16 @@ const attachmentFacts = new Map<string, { name: string; size: number }>();
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
+  // The real `ThemeProvider` reads these on mount on a `?picker=` page: an empty
+  // themes folder, no kept file, and a watcher that answers a real teardown —
+  // the provider calls the return value as a function and the Proxy fallback
+  // would hand it a Promise. `windowChrome: null` is the caption-strip sync
+  // saying "there is no native strip on this page"; the Proxy's fallback object
+  // has no `setTitleBarOverlay`, and the sync would throw into the paint.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
+  windowChrome: null,
   // The chain's read, only on request: `?longchain=1` answers with the long
   // fixture so the anchor rig can grow Notebox' composer over a scrolled
   // transcript. Every other rig keeps the stubbed fallback an empty chain.
@@ -909,6 +1011,23 @@ const readingShell = READING_MODE ? (
   shell
 );
 
+/**
+ * The same page under the shell's real theme provider, only when a rig asked for
+ * an agent-picker mode. `ThemeProvider` is where the picker's recipe lives, so
+ * this is the one flag that needs it; a page without the flag keeps exactly the
+ * tree every older rig measures. `ForcedPicker` sits beside the dock rather than
+ * around it — chrome is a document-level layer, and the pick is an effect on the
+ * provider, not a wrapper on the surface.
+ */
+const themedShell = WITH_PICKER_THEME ? (
+  <ThemeProvider>
+    <ForcedPicker />
+    {readingShell}
+  </ThemeProvider>
+) : (
+  readingShell
+);
+
 createRoot(root).render(
   <StrictMode>
     {WITH_CAPABILITIES || AGENTS_MODE ? (
@@ -920,10 +1039,10 @@ createRoot(root).render(
             landing the dock just resumed. The gate is a property of the
             companion provider being above the dock, so it wraps the agents
             provider too. */}
-        <WhenHarnessesAreKnown>{readingShell}</WhenHarnessesAreKnown>
+        <WhenHarnessesAreKnown>{themedShell}</WhenHarnessesAreKnown>
       </CompanionProvider>
     ) : (
-      readingShell
+      themedShell
     )}
   </StrictMode>,
 );
@@ -940,7 +1059,16 @@ const ready = new Promise<void>((resolve) => {
 const waitForSurface = () => {
   const composer = document.querySelector(".chat-panel__composer-input");
   const rows = document.querySelectorAll(".chats-rail__row-main").length;
-  if (!composer || rows === 0) {
+  // A picker page is ready only once the forced recipe has landed on the
+  // dock's root: the provider applies the pick one effect after the first
+  // render, and a rig that measured before it would be measuring `one-mark`.
+  // Only asked for when the switcher can draw at all (`?agents=1`), so a page
+  // opened with `?picker=` alone can still settle.
+  const pickerReady =
+    !WITH_PICKER_THEME || !AGENTS_MODE
+      ? true
+      : document.querySelector(".agent-switcher[data-mode]") !== null;
+  if (!composer || rows === 0 || !pickerReady) {
     requestAnimationFrame(waitForSurface);
     return;
   }

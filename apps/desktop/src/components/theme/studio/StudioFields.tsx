@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
+import { AgentPickerControls } from "@/components/settings/AgentPickerControls";
 import { BackgroundControls } from "@/components/settings/BackgroundControls";
 import { LayoutControls } from "@/components/settings/LayoutControls";
 import { MaterialControls } from "@/components/settings/MaterialControls";
@@ -21,34 +22,46 @@ import {
 } from "./draft-theme";
 
 /**
- * The Extensions studio's Fields view — the whole look, without JSON.
+ * The Customizations studio's Fields view — the whole look, without JSON.
  *
  * One draft `ThemeFile` is the source of truth. A section strip swaps which
- * layer is on screen (Composition, Chrome, Material, Scene, Palette) so the
- * editor stays navigable at 1280×800 instead of becoming one long scroll; every
- * control edits the draft through the same `onChange`, the page paints it via
- * the provider's `setDraftTheme`, and only the Save button at the foot of the
- * studio reaches main. Nothing here writes, keeps or previews on its own.
+ * layer is on screen (Composition, Components, Chrome, Material, Scene,
+ * Palette) so the editor stays navigable at 1280×800 instead of becoming one
+ * long scroll; every control edits the draft through the same `onChange`, the
+ * page paints it via the provider's `setDraftTheme`, and only the Save button
+ * at the foot of the studio reaches main. Nothing here writes, keeps or
+ * previews on its own.
  *
  * The Chrome, Material and Scene sections are the Settings Appearance controls
  * in controlled mode (D9): same rows, same words, `studio-` ids, and the draft
- * passed as `value` so no operator override is touched. The Scene tab stacks
- * the picture layer under the drawn-sky rows; both edit the draft's
- * `scene.background`, so a picture authored here lands in the file exactly as
- * one picked in Settings would. Composition has its own schematic editor;
- * Palette is the studio's only new control surface, and it runs the parser's
- * own contrast check so Save can never be pressed on a palette the shell would
- * refuse.
+ * passed as `value` so no operator override is touched. The Components section
+ * is the same deal for the agent picker: it writes the file's
+ * `chrome.agentPicker`, so the dock painted behind the studio previews every
+ * pick without a separate preview step. The Scene tab stacks the picture layer
+ * under the drawn-sky rows; both edit the draft's `scene.background`, so a
+ * picture authored here lands in the file exactly as one picked in Settings
+ * would. Composition has its own schematic editor; Palette is the studio's only
+ * new control surface, and it runs the parser's own contrast check so Save can
+ * never be pressed on a palette the shell would refuse.
  */
 export type StudioSection =
   | "composition"
+  | "components"
   | "chrome"
   | "material"
   | "scene"
   | "palette";
 
+/*
+ * Components sits directly after Composition: both author something visible on
+ * the chat page itself (the widgets, and the picker inside the composer),
+ * before the strip turns to the shell-wide layers. It still writes `chrome`,
+ * which is why its panel is the `chrome` layer's sibling rather than a crate of
+ * its own.
+ */
 const SECTION_ORDER: readonly StudioSection[] = [
   "composition",
+  "components",
   "chrome",
   "material",
   "scene",
@@ -57,6 +70,7 @@ const SECTION_ORDER: readonly StudioSection[] = [
 
 const SECTION_LABELS: Record<StudioSection, string> = {
   composition: "Composition",
+  components: "Components",
   chrome: "Chrome",
   material: "Material",
   scene: "Scene",
@@ -64,6 +78,8 @@ const SECTION_LABELS: Record<StudioSection, string> = {
 };
 
 const SECTION_INTROS: Record<Exclude<StudioSection, "composition">, string> = {
+  components:
+    "The dock's agent picker: one of three shipped modes, or your own combination of four closed axes (roster, labels, ring, size). This section writes the file's `chrome.agentPicker` — data the renderer already draws, never code. The studio paints the draft, so the picker in the dock behind changes as you pick; that is the preview.",
   chrome:
     "Where the shell's own components sit and which variant they wear. This section writes the file's `chrome` layer, not a Settings override.",
   material:
@@ -115,18 +131,18 @@ export function StudioFields({
   };
 
   const validText = draft.composition
-    ? `Valid extension — ${compositionSummary(draft.composition.widgets)}.`
-    : "Valid extension — no composition; Save writes the file as it stands.";
+    ? `Valid customization — ${compositionSummary(draft.composition.widgets)}.`
+    : "Valid customization — no composition; Save writes the file as it stands.";
 
   return (
     <section
       className="studio"
       aria-label="Theme studio"
-      data-testid="extension-studio"
+      data-testid="customization-studio"
     >
       <div
         ref={tablistRef}
-        className="extensions-page__tabs studio__sections"
+        className="customizations-page__tabs studio__sections"
         role="tablist"
         aria-label="Studio section"
       >
@@ -137,7 +153,7 @@ export function StudioFields({
             role="tab"
             aria-selected={section === id}
             tabIndex={section === id ? 0 : -1}
-            className={`extensions-page__tab${section === id ? " is-active" : ""}`}
+            className={`customizations-page__tab${section === id ? " is-active" : ""}`}
             data-testid={`studio-section-tab-${id}`}
             onClick={() => setSection(id)}
             onKeyDown={onTabKeyDown}
@@ -152,6 +168,21 @@ export function StudioFields({
           <div role="tabpanel" aria-label="Composition section">
             <CompositionStudio draft={draft} onChange={onChange} />
           </div>
+        ) : null}
+
+        {section === "components" ? (
+          <section
+            role="tabpanel"
+            aria-label="Components section"
+            data-testid="studio-components"
+          >
+            <p className="studio__section-intro">{SECTION_INTROS.components}</p>
+            <AgentPickerControls
+              value={resolveChrome(draft.chrome).agentPicker}
+              onChange={(patch) => onChange(withChromePatch(draft, patch))}
+              testIdPrefix="studio-"
+            />
+          </section>
         ) : null}
 
         {section === "chrome" ? (
