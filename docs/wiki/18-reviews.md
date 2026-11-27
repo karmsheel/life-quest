@@ -309,8 +309,10 @@ What the engine enforces:
   seeded with the four common headings only.
 - A save **orders** the extras a page already holds: the four common headings
   first, then the contract's sections in contract order, then any other section
-  in the order you wrote it. The contract only seeds and orders — it never
-  rejects a heading you added, and the prose under every heading is preserved.
+  in the order you wrote it. A deeper heading (`###` or more) stays inside the
+  section you wrote it under — a save never moves it to the end of the page. The
+  contract only seeds and orders — it never rejects a heading you added, and the
+  prose under every heading is preserved.
 
 To tailor an area, ask the companion to change that area's page contract (the
 `get_review_template` and `write_review_template` tools), or edit

@@ -55,7 +55,9 @@ Week start is a vault setting and cannot change while weekly review or planning 
   sections the page already holds, in contract order; then any other extra
   heading in the order the page held it. Extras are first-class — a heading no
   contract names MUST be preserved — and prose under every heading MUST be
-  preserved.
+  preserved. A heading deeper than H2 MUST stay inside the H2 section it was
+  written under, in its original order, and MUST NOT be moved to the end of the
+  page.
 - Writing or changing a contract MUST NOT rewrite an existing page. The contract
   seeds pages created after it, and its order applies at that page's next
   accepted write.
