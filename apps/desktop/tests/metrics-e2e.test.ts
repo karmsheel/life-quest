@@ -713,9 +713,28 @@ describe("metrics e2e", () => {
       assert.equal(kit.ok, true, "the skill rig could not install the finance kit");
       await seedFinance(skillVault);
 
-      // Seed the PREVIOUS shipped default, exactly as an unedited vault has it.
+      // Seed the PREVIOUS shipped default from a FIXTURE OF THE REAL 0.3.4 FILE,
+      // not from the helper that is supposed to recognise it. Seeding with the
+      // helper would pass even if both were wrong together — which is exactly
+      // how a reworded bullet made the replacement miss every real vault.
+      const shippedFixturePath = path.join(
+        desktopRoot,
+        "e2e/fixtures/review-skill-0.3.4-weekly.md",
+      );
+      const shippedDefault = fs.readFileSync(shippedFixturePath, "utf8");
       const previous = previousShippedDefaultReviewSkill("weekly");
-      const seeded = await writeReviewSkill(skillVault, "weekly", previous, ACTOR);
+      checks.byteIdentity = {
+        fixture: "e2e/fixtures/review-skill-0.3.4-weekly.md",
+        fixtureBytes: shippedDefault.length,
+        helperMatchesFixture: previous === shippedDefault,
+      };
+      assert.equal(
+        previous,
+        shippedDefault,
+        "the code's copy of the previous default is not byte-identical to the 0.3.4 release file",
+      );
+      assert.match(shippedDefault, /<!-- lifequest:snapshot:finance-spend -->|"id": "finance-spend"/, "the fixture is not the old finance-spend default");
+      const seeded = await writeReviewSkill(skillVault, "weekly", shippedDefault, ACTOR);
       assert.equal(seeded.ok, true);
       const before = await getReviewSkill(skillVault, "weekly");
       assert.equal(before.ok && before.value.snapshots.length, 1, "the previous default does not parse as one directive");
@@ -740,16 +759,23 @@ describe("metrics e2e", () => {
       const rewritten = await getReviewSkill(skillVault, "weekly");
       const rewrittenIds = rewritten.ok ? rewritten.value.snapshots.map((d) => d.id) : [];
       checks.defaultSkill = {
-        previousDefaultId: "finance-spend",
+        previousDefaultFile: "e2e/fixtures/review-skill-0.3.4-weekly.md",
         afterStartIds: rewrittenIds,
         outcomes: first!.outcomes,
         applied: first!.applied,
         body: first!.bodyMarkdown,
+        rewrittenMarkdown: rewritten.ok ? rewritten.value.markdown : null,
       };
       assert.deepEqual(
         rewrittenIds,
         ["finance-in", "finance-out", "finance-net"],
         "the previous shipped default was not replaced by the three finance directives",
+      );
+      const rewrittenMarkdown = rewritten.ok ? rewritten.value.markdown : "";
+      assert.doesNotMatch(
+        rewrittenMarkdown,
+        /finance-spend|Spending this period/,
+        "the rewritten skill still carries the old Spending figure",
       );
       assert.equal(first!.applied, 3, "Start wrote fewer than three figures");
       assert.deepEqual(
@@ -801,7 +827,9 @@ describe("metrics e2e", () => {
       assert.equal(migrated.length, 1, "the shipped-default replacement was logged more or less than once");
 
       // An operator-edited skill is never matched by bytes and never touched.
-      const edited = `${previous}\n- Ask about sleep every week.\n`;
+      // The variant is the release fixture plus one visible rule — the operator
+      // changed their file, so no release may replace it.
+      const edited = `${shippedDefault}\n- Ask about sleep every week.\n`;
       await writeReviewSkill(skillVault, "monthly", edited, ACTOR);
       const ensureEdited = await ensureReviewSkill(skillVault, "monthly", ACTOR);
       assert.equal(ensureEdited.ok, true);

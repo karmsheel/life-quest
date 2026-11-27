@@ -66,6 +66,12 @@ const RAIL_ROWS = [
   "review-tab-overall",
   ...AREAS.map((area) => `review-tab-${area.slug}`),
 ];
+/** The three figures the shipped default skill writes into Finance's Look-back. */
+const SNAPSHOT_MARKERS = [
+  "<!-- lifequest:snapshot:finance-in -->",
+  "<!-- lifequest:snapshot:finance-out -->",
+  "<!-- lifequest:snapshot:finance-net -->",
+];
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -840,9 +846,9 @@ describe("review ui e2e", () => {
     );
     assert.equal(agentDown.boxes, 1, "an unreachable agent took the review document away");
     assert.equal(
-      agentDown.boxText.includes("Spending this period"),
+      agentDown.boxText.includes("Cash in this period"),
       true,
-      "the filled snapshot is not visible in the review with the agent down",
+      "the filled figures are not visible in the review with the agent down",
     );
     // Pressing a row puts the page on that area: the selected row is the only
     // place the scope is said now that the reviewing line is gone.
@@ -862,41 +868,49 @@ describe("review ui e2e", () => {
       "financial",
       "the Finance row ran the snapshot pass for another scope",
     );
-    assert.equal(
-      report.checks.filledBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-      1,
-      "the snapshot marker is not in the file exactly once",
-    );
-    assert.match(report.checks.filledBody, /\| Groceries \| 1,234\.56 \|/, "the snapshot did not carry the figure");
-    // The rule names the financial domain's Look-back, so the block belongs in
+    for (const marker of SNAPSHOT_MARKERS) {
+      assert.equal(
+        report.checks.filledBody.split(marker).length - 1,
+        1,
+        `${marker} is not in the file exactly once`,
+      );
+    }
+    assert.match(report.checks.filledBody, /1,234\.56 \(ZAR\)/, "the figures did not carry their numbers");
+    // The rules name the financial domain's Look-back, so the blocks belong in
     // the Finance area section, not under the overall `## Look-back`.
     const filled = report.checks.filledBody;
     const financeAt = filled.indexOf("## Finance");
     const financeLookback = filled.indexOf("### Look-back", Math.max(financeAt, 0));
-    const snapshotAt = filled.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+    const snapshotAt = filled.indexOf(SNAPSHOT_MARKERS[0]);
     const financeKeep = filled.indexOf("### Keep", Math.max(financeLookback, 0));
     assert.ok(
       financeAt !== -1 &&
         financeLookback !== -1 &&
         snapshotAt > financeLookback &&
         snapshotAt < financeKeep,
-      "the snapshot did not land in Finance's Look-back section",
+      "the figures did not land in Finance's Look-back section",
     );
     assert.equal(
       agentDown.boxText.includes("lifequest:snapshot"),
       false,
       "the snapshot marker is printed in the review",
     );
-    assert.equal(agentDown.tables >= 1, true, "the snapshot's table is not drawn as a table");
-    assert.deepEqual(
-      agentDown.headers.filter((h) => h === "Category" || h === "Total (ZAR)").sort(),
-      ["Category", "Total (ZAR)"],
-      "the snapshot's table headers are wrong",
-    );
+    for (const title of [
+      "Cash in this period",
+      "Cash out this period",
+      "Net cash flow this period (transfers included)",
+    ]) {
+      assert.equal(
+        agentDown.boxText.includes(title),
+        true,
+        `the filled figure ${JSON.stringify(title)} is not drawn in the review`,
+      );
+    }
+    assert.equal(agentDown.tables, 0, "the figures are prose, not a table");
     assert.equal(
       agentDown.boxText.includes("| --- |"),
       false,
-      "the snapshot's table is painted as markdown pipes",
+      "the figures are painted as markdown pipes",
     );
 
     // ── the Finance row opens the Finance interview, and finishing it flips
@@ -906,10 +920,18 @@ describe("review ui e2e", () => {
     assert.equal(started.error, null, `the Finance start reported ${String(started.error)}`);
     assert.equal(financeStart.scope, "financial", "the Finance row started another scope");
     assert.equal(financeStart.cadence, "weekly", "the Finance row started another cadence");
-    assert.match(financeStart.kickoff, /## Finance/, "the Finance kickoff does not name its own section");
-    assert.match(financeStart.kickoff, /only/, "the Finance kickoff does not scope the companion to one section");
+    assert.match(financeStart.kickoff, /scope "financial"/, "the Finance kickoff does not name its own scope");
+    assert.match(
+      financeStart.kickoff,
+      /Leave every other page alone/,
+      "the Finance kickoff does not scope the companion to one page",
+    );
     assert.equal(report.checks.financeKickoffs.length, 1, "the dock was not sent exactly the Finance kickoff");
-    assert.match(String(report.checks.financeKickoffs[0]), /## Finance/, "the dock was sent another kickoff");
+    assert.match(
+      String(report.checks.financeKickoffs[0]),
+      /scope "financial"/,
+      "the dock was sent another kickoff",
+    );
 
     // ── the started interview is in Chats while the agent is still working ──
     // The chat list was read before this session existed and is not read again
@@ -979,15 +1001,17 @@ describe("review ui e2e", () => {
       "Mark Finance review complete",
       "the mark-done button is not the Finance form",
     );
+    for (const marker of SNAPSHOT_MARKERS) {
+      assert.equal(
+        report.checks.startedTwiceBody.split(marker).length - 1,
+        1,
+        `a second start appended a second ${marker}`,
+      );
+    }
     assert.equal(
-      report.checks.startedTwiceBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
+      report.checks.startedTwiceBody.split("1,234.56 (ZAR)").length - 1,
       1,
-      "a second start appended a second snapshot block",
-    );
-    assert.equal(
-      report.checks.startedTwiceBody.split("| Groceries | 1,234.56 |").length - 1,
-      1,
-      "a second start appended the snapshot's own table again",
+      "a second start appended the figures again",
     );
     assert.equal(
       railText(report.checks.financeDone, "financial"),
@@ -1152,7 +1176,7 @@ describe("review ui e2e", () => {
     // looked, which is also the only page surface that reports a genuine skip.
     assert.match(
       String(report.checks.dailyStarted.notice),
-      /Skipped: Spending this period — this review has no "Look-back" section under Finance/,
+      /Skipped: Cash in this period — this review has no "Look-back" section under Finance/,
       "the daily Start notice did not report the skipped snapshot",
     );
 
@@ -1342,11 +1366,13 @@ describe("review ui e2e", () => {
         `the locked review holds a duplicate ${area.name} section`,
       );
     }
-    assert.equal(
-      report.checks.lockedBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-      1,
-      "the lock changed the snapshot block",
-    );
+    for (const marker of SNAPSHOT_MARKERS) {
+      assert.equal(
+        report.checks.lockedBody.split(marker).length - 1,
+        1,
+        `the lock changed the figure block ${marker}`,
+      );
+    }
 
     // ── an agent's mark updates the checklist of the page already open ──────
     // The reported bug, restated: the companion marks a scope done in the main

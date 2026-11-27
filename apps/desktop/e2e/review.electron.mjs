@@ -53,8 +53,9 @@
  *     reviewed after the last area is done.
  *  5. A tab selects THAT page and the area lens moves with it: pressing Finance
  *     shows the Finance page, binds the lens to Finance, and its Start asks for
- *     scope `financial` with a kickoff that names the area's own `## Finance`
- *     section. The reverse binding — the lens moving the tab — is checked too.
+ *     scope `financial` with a kickoff that scopes the companion to that one
+ *     page (`scope "financial"`, leave every other page alone). The reverse
+ *     binding — the lens moving the tab — is checked too.
  *  6. The Overall page is the SUMMARY: its session is asked for scope `overall`
  *     and its kickoff says `whole-life review` across the areas, which is what
  *     the operator asked for when every area is done.
@@ -173,6 +174,12 @@ const AREA_ROWS = [
   { slug: "relationships", name: "Relationships" },
 ];
 const RAIL_ROWS = ["review-tab-overall", ...AREA_ROWS.map((a) => `review-tab-${a.slug}`)];
+/** The three figures the shipped default skill writes into Finance's Look-back. */
+const SNAPSHOT_MARKERS = [
+  "<!-- lifequest:snapshot:finance-in -->",
+  "<!-- lifequest:snapshot:finance-out -->",
+  "<!-- lifequest:snapshot:finance-net -->",
+];
 const LOCKED_ROW = "review-tab-spirit";
 const TOTAL_AREAS = AREA_ROWS.length;
 
@@ -1621,38 +1628,41 @@ async function main() {
   }
   const filledBody = await fileBody(win);
   checks.filledBody = filledBody;
-  if (occurrences(filledBody, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
-    failure("the snapshot marker is not in the file exactly once");
+  for (const marker of SNAPSHOT_MARKERS) {
+    if (occurrences(filledBody, marker) !== 1) {
+      failure(`${marker} is not in the file exactly once`);
+    }
   }
-  if (!filledBody.includes("| Groceries | 1,234.56 |")) {
-    failure("the snapshot did not carry the figure the rule asked for");
+  if (!filledBody.includes("1,234.56 (ZAR)")) {
+    failure("the snapshots did not carry the figures the rules asked for");
   }
-  // The block belongs under `## Finance` / `### Look-back`, not under the overall
-  // `## Look-back`: the rule names the financial domain's section.
+  // The blocks belong under `## Finance` / `### Look-back`, not under the overall
+  // `## Look-back`: the rules name the financial domain's section.
   const financeAt = filledBody.indexOf("## Finance");
   const financeLookback = filledBody.indexOf("### Look-back", Math.max(financeAt, 0));
-  const snapshotAt = filledBody.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+  const snapshotAt = filledBody.indexOf(SNAPSHOT_MARKERS[0]);
   const financeKeep = filledBody.indexOf("### Keep", Math.max(financeLookback, 0));
   if (!(financeAt !== -1 && financeLookback !== -1 && snapshotAt > financeLookback && snapshotAt < financeKeep)) {
     failure(
-      `the snapshot did not land in Finance's Look-back section (finance ${financeAt}, lookback ${financeLookback}, snapshot ${snapshotAt}, keep ${financeKeep})`,
+      `the figures did not land in Finance's Look-back section (finance ${financeAt}, lookback ${financeLookback}, snapshot ${snapshotAt}, keep ${financeKeep})`,
     );
   }
-  // The markers are comments: the box prints the figure and hides the machinery.
-  if (!agentDown.boxText.includes("Spending this period")) {
-    failure("the filled snapshot is not visible in the review");
+  // The markers are comments: the box prints the figures and hides the machinery.
+  for (const title of ["Cash in this period", "Cash out this period", "Net cash flow this period (transfers included)"]) {
+    if (!agentDown.boxText.includes(title)) {
+      failure(`the filled figure ${JSON.stringify(title)} is not visible in the review`);
+    }
   }
   if (agentDown.boxText.includes("lifequest:snapshot")) {
     failure("the snapshot marker is printed in the review");
   }
-  // And the figure is a TABLE, not a paragraph of pipes: a snapshot drawn as
-  // `| Category | Total | | --- | --- |` is worse than no snapshot at all.
-  if (agentDown.tables < 1) failure("the snapshot's table is not drawn as a table");
-  if (!agentDown.headers.includes("Category") || !agentDown.headers.includes("Total (ZAR)")) {
-    failure(`the snapshot's table headers read ${JSON.stringify(agentDown.headers)}`);
+  // The figures are prose (title, window, number), not pipes: markdown that
+  // reached the box as `| ... | --- |` is worse than no figure at all.
+  if (agentDown.tables !== 0) {
+    failure(`the figures drew ${agentDown.tables} table(s), expected prose`);
   }
   if (agentDown.boxText.includes("| --- |")) {
-    failure("the snapshot's table is painted as markdown pipes");
+    failure("the figures are painted as markdown pipes");
   }
   await shot(win, "review-started.png");
 
@@ -1689,16 +1699,16 @@ async function main() {
   }
   // The kickoff is the interview's first turn, so it must name the section this
   // row is about — and say to leave the others alone.
-  if (!String(starts[0]?.kickoff).includes("## Finance")) {
-    failure(`the Finance kickoff does not name its own section: ${JSON.stringify(starts[0]?.kickoff)}`);
+  if (!String(starts[0]?.kickoff).includes('scope "financial"')) {
+    failure(`the Finance kickoff does not name its own scope: ${JSON.stringify(starts[0]?.kickoff)}`);
   }
-  if (!String(starts[0]?.kickoff).includes("only")) {
-    failure(`the Finance kickoff does not scope the companion to one section: ${JSON.stringify(starts[0]?.kickoff)}`);
+  if (!String(starts[0]?.kickoff).includes("Leave every other page alone")) {
+    failure(`the Finance kickoff does not scope the companion to one page: ${JSON.stringify(starts[0]?.kickoff)}`);
   }
   await waitForDockKickoffs(win, 1);
   const kickoffs = await setHarness(win, "window.reviewRigKickoffs");
   checks.financeKickoffs = kickoffs;
-  if (kickoffs.length !== 1 || !kickoffs[0].includes("## Finance")) {
+  if (kickoffs.length !== 1 || !kickoffs[0].includes('scope "financial"')) {
     failure(`the dock was sent ${kickoffs.length} kickoff(s), not the Finance one`);
   }
 
@@ -1859,11 +1869,13 @@ async function main() {
   }
   const twice = await fileBody(win);
   checks.startedTwiceBody = twice;
-  if (occurrences(twice, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
-    failure("a second start appended a second snapshot block");
+  for (const marker of SNAPSHOT_MARKERS) {
+    if (occurrences(twice, marker) !== 1) {
+      failure(`a second start appended a second ${marker}`);
+    }
   }
-  if (occurrences(twice, "| Groceries | 1,234.56 |") !== 1) {
-    failure("a second start appended the snapshot's own table again");
+  if (occurrences(twice, "1,234.56 (ZAR)") !== 1) {
+    failure("a second start appended the figures again");
   }
   // Completing the area completes ONLY that area: the rail says so, and the file
   // it is reading says so — one scope `done`, not the file locked.
@@ -1918,8 +1930,8 @@ async function main() {
     if (last?.scope !== area.slug) {
       failure(`the ${area.name} row started scope ${JSON.stringify(last?.scope)}`);
     }
-    if (!String(last?.kickoff).includes(`## ${area.name}`)) {
-      failure(`the ${area.name} kickoff does not name its own section: ${JSON.stringify(last?.kickoff)}`);
+    if (!String(last?.kickoff).includes(`scope "${area.slug}"`)) {
+      failure(`the ${area.name} kickoff does not name its own scope: ${JSON.stringify(last?.kickoff)}`);
     }
     if (activeScope(areaStart) !== area.slug) {
       failure(`the ${area.name} row left the selected row on ${JSON.stringify(activeScope(areaStart))}`);
@@ -2015,7 +2027,7 @@ async function main() {
   // directive the pass cannot place. The page must report that skip in its
   // notice rather than let a Start that filled nothing read as a clean start.
   const dailySkipLine =
-    'Skipped: Spending this period — this review has no "Look-back" section under Finance';
+    'Skipped: Cash in this period — this review has no "Look-back" section under Finance';
   await waitFor(
     win,
     `(document.querySelector(".review-page__notice")?.textContent ?? "").includes(${JSON.stringify(dailySkipLine)})`,
@@ -2416,8 +2428,10 @@ async function main() {
       failure(`the locked review holds ${occurrences(lockedBody, `\n## ${area.name}\n`)} ${area.name} sections, expected 1`);
     }
   }
-  if (occurrences(lockedBody, "<!-- lifequest:snapshot:finance-spend -->") !== 1) {
-    failure("the lock changed the snapshot block");
+  for (const marker of SNAPSHOT_MARKERS) {
+    if (occurrences(lockedBody, marker) !== 1) {
+      failure(`the lock changed the figure block ${marker}`);
+    }
   }
 
   // ── 12. an agent's mark reaches the checklist of the OPEN page ────────────

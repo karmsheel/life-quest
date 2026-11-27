@@ -76,6 +76,7 @@ import type {
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
+  ViewFilter,
   VaultSnapshot,
 } from "@lifequest/vault-core";
 import {
@@ -548,66 +549,133 @@ function pageOf(stored: StoredReview, scope: string): ReviewPageBody {
   };
 }
 
-/** What the app's snapshot pass writes into Finance's Look-back. */
-const SNAPSHOT_MARKER_OPEN = "<!-- lifequest:snapshot:finance-spend -->";
-const SNAPSHOT_MARKER_CLOSE = "<!-- /lifequest:snapshot:finance-spend -->";
-const SNAPSHOT_BLOCK = [
-  SNAPSHOT_MARKER_OPEN,
-  ``,
-  `**Spending this period** · 2026-10-12 → 2026-10-18`,
-  ``,
-  `| Category | Total (ZAR) |`,
-  `| --- | --- |`,
-  `| Groceries | 1,234.56 |`,
-  ``,
-  SNAPSHOT_MARKER_CLOSE,
-].join("\n");
+/**
+ * The three figures the shipped default skill asks for, as the app's snapshot
+ * pass writes them into Finance's Look-back. The values are fixtures, but the
+ * titles, the window line and the "Cash out printed positive" shape are the
+ * shipped ones — a stub that drew the old single "Spending this period" block
+ * would let a page that never learned the new vocabulary pass.
+ */
+type StubSnapshot = {
+  id: string;
+  title: string;
+  value: string;
+  filters: ViewFilter[];
+};
+
+const SNAPSHOT_FIGURES: StubSnapshot[] = [
+  {
+    id: "finance-in",
+    title: "Cash in this period",
+    value: "5,000",
+    filters: [
+      { columnId: "amount", op: "gt", value: 0 },
+      { columnId: "transfer_id", op: "is-not-set" },
+    ],
+  },
+  {
+    id: "finance-out",
+    title: "Cash out this period",
+    value: "1,234.56",
+    filters: [
+      { columnId: "amount", op: "lt", value: 0 },
+      { columnId: "transfer_id", op: "is-not-set" },
+    ],
+  },
+  {
+    id: "finance-net",
+    title: "Net cash flow this period (transfers included)",
+    value: "3,765.44",
+    filters: [],
+  },
+];
+
+const SNAPSHOT_WINDOW = "2026-10-12 → 2026-10-18";
+
+function snapshotMarkerOpen(id: string): string {
+  return `<!-- lifequest:snapshot:${id} -->`;
+}
+
+function snapshotMarkerClose(id: string): string {
+  return `<!-- /lifequest:snapshot:${id} -->`;
+}
+
+/** One figure's markdown: bold title with its window, then its number. */
+function snapshotBlockText(figure: StubSnapshot): string {
+  return [
+    snapshotMarkerOpen(figure.id),
+    ``,
+    `**${figure.title}** · ${SNAPSHOT_WINDOW}`,
+    ``,
+    `${figure.value} (ZAR)`,
+    ``,
+    snapshotMarkerClose(figure.id),
+  ].join("\n");
+}
 
 /**
- * Write the snapshot block into the Finance area's Look-back, or rewrite the
- * block where it already is.
+ * Write the three figures into the Finance area's Look-back, or rewrite each one
+ * where it already is.
  *
- * The directive names the financial domain, so the block belongs under
- * `## Finance` / `### Look-back` — not under the overall `## Look-back`. Writing
- * it in the right section is the claim; a stub that dropped it anywhere would
- * let a page that never scoped the pass pass.
+ * The directives name the financial domain, so the blocks belong under
+ * `## Finance` / `### Look-back` — not under the overall `## Look-back`. They are
+ * placed in their declared order (Cash in, Cash out, Net); writing them in the
+ * right section and the right order is the claim, and a stub that dropped them
+ * anywhere would let a page that never scoped the pass pass.
  */
 function writeSnapshot(body: string): { body: string; applied: boolean } {
-  if (body.includes(SNAPSHOT_MARKER_OPEN)) {
-    const lines = body.split("\n");
-    const open = lines.indexOf(SNAPSHOT_MARKER_OPEN);
-    const close = lines.indexOf(SNAPSHOT_MARKER_CLOSE);
-    if (open !== -1 && close !== -1) {
-      const next = [
-        ...lines.slice(0, open),
-        ...SNAPSHOT_BLOCK.split("\n"),
-        ...lines.slice(close + 1),
-      ];
-      return { body: next.join("\n"), applied: true };
-    }
+  let next = body;
+  let touched = false;
+  for (const figure of SNAPSHOT_FIGURES) {
+    const open = snapshotMarkerOpen(figure.id);
+    if (!next.includes(open)) continue;
+    const lines = next.split("\n");
+    const openAt = lines.indexOf(open);
+    const closeAt = lines.indexOf(snapshotMarkerClose(figure.id), openAt + 1);
+    if (openAt === -1 || closeAt === -1) continue;
+    next = [
+      ...lines.slice(0, openAt),
+      ...snapshotBlockText(figure).split("\n"),
+      ...lines.slice(closeAt + 1),
+    ].join("\n");
+    touched = true;
   }
-  const lines = body.split("\n");
+
+  const missing = SNAPSHOT_FIGURES.filter(
+    (figure) => !next.includes(snapshotMarkerOpen(figure.id)),
+  );
+  if (missing.length === 0) return { body: next, applied: touched };
+
+  const lines = next.split("\n");
   const financeAt = lines.indexOf("## Finance");
   if (financeAt === -1) return { body, applied: false };
   let lookbackAt = -1;
   for (let i = financeAt + 1; i < lines.length; i += 1) {
-    const line = lines[i]!;
-    if (/^##\s/.test(line)) break;
-    if (line.trim() === "### Look-back") {
+    if (/^##\s/.test(lines[i]!)) break;
+    if (lines[i]!.trim() === "### Look-back") {
       lookbackAt = i;
       break;
     }
   }
   if (lookbackAt === -1) return { body, applied: false };
+  let spanEnd = lines.length;
+  for (let i = lookbackAt + 1; i < lines.length; i += 1) {
+    if (/^#{2,3}\s/.test(lines[i]!)) {
+      spanEnd = i;
+      break;
+    }
+  }
   let at = lookbackAt + 1;
   while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  for (let i = lookbackAt + 1; i < spanEnd; i += 1) {
+    if (/^<!-- \/lifequest:snapshot:.+ -->$/.test(lines[i]!)) {
+      at = i + 1;
+      while (at < lines.length && lines[at]!.trim() === "") at += 1;
+    }
+  }
+  const inserted = missing.flatMap((figure) => [...snapshotBlockText(figure).split("\n"), ""]);
   return {
-    body: [
-      ...lines.slice(0, at),
-      ...SNAPSHOT_BLOCK.split("\n"),
-      "",
-      ...lines.slice(at),
-    ].join("\n"),
+    body: [...lines.slice(0, at), ...inserted, ...lines.slice(at)].join("\n"),
     applied: true,
   };
 }
@@ -620,10 +688,24 @@ const SKILL_MARKDOWN = [
   ``,
   `- Keep it to a page.`,
   ``,
-  '```lifequest-snapshot',
-  `{"id":"finance-spend","domain":"financial","section":"Look-back","window":"period"}`,
-  "```",
+  `## Snapshots`,
   ``,
+  ...SNAPSHOT_FIGURES.flatMap((figure) => [
+    '```lifequest-snapshot',
+    JSON.stringify(
+      {
+        id: figure.id,
+        domain: "financial",
+        section: "Look-back",
+        title: figure.title,
+        window: "period",
+      },
+      null,
+      2,
+    ),
+    "```",
+    ``,
+  ]),
 ].join("\n");
 
 /**
@@ -641,10 +723,10 @@ function kickoffFor(cadence: ReviewCadence, period: string, scope: string): stri
     return `Let's assemble the ${title}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   if (scope === "overall") {
-    return `Let's assemble the ${title}. This is the whole-life review: every area review for this period is complete (${AREAS.length} areas). Read the file with get_review and go across each area's Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall sections only, synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+    return `Let's assemble the ${title}. This is the whole-life review: every area review for this period is complete (${AREAS.length} areas). Read every area page with get_review first (one call per area scope). The overall page has no area sections: synthesise the area pages under the four common headings — Look-back, Keep, Change, Next-period intent — without copying an area's own extra sections, and never rewrite an area page. Write the overall page only (get_review with scope "overall", then write_review with that scope and its rev), synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   const name = AREA_NAME.get(scope) ?? scope;
-  return `Let's assemble the ${title}. This is the ${name} review — this period's part of the life review. Write into the ## ${name} section only and leave the other sections alone. Interview me through the four ### headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
+  return `Let's assemble the ${title}. This is the ${name} review — this period's part of the life review. Your page is get_review with scope "${scope}" → write_review with the same scope, the page body (one # title and the four common ## headings) and the rev it returned. Leave every other page alone. Interview me through the four common headings. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
 }
 
 /** The refusal the engine builds when the life review is pressed too early. */
@@ -1132,21 +1214,21 @@ const bridge: Record<string, unknown> = {
         ...patch,
       });
     if (stored.locked) return Promise.resolve(value({}));
-    // This stub answer stands for a review whose directive the pass cannot
+    // This stub answer stands for a review whose directives the pass cannot
     // place — a section the review does not carry — not for the shipped daily
-    // review: after the core fix that directive resolves to the overall
-    // `## Look-back`, so a real daily Start writes. It is kept here because this
-    // is the only harness path that exercises the page's skip line, and the
-    // page must report a skip rather than a clean start.
+    // review: there the figures resolve to the overall `## Look-back`, so a real
+    // daily Start writes. It is kept here because this is the only harness path
+    // that exercises the page's skip line, and the page must report a skip
+    // rather than a clean start.
     if (cadence === "daily") {
       return Promise.resolve(
         value({
           outcomes: [
             {
-              id: "finance-spend",
+              id: SNAPSHOT_FIGURES[0]!.id,
               domain: "financial",
               section: "Look-back",
-              title: "Spending this period",
+              title: SNAPSHOT_FIGURES[0]!.title,
               status: "skipped",
               reason: 'this review has no "Look-back" section under Finance',
             },
@@ -1154,37 +1236,36 @@ const bridge: Record<string, unknown> = {
         }),
       );
     }
-    // The directive names the financial domain, so an area scope only runs for
+    // The directives name the financial domain, so an area scope only runs for
     // that area; the overall scope runs every directive in the skill.
     if (scope !== "overall" && scope !== "financial") {
       return Promise.resolve(value({}));
     }
     const written = writeSnapshot(stored.body);
     if (written.applied) stored.body = written.body;
+    const outcomes = SNAPSHOT_FIGURES.map((figure) =>
+      written.applied
+        ? {
+            id: figure.id,
+            domain: "financial",
+            section: "Look-back",
+            title: figure.title,
+            status: "written" as const,
+            groups: 1,
+          }
+        : {
+            id: figure.id,
+            domain: "financial",
+            section: "Look-back",
+            title: figure.title,
+            status: "skipped" as const,
+            reason: 'this review has no "Look-back" section under Finance',
+          },
+    );
     return Promise.resolve(
       value({
-        applied: written.applied ? 1 : 0,
-        outcomes: written.applied
-          ? [
-              {
-                id: "finance-spend",
-                domain: "financial",
-                section: "Look-back",
-                title: "Spending this period",
-                status: "written",
-                groups: 2,
-              },
-            ]
-          : [
-              {
-                id: "finance-spend",
-                domain: "financial",
-                section: "Look-back",
-                title: "Spending this period",
-                status: "skipped",
-                reason: 'this review has no "Look-back" section under Finance',
-              },
-            ],
+        applied: written.applied ? SNAPSHOT_FIGURES.length : 0,
+        outcomes,
       }),
     );
   },
@@ -1253,32 +1334,30 @@ const bridge: Record<string, unknown> = {
     const value: ReviewSkill = {
       cadence: cadence as ReviewCadence,
       markdown: skillMarkdown ?? SKILL_MARKDOWN,
-      snapshots: [
-        {
-          id: "finance-spend",
-          domain: "financial",
-          section: "Look-back",
-          title: "Spending this period",
-          window: "period",
-          spec: {
-            databaseId: "finance:transactions",
-            title: "Spending this period",
-            presentation: "metric",
-            groupBy: null,
-            timeBucket: null,
-            timeColumnId: "date",
-            timeWindow: "all",
-            filters: [],
-            measure: "sum",
-            measureColumnId: "amount",
-            per: null,
-            sort: { by: "value", dir: "desc" },
-            limit: 12,
-            convertToZar: true,
-            columns: [],
-          },
+      snapshots: SNAPSHOT_FIGURES.map((figure) => ({
+        id: figure.id,
+        domain: "financial",
+        section: "Look-back",
+        title: figure.title,
+        window: "period",
+        spec: {
+          databaseId: "finance:transactions",
+          title: figure.title,
+          presentation: "metric",
+          groupBy: null,
+          timeBucket: null,
+          timeColumnId: "date",
+          timeWindow: "all",
+          filters: figure.filters,
+          measure: "sum",
+          measureColumnId: "amount",
+          per: null,
+          sort: { by: "value", dir: "desc" },
+          limit: 12,
+          convertToZar: true,
+          columns: [],
         },
-      ],
+      })),
       problems: [],
       exists: skillMarkdown !== null,
     };

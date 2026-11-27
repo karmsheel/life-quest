@@ -549,11 +549,13 @@ describe("review notebook guards e2e", () => {
         /Health written while the figures were read\./,
         "the snapshot pass reverted the page written while it was reading",
       );
-      assert.match(
-        bodyAfterPass,
-        /<!-- lifequest:snapshot:finance-spend -->/,
-        "the snapshot pass did not write its figure",
-      );
+      for (const figure of ["finance-in", "finance-out", "finance-net"]) {
+        assert.match(
+          bodyAfterPass,
+          new RegExp(`<!-- lifequest:snapshot:${figure} -->`),
+          `the snapshot pass did not write the ${figure} figure`,
+        );
+      }
 
       // ── artifact (only a run that held this far reaches this line) ────────
       fs.mkdirSync(path.dirname(ARTIFACT), { recursive: true });
