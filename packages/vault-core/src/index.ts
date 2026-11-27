@@ -166,7 +166,6 @@ export {
 export type { ReviewPageTemplate } from "./review-templates.ts";
 export {
   REVIEW_SECTIONS,
-  FINANCE_SNAPSHOT_ID,
   defaultReviewSkill,
   ensureReviewSkill,
   formatSnapshotNumber,
@@ -355,8 +354,10 @@ export {
   listInstalledKits,
   getFinanceKitSettings,
   applyFinanceKitInstall,
+  ensureFinanceMetrics,
   setFinanceCaptureAccount,
 } from "./finance-kit.ts";
+export type { FinanceMetricsInstallResult } from "./finance-kit.ts";
 export {
   DEFAULT_FX_SOURCE,
   fxSourceOf,

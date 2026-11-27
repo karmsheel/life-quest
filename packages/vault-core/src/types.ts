@@ -2294,7 +2294,12 @@ export type ViewFilterOp =
 export type ViewFilter = {
   columnId: string;
   op: ViewFilterOp;
-  value: unknown;
+  /**
+   * The value to compare against. Absent for the presence ops (`is-set`,
+   * `is-not-set`), which ask about the cell rather than compare it — the
+   * validator refuses a supplied value there instead of silently ignoring it.
+   */
+  value?: unknown;
 };
 
 export type ViewTimeWindow =

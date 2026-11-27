@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { listDomains } from "./domains.ts";
+import { isDomainLive } from "./domain-databases.ts";
+import { ensureFinanceMetrics, listInstalledKits } from "./finance-kit.ts";
 import { appendLog } from "./log.ts";
+import { metricDisplayValue } from "./metrics.ts";
 import { periodBounds } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
 import {
@@ -13,6 +16,8 @@ import {
 } from "./reviews.ts";
 import { applyViewDefaults, resolveViewBlocks, runViewBlocks } from "./views.ts";
 import {
+  FINANCE_DOMAIN_SLUG,
+  FINANCE_KIT_ID,
   USER_ACTOR,
   type Actor,
   type ComposedViewRunResult,
@@ -47,9 +52,11 @@ import {
  * WHY A DEFAULT AND NOT A SEED. `getReviewSkill` answers with the shipped
  * default when the file is missing and does not write it. A read that created a
  * file would freeze the default at the version that first ran; keeping the read
- * pure means a later release can improve a cadence's starting rules and every
- * operator who never edited theirs gets it. `ensureReviewSkill` is the write,
- * and it only runs from the one place a session actually starts.
+ * pure means a later release can improve a cadence's starting rules. The one
+ * exception is `ensureReviewSkill`: when the file on disk is BYTE-IDENTICAL to
+ * the previous shipped default, it was never the operator's, so the write path
+ * replaces it with the improved default. An operator's edit is never matched by
+ * bytes and never touched.
  */
 
 /** The fence that carries one directive: ```lifequest-snapshot */
@@ -79,11 +86,19 @@ export const REVIEW_SECTIONS = [
 ] as const;
 
 /**
- * The shipped rules for a cadence. Each one carries the finance snapshot, whose
- * window is the review's own period: the week's spending in a weekly review, the
- * day's in a daily one, with no second copy of the rules to keep in step.
+ * The PREVIOUS shipped default's finance snapshot, kept in code on purpose.
+ *
+ * The shipped figure used to be one "Spending this period" block: a plain
+ * `sum(amount)` with no filters, which is net cash flow, not spending, and it
+ * printed a week's mixed income and expenses under a "Spending" heading. It is
+ * replaced by Cash in / Cash out / Net cash flow (spec §10.3, decision D3).
+ *
+ * The old builder stays because a vault that never edited its skill file has the
+ * old default ON DISK, byte for byte, and `ensureReviewSkill` must recognise
+ * exactly that content before replacing it. Checking "is this the old default?"
+ * by feature instead of by bytes would also match an operator's edit.
  */
-function financeSnapshotBlock(): Record<string, unknown>[] {
+function previousFinanceSnapshotBlock(): Record<string, unknown>[] {
   return [
     {
       id: "total",
@@ -124,12 +139,12 @@ function financeSnapshotBlock(): Record<string, unknown>[] {
   ];
 }
 
-export const FINANCE_SNAPSHOT_ID = "finance-spend";
+const PREVIOUS_FINANCE_SNAPSHOT_ID = "finance-spend";
 
-function financeSnapshotJson(): string {
+function previousFinanceSnapshotJson(): string {
   return JSON.stringify(
     {
-      id: FINANCE_SNAPSHOT_ID,
+      id: PREVIOUS_FINANCE_SNAPSHOT_ID,
       domain: "financial",
       section: "Look-back",
       title: "Spending this period",
@@ -150,7 +165,7 @@ function financeSnapshotJson(): string {
         limit: 12,
         convertToZar: true,
         columns: [],
-        blocks: financeSnapshotBlock(),
+        blocks: previousFinanceSnapshotBlock(),
       },
     },
     null,
@@ -158,7 +173,155 @@ function financeSnapshotJson(): string {
   );
 }
 
+/**
+ * One shipped finance figure: a single metric spec over the ledger, with the
+ * filters and measure that make its number mean what its title says.
+ *
+ * These are plain `metric` specs — not the snapshot's composed `blocks` form —
+ * because a figure is one number. The `transfer_id is-not-set` filter is the
+ * gross rule (decision D3): a transfer is two rows sharing a transfer id, and
+ * counting either leg as income or spend would inflate both.
+ */
+function financeMetricSpec(input: {
+  title: string;
+  filters: Array<Record<string, unknown>>;
+}): Record<string, unknown> {
+  return {
+    databaseId: "finance:transactions",
+    title: input.title,
+    presentation: "metric",
+    groupBy: null,
+    timeBucket: null,
+    timeColumnId: "date",
+    timeWindow: "all",
+    filters: input.filters,
+    measure: "sum",
+    measureColumnId: "amount",
+    per: null,
+    sort: { by: "value", dir: "desc" },
+    limit: 12,
+    convertToZar: true,
+    columns: [],
+  };
+}
+
+/**
+ * The three shipped finance figures, in reading order.
+ *
+ * Cash in and Cash out are GROSS — transfers excluded — and Cash out is the
+ * negative side of the ledger printed as its size (`magnitude: "abs"`), never a
+ * negated query. Net includes transfers and says so in its title, because the
+ * ledger's `sum(amount)` is net cash flow and labelling it "Spending" was the
+ * concrete weakness the metrics proposal was written to fix.
+ */
+function financeSnapshotDirectives(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: "finance-in",
+      domain: "financial",
+      section: "Look-back",
+      title: "Cash in this period",
+      window: "period",
+      spec: financeMetricSpec({
+        title: "Cash in this period",
+        filters: [
+          { columnId: "amount", op: "gt", value: 0 },
+          { columnId: "transfer_id", op: "is-not-set" },
+        ],
+      }),
+    },
+    {
+      id: "finance-out",
+      domain: "financial",
+      section: "Look-back",
+      title: "Cash out this period",
+      window: "period",
+      magnitude: "abs",
+      spec: financeMetricSpec({
+        title: "Cash out this period",
+        filters: [
+          { columnId: "amount", op: "lt", value: 0 },
+          { columnId: "transfer_id", op: "is-not-set" },
+        ],
+      }),
+    },
+    {
+      id: "finance-net",
+      domain: "financial",
+      section: "Look-back",
+      title: "Net cash flow this period (transfers included)",
+      window: "period",
+      spec: financeMetricSpec({
+        title: "Net cash flow this period (transfers included)",
+        filters: [],
+      }),
+    },
+  ];
+}
+
 function defaultSkillMarkdown(cadence: ReviewCadence): string {
+  const shared = [
+    "## How to run this review",
+    "",
+    "- Work from the review page the app has open. Read it with `get_review` and the scope you were given before you change anything; a page is written with `write_review(scope, body, baseRev)`.",
+    "- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.",
+    "- Prefer the operator's own words over your summary of them. `get_period_pack` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.",
+    "- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.",
+    "- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.",
+    "- When the report is ready, propose `mark_review_done` rather than marking it done yourself.",
+    "",
+  ];
+  const perCadence: Record<ReviewCadence, string[]> = {
+    daily: [
+      "- One day is small: keep it to a few honest lines rather than a report.",
+      "- The one question worth asking every day is what the day was actually for.",
+    ],
+    weekly: [
+      "- A week is where patterns start to show. Name the one pattern worth changing, not five.",
+      "- Compare against the previous week's review when there is one.",
+    ],
+    monthly: [
+      "- A month is where a goal either has a pulse or does not. Check the open goals before you write intent.",
+    ],
+    quarterly: [
+      "- A quarter is long enough that the honest question is what to stop doing.",
+    ],
+    yearly: [
+      "- A year is a story, not a list. Read the months before you write the year.",
+    ],
+  };
+  const fences = financeSnapshotDirectives().flatMap((directive) => [
+    "```lifequest-snapshot",
+    JSON.stringify(directive, null, 2),
+    "```",
+    "",
+  ]);
+  return [
+    "---",
+    `cadence: ${cadence}`,
+    "---",
+    "# " + cadence.charAt(0).toUpperCase() + cadence.slice(1) + " review skill",
+    "",
+    "Standing rules for this cadence's review sessions. Edit freely, or ask the",
+    "companion to add a rule — the whole file is handed to the review session.",
+    "",
+    ...shared,
+    ...perCadence[cadence],
+    "",
+    "## Snapshots",
+    "",
+    "Each fenced block below names a figure the app itself writes into the review",
+    "before the interview starts, so the numbers are there whether or not the agent",
+    "is running. `window: period` means the block reads exactly the review's own",
+    "period; on the Financial page the three figures are gross cash in, gross cash",
+    "out (transfers excluded, printed positive) and net cash flow (transfers",
+    "included). Marked blocks are refreshed in place on every Start.",
+    "",
+    ...fences,
+  ].join("\n");
+}
+
+function previousDefaultSkillMarkdown(cadence: ReviewCadence): string {
   const shared = [
     "## How to run this review",
     "",
@@ -209,7 +372,7 @@ function defaultSkillMarkdown(cadence: ReviewCadence): string {
     "period. Marked blocks are refreshed in place on every Start.",
     "",
     "```lifequest-snapshot",
-    financeSnapshotJson(),
+    previousFinanceSnapshotJson(),
     "```",
     "",
   ].join("\n");
@@ -293,6 +456,14 @@ export function parseSnapshotDirectives(markdown: string): {
       problems.push(`${label} (${id}): "window" must be "period" or "all"`);
       continue;
     }
+    let magnitude: "abs" | "negate" | null = null;
+    if (raw.magnitude !== undefined && raw.magnitude !== null) {
+      if (raw.magnitude !== "abs" && raw.magnitude !== "negate") {
+        problems.push(`${label} (${id}): "magnitude" must be "abs" or "negate"`);
+        continue;
+      }
+      magnitude = raw.magnitude;
+    }
     seen.add(id);
     directives.push({
       id,
@@ -303,6 +474,7 @@ export function parseSnapshotDirectives(markdown: string): {
           ? raw.title.trim()
           : "Snapshot",
       window,
+      ...(magnitude ? { magnitude } : {}),
       spec: applyViewDefaults(
         spec as Omit<ViewSpec, "schemaVersion">,
       ) as Omit<ViewSpec, "schemaVersion">,
@@ -339,8 +511,9 @@ export async function getReviewSkill(
 }
 
 /**
- * Write one cadence's rules, and only if there is no file yet for `ensure`.
- * An edited skill is never overwritten: the operator's rules are theirs.
+ * Write one cadence's rules, atomically, normalising the trailing newline.
+ * Shared by the three writers — the first-run seed, the default replacement and
+ * the operator's own `write_review_skill` — so every file on disk has one shape.
  */
 async function writeSkillFile(file: string, markdown: string): Promise<Result<true>> {
   try {
@@ -352,15 +525,40 @@ async function writeSkillFile(file: string, markdown: string): Promise<Result<tr
   }
 }
 
+/**
+ * Write one cadence's rules, and only if there is no file yet for `ensure`.
+ * An edited skill is never overwritten: the operator's rules are theirs.
+ *
+ * The one rewrite is the release that replaced the shipped default: a file
+ * byte-identical to the PREVIOUS default (the single "Spending this period"
+ * snapshot) is not an operator's edit, so it is replaced with the current
+ * default and logged. Comparing bytes is the whole safety property — an
+ * operator who changed even one character no longer matches and is left alone.
+ */
 export async function ensureReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewSkill>> {
   try {
     const file = vaultPaths(rootPath).reviewSkillMd(cadence);
     const existing = await getReviewSkill(rootPath, cadence);
     if (!existing.ok) return existing;
-    if (existing.value.exists) return existing;
+    if (existing.value.exists) {
+      if (existing.value.markdown !== previousDefaultSkillMarkdown(cadence)) {
+        return existing;
+      }
+      const migrated = await writeSkillFile(file, defaultReviewSkill(cadence));
+      if (!migrated.ok) return migrated;
+      await appendLog(rootPath, {
+        domainSlug: null,
+        type: "review-skill.migrated",
+        summary: `Replaced the shipped default ${cadence} review skill with the cash in/out/net default`,
+        payload: { cadence, from: "shipped-default", to: "shipped-default" },
+        actor,
+      });
+      return getReviewSkill(rootPath, cadence);
+    }
     const written = await writeSkillFile(file, existing.value.markdown);
     if (!written.ok) return written;
     return getReviewSkill(rootPath, cadence);
@@ -458,6 +656,18 @@ export function renderSnapshotMarkdown(
   out.push(`**${directive.title}**${covers}`);
   out.push("");
 
+  /**
+   * A directive's magnitude is DISPLAY ONLY. "Cash out" sums the ledger's
+   * negative amounts (-3,000) and prints the size the operator spent (3,000);
+   * the query and the stored rows keep the sign, so a figure can never change
+   * what the data says. `negate` is the mirror rule.
+   */
+  const shown = (value: number): number =>
+    metricDisplayValue(
+      value,
+      directive.magnitude ? { magnitude: directive.magnitude } : null,
+    ) ?? value;
+
   let groups = 0;
   run.blocks.forEach((block, index) => {
     const result = block.result;
@@ -474,7 +684,7 @@ export function renderSnapshotMarkdown(
       return;
     }
     if (block.presentation === "metric") {
-      const value = result.rows[0]?.[1] ?? 0;
+      const value = shown(result.rows[0]?.[1] ?? 0);
       groups += 1;
       out.push(
         `${formatSnapshotNumber(value)}${unitSuffix(result.currency)}${result.rows.length === 0 ? " — no rows in this window" : ""}`,
@@ -503,7 +713,7 @@ export function renderSnapshotMarkdown(
     out.push(`| ${cell(label)} | Total${unitSuffix(result.currency)} |`);
     out.push("| --- | --- |");
     for (const [name, value] of result.rows) {
-      out.push(`| ${cell(name)} | ${formatSnapshotNumber(value)} |`);
+      out.push(`| ${cell(name)} | ${formatSnapshotNumber(shown(value))} |`);
     }
     out.push("");
   });
@@ -715,6 +925,27 @@ function upsertSnapshotAt(
 }
 
 /**
+ * Install the shipped finance metric definitions for a vault that already has
+ * the kit, without letting a definition failure fail the review pass.
+ *
+ * The kit's own install path calls the same helper for a fresh install; this is
+ * the catch-up path for every vault installed before metrics existed. It runs
+ * on Start, which is when the finance figures are about to be written, and it
+ * only creates absent files — an operator's edit or deletion is respected.
+ */
+async function ensureShippedFinanceMetrics(rootPath: string): Promise<void> {
+  try {
+    if (!(await isDomainLive(rootPath, FINANCE_DOMAIN_SLUG))) return;
+    const kits = await listInstalledKits(rootPath, FINANCE_DOMAIN_SLUG);
+    if (!kits.ok || !kits.value.includes(FINANCE_KIT_ID)) return;
+    await ensureFinanceMetrics(rootPath);
+  } catch {
+    // The ledger figures still run; a missing definition file is a library
+    // convenience, not a precondition for the review's own numbers.
+  }
+}
+
+/**
  * Fill a review from its cadence's skill, before the interview starts.
  *
  * This is the app doing the reading, not the model: the operator opens a weekly
@@ -764,8 +995,15 @@ export async function prepopulateReview(
   if (!pageRes.ok) return pageRes;
   let page = pageRes.value;
 
-  const skill = await ensureReviewSkill(rootPath, input.cadence);
+  const skill = await ensureReviewSkill(rootPath, input.cadence, input.actor);
   if (!skill.ok) return skill;
+  // A vault that installed the finance kit before metric definitions shipped
+  // has the ledger but not the three shipped definitions. Start is where the
+  // figures are about to be read, so it is where they are written — idempotent
+  // (only absent files are created) and never overwriting an operator's edit
+  // (spec §10.3). A failure here must not fail the Start's own figures, which
+  // still run from whatever the ledger holds.
+  await ensureShippedFinanceMetrics(rootPath);
 
   /**
    * Which directives belong to this page.
