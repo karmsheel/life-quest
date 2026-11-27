@@ -305,6 +305,15 @@ type ReviewWriteOutcome =
   naming an area that is not live is skipped with a reason.
 - `prepopulateReview(scope)` runs only that page's directives and writes that page.
 
+**Phase 1 note (shipped).** The notebook storage, migration and compatibility projection land
+before the tabbed UI, so three engine functions keep returning the compatibility `ReviewRecord`
+rather than `ReviewNotebook` for one release (`markReviewDone`, `unlockReview`,
+`setReviewSessionId`); the renderer's IPC and the Review page consume that shape unchanged until
+Phase 2. `writeReviewPage`'s failure variant carries the sentence as both `message` (this spec)
+and `error` (the Phase 0 outcome shape the tool door already reads). The migration lives in
+`reviews.ts` rather than a separate `review-migrate.ts`: it shares the page parser, the splitter
+and the projection, and the public name `migrateLegacyReviews` is unchanged.
+
 ---
 
 ## 7. Agent tools and prompts

@@ -1,12 +1,12 @@
 # Reviews
 
-A review is a look back over a period you have actually lived, written down as
-one markdown file, ending in what the next period is for. The Review wing gives
+A review is a look back over a period you have actually lived, written down in
+the vault, ending in what the next period is for. The Review wing gives
 each cadence its own page. **Daily** is one general review of the day. **Weekly**,
 **Monthly**, **Quarterly** and **Yearly** add a **Review checklist** on the right:
-one button per life area, each opening that area's own interview and its section
-of the same review file, and a **Life review** that opens only once every area is
-done and that sums the area reviews up through the whole-life — life-vision —
+one button per life area, each opening that area's own interview and its own
+page of the period's review notebook, and a **Life review** that opens only once
+every area is done and that sums the area reviews up through the whole-life — life-vision —
 perspective. The single idea: a review is a durable vault document, not a chat
 transcript — the report outlives the session that helped write it.
 
@@ -140,9 +140,11 @@ review**, **Quarterly review**, **Yearly review**.
 ## What it is for
 
 Reviews turn a lived period into something you can read back and something the
-next period can be planned from. One file holds the whole period — the overall
-review is four headings, and each area you review is a section in the same file
-rather than a document of its own. Splitting a period into an interview per area
+next period can be planned from. A period is a **notebook**: one markdown page
+per area plus the overall page, all inside the vault under the period's own
+directory. The overall review is four headings, and each area you review is a
+page rather than a document of its own — which is also what lets two area
+interviews be written at the same time without overwriting each other. Splitting a period into an interview per area
 keeps each segment of a life small enough to think about on its own — health on
 its own terms, money on its own terms — and the **Life review** is where the
 segments are put back together. It reads every area section and says what they
@@ -171,8 +173,8 @@ cannot be quietly rewritten.
    (create the file and edit it without starting a session).
 4. On **Weekly** and longer, the checklist is the way in. Press an area row — say
    **Health review** — and:
-   - the review file is created if this period has none, with the overall
-     skeleton and the `## Health` section;
+   - the period's notebook is created if it has none, with the overall page and
+     a Health page;
    - the figures this cadence's rules ask for are filled by the app;
    - the Health interview opens in the chat pane, bound to this period's Health
      scope — in a tab of its own, and listed in **Chats** under its name from
@@ -185,14 +187,14 @@ cannot be quietly rewritten.
    editor, and on Ctrl/Cmd+S. The status under the document reads **Saved**,
    **Saving…**, **Not saved**, or **Locked**.
 6. Press **Mark Health review complete** when that area's section says what you
-   wanted. The checklist row flips to **Done**; the file stays editable and the
-   other areas stay open. An area you have not started reads **Not started**, and
+   wanted. The checklist row flips to **Done**; the notebook stays editable and
+   the other areas stay open. An area you have not started reads **Not started**, and
    one you opened reads **In progress**.
 7. Work through the areas. The **Life review** row counts them — `2 of 5 areas
    done` — and stays disabled until every live area reads **Done**.
 8. When the last area is done the page says **Every area is reviewed — the life
    review is ready.** Press **Life review**. Its interview reads every area's
-   `## <Area>` section in the same file and summarises across them — what the
+   page and summarises across them — what the
    areas say together, where they pull against each other, and what that means
    for the life vision — into the overall **Look-back**, **Keep**, **Change** and
    **Next-period intent**.
@@ -242,31 +244,43 @@ not as a screen.
 
 ## Rules and behaviour
 
-One file per cadence and period. The laws are short and enforced by the engine:
-a review is one markdown file at `reviews/{cadence}/{period}.md`, area reviews
-are sections in it, a daily review is one general review with no area sections,
-an overall review on a weekly-or-longer cadence cannot be finished before every
-live area's section is done, the file locks when the overall review is done,
-planning stubs live under `planning/` with no plan body, and week start cannot
-change while weekly review or planning files exist. It is restated in
+A notebook per cadence and period. The laws are short and enforced by the
+engine: a review period is a directory at `reviews/{cadence}/{period}/` holding a
+`review.json` manifest and one page per scope; an area review is its own page, a
+daily review is one general review with only an overall page, an overall review
+on a weekly-or-longer cadence cannot be finished before every live area's page
+is done, the notebook locks when the overall review is done, planning stubs live
+under `planning/` with no plan body, and week start cannot change while weekly
+review or planning files exist. It is restated in
 [LAWS/REVIEWS.md](../../LAWS/REVIEWS.md).
 
-| Cadence | Period string | Example path |
+| Cadence | Period string | Example notebook |
 |---|---|---|
-| Daily | `YYYY-MM-DD` | `reviews/daily/2026-10-29.md` |
-| Weekly | week-start date | `reviews/weekly/2026-10-26.md` |
-| Monthly | `YYYY-MM` | `reviews/monthly/2026-10.md` |
-| Quarterly | `YYYY-Qn` | `reviews/quarterly/2026-Q4.md` |
-| Yearly | `YYYY` | `reviews/yearly/2026.md` |
+| Daily | `YYYY-MM-DD` | `reviews/daily/2026-10-29/` |
+| Weekly | week-start date | `reviews/weekly/2026-10-26/` |
+| Monthly | `YYYY-MM` | `reviews/monthly/2026-10/` |
+| Quarterly | `YYYY-Qn` | `reviews/quarterly/2026-Q4/` |
+| Yearly | `YYYY` | `reviews/yearly/2026/` |
 
-File shape. Frontmatter carries `cadence`, `period`, `weekStartDay`,
-`locked`, `updatedAt`, `title` and `scopes` — `overall` plus one entry per
-started area with `status` (`draft` or `done`) and a companion `sessionId`.
-The body starts with `# <period title>`, then `## Look-back`, `## Keep`,
-`## Change`, `## Next-period intent`; a started area adds `## <Area name>`
-with the same four as `###` subsections. Extra headings you type are kept after
-the required blocks. A save canonicalises this skeleton and preserves the prose
-under each heading.
+Notebook shape. `review.json` carries `cadence`, `period`, `weekStartDay`,
+`title`, `locked`, `order` (`overall` first, then the area slugs), and a `rev`
+that moves only when pages are added or the lock changes. `overall.md` and each
+`{area-slug}.md` page start with `# <title>`, then `## Look-back`, `## Keep`,
+`## Change`, `## Next-period intent`. A page's frontmatter carries its `scope`,
+`title`, `status` (`draft` or `done`), an optional companion `sessionId`, and a
+`rev` that increments on every accepted body write; a write quotes the rev it
+read, so two interviews on two pages never fight and a write to the same page
+that missed a change is refused rather than overwriting it. Extra headings you
+type are kept after the required blocks, and a save canonicalises this skeleton
+and preserves the prose under each heading.
+
+The page the app shows is assembled from the notebook's pages, which is also how
+the editor works for this release: the overall page and each area page are laid
+out as one document, and a save is split back into pages by heading. A vault
+from the previous release (one `.md` per period) is read through the same
+projection until its first open splits it into notebooks; that migration verifies
+the split, archives the old file under `.lifequest/legacy-reviews/`, and writes
+`.lifequest/migrations/reviews-notebook-v1.json` so it never runs twice.
 
 The daily review is one general review. Asking for an area section on a daily
 review is refused with `The daily review is one general review — it has no area
