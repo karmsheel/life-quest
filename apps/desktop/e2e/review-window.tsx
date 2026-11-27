@@ -332,6 +332,11 @@ const bridge: Record<string, unknown> = {
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
   dialogOpenDirectory: () => Promise.resolve(null),
+  // The dock's receipt chip asks main whether the kit is installed; these rigs
+  // run without a finance kit, so the chip stays out of the way. It is a
+  // promise: ChatPanel chains `.then` on it, and a plain object throws in the
+  // mount effect (which unmounts the page before the rig's ready flag).
+  receiptReady: () => Promise.resolve({ ok: true as const, value: false }),
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () => ok([]),

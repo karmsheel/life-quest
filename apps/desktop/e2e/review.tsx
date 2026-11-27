@@ -1107,6 +1107,11 @@ const bridge: Record<string, unknown> = {
   // The gateway's chat list, answered as copies the way the real IPC hop does —
   // a mutable array would let a later create appear in the store's list by
   // aliasing, hiding the very bug this rig is for.
+  // The dock's receipt chip asks main whether the kit is installed; these rigs
+  // run without a finance kit, so the chip stays out of the way. It is a
+  // promise: ChatPanel chains `.then` on it, and a plain object throws in the
+  // mount effect (which unmounts the page before the rig's ready flag).
+  receiptReady: () => Promise.resolve({ ok: true as const, value: false }),
   companionSessionsList: () => ok(gatewaySessions.map((row) => ({ ...row }))),
   companionSessionCreate: (title: string) => ok(madeSession(title)),
   companionSessionMessages: () => ok([]),
