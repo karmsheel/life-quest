@@ -370,7 +370,7 @@ fallback.
 - Six tabs at a narrow sheet wrap to a second row inside the column; the strip never hides a
   tab behind horizontal scroll, and the label truncates with a tooltip before that happens.
   No close/add affordances, no persistence beyond the lens.
-- The checklist rail is **retired**. In its place, one progress line under the tab row:
+- The checklist rail is **retired**. In its place, one progress line above the tab row:
   `2 of 5 areas done · Life review unlocks when every area is done`, or
   `Every area is reviewed — the life review is ready`, or `Review complete — read-only`.
   `Start`, `Mark … complete`, `Unlock`, `Plan next period` move to the actions row below the

@@ -436,6 +436,8 @@ const SAMPLE = `(() => {
         pageMaxWidth: page ? getComputedStyle(page).maxWidth : null,
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
+        tabs: rect(tabsEl),
+        progressLine: rect(document.querySelector('[data-testid="review-progress"]')),
         header: rect(document.querySelector(".review-page__header")),
         editor: rect(document.querySelector(".review-page__editor")),
         status: rect(document.querySelector('[data-testid="review-status"]')),

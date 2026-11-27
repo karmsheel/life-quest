@@ -61,7 +61,7 @@ period heading:
   from that page's own status. The active tab is highlighted, and the tab row is
   a proper `tablist` labelled **Review pages**: Left/Right arrows and Home/End
   move between tabs, and the focused tab is the usual single tab stop.
-- Under the tabs a progress line counts the work: `2 of 5 areas done · Life
+- Above the tabs a progress line counts the work: `2 of 5 areas done · Life
   review unlocks when every area is done`, then `Every area is reviewed — the
   life review is ready` when the last area is done, and `Review complete —
   read-only.` once the overall page is marked complete.
@@ -82,7 +82,7 @@ without a navigation; a write to a page you are not looking at updates that tab'
 status.
 
 The page keeps the Daily Journal's 48rem measure as one centred column: the
-eyebrow, the period pager, the tab row and the progress line sit across the top
+eyebrow, the period pager, the progress line and the tab row sit across the top
 in that measure, and the editor and its actions come under them, the same margin
 on both sides. If the sheet is cramped — an open chat dock beside the page, or a
 narrow window — the column simply takes the room the sheet has, with equal

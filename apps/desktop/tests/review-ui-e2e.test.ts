@@ -107,6 +107,8 @@ type Layout = {
   pageMaxWidth: string | null;
   rail: Rect | null;
   railPosition: string | null;
+  tabs: Rect | null;
+  progressLine: Rect | null;
   header: Rect | null;
   modes: Rect | null;
   editor: Rect | null;
@@ -560,6 +562,29 @@ describe("review ui e2e", () => {
     assert.equal(opened.layoutPresent, true, "the review-page-layout wrapper is missing");
     assert.equal(opened.railPresent, true, "the weekly review has no Review pages tab row");
     assert.equal(opened.railLabel, "Review pages", "the tab row is not labelled as one");
+    // The page's own index reads status first, then the tabs straight on the box:
+    // the progress sentence is above the tab row, and the tabs sit above the
+    // document rather than under the header note.
+    const progressBox = opened.layout.progressLine;
+    const tabsBox = opened.layout.tabs;
+    assert.ok(progressBox !== null, "the progress line's box could not be read");
+    assert.ok(tabsBox !== null, "the tab row's box could not be read");
+    assert.ok(
+      progressBox.top < tabsBox.top,
+      `the progress line (top ${progressBox.top}) is not above the tab row (top ${tabsBox.top})`,
+    );
+    assert.ok(
+      progressBox.top + progressBox.height <= tabsBox.top + 1,
+      "the progress line and the tab row overlap",
+    );
+    assert.ok(
+      opened.layout.editor !== null,
+      "the document box's box could not be read",
+    );
+    assert.ok(
+      tabsBox.top + tabsBox.height <= opened.layout.editor.top + 1,
+      `the tab row (bottom ${tabsBox.top + tabsBox.height}) is not above the document box (top ${opened.layout.editor.top})`,
+    );
     assert.deepEqual(
       opened.railButtons,
       RAIL_ROWS,

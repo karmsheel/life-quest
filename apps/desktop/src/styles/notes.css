@@ -1742,7 +1742,7 @@
    section per area: the tabs under the period select the page, and the page is
    the 48rem reading column. The header and the body are the same column, so the
    page reads as one block centred in whatever room the sheet gives it. The old
-   checklist rail is retired; its progress line is one quiet line under the tabs,
+   checklist rail is retired; its progress line is one quiet line above the tabs,
    and its actions sit under the editor.
 
    DAILY IS THE SAME COLUMN without tabs: a day is one general review and has no
@@ -1855,8 +1855,9 @@
   color: var(--primary);
 }
 
-/* The retired checklist's progress line, kept as one quiet sentence under the
-   tabs: how many areas are done, and what the life review waits on. */
+/* The retired checklist's progress line, kept as one quiet sentence above the
+   tabs: how many areas are done, and what the life review waits on. It leads the
+   page's own index so the tabs can sit straight on the document. */
 .review-page__progress {
   margin: 0;
   font-size: 0.85rem;
@@ -1864,9 +1865,16 @@
   line-height: 1.45;
 }
 
+/* The page's own index above the box: the status sentence, then the tab row. */
+.review-page__pages-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 /* The page's one panel: the conflict banner, the editor, its status line, the
-   actions and the rules all live here, so the tab row and progress line stay
-   above them without inheriting their spacing. */
+   actions and the rules all live here, so the index above stays separate from
+   their spacing. */
 .review-page__panel {
   display: flex;
   flex-direction: column;

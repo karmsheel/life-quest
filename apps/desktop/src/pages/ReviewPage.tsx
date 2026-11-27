@@ -108,7 +108,7 @@ function withPageSummary(
  * The area lens in the window title bar is the same selection seen from outside —
  * pressing a tab moves the lens, and a lens change moves the tab.
  *
- * THE CHECKLIST IS RETIRED. Its progress line survives under the tabs, the Start
+ * THE CHECKLIST IS RETIRED. Its progress line survives above the tabs, the Start
  * / Mark complete / Unlock actions moved under the editor and act on the active
  * page, and an area with no page yet shows a page-scoped empty state instead of
  * quietly pre-creating every area.
@@ -1262,7 +1262,19 @@ function ReviewPageFor() {
 
         <div className="review-page">
           {isDaily ? null : (
-            <>
+            <div className="review-page__pages-nav">
+              {/* The status sentence leads, then the tab row sits straight on the
+                  document it selects between, so the strip reads as the page's own
+                  index rather than as chrome under the header. */}
+              {progressText ? (
+                <p
+                  className="review-page__progress"
+                  data-testid="review-progress"
+                  role="status"
+                >
+                  {progressText}
+                </p>
+              ) : null}
               {/* The tab row is the scope selection. Roving tabIndex and the
                   Arrow/Home/End keys match the studio's field strip; Ctrl+Tab is
                   the chat dock's and is never claimed here. Six tabs wrap rather
@@ -1308,16 +1320,7 @@ function ReviewPageFor() {
                   );
                 })}
               </div>
-              {progressText ? (
-                <p
-                  className="review-page__progress"
-                  data-testid="review-progress"
-                  role="status"
-                >
-                  {progressText}
-                </p>
-              ) : null}
-            </>
+            </div>
           )}
 
           <div
