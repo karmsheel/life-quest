@@ -44,13 +44,22 @@
  * 13. Logging an event does not call `metricLogEvent`, or neither the panel nor
  *     the matrix picks the new row up.
  * 14. A derived cell does not open its source database at
- *     `/data/<area>/<databaseId>`.
+ *     `/data/<area>/<databaseId>`, or (when the definition names a date column)
+ *     does not carry the cell's `from`/`to`/`columnId` so the rows cannot be
+ *     filtered to that period.
  * 15. The New metric form does not call `metricDefine` with the fixed payload
  *     (id/eventKey slugged from the label), or the new row does not appear.
- * 16. Ask-companion invents a transport instead of the app's prepared-chat door
+ * 16. The derived form's save does not send a derived draft — a renderer-built
+ *     spec, the wrong database/columns, or the events payload.
+ * 17. Edit does not read the definition (`metricGet`), does not prefill from it,
+ *     or proposes an update with the wrong id/changed label missing.
+ * 18. Delete does not confirm, or proposes with the wrong metric/action.
+ * 19. A proposal's status line does not appear, or the matrix starts showing the
+ *     proposed definition before the Decision is approved.
+ * 20. Ask-companion invents a transport instead of the app's prepared-chat door
  *     (or sends no kickoff), so the operator's chat is empty.
- * 17. A lens with no definitions shows an empty grid instead of the empty state.
- * 18. A bridge call this rig does not model, or a console error, passes
+ * 21. A lens with no definitions shows an empty grid instead of the empty state.
+ * 22. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
  *
  * ── How to read this file ────────────────────────────────────────────────────
@@ -77,6 +86,9 @@ import type {
   AnalyticsMatrix,
   AnalyticsMetricRow,
   AnalyticsPeriod,
+  DatabaseListEntry,
+  DatabaseMeta,
+  MetricDefinition,
   MetricEventRow,
   MetricEvents,
   ReviewCadence,
@@ -261,6 +273,107 @@ const EVENT_KEYS: Record<string, string> = {
   "prayer-minutes": "prayer-minutes",
 };
 
+/* ── the registry's databases: what a derived metric reads ─────────────────── */
+
+/** The finance book's minted column ids, as the registry holds them. */
+const FINANCE_DATE_COLUMN = "a1d4e6f0-93b1-4d0e-9a77-0c5e6d7f8a10";
+const FINANCE_AMOUNT_COLUMN = "a1d4e6f0-93b1-4d0e-9a77-0c5e6d7f8a11";
+
+const FINANCE_DATABASE: DatabaseMeta = {
+  id: "finance:transactions",
+  name: "Transactions",
+  sotMode: "local-only",
+  adapter: null,
+  columns: [
+    { id: "a1d4e6f0-93b1-4d0e-9a77-0c5e6d7f8a12", name: "ID", type: "text" },
+    { id: FINANCE_DATE_COLUMN, name: "Date", type: "date" },
+    { id: FINANCE_AMOUNT_COLUMN, name: "Amount", type: "number" },
+    { id: "a1d4e6f0-93b1-4d0e-9a77-0c5e6d7f8a13", name: "Payee", type: "text" },
+    {
+      id: "a1d4e6f0-93b1-4d0e-9a77-0c5e6d7f8a14",
+      name: "Category",
+      type: "select",
+      options: ["Food", "Travel"],
+    },
+  ],
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+/** What `dbList("financial")` answers; other areas have no databases here. */
+const REGISTRY: DatabaseListEntry[] = [
+  { domainSlug: "financial", database: FINANCE_DATABASE },
+];
+
+/* ── the definitions `metricGet` answers (edit prefills from them) ─────────── */
+
+/**
+ * A derived definition as the engine stores it: the one-number ViewSpec the
+ * engine builds from a derived draft. Cash in and Cash out differ only in the
+ * label the fixture gives them.
+ */
+function derivedDefinition(
+  id: string,
+  label: string,
+  unit: string,
+): MetricDefinition {
+  return {
+    schemaVersion: 1,
+    id,
+    domainSlug: "financial",
+    label,
+    unit,
+    source: "derived",
+    spec: {
+      databaseId: FINANCE_DATABASE.id,
+      title: label,
+      presentation: "metric",
+      groupBy: null,
+      timeBucket: null,
+      timeColumnId: FINANCE_DATE_COLUMN,
+      timeWindow: "all",
+      filters: [],
+      measure: "sum",
+      measureColumnId: FINANCE_AMOUNT_COLUMN,
+      per: null,
+      sort: { by: "value", dir: "desc" },
+      limit: 1,
+      convertToZar: false,
+      columns: [],
+    },
+    aggregation: "sum",
+    direction: "neutral",
+    target: null,
+    createdBy: "user",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+/** The events definition, so an events metric's prefill keeps its event key. */
+const TRAINING_DEFINITION: MetricDefinition = {
+  schemaVersion: 1,
+  id: "training-sessions",
+  domainSlug: "health",
+  label: "Training sessions",
+  unit: "sessions",
+  source: "events",
+  eventKey: "training-sessions",
+  aggregation: "count",
+  direction: "higher-is-better",
+  target: 4,
+  createdBy: "user",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+/** The definitions this rig can prefill from, keyed `area:metricId`. */
+const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
+  "financial:cash-in": derivedDefinition("cash-in", "Cash in", "ZAR"),
+  "financial:cash-out": derivedDefinition("cash-out", "Cash out", "ZAR"),
+  "health:training-sessions": TRAINING_DEFINITION,
+};
+
 /* ── the fixture's definitions ──────────────────────────────────────────────── */
 
 type FixtureRow = {
@@ -273,6 +386,7 @@ type FixtureRow = {
   direction: "higher-is-better" | "lower-is-better" | "neutral" | null;
   target: number | null;
   databaseId: string | null;
+  timeColumnId: string | null;
   cells: AnalyticsCell[];
 };
 
@@ -306,6 +420,9 @@ type DefinedMetric = {
   unit: string;
   aggregation: "sum" | "count" | "last" | "avg";
   target: number | null;
+  source: "derived" | "events";
+  databaseId: string | null;
+  timeColumnId: string | null;
 };
 let definedMetrics: DefinedMetric[] = [];
 
@@ -320,6 +437,7 @@ function trainingRow(periods: AnalyticsPeriod[], values: Array<number | null>): 
     direction: "higher-is-better",
     target: 4,
     databaseId: null,
+    timeColumnId: null,
     cells: cellsFor(periods, values, "sessions", 0),
   };
 }
@@ -342,7 +460,8 @@ function financeRows(periods: AnalyticsPeriod[]): FixtureRow[] {
     aggregation: "sum",
     direction: "neutral",
     target: null,
-    databaseId: "finance:transactions",
+    databaseId: FINANCE_DATABASE.id,
+    timeColumnId: FINANCE_DATE_COLUMN,
     cells: cellsFor(periods, values, "ZAR", 2),
   });
   return [
@@ -382,7 +501,8 @@ function rowsFor(cadence: ReviewCadence, lens: string | null): AnalyticsMetricRo
       aggregation: defined.aggregation,
       direction: null,
       target: defined.target,
-      databaseId: null,
+      databaseId: defined.databaseId,
+      timeColumnId: defined.timeColumnId,
       cells: cellsFor(periods, periods.map(() => null), defined.unit, 2),
     });
   }
@@ -398,6 +518,7 @@ function rowsFor(cadence: ReviewCadence, lens: string | null): AnalyticsMetricRo
     direction: row.direction,
     target: row.target,
     databaseId: row.databaseId,
+    timeColumnId: row.timeColumnId,
     cells: row.cells.map((cell) => ({ ...cell })),
   }));
 }
@@ -574,18 +695,41 @@ type LogInput = {
   value?: number;
   note?: string;
 };
-type DefineInput = {
+/**
+ * The definition draft the New metric form sends. `metricDefine` takes the same
+ * union the engine's `MetricDefinitionDraft` declares: an events metric names an
+ * event key, a derived one names the database and the columns the engine will
+ * build its one-number spec from.
+ */
+type DefineDraft = {
+  id: string;
+  label: string;
+  unit: string;
+  source: "events" | "derived";
+  aggregation: "sum" | "count" | "last" | "avg";
+  eventKey?: string;
+  databaseId?: string;
+  measureColumnId?: string;
+  timeColumnId?: string;
+  target?: number | null;
+  direction?: string | null;
+};
+type DefineInput = { area: string; definition: DefineDraft };
+type MetricGetInput = { area: string; metricId: string };
+type ProposeInput = {
   area: string;
-  definition: {
-    id: string;
-    label: string;
-    unit: string;
-    source: "events";
-    aggregation: "sum" | "count" | "last" | "avg";
-    eventKey: string;
-    target?: number | null;
-    direction?: string | null;
-  };
+  metricId: string;
+  action: "update" | "delete";
+  definition?: DefineDraft;
+};
+type DerivedRoute = {
+  pathname: string;
+  search: string;
+  slug: string;
+  dbId: string;
+  from: string | null;
+  to: string | null;
+  columnId: string | null;
 };
 type DbCall =
   | {
@@ -602,14 +746,20 @@ type HarnessWindow = Window & {
   analyticsRigGoto?: (path: string) => void;
   /** The MemoryRouter location as one string, e.g. `/review/analytics`. */
   analyticsRigLocation?: string;
-  /** The last destination the derived-cell leg navigated to, with route params. */
-  analyticsRigRoute?: { pathname: string; slug: string; dbId: string } | null;
+  /**
+   * The last destination the derived-cell leg navigated to: its pathname, its
+   * search string and the three period-filter params read back individually.
+   */
+  analyticsRigRoute?: DerivedRoute | null;
   analyticsRigCalls?: string[];
   analyticsRigUnexpectedCalls?: string[];
   analyticsRigMatrixInputs?: MatrixInput[];
   analyticsRigEventsInputs?: EventsInput[];
   analyticsRigLogInputs?: LogInput[];
   analyticsRigDefineInputs?: DefineInput[];
+  analyticsRigMetricGets?: MetricGetInput[];
+  analyticsRigProposals?: ProposeInput[];
+  analyticsRigDbListInputs?: string[];
   analyticsRigDbCalls?: DbCall[];
   /** Every kickoff turn the dock sent (the ask-companion prompt). */
   analyticsRigKickoffs?: string[];
@@ -619,6 +769,9 @@ type HarnessWindow = Window & {
     weekly: AnalyticsPeriod[];
     monthly: AnalyticsPeriod[];
     eventColumns: typeof EVENT_COLUMNS;
+    financeDatabaseId: string;
+    financeDateColumn: string;
+    financeAmountColumn: string;
   };
   analyticsRigEventColumns?: () => typeof EVENT_COLUMNS;
   analyticsRigEvents?: () => StoredEvent[];
@@ -634,6 +787,9 @@ harness.analyticsRigMatrixInputs = [];
 harness.analyticsRigEventsInputs = [];
 harness.analyticsRigLogInputs = [];
 harness.analyticsRigDefineInputs = [];
+harness.analyticsRigMetricGets = [];
+harness.analyticsRigProposals = [];
+harness.analyticsRigDbListInputs = [];
 harness.analyticsRigDbCalls = [];
 harness.analyticsRigKickoffs = [];
 harness.analyticsRigLocation = "/review/analytics";
@@ -643,6 +799,9 @@ harness.analyticsRigExpected = {
   weekly: WEEKLY_PERIODS.map((period) => ({ ...period })),
   monthly: MONTHLY_PERIODS.map((period) => ({ ...period })),
   eventColumns: { ...EVENT_COLUMNS },
+  financeDatabaseId: FINANCE_DATABASE.id,
+  financeDateColumn: FINANCE_DATE_COLUMN,
+  financeAmountColumn: FINANCE_AMOUNT_COLUMN,
 };
 harness.analyticsRigEventColumns = () => ({ ...EVENT_COLUMNS });
 harness.analyticsRigEvents = () => events.map((row) => ({ ...row }));
@@ -756,16 +915,38 @@ const bridge: Record<string, unknown> = {
     if (definedMetrics.some((row) => row.metricId === input.definition.id)) {
       return Promise.resolve(fail(`A metric with id ${input.definition.id} already exists`));
     }
+    const derived = input.definition.source === "derived";
     const definition = {
       ...input.definition,
-      schemaVersion: 1 as const,
+      schemaVersion: 1,
       domainSlug: input.area,
       direction: input.definition.direction ?? null,
       target: input.definition.target ?? null,
       formatting: null,
-      createdBy: "user" as const,
+      createdBy: "user",
       createdAt: "2026-11-27T15:00:00.000Z",
       updatedAt: "2026-11-27T15:00:00.000Z",
+      // The engine builds a derived definition's one-number spec; the renderer
+      // only ever sends the database and column ids.
+      spec: derived
+        ? {
+            databaseId: input.definition.databaseId,
+            title: input.definition.label,
+            presentation: "metric",
+            groupBy: null,
+            timeBucket: null,
+            timeColumnId: input.definition.timeColumnId,
+            timeWindow: "all",
+            filters: [],
+            measure: input.definition.aggregation,
+            measureColumnId: input.definition.measureColumnId,
+            per: null,
+            sort: { by: "value", dir: "desc" },
+            limit: 1,
+            convertToZar: false,
+            columns: [],
+          }
+        : undefined,
     };
     definedMetrics = [
       ...definedMetrics,
@@ -776,10 +957,70 @@ const bridge: Record<string, unknown> = {
         unit: definition.unit,
         aggregation: definition.aggregation,
         target: definition.target,
+        source: input.definition.source,
+        databaseId: derived ? (input.definition.databaseId ?? null) : null,
+        timeColumnId: derived ? (input.definition.timeColumnId ?? null) : null,
       },
     ];
     announceDataChanged();
     return Promise.resolve(ok(definition));
+  },
+  /**
+   * The registry read the derived form does: one area's databases and columns.
+   * Only Finance has a book in this fixture, so the Health form's empty answer is
+   * the "create one in Data" case.
+   */
+  dbList: (domainSlug: string | null) => {
+    harness.analyticsRigCalls?.push(`dbList:${domainSlug ?? "all"}`);
+    harness.analyticsRigDbListInputs?.push(domainSlug ?? "all");
+    const entries =
+      domainSlug === null
+        ? REGISTRY
+        : REGISTRY.filter((entry) => entry.domainSlug === domainSlug);
+    return Promise.resolve(
+      ok(
+        entries.map((entry) => ({
+          domainSlug: entry.domainSlug,
+          database: {
+            ...entry.database,
+            columns: entry.database.columns.map((column) => ({ ...column })),
+          },
+        })),
+      ),
+    );
+  },
+  /** The edit form's prefill: the whole definition, exactly as the engine stores it. */
+  metricGet: (input: MetricGetInput) => {
+    harness.analyticsRigCalls?.push(`metricGet:${input.area}:${input.metricId}`);
+    harness.analyticsRigMetricGets?.push({ ...input });
+    const definition = METRIC_DEFINITIONS[`${input.area}:${input.metricId}`];
+    if (!definition) {
+      return Promise.resolve(
+        fail(`Unknown metric definition: ${input.area}:${input.metricId}`),
+      );
+    }
+    return Promise.resolve(
+      ok(JSON.parse(JSON.stringify(definition)) as MetricDefinition),
+    );
+  },
+  /** Editing/deleting a definition files a Decision; the file does not move. */
+  metricPropose: (input: ProposeInput) => {
+    harness.analyticsRigCalls?.push(
+      `metricPropose:${input.area}:${input.metricId}:${input.action}`,
+    );
+    harness.analyticsRigProposals?.push({
+      ...input,
+      ...(input.definition ? { definition: { ...input.definition } } : {}),
+    });
+    if (!METRIC_DEFINITIONS[`${input.area}:${input.metricId}`]) {
+      return Promise.resolve(
+        fail(`Unknown metric definition: ${input.area}:${input.metricId}`),
+      );
+    }
+    announceDataChanged();
+    return Promise.resolve(
+      ok({ decisionId: `decision-${input.action}-${input.metricId}` }),
+    );
   },
   dbUpsertRow: (
     slug: string,
@@ -868,10 +1109,15 @@ function CadenceProbe() {
 function DestinationProbe() {
   const { slug, dbId } = useParams();
   const location = useLocation();
+  const search = new URLSearchParams(location.search);
   harness.analyticsRigRoute = {
     pathname: location.pathname,
+    search: location.search,
     slug: slug ?? "",
     dbId: dbId ?? "",
+    from: search.get("from"),
+    to: search.get("to"),
+    columnId: search.get("columnId"),
   };
   return (
     <div data-testid="analytics-rig-destination" data-db={dbId}>

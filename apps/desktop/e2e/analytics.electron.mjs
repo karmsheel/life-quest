@@ -168,6 +168,7 @@ const SAMPLE = `(() => {
     (el) => ({
       testid: el.getAttribute("data-testid"),
       label: text(el.querySelector("th, .analytics-row__label, [data-label]")) || text(el),
+      labelText: text(el.querySelector(".analytics-matrix__label")),
     }),
   );
   const isCell = (id) => id && id.indexOf("analytics-cell-") === 0 && id !== "analytics-cell-panel";
@@ -239,12 +240,24 @@ const SAMPLE = `(() => {
     },
     metricForm: {
       present: Boolean(tid("analytics-metric-form")),
+      mode: tid("analytics-metric-form")?.getAttribute("data-mode") ?? null,
       area: metricArea,
+      source: field("analytics-metric-source"),
       label: field("analytics-metric-label"),
       unit: field("analytics-metric-unit"),
       aggregation: metricAggregation,
       target: field("analytics-metric-target"),
+      database: field("analytics-metric-database"),
+      measure: field("analytics-metric-measure"),
+      dateColumn: field("analytics-metric-date"),
       save: Boolean(tid("analytics-metric-save")),
+    },
+    derivedHint: text(tid("analytics-metric-derived-hint")),
+    proposalStatus: text(tid("analytics-proposal-status")),
+    deleteConfirm: {
+      panel: Boolean(tid("analytics-metric-delete-panel")),
+      button: Boolean(tid("analytics-metric-delete-confirm")),
+      text: text(tid("analytics-metric-delete-panel")),
     },
     newMetricButton: Boolean(tid("analytics-new-metric")),
     askCompanion: Boolean(tid("analytics-ask-companion")),
@@ -255,6 +268,9 @@ const SAMPLE = `(() => {
     eventsInputs: window.analyticsRigEventsInputs ?? [],
     logInputs: window.analyticsRigLogInputs ?? [],
     defineInputs: window.analyticsRigDefineInputs ?? [],
+    metricGets: window.analyticsRigMetricGets ?? [],
+    proposals: window.analyticsRigProposals ?? [],
+    dbListInputs: window.analyticsRigDbListInputs ?? [],
     dbCalls: window.analyticsRigDbCalls ?? [],
     kickoffs: window.analyticsRigKickoffs ?? [],
     sessions: window.analyticsRigSessions ? window.analyticsRigSessions() : [],
@@ -843,6 +859,7 @@ async function main() {
     }
     await frames(win);
     const derived = await sample(win);
+    const derivedExpected = (derived.expected ?? expected) ?? {};
     checks.derivedNavigation = derived.route;
     if (derived.route?.pathname !== "/data/financial/finance:transactions") {
       failure(
@@ -852,6 +869,31 @@ async function main() {
     if (derived.route?.slug !== "financial" || derived.route?.dbId !== "finance:transactions") {
       failure(
         `the derived cell's route params are ${JSON.stringify(derived.route)}, expected area financial and database finance:transactions`,
+      );
+    }
+    if (derived.route?.from !== lastWeek.start || derived.route?.to !== lastWeek.end) {
+      failure(
+        `the derived cell's period filter is ${JSON.stringify({
+          from: derived.route?.from,
+          to: derived.route?.to,
+        })}, expected the cell's period ${lastWeek.start}..${lastWeek.end}`,
+      );
+    }
+    if (
+      !derived.route?.columnId ||
+      derived.route.columnId !== derivedExpected.financeDateColumn
+    ) {
+      failure(
+        `the derived cell's period filter names the date column ${JSON.stringify(
+          derived.route?.columnId,
+        )}, expected the definition's ${JSON.stringify(derivedExpected.financeDateColumn)}`,
+      );
+    }
+    if (!String(derived.route?.search ?? "").includes("columnId=")) {
+      failure(
+        `the derived cell's URL is ${JSON.stringify(
+          derived.route?.search,
+        )}, without the columnId period-filter param`,
       );
     }
     // Back to the matrix for the event legs.
@@ -1218,6 +1260,374 @@ async function main() {
           `the matrix after defining the metric has rows ${JSON.stringify(
             defined.rows.map((row) => row.testid),
           )}, without analytics-row-health-prayer-minutes`,
+        );
+      }
+    }
+  }
+
+  // ── 11b. the New metric form defines a database-derived metric ────────────
+  if (!(await clickTestId(win, "analytics-new-metric"))) {
+    failure("the page has no New metric control (analytics-new-metric) for the derived leg");
+  } else {
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="analytics-metric-form"]'))`,
+      "the New metric form for the derived leg",
+    );
+    const sourceSet = await setSelectValue(win, "analytics-metric-source", "derived");
+    if (sourceSet !== "derived") {
+      failure("the New metric form has no derived source option");
+    }
+    const derivedAreaSet = await setSelectValue(win, "analytics-metric-area", "financial");
+    if (!derivedAreaSet) failure("the New metric form has no Finance area option");
+    try {
+      await waitFor(
+        win,
+        `(window.analyticsRigDbListInputs ?? []).includes("financial")`,
+        "the derived form's dbList read",
+      );
+      await waitFor(
+        win,
+        `Boolean(document.querySelector('[data-testid="analytics-metric-database"] option[value="finance:transactions"]'))`,
+        "the finance database option",
+      );
+    } catch (error) {
+      failure(String(error instanceof Error ? error.message : error));
+    }
+    const databaseSet = await setSelectValue(
+      win,
+      "analytics-metric-database",
+      "finance:transactions",
+    );
+    const measureSet = await setSelectValue(
+      win,
+      "analytics-metric-measure",
+      expected?.financeAmountColumn ?? "",
+    );
+    const dateSet = await setSelectValue(
+      win,
+      "analytics-metric-date",
+      expected?.financeDateColumn ?? "",
+    );
+    if (!databaseSet) failure("the derived form has no finance:transactions database option");
+    if (!measureSet) failure("the derived form has no Amount measure column option");
+    if (!dateSet) failure("the derived form has no Date column option");
+    await setField(win, "analytics-metric-label", "Card spend");
+    await setField(win, "analytics-metric-unit", "ZAR");
+    await setSelectValue(win, "analytics-metric-aggregation", "sum");
+    await setField(win, "analytics-metric-target", "2000");
+    if (!(await clickTestId(win, "analytics-metric-save"))) {
+      failure("the derived form has no save button (analytics-metric-save)");
+    } else {
+      await waitFor(
+        win,
+        `(window.analyticsRigDefineInputs ?? []).some((input) => input.definition?.source === "derived")`,
+        "the derived form's metricDefine",
+      );
+      await waitFor(
+        win,
+        `Boolean(document.querySelector('[data-testid="analytics-row-financial-card-spend"]'))`,
+        "the matrix to reload with the derived metric row",
+      );
+      await frames(win);
+      const derivedForm = await sample(win);
+      const derivedDefine = derivedForm.defineInputs
+        .filter((input) => input.definition?.source === "derived")
+        .pop();
+      checks.derivedForm = {
+        input: derivedDefine ?? null,
+        hint: derivedForm.derivedHint,
+        rowPresent: derivedForm.rows.some(
+          (row) => row.testid === "analytics-row-financial-card-spend",
+        ),
+      };
+      if (!derivedDefine) {
+        failure("the derived form did not call metricDefine with a derived draft");
+      } else {
+        const definition = derivedDefine.definition ?? {};
+        if (derivedDefine.area !== "financial") {
+          failure(
+            `the derived definition's area is ${JSON.stringify(derivedDefine.area)}, expected financial`,
+          );
+        }
+        if (definition.source !== "derived") {
+          failure(
+            `the derived definition's source is ${JSON.stringify(definition.source)}, expected derived`,
+          );
+        }
+        if (definition.id !== "card-spend" || definition.label !== "Card spend") {
+          failure(
+            `the derived definition is ${JSON.stringify({
+              id: definition.id,
+              label: definition.label,
+            })}, expected the label slugged to card-spend`,
+          );
+        }
+        if (definition.databaseId !== "finance:transactions") {
+          failure(
+            `the derived definition's database is ${JSON.stringify(definition.databaseId)}, expected finance:transactions`,
+          );
+        }
+        if (definition.measureColumnId !== (expected?.financeAmountColumn ?? "")) {
+          failure(
+            `the derived definition's measure column is ${JSON.stringify(definition.measureColumnId)}, expected the Amount column`,
+          );
+        }
+        if (definition.timeColumnId !== (expected?.financeDateColumn ?? "")) {
+          failure(
+            `the derived definition's date column is ${JSON.stringify(definition.timeColumnId)}, expected the Date column`,
+          );
+        }
+        if (definition.aggregation !== "sum") {
+          failure(
+            `the derived definition's aggregation is ${JSON.stringify(definition.aggregation)}, expected sum`,
+          );
+        }
+        if (Number(definition.target) !== 2000) {
+          failure(
+            `the derived definition's target is ${JSON.stringify(definition.target)}, expected 2000`,
+          );
+        }
+        if (definition.spec !== undefined) {
+          failure(
+            "the renderer sent a ViewSpec; a derived draft must let the engine build the spec",
+          );
+        }
+      }
+      if (!checks.derivedForm.rowPresent) {
+        failure("the matrix did not reload with analytics-row-financial-card-spend");
+      }
+    }
+  }
+
+  // ── 11c. editing a definition proposes an update; the matrix keeps the old one ──
+  const editTestId = "analytics-metric-edit-financial-cash-out";
+  if (!(await clickTestId(win, editTestId))) {
+    failure(`the Cash out row has no edit control (${editTestId})`);
+  } else {
+    try {
+      await waitFor(
+        win,
+        `(window.analyticsRigMetricGets ?? []).some((input) => input.metricId === "cash-out")`,
+        "the edit form's metricGet",
+      );
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="analytics-metric-form"]')?.getAttribute("data-mode") ?? "") === "edit"`,
+        "the edit form",
+      );
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="analytics-metric-database"]')?.value ?? "") === "finance:transactions"`,
+        "the edit form's database prefill",
+      );
+      // The measure column only comes from metricGet, so waiting for it proves
+      // the whole prefill landed before the driver types into the form.
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="analytics-metric-measure"]')?.value ?? "") === ${JSON.stringify(expected?.financeAmountColumn ?? "")}`,
+        "the edit form's measure prefill",
+      );
+    } catch (error) {
+      failure(String(error instanceof Error ? error.message : error));
+    }
+    await frames(win);
+    const editForm = await sample(win);
+    checks.editDefinition = {
+      get: editForm.metricGets.filter((input) => input.metricId === "cash-out").pop() ?? null,
+      form: {
+        mode: editForm.metricForm.mode,
+        source: editForm.metricForm.source?.value ?? null,
+        label: editForm.metricForm.label?.value ?? null,
+        database: editForm.metricForm.database?.value ?? null,
+        measure: editForm.metricForm.measure?.value ?? null,
+        dateColumn: editForm.metricForm.dateColumn?.value ?? null,
+        aggregation: editForm.metricForm.aggregation?.value ?? null,
+        unit: editForm.metricForm.unit?.value ?? null,
+      },
+      proposal: null,
+      proposalStatus: null,
+      rowLabel: null,
+      defineCallsBefore: editForm.defineInputs.length,
+    };
+    const prefilled = checks.editDefinition.form;
+    if (prefilled.source !== "derived") {
+      failure(
+        `the edit form's source is ${JSON.stringify(prefilled.source)}, expected derived (prefilled from metricGet)`,
+      );
+    }
+    if (prefilled.label !== "Cash out") {
+      failure(
+        `the edit form's label is ${JSON.stringify(prefilled.label)}, expected the definition's "Cash out"`,
+      );
+    }
+    if (prefilled.measure !== (expected?.financeAmountColumn ?? "")) {
+      failure(
+        `the edit form's measure column is ${JSON.stringify(prefilled.measure)}, expected the definition's Amount column`,
+      );
+    }
+    if (prefilled.dateColumn !== (expected?.financeDateColumn ?? "")) {
+      failure(
+        `the edit form's date column is ${JSON.stringify(prefilled.dateColumn)}, expected the definition's Date column`,
+      );
+    }
+    await setField(win, "analytics-metric-label", "Cash out (gross)");
+    if (!(await clickTestId(win, "analytics-metric-save"))) {
+      failure("the edit form has no save control (analytics-metric-save)");
+    } else {
+      await waitFor(
+        win,
+        `(window.analyticsRigProposals ?? []).some((input) => input.action === "update" && input.metricId === "cash-out")`,
+        "the edit form's metricPropose update",
+      );
+      await waitFor(
+        win,
+        `Boolean(document.querySelector('[data-testid="analytics-proposal-status"]'))`,
+        "the proposal status line",
+      );
+      await frames(win);
+      const edited = await sample(win);
+      const proposal = edited.proposals
+        .filter((input) => input.action === "update" && input.metricId === "cash-out")
+        .pop();
+      const cashOutRow = edited.rows.find(
+        (row) => row.testid === "analytics-row-financial-cash-out",
+      );
+      checks.editDefinition = {
+        ...checks.editDefinition,
+        proposal: proposal ?? null,
+        proposalStatus: edited.proposalStatus,
+        rowLabel: cashOutRow?.labelText ?? null,
+        defineCallsAfter: edited.defineInputs.length,
+      };
+      if (!proposal) {
+        failure("editing the definition did not call metricPropose with action update");
+      } else {
+        const definition = proposal.definition ?? {};
+        if (proposal.area !== "financial") {
+          failure(
+            `the update proposal's area is ${JSON.stringify(proposal.area)}, expected financial`,
+          );
+        }
+        if (definition.id !== "cash-out") {
+          failure(
+            `the update draft's id is ${JSON.stringify(definition.id)}, expected cash-out (an edit keeps the id)`,
+          );
+        }
+        if (definition.label !== "Cash out (gross)") {
+          failure(
+            `the update draft's label is ${JSON.stringify(definition.label)}, expected "Cash out (gross)"`,
+          );
+        }
+        if (definition.source !== "derived") {
+          failure(
+            `the update draft's source is ${JSON.stringify(definition.source)}, expected derived`,
+          );
+        }
+        if (definition.databaseId !== "finance:transactions") {
+          failure(
+            `the update draft's database is ${JSON.stringify(definition.databaseId)}, expected finance:transactions`,
+          );
+        }
+      }
+      if (!String(checks.editDefinition.proposalStatus ?? "").includes("Sent to Decisions")) {
+        failure(
+          `the proposal status reads ${JSON.stringify(
+            checks.editDefinition.proposalStatus,
+          )}, expected "Sent to Decisions — applying it changes what this metric measures."`,
+        );
+      }
+      if (checks.editDefinition.rowLabel !== "Cash out") {
+        failure(
+          `the matrix row reads ${JSON.stringify(
+            checks.editDefinition.rowLabel,
+          )} before the Decision is approved, expected the unchanged "Cash out"`,
+        );
+      }
+      if (checks.editDefinition.defineCallsAfter !== checks.editDefinition.defineCallsBefore) {
+        failure("editing a definition called metricDefine; an edit must be proposed in Decisions");
+      }
+    }
+  }
+
+  // ── 11d. deleting a definition confirms, then proposes a delete ────────────
+  const deleteTestId = "analytics-metric-delete-financial-cash-in";
+  if (!(await clickTestId(win, deleteTestId))) {
+    failure(`the Cash in row has no delete control (${deleteTestId})`);
+  } else {
+    try {
+      await waitFor(
+        win,
+        `Boolean(document.querySelector('[data-testid="analytics-metric-delete-confirm"]'))`,
+        "the delete confirm",
+      );
+    } catch (error) {
+      failure(String(error instanceof Error ? error.message : error));
+    }
+    await frames(win);
+    const confirmForm = await sample(win);
+    checks.deleteDefinition = {
+      confirmShown: confirmForm.deleteConfirm.button,
+      confirmText: confirmForm.deleteConfirm.text,
+      proposal: null,
+      proposalStatus: null,
+      rowPresent: confirmForm.rows.some(
+        (row) => row.testid === "analytics-row-financial-cash-in",
+      ),
+    };
+    if (!checks.deleteDefinition.confirmShown) {
+      failure("pressing Delete did not open the confirm (analytics-metric-delete-confirm)");
+    }
+    if (!String(checks.deleteDefinition.confirmText ?? "").includes("Cash in")) {
+      failure(
+        `the delete confirm says ${JSON.stringify(
+          checks.deleteDefinition.confirmText,
+        )}, without naming the Cash in metric`,
+      );
+    }
+    if (!(await clickTestId(win, "analytics-metric-delete-confirm"))) {
+      failure("the delete confirm could not be pressed");
+    } else {
+      await waitFor(
+        win,
+        `(window.analyticsRigProposals ?? []).some((input) => input.action === "delete" && input.metricId === "cash-in")`,
+        "the delete confirm's metricPropose",
+      );
+      await frames(win);
+      const deleted = await sample(win);
+      const proposal = deleted.proposals
+        .filter((input) => input.action === "delete" && input.metricId === "cash-in")
+        .pop();
+      checks.deleteDefinition = {
+        ...checks.deleteDefinition,
+        proposal: proposal ?? null,
+        proposalStatus: deleted.proposalStatus,
+        rowPresent: deleted.rows.some(
+          (row) => row.testid === "analytics-row-financial-cash-in",
+        ),
+      };
+      if (!proposal) {
+        failure("the delete confirm did not call metricPropose with action delete");
+      } else {
+        if (proposal.area !== "financial") {
+          failure(
+            `the delete proposal's area is ${JSON.stringify(proposal.area)}, expected financial`,
+          );
+        }
+        if (proposal.definition !== undefined) {
+          failure("the delete proposal carried a definition; a delete names the metric only");
+        }
+      }
+      if (!String(checks.deleteDefinition.proposalStatus ?? "").includes("Sent to Decisions")) {
+        failure(
+          `the delete proposal's status reads ${JSON.stringify(
+            checks.deleteDefinition.proposalStatus,
+          )}, expected "Sent to Decisions — applying it changes what this metric measures."`,
+        );
+      }
+      if (!checks.deleteDefinition.rowPresent) {
+        failure(
+          "the Cash in row disappeared after the delete proposal; the definition must stay until the Decision is approved",
         );
       }
     }

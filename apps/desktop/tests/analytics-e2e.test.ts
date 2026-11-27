@@ -147,7 +147,15 @@ type Report = {
       periods: PeriodHeader[];
       cadence: string | null;
     };
-    derivedNavigation: { pathname: string; slug: string; dbId: string } | null;
+    derivedNavigation: {
+      pathname: string;
+      search: string;
+      slug: string;
+      dbId: string;
+      from: string | null;
+      to: string | null;
+      columnId: string | null;
+    } | null;
     eventsPanel: {
       input: { area: string; metricId: string; start: string; end: string } | null;
       rows: { testid: string; text: string | null }[];
@@ -188,6 +196,67 @@ type Report = {
           target?: number | null;
         };
       } | null;
+      rowPresent: boolean;
+    };
+    derivedForm: {
+      input: {
+        area: string;
+        definition: {
+          id: string;
+          label: string;
+          unit: string;
+          source: string;
+          aggregation: string;
+          databaseId?: string;
+          measureColumnId?: string;
+          timeColumnId?: string;
+          target?: number | null;
+          spec?: unknown;
+        };
+      } | null;
+      hint: string | null;
+      rowPresent: boolean;
+    };
+    editDefinition: {
+      get: { area: string; metricId: string } | null;
+      form: {
+        mode: string | null;
+        source: string | null;
+        label: string | null;
+        database: string | null;
+        measure: string | null;
+        dateColumn: string | null;
+        aggregation: string | null;
+        unit: string | null;
+      };
+      proposal: {
+        area: string;
+        metricId: string;
+        action: string;
+        definition?: {
+          id?: string;
+          label?: string;
+          source?: string;
+          databaseId?: string;
+          measureColumnId?: string;
+          timeColumnId?: string;
+        };
+      } | null;
+      proposalStatus: string | null;
+      rowLabel: string | null;
+      defineCallsBefore: number;
+      defineCallsAfter: number;
+    };
+    deleteDefinition: {
+      confirmShown: boolean;
+      confirmText: string | null;
+      proposal: {
+        area: string;
+        metricId: string;
+        action: string;
+        definition?: unknown;
+      } | null;
+      proposalStatus: string | null;
       rowPresent: boolean;
     };
     askCompanion: {
@@ -488,7 +557,7 @@ describe("analytics ui e2e", () => {
       "the matrix did not pick up the logged event's value",
     );
 
-    // ── a derived cell opens its source database ───────────────────────────
+    // ── a derived cell opens its source database, pinned to its period ──────
     assert.equal(
       checks.derivedNavigation?.pathname,
       "/data/financial/finance:transactions",
@@ -496,6 +565,30 @@ describe("analytics ui e2e", () => {
     );
     assert.equal(checks.derivedNavigation?.slug, "financial");
     assert.equal(checks.derivedNavigation?.dbId, "finance:transactions");
+    assert.match(
+      String(checks.derivedNavigation?.from),
+      /^\d{4}-\d{2}-\d{2}$/,
+      "a derived cell's source-database link carries no from date",
+    );
+    assert.match(
+      String(checks.derivedNavigation?.to),
+      /^\d{4}-\d{2}-\d{2}$/,
+      "a derived cell's source-database link carries no to date",
+    );
+    assert.ok(
+      String(checks.derivedNavigation?.from) <= String(checks.derivedNavigation?.to),
+      "the derived cell's period link runs backwards",
+    );
+    assert.ok(
+      checks.derivedNavigation?.columnId,
+      "the derived cell's period link names no date column",
+    );
+    assert.ok(
+      String(checks.derivedNavigation?.search).includes(
+        `columnId=${checks.derivedNavigation?.columnId}`,
+      ),
+      "the derived cell's link does not carry the date column id in its query",
+    );
 
     // ── the New metric form defines an events metric ───────────────────────
     assert.ok(checks.newMetric.input, "the New metric form did not call metricDefine");
@@ -519,6 +612,119 @@ describe("analytics ui e2e", () => {
       checks.newMetric.rowPresent,
       true,
       "the matrix did not reload with the newly defined metric",
+    );
+
+    // ── the derived form sends a derived draft; the engine builds the spec ──
+    assert.ok(
+      checks.derivedForm.input,
+      "the New metric form's derived source did not call metricDefine",
+    );
+    assert.equal(checks.derivedForm.input?.area, "financial");
+    assert.equal(checks.derivedForm.input?.definition.source, "derived");
+    assert.equal(checks.derivedForm.input?.definition.id, "card-spend");
+    assert.equal(checks.derivedForm.input?.definition.label, "Card spend");
+    assert.equal(checks.derivedForm.input?.definition.unit, "ZAR");
+    assert.equal(checks.derivedForm.input?.definition.aggregation, "sum");
+    assert.equal(checks.derivedForm.input?.definition.databaseId, "finance:transactions");
+    assert.ok(
+      checks.derivedForm.input?.definition.measureColumnId,
+      "the derived draft names no measure column",
+    );
+    assert.ok(
+      checks.derivedForm.input?.definition.timeColumnId,
+      "the derived draft names no date column",
+    );
+    assert.equal(checks.derivedForm.input?.definition.target, 2000);
+    assert.equal(
+      checks.derivedForm.input?.definition.spec,
+      undefined,
+      "the renderer built a ViewSpec; a derived draft must let the engine build it",
+    );
+    assert.equal(
+      checks.derivedForm.rowPresent,
+      true,
+      "the matrix did not reload with the newly defined derived metric",
+    );
+
+    // ── editing a definition proposes an update; the matrix keeps the old row ──
+    assert.ok(
+      checks.editDefinition.get,
+      "editing a definition did not read it through metricGet",
+    );
+    assert.equal(checks.editDefinition.get?.area, "financial");
+    assert.equal(checks.editDefinition.get?.metricId, "cash-out");
+    assert.equal(checks.editDefinition.form.mode, "edit", "the edit form is not in edit mode");
+    assert.equal(checks.editDefinition.form.source, "derived");
+    assert.equal(checks.editDefinition.form.label, "Cash out");
+    assert.equal(checks.editDefinition.form.database, "finance:transactions");
+    assert.ok(checks.editDefinition.form.measure, "the edit form did not prefill the measure column");
+    assert.ok(checks.editDefinition.form.dateColumn, "the edit form did not prefill the date column");
+    assert.ok(
+      checks.editDefinition.proposal,
+      "editing a definition did not call metricPropose",
+    );
+    assert.equal(checks.editDefinition.proposal?.action, "update");
+    assert.equal(checks.editDefinition.proposal?.area, "financial");
+    assert.equal(checks.editDefinition.proposal?.metricId, "cash-out");
+    assert.equal(
+      checks.editDefinition.proposal?.definition?.id,
+      "cash-out",
+      "an edit changed the definition id",
+    );
+    assert.equal(
+      checks.editDefinition.proposal?.definition?.label,
+      "Cash out (gross)",
+      "the update proposal does not carry the changed label",
+    );
+    assert.equal(checks.editDefinition.proposal?.definition?.source, "derived");
+    assert.equal(
+      checks.editDefinition.proposal?.definition?.databaseId,
+      "finance:transactions",
+    );
+    assert.match(
+      String(checks.editDefinition.proposalStatus),
+      /Sent to Decisions/,
+      "the update proposal shows no status line",
+    );
+    assert.equal(
+      checks.editDefinition.rowLabel,
+      "Cash out",
+      "the matrix shows the proposed label before the Decision is approved",
+    );
+    assert.equal(
+      checks.editDefinition.defineCallsAfter,
+      checks.editDefinition.defineCallsBefore,
+      "editing a definition went through metricDefine; an edit must be proposed",
+    );
+
+    // ── deleting a definition confirms, then proposes a delete ─────────────
+    assert.equal(checks.deleteDefinition.confirmShown, true, "Delete opened no confirm");
+    assert.match(
+      String(checks.deleteDefinition.confirmText),
+      /Cash in/,
+      "the delete confirm does not name the metric",
+    );
+    assert.ok(
+      checks.deleteDefinition.proposal,
+      "confirming the delete did not call metricPropose",
+    );
+    assert.equal(checks.deleteDefinition.proposal?.action, "delete");
+    assert.equal(checks.deleteDefinition.proposal?.area, "financial");
+    assert.equal(checks.deleteDefinition.proposal?.metricId, "cash-in");
+    assert.equal(
+      checks.deleteDefinition.proposal?.definition,
+      undefined,
+      "the delete proposal carried a definition; a delete names the metric only",
+    );
+    assert.match(
+      String(checks.deleteDefinition.proposalStatus),
+      /Sent to Decisions/,
+      "the delete proposal shows no status line",
+    );
+    assert.equal(
+      checks.deleteDefinition.rowPresent,
+      true,
+      "the metric row vanished after the delete proposal; the definition stays until approval",
     );
 
     // ── ask-companion uses the app's prepared-chat door ────────────────────
