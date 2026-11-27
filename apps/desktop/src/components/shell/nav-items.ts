@@ -202,7 +202,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "track",
-    href: "/track",
+    href: "/blueprints",
     label: "Blueprints",
     icon: Target,
     section: "main",

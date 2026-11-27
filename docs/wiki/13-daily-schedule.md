@@ -79,7 +79,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 - If the weekday has no default day type, the live day starts with an empty leftover list
   and no type.
 - Blueprints keeps **Day types**, **Default week** and **Real week**; this page never mutates
-  them. See [Blueprints](./08-architecture.md).
+  them. See [Blueprints](./08-blueprints.md).
 - The live day is not drawn on [Life Map](./11-life-map.md). Life Map holds years, months
   and dated events; weeks belong to Blueprints. The live day is a separate record that
   happens to live in the same map store.
@@ -142,7 +142,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 ## Related
 
-- [Blueprints](./08-architecture.md) — the day types and default week the live day copies
+- [Blueprints](./08-blueprints.md) — the day types and default week the live day copies
   from, and the real week it leaves alone.
 - [Task Manager](./14-task-manager.md) — the **Today** column that appears in **Leftover**.
 - [Life Map](./11-life-map.md) — the calendar the live day is deliberately not drawn on.

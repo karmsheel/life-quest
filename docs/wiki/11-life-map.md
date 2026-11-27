@@ -2,7 +2,7 @@
 
 The Life Map is the year canvas: one page that shows a year as four quarters and twelve month grids, opens any month as a Monday–Sunday calendar, and keeps the year's events. It is the place a single date lives — a deadline, a trip, a launch, a birthday — with notes, an optional area, and an optional link to a Goal. Months also carry their own short text and a Main Objectives / Notes pair.
 
-The Life Map draws events, not tasks and not goal records. Tasks are on the [Task Manager](./14-task-manager.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Blueprints](./08-architecture.md).
+The Life Map draws events, not tasks and not goal records. Tasks are on the [Task Manager](./14-task-manager.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Blueprints](./08-blueprints.md).
 
 ## Where it lives
 
@@ -66,7 +66,7 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 | Free text | None | A field per day, **Main Objectives**, **Notes** |
 | Editable? | Live year only | Live year only |
 
-**The year record.** Each year in `map.json` carries its `year`, its `status` (`live` or `archive`), an `events` array, twelve `months` records (each with `objectives`, `notes`, and a `days` map keyed by day number), and `detachedWeeks` keyed by Monday date. An archived year also carries the frozen `snapshot` that [Blueprints](./08-architecture.md) reads for its templates.
+**The year record.** Each year in `map.json` carries its `year`, its `status` (`live` or `archive`), an `events` array, twelve `months` records (each with `objectives`, `notes`, and a `days` map keyed by day number), and `detachedWeeks` keyed by Monday date. An archived year also carries the frozen `snapshot` that [Blueprints](./08-blueprints.md) reads for its templates.
 
 ## Rules and behaviour
 
@@ -96,7 +96,7 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 - The current calendar year cannot be deleted; a missing year or event is a not-found error rather than a silent write.
 - A malformed map file is reported and left alone rather than overwritten with empty state.
 
-**Where it fits the rest of the plan.** The Life Map is the calendar; [Blueprints](./08-architecture.md) is the weekly template; [Daily Schedule](./13-daily-schedule.md) is today's live copy; [Goals](./10-goals.md) is the outcome list. They share the vault and the area lens, but they write to different records: events to the year, templates to the map store, goals to `goals.json`.
+**Where it fits the rest of the plan.** The Life Map is the calendar; [Blueprints](./08-blueprints.md) is the weekly template; [Daily Schedule](./13-daily-schedule.md) is today's live copy; [Goals](./10-goals.md) is the outcome list. They share the vault and the area lens, but they write to different records: events to the year, templates to the map store, goals to `goals.json`.
 
 **Companion.** The map tools let a companion read the map, create and edit years and events, and write month text. Event writes apply directly; goal records (including their deadlines) go through Decisions, as described on [Goals](./10-goals.md). Reads need no approval.
 
@@ -116,7 +116,7 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 ## Related
 
 - [Wiki home](./index.md)
-- [Blueprints](./08-architecture.md)
+- [Blueprints](./08-blueprints.md)
 - [Goals](./10-goals.md)
 - [Daily Schedule](./13-daily-schedule.md)
 - [Task Manager](./14-task-manager.md)

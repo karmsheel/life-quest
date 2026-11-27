@@ -15,7 +15,7 @@ import AutomationsPage from "@/pages/AutomationsPage";
 import CustomizationsPage from "@/pages/CustomizationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
-import ArchitecturePage from "@/pages/ArchitecturePage";
+import BlueprintsPage from "@/pages/BlueprintsPage";
 import ChainPage from "@/pages/ChainPage";
 import ChartPage from "@/pages/ChartPage";
 import DataPage from "@/pages/DataPage";
@@ -135,10 +135,17 @@ function AppRoutes() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
           <Route path="/chart" element={<ChartPage />} />
-          <Route path="/track" element={<ArchitecturePage />} />
+          <Route path="/blueprints" element={<BlueprintsPage />} />
+          <Route
+            path="/blueprints/:slug/:kind"
+            element={<DoctrineEditorPage backTo="/blueprints" />}
+          />
+          {/* The Plan page's old address. Pins and stored page links kept it
+              alive; the redirect keeps them working without the old route. */}
+          <Route path="/track" element={<Navigate to="/blueprints" replace />} />
           <Route
             path="/track/:slug/:kind"
-            element={<DoctrineEditorPage backTo="/track" />}
+            element={<Navigate to="/blueprints" replace />}
           />
           <Route path="/act" element={<ActPage />} />
           <Route path="/notes" element={<DailyNotePage />} />

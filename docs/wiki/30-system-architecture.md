@@ -320,7 +320,8 @@ regaining focus (edits by another program, a sync client, or a second copy).
 | `/chain`, `/notes`, `/automations` | Notebox, Daily Journal, Automations |
 | `/dream`, `/vision`, `/ideal-state` | Define pages and their editors |
 | `/goals`, `/projects`, `/chart` | Goals, Projects, Life Map |
-| `/track`, `/act`, `/daily` | Architecture, Task Manager, Daily Schedule |
+| `/blueprints`, `/act`, `/daily` | Blueprints, Task Manager, Daily Schedule |
+| `/track` | Redirect to `/blueprints` (the old Plan address) |
 | `/review/:cadence`, `/documents`, `/log`, `/personnel` | Review, Documents, Log, Agents |
 | `/decisions`, `/settings` | Sheets over the page you were on |
 | `/` and `*` | Redirect to `/home` with a vault, `/welcome` without |

@@ -15,8 +15,10 @@ file.
 
 ## Where it lives
 
-- Plan wing, rail label **Blueprints**, icon Target, route `/track`.
-- The Strategy (How) editor opens at `/track/:slug/how`; the index lists every
+- Plan wing, rail label **Blueprints**, icon Target, route `/blueprints`.
+- Older links to `/track` and `/track/<area>/<kind>` redirect here, so a stored page
+  link keeps working.
+- The Strategy (How) editor opens at `/blueprints/:slug/how`; the index lists every
   unlocked area and links there.
 - The **area lens** in the window title bar filters only that index and the
   **Events this week** list; the page's own templates are vault-global.

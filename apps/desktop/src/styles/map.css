@@ -202,7 +202,7 @@
 }
 
 .life-map .event-mark,
-.architecture .event-mark {
+.blueprints .event-mark {
   width: 0.4rem;
   height: 0.4rem;
   border-radius: 50%;
@@ -442,7 +442,7 @@
 }
 
 /* —— Architecture (Track route) —— */
-.architecture {
+.blueprints {
   --fg-muted: var(--muted);
   --map-event-default: var(--fg-muted);
   display: flex;
@@ -677,8 +677,8 @@
   font-weight: 600;
 }
 
-.architecture.is-archive input,
-.architecture.is-archive textarea {
+.blueprints.is-archive input,
+.blueprints.is-archive textarea {
   background: var(--bg-muted);
 }
 

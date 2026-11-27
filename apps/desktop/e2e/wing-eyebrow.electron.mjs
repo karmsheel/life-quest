@@ -71,7 +71,7 @@ const PAGES = [
   // Plan
   { route: "/goals", eyebrow: "Goals", wing: "Plan", heading: "Goals" },
   { route: "/chart", eyebrow: "Life Map", wing: "Plan", heading: "Life Map" },
-  { route: "/track", eyebrow: "Blueprints", wing: "Plan", heading: "Blueprints" },
+  { route: "/blueprints", eyebrow: "Blueprints", wing: "Plan", heading: "Blueprints" },
   // Act
   { route: "/projects", eyebrow: "Projects", wing: "Act", heading: "Projects" },
   { route: "/daily", eyebrow: "Daily Schedule", wing: "Act", heading: "Daily Schedule" },

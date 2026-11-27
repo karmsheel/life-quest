@@ -58,7 +58,7 @@ Full detail: [Areas](./05-areas.md).
    choose **Propose change** from the menu while it stays locked. The proposal
    waits in **Decisions**.
 6. **Plan → Blueprints** carries the same **Strategy (How)** document and adds
-   the day types and weekly shapes. See [Blueprints](./08-architecture.md).
+   the day types and weekly shapes. See [Blueprints](./08-blueprints.md).
 
 Full detail: [Doctrine](./07-doctrine.md).
 
@@ -99,7 +99,7 @@ Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
    and duration, then **Place** again. As the day runs, change times and
    **Apply**, tick **Done**, or **Unplace** a block.
 7. The live day is not drawn on the Life Map. The map is the calendar; the
-   schedule is the day. Full detail: [Blueprints](./08-architecture.md),
+   schedule is the day. Full detail: [Blueprints](./08-blueprints.md),
    [Daily Schedule](./13-daily-schedule.md).
 
 ## Run a weekly review

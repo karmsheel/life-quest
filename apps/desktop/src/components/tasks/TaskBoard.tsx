@@ -14,7 +14,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
-import { weekOptions } from "../architecture/weekList";
+import { weekOptions } from "../blueprints/weekList";
 import type {
   MapCommand,
   StoreState,
