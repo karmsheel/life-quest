@@ -156,6 +156,7 @@ It checks the asar really holds the main, the preload and the renderer; then lau
 
 ```text
 apps/desktop/          Electron main + Vite React UI (@lifequest/desktop)
+apps/landing/          One-page marketing site, plain HTML/CSS/JS (see apps/landing/README.md)
 packages/vault-core/   Vault FS library — create/open, domains, docs, decisions, log, agents
 docs/wiki/             Operator guide, published at karmsheel.github.io/life-quest
 docs/design/screens/   The screenshots DESIGN.md embeds
