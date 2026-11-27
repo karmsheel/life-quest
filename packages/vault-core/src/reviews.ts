@@ -347,10 +347,18 @@ function parseBodySections(body: string): ParsedBody {
   return { sections, contentMap };
 }
 
-/** One parsed page body: its H1 title, the four required sections and any extras. */
+/**
+ * One parsed page body: its H1 title, the four required sections — with any
+ * deeper headings written inside them — and the extras that stand on their own.
+ */
 type ParsedPage = {
   title: string | null;
   required: Map<RequiredHeading, string[]>;
+  /**
+   * `###`+ sections written under a required H2, kept with that section rather
+   * than at the end of the page. Extras are kept in place (S4).
+   */
+  requiredChildren: Map<RequiredHeading, BodySection[]>;
   extras: BodySection[];
 };
 
@@ -359,20 +367,35 @@ function parsePageBody(body: string): ParsedPage {
   const page: ParsedPage = {
     title: null,
     required: new Map(),
+    requiredChildren: new Map(),
     extras: [],
   };
+  // The required H2 the current run of deeper headings was written under. A
+  // deeper heading belongs to the section it follows, so it is held there and
+  // emitted back inside it; only headings outside any H2 are page-level extras.
+  let insideRequired: RequiredHeading | null = null;
   for (const section of parsed.sections) {
     if (section.level === 1) {
       if (page.title === null) page.title = section.text;
       else page.extras.push(section);
+      insideRequired = null;
       continue;
     }
     if (section.level === 2) {
       if (DOMAIN_HEADINGS.includes(section.text as RequiredHeading) && !page.required.has(section.text as RequiredHeading)) {
-        page.required.set(section.text as RequiredHeading, trimBlankEdges(section.content));
+        const heading = section.text as RequiredHeading;
+        page.required.set(heading, trimBlankEdges(section.content));
+        insideRequired = heading;
         continue;
       }
       page.extras.push(section);
+      insideRequired = null;
+      continue;
+    }
+    if (insideRequired !== null) {
+      const children = page.requiredChildren.get(insideRequired) ?? [];
+      children.push({ ...section, content: trimBlankEdges(section.content) });
+      page.requiredChildren.set(insideRequired, children);
       continue;
     }
     page.extras.push(section);
@@ -382,7 +405,8 @@ function parsePageBody(body: string): ParsedPage {
 
 /**
  * Validate a page: one H1 plus exactly the four required H2s. Extra headings are
- * first-class (S4) and preserved after the required ones, in page order.
+ * first-class (S4): page-level ones are preserved after the required ones, and
+ * deeper ones stay inside the required section they were written under.
  */
 function validatePage(page: ParsedPage): Result<ParsedPage> {
   const missing = DOMAIN_HEADINGS.filter((h) => !page.required.has(h));
@@ -458,6 +482,12 @@ function emitPageBody(
     content.length > 0 ? `${heading}\n\n${content.join("\n")}` : heading;
   for (const h of DOMAIN_HEADINGS) {
     blocks.push(withContent(`## ${h}`, page.required.get(h) ?? []));
+    // A deeper heading written inside this required section stays inside it, in
+    // the order it had, so canonicalising never moves the operator's sub-section
+    // to the end of the page.
+    for (const child of page.requiredChildren.get(h) ?? []) {
+      blocks.push(withContent(headingLine(child.level, child.text), trimBlankEdges(child.content)));
+    }
   }
   for (const group of orderExtras(page.extras, templateExtras)) {
     for (const section of group) {
@@ -489,6 +519,7 @@ function emptyPageBody(title: string, extras: readonly string[] = []): string {
   const page: ParsedPage = {
     title,
     required: new Map(),
+    requiredChildren: new Map(),
     extras: extras.map((text) => ({ level: 2, text, content: [], parentH2: null })),
   };
   return emitPageBody(title, page, extras);
@@ -955,12 +986,12 @@ function projectLegacyPage(
 ): { title: string; bodyMarkdown: string } {
   const parsed = parseBodySections(record.bodyMarkdown);
   if (isOverall(scope)) {
-    const page: ParsedPage = { title: record.title, required: new Map(), extras: [] };
+    const page: ParsedPage = { title: record.title, required: new Map(), requiredChildren: new Map(), extras: [] };
     for (const h of DOMAIN_HEADINGS) page.required.set(h, parsed.contentMap.get(h) ?? []);
     return { title: record.title, bodyMarkdown: emitPageBody(record.title, page) };
   }
   const name = domainNames.get(scope) ?? scope;
-  const page: ParsedPage = { title: name, required: new Map(), extras: [] };
+  const page: ParsedPage = { title: name, required: new Map(), requiredChildren: new Map(), extras: [] };
   for (const h of DOMAIN_HEADINGS) {
     page.required.set(h, parsed.contentMap.get(name + "\u0000" + h) ?? []);
   }
@@ -1880,7 +1911,7 @@ function splitWholeBody(
   newScopes: string[];
 }> {
   const parsed = parseBodySections(normalizeBody(bodyMarkdown));
-  const overall: ParsedPage = { title: disk.manifest.title, required: new Map(), extras: [] };
+  const overall: ParsedPage = { title: disk.manifest.title, required: new Map(), requiredChildren: new Map(), extras: [] };
   for (const h of DOMAIN_HEADINGS) {
     overall.required.set(h, parsed.contentMap.get(h) ?? []);
   }
@@ -1921,7 +1952,7 @@ function splitWholeBody(
       if (!areaPages.has(scope)) {
         const existing = disk.pages.get(scope);
         const title = existing?.title ?? section.text;
-        const page: ParsedPage = { title, required: new Map(), extras: [] };
+        const page: ParsedPage = { title, required: new Map(), requiredChildren: new Map(), extras: [] };
         for (const h of DOMAIN_HEADINGS) {
           page.required.set(h, parsed.contentMap.get(section.text + "\u0000" + h) ?? []);
         }
@@ -2361,7 +2392,7 @@ async function migrateOneLegacyPeriod(
     // Area headings inside this body name scopes; the canonical heading is the
     // recorded display name. Headings that map to no scope stay on the overall
     // page as extras.
-    const overall: ParsedPage = { title: record.title, required: new Map(), extras: [] };
+    const overall: ParsedPage = { title: record.title, required: new Map(), requiredChildren: new Map(), extras: [] };
     for (const h of DOMAIN_HEADINGS) {
       overall.required.set(h, parsedBody.contentMap.get(h) ?? []);
     }
@@ -2369,7 +2400,7 @@ async function migrateOneLegacyPeriod(
     for (const scope of Object.keys(record.scopes)) {
       if (isOverall(scope)) continue;
       const title = domainNamesForSplit.get(scope) ?? scope;
-      const page: ParsedPage = { title, required: new Map(), extras: [] };
+      const page: ParsedPage = { title, required: new Map(), requiredChildren: new Map(), extras: [] };
       for (const h of DOMAIN_HEADINGS) {
         page.required.set(h, parsedBody.contentMap.get(title + "\u0000" + h) ?? []);
       }
