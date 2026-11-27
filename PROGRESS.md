@@ -13,7 +13,7 @@ does. It is short on purpose: one section per release, plus the current state at
 |---|---|
 | Current release | **0.3.4**, tagged 2026-11-25 |
 | Released since | 0.3.0 (11-16), 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22) |
-| Master | 21 commits past `v0.3.4`, unreleased — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs, the six-file plan pack, and the Plan page renamed **Blueprints** (now at `/blueprints`, with `/track` redirecting) |
+| Master | 25 commits past `v0.3.4`, unreleased — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs, the six-file plan pack, and the Plan page renamed **Blueprints** (now at `/blueprints`, with `/track` redirecting) |
 | Next | **0.3.5** after [`TASKS.md`](TASKS.md) items 1–2 land |
 | Open gates | `npm run typecheck` and `npm run docs:check` green on master; the packaged smoke and live update feed run at release, not in CI |
 
