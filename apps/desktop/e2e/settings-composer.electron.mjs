@@ -334,7 +334,7 @@ async function main() {
 
     // ── 1. the tab: the sheet's own nav, with Composer after Chat display ──
     check(
-      "the section column lists the fourteen tabs",
+      "the section column lists the fifteen tabs",
       opened.nav.length === NAV_ORDER.length,
       `nav ${JSON.stringify(opened.nav.map((row) => row.label))}`,
     );
