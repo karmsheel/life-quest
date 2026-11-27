@@ -606,6 +606,14 @@ export type ReviewSnapshotDirective = {
    * `all` leaves the spec's window as it was written.
    */
   window: "period" | "all";
+  /**
+   * Display-only sign handling, mirroring a metric definition's
+   * `formatting.magnitude`: `abs` prints a negative total as its gross size
+   * (Cash out), `negate` flips the sign. It is applied where the value is
+   * PRINTED and never to the query or the stored number, so a review can read
+   * "Cash out 3,000" while the ledger keeps -3,000.
+   */
+  magnitude?: "abs" | "negate" | null;
   spec: Omit<ViewSpec, "schemaVersion">;
 };
 
@@ -657,6 +665,108 @@ export type ReviewPrepopulateResult = {
   locked: boolean;
   /** The review body after the pass — the file's own, unchanged when locked. */
   bodyMarkdown: string;
+};
+
+// ---------------------------------------------------------------------------
+// Metrics (2026-11-26 metrics design, §10). A metric definition is the
+// operator's named measurement, stored as one git-portable JSON per metric
+// under `domains/<slug>/metrics/<id>.json`. The rows it reads are ordinary
+// rows in the area's own database (the `metrics` events table for a manually
+// logged metric, or whatever database a derived spec names), so figures run
+// through the one view engine rather than a second aggregation path.
+// ---------------------------------------------------------------------------
+
+/** Where a metric's rows come from. */
+export const METRIC_SOURCES = ["derived", "events"] as const;
+export type MetricSource = (typeof METRIC_SOURCES)[number];
+
+/** The measures a metric may fold its rows with. `avg-per` stays a view-only measure. */
+export const METRIC_AGGREGATIONS = ["sum", "count", "last", "avg"] as const;
+export type MetricAggregation = (typeof METRIC_AGGREGATIONS)[number];
+
+export const METRIC_DIRECTIONS = ["higher-is-better", "lower-is-better", "neutral"] as const;
+export type MetricDirection = (typeof METRIC_DIRECTIONS)[number];
+
+/** Display-only sign handling; never applied to the query or the stored number. */
+export const METRIC_MAGNITUDES = ["abs", "negate"] as const;
+export type MetricMagnitude = (typeof METRIC_MAGNITUDES)[number];
+
+/**
+ * How a metric's value is printed. All of it is display-only: a `prefix` never
+ * enters the SQL, and `magnitude` never changes what the query returned.
+ */
+export type MetricFormatting = {
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  magnitude?: MetricMagnitude | null;
+};
+
+/**
+ * One operator-owned metric definition, exactly the object spec §10.1 names.
+ *
+ * `derived` carries a spec — validated against the area's own databases at
+ * definition time — and `events` carries the `metric` cell value its rows
+ * carry. `aggregation` is the fold for an events metric and display metadata
+ * for a derived one, whose query stays in `spec` (the same split a saved view
+ * makes between its data and its drawing).
+ */
+export type MetricDefinition = {
+  schemaVersion: 1;
+  /** Stable id; a review figure is found by `metric:<id>`. */
+  id: string;
+  domainSlug: string;
+  /** "Training minutes" */
+  label: string;
+  /** "minutes" | "sessions" | "pages" | "ZAR" | free text, display only. */
+  unit: string;
+  source: MetricSource;
+  /** derived: the one query that answers the metric. Validated on write. */
+  spec?: Omit<ViewSpec, "schemaVersion">;
+  /** events: the `metric` cell value the logged rows carry. */
+  eventKey?: string;
+  aggregation: MetricAggregation;
+  direction?: MetricDirection;
+  target?: number | null;
+  formatting?: MetricFormatting;
+  createdBy: "user" | "agent";
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * One metric's answered value for a review period and the one before it.
+ *
+ * `value`/`previousValue`/`delta` are null when the window held no rows at all
+ * — never a fabricated zero, because a metric that was not tracked and a metric
+ * that was genuinely zero are different statements, and only one of them is
+ * true. `formatting` is carried so Phase 5/6 render from the definition rather
+ * than from a second copy of it.
+ */
+export type MetricSummary = {
+  id: string;
+  label: string;
+  unit: string;
+  source: MetricSource;
+  value: number | null;
+  previousValue: number | null;
+  delta: number | null;
+  direction: MetricDirection | null;
+  target: number | null;
+  formatting: MetricFormatting | null;
+  window: { start: string; end: string };
+  previousWindow: { start: string; end: string };
+  /** The instant the read ran, ISO — a review window opens before the period ends. */
+  asOf: string;
+  /** Where the number came from, for the figure's provenance line. */
+  provenance: { databaseId: string; eventKey?: string };
+};
+
+/** One definition refused by the reader, reported rather than thrown. */
+export type MetricDefinitionProblem = {
+  /** Vault-relative file, so the operator can open the one that is wrong. */
+  file: string;
+  reason: string;
 };
 
 export type PlanningStub = {

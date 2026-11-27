@@ -155,6 +155,16 @@ export {
 } from "./reviews.ts";
 export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
 export {
+  REVIEW_PAGE_COMMON_HEADINGS,
+  REVIEW_PAGE_TEMPLATE_MAX_EXTRAS,
+  canonicalizeReviewPageTemplate,
+  getReviewPageTemplate,
+  parseReviewPageTemplate,
+  reviewPageTemplateSeed,
+  writeReviewPageTemplate,
+} from "./review-templates.ts";
+export type { ReviewPageTemplate } from "./review-templates.ts";
+export {
   REVIEW_SECTIONS,
   FINANCE_SNAPSHOT_ID,
   defaultReviewSkill,
@@ -169,6 +179,17 @@ export {
   upsertSnapshotBlock,
   writeReviewSkill,
 } from "./review-skills.ts";
+export {
+  METRIC_ID_PATTERN,
+  METRICS_DATABASE_ID,
+  METRICS_DATABASE_NAME,
+  defineMetric,
+  getMetric,
+  listMetricDefinitions,
+  metricDisplayValue,
+  metricMagnitude,
+} from "./metrics.ts";
+export type { DefineMetricInput, MetricErrorCode, MetricResult } from "./metrics.ts";
 export {
   ensurePlanningStub,
   getPlanningStub,
