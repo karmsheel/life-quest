@@ -447,7 +447,16 @@ describe("review areas e2e", () => {
       });
       checks.areaKickoff = areaKickoff;
       assert.match(areaKickoff, /scope "health"/, "the area kickoff does not name its own scope");
-      assert.match(areaKickoff, /only this page/i, "the area kickoff does not say to write only its page");
+      assert.match(
+        areaKickoff,
+        /Leave every other page alone\./,
+        "the area kickoff does not bind the session to its own page",
+      );
+      assert.match(
+        areaKickoff,
+        /four common headings and this area's own sections/,
+        "the area kickoff does not name the page contract the session writes against",
+      );
       assert.match(areaKickoff, /get_review/, "the area kickoff lost the get_review guidance");
       assert.match(areaKickoff, /write_review/, "the area kickoff lost the write_review guidance");
 
