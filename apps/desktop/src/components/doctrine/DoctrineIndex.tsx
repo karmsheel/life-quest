@@ -16,7 +16,7 @@ import { useVault } from "@/state/VaultProvider";
  * Dream carries Premise / Purpose / Strategy, Vision carries Vision & Desire,
  * and Blueprints carries Strategy (How) for the Plan wing.
  */
-export type DoctrineBasePath = "/dream" | "/vision" | "/track";
+export type DoctrineBasePath = "/dream" | "/vision" | "/blueprints";
 
 function rowHref(kind: DocumentKind, slug: string, basePath: DoctrineBasePath): string {
   return `${basePath}/${slug}/${kind}`;
@@ -24,7 +24,7 @@ function rowHref(kind: DocumentKind, slug: string, basePath: DoctrineBasePath): 
 
 export function DoctrineIndex({
   kinds,
-  basePath = "/track",
+  basePath = "/blueprints",
   layout = "list",
 }: {
   kinds: DocumentKind[];

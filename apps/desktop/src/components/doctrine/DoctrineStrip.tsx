@@ -16,7 +16,7 @@ export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
   const editTo =
     kind === "what"
       ? `/vision/${domain.slug}/what`
-      : `/track/${domain.slug}/how`;
+      : `/blueprints/${domain.slug}/how`;
 
   return (
     <aside className="doctrine-strip">

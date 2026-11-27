@@ -51,6 +51,7 @@ command and artifact that show it works), and the **plan** or spec it follows.
 | When | What | Where |
 |---|---|---|
 | 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
+| 2026-11-27 | The Plan page's identifiers follow its name: `BlueprintsPage`, `components/blueprints/`, the `.blueprints` class, and route `/blueprints` with the old `/track` address redirecting | merge `840781b` |
 | 2026-11-25 | v0.3.4 shipped (Review page, background picture, layouts picker, Notebox dock links, rail dividers, recurring due-today) | tag `v0.3.4` |
 | 2026-11-27 | The agent picker as data: three shipped modes, custom recipe, Customizations page | `5c6ee13` (unreleased) |
 | 2026-11-26 | One attach control in the composer; a picture's chip offers "Use as receipt" | `9cea303` (unreleased) |

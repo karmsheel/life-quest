@@ -9,7 +9,7 @@ live-preview box, and locked when you are done with it. Agents never write
 doctrine directly; their changes wait in Decisions.
 
 This page covers the documents and their editor. For the pages that host them,
-see [Blueprints](./08-architecture.md) (Strategy (How) and the week),
+see [Blueprints](./08-blueprints.md) (Strategy (How) and the week),
 [Goals](./10-goals.md) (outcomes), and [Ideal State](./09-ideal-state.md) (your
 own future documents, which are not doctrine).
 
@@ -18,9 +18,9 @@ own future documents, which are not doctrine).
 - Define wing, rail label **Dream**, icon Sparkles, route `/dream`.
 - Define wing, rail label **Vision**, icon Telescope, route `/vision`.
 - The Strategy (How) document also opens from the Plan wing, rail label
-  **Blueprints**, icon Target, route `/track`.
+  **Blueprints**, icon Target, route `/blueprints`.
 - The editor for one document is a page at `/dream/:slug/:kind`,
-  `/vision/:slug/:kind`, or `/track/:slug/:kind`. The index and editor are
+  `/vision/:slug/:kind`, or `/blueprints/:slug/:kind`. The index and editor are
   pages, not sheets.
 - The **area lens** in the window title bar chooses which areas the indexes
   list. It is a quiet **Life** label while zero or one area is unlocked and
@@ -252,7 +252,7 @@ They appear on the [Log](./26-log.md) page.
 
 - [Wiki home](./index.md)
 - [Areas](./05-areas.md)
-- [Blueprints](./08-architecture.md)
+- [Blueprints](./08-blueprints.md)
 - [Ideal State](./09-ideal-state.md)
 - [Decisions](./23-decisions.md)
 - [The Log](./26-log.md)

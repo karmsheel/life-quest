@@ -79,6 +79,12 @@ stands on a golden ring of quick actions), *Paper Trail*, *Night Shift* and *Con
 
 ## The four verbs
 
+A launch is not a write: the ten-second preview answers changes that land while the window is
+open — a companion write, a save, a Try. Theme files that were already in the folder when the
+window opened are listed, never worn, because the session's first read of `themes/` is its
+baseline. Restarting the app therefore cannot hand you a theme you did not ask for, even when
+the file's metadata moves while the window is still opening.
+
 - **Active switch** — the toggle on the card. On keeps that file as the window's theme; off
   hands the window back its default look. A window wears exactly one theme file, so
   switching a second card on replaces the first: this is an on/off switch over *the window's

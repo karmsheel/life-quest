@@ -86,7 +86,7 @@ import { ChatDockProvider, useChatDock } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import ActPage from "@/pages/ActPage";
-import ArchitecturePage from "@/pages/ArchitecturePage";
+import BlueprintsPage from "@/pages/BlueprintsPage";
 import ChartPage from "@/pages/ChartPage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import DataPage from "@/pages/DataPage";
@@ -1270,7 +1270,7 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: "/ideal-state", element: <IdealStatePage /> },
   { path: "/goals", element: <GoalsPage /> },
   { path: "/chart", element: <ChartPage /> },
-  { path: "/track", element: <ArchitecturePage /> },
+  { path: "/blueprints", element: <BlueprintsPage /> },
   { path: "/projects", element: <ProjectsPage /> },
   { path: "/daily", element: <DailySchedulePage /> },
   { path: "/act", element: <ActPage /> },

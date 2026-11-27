@@ -48,7 +48,7 @@ import VisionPage from "@/pages/VisionPage";
 import IdealStatePage from "@/pages/IdealStatePage";
 import GoalsPage from "@/pages/GoalsPage";
 import ChartPage from "@/pages/ChartPage";
-import ArchitecturePage from "@/pages/ArchitecturePage";
+import BlueprintsPage from "@/pages/BlueprintsPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import ActPage from "@/pages/ActPage";
@@ -91,14 +91,14 @@ const DOMAINS = [
 ];
 
 /**
- * The map's own state — the Life Map and Architecture pages read their years
+ * The map's own state — the Life Map and Blueprints pages read their years
  * from it, and the map year provider reaches for `map.years` on every render.
  * One live year is enough for both pages to draw their chrome.
  */
 const MAP_STATE = {
   dayTypes: [],
   // The default week: one day-type slot per weekday, and the weekly checklist
-  // that rides with it. The Architecture page reads both by index, so the
+  // that rides with it. The Blueprints page reads both by index, so the
   // shapes are the real ones and not empty stand-ins.
   defaultWeek: { dayTypeByWeekday: [null, null, null, null, null, null, null], weeklyItems: [] },
   years: [
@@ -309,7 +309,7 @@ createRoot(root).render(
                       <Route path="/ideal-state" element={<IdealStatePage />} />
                       <Route path="/goals" element={<GoalsPage />} />
                       <Route path="/chart" element={<ChartPage />} />
-                      <Route path="/track" element={<ArchitecturePage />} />
+                      <Route path="/blueprints" element={<BlueprintsPage />} />
                       <Route path="/projects" element={<ProjectsPage />} />
                       <Route path="/daily" element={<DailySchedulePage />} />
                       <Route path="/act" element={<ActPage />} />
