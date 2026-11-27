@@ -356,6 +356,11 @@ describe("metrics e2e", () => {
       assert.deepEqual(cashIn!.window, { start: WINDOW_START, end: WINDOW_END });
       assert.equal(cashOut!.formatting?.magnitude, "abs", "cash out lost its display-only magnitude");
       assert.equal(cashIn!.source, "derived");
+      assert.equal(
+        net!.label,
+        "Net cash flow (transfers included)",
+        "the shipped Net label does not say transfers are included",
+      );
 
       // Cash out PRINTS positive; the raw summary value keeps the ledger's sign.
       const cashOutDefinition = await getMetric(vaultRoot, "financial", "cash-out");
@@ -541,6 +546,31 @@ describe("metrics e2e", () => {
         domainSlug: "financial",
         metricId: "cash-in",
       })) as ToolErr;
+      const avgPerDerived = (await executeMetricsTool(vaultRoot, ACTOR, "define_metric", {
+        domainSlug: "financial",
+        id: "average-day-spend",
+        label: "Average day spend",
+        unit: "ZAR",
+        source: "derived",
+        aggregation: "sum",
+        spec: {
+          databaseId: "finance:transactions",
+          title: "Average day spend",
+          presentation: "metric",
+          groupBy: null,
+          timeBucket: null,
+          timeColumnId: "date",
+          timeWindow: "all",
+          filters: [],
+          measure: "avg-per",
+          measureColumnId: "amount",
+          per: "day",
+          sort: { by: "value", dir: "desc" },
+          limit: 12,
+          convertToZar: true,
+          columns: [],
+        },
+      })) as ToolErr;
       checks.refusals = {
         badDerived: badDerived.error,
         eventsNoKey: eventsNoKey.error,
@@ -549,6 +579,7 @@ describe("metrics e2e", () => {
         redefined: redefined.error,
         unknownLog: unknownLog.error,
         derivedLog: derivedLog.error,
+        avgPerDerived: avgPerDerived.error,
       };
       assert.equal(badDerived.error?.code, "MALFORMED", "a grouped derived spec was accepted");
       assert.match(badDerived.error?.message ?? "", /group/i, "the grouped-spec refusal does not say why");
@@ -559,6 +590,8 @@ describe("metrics e2e", () => {
       assert.equal(redefined.error?.code, "EXISTS", "redefining an existing id overwrote it");
       assert.equal(unknownLog.error?.code, "NOT_FOUND", "logging to an unknown metric succeeded");
       assert.equal(derivedLog.error?.code, "MALFORMED", "a derived metric was logged as an event");
+      assert.equal(avgPerDerived.error?.code, "MALFORMED", "an avg-per derived metric was accepted");
+      assert.match(avgPerDerived.error?.message ?? "", /avg-per/, "the avg-per refusal does not name the measure");
       assert.equal(
         readJson(sessionsFile).label,
         "Training sessions",
@@ -620,6 +653,140 @@ describe("metrics e2e", () => {
       const refused = dbForValidation ? validateViewSpec(withValue, dbForValidation) : { ok: true as const };
       checks.presenceValidation = refused;
       assert.equal(refused.ok, false, "is-set accepted a value argument");
+
+      // ── (f2) one broken definition must not hide the healthy ones ─────────
+      // A definition already on disk whose source database is gone, plus a
+      // hand-edited definition using the view-only avg-per measure. The summary
+      // must still answer Cash in, and report each broken one with nulls.
+      const orphanedFile = vaultPaths(vaultRoot).domainMetric("financial", "orphaned");
+      fs.writeFileSync(
+        orphanedFile,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "orphaned",
+            domainSlug: "financial",
+            label: "Orphaned",
+            unit: "ZAR",
+            source: "derived",
+            aggregation: "sum",
+            spec: {
+              databaseId: "deleted:db",
+              title: "Orphaned",
+              presentation: "metric",
+              groupBy: null,
+              timeBucket: null,
+              timeColumnId: "date",
+              timeWindow: "all",
+              filters: [],
+              measure: "sum",
+              measureColumnId: "amount",
+              per: null,
+              sort: { by: "value", dir: "desc" },
+              limit: 12,
+              convertToZar: true,
+              columns: [],
+            },
+            createdBy: "user",
+            createdAt: "2026-11-01T00:00:00.000Z",
+            updatedAt: "2026-11-01T00:00:00.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const editedAvgPerFile = vaultPaths(vaultRoot).domainMetric("financial", "edited-avg-per");
+      fs.writeFileSync(
+        editedAvgPerFile,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "edited-avg-per",
+            domainSlug: "financial",
+            label: "Edited average",
+            unit: "ZAR",
+            source: "derived",
+            aggregation: "avg",
+            spec: {
+              databaseId: "finance:transactions",
+              title: "Edited average",
+              presentation: "metric",
+              groupBy: null,
+              timeBucket: null,
+              timeColumnId: "date",
+              timeWindow: "all",
+              filters: [],
+              measure: "avg-per",
+              measureColumnId: "amount",
+              per: "day",
+              sort: { by: "value", dir: "desc" },
+              limit: 12,
+              convertToZar: true,
+              columns: [],
+            },
+            createdBy: "user",
+            createdAt: "2026-11-01T00:00:00.000Z",
+            updatedAt: "2026-11-01T00:00:00.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const resilient = await getMetricsSummary(vaultRoot, "financial", {
+        cadence: "weekly",
+        period: PERIOD,
+        metricIds: ["cash-in", "orphaned", "edited-avg-per"],
+      });
+      assert.equal(resilient.ok, true, `the summary aborted on a broken definition: ${resilient.ok ? "" : resilient.error}`);
+      const resilientById = new Map(
+        resilient.ok ? resilient.value.metrics.map((metric) => [metric.id, metric]) : [],
+      );
+      const resilientProblems = resilient.ok ? resilient.value.problems : [];
+      checks.resilientSummary = {
+        metrics: [...resilientById.values()],
+        problems: resilientProblems,
+      };
+      assert.equal(
+        resilientById.get("cash-in")?.value,
+        5000,
+        "a broken definition hid the healthy metric beside it",
+      );
+      assert.equal(
+        resilientById.get("orphaned")?.value,
+        null,
+        "a definition whose source database is gone fabricated a value",
+      );
+      assert.equal(
+        resilientById.get("edited-avg-per")?.value,
+        null,
+        "a hand-edited avg-per definition fabricated a value",
+      );
+      assert.equal(
+        resilientProblems.some(
+          (problem) => problem.metricId === "orphaned" && /Database not found/i.test(problem.reason),
+        ),
+        true,
+        "the deleted-database definition was not reported as a problem",
+      );
+      assert.equal(
+        resilientProblems.some(
+          (problem) =>
+            problem.metricId === "edited-avg-per" && /avg-per/i.test(problem.reason),
+        ),
+        true,
+        "the hand-edited avg-per definition was not reported as a problem",
+      );
+      // The whole-area read (no metricIds) is just as resilient.
+      const wholeArea = await getMetricsSummary(vaultRoot, "financial", {
+        cadence: "weekly",
+        period: PERIOD,
+      });
+      assert.equal(wholeArea.ok, true, "the whole-area summary aborted on a broken definition");
+      assert.equal(
+        wholeArea.ok && wholeArea.value.metrics.some((metric) => metric.id === "cash-in" && metric.value === 5000),
+        true,
+        "the whole-area summary hid a healthy metric because another definition is broken",
+      );
 
       // ── (i) the four tools are on the door and in ALL_TOOL_DEFS ────────────
       const names = ["define_metric", "log_metric", "list_metrics", "get_metrics_summary"];

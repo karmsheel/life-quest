@@ -366,6 +366,20 @@ async function validateDerivedSpec(
       error: 'A metric spec must draw as one number: set presentation to "metric".',
     };
   }
+  if (written.measure === "avg-per") {
+    // `avg-per` is a view-only measure: it divides a WINDOW's total by the
+    // periods it spans, and an empty window answers 0 per period rather than
+    // "no data". A metric must be able to answer "not tracked", so it folds
+    // with sum/count/last/avg only — the same set as `MetricAggregation`.
+    return {
+      ok: false,
+      code: "MALFORMED",
+      error:
+        "A metric's measure cannot be 'avg-per': that divides a view window by its periods and " +
+        "answers 0 over an empty window, which would be a fabricated value. Use sum, count, last " +
+        "or avg — the definition's aggregation is the metric's fold.",
+    };
+  }
   if (
     written.limit !== undefined &&
     written.limit !== null &&
@@ -943,6 +957,13 @@ export function compileMetricSpec(
   if (!definition.spec) {
     throw new Error(`Metric ${definition.id} is derived but carries no spec`);
   }
+  if (definition.spec.measure === "avg-per") {
+    // A hand-edited file could still carry it; refusing here keeps the empty
+    // window from answering the fabricated 0 the definition validation bans.
+    throw new Error(
+      `Metric ${definition.id} uses the view-only 'avg-per' measure; a metric must fold with sum, count, last or avg`,
+    );
+  }
   return {
     ...(definition.spec as Omit<ViewSpec, "schemaVersion">),
     schemaVersion: 1,
@@ -1012,10 +1033,11 @@ async function runSpecOverWindow(
   spec: ViewSpec,
   now: Date,
 ): Promise<MetricResult<number | null>> {
-  const runSpec: ViewSpec =
-    spec.measure === "avg-per"
-      ? spec
-      : ({ ...spec, presentation: "table" } as ViewSpec);
+  // Table presentation so an empty sum/count window leaves `rows` empty instead
+  // of the engine's card-shaped 0; the value itself is still the engine's own
+  // aggregate. `avg-per` cannot reach here — definition validation and
+  // `compileMetricSpec` both refuse it.
+  const runSpec = { ...spec, presentation: "table" } as ViewSpec;
   const run = await runView(root, slug, runSpec, now);
   if (!run.ok) return { ok: false, code: "FAILED", error: run.error };
   const summary = run.value.summary;
@@ -1035,7 +1057,14 @@ export type GetMetricsSummaryInput = {
 
 export type MetricsSummaryResult = {
   metrics: MetricSummary[];
-  /** Definitions whose file could not be read; reported, never thrown. */
+  /**
+   * Definitions that could not be used, reported and never thrown: an unreadable
+   * file, or a definition that could not ANSWER (a derived metric whose source
+   * database was deleted, a hand-edited spec that is no longer runnable). A failed
+   * definition still appears in `metrics` with value/previousValue/delta null —
+   * it is never given a fabricated number. Healthy definitions beside it answer
+   * normally, and the problem names its `metricId`.
+   */
   problems: MetricDefinitionProblem[];
   window: MetricBounds;
   previousWindow: MetricBounds;
@@ -1095,34 +1124,71 @@ export async function getMetricsSummary(
     const now = new Date();
     const asOf = now.toISOString();
     const summaries: MetricSummary[] = [];
+    /**
+     * A definition that cannot answer (its source database was deleted, its
+     * hand-edited spec is not runnable, …) is REPORTED and answered with nulls,
+     * never allowed to take the area down: one broken definition must not hide
+     * every healthy metric beside it. `value` stays null so no consumer prints a
+     * fabricated number for it.
+     */
+    const problems: MetricDefinitionProblem[] = [...listed.value.problems];
+    const failedSummary = (definition: MetricDefinition): MetricSummary => ({
+      id: definition.id,
+      label: definition.label,
+      unit: definition.unit,
+      source: definition.source,
+      value: null,
+      previousValue: null,
+      delta: null,
+      direction: definition.direction ?? null,
+      target: definition.target ?? null,
+      formatting: definition.formatting ?? null,
+      window: bounds.value,
+      previousWindow: previousBounds.value,
+      asOf,
+      provenance:
+        definition.source === "events"
+          ? { databaseId: METRICS_DATABASE_ID, eventKey: definition.eventKey }
+          : { databaseId: (definition.spec?.databaseId as string) ?? "" },
+    });
+    const fail = (definition: MetricDefinition, reason: string): void => {
+      problems.push({
+        file: relMetricsFile(slug, definition.id),
+        metricId: definition.id,
+        reason,
+      });
+      summaries.push(failedSummary(definition));
+    };
+
     for (const definition of defs) {
       const formatting = definition.formatting ?? null;
-      let spec: ViewSpec;
-      try {
-        spec = compileMetricSpec(definition, bounds.value, eventColumns ?? undefined);
-      } catch (e) {
-        return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
-      }
       let current: MetricResult<number | null>;
       let previous: MetricResult<number | null>;
-      if (definition.source === "events" && !eventColumns) {
-        current = { ok: true, value: null };
-        previous = { ok: true, value: null };
-      } else {
-        current = await runSpecOverWindow(root, slug, spec, now);
-        if (!current.ok) return current;
-        let previousSpec: ViewSpec;
-        try {
-          previousSpec = compileMetricSpec(
+      try {
+        if (definition.source === "events" && !eventColumns) {
+          current = { ok: true, value: null };
+          previous = { ok: true, value: null };
+        } else {
+          const spec = compileMetricSpec(definition, bounds.value, eventColumns ?? undefined);
+          const previousSpec = compileMetricSpec(
             definition,
             previousBounds.value,
             eventColumns ?? undefined,
           );
-        } catch (e) {
-          return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+          current = await runSpecOverWindow(root, slug, spec, now);
+          if (!current.ok) {
+            fail(definition, current.error);
+            continue;
+          }
+          previous = await runSpecOverWindow(root, slug, previousSpec, now);
+          if (!previous.ok) {
+            fail(definition, previous.error);
+            continue;
+          }
         }
-        previous = await runSpecOverWindow(root, slug, previousSpec, now);
-        if (!previous.ok) return previous;
+      } catch (e) {
+        fail(definition, e instanceof Error ? e.message : String(e));
+        continue;
       }
       const shownCurrent = metricDisplayValue(current.value, formatting);
       const shownPrevious = metricDisplayValue(previous.value, formatting);
@@ -1153,7 +1219,7 @@ export async function getMetricsSummary(
       ok: true,
       value: {
         metrics: summaries,
-        problems: listed.value.problems,
+        problems,
         window: bounds.value,
         previousWindow: previousBounds.value,
         asOf,

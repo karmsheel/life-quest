@@ -104,7 +104,9 @@ export const METRICS_TOOL_DEFS: MapToolDef[] = [
     description:
       "Read each metric's value for a review period and the previous period of the same cadence, with delta, direction, " +
       "target, formatting, window and as-of. Values come from the same view engine the review figures use. A metric with no " +
-      "rows in a window answers value null (and delta null) — never a fabricated zero. Read-only.",
+      "rows in a window answers value null (and delta null) — never a fabricated zero — and a definition that cannot answer " +
+      "(its source database is gone, its spec is no longer runnable) is reported in problems with value null while its healthy " +
+      "neighbours still answer. Read-only.",
     parameters: {
       type: "object",
       properties: {

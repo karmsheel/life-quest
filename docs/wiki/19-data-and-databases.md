@@ -318,8 +318,9 @@ with one query path:
   the view engine runs it — the same path a dashboard card takes. A window with
   no rows answers "no data", never a fabricated zero.
 
-The `metrics` database is created on the first logged event, only in a live area,
-and it is reused with its columns intact afterwards. Metric definitions are
+The `metrics` database is created with the first events metric definition (or the
+first logged event, whichever comes first), only in a live area, and it is
+reused with its columns intact afterwards. Metric definitions are
 created immediately (a new definition is the "define it now" act); changing or
 deleting an existing definition is not exposed yet because it changes what a
 review measures, and that governance is still an open product question. The

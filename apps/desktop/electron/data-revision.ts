@@ -227,6 +227,12 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_page",
   "list_signals",
   "get_signal",
+  // Metric definitions and their period comparison (2026-11-26 metrics design),
+  // and the review page contract: all reads, so none of them may fire the
+  // whole-vault repaint a write does.
+  "list_metrics",
+  "get_metrics_summary",
+  "get_review_template",
   "library_list",
   "library_get",
   "list_library_notes",

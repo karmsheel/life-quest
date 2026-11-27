@@ -453,7 +453,11 @@ const SHIPPED_FINANCE_METRICS: DefineMetricInput[] = [
   },
   {
     id: "net-cash-flow",
-    label: "Net cash flow",
+    // The label is what a summary/tool surfaces (the spec title is only the
+    // query's), so the transfers caveat belongs on the label the operator and
+    // the agent read — otherwise Net reads as an unqualified figure beside the
+    // two gross ones.
+    label: "Net cash flow (transfers included)",
     unit: "ZAR",
     source: "derived",
     aggregation: "sum",
@@ -604,8 +608,11 @@ export async function applyFinanceKitInstall(
 
   // 10. The shipped metric definitions (Cash in / Cash out / Net cash flow).
   // Only absent files are created, so a re-install can never overwrite an
-  // operator's edit of a definition.
-  await ensureFinanceMetrics(root, actor);
+  // operator's edit of a definition. A definition that cannot be written does
+  // not fail the install — the ledger is intact either way — but it is reported
+  // in the result instead of being silently dropped.
+  const metrics = await ensureFinanceMetrics(root, actor);
+  const metricProblems = metrics.ok ? metrics.value.problems : [metrics.error];
 
   // 11. Log kit.installed
   await appendLog(root, {
@@ -616,7 +623,14 @@ export async function applyFinanceKitInstall(
     actor,
   });
 
-  return { ok: true, value: { applied: true, alreadyInstalled: false } };
+  return {
+    ok: true,
+    value: {
+      applied: true,
+      alreadyInstalled: false,
+      ...(metricProblems.length > 0 ? { metricProblems } : {}),
+    },
+  };
 }
 
 /**

@@ -762,10 +762,20 @@ export type MetricSummary = {
   provenance: { databaseId: string; eventKey?: string };
 };
 
-/** One definition refused by the reader, reported rather than thrown. */
+/**
+ * One definition the metrics layer could not use, reported rather than thrown.
+ *
+ * Two failures look the same to a caller: a file that is malformed on disk and a
+ * well-formed definition that cannot ANSWER (a derived metric whose source
+ * database was deleted, a spec that is no longer runnable). Both are reported
+ * here; the second carries `metricId`, and its summary answers null rather than a
+ * fabricated value.
+ */
 export type MetricDefinitionProblem = {
   /** Vault-relative file, so the operator can open the one that is wrong. */
   file: string;
+  /** The definition that could not answer, for a run failure (absent for a file read failure). */
+  metricId?: string;
   reason: string;
 };
 
@@ -1624,7 +1634,17 @@ export type CaptureOutcome =
     };
 
 export type KitInstallResult =
-  | { applied: true; alreadyInstalled: boolean }
+  | {
+      applied: true;
+      alreadyInstalled: boolean;
+      /**
+       * Shipped metric definitions that could not be written during the install.
+       * The kit itself still installed (a ledger must not fail because one
+       * definition file is unwritable), so these are reported, not thrown — the
+       * same shape the metrics summary uses for a definition that cannot answer.
+       */
+      metricProblems?: string[];
+    }
   | { applied: false; decision: DecisionRecord };
 
 // KAR-61 Finance kit constants
