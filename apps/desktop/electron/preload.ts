@@ -667,6 +667,39 @@ const lifequest = {
     ipcRenderer.invoke("review:prepopulate", cadence, period, scope) as Promise<
       Result<unknown>
     >,
+  // Phase 6 Analytics: the matrix read, one events metric's rows for a period,
+  // and the two immediate writes (log an event, define an events metric).
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => ipcRenderer.invoke("analytics:matrix", input) as Promise<Result<unknown>>,
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => ipcRenderer.invoke("metrics:events", input) as Promise<Result<unknown>>,
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => ipcRenderer.invoke("metrics:logEvent", input) as Promise<Result<unknown>>,
+  metricDefine: (input: {
+    area: string;
+    definition: {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: "sum" | "count" | "last" | "avg";
+      eventKey: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    };
+  }) => ipcRenderer.invoke("metrics:define", input) as Promise<Result<unknown>>,
   planningEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
       Result<unknown>

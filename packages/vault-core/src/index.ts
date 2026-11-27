@@ -236,6 +236,22 @@ export type {
   MetricsSummaryResult,
 } from "./metrics.ts";
 export {
+  ANALYTICS_DEFAULT_PERIODS,
+  ANALYTICS_MAX_PERIODS,
+  getAnalyticsMatrix,
+  listMetricEvents,
+} from "./analytics.ts";
+export type {
+  AnalyticsCell,
+  AnalyticsMetricRow,
+  AnalyticsMatrix,
+  AnalyticsPeriod,
+  GetAnalyticsMatrixInput,
+  ListMetricEventsInput,
+  MetricEventRow,
+  MetricEvents,
+} from "./analytics.ts";
+export {
   METRICS_TOOL_DEFS,
   executeMetricsTool,
 } from "./metrics-tools.ts";

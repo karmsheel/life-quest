@@ -771,7 +771,14 @@ export async function ensureMetricsDatabase(
 /** The four event-table column ids, resolved by NAME: their ids are minted. */
 export type MetricEventColumns = { date: string; metric: string; value: string; note: string };
 
-function eventColumnIds(db: DatabaseMeta): MetricEventColumns | null {
+/**
+ * The four event-table column ids, resolved by NAME from a database's meta.
+ *
+ * Exported for the Analytics surface (Phase 6), which reads the events table
+ * without creating it: the matrix and the per-period events list both need the
+ * minted ids, and they must resolve them the same way the summary does.
+ */
+export function eventColumnIds(db: DatabaseMeta): MetricEventColumns | null {
   const byName = new Map(db.columns.map((c) => [c.name, c.id]));
   const date = byName.get("date");
   const metric = byName.get("metric");
@@ -1008,7 +1015,7 @@ export async function compileMetricSpecForVault(
  * Read tolerantly, like the period pack: a settings file mid-repair still
  * answers the shipped default rather than failing a summary.
  */
-async function readWeekStartDay(root: string): Promise<WeekStartDay> {
+export async function readWeekStartDay(root: string): Promise<WeekStartDay> {
   try {
     const raw = await fs.readFile(vaultPaths(root).settingsJson, "utf8");
     const parsed = JSON.parse(raw) as { weekStartDay?: unknown };
@@ -1027,7 +1034,7 @@ async function readWeekStartDay(root: string): Promise<WeekStartDay> {
  * period average of nothing is 0 per period by the engine's own rule — so it is
  * the one measure whose empty answer is 0 rather than null.
  */
-async function runSpecOverWindow(
+export async function runSpecOverWindow(
   root: string,
   slug: string,
   spec: ViewSpec,

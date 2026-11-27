@@ -177,6 +177,11 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "review:unlock",
   "review:prepopulate",
   "review:skillWrite",
+  // metrics: logging an event writes a row into the area's Metrics database, and
+  // defining a metric writes a definition file and may create that database, so
+  // both move what the Analytics matrix and the review figures read.
+  "metrics:logEvent",
+  "metrics:define",
   "note:write",
   "planning:ensure",
   // settings carry the currency and the FX rate

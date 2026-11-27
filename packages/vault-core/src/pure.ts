@@ -37,3 +37,16 @@ export {
 // the engine and the tools use. Browser-safe: imports only dates, review
 // windows and the map's pure cadence helpers.
 export * from "./recurrence.ts";
+// The Analytics matrix's response shapes (Phase 6), so the renderer can type its
+// bridge and its table without importing the engine: `analytics.ts` reads the
+// vault from disk, and only these types belong in the browser-safe surface.
+export type {
+  AnalyticsCell,
+  AnalyticsMetricRow,
+  AnalyticsMatrix,
+  AnalyticsPeriod,
+  GetAnalyticsMatrixInput,
+  ListMetricEventsInput,
+  MetricEventRow,
+  MetricEvents,
+} from "./analytics.ts";

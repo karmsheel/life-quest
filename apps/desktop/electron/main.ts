@@ -1495,6 +1495,28 @@ function registerIpcHandlers() {
       scope: Parameters<typeof vault.planningEnsure>[2],
     ) => vault.planningEnsure(cadence, period, scope),
   );
+  // Phase 6: the Analytics matrix (a read) and the metrics add door. Logging an
+  // event and creating a definition apply immediately; `metrics:define` and
+  // `metrics:logEvent` are named in data-revision.ts so the vault's change signal
+  // fires and an open matrix reloads.
+  ipcMain.handle(
+    "analytics:matrix",
+    (_e, input: Parameters<typeof vault.analyticsMatrix>[0]) =>
+      vault.analyticsMatrix(input),
+  );
+  ipcMain.handle(
+    "metrics:events",
+    (_e, input: Parameters<typeof vault.metricEvents>[0]) => vault.metricEvents(input),
+  );
+  ipcMain.handle(
+    "metrics:logEvent",
+    (_e, input: Parameters<typeof vault.metricLogEvent>[0]) =>
+      vault.metricLogEvent(input),
+  );
+  ipcMain.handle(
+    "metrics:define",
+    (_e, input: Parameters<typeof vault.metricDefine>[0]) => vault.metricDefine(input),
+  );
   ipcMain.handle(
     "review:startOrResume",
     (

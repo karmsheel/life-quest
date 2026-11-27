@@ -118,6 +118,15 @@ import {
   getReviewSkill,
   writeReviewSkill,
   prepopulateReview,
+  // Phase 6: the Analytics matrix, and the metric events/log/define door the
+  // page uses to log and create definitions. The writes apply immediately (the
+  // add-vs-change split): editing an existing definition stays on the Decision
+  // path.
+  getAnalyticsMatrix,
+  listMetricEvents,
+  logMetric,
+  defineMetric,
+  isReviewCadence,
   addDatabaseColumn,
   withDecisionDisplayLabels,
   exportDomainBooks,
@@ -213,6 +222,10 @@ import {
   type ReviewRecord,
   type ReviewWriteOutcome,
   type ReviewSkill,
+  type AnalyticsMatrix,
+  type MetricDefinition,
+  type MetricEventRow,
+  type MetricEvents,
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalRecord,
@@ -2119,12 +2132,138 @@ export async function reviewPrepopulate(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6: the Analytics matrix, and logging / defining metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * The Analytics matrix: every definition's value over the last N periods of a
+ * cadence, scoped by the lens (null = Life, every live area). A read; it never
+ * creates the events table and never writes.
+ */
+export async function analyticsMatrix(input: {
+  cadence: string;
+  lens: string | null;
+  count?: number;
+}): Promise<Result<AnalyticsMatrix>> {
+  if (!isReviewCadence(input.cadence)) {
+    return { ok: false, error: `Unknown review cadence: ${String(input.cadence)}` };
+  }
+  return withVault((root) =>
+    getAnalyticsMatrix(root, {
+      cadence: input.cadence as ReviewCadence,
+      lens: typeof input.lens === "string" && input.lens ? input.lens : null,
+      count: input.count,
+    }),
+  );
+}
+
+/**
+ * One events metric's logged rows for a period, with the metrics database's
+ * minted column ids so the page can edit a row through the standard row path.
+ * A derived metric answers an error: it has no rows to list.
+ */
+export async function metricEvents(input: {
+  area: string;
+  metricId: string;
+  start: string;
+  end: string;
+}): Promise<Result<MetricEvents>> {
+  return withVault((root) =>
+    listMetricEvents(root, {
+      area: input.area,
+      metricId: input.metricId,
+      start: input.start,
+      end: input.end,
+    }),
+  );
+}
+
+/**
+ * Log one dated event. Applies immediately — logging a row is the add-vs-change
+ * line (editing an existing row goes through the standard Decision path) — and
+ * the engine logs `metric.logged` itself, so no second line is written here.
+ */
+export async function metricLogEvent(input: {
+  area: string;
+  metricId: string;
+  date?: string;
+  value?: number;
+  note?: string;
+}): Promise<Result<MetricEventRow>> {
+  return withVault(async (root) => {
+    const logged = await logMetric(
+      root,
+      input.area,
+      input.metricId,
+      { date: input.date, value: input.value, note: input.note },
+      USER_ACTOR,
+    );
+    if (!logged.ok) return { ok: false, error: logged.error };
+    return {
+      ok: true,
+      value: {
+        rowId: logged.value.rowId,
+        date: logged.value.date,
+        value: logged.value.value,
+        note: logged.value.note ?? "",
+      },
+    };
+  });
+}
+
+export type MetricDefineInput = {
+  area: string;
+  definition: {
+    id: string;
+    label: string;
+    unit: string;
+    source: "events";
+    aggregation: "sum" | "count" | "last" | "avg";
+    eventKey: string;
+    target?: number | null;
+    direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+  };
+};
+
+/**
+ * Create one events metric definition. Applies immediately (creation is the
+ * companion's own add rule) and is attributed to the operator; the engine writes
+ * the `metric.created` line and creates the area's Metrics database if needed.
+ * A duplicate id is refused: editing a definition still waits on a Decision.
+ */
+export async function metricDefine(
+  input: MetricDefineInput,
+): Promise<Result<MetricDefinition>> {
+  const definition = input.definition;
+  return withVault((root) =>
+    defineMetric(
+      root,
+      input.area,
+      {
+        id: definition.id,
+        label: definition.label,
+        unit: definition.unit,
+        source: definition.source,
+        aggregation: definition.aggregation,
+        eventKey: definition.eventKey,
+        ...(definition.target !== undefined ? { target: definition.target } : {}),
+        // `direction: null` from the form means "no direction"; the stored
+        // definition simply omits the field.
+        ...(definition.direction !== undefined && definition.direction !== null
+          ? { direction: definition.direction }
+          : {}),
+      },
+      USER_ACTOR,
+    ),
+  );
+}
+
 export async function planningEnsure(
   cadence: ReviewCadence,
   period: string,
   scope: "overall" | string,
-): Promise<Result<PlanningStub>> {
-  return withVault((root) =>
+): Promise<Result<PlanningStub>> {  return withVault((root) =>
     ensurePlanningStub(root, { cadence, period, scope }),
   );
 }

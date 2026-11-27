@@ -34,6 +34,10 @@ import type {
   AutomationInput,
   AutomationRecord,
   AutomationRunPatch,
+  AnalyticsMatrix,
+  MetricDefinition,
+  MetricEventRow,
+  MetricEvents,
   PageBlock,
   PageListEntry,
   PageRecord,
@@ -850,6 +854,48 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<Result<ReviewPrepopulateResult>>;
+  /**
+   * The Analytics matrix: rows = metric definitions, columns = the last recent
+   * periods of `cadence`, scoped by the lens (null = Life, every live area).
+   * `count` defaults to 8; the engine also reads one older window so the oldest
+   * column can still show a delta.
+   */
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => Promise<Result<AnalyticsMatrix>>;
+  /** One events metric's logged rows for one period, with the metrics
+   *  database's minted column ids so a row can be edited through dbUpsertRow. */
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => Promise<Result<MetricEvents>>;
+  /** Log one dated event. Applies immediately; the engine logs `metric.logged`. */
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => Promise<Result<MetricEventRow>>;
+  /** Create one events metric definition. Applies immediately; duplicate ids
+   *  are refused (editing a definition waits on a Decision). */
+  metricDefine: (input: {
+    area: string;
+    definition: {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: "sum" | "count" | "last" | "avg";
+      eventKey: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    };
+  }) => Promise<Result<MetricDefinition>>;
   planningEnsure: (
     cadence: ReviewCadence,
     period: string,
