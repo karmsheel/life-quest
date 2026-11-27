@@ -762,7 +762,7 @@ async function main() {
     }
   }
   // Back to Life for the event legs.
-  if (!(await clickLens(win, "Life"))) {
+  if (!(await clickLens(win, "LIFE"))) {
     failure("the title bar's Life lens control was not found");
   } else {
     await waitFor(

@@ -2,18 +2,15 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { DEFAULT_DECISION_INBOX_SETTINGS } from "./decision-inbox.ts";
-import { serializeFrontmatter } from "./frontmatter.ts";
+import { materialiseAreaSeed } from "./domains.ts";
 import { appendLog } from "./log.ts";
 import { openVault } from "./open-vault.ts";
 import { vaultPaths } from "./paths.ts";
 import { defaultReviewAvailability } from "./review-availability.ts";
 import {
   DEFAULT_HERMES_URL,
-  DOCUMENT_KIND_LABELS,
-  DOCUMENT_KINDS,
   SCHEMA_VERSION,
   AREA_SEEDS,
-  type DomainMeta,
   type LifequestJson,
   type OnboardingRecord,
   type Result,
@@ -76,30 +73,7 @@ export async function createVault(
     await atomicWriteFile(paths.onboardingJson, `${JSON.stringify(onboarding, null, 2)}\n`);
 
     for (const seed of AREA_SEEDS) {
-      const meta: DomainMeta = {
-        name: seed.name,
-        description: null,
-        color: null,
-        sortOrder: seed.sortOrder,
-        unlockedAt: seed.locked ? null : now,
-        archivedAt: null,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await fs.mkdir(paths.domainDir(seed.slug), { recursive: true });
-      await atomicWriteFile(paths.domainJson(seed.slug), `${JSON.stringify(meta, null, 2)}\n`);
-
-      for (const kind of DOCUMENT_KINDS) {
-        const md = serializeFrontmatter(
-          {
-            title: DOCUMENT_KIND_LABELS[kind],
-            locked: false,
-            updatedAt: now,
-          },
-          "",
-        );
-        await atomicWriteFile(paths.documentMd(seed.slug, kind), md);
-      }
+      await materialiseAreaSeed(paths.root, seed, now);
 
       // A locked area has no log line: the Log is operator-visible, and a
       // locked area must not be named there. Unlocking logs its own event.

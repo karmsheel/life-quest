@@ -33,16 +33,19 @@ agents connected over MCP, and the Hermes agents you have hired. Formerly
 **Personnel**. See [Agents](./25-agents.md).
 
 **Area** — a life area. A new vault seeds the base area **Life** (always
-unlocked, never a chip, cannot be archived or deleted) plus five locked areas:
-Health, Mind, Finance, Business and Relationships. An area owns doctrine,
+unlocked, never a chip, cannot be archived or deleted) plus seven locked areas:
+Health, Mind, Finance, Business, Relationships, Spiritual and Career. An area owns doctrine,
 databases, pages, pins and views under `domains/<slug>/`; the folder name and
 routes still say "domain". Formerly **Domain**. See [Areas](./05-areas.md).
 
 **Area lens** — the band in the window title bar that scopes area-owned lists.
-At zero or one unlocked area it is a quiet **Life** label; after a second area
-opens it becomes a segmented control with **Life** first (every unlocked area)
-and then one chip per unlocked area. Formerly **domain lens**. See
-[Areas](./05-areas.md).
+At zero or one unlocked area it is a quiet **LIFE** label; after a second area
+opens it becomes a segmented control with a round **LIFE** button in the centre
+and one chip per unlocked area on either side. That is the default **Life mark**
+mode. **Named strip**, **Initials**, **Stack** and a custom combination are the
+other shapes, chosen in **Settings → Appearance** or by a theme. Formerly
+**domain lens**. See [Areas](./05-areas.md) and
+[Customizations](./37-customizations.md).
 
 **Blueprints** — the Plan wing page (`/blueprints`) where the operator designs day
 types, the default week and the real week, and edits the area's Strategy (How)

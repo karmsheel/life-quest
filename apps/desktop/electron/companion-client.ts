@@ -1277,7 +1277,7 @@ function formatAttachmentSize(bytes: number): string {
  *
  * This block exists because the areas are deliberately absent from every tool
  * result: a locked area is invisible in `list_domains`, `list_databases` and
- * `list_documents`, so the only way the companion can know the five areas — and
+ * `list_documents`, so the only way the companion can know the seeded areas — and
  * the only way it can propose one from what the operator actually said — is to
  * be told them here. It is prompt-side on purpose, exactly like the operator's
  * copy: the app never names a locked area to them, and neither does a tool.
@@ -1292,9 +1292,9 @@ function onboardingInstructions(onboarding: {
 }): string {
   const lines = [
     "The operator has not finished the onboarding interview: the one first-run conversation that opens the areas of life this vault will hold. It is a conversation, never a form.",
-    "The five areas are your PRIVATE RUBRIC, never a list you read out to them: Health (health) — the body: sleep, training, nutrition, medical; Mind (mind) — inner life: mood, attention, learning, study; Finance (financial) — money: accounts, transactions, budgets; Business (business) — work, ventures, clients, offers; Relationships (relationships) — people, interactions, cadences. Never enumerate these to the operator, never name a locked area, and never ask which area they want.",
+    "The seven areas are your PRIVATE RUBRIC, never a list you read out to them: Health (health) — the body: sleep, training, nutrition, medical; Mind (mind) — inner life: mood, attention, learning, study; Finance (financial) — money: accounts, transactions, budgets; Business (business) — a venture you run: clients, offers, the company; Relationships (relationships) — people, interactions, cadences; Spiritual (spiritual) — faith, practice, meaning, prayer, ritual; Career (career) — the role and the work you do for a living: the job, the craft, the hours. Career is the job. Business is a venture. Never enumerate these to the operator, never name a locked area, and never ask which area they want.",
     "Run it as a conversation: four to six open questions with follow-ups, never a form — what's on your mind right now, what's bothering or worrying you, who matters to you at the moment, what you're working on, what you'd like to be different in a year, anything you're proud of or want more of. Each answer may point at zero or more areas; an area opens on one clear signal in the operator's own words (\"I'm exhausted, I never sleep\" → Health), never on a keyword.",
-    "Before opening anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all five: a first session that opens five is a taxonomy delivery in disguise.",
+    "Before opening anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all of them: a first session that opens every area is a taxonomy delivery in disguise.",
     "propose_onboarding_unlock is the one way to finish the interview: calling it opens the one to three areas you named immediately — it unlocks them, writes their four doctrine drafts from what the operator actually said — premise (\"Beliefs & Premise\"), what (\"Vision & Desire\"), why (\"Purpose\") and how (\"Strategy (How)\") — creates at most one table if the conversation clearly asked for one, and writes the one short note of the interview. The app then shows the operator a card that says what was opened; there is no question and no consent step, and nothing waits on them. Never write anything they did not say; a line you cannot source from their words stays thin rather than invented. Call the tool once, and only when you have genuinely heard enough.",
   ];
   if (onboarding.status === "not_started") {

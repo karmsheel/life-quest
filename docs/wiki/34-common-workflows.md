@@ -14,8 +14,8 @@ Return to [Wiki home](./index.md).
 2. For Pi, fill in **Endpoint**, **Model**, **Name** and, if the server needs one,
    **API key**. A local server works without a key. Choose **Save and connect**.
 3. Choose **Create vault** and pick an empty folder. The vault seeds the base area
-   **Life** and five areas that exist on disk but stay locked: Health, Mind,
-   Finance, Business and Relationships.
+   **Life** and seven areas that exist on disk but stay locked: Health, Mind,
+   Finance, Business, Relationships, Spiritual and Career.
 4. The chat dock shows **Welcome to LifeQuest.** Choose **Begin the interview**.
    Talk about what is going on and what you want to change; the companion opens
    one to three areas itself, drafts their doctrine, and may add one table and one
@@ -31,10 +31,10 @@ Return to [Wiki home](./index.md).
 1. Open **Settings** (the gear, or the **Open settings** route) and choose the
    **Areas** tab.
 2. Under **Unlock another area**, find the locked area — Health, Mind, Finance,
-   Business or Relationships — and choose **Unlock**. There is no confirmation:
+   Business, Relationships, Spiritual or Career — and choose **Unlock**. There is no confirmation:
    unlocking is a reveal, not an activation, and the lens stays where it was.
 3. **Your areas** now lists it. The area lens becomes a segmented control once a
-   second area is unlocked, with **Life** first and the unlocked areas after it.
+   second area is unlocked, with a round **LIFE** button in the centre and the unlocked areas on either side.
 4. A locked area is invisible everywhere until then: no doctrine, databases,
    pages, boards or goals, and the companion cannot leak one.
 5. To remove an area from the switcher, use **Archive** under **Your areas**; the
@@ -106,7 +106,8 @@ Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
 
 1. Choose **Review → Weekly**. The page opens on the current, still-in-progress
    period in one centred reading column. Move with **‹ Prev** and **Next ›**.
-2. With no file for the period, choose **Start the interview** (companion
+2. With no file for the period, the page shows the unwritten sheet (the four
+   headings, status **Not started**). Choose **Start the life review** (companion
    session) or **Write it myself** (editor only).
 3. Write in **Document** mode; it saves itself, and Ctrl/Cmd+S saves now. Switch
    to **Preview** to read the rendered file. **Areas** shows each area as

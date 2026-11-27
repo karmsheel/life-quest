@@ -67,7 +67,7 @@ export function WindowTitleBar() {
           data-chrome-slot="domain"
           data-chrome-place="titlebar-center"
         >
-          <DomainSwitcher variant={themeChrome.domainSwitcher.variant} />
+          <DomainSwitcher />
         </div>
       ) : null}
       {/*

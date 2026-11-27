@@ -36,6 +36,12 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/shell-sidebar.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
+/** Visible lens order: the first half of the areas, LIFE, then the rest. */
+function centredLensLabels(areas) {
+  const mid = Math.ceil(areas.length / 2);
+  return [...areas.slice(0, mid), "LIFE", ...areas.slice(mid)];
+}
+
 const SAMPLE = `(() => {
   const box = (el) => {
     if (!el) return null;
@@ -2122,7 +2128,7 @@ async function main() {
         Array.isArray(domainNames) &&
         lensSwitcher.optionCount === domainNames.length + 1 &&
         JSON.stringify(lensSwitcher.labels) ===
-          JSON.stringify(["Life", ...domainNames]),
+          JSON.stringify(centredLensLabels(domainNames)),
       `labels ${JSON.stringify(lensSwitcher?.labels)} for harness domains ${JSON.stringify(domainNames)}`,
     );
     // The lens's own segmented control: no outer frame inside the page-ink tab,
@@ -3052,7 +3058,7 @@ async function main() {
       const quiet = quietSample.quietLens;
       check(
         `quiet[${mode}]: the lens is the quiet Life label`,
-        Boolean(quiet) && quiet.inLens === true && quiet.text === "Life",
+        Boolean(quiet) && quiet.inLens === true && quiet.text === "LIFE",
         `quiet lens ${JSON.stringify(quiet)}`,
       );
       check(

@@ -2870,7 +2870,7 @@ async function main() {
     );
 
     // Back to Life: the readout returns to the general area.
-    const lifeClicked = await js(clickLens("Life"));
+    const lifeClicked = await js(clickLens("LIFE"));
     check(
       "the Life tab is on the switcher",
       lifeClicked === true,

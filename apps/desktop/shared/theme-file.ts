@@ -32,9 +32,17 @@ import {
   parseAgentPickerChoice,
   type AgentPickerChoice,
 } from "./agent-picker.ts";
+import {
+  choiceFromLegacyVariant,
+  DEFAULT_DOMAIN_PICKER,
+  layerDomainPicker,
+  parseDomainPickerChoice,
+  type DomainPickerChoice,
+} from "./domain-picker.ts";
 
 export * from "./composition.ts";
 export * from "./agent-picker.ts";
+export * from "./domain-picker.ts";
 
 export type WingSwitcherPlace =
   | "rail-top"
@@ -77,6 +85,13 @@ export type ThemeChrome = {
    * `one-mark`, so a theme that never mentions it still ships the quiet picker.
    */
   agentPicker: AgentPickerChoice;
+  /**
+   * The area lens, as a shape: which shipped mode it wears, or the author's
+   * own combination of the four axes (see `domain-picker.ts`). Absent on a
+   * file means "wear whatever `domainSwitcher.variant` already meant".
+   * Resolved chrome always carries one.
+   */
+  domainPicker: DomainPickerChoice;
 };
 
 /**
@@ -96,6 +111,13 @@ export type ThemeChromeOverride = {
    * prefers the named chip keeps the theme's size, ring and roster.
    */
   agentPicker?: Partial<AgentPickerChoice>;
+  /**
+   * The lens's own pick. Its axes layer one by one, so an operator who only
+   * prefers pill chips keeps the theme's arrangement, mark and labels.
+   * When this branch is absent, `domainSwitcher.variant` still decides the
+   * shape — that is how a file from before the recipe keeps its look.
+   */
+  domainPicker?: Partial<DomainPickerChoice>;
 };
 
 export type SceneBackdropPreset =
@@ -240,6 +262,12 @@ export const DEFAULT_THEME_CHROME: ThemeChrome = {
    * `quiet-stack`.
    */
   agentPicker: DEFAULT_AGENT_PICKER,
+  /*
+   * Life mark, by default: the round LIFE button centred in the bar. A theme
+   * that never mentions the picker still ships that shape, which is also what
+   * a `segmented` variant resolves to.
+   */
+  domainPicker: DEFAULT_DOMAIN_PICKER,
 };
 
 /** A picture's sitting defaults: fit the whole page, softened so text reads. */
@@ -836,6 +864,12 @@ export function parseThemeFile(raw: unknown): ParseResult {
       if (!parsed.ok) return { ok: false, error: parsed.error };
       chrome.agentPicker = parsed.value;
     }
+    const domainPicker = raw.chrome.domainPicker;
+    if (domainPicker !== undefined) {
+      const parsed = parseDomainPickerChoice(domainPicker, "chrome.domainPicker");
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+      chrome.domainPicker = parsed.value;
+    }
   }
 
   const scene: ThemeSceneFile = {};
@@ -980,15 +1014,23 @@ export function parseThemeFile(raw: unknown): ParseResult {
 }
 
 export function resolveChrome(chrome?: Partial<ThemeChrome>): ThemeChrome {
+  const domainSwitcher = {
+    ...DEFAULT_THEME_CHROME.domainSwitcher,
+    ...chrome?.domainSwitcher,
+  };
+  // A file that names the recipe wears that recipe. A file that only names the
+  // older variant wears the shape that variant already drew. Naming both lets
+  // the recipe win, so a saved mode is not silently undone by a leftover
+  // `variant: "icons"`.
+  const domainPicker = chrome?.domainPicker
+    ? layerDomainPicker(chrome.domainPicker)
+    : choiceFromLegacyVariant(domainSwitcher.variant);
   return {
     wingSwitcher: {
       ...DEFAULT_THEME_CHROME.wingSwitcher,
       ...chrome?.wingSwitcher,
     },
-    domainSwitcher: {
-      ...DEFAULT_THEME_CHROME.domainSwitcher,
-      ...chrome?.domainSwitcher,
-    },
+    domainSwitcher,
     navRail: {
       ...DEFAULT_THEME_CHROME.navRail,
       ...chrome?.navRail,
@@ -1005,6 +1047,7 @@ export function resolveChrome(chrome?: Partial<ThemeChrome>): ThemeChrome {
     // only `{ mode: "named-chip" }` and an operator who only prefers a large
     // mark must both survive the merge.
     agentPicker: layerAgentPicker(DEFAULT_AGENT_PICKER, chrome?.agentPicker),
+    domainPicker,
   };
 }
 
@@ -1013,6 +1056,16 @@ export function layerChrome(
   theme?: Partial<ThemeChrome>,
   override?: ThemeChromeOverride,
 ): ThemeChrome {
+  const variant =
+    override?.domainSwitcher?.variant ??
+    theme?.domainSwitcher?.variant ??
+    DEFAULT_THEME_CHROME.domainSwitcher.variant;
+  // The theme's recipe, when it named one, is the base. Otherwise the variant
+  // — the operator's own variant pick included — is the shape. The operator's
+  // domainPicker then layers on top, one axis at a time.
+  const basePicker = theme?.domainPicker
+    ? theme.domainPicker
+    : choiceFromLegacyVariant(variant);
   return resolveChrome({
     wingSwitcher: { ...theme?.wingSwitcher, ...override?.wingSwitcher },
     domainSwitcher: { ...theme?.domainSwitcher, ...override?.domainSwitcher },
@@ -1020,6 +1073,7 @@ export function layerChrome(
     chatDock: { ...theme?.chatDock, ...override?.chatDock },
     titlebar: { ...theme?.titlebar, ...override?.titlebar },
     agentPicker: layerAgentPicker(theme?.agentPicker, override?.agentPicker),
+    domainPicker: layerDomainPicker(basePicker, override?.domainPicker),
   } as Partial<ThemeChrome>);
 }
 
@@ -1087,7 +1141,8 @@ export const THEME_VOCABULARY = [
   "A theme is presentation only: a JSON file at <app profile>/themes/<name>.json, never in the vault, and it needs no Decision.",
   "Shape: { name (slug), label, description?, chrome?, material?, scene?, colors?, darkColors? }.",
   "chrome.wingSwitcher.place: rail-top | titlebar-left | floating-left | hidden (variant labels | icons).",
-  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill | icons | list; frame pill | bare — bare drops the dock's container so the rows are the whole control).",
+  "chrome.domainSwitcher.place: titlebar-center | below-titlebar | bottom-center | floating-bottom-right | hidden (variant segmented | pill | icons | list, kept so an older file still wears a shape — segmented is life-mark, pill is life-mark with pill chips, icons is initials, list is stack; frame pill | bare — bare drops the dock's container so the rows are the whole control). When chrome.domainPicker is also set, the picker wins and the variant is placement history.",
+  "chrome.domainPicker: the area lens, as data. mode: life-mark (default — a round LIFE button centred, area names on either side) | named-strip (LIFE leads one row of chips, no circle) | initials (the centred LIFE circle, each area as a letter) | stack (LIFE on top, areas as rows) | custom (the operator's own combination). Optional chrome.domainPicker.recipe layers over the mode: arrangement centre | leading | stack, mark circle | chip, labels names | initials, chips segment | pill. It is a shape the renderer already knows, never code or CSS: an unknown value is refused naming the field. Place and frame stay on chrome.domainSwitcher.",
   "chrome.agentPicker: the chat dock's agent picker, as data. mode: one-mark (default — only the answering agent's mark, roster in a menu) | named-chip (same trigger, the agent named beside it) | quiet-stack (both marks inline, no capsule, one click to switch) | custom (the operator's own combination). Optional chrome.agentPicker.recipe layers over the mode: roster menu | inline, labels none | agent | all, ring accent | hairline, size compact | default | large. It is a shape the renderer already knows, never code or CSS: an unknown value is refused naming the field.",
   "chrome.titlebar.size: compact | default | tall; chrome.chatDock.side: left | right; chrome.navRail.place: left | right | floating; chrome.navRail.width: narrow | default | wide; material.radius: sharp | soft | round; material.density: compact | default | airy; material.motion: none | calm | lively; material.shadow: flat | soft | deep; material.typeScale: compact | default | airy; material.backdrop: plain | wash | grid.",
   "scene.background.preset: plain | starfield | orbit | aurora | horizon | mesh (procedural, bundled: no images, no CSS); scene.background.intensity: calm | default | lively. The scene paints behind the whole shell — sidebar, page and dock — behind a scrim, and stops dead under prefers-reduced-motion.",

@@ -76,7 +76,9 @@ import {
   TITLEBAR_SIZES,
   TYPE_SCALES,
   mergeAgentPickerOverride,
+  mergeDomainPickerOverride,
   parseAgentPickerChoice,
+  parseDomainPickerChoice,
   WING_PLACES,
   WING_VARIANTS,
   type CompositionOverride,
@@ -227,6 +229,15 @@ function readStoredChromeOverride(): ThemeChromeOverride {
     if (isRecord(raw.agentPicker)) {
       const parsed = parseAgentPickerChoice(raw.agentPicker, "agentPicker");
       if (parsed.ok) override.agentPicker = parsed.value;
+    }
+    /*
+     * Same rule as the agent picker: a stored mode the parser does not know
+     * is dropped, and the lens falls back to the variant's shape rather than
+     * wearing a word the renderer has never drawn.
+     */
+    if (isRecord(raw.domainPicker)) {
+      const parsed = parseDomainPickerChoice(raw.domainPicker, "domainPicker");
+      if (parsed.ok) override.domainPicker = parsed.value;
     }
     return override;
   } catch {
@@ -1049,6 +1060,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         agentPicker: mergeAgentPickerOverride(
           chromeOverrideRef.current.agentPicker,
           patch.agentPicker,
+        ),
+        // A patch log, same as the agent picker: an axis-only pick must not
+        // invent a mode and flatten the theme's choice to life mark.
+        domainPicker: mergeDomainPickerOverride(
+          chromeOverrideRef.current.domainPicker,
+          patch.domainPicker,
         ),
       };
       // Drop empty branches so "no overrides" stays a clean empty object.

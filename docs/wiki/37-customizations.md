@@ -6,12 +6,12 @@ companion to write anything.
 
 The page shipped as **Extensions** until that name stopped being honest. What the app ships is
 **data**, not code: a theme file names colours, material steps, chrome placements, a scene, a
-composition of page widgets and — inside its chrome — the agent picker's own mode. Nothing in
+composition of page widgets and — inside its chrome — the area lens's shape and the agent picker's own mode. Nothing in
 it can run, request, import or draw arbitrary markup. Calling any of it a *plugin* would
 promise an execution model and a trust story the app deliberately refuses (no package code, a
 strict content policy, one privileged window, an unsigned installer). **Customizations** is
 the umbrella for the shell's own layer — the parts of LifeQuest the operator is allowed to
-disagree with: themes today, and the components a theme may shape (the agent picker among
+disagree with: themes today, and the components a theme may shape (the area lens and the agent picker among
 them), with room for the next kind without changing what the first one is. The page was
 formerly Extensions; its old address `/extensions` redirects to `/customizations`, so pins and
 bookmarks still land here.
@@ -34,8 +34,8 @@ the profile's `backgrounds/`), `validate_theme`, `write_theme` and `store_backgr
   "Data files that change how LifeQuest looks and behaves." Under that: a count line, the
   files as rows in one panel, an inline create panel, an **Import from file** action in the
   page header, and an inline editor with a visual **Fields** tab (whose **Components**
-  section picks the agent picker's mode, below) and a **JSON** tab, whose panel also keeps
-  the file's saved versions.
+  section picks the area lens's shape and the agent picker's mode, below) and a **JSON**
+  tab, whose panel also keeps the file's saved versions.
 
 This page is part of the [Wiki home](./index.md).
 
@@ -161,9 +161,9 @@ file as text.
 Below the composition, the same studio authors the rest of the theme file, so a whole look can
 be built without opening the JSON tab.
 
-- **Chrome** — where the wing switcher and the area lens sit and how they look, the sidebar's
-  place and width, the chat dock's side, the height of the window strip and the agent picker's
-  mode (its own section below): the same placements and variants Settings offers, written into
+- **Chrome** — where the wing switcher and the area lens sit, how the wing switcher looks, the sidebar's
+  place and width, the chat dock's side, the height of the window strip, and the frame on the area lens's dock. The lens's shape and the agent picker's
+  mode are the **Components** section below. These are the same placements Settings offers, written into
   the file's `chrome` block instead of stored as your overrides.
 - **Material** — the six axes: radius, elevation, type scale, density, motion and backdrop.
   They are named steps, not free values, and the shell reads them as its own tokens.
@@ -214,6 +214,65 @@ bytes of its own — the picture layer names a file the profile already stores.
 pick made there outranks the theme, is marked as yours, and survives the file being kept,
 swapped or removed. The studio writes the file itself. The two stack — build a baseline in
 the studio, tune it in Settings — and they are deliberately not unified.
+
+## The area lens as a component
+
+The title bar's area lens is a component too, and the operator is allowed to disagree with its
+shape. A round **LIFE** mark in the centre is right for someone who thinks of Life as the union
+of the areas, and wrong for someone who wants a plain row, a letter each, or a column in the
+rail. Where the lens sits — title bar, sidebar, under the title bar, the bottom, or a floating
+dock — stays a placement. The shape is its own data.
+
+Four modes ship. **Life mark** is the default, and it is the bar a new vault already wears.
+
+- **Life mark** — a round **LIFE** button in the centre of the bar, with the unlocked areas'
+  names on either side, in their usual order.
+- **Named strip** — **LIFE** leads one row of chips, the same shape as the areas. No circle.
+- **Initials** — the centred **LIFE** circle, and each area as its letter, so a crowded bar
+  stays short.
+- **Stack** — **LIFE** on top and the areas as rows under it. This is the shape the rail's
+  column is built for.
+
+Until a second area is unlocked the lens is still the quiet **LIFE** label, in every mode.
+
+**Custom** is your own combination of four closed axes, each a named step rather than a free
+value:
+
+| Axis | Values | What it decides |
+|---|---|---|
+| **Arrangement** | `Centre` / `Leading` / `Stack` | **LIFE** in the middle, **LIFE** first in a row, or a column. |
+| **Mark** | `Circle` / `Chip` | The round **LIFE** button, or **LIFE** as a normal chip. |
+| **Labels** | `Names` / `Initials` | Area words, or a letter each. **LIFE** itself stays the word. |
+| **Chips** | `Segment` / `Pill` | The ordinary segments, or round pill chips. |
+
+A custom mode is **data in the theme file, never code**: it is written as
+`chrome.domainPicker` — a `mode` name (a shipped mode or `custom`) plus, for `custom` or for a
+tweak on top of a shipped mode, `recipe: { arrangement, mark, labels, chips }`. The parser
+refuses an unknown mode or axis value by field name (`chrome.domainPicker.mode must be one of
+life-mark, named-strip, initials, stack, custom`; `chrome.domainPicker.recipe.mark must be one
+of circle, chip`), so a bad theme is a named error in the editor rather than a lens that
+silently wears something else.
+
+An older file that never mentions `chrome.domainPicker` keeps the look its variant already
+drew: `segmented` is **Life mark**, `pill` is **Life mark** with pill chips, `icons` is
+**Initials**, and `list` is **Stack**. Once the file names `domainPicker`, that choice wins
+and the variant no longer decides the shape. Place and frame stay on `chrome.domainSwitcher`.
+
+There are two places to change it, and they stack the way the rest of the look does:
+
+- **Customizations studio → Components** — open a theme's **Edit** panel and pick the mode (or
+  the four axes) in **Components**, above the agent picker. It writes the draft theme's
+  `chrome.domainPicker`, and because the studio paints the draft, the lens changes live.
+  **Save** writes it through the same parser gate as any other field, then previews for ten
+  seconds with **Keep** and **Revert**.
+- **Settings → Appearance** — the same control as *your* override, directly under **Layout**.
+  A pick made there outranks the theme, is marked as yours, and survives the file being kept,
+  swapped or removed; **Reset to theme** (in Layout) hands the lens back to the theme's
+  choice, exactly like the other rows in that section.
+
+Both edit the same choice, and a theme's mode and your axis can layer: a theme that ships
+**Named strip** still lets you set just **Chips → Pill** without flattening the mode into four
+axes.
 
 ## The agent picker as a component
 

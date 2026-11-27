@@ -190,7 +190,7 @@ const SEEDED_AT = "2026-01-01T00:00:00.000Z";
 
 /**
  * The live domains the titlebar's lens must offer. The tab is a real choice, not
- * a decoration: with an empty list the lens is the quiet "Life" label and every
+ * a decoration: with an empty list the lens is the quiet "LIFE" label and every
  * "it is a tab" claim would pass on a control with nothing to pick. Three of them,
  * so the compacted segmented control also has to fit more than one label inside
  * the 32px strip. The driver reads the same names off `window.shellHarnessDomainNames`.
@@ -459,13 +459,13 @@ requestAnimationFrame(waitForShell);
 ).shellHarnessVaultName = VAULT_NAME;
 
 // ...and the titlebar lens's claims need the domain list it was handed: with
-// two or more areas the tab must name them, in order, after "Life".
+// two or more areas the tab must name them around "LIFE", which sits in the centre.
 (
   window as unknown as { shellHarnessDomainNames: string[] }
 ).shellHarnessDomainNames = HARNESS_DOMAIN_NAMES;
 
 // The mode the driver opened: "all" (the segmented lens), "one" or "none" (the
-// quiet Life label). Read by the driver so a pass cannot silently measure the
+// quiet LIFE label). Read by the driver so a pass cannot silently measure the
 // other snapshot.
 (
   window as unknown as { shellHarnessAreasMode: string }

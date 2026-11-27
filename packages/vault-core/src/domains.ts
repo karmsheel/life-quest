@@ -6,6 +6,7 @@ import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  AREA_SEEDS,
   BASE_AREA_SLUG,
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
@@ -15,6 +16,19 @@ import {
   type DomainRecord,
   type Result,
 } from "./types.ts";
+
+/**
+ * Areas a vault could already have deleted before Spiritual and Career existed.
+ * Opening must not put one of these back just because its folder is gone.
+ */
+const LEGACY_AREA_SLUGS = new Set<string>([
+  "life",
+  "health",
+  "mind",
+  "financial",
+  "business",
+  "relationships",
+]);
 
 export function slugifyDomainName(name: string): string {
   const s = name
@@ -32,6 +46,104 @@ async function slugExists(rootPath: string, slug: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Write one seeded area's folder: identity and four empty doctrine documents.
+ * Does not log. Callers decide whether a locked seed stays silent.
+ */
+export async function materialiseAreaSeed(
+  rootPath: string,
+  seed: (typeof AREA_SEEDS)[number],
+  now: string,
+): Promise<void> {
+  const paths = vaultPaths(rootPath);
+  const meta: DomainMeta = {
+    name: seed.name,
+    description: null,
+    color: null,
+    sortOrder: seed.sortOrder,
+    unlockedAt: seed.locked ? null : now,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await fs.mkdir(paths.domainDir(seed.slug), { recursive: true });
+  await atomicWriteFile(
+    paths.domainJson(seed.slug),
+    `${JSON.stringify(meta, null, 2)}\n`,
+  );
+  for (const kind of DOCUMENT_KINDS) {
+    const md = serializeFrontmatter(
+      {
+        title: DOCUMENT_KIND_LABELS[kind],
+        locked: false,
+        updatedAt: now,
+      },
+      "",
+    );
+    await atomicWriteFile(paths.documentMd(seed.slug, kind), md);
+  }
+}
+
+/**
+ * Give an existing vault any seeded area it has never been offered.
+ *
+ * A missing stamp means the vault predates this file. Spiritual and Career are
+ * created locked when their folders are absent. Life, Health, Mind, Finance,
+ * Business and Relationships are recorded as already offered, so a folder the
+ * operator deleted is not put back. Once the stamp exists, a later seed is
+ * created only when its slug is not yet listed. A listed slug whose folder is
+ * gone stays gone.
+ */
+export async function ensureSeededAreas(rootPath: string): Promise<Result<true>> {
+  try {
+    const paths = vaultPaths(rootPath);
+    const stampPath = path.join(paths.lifequestDir, "area-seeds.json");
+    let applied: string[] | null = null;
+    try {
+      const raw = JSON.parse(await fs.readFile(stampPath, "utf8")) as {
+        applied?: unknown;
+      };
+      applied = Array.isArray(raw.applied)
+        ? raw.applied.filter((slug): slug is string => typeof slug === "string")
+        : [];
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+
+    const seen = new Set(applied ?? []);
+    const now = new Date().toISOString();
+    for (const seed of AREA_SEEDS) {
+      if (await slugExists(rootPath, seed.slug)) {
+        seen.add(seed.slug);
+        continue;
+      }
+      if (applied === null && LEGACY_AREA_SLUGS.has(seed.slug)) {
+        seen.add(seed.slug);
+        continue;
+      }
+      if (seen.has(seed.slug)) continue;
+      await materialiseAreaSeed(rootPath, seed, now);
+      seen.add(seed.slug);
+    }
+
+    const next = AREA_SEEDS.map((seed) => seed.slug).filter((slug) => seen.has(slug));
+    const same =
+      applied !== null &&
+      applied.length === next.length &&
+      applied.every((slug, index) => slug === next[index]);
+    if (!same) {
+      await fs.mkdir(paths.lifequestDir, { recursive: true });
+      await atomicWriteFile(
+        stampPath,
+        `${JSON.stringify({ applied: next }, null, 2)}\n`,
+      );
+    }
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

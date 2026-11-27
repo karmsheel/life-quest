@@ -17,10 +17,10 @@ import { createVault, listDomains, readLog } from "@lifequest/vault-core";
  *
  *  1. A new vault opens on Life: the titlebar band carries the quiet "Life"
  *     label, not a switcher, and no locked area is named anywhere in the lens.
- *  2. Settings → Areas reveals the five locked areas by name and unlocks two of
+ *  2. Settings → Areas reveals the seven locked areas by name and unlocks two of
  *     them through the real IPC channel.
  *  3. Once a second area is unlocked the same band becomes the segmented control
- *     — Life, Health, Finance — and choosing Health changes the surface.
+ *     — Health, LIFE, Finance — and choosing Health changes the surface.
  *  4. Unlocking is a flag flip in the vault: nothing is created, no folder moves,
  *     and the log records both unlocks.
  *  5. The persisted lens named a LOCKED area (`health`) when the app opened; the
@@ -226,11 +226,11 @@ describe("one life: the locked areas unlock on the real app", () => {
       const seeded = await listDomains(world.vaultDir);
       assert.equal(seeded.ok, true, seeded.ok ? "" : seeded.error);
       if (!seeded.ok) return;
-      assert.equal(seeded.value.length, 6, "Life + five areas are seeded");
+      assert.equal(seeded.value.length, 8, "Life + seven areas are seeded");
       assert.equal(
         seeded.value.filter((d) => d.meta.unlockedAt === null).map((d) => d.slug).join(","),
-        "health,mind,financial,business,relationships",
-        "the five seeded areas are locked",
+        "health,mind,financial,business,relationships,spiritual,career",
+        "the seven seeded areas are locked",
       );
       // The Log is operator-visible, so seeding a LOCKED area must not name it.
       const seedLog = await readLog(world.vaultDir);

@@ -22,7 +22,7 @@ import { DATABASE_COLUMN_TYPES, type Actor } from "./types.ts";
  * note is written. The app's card is only an ANNOUNCEMENT of what was opened, with
  * one Continue button, and the kept proposal file is that card's receipt.
  *
- * The five seeded area slugs are NOT enumerated in the schema on purpose: they
+ * The seeded area slugs are NOT enumerated in the schema on purpose: they
  * are the companion's private rubric, which it carries in its own instructions.
  * The engine is what refuses a slug outside that set (and an area that is
  * already open), so the taxonomy never has to be leaked into a tool result for
@@ -42,7 +42,7 @@ export const ONBOARDING_TOOL_DEFS: MapToolDef[] = [
       `- \`areas\`: ${ONBOARDING_AREA_MIN}–${ONBOARDING_AREA_MAX} seeded areas the interview heard ` +
       "in the operator's own words, each with its four doctrine drafts (premise, what, why, how), " +
       "all four required and non-empty — an opened area must never be blank. Never name an area " +
-      "that is already open. Do not enumerate the five areas to the operator; the card names only " +
+      "that is already open. Do not enumerate the seeded areas to the operator; the card names only " +
       "the ones this call opened.\n" +
       "- `table`: at most ONE table, drawn from the conversation's clearest ask, on one of the " +
       `opened areas, with 1–${ONBOARDING_TABLE_COLUMN_MAX} hand-written columns ` +

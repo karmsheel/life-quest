@@ -14,8 +14,10 @@
  */
 import {
   layerAgentPicker,
+  layerDomainPicker,
   resolveChrome,
   type AgentPickerChoice,
+  type DomainPickerChoice,
   type ThemeChrome,
   type ThemeChromeOverride,
   type ThemeFile,
@@ -33,9 +35,10 @@ import {
  * wing variant, before any place) would be refused. Seeding keeps the draft
  * valid without the studio ever writing a half-branch.
  *
- * The picker is the one branch that is not a flat bag of enums — it carries
- * `mode` plus a nested `recipe` — so it merges through `layerAgentPicker` rather
- * than a spread. A shallow merge of `{ recipe }` would drop the draft's other
+ * The agent picker and the area lens are the branches that are not a flat bag
+ * of enums — each carries `mode` plus a nested `recipe` — so they merge through
+ * `layerAgentPicker` and `layerDomainPicker` rather than a spread. A shallow
+ * merge of `{ recipe }` would drop the draft's other
  * axes every time an operator changed one, and writing the mode *and* all four
  * axes on every pick would flatten a shipped mode into a `custom`-shaped recipe
  * the author never asked for. `layerAgentPicker` keeps the mode the file
@@ -57,6 +60,14 @@ export function withChromePatch(
         (chrome.agentPicker as AgentPickerChoice | undefined) ??
           resolved.agentPicker,
         values as Partial<AgentPickerChoice>,
+      );
+      continue;
+    }
+    if (component === "domainPicker") {
+      chrome.domainPicker = layerDomainPicker(
+        (chrome.domainPicker as DomainPickerChoice | undefined) ??
+          resolved.domainPicker,
+        values as Partial<DomainPickerChoice>,
       );
       continue;
     }
