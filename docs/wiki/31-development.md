@@ -324,6 +324,10 @@ Bench discipline:
 - Restart only what the change needs, and ask before stopping a process that is the
   operator's rather than one you started.
 
+The canonical, fuller version of these rules — code conventions, the never-do list and
+the gates — lives in `RULES.md` at the repo root. If this page and that file disagree,
+`RULES.md` wins.
+
 ## Tips and gotchas
 
 - **A running `LifeQuest.exe` locks files under `release/`.** Quit it before
