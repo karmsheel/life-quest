@@ -313,12 +313,11 @@ describe("documents lock ui e2e", () => {
     assert.equal(opened.composer.bodyReadOnly, false);
     assert.equal(opened.composer.domainDisabled, false);
     assert.equal(opened.composer.domainChecked, true, "the seeded note's domain is not checked");
-    // The bottom row keeps Save/Cancel and nothing else: Delete and Propose
-    // live in the menu now.
+    // The editor has no Save or Cancel. Delete and Propose live in the menu.
     assert.equal(opened.composer.dangerButtons, 0, "the bottom row still offers Delete");
     assert.equal(opened.composer.proposeButtons, 0, "the bottom row still offers Propose");
-    assert.ok(opened.composer.actionLabels.includes("Save"));
-    assert.ok(opened.composer.actionLabels.includes("Cancel"));
+    assert.deepEqual(opened.composer.actionLabels, []);
+    assert.equal(opened.composer.saveDisabled, null);
 
     // ── The open menu: lock first, Delete last, anchored under the trigger ──
     const menuUnlocked = report.checks.menuUnlocked;
@@ -391,7 +390,7 @@ describe("documents lock ui e2e", () => {
     assert.equal(lockedMenu.composer.titleReadOnly, true, "a locked note's title is editable");
     assert.equal(lockedMenu.composer.bodyReadOnly, true, "a locked note's body is editable");
     assert.equal(lockedMenu.composer.domainDisabled, true, "a locked note's domain picker is enabled");
-    assert.equal(lockedMenu.composer.saveDisabled, true, "a locked note's Save is enabled");
+    assert.equal(lockedMenu.composer.saveDisabled, null, "a locked note still has a Save button");
     assert.match(lockedMenu.composer.lockHint ?? "", /Unlock to edit/);
     assert.equal(lockedMenu.composer.dangerButtons, 0, "the locked bottom row grew a Delete button");
     assert.equal(lockedMenu.composer.proposeButtons, 0, "the locked bottom row grew a Propose button");

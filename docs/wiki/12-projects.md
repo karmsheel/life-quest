@@ -71,7 +71,7 @@ becomes a markdown file in the vault the moment you create it."
 
 | Part | What it does |
 |---|---|
-| **Projects** eyebrow + **Projects** heading | The page name, the count ("N projects"), and **New project**. |
+| **Projects** eyebrow + **Projects** heading | The page name and **New project**. The count ("N projects") sits on the register panel with the status filter and the rows. The register uses the content pane, and a row stacks when the window is narrow. |
 | Status filter | Segmented control: **All**, **Open**, **Active**, **Paused**, **Blocked**, **Done**, **Closed**. |
 | Scope line | "Life — every area" or `Scoped to <area>` — the lens, not a second filter. |
 | Project row | Title, its **Type** when set, status chip, priority, state note (or summary), goal, area, target date, next action, and a progress bar with its percent. |

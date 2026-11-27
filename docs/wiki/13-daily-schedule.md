@@ -11,7 +11,7 @@ rewrites the plan in Blueprints.
 - Wing: **Act** (the wing id stays `execute`). Daily Schedule is the wing's default page, so
   choosing **Act** lands here.
 - Rail: second row of the Act wing, icon **Clock**, label **Daily Schedule**.
-- Header: the grey **Daily Schedule** page eyebrow above the **Daily Schedule** title.
+- Header: the grey **Daily Schedule** page eyebrow above the **Daily Schedule** title, the line *Today's clock, and what is still waiting to be placed.*, the date, and the **Day type** picker. **Clock** and **Leftover** are two panels that stack when the window is narrow.
 - Route: `/daily`.
 - Surface: a full page in the centre pane. It always shows the local calendar date —
   there is no date switcher and no past-day browsing.

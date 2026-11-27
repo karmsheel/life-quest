@@ -14,8 +14,13 @@ import { WingEyebrow } from "@/components/shell/WingEyebrow";
 export default function VisionPage() {
   return (
     <div className="doctrine-page">
-      <WingEyebrow page="Vision" />
-      <h1>Vision</h1>
+      <header className="doctrine-page__header">
+        <WingEyebrow page="Vision" />
+        <h1 className="stub-page__title">Vision</h1>
+        <p className="stub-page__desc muted">
+          What each area is reaching for, and the board those pictures sit on.
+        </p>
+      </header>
       <DoctrineIndex
         kinds={[...VISION_DOCUMENT_KINDS]}
         basePath="/vision"
