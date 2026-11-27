@@ -203,6 +203,10 @@ export type {
   MetricsSummaryResult,
 } from "./metrics.ts";
 export {
+  METRICS_TOOL_DEFS,
+  executeMetricsTool,
+} from "./metrics-tools.ts";
+export {
   ensurePlanningStub,
   getPlanningStub,
   setPlanningSessionId,
@@ -450,6 +454,7 @@ export type { ProjectToolResult } from "./projects.ts";
 import { MAP_TOOL_DEFS, GOALS_TOOL_DEFS } from "./map/tools.ts";
 import { DOCUMENT_TOOL_DEFS } from "./document-tools.ts";
 import { REVIEW_TOOL_DEFS } from "./review-tools.ts";
+import { METRICS_TOOL_DEFS } from "./metrics-tools.ts";
 import { CAPTURE_TOOL_DEFS } from "./capture-tools.ts";
 import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
 import { PROJECT_TOOL_DEFS } from "./projects.ts";
@@ -472,6 +477,7 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...GOALS_TOOL_DEFS,
   ...DOCUMENT_TOOL_DEFS,
   ...REVIEW_TOOL_DEFS,
+  ...METRICS_TOOL_DEFS,
   ...CAPTURE_TOOL_DEFS,
   ...SCRIPT_TOOL_DEFS,
   ...PROJECT_TOOL_DEFS,

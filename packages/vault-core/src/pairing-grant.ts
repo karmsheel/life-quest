@@ -80,6 +80,12 @@ export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "preview_view",
   "list_views",
   "get_dashboard",
+  // Metric definitions and their period comparisons (2026-11-26 metrics
+  // design). A definition belongs to one area, so the per-call projection keeps
+  // only the granted areas' definitions; a summary is a read of one area's
+  // values and answers NOT_FOUND outside the grant.
+  "list_metrics",
+  "get_metrics_summary",
   // Operator surfaces whose records carry a domain: a project, a page and a
   // signal are each visible only from an assigned domain, and a record with no
   // domain stays with the companion.
@@ -237,6 +243,14 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "insert_rows",
   "create_signal",
   "update_signal",
+  // Creating a metric DEFINITION and logging one dated metric event both apply
+  // immediately (spec §10.6): creating is the "define it now" act, and a logged
+  // event is adding data, the same rule `insert_rows` follows. Editing or
+  // deleting a definition is the Decision-gated half and is not exposed as a
+  // tool at all yet. Both still name one area, which the per-call domain check
+  // enforces.
+  "define_metric",
+  "log_metric",
 ]);
 
 /**
