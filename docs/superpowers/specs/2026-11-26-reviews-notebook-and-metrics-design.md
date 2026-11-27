@@ -599,6 +599,33 @@ file) and a pre-metrics vault with the kit catches up on Start. Figure as-of lin
 Phase 5's figure renderer so that Start stays idempotent; the summary API already carries the
 as-of. The `metrics` engine rig is the phase artifact.
 
+**Phase 5 note (shipped).** Figures come from the area's metric definitions, not from fences in
+the cadence skill. On Start (and only on Start), while the notebook is unlocked,
+`prepopulateReview` runs every definition of the page's area through `getMetricsSummary` and
+writes one block per definition under the page's `Look-back`, inside
+`<!-- lifequest:metric:<definitionId> -->` … `<!-- /lifequest:metric:<definitionId> -->`: the
+bold label, the value with its unit and the definition's display formatting (the magnitude rule
+is applied to the display only), the window the read covered with ` (period to date)` when the
+pass runs before the window ends, `_As of <local minute> · Source: …_` naming the events
+database and event key (or the derived source database), and `_No rows in this window._` in
+place of a fabricated zero. Placement and refresh are by marker, never by heading; operator
+prose is untouched; a definition that no longer exists has its block removed while the review is
+unlocked; a locked notebook freezes every figure (no write, no log). The overall page — Daily
+included — gets one cross-domain table inside `<!-- lifequest:metrics:overall -->` …
+`<!-- /lifequest:metrics:overall -->`: live areas in notebook order, their definitions in
+definition order, columns Area · Metric · This period · Previous period · Δ, with `—` for a
+window with no rows and the delta computed from the two displayed values; no block is written
+when there are no definitions, and an existing block is removed. The pass logs `review.figures`
+with written/unchanged/failed counts and the page scope. Hand-written `lifequest-snapshot`
+fences still run on the snapshot path for custom figures and keep their existing logs. The
+default skill no longer carries the finance fences — its `## Figures` section explains where
+figures come from and how to change them — and `ensureReviewSkill` replaces a file byte-identical
+to either previous shipped default (the 0.3.4 `finance-spend` default or the Phase 4
+three-fence default) with the new one, once; an operator-edited file is never matched. The as-of
+is local minute precision, so a repeat Start in the same minute is a no-op and a later Start
+refreshes the as-of line (no byte-idempotence across minutes by design). The `review-figures`
+engine rig and the rewritten `review-ui` rig are the phase artifacts.
+
 ---
 
 ## 11. Migration
@@ -749,7 +776,8 @@ test is the one served.
    definitions, default-skill replacement. Shipped 2026-11-27; see the Phase 4 note in §10 and
    the `metrics` rig.
 6. **Phase 5 — review figures:** per-page figure blocks + overall cross-domain table, window
-   and as-of, frozen at lock.
+   and as-of, frozen at lock. Shipped 2026-11-27; see the Phase 5 note in §10.4 and the
+   `review-figures` + `review-ui` rigs.
 7. **Phase 6 — Analytics page:** route, rail row, matrix, logging, wiki/docs-check.
 
 Each phase is a branch from master, E2E-verified against its own checkout, and handed over
