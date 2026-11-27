@@ -111,8 +111,8 @@ npm test               # from the repo root → apps/desktop/scripts/test.mjs
 ```
 
 That runs `node --experimental-strip-types --test "tests/**/*.test.ts"` in
-`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 135 test
-wrappers over 109 Electron rig drivers.
+`apps/desktop` with `ELECTRON_RUN_AS_NODE` stripped. This checkout carries 146 test
+wrappers over 113 Electron rig drivers.
 
 The testing discipline in this repository is E2E, and the layout enforces it:
 
@@ -224,7 +224,7 @@ Pages on a push to `master`, on `release: published`, and on demand.
 
 Both go through electron-builder on Windows x64, configured by
 `apps/desktop/electron-builder.yml`. The version both read is `version` in
-`apps/desktop/package.json` (currently `0.3.4`).
+`apps/desktop/package.json` (currently `0.3.5`).
 
 ```bash
 npm run package   # a dev build you can run: apps/desktop/release/win-unpacked/LifeQuest.exe
