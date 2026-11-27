@@ -56,6 +56,7 @@ const NAV_ORDER = [
   "Areas",
   "Vault",
   "Hermes",
+  "Phone",
   "Agent",
   "Review",
   "Questions",
