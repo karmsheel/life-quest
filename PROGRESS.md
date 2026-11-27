@@ -13,7 +13,7 @@ does. It is short on purpose: one section per release, plus the current state at
 |---|---|
 | Current release | **0.3.4**, tagged 2026-11-25 |
 | Released since | 0.3.0 (11-16), 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22) |
-| Master | 15 commits past `v0.3.4`, unreleased — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs |
+| Master | 19 commits past `v0.3.4`, unreleased — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs, the six-file plan pack, and the Plan page renamed **Blueprints** |
 | Next | **0.3.5** after [`TASKS.md`](TASKS.md) items 1–2 land |
 | Open gates | `npm run typecheck` and `npm run docs:check` green on master; the packaged smoke and live update feed run at release, not in CI |
 
@@ -74,6 +74,14 @@ is recorded here because the reports themselves are gitignored:
 
 Lesson that is now a rule: a skipped or stale rig is evidence of nothing
 ([`RULES.md`](RULES.md)), and a red report must name the change that supersedes it.
+
+**Unreleased, rig only (2026-11-27):** two harnesses under `apps/desktop/e2e/` were missing the
+ThemeProvider stubs (`themesList`, `themeGetState`, `onThemesChanged`), so the shell unmounted
+before any page rendered, and `wing-eyebrow.electron.mjs` still read the wing tabs as
+`aria-selected` when the segmented control had moved to `aria-checked`. Both fixed; the
+`wing-eyebrow` rig now passes against `master`. The `projects` rig got the same harness fix but
+its driver died in the GPU process on this host before writing a report — rerun it before
+leaning on it.
 
 ## Next
 

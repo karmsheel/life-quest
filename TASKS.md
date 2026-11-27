@@ -12,35 +12,28 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Now
 
-- [ ] **Docs: the six-file plan pack.**
-      branch: `docs/plan-pack` · scope: `PRD.md`, `ARCHITECTURE.md`, `DESIGN.md`, `RULES.md`,
-      `TASKS.md`, `PROGRESS.md`, `AGENTS.md`, `README.md`, `docs/design/screens/`,
-      `scripts/docs-check.mjs`, `docs/wiki/31-development.md`,
-      `apps/desktop/src/components/ui/AGENTS.md` · proof: `npm run docs:check` green, every relative link and
-      screenshot resolves, README indexes the pack · plan: this file's `Done` rule, audit in
-      the session record.
+- [ ] **Reviews: the review notebook.**
+      branch: `feat/reviews-notebook` (ahead of master and still moving — rebase first) · scope: review
+      page, `packages/vault-core/src/views.ts`, `view-schema.ts`, review rig · proof:
+      `lifequest-e2e` review rig, report + picture · plan: branch commits and the Review spec.
 
 ## Next
 
-1. **Reviews: the review notebook.**
-   branch: `feat/reviews-notebook` (ahead of master and still moving — rebase first) · scope: review
-   page, `packages/vault-core/src/views.ts`, `view-schema.ts`, review rig · proof:
-   `lifequest-e2e` review rig, report + picture · plan: branch commits and the Review spec.
-2. **Release 0.3.5.**
+1. **Release 0.3.5.**
    branch: `master` after the pack and the notebook land · scope: version in
    `apps/desktop/package.json`, wiki "Version covered", release notes · proof:
    `npm run release`, `packaged-smoke.mjs`, `update-live-feed.mjs`, `gh release create` ·
    plan: [`docs/wiki/31-development.md`](docs/wiki/31-development.md) release section.
-3. **Phone client spec: decide its fate.**
+2. **Phone client spec: decide its fate.**
    branch: `docs/phone-client-spec` (2 commits, 548 behind master) · scope: two spec/plan
    commits only · decision needed: rebase onto master and keep the plan, or fold the decision
    into `docs/superpowers/` and delete the branch · proof: a spec a fresh agent can execute.
-4. **Encrypted context layer: decide its fate.**
+3. **Encrypted context layer: decide its fate.**
    branch: `docs/encrypted-context-layer` (1 commit, 509 behind master) · scope: one research
    decision commit · decision needed: promote to a spec + plan, or park it with a one-line
    status in [`PROGRESS.md`](PROGRESS.md) · proof: the decision names what ships and what does
    not.
-5. **Prune the empty audit worktree.**
+4. **Prune the empty audit worktree.**
    branch: `audit/implicit-invariants` (0 commits ahead, 309 behind master) · it holds no work;
    either start the audit it was made for or remove the worktree so `git worktree list` is the
    real queue again.
@@ -54,6 +47,7 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 | When | What | Where |
 |---|---|---|
+| 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
 | 2026-11-25 | v0.3.4 shipped (Review page, background picture, layouts picker, Notebox dock links, rail dividers, recurring due-today) | tag `v0.3.4` |
 | 2026-11-27 | The agent picker as data: three shipped modes, custom recipe, Customizations page | `5c6ee13` (unreleased) |
 | 2026-11-26 | One attach control in the composer; a picture's chip offers "Use as receipt" | `9cea303` (unreleased) |
