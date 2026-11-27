@@ -10,6 +10,7 @@ import {
   createVault,
   defineMetric,
   deleteDatabase,
+  draftToDefineMetricInput,
   ensureReview,
   executeMetricsTool,
   getAnalyticsMatrix,
@@ -687,7 +688,51 @@ describe("metric governance e2e", () => {
         "approving the tool's Decision did not write the update",
       );
 
-      // ── (h) an invalid proposal at apply time: pending, validated, no write ─
+      // ── (h) a derived update through the same bridge draft ────────────────
+      // The Analytics edit form sends a draft, not a spec; the IPC door converts
+      // it with `draftToDefineMetricInput` and the update Decision must carry a
+      // runnable one-number spec just like a hand-written one.
+      const derivedDraftUpdate = draftToDefineMetricInput({
+        id: "logged-minutes",
+        label: "Logged minutes tracked",
+        unit: "minutes",
+        source: "derived",
+        aggregation: "sum",
+        databaseId: "training-log",
+        measureColumnId: minutesColumnId!,
+        timeColumnId: dateColumnId!,
+      });
+      const derivedEdit = await proposeMetricDefinitionChange(
+        vaultRoot,
+        {
+          area: "health",
+          metricId: "logged-minutes",
+          action: "update",
+          definition: derivedDraftUpdate,
+        },
+        ACTOR,
+      );
+      check(derivedEdit, "the derived edit draft could not be proposed");
+      const derivedEditId = derivedEdit.ok ? derivedEdit.value.decisionId : "";
+      check(
+        await resolveDecision(vaultRoot, derivedEditId, "approved"),
+        "the derived edit draft could not be approved",
+      );
+      const derivedAfterEdit = readJson(metricFile("logged-minutes")) as Json & {
+        spec?: Record<string, unknown>;
+      };
+      checks.derivedEdit = {
+        label: derivedAfterEdit.label,
+        databaseId: derivedAfterEdit.spec?.databaseId,
+        timeColumnId: derivedAfterEdit.spec?.timeColumnId,
+        measureColumnId: derivedAfterEdit.spec?.measureColumnId,
+      };
+      assert.equal(derivedAfterEdit.label, "Logged minutes tracked", "a derived edit draft did not write the label");
+      assert.equal(derivedAfterEdit.spec?.databaseId, "training-log", "a derived edit draft lost its source database");
+      assert.equal(derivedAfterEdit.spec?.timeColumnId, dateColumnId, "a derived edit draft lost its time column");
+      assert.equal(derivedAfterEdit.spec?.measureColumnId, minutesColumnId, "a derived edit draft lost its measure column");
+
+      // ── (i) an invalid proposal at apply time: pending, validated, no write ─
       const derivedUpdate = await proposeMetricDefinitionChange(
         vaultRoot,
         {
@@ -727,7 +772,7 @@ describe("metric governance e2e", () => {
       assert.equal((await pendingFor(vaultRoot, "logged-minutes")).length, 1, "an invalid proposal was resolved");
       assert.equal(
         readJson(metricFile("logged-minutes")).label,
-        "Logged minutes",
+        "Logged minutes tracked",
         "an invalid proposal wrote the definition",
       );
       check(await resolveDecision(vaultRoot, derivedUpdateId, "rejected"), "the invalid Decision could not be rejected");
