@@ -3,13 +3,13 @@
 Doctrine is the four-part definition of every area: its **Beliefs & Premise**,
 its **Vision & Desire**, its **Purpose**, and its **Strategy (How)**. The Dream
 page carries three of the four as cards, the Vision page carries the vision on
-its own, and the Architecture page keeps a second door into the same Strategy
+its own, and the Blueprints page keeps a second door into the same Strategy
 (How) document. Each document is plain markdown in the vault, edited in one
 live-preview box, and locked when you are done with it. Agents never write
 doctrine directly; their changes wait in Decisions.
 
 This page covers the documents and their editor. For the pages that host them,
-see [Architecture](./08-architecture.md) (Strategy (How) and the week),
+see [Blueprints](./08-architecture.md) (Strategy (How) and the week),
 [Goals](./10-goals.md) (outcomes), and [Ideal State](./09-ideal-state.md) (your
 own future documents, which are not doctrine).
 
@@ -18,7 +18,7 @@ own future documents, which are not doctrine).
 - Define wing, rail label **Dream**, icon Sparkles, route `/dream`.
 - Define wing, rail label **Vision**, icon Telescope, route `/vision`.
 - The Strategy (How) document also opens from the Plan wing, rail label
-  **Architecture**, icon Target, route `/track`.
+  **Blueprints**, icon Target, route `/track`.
 - The editor for one document is a page at `/dream/:slug/:kind`,
   `/vision/:slug/:kind`, or `/track/:slug/:kind`. The index and editor are
   pages, not sheets.
@@ -98,7 +98,7 @@ reads as empty.
 **Vision index.** One card per unlocked area, labelled **Vision & Desire**, same
 badge and body rules. The **Vision board** panel follows it on the page.
 
-**Architecture index.** A list, not cards: one row per unlocked area with a
+**Blueprints index.** A list, not cards: one row per unlocked area with a
 **Strategy (How)** link and a lock badge. It opens the same `how.md` file as the
 Dream card.
 
@@ -229,7 +229,7 @@ They appear on the [Log](./26-log.md) page.
   page and its own card there. The Dream cards are exactly three: Premise,
   Purpose, Strategy (How).
 - **Strategy (How) has two doors but one file.** Editing it from Dream and from
-  Architecture edits `domains/<slug>/how.md`; there is no second Strategy
+  Blueprints edits `domains/<slug>/how.md`; there is no second Strategy
   document.
 - **The Vision board is not doctrine.** It is a block document at
   `images/board.json`, drawn below the doctrine card on the Vision page, with
@@ -252,7 +252,7 @@ They appear on the [Log](./26-log.md) page.
 
 - [Wiki home](./index.md)
 - [Areas](./05-areas.md)
-- [Architecture](./08-architecture.md)
+- [Blueprints](./08-architecture.md)
 - [Ideal State](./09-ideal-state.md)
 - [Decisions](./23-decisions.md)
 - [The Log](./26-log.md)

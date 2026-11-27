@@ -71,7 +71,7 @@ const PAGES = [
   // Plan
   { route: "/goals", eyebrow: "Goals", wing: "Plan", heading: "Goals" },
   { route: "/chart", eyebrow: "Life Map", wing: "Plan", heading: "Life Map" },
-  { route: "/track", eyebrow: "Architecture", wing: "Plan", heading: "Architecture" },
+  { route: "/track", eyebrow: "Blueprints", wing: "Plan", heading: "Blueprints" },
   // Act
   { route: "/projects", eyebrow: "Projects", wing: "Act", heading: "Projects" },
   { route: "/daily", eyebrow: "Daily Schedule", wing: "Act", heading: "Daily Schedule" },
@@ -91,7 +91,7 @@ const PAGES = [
 const RAILS = {
   Home: ["Dashboard", "Data", "Pages", "Documents", "Agents", "Images"],
   Define: ["Dream", "Vision", "Ideal State"],
-  Plan: ["Goals", "Life Map", "Architecture"],
+  Plan: ["Goals", "Life Map", "Blueprints"],
   Act: ["Projects", "Daily Schedule", "Task Manager"],
   Review: ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
 };
@@ -120,7 +120,10 @@ const SAMPLE = `(() => {
     document.querySelectorAll(".nav-rail__wings .ui-segmented__option"),
   ).map((b) => ({
     label: text(b),
-    selected: b.getAttribute("aria-selected") === "true",
+    // The wing tabs are a segmented control: radio semantics, not tabs.
+    selected:
+      b.getAttribute("aria-checked") === "true" ||
+      b.getAttribute("aria-selected") === "true",
   }));
   const h1 = root ? root.querySelector("h1") : null;
   // The title's OWN text: the Dashboard's h1 also carries the board's state

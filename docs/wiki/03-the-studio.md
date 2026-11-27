@@ -65,7 +65,7 @@ settings sheet instead of a smaller menu.
    `execute` reads **Act**; its routes and stored question scopes are unchanged.
 2. **Walk the rail.** Click a page under the active wing. **Home** holds
    Dashboard, Data, Pages, Documents, **Agents** and **Images**; **Define** holds
-   Dream, Vision and Ideal State; **Plan** holds Goals, Life Map and Architecture;
+   Dream, Vision and Ideal State; **Plan** holds Goals, Life Map and Blueprints;
    **Act** holds Projects, Daily Schedule and **Task Manager**; **Review** holds
    Daily, Weekly, Monthly, Quarterly and Yearly.
 3. **Change the lens.** Choose **Life** or an unlocked area in the title bar's

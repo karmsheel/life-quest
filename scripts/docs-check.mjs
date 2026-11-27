@@ -11,7 +11,10 @@
  *  - every route in `App.tsx`, every rail label in `nav-items.ts`, every wing
  *    label and every Settings tab label appears somewhere in the wiki;
  *  - every page ends with `## Related` and links back to the wiki home;
- *  - the index links every page.
+ *  - the index links every page;
+ *  - the six root planning docs (PRD, ARCHITECTURE, DESIGN, RULES, TASKS, PROGRESS)
+ *    exist, open with a heading, are indexed in README.md, and every relative link
+ *    and screenshot inside them resolves.
  *
  * It is deliberately pure Node with no dependencies: it must run in CI, in a
  * worktree, and inside `npm run release` before the installer is built.
@@ -206,6 +209,80 @@ for (const page of pages) {
 pass("shape", `${pages.length - 1} pages`);
 
 // ---------------------------------------------------------------------------
+// 9. The plan pack: six root docs, indexed and internally linked
+// ---------------------------------------------------------------------------
+// The pack is what an agent reads before it writes code (see AGENTS.md). It is
+// not part of the MkDocs site, so nothing else would notice it rotting: a file
+// renamed in a refactor, a screenshot path that stopped resolving, a doc that
+// fell out of the README index. These are the checks that are cheap and true.
+const packFiles = [
+  "PRD.md",
+  "ARCHITECTURE.md",
+  "DESIGN.md",
+  "RULES.md",
+  "TASKS.md",
+  "PROGRESS.md",
+];
+const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+const packLinkPattern = new RegExp(linkPattern.source, "g");
+const packFailuresBefore = failures.length;
+const packText = {};
+for (const name of packFiles) {
+  const file = path.join(repoRoot, name);
+  if (!fs.existsSync(file)) {
+    fail("pack", `${name} is missing`);
+    continue;
+  }
+  const text = fs.readFileSync(file, "utf8");
+  packText[name] = text;
+  if (!/^# \S/m.test(text)) fail("pack", `${name} has no level-1 heading`);
+  if (!readme.includes(`](${name})`)) fail("pack", `README.md does not index ${name}`);
+  if (!/Last (verified|updated): \d{4}-\d{2}-\d{2}/.test(text)) {
+    fail("pack", `${name} has no "Last verified:" / "Last updated:" date line`);
+  }
+  let match;
+  while ((match = packLinkPattern.exec(text)) !== null) {
+    const raw = match[1];
+    if (/^(https?:|mailto:|#)/.test(raw)) continue;
+    const target = raw.split("#")[0];
+    if (!target || target.includes("<")) continue;
+    if (!fs.existsSync(path.resolve(repoRoot, target))) {
+      fail("pack", `${name} links to ${raw}, which does not exist`);
+    }
+  }
+}
+
+// The pack's promises: every requirement, a queue with a close-out rule, a
+// history with a "broke" section, and a design doc with real screenshots.
+const missingRequirements = [];
+for (let n = 1; n <= 14; n += 1) {
+  if (!packText["PRD.md"]?.includes(`**P${n} — `)) missingRequirements.push(`P${n}`);
+}
+if (missingRequirements.length > 0) {
+  fail("pack", `PRD.md is missing requirement(s): ${missingRequirements.join(", ")}`);
+}
+for (const [name, headings] of [
+  ["TASKS.md", ["## Now", "## Next", "## Done this cycle"]],
+  ["PROGRESS.md", ["## State", "## Broke", "## Next"]],
+]) {
+  for (const heading of headings) {
+    if (!packText[name]?.includes(heading)) fail("pack", `${name} has no "${heading}" section`);
+  }
+}
+const screenshots = [...(packText["DESIGN.md"] ?? "").matchAll(
+  /!\[[^\]]*\]\(([^)\s]+)\)/g,
+)].map((match) => match[1]);
+if (screenshots.length < 4 || new Set(screenshots).size < 4) {
+  fail(
+    "pack",
+    `DESIGN.md embeds ${screenshots.length} screenshot(s), ${new Set(screenshots).size} distinct; the visual reference expects at least 4 distinct`,
+  );
+}
+if (failures.length === packFailuresBefore) {
+  pass("pack", `${packFiles.length} planning docs, ${screenshots.length} screenshots`);
+}
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 const verbose = process.argv.includes("--verbose");
@@ -217,7 +294,9 @@ if (json) {
     if (verbose) console.log(`  ok  ${check.check}: ${check.detail}`);
   }
   if (failures.length === 0) {
-    console.log(`[docs:check] the wiki is current (${pages.length} pages).`);
+    console.log(
+      `[docs:check] the wiki and the plan pack are current (${pages.length} pages, ${packFiles.length} planning docs).`,
+    );
   } else {
     console.error(`[docs:check] ${failures.length} problem(s):`);
     for (const failure of failures) {

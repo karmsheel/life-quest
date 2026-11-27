@@ -35,7 +35,7 @@ export type EyebrowPage =
   // Plan
   | "Goals"
   | "Life Map"
-  | "Architecture"
+  | "Blueprints"
   // Act
   | "Projects"
   | "Daily Schedule"
