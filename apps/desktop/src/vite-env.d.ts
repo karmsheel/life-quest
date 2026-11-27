@@ -785,6 +785,31 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
   ) => Promise<Result<ReviewRecord>>;
+  /** The period's notebook summary: tabs, lock and page statuses, no bodies. */
+  reviewNotebookGet: (
+    cadence: ReviewCadence,
+    period: string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** One page's body and rev, for the page the operator is reading. */
+  reviewPageGet: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewPageBody>>;
+  /** Create one page (and the notebook) without starting an interview. */
+  reviewPageEnsure: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** Write one page against the rev it was read at. */
+  reviewPageWrite: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+    body: string,
+    baseRev: number,
+  ) => Promise<ReviewPageWriteOutcome>;
   reviewEnsure: (
     cadence: ReviewCadence,
     period: string,

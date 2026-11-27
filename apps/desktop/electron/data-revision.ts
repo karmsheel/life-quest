@@ -170,6 +170,8 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "map:apply",
   "goals:apply",
   "review:ensure",
+  "review:pageEnsure",
+  "review:pageWrite",
   "review:write",
   "review:markDone",
   "review:unlock",

@@ -1328,6 +1328,40 @@ function registerIpcHandlers() {
       vault.reviewGet(cadence, period),
   );
   ipcMain.handle(
+    "review:notebook",
+    (_e, cadence: Parameters<typeof vault.reviewNotebookGet>[0], period: string) =>
+      vault.reviewNotebookGet(cadence, period),
+  );
+  ipcMain.handle(
+    "review:pageGet",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageGet>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageGet>[2],
+    ) => vault.reviewPageGet(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageEnsure",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageEnsure>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageEnsure>[2],
+    ) => vault.reviewPageEnsure(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageWrite",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageWrite>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageWrite>[2],
+      body: string,
+      baseRev: number,
+    ) => vault.reviewPageWrite(cadence, period, scope, body, baseRev),
+  );
+  ipcMain.handle(
     "review:ensure",
     (
       _e,

@@ -610,6 +610,33 @@ const lifequest = {
 
   reviewGet: (cadence: string, period: string) =>
     ipcRenderer.invoke("review:get", cadence, period) as Promise<Result<unknown>>,
+  reviewNotebookGet: (cadence: string, period: string) =>
+    ipcRenderer.invoke("review:notebook", cadence, period) as Promise<
+      Result<unknown>
+    >,
+  reviewPageGet: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageGet", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageEnsure: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageEnsure", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    baseRev: number,
+  ) =>
+    ipcRenderer.invoke(
+      "review:pageWrite",
+      cadence,
+      period,
+      scope,
+      body,
+      baseRev,
+    ) as Promise<unknown>,
   reviewEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:ensure", cadence, period, scope) as Promise<
       Result<unknown>

@@ -31,6 +31,7 @@ import {
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
+  ensureReviewPage,
   fileImpliedChanges,
   getDailyNote,
   readCompanionBrief,
@@ -40,6 +41,8 @@ import {
   getPage,
   getPeriodPack,
   getReview,
+  getReviewNotebook,
+  getReviewPageBody,
   getRow,
   getVisionBoard,
   hireAgent,
@@ -109,6 +112,7 @@ import {
   USER_ACTOR,
   vaultPaths,
   writeReview,
+  writeReviewPage,
   // The cadence's standing review rules, and the snapshot pass that fills the
   // review from them before an interview starts.
   getReviewSkill,
@@ -203,6 +207,9 @@ import {
   type Result,
   type ReviewCadence,
   type ReviewPrepopulateResult,
+  type ReviewNotebook,
+  type ReviewPageBody,
+  type ReviewPageWriteOutcome,
   type ReviewRecord,
   type ReviewWriteOutcome,
   type ReviewSkill,
@@ -1865,6 +1872,68 @@ export async function reviewWrite(
       bodyMarkdown: body,
       actor: USER_ACTOR,
       baseRev,
+    });
+  });
+}
+
+/**
+ * The period's notebook summary: identity, lock and one row per page.
+ *
+ * Phase 2's page UI reads this for its tabs, so it is the one door onto a
+ * notebook that has no body in it. `reviewPageGet` is the body beside it.
+ */
+export async function reviewNotebookGet(
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => getReviewNotebook(root, cadence, period));
+}
+
+/** One page's body and rev, for the page the operator is reading. */
+export async function reviewPageGet(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewPageBody>> {
+  return withVault((root) => getReviewPageBody(root, cadence, period, scope));
+}
+
+/**
+ * Create one page (and the notebook, when the period has none) without starting
+ * an interview: the page's "Write it myself" and the first half of Start.
+ */
+export async function reviewPageEnsure(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => ensureReviewPage(root, { cadence, period, scope }));
+}
+
+/** Write one page against the rev it was read at. */
+export async function reviewPageWrite(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+  body: string,
+  baseRev: number,
+): Promise<ReviewPageWriteOutcome> {
+  return enqueue(async () => {
+    if (!currentRoot) {
+      return {
+        ok: false as const,
+        code: "MALFORMED" as const,
+        error: "No vault is open",
+        message: "No vault is open",
+      };
+    }
+    return writeReviewPage(currentRoot, {
+      cadence,
+      period,
+      scope,
+      bodyMarkdown: body,
+      baseRev,
+      actor: USER_ACTOR,
     });
   });
 }
