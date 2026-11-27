@@ -2,13 +2,12 @@
 
 A review is a look back over a period you have actually lived, written down in
 the vault, ending in what the next period is for. The Review wing gives
-each cadence its own page. **Daily** is one general review of the day. **Weekly**,
-**Monthly**, **Quarterly** and **Yearly** add a **Review checklist** on the right:
-one button per life area, each opening that area's own interview and its own
-page of the period's review notebook, and a **Life review** that opens only once
-every area is done and that sums the area reviews up through the whole-life — life-vision —
-perspective. The single idea: a review is a durable vault document, not a chat
-transcript — the report outlives the session that helped write it.
+each cadence its own page. **Daily** is one general review of the day. Every
+other cadence — **Weekly**, **Monthly**, **Quarterly**, **Yearly** — is a
+**review notebook**: a set of pages, one tab per review, with the overall
+**Overall** page first and then one page per live life area. The notebook is a
+durable vault document, not a chat transcript: every page is its own Markdown
+file, and the notebook outlives the sessions that helped write it.
 
 The new period's review is not available the instant the period starts. Each
 cadence has its own **review window**: the page opens on the latest period whose
@@ -42,45 +41,74 @@ ends and its calendar-week number, for example
 jumps to another period, and wordless arrow keys on the column's edges step one
 period at a time. The cadence is never repeated as a second title.
 
-**Daily is one general review of the day.** It has no checklist and no area
-sections, and the area lens does not narrow it: a day is reviewed as a day,
-because a day is too short to be cut into six interviews.
+**Daily is one general review of the day.** It has no tabs and no area sections,
+and the area lens does not narrow it: a day is reviewed as a day, because a day
+is too short to be cut into six interviews. It is a single page, as it always
+was.
 
-**Weekly, monthly, quarterly and yearly carry the Review checklist** in a
-vertical column to the right of the report:
+### The notebook's tabs
 
-- **Life review** sits first — the overall review, the whole-life view the area
-  reviews feed.
-- Then one row per live area, labelled **Health review**, **Mind review**,
-  **Finance review**, **Business review**, **Relationships review** for a vault
-  with those areas open. A locked or archived area is not listed.
-- Every row is a button, and every row reads **Not started**, **In progress** or
-  **Done**. The row for the active scope is highlighted.
-- The checklist is **live**. When the companion finishes an interview and marks
-  an area — or the life review — complete, the row on the page you already have
-  open flips to **Done** and the `n of 5 areas done` count moves with it, with no
-  navigating away and back. The same is true of the Life review unlocking once
-  the last area is finished, and of the **Locked** badge when the life review is
-  completed.
-- The **report is live too**. The companion writes the review body as you answer
-  its interview, and the open page fills with what it wrote as it goes; when it
-  marks the review complete, the locked file's final text is what the box shows.
-  You do not have to leave the page and come back to see the review the agent
-  wrote. An unsaved sentence of your own is kept until the file is locked; a
-  finished review shows the file, because the box is read-only from then on.
-- The area lens in the window title bar still selects the active area, and
-  pressing a checklist row moves the lens to that area. The checklist is the
-  control; the lens shows what is selected.
+A weekly, monthly, quarterly or yearly review opens a **tab row** under the
+period heading:
 
-The page keeps the Daily Journal's 48rem measure. The eyebrow and the period
-pager sit across the top of the page in that measure, and the report and the
-checklist come under them. Where the sheet has room for the two together they
-sit side by side, the pair centred in the page's own side padding with the same
-margin on both sides. Where it does not — an open chat dock beside the page, or
-a narrow window — the checklist takes its own row between the header and the
-report, and the document keeps its full measure (or the room the sheet has, with
-equal margins either side). The prose is never narrowed to make room for the
-checklist; when the sheet widens again, the checklist returns to the side.
+- **Overall** sits first — the life review, the whole-life view the area reviews
+  feed. It is the page every review opens on.
+- Then one tab per live area, labelled **Health**, **Mind**, **Finance**,
+  **Business**, **Relationships** for a vault with those areas open. A locked or
+  archived area is not listed.
+- Each tab is a page of its own: pressing it swaps the editor to that page's
+  Markdown file, and the tab reads **Not started**, **In progress** or **Done**
+  from that page's own status. The active tab is highlighted, and the tab row is
+  a proper `tablist` labelled **Review pages**: Left/Right arrows and Home/End
+  move between tabs, and the focused tab is the usual single tab stop.
+- Under the tabs a progress line counts the work: `2 of 5 areas done · Life
+  review unlocks when every area is done`, then `Every area is reviewed — the
+  life review is ready` when the last area is done, and `Review complete —
+  read-only.` once the overall page is marked complete.
+
+The **area lens in the window title bar and the tabs are one selection**: press
+a tab and the lens moves to that area; choose an area in the lens and the page
+switches to that tab. The Overall page is the lens's **Whole life** choice.
+Opening an area page from elsewhere in the app — the Dashboard, the wiki's area
+links — lands on that page directly.
+
+Each page autosaves on its own: the editor writes the page you are on (700 ms
+after you stop typing, on blur, on **Ctrl+S**, when you switch tabs or periods,
+and when you leave the page). A page whose file changed underneath you — the
+companion wrote it in the main process while you were typing — keeps your draft
+and shows a **changed on disk** banner with a **Reload** button; reloading adopts
+the file's text. The companion's writes to the page you have open appear in it
+without a navigation; a write to a page you are not looking at updates that tab's
+status.
+
+The page keeps the Daily Journal's 48rem measure as one centred column: the
+eyebrow, the period pager, the tab row and the progress line sit across the top
+in that measure, and the editor and its actions come under them, the same margin
+on both sides. If the sheet is cramped — an open chat dock beside the page, or a
+narrow window — the column simply takes the room the sheet has, with equal
+margins; nothing is ever squeezed to make a second column.
+
+### Starting, completing and unlocking a page
+
+The actions under the editor act on the tab you are on:
+
+- **Start interview** opens that page's own interview, with a companion that is
+  scoped to that area and told to leave the others alone. The Overall page's
+  interview speaks about the whole life and the areas it sums up. Starting a
+  page fills it with the snapshot figures the page's rules can place, and the
+  page's notice says what was filled.
+- **Mark review complete** — **Mark Health review complete**, **Mark Finance
+  review complete**, and for the Overall page **Mark life review complete** —
+  finishes that page. Marking an area done updates the progress line and the
+  tabs; the Overall tab stays gated until every area is done.
+- **Plan next period** starts the next period's review from this one.
+- **Unlock** appears on a locked review.
+
+A review's overall page locks the whole notebook when it is marked complete: the
+file becomes read-only, the editing surfaces and authoring controls are hidden,
+and **Unlock** is the way back. The tabs keep working on a locked review —
+reading every page is still the point — but nothing can be written until it is
+unlocked.
 
 Back to [Wiki home](./index.md).
 

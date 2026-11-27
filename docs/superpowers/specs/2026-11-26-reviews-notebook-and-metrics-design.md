@@ -412,6 +412,19 @@ fallback.
 - Overall tab while gated: the progress line names the areas still open and the primary
   action starts the first one.
 
+**Phase 2 note (shipped).** The Review page is the tabbed notebook this section describes:
+the tab row sits inside the 48rem column with `role="tablist"` / `aria-label="Review pages"`,
+roving `tabIndex` and Arrow/Home/End; the tabs are `Overall` then each live area, and the lens
+and the selected tab are one selection in both directions. The progress line carries the three
+sentences above, the actions live under the editor and act on the active page, each page has
+its own keyed `LiveMarkdownEditor` and autosave queue, and switching tabs or periods flushes the
+page being left (a failed flush holds the switch). The checklist rail and
+`AreaReviewsPanel.tsx` are deleted, weekly-plus cadences show the tab row, and Daily is the
+single general page it was. The empty states, `?scope=` one-shot binding with `replace`, the
+locked read-only editor with tabs still switching, and the once-only Daily notes panel are all
+as specified. The `review-ui` rig was rewritten for this surface and its report/screenshots are
+the phase artifact; metrics, Analytics and figures are still Phase 3+.
+
 ---
 
 ## 10. Metrics
