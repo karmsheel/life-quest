@@ -223,7 +223,7 @@ source, aggregation, optional target and display formatting, stored as one JSON
 per metric at `domains/<slug>/metrics/<id>.json`. A `derived` definition carries
 one view spec over the area's databases; an `events` definition names the
 `eventKey` its logged rows carry. Creating one applies at once; editing or
-deleting one is not exposed yet (it waits on a product decision). See
+deleting one is filed as a Decision and applies when you approve it. See
 [Data and databases](./19-data-and-databases.md).
 
 **Metric event** — one dated row in an area's **Metrics** database: `date`,

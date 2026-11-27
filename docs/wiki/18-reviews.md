@@ -505,9 +505,9 @@ type are kept after the required blocks — a save canonicalises this skeleton
 order, then any other extra heading in the order you typed it) and preserves the
 prose under each heading. See [Page contracts](#page-contracts).
 
-The page the app shows is assembled from the notebook's pages, which is also how
-the editor works for this release: the overall page and each area page are laid
-out as one document, and a save is split back into pages by heading. A vault
+The tab strip picks one page at a time — **Overall** first, then each live area
+— and each tab is its own editor with its own status, session and revision;
+switching tabs keeps the text you have typed on the page you leave. A vault
 from the previous release (one `.md` per period) is read through the same
 projection until its first open splits it into notebooks; that migration verifies
 the split, archives the old file under `.lifequest/legacy-reviews/`, and writes

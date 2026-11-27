@@ -311,8 +311,9 @@ at `domains/financial/metrics/cash-in.json`, `cash-out.json` and
 `net-cash-flow.json`. A vault that installed the kit before the figures existed
 gets them on its first review Start; either way only ABSENT files are written, so
 an operator's edit of a definition is never overwritten. Defining a new metric
-applies immediately; editing or deleting an existing definition waits on a
-product decision and is not exposed yet.
+applies immediately; editing or deleting an existing definition is filed as a
+Decision (from **Analytics**, or through the companion) and applies when you
+approve it.
 
 A review's figures are the app writing those definitions: one block per
 definition on the **Finance** page under **Look-back**, carrying its label, the
