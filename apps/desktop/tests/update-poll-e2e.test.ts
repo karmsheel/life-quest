@@ -51,7 +51,7 @@ type Caption = {
   display: string;
   dataLabel: string | null;
   inVersion: boolean;
-  immediatelyBeforeBadge: boolean;
+  centeredUnderBadge: boolean;
   box: Box | null;
   visible: boolean;
 } | null;
@@ -285,10 +285,10 @@ describe("update watch", () => {
       OFFERED,
       `the glowing build number names ${states.arrived.badge?.dataVersion}, not ${OFFERED}`,
     );
-    // The caption is the element immediately before the badge, in the rail's
-    // version slot: the glow's sentence is the replacement for the removed card.
+    // The caption is the line under the badge, in the rail's version slot: the
+    // glow's sentence is the replacement for the removed card.
     assert.equal(states.arrived.captionCount, 1, "the offer drew no caption");
-    assert.ok(states.arrived.caption, "the offer drew no caption beside the badge");
+    assert.ok(states.arrived.caption, "the offer drew no caption under the badge");
     assert.equal(
       states.arrived.caption?.text,
       CAPTION_TEXT,
@@ -300,9 +300,9 @@ describe("update watch", () => {
       "the caption left the rail's version slot",
     );
     assert.equal(
-      states.arrived.caption?.immediatelyBeforeBadge,
+      states.arrived.caption?.centeredUnderBadge,
       true,
-      "the caption is not immediately before the build number",
+      "the caption is not centred under the build number",
     );
     assert.equal(
       states.arrived.caption?.visible,

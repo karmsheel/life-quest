@@ -119,6 +119,7 @@ type State = {
     box: Box;
     padding: { top: number; right: number; bottom: number; left: number };
     display: string;
+    flexDirection: string;
     alignItems: string;
     justifyContent: string;
     gap: string;
@@ -129,7 +130,8 @@ type State = {
     containsChip: boolean;
     containsLabel: boolean;
     childCount: number;
-    lastChildIsChip: boolean;
+    firstChildIsChip: boolean;
+    lastChildIsLabel: boolean;
     lastControlIsChip: boolean;
     lastControlAriaLabel: string | null;
     controls: {
@@ -162,7 +164,7 @@ type State = {
     text: string;
     dataLabel: string | null;
     inVersion: boolean;
-    nextToChip: boolean;
+    underChip: boolean;
     /** `none` in the thin rail: the caption leaves the layout, it does not shrink. */
     display: string;
     visibility: string;
@@ -407,6 +409,8 @@ describe("auto-update badge", () => {
       `the version slot holds ${version?.controls.length} controls, expected the badge alone`,
     );
     assert.equal(version?.lastControlIsChip, true, "the chip is not the version slot's control");
+    assert.equal(version?.firstChildIsChip, true, "the number is not the version slot's first line");
+    assert.equal(version?.lastChildIsLabel, true, "the caption is not the version slot's second line");
     assert.equal(
       version?.lastControlAriaLabel,
       available.chip?.ariaLabel,
@@ -631,9 +635,9 @@ describe("auto-update badge", () => {
 
     // The caption: a glowing number is a state without a sentence, so the rail's
     // version slot says what it means — the words exist while the offer does,
-    // immediately left of the number on the same centred line, and never as a
-    // second focus stop in the chrome. The wide rail has room for them; the thin
-    // rail retires them (the probe below is the other half of that claim).
+    // centred on the line under the number, and never as a second focus stop in
+    // the chrome. The wide rail has room for them; the thin rail retires them
+    // (the probe below is the other half of that claim).
     assert.equal(
       available.label?.text,
       "Update available",
@@ -657,9 +661,9 @@ describe("auto-update badge", () => {
       "the caption is not inside the rail's version slot",
     );
     assert.equal(
-      available.label?.nextToChip,
+      available.label?.underChip,
       true,
-      "the caption is not immediately before the chip in DOM order",
+      "the caption is not the line under the chip",
     );
     assert.notEqual(
       available.label?.display,
@@ -669,20 +673,18 @@ describe("auto-update badge", () => {
     assert.ok(
       available.label?.box &&
         available.chip?.box &&
-        available.label.box.right <= available.chip.box.left &&
-        available.chip.box.left - available.label.box.right <= 12 &&
-        available.label.box.top < available.chip.box.bottom &&
-        available.label.box.bottom > available.chip.box.top,
-      `the caption is not inline to the chip's left: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
+        available.label.box.top >= available.chip.box.bottom - 1 &&
+        available.label.box.top - available.chip.box.bottom <= 12,
+      `the caption is not under the chip: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
     );
     assert.ok(
       available.label?.box &&
         available.chip?.box &&
         Math.abs(
-          (available.label.box.top + available.label.box.bottom) / 2 -
-            (available.chip.box.top + available.chip.box.bottom) / 2,
+          (available.label.box.left + available.label.box.right) / 2 -
+            (available.chip.box.left + available.chip.box.right) / 2,
         ) <= 2,
-      `the caption does not ride the chip's row: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
+      `the caption is not centred on the chip: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
     );
     assert.ok(
       (available.label?.overflow.scrollWidth ?? Infinity) <=
