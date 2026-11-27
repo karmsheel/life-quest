@@ -212,9 +212,10 @@ From there you can:
 
 A **derived** metric — one computed from a database, like **Cash out** — has no
 entries to log, so its cell opens the source database in Data instead (for
-example `/data/financial/finance:transactions`). Data has no period filter, so
-the database opens unpinned in time; the period's rows are the ones its own date
-column marks.
+example `/data/financial/finance:transactions`). When the definition names a
+date column, the link carries the cell's own period, so the database opens
+filtered to those rows with a *Showing 2026-10-12 → 2026-10-18* chip you can
+clear. A definition without a date column opens the database unpinned in time.
 
 **Period headers are links too.** A column header opens that period's review on
 the current cadence (`/review/weekly?period=2026-11-09`), carrying the area lens
@@ -223,13 +224,30 @@ you were reading. The link is one-shot: the period applies, then the address bar
 drops back to the plain review route.
 
 **New metric.** Above the matrix, **New metric** opens a small form that defines
-an **events** metric directly — area (under Life), label, unit, aggregation
-(sum, count, last or average) and an optional target. Its id and event key are
-the label slugged, so the rows it logs stay tied to the definition. For a
-database-derived metric, or anything that needs a view spec, **Ask the
-companion** opens a prepared chat briefed to define a metric for the lens area;
-definitions are the same vault objects either way. Creating one applies
-immediately and the matrix re-reads.
+either kind of metric directly, chosen with a **Source** selector:
+
+- **Events** — area (under Life), label, unit, aggregation (sum, count, last or
+  average) and an optional target. Its id and event key are the label slugged,
+  so the rows it logs stay tied to the definition.
+- **Database** — the same area, label, unit, aggregation and target, plus the
+  database it reads (the area's databases, from
+  [Data and databases](./19-data-and-databases.md)), the **number** column it
+  measures and the **date** column its review periods use. The engine builds the
+  one-number query from those choices; if the area has no database with a number
+  and a date column, the form says so and points at Data.
+
+**Ask the companion** still opens a prepared chat briefed to define a metric for
+the lens area; definitions are the same vault objects either way. Creating a
+metric applies immediately and the matrix re-reads.
+
+**Changing a definition.** Every row label carries **Edit** and **Delete**. Edit
+opens the same form prefilled with the definition (source, columns, label, unit,
+aggregation, target), and its save does not apply directly: it files an update
+proposal. Delete asks for confirmation and files a delete proposal. Both send
+the change to [Decisions](./23-decisions.md) and the page says so —
+*Sent to Decisions — applying it changes what this metric measures.* The
+definition, and with it every figure and cell that reads it, changes only when
+the Decision is approved; the matrix keeps showing the old metric until then.
 
 The page is **live**, not a report: it re-reads after you log, edit, delete or
 define something, and when the companion changes a metric elsewhere. Flipping
