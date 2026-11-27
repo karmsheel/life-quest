@@ -453,6 +453,14 @@ async function main() {
         `!document.querySelector('[data-testid="db-period-filter"]') && document.querySelectorAll(".database-page table.data-table tbody tr").length === ${ALL_DATES.length + 1}`,
         "the cleared page (chip gone, all seven rows)",
       );
+      // React Router runs a navigation in a transition, so the router's own
+      // location can land a paint after the chip and rows do. Wait for the URL
+      // the clear asked for, not for the state around it.
+      await waitFor(
+        win,
+        `window.databasePeriodLocation === ${JSON.stringify(ROUTE)}`,
+        "the cleared URL",
+      );
     } catch (error) {
       failure(String(error instanceof Error ? error.message : error));
     }
