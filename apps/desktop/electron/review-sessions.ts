@@ -158,9 +158,11 @@ export function boundKickoff(input: {
   if (input.kind !== "review") {
     return `Let's plan ${title}${suffix}. Previous period's review is in your instructions (or noted missing/draft). Ask what to focus on. Do not write a plan file yet.`;
   }
-  // The cadence's skill fills the figures; both cadences read them the same way.
+  // The app writes the page's figures from the area's metric definitions on
+  // Start (and refreshes any custom snapshot fence the operator kept); both
+  // cadences read them the same way, only the marker namespace differs.
   const figures =
-    "Read your page with get_review (pass this scope) — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
+    "Read your page with get_review (pass this scope) — the app has already filled in the figures from the area's metric definitions, inside `<!-- lifequest:metric:<id> -->` markers (on the overall page the across-area table is inside `<!-- lifequest:metrics:overall -->`), so work from those numbers rather than fetching them again. Any custom `<!-- lifequest:snapshot:<id> -->` blocks the operator wrote are refreshed too; leave every marker in place. Use get_period_pack for the period's own days.";
   if (input.cadence === "daily") {
     // One general review of the day: the daily cadence has no area scopes, and
     // a kickoff that implied them would send the companion looking for sections
@@ -274,7 +276,7 @@ export function formatReviewContext(input: {
       );
     }
     lines.push(
-      "Figures the app already filled in sit inside `<!-- lifequest:snapshot -->` markers in the review file. Refresh them rather than duplicating them, and leave the markers in place: they are how the next Start finds the block.",
+      "Figures the app already filled in sit inside `<!-- lifequest:metric:<id> -->` markers on the page (the overall page's across-area table inside `<!-- lifequest:metrics:overall -->`); any custom `<!-- lifequest:snapshot:<id> -->` blocks the operator wrote are refreshed by the same pass. Work from those numbers rather than duplicating them, and leave the markers in place: they are how the next Start finds the block.",
     );
   }
   if (input.kind === "review") {
