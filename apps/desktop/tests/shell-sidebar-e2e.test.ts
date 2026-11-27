@@ -18,6 +18,12 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/shell-sidebar.json");
 
+/** Visible lens order: the first half of the areas, LIFE, then the rest. */
+function centredLensLabels(areas: readonly string[]): string[] {
+  const mid = Math.ceil(areas.length / 2);
+  return [...areas.slice(0, mid), "LIFE", ...areas.slice(mid)];
+}
+
 type Box = {
   left: number;
   top: number;
@@ -281,7 +287,7 @@ type State = {
   } | null;
   /**
    * The first-run band: with fewer than two unlocked areas the lens is one inert
-   * word, "Life", in the same tab. Absent when the segmented control rendered.
+   * word, "LIFE", in the same tab. Absent when the segmented control rendered.
    */
   quietLens: {
     text: string;
@@ -1590,8 +1596,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       lensSwitcher!.labels,
-      ["Life", ...report.domains],
-      `the lens offers ${JSON.stringify(lensSwitcher!.labels)}, not Life then the vault's areas ${JSON.stringify(report.domains)}`,
+      centredLensLabels(report.domains),
+      `the lens offers ${JSON.stringify(lensSwitcher!.labels)}, not LIFE centred between the vault's areas ${JSON.stringify(report.domains)}`,
     );
     assert.equal(
       lensSwitcher!.optionCount,
@@ -1651,8 +1657,8 @@ describe("shell sidebar (docked rail)", () => {
       assert.equal(quiet!.inLens, true, `the quiet label is not inside the lens at ${label}`);
       assert.equal(
         quiet!.text,
-        "Life",
-        `the quiet label reads ${JSON.stringify(quiet!.text)}, not "Life" at ${label}`,
+        "LIFE",
+        `the quiet label reads ${JSON.stringify(quiet!.text)}, not "LIFE" at ${label}`,
       );
       assert.equal(state!.lensHasTabs, false, `a segmented control rendered at ${label}`);
       assert.equal(state!.lensTabs, null, `the rig measured a segmented control at ${label}`);

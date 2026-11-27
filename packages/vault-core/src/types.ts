@@ -271,6 +271,8 @@ export const AREA_SEEDS = [
   { slug: "financial", name: "Finance", sortOrder: 3, locked: true },
   { slug: "business", name: "Business", sortOrder: 4, locked: true },
   { slug: "relationships", name: "Relationships", sortOrder: 5, locked: true },
+  { slug: "spiritual", name: "Spiritual", sortOrder: 6, locked: true },
+  { slug: "career", name: "Career", sortOrder: 7, locked: true },
 ] as const;
 export const DEFAULT_HERMES_URL = "http://localhost:8642";
 

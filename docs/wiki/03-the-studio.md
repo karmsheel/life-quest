@@ -68,12 +68,12 @@ settings sheet instead of a smaller menu.
    Dream, Vision and Ideal State; **Plan** holds Goals, Life Map and Blueprints;
    **Act** holds Projects, Daily Schedule and **Task Manager**; **Review** holds
    Daily, Weekly, Monthly, Quarterly and Yearly.
-3. **Change the lens.** Choose **Life** or an unlocked area in the title bar's
-   lens tab. This is the data filter for area-scoped lists (Dashboard boards,
-   Data, Pages, Notebox and others). **←** and **→** move between lens
-   options. The tab is centred on the strip and holds that centre when the rail
-   collapses. With fewer than two unlocked areas it is a quiet **Life** label, not
-   a control — see [Areas](./05-areas.md).
+3. **Change the lens.** Choose the round **LIFE** button or an unlocked area in
+   the title bar's lens tab. This is the data filter for area-scoped lists
+   (Dashboard boards, Data, Pages, Notebox and others). **←** and **→** move
+   between lens options. The tab is centred on the strip and holds that centre
+   when the rail collapses. With fewer than two unlocked areas it is a quiet
+   **LIFE** label, not a control — see [Areas](./05-areas.md).
 4. **Collapse and restore the rail.** Press the panel icon at the foot of the rail
    (**Collapse sidebar** / **Expand sidebar**), at the bottom trailing corner
    beside the vault chip — or press the centred **LifeQuest lockup** in the
@@ -142,8 +142,10 @@ The window title bar:
   corners are rounded and its two bottom corners flare into the page with small
   concave fillets — the rounded ends make it read as the page's own tab rather
   than a control floating in the chrome. Inside it is the area lens: a quiet
-  **Life** label until a second area opens, then a segmented control with
-  **Life** first. The window title is `LifeQuest — <vault name>`.
+  **LIFE** label until a second area opens, then a segmented control with a
+  round **LIFE** button in the centre. That shape is the **Life mark** mode;
+  **Settings → Appearance** can wear another (see [Customizations](./37-customizations.md)).
+  The window title is `LifeQuest — <vault name>`.
 - The open room on either side of the tab is the window's drag handle — empty
   apart from the tab itself, which stays clickable — with the window controls on
   the trailing edge.

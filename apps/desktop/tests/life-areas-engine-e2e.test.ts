@@ -21,6 +21,7 @@ import {
   listDomains,
   listPages,
   liveDomainSlugs,
+  openVault,
   readLog,
   unarchiveDomain,
   unlockDomain,
@@ -28,15 +29,16 @@ import {
 import { resolveRestoredLens } from "../src/state/lens-persistence.ts";
 
 /**
- * P0: one Life surface, five locked areas.
+ * P0: one Life surface, seven locked areas.
  *
  * This rig runs the engine half against a real vault on disk — no window, no
  * fixture objects. It holds the contract the renderer and the companion both
  * read:
  *
  *  1. A new vault seeds the base `life` area unlocked and Health, Mind, Finance,
- *     Business and Relationships LOCKED. Locked is `unlockedAt: null`; an absent
- *     field means unlocked, so every existing vault keeps every area.
+ *     Business, Relationships, Spiritual and Career LOCKED. Locked is
+ *     `unlockedAt: null`; an absent field means unlocked, so every existing
+ *     vault keeps every area.
  *  2. Locked areas are invisible to every domain-scoped engine read and refuse
  *     writes, and unlocking is a flag flip that creates and moves nothing.
  *  3. The Life area cannot be archived or deleted.
@@ -78,8 +80,8 @@ function writeMeta(root: string, slug: string, meta: unknown): void {
   fs.writeFileSync(metaPath(root, slug), `${JSON.stringify(meta, null, 2)}\n`);
 }
 
-describe("areas: one life, five locked areas (engine)", () => {
-  it("seeds life unlocked and the five areas locked, and keeps locked areas invisible to every read and write", async () => {
+describe("areas: one life, seven locked areas (engine)", () => {
+  it("seeds life unlocked and the seven areas locked, and keeps locked areas invisible to every read and write", async () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-areas-engine-"));
     const vaultRoot = path.join(workDir, "vault");
     const created = await createVault(vaultRoot, "Areas engine rig");
@@ -90,12 +92,16 @@ describe("areas: one life, five locked areas (engine)", () => {
     assert.equal(listed.ok, true, listed.ok ? "" : listed.error);
     if (!listed.ok) return;
     const domains = listed.value;
-    check("six areas are seeded (Life + the five)", domains.length === 6, domains.length);
+    check(
+      "eight areas are seeded (Life + the seven)",
+      domains.length === AREA_SEEDS.length,
+      domains.length,
+    );
 
     const bySlug = new Map(domains.map((d) => [d.slug, d]));
     const expected = AREA_SEEDS.map((s) => s.slug);
     check(
-      "seed order is Life, Health, Mind, Finance, Business, Relationships",
+      "seed order follows AREA_SEEDS",
       domains.map((d) => d.slug).join(",") === expected.join(","),
       domains.map((d) => d.slug),
     );
@@ -110,7 +116,7 @@ describe("areas: one life, five locked areas (engine)", () => {
       bySlug.get(BASE_AREA_SLUG)?.meta.unlockedAt,
     );
 
-    for (const slug of ["health", "mind", "financial", "business", "relationships"]) {
+    for (const slug of AREA_SEEDS.filter((seed) => seed.locked).map((seed) => seed.slug)) {
       const domain = bySlug.get(slug);
       check(
         `${slug} is seeded locked`,
@@ -217,8 +223,12 @@ describe("areas: one life, five locked areas (engine)", () => {
     check("Life cannot be deleted", deletedLife.ok === false, deletedLife.ok ? "" : deletedLife.error);
 
     // ── 6. a user-created area arrives unlocked ──────────────────────────
-    const career = await createDomain(vaultRoot, { name: "Career" });
-    check("a custom area is unlocked at creation", career.ok && typeof career.value.meta.unlockedAt === "string", career.ok ? career.value.meta.unlockedAt : career.error);
+    const woodworking = await createDomain(vaultRoot, { name: "Woodworking" });
+    check(
+      "a custom area is unlocked at creation",
+      woodworking.ok && typeof woodworking.value.meta.unlockedAt === "string",
+      woodworking.ok ? woodworking.value.meta.unlockedAt : woodworking.error,
+    );
 
     // ── 7. the artifact ──────────────────────────────────────────────────
     fs.mkdirSync(path.dirname(ARTIFACT), { recursive: true });
@@ -233,6 +243,58 @@ describe("areas: one life, five locked areas (engine)", () => {
     const written = JSON.parse(fs.readFileSync(ARTIFACT, "utf8")) as { pass: boolean; checks: Check[] };
     assert.equal(written.pass, true, `one or more checks failed: ${JSON.stringify(written.checks.filter((c) => !c.pass))}`);
     assert.deepEqual(checks.filter((c) => !c.pass), [], "all checks must hold");
+  });
+
+  it("adds Spiritual and Career to an older vault and does not restore a deleted area", async () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-areas-stamp-"));
+    const vaultRoot = path.join(workDir, "vault");
+    const created = await createVault(vaultRoot, "Stamp rig");
+    assert.equal(created.ok, true, created.ok ? "" : created.error);
+
+    fs.rmSync(path.join(vaultRoot, "domains", "spiritual"), { recursive: true, force: true });
+    fs.rmSync(path.join(vaultRoot, "domains", "career"), { recursive: true, force: true });
+    fs.rmSync(path.join(vaultRoot, "domains", "health"), { recursive: true, force: true });
+    fs.rmSync(path.join(vaultRoot, ".lifequest", "area-seeds.json"), { force: true });
+
+    const opened = await openVault(vaultRoot);
+    assert.equal(opened.ok, true, opened.ok ? "" : opened.error);
+    const listed = await listDomains(vaultRoot);
+    assert.equal(listed.ok, true, listed.ok ? "" : listed.error);
+    if (!listed.ok) return;
+    const slugs = listed.value.map((domain) => domain.slug);
+    assert.ok(slugs.includes("spiritual"), "Spiritual was not added");
+    assert.ok(slugs.includes("career"), "Career was not added");
+    assert.equal(slugs.includes("health"), false, "a deleted legacy area came back");
+    const spiritual = listed.value.find((domain) => domain.slug === "spiritual");
+    const career = listed.value.find((domain) => domain.slug === "career");
+    assert.equal(spiritual?.meta.unlockedAt, null, "Spiritual was not seeded locked");
+    assert.equal(career?.meta.unlockedAt, null, "Career was not seeded locked");
+    assert.equal(
+      fs.existsSync(path.join(vaultRoot, "domains", "spiritual", "premise.md")),
+      true,
+      "Spiritual has no doctrine file",
+    );
+
+    const log = await readLog(vaultRoot);
+    assert.equal(log.ok, true, log.ok ? "" : log.error);
+    if (!log.ok) return;
+    assert.deepEqual(
+      log.value.filter((event) => event.type === "domain.created").map((event) => event.domainSlug),
+      ["life"],
+      "adding a locked seed wrote a log line",
+    );
+
+    fs.rmSync(path.join(vaultRoot, "domains", "career"), { recursive: true, force: true });
+    const reopened = await openVault(vaultRoot);
+    assert.equal(reopened.ok, true, reopened.ok ? "" : reopened.error);
+    const afterDelete = await listDomains(vaultRoot);
+    assert.equal(afterDelete.ok, true, afterDelete.ok ? "" : afterDelete.error);
+    if (!afterDelete.ok) return;
+    assert.equal(
+      afterDelete.value.some((domain) => domain.slug === "career"),
+      false,
+      "Career came back after it was deleted",
+    );
   });
 
   it("reads a vault written before areas had a lock state as fully unlocked", async () => {
@@ -256,7 +318,7 @@ describe("areas: one life, five locked areas (engine)", () => {
     if (!reread.ok) return;
     check(
       "an absent unlockedAt means unlocked",
-      liveDomainSlugs(reread.value).length === 6,
+      liveDomainSlugs(reread.value).length === AREA_SEEDS.length,
       liveDomainSlugs(reread.value),
     );
     check(

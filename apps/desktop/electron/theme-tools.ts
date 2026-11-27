@@ -35,6 +35,7 @@ import {
   resolveScene,
   THEME_VOCABULARY,
   type AgentPickerChoice,
+  type DomainPickerChoice,
   type ThemeBackgroundImage,
   type ThemeFile,
   type ThemeScene,
@@ -142,6 +143,8 @@ type ThemeSummary = {
     domainSwitcher: { place: string; variant: string };
     /** The dock's agent picker as worn: a shipped mode plus its resolved axes. */
     agentPicker: AgentPickerChoice;
+    /** The area lens as worn: a shipped mode plus its resolved axes. */
+    domainPicker: DomainPickerChoice;
   };
   material?: { radius: string; density: string; motion: string };
   /** The scene as worn: defaults filled in, so the agent reads real values. */

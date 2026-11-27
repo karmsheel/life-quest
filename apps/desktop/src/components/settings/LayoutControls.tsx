@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/Button";
 import {
   DOMAIN_PLACES,
   DOMAIN_FRAMES,
-  DOMAIN_VARIANTS,
   CHAT_DOCK_SIDES,
   NAV_RAIL_PLACES,
   TITLEBAR_SIZES,
@@ -73,15 +72,6 @@ const DOMAIN_PLACE_LABELS: Record<
   "bottom-center": "Bottom centre",
   "floating-bottom-right": "Floating bottom right",
   hidden: "Hidden",
-};
-const DOMAIN_VARIANT_LABELS: Record<
-  ThemeChrome["domainSwitcher"]["variant"],
-  string
-> = {
-  segmented: "Segmented",
-  pill: "Pill",
-  icons: "Icons",
-  list: "List",
 };
 const DOMAIN_FRAME_LABELS: Record<
   ThemeChrome["domainSwitcher"]["frame"],
@@ -198,23 +188,6 @@ export function LayoutControls({
         pick({
           domainSwitcher: {
             place: value as ThemeChrome["domainSwitcher"]["place"],
-          },
-        }),
-    },
-    {
-      key: "domain-variant",
-      component: "domainSwitcher",
-      testIdPrefix: "chrome-domain-variant",
-      label: "Area lens variant",
-      options: DOMAIN_VARIANTS.map((value) => ({
-        value,
-        label: DOMAIN_VARIANT_LABELS[value],
-      })),
-      selected: effectiveChrome.domainSwitcher.variant,
-      onPick: (value) =>
-        pick({
-          domainSwitcher: {
-            variant: value as ThemeChrome["domainSwitcher"]["variant"],
           },
         }),
     },

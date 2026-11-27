@@ -155,13 +155,14 @@ Locked areas are absent from everything that reads the vault, not only the switc
 no list, no doctrine, no board, no goal, and the companion cannot leak one. That is
 expected until an area is opened.
 
-- A new vault opens on **Life** with Health, Mind, Finance, Business and
-  Relationships on disk but locked.
+- A new vault opens on **Life** with Health, Mind, Finance, Business,
+  Relationships, Spiritual and Career on disk but locked. An older vault gains
+  Spiritual and Career, locked, the next time it opens.
 - Settings → **Areas** is the one screen that names them: **Unlock another area**
   with a plain **Unlock** on each row (no confirmation — unlocking is a reveal, not
   an activation), then **Your areas**, **Archived**, **Create area**.
-- The lens strip is a quiet **Life** label until a second area is unlocked; then it
-  becomes the area band with **Life** first.
+- The lens strip is a quiet **LIFE** label until a second area is unlocked; then it
+  becomes the area band with a round **LIFE** button in the centre.
 - A saved lens that names a locked or archived area resolves to **Life** and the
   preference is cleared. The main process refuses to activate a locked area.
 - **Life** itself can never be archived or deleted.

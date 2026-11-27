@@ -172,7 +172,7 @@ describe("connected agents read projects, pages and the Life-Chain inside their 
     }
 
     // ── the operator's own records, in and outside one domain ───────────────
-    // A fresh vault seeds the base Life area plus five locked areas; this rig
+    // A fresh vault seeds the base Life area plus seven locked areas; this rig
     // unlocks financial and health, the two it writes into. The grant under test
     // is financial, so health is a live area the agent is NOT assigned — which is
     // the state every projection below has to hide.
@@ -629,7 +629,16 @@ describe("connected agents read projects, pages and the Life-Chain inside their 
         vault: {
           id: vaultId,
           temp: true,
-          seededAreas: ["life", "health", "mind", "financial", "business", "relationships"],
+          seededAreas: [
+            "life",
+            "health",
+            "mind",
+            "financial",
+            "business",
+            "relationships",
+            "spiritual",
+            "career",
+          ],
           unlockedAreas: ["life", "financial", "health"],
         },
         grant: {

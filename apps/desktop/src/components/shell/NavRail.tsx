@@ -216,7 +216,7 @@ export function NavRail() {
           data-chrome-place="left-rail"
           data-chrome-frame={chrome.domainSwitcher.frame}
         >
-          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
+          <DomainSwitcher />
         </div>
       ) : null}
       {topPinned.length > 0 ? (

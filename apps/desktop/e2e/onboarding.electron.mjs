@@ -4,7 +4,7 @@
  *
  * WHY THIS RIG EXISTS
  *
- * A new vault opens on Life with five areas seeded but LOCKED, and the chat dock
+ * A new vault opens on Life with seven areas seeded but LOCKED, and the chat dock
  * carries one quiet first-run card. The companion interviews the operator and
  * then OPENS the areas itself: one tool call applies the whole batch — unlocks,
  * doctrine drafts, at most one table, one note, a completed record — and leaves
@@ -522,7 +522,7 @@ async function run() {
     states.fresh = fresh;
     check("the titlebar carries the lens on first run", fresh.switcher === true, fresh.switcher);
     check("a new vault shows the quiet Life label", fresh.quiet === true, fresh);
-    check("the quiet label reads Life", fresh.quietText === "Life", fresh.quietText);
+    check("the quiet label reads LIFE", fresh.quietText === "LIFE", fresh.quietText);
     check("there is no switcher before a second area", fresh.tabs === null, fresh.tabs);
 
     const welcome = await js(CARD_EXPRESSION);
@@ -613,9 +613,9 @@ async function run() {
     states.preContinueBand = openedBand;
     check("the band is already Life · Health · Business while the card is up", openedBand.quiet === false, openedBand);
     check(
-      "the band already reads Life, Health, Business",
+      "the band already reads Health, LIFE, Business",
       JSON.stringify((openedBand.tabs ?? []).map((tab) => tab.label)) ===
-        JSON.stringify(["Life", "Health", "Business"]),
+        JSON.stringify(["Health", "LIFE", "Business"]),
       openedBand.tabs,
     );
 

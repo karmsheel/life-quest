@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { AgentPickerControls } from "@/components/settings/AgentPickerControls";
+import { DomainPickerControls } from "@/components/settings/DomainPickerControls";
 import { BackgroundControls } from "@/components/settings/BackgroundControls";
 import { LayoutControls } from "@/components/settings/LayoutControls";
 import { MaterialControls } from "@/components/settings/MaterialControls";
@@ -35,9 +36,9 @@ import {
  * The Chrome, Material and Scene sections are the Settings Appearance controls
  * in controlled mode (D9): same rows, same words, `studio-` ids, and the draft
  * passed as `value` so no operator override is touched. The Components section
- * is the same deal for the agent picker: it writes the file's
- * `chrome.agentPicker`, so the dock painted behind the studio previews every
- * pick without a separate preview step. The Scene tab stacks the picture layer
+ * is the same deal for the area lens and the agent picker: it writes the
+ * file's `chrome.domainPicker` and `chrome.agentPicker`, so the lens and the
+ * dock painted behind the studio preview every pick. The Scene tab stacks the picture layer
  * under the drawn-sky rows; both edit the draft's `scene.background`, so a
  * picture authored here lands in the file exactly as one picked in Settings
  * would. Composition has its own schematic editor; Palette is the studio's only
@@ -79,7 +80,7 @@ const SECTION_LABELS: Record<StudioSection, string> = {
 
 const SECTION_INTROS: Record<Exclude<StudioSection, "composition">, string> = {
   components:
-    "The dock's agent picker: one of three shipped modes, or your own combination of four closed axes (roster, labels, ring, size). This section writes the file's `chrome.agentPicker` — data the renderer already draws, never code. The studio paints the draft, so the picker in the dock behind changes as you pick; that is the preview.",
+    "Two components, each a shipped mode or your own combination of closed axes. The area lens writes `chrome.domainPicker` (arrangement, mark, labels, chips). The dock's agent picker writes `chrome.agentPicker` (roster, labels, ring, size). Both are data the renderer already draws, never code. The studio paints the draft, so the lens and the picker change as you pick; that is the preview. Where the lens sits stays in Chrome.",
   chrome:
     "Where the shell's own components sit and which variant they wear. This section writes the file's `chrome` layer, not a Settings override.",
   material:
@@ -177,6 +178,11 @@ export function StudioFields({
             data-testid="studio-components"
           >
             <p className="studio__section-intro">{SECTION_INTROS.components}</p>
+            <DomainPickerControls
+              value={resolveChrome(draft.chrome).domainPicker}
+              onChange={(patch) => onChange(withChromePatch(draft, patch))}
+              testIdPrefix="studio-"
+            />
             <AgentPickerControls
               value={resolveChrome(draft.chrome).agentPicker}
               onChange={(patch) => onChange(withChromePatch(draft, patch))}

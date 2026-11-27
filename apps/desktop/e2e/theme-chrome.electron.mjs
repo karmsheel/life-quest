@@ -2328,7 +2328,7 @@ async function main() {
   const pressedWing = await click("chrome-wing-place-titlebar-left");
   const pressedWingVariant = await click("chrome-wing-variant-icons");
   const pressedDomain = await click("chrome-domain-place-bottom-center");
-  const pressedDomainVariant = await click("chrome-domain-variant-pill");
+  const pressedDomainVariant = await click("settings-domain-picker-chips-pill");
   const pressedRight = await click("chrome-nav-place-right");
   const pressedDockLeft = await click("chrome-chat-side-left");
   const pressedTitlebarTall = await click("chrome-titlebar-size-tall");

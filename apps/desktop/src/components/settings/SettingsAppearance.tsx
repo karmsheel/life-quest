@@ -5,6 +5,7 @@ import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import type { ThemePreference } from "@/lib/theme";
 import { AgentPickerControls } from "./AgentPickerControls";
+import { DomainPickerControls } from "./DomainPickerControls";
 import { MaterialControls } from "./MaterialControls";
 import { SceneControls } from "./SceneControls";
 import { BackgroundControls } from "./BackgroundControls";
@@ -59,6 +60,9 @@ export function SettingsAppearance() {
       <BackgroundControls />
       <CompositionControls />
       <LayoutControls />
+      {/* The lens's shape, beside Layout's place and frame. Same override,
+          its own "yours" marker; Layout's Reset clears it with the rest. */}
+      <DomainPickerControls />
       {/* The picker's own section: same chrome override, its own "yours"
           marker, and the Layout section's Reset clears it with the rest. */}
       <AgentPickerControls />

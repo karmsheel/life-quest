@@ -236,7 +236,9 @@ describe("onboarding interview (real app)", () => {
     );
     const promptSample = String((report.states as { promptSample?: unknown }).promptSample ?? "");
     assert.match(promptSample, /propose_onboarding_unlock/, "the rubric block names no proposal tool");
-    assert.match(promptSample, /Relationships/, "the rubric block does not carry the five areas");
+    assert.match(promptSample, /Relationships/, "the rubric block does not carry the seeded areas");
+    assert.match(promptSample, /Spiritual \(spiritual\)/, "the rubric block does not carry Spiritual");
+    assert.match(promptSample, /Career \(career\)/, "the rubric block does not carry Career");
 
     // ── the card is a receipt: the vault was already open when it appeared ─
     const pre = report.states.preContinueVault as {
@@ -254,7 +256,7 @@ describe("onboarding interview (real app)", () => {
     const band = report.states.preContinueBand as { tabs?: { label: string }[] };
     assert.deepEqual(
       (band.tabs ?? []).map((tab) => tab.label),
-      ["Life", "Health", "Business"],
+      ["Health", "LIFE", "Business"],
       "the band was not already the switcher when the card appeared",
     );
     const opened = report.states.opened as {

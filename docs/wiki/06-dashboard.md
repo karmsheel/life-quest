@@ -19,8 +19,9 @@ Return to [Wiki home](./index.md).
 - The main pane. It is a page, not a sheet.
 - The board follows the **area lens** in the window title bar: the **Life**
   board has its own pins, and each unlocked area has its own. The lens is a
-  quiet **Life** label while zero or one area is unlocked and becomes the
-  segmented control, starting with **Life**, once a second area opens.
+  quiet **LIFE** label while zero or one area is unlocked and becomes the
+  segmented control, with a round **LIFE** button in the centre, once a second
+  area opens. The board's title stays **Life**; **LIFE** is only the lens control.
 
 ## What it is for
 
@@ -39,10 +40,10 @@ watch; the board does not grade you.
 ### Read the board
 
 1. Open **Dashboard** on the Home wing.
-2. Choose the area lens in the window title bar: **Life** or an unlocked area.
-   The page's eyebrow is **Dashboard**, and the title under it is the lens's
-   name — **Life** on the base lens — with a **Locked** or **Unlocked** badge
-   beside it.
+2. Choose the area lens in the window title bar: the round **LIFE** button, or
+   an unlocked area. The page's eyebrow is **Dashboard**, and the title under it
+   is the area's name — **Life** on the base lens — with a **Locked** or
+   **Unlocked** badge beside it.
 3. Read the cards. Built-in cards update themselves when the vault changes, when
    a Decision is approved, and when the local day turns over. Every card the app
    ships wears a small blocks marker beside its heading (the **Built-in card**
@@ -352,7 +353,7 @@ the review index — are in [`LAWS/RECURRING.md`](../../LAWS/RECURRING.md).
   locking Finance takes the offer away with it.
 - On a board with no unlocked areas besides Life, the Built-in cards and Life's
   own pages and views are the whole board; unlocking Health, Mind, Finance,
-  Business or Relationships gives each its own board and its own pins.
+  Business, Relationships, Spiritual or Career gives each its own board and its own pins.
 
 ## Related
 

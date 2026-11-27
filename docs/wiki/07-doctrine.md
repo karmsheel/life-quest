@@ -23,8 +23,8 @@ own future documents, which are not doctrine).
   `/vision/:slug/:kind`, or `/blueprints/:slug/:kind`. The index and editor are
   pages, not sheets.
 - The **area lens** in the window title bar chooses which areas the indexes
-  list. It is a quiet **Life** label while zero or one area is unlocked and
-  becomes the segmented control, starting with **Life**, after a second one
+  list. It is a quiet **LIFE** label while zero or one area is unlocked and
+  becomes the segmented control, with **LIFE** in the centre, after a second one
   opens.
 
 Return to [Wiki home](./index.md).
@@ -49,7 +49,7 @@ labels:
 | `why` | Purpose | `domains/<slug>/why.md` |
 | `how` | Strategy (How) | `domains/<slug>/how.md` |
 
-Every area has all four files, including the five seeded areas while they are
+Every area has all four files, including the seven seeded areas while they are
 still locked — you simply cannot see them until the area is unlocked. Life, the
 base area, is a group like any other in the indexes.
 
