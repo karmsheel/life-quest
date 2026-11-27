@@ -731,7 +731,9 @@ async function main() {
         `the Finance lens draws ${financeRows.length} rows, expected the fixture's three Finance definitions`,
       );
     }
-    const periodHref = String(finance.periodHref ?? "");
+    // `checks.financeLens` holds the sampled link; the sample object itself has
+    // `periods`, not `periodHref` (reading the latter always saw undefined).
+    const periodHref = String(checks.financeLens.periodHref ?? "");
     if (!periodHref.includes("scope=financial")) {
       failure(
         `the Finance lens's period link is ${JSON.stringify(periodHref)}; it must carry &scope=financial so the review opens on this area`,
