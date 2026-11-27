@@ -95,7 +95,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     group: "wings",
     label: "Go to Plan",
     description:
-      "Jump to the Plan wing's last page — Goals, Life Map or Architecture.",
+      "Jump to the Plan wing's last page — Goals, Life Map or Blueprints.",
     defaultBinding: "Mod+3",
   },
   {

@@ -65,7 +65,7 @@ const DETAIL_SIZE = { width: 1280, height: 1180 };
 
 const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Task Manager"];
-const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
+const PLAN_RAIL = ["Goals", "Life Map", "Blueprints"];
 const LIST_ORDER = ["p-exec", "p-paused", "p-closed", "p-trip"];
 
 const SHOTS = {

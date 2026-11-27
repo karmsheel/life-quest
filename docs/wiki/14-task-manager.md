@@ -192,7 +192,7 @@ rail and never filter page data — [`LAWS/WINGS.md`](../../LAWS/WINGS.md).
 
 ### Who writes what
 
-- Your board actions go through the same map command bus as Architecture and Daily
+- Your board actions go through the same map command bus as Blueprints and Daily
   Schedule: create, update, move and delete apply immediately and write the map store.
 - Tasks live in `.lifequest/map.json` in the map store's `tasks` list — there is no
   per-task file.
@@ -201,7 +201,7 @@ rail and never filter page data — [`LAWS/WINGS.md`](../../LAWS/WINGS.md).
   [Decisions](./23-decisions.md). A companion that marks a task done by moving it to
   **Done**, or a dispatched agent that adds a card, is visible on the board on the next
   vault refresh. A card the companion creates this way wears the **Added by agent** glyph.
-- That is different from Architecture's day-template tools (day types, the default week and
+- That is different from Blueprints' day-template tools (day types, the default week and
   weekly items), which are Decision-gated and wait for approval.
 
 ### Send to agent

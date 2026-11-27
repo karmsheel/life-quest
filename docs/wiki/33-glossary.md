@@ -44,7 +44,7 @@ opens it becomes a segmented control with **Life** first (every unlocked area)
 and then one chip per unlocked area. Formerly **domain lens**. See
 [Areas](./05-areas.md).
 
-**Architecture** — the Plan wing page (`/track`) where the operator designs day
+**Blueprints** — the Plan wing page (`/track`) where the operator designs day
 types, the default week and the real week, and edits the area's Strategy (How)
 document. Not the app's technical architecture; that is
 [System architecture](./30-system-architecture.md).
@@ -121,8 +121,8 @@ changing or deleting existing data, and adding a column, still file a Decision.
 The old `autoApproveInserts` allowlist is retired and read by nothing.
 
 **Day template / day type** — a named shape for a day (work day, rest day, and so
-on) designed on the Architecture page. A template is picked for a day on Daily
-Schedule. See [Architecture](./08-architecture.md).
+on) designed on the Blueprints page. A template is picked for a day on Daily
+Schedule. See [Blueprints](./08-architecture.md).
 
 **Decision** — a proposed change that waits for the operator's approval, with a
 status of pending, approved or rejected. The inbox is one global shelf: it is not
@@ -130,7 +130,7 @@ filtered by the area lens, and its rail badge counts every pending Decision. A
 pending card can be edited before approval, and **Approve all** answers the
 queue. See [Decisions](./23-decisions.md).
 
-**Default week** — the repeating weekly shape designed in Architecture, from
+**Default week** — the repeating weekly shape designed in Blueprints, from
 which real weeks are planned.
 
 **Doctrine** — the four documents that define an area: Beliefs & Premise, Vision
@@ -191,7 +191,7 @@ vault's root data keeps. See [Areas](./05-areas.md).
 
 **Life Map** — the Plan wing's year canvas and month calendar (`/chart`): years,
 months, days and single-date events. It draws no tasks and no goal deadlines;
-weeks belong to Architecture and goal pressure to the Dashboard. See
+weeks belong to Blueprints and goal pressure to the Dashboard. See
 [Life Map](./11-life-map.md).
 
 **Library document** — a Markdown document in the vault's `documents/` folder,
@@ -272,7 +272,7 @@ capture may be attachment-only. Formerly **Life-Chain**. See
 column in place.
 
 **Real week** — a particular week as it is planned, as opposed to the repeating
-default week. Edited in Architecture; it is a plan view and does not feed the
+default week. Edited in Blueprints; it is a plan view and does not feed the
 Daily Schedule, which copies the default week's day type when a day first opens.
 
 **Review** — a cadence review file at `reviews/{cadence}/{period}.md`, with areas
@@ -307,7 +307,7 @@ Settings → Appearance.
 up. It does not wait indefinitely on the companion.
 
 **Strategy (How)** — the doctrine document holding the actions that turn an
-area's vision into reality. It is edited on both Dream and Architecture.
+area's vision into reality. It is edited on both Dream and Blueprints.
 
 **Studio** — the desktop app: Electron main process, preload bridge and React
 renderer. See [The studio](./03-the-studio.md).

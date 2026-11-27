@@ -78,7 +78,7 @@ just start talking — and an existing vault never sees a first-run card. See
 3. **Goals** turn the vision into records with a deadline and either a metric and
    target or a written definition of done.
 4. **The Life Map** places events on a calendar of years, months and days;
-   **Architecture** designs the day templates you want to live by.
+   **Blueprints** is where you design the day templates you want to live by.
 5. **Projects** break goals into real work, and record what the idea is, where it
    came from, and any repositories it lives in.
 6. **Daily Schedule**, **Task Manager** and **Notebox** turn the plan into a
@@ -97,7 +97,7 @@ the loop through **Decisions**:
 - **Reads** need no approval.
 - **The operator writes directly.** There is no agent lock on your own work.
 - **Agent writes that change a document** — doctrine, library documents,
-  reviews, projects, goal records, Architecture templates, pages other than
+  reviews, projects, goal records, Blueprint templates, pages other than
   script blocks, pins, ingest mappings, posted ledger edits, kit installs — are
   filed as pending Decisions. You approve or reject them.
 - **Some agent actions apply directly**, and the chat names what changed:
@@ -128,7 +128,7 @@ the window title bar — is the data filter for area-scoped lists.
 |---|---|---|
 | **Home** | Dashboard, Data, Pages, Documents, Agents, Images | What is happening now, and what do I have? |
 | **Define** | Dream, Vision, Ideal State | What do I believe, want and aim for? |
-| **Plan** | Goals, Life Map, Architecture | What am I reaching for, by when, and in what shape? |
+| **Plan** | Goals, Life Map, Blueprints | What am I reaching for, by when, and in what shape? |
 | **Act** | Projects, Daily Schedule, Task Manager | What am I actually doing? |
 | **Review** | Daily, Weekly, Monthly, Quarterly, Yearly | What happened, and what changes? |
 

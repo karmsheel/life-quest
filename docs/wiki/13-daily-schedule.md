@@ -1,10 +1,10 @@
 # Daily Schedule
 
 **Daily Schedule** is the page for running today. It copies today's day template — the
-Architecture **Day type** that the default week assigns to this weekday — into a live
+Blueprints **Day type** that the default week assigns to this weekday — into a live
 record, and then lets you put those items, your own additions and today's Task Manager tasks
 onto a clock. You rearrange it as the day overruns or finishes early; living the day never
-rewrites the plan in Architecture.
+rewrites the plan in Blueprints.
 
 ## Where it lives
 
@@ -26,7 +26,7 @@ Daily Schedule is the place where the plan and the day meet: untimed template it
 blocks move out of the way when something runs long. It also draws in the Task Manager tasks
 sitting in the **Today** column, so the board and the day are not two separate stories.
 
-The live day is a record, not a plan: Architecture's day types and default week stay the
+The live day is a record, not a plan: Blueprints' day types and default week stay the
 plan, and the live day is a copy that only exists for the date you open.
 
 ## How to use it
@@ -63,7 +63,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 | Part | What it does |
 |---|---|
 | **Daily Schedule** eyebrow + heading | The page eyebrow, the **Daily Schedule** title, and today's date as text (not a control). |
-| Template picker | A select with **None** and every Architecture day type by name; a dangling type id is shown as `"<id> (missing)"`. |
+| Template picker | A select with **None** and every Blueprints day type by name; a dangling type id is shown as `"<id> (missing)"`. |
 | **Clock** | Timed blocks, sorted by start time. Each row shows `HH:MM–HH:MM`, the text, a duration field, a start field, a **Done** checkbox, **Unplace** and **Apply**. |
 | **Leftover** | Stored untimed rows (template copies and your additions) followed by today's unplaced Task Manager tasks, which are prefixed **Task ·**. Each row has a done checkbox and **Place**; added rows also have **Remove**. |
 | **Place** fields | Start minute and duration number fields with **Place** and **Cancel**, shown in the row you are placing. |
@@ -71,17 +71,17 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 ## Rules and behaviour
 
-### What the day copies from Architecture
+### What the day copies from Blueprints
 
 - Opening `/daily` ensures a live day for the local date. If none exists, it copies the
   items of the default week's day type for that weekday into **Leftover**, with no blocks on
   the clock. The operation is idempotent: opening the page twice does not duplicate items.
 - If the weekday has no default day type, the live day starts with an empty leftover list
   and no type.
-- Architecture keeps **Day types**, **Default week** and **Real week**; this page never mutates
-  them. See [Architecture](./08-architecture.md).
+- Blueprints keeps **Day types**, **Default week** and **Real week**; this page never mutates
+  them. See [Blueprints](./08-architecture.md).
 - The live day is not drawn on [Life Map](./11-life-map.md). Life Map holds years, months
-  and dated events; weeks belong to Architecture. The live day is a separate record that
+  and dated events; weeks belong to Blueprints. The live day is a separate record that
   happens to live in the same map store.
 
 ### Timing and rearrangement
@@ -142,7 +142,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 ## Related
 
-- [Architecture](./08-architecture.md) — the day types and default week the live day copies
+- [Blueprints](./08-architecture.md) — the day types and default week the live day copies
   from, and the real week it leaves alone.
 - [Task Manager](./14-task-manager.md) — the **Today** column that appears in **Leftover**.
 - [Life Map](./11-life-map.md) — the calendar the live day is deliberately not drawn on.

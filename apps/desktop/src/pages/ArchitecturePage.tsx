@@ -32,8 +32,8 @@ function ArchitectureContent() {
     <div className={selected?.status === "archive" ? "architecture is-archive" : "architecture"}>
       <header className="life-map__chrome">
         <div className="life-map__title">
-          <WingEyebrow page="Architecture" />
-          <h1>Architecture</h1>
+          <WingEyebrow page="Blueprints" />
+          <h1>Blueprints</h1>
         </div>
         <label>
           Year

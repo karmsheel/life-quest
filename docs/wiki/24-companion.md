@@ -451,7 +451,7 @@ the arrangement you left; leaving full-screen chat gives back the split.
   page they open — the pill re-arms on every navigation.
 - **The companion can read anything in the vault and most writes wait.** Reads
   need no approval. Writes to doctrine, library notes, reviews, projects, goal
-  records, Architecture templates, pins, ingest mappings, posted ledger edits,
+  records, Blueprint templates, pins, ingest mappings, posted ledger edits,
   database merges and whole-database deletions, and dashboard views go through
   [Decisions](./23-decisions.md). Direct writes are adding data (a new database, a
   new row, a batch of rows — after the confirmation in chat, and a database name
