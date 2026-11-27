@@ -82,7 +82,7 @@ is recorded here because the reports themselves are gitignored:
 |---|---|---|
 | `shell-sidebar.json` | `pass: false`, 23 failures (rail topband mat, chat panel surface, dark-ladder repeats) | Ran 11-27, after the rig's last change — it judges this revision, and it is the same disagreement as at 0.3.4: the dock and rail surface rules (`--scene-panel-*` veils, `.chat-panel`'s own fill) were not touched in this window |
 | `chat-side.json` | `pass: false`, 5 dock-surface failures | Same five dock-surface expectations as at 0.3.4, same untouched rules; either the rigs or the shipped look is wrong, and neither changed here — a standing red to settle, not a regression from this window |
-| `update-live-feed.json` | `pass: false` before publishing (feed newest 0.3.4, build 0.3.5) | Expected pre-publish; re-run after `gh release create` and it is green against v0.3.5 |
+| `update-live-feed.json` | `pass: true` after publishing | Was red before `gh release create` (feed newest 0.3.4, build 0.3.5), green once v0.3.5 was the newest release: `0.3.5 -> 0.3.5` |
 | `packaged-smoke.json` | `pass: false` | The native `.exe` cannot run on this box (no binfmt; wine 9.0 cannot render); release proof is `release-0.3.5-packaged-smoke-linux.json` instead |
 | `release-0.3.5-packaged-smoke-linux.json` | `pass: true`, 17 checks | Loads the shipped `app.asar` from `release/win-unpacked` in a packaged layout; it only passes with the bench stopped, because the probe's door check (`:8643`) would otherwise be satisfied by the bench app's own door |
 
