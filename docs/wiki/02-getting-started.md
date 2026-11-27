@@ -165,8 +165,9 @@ dock and [Troubleshooting](./32-troubleshooting.md) for deeper failures.
 A new vault is seeded with:
 
 - the base area **Life**, always unlocked and never a chip of its own;
-- five further areas on disk but locked — **Health**, **Mind**, **Finance**,
-  **Business**, **Relationships** — each with its four empty doctrine documents;
+- seven further areas on disk but locked — **Health**, **Mind**, **Finance**,
+  **Business**, **Relationships**, **Spiritual**, **Career** — each with its four
+  empty doctrine documents;
 - vault settings with Monday as the week start and both decision-inbox switches
   on;
 - one Life log line recording the creation of the base area. A locked area
@@ -207,8 +208,8 @@ never shown a first-run card.
    is a plain reveal with no confirmation: unlocking creates nothing, moves
    nothing, and does not change the lens.
 3. The area joins **Your areas** and the title bar's lens. Once a second area is
-   open, the quiet **Life** label becomes a segmented control — **Life**, then
-   each unlocked area.
+   open, the quiet **LIFE** label becomes a segmented control — a round **LIFE**
+   button in the centre, and the unlocked areas on either side.
 
 The full flow, archive and delete are on [Areas](./05-areas.md).
 
@@ -236,7 +237,7 @@ under the buttons. Nothing is modified.
    the conversation. See [Dashboard](./06-dashboard.md).
 2. **Finish or continue the interview.** The **Welcome to LifeQuest** card sits
    above the composer. If you skipped it, **Settings → Areas** reveals the same
-   five areas by name.
+   seven areas by name.
 3. **Write one doctrine page.** Choose the **Define** wing, open **Dream**, and
    pick the **Beliefs & Premise** card for an open area. Type in the editor and
    press **Save**. The other documents are on **Dream**, **Vision** and
@@ -297,7 +298,7 @@ Nothing from Hermes is copied into the vault.
   it.
 - API keys never enter the vault ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)).
   Pi's key is sealed by the OS; Hermes' credential belongs to its profile.
-- A new vault seeds **Life** plus five locked areas. A locked area is invisible
+- A new vault seeds **Life** plus seven locked areas. A locked area is invisible
   to every read, list and write until it is unlocked; the interview opens at most
   three, and **Settings → Areas** can open any of them.
 - The app works offline against the files on disk. Features that need the

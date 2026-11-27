@@ -71,7 +71,7 @@ export const ONBOARDING_SEEDED_AREA_SLUGS: readonly string[] = AREA_SEEDS.filter
   (seed) => seed.locked,
 ).map((seed) => seed.slug);
 
-/** The interview cap: a first session that opens all five is a taxonomy delivery. */
+/** The interview cap: a first session that opens every seeded area is a taxonomy delivery. */
 export const ONBOARDING_AREA_MIN = 1;
 export const ONBOARDING_AREA_MAX = 3;
 
@@ -314,7 +314,7 @@ function isColumnType(value: unknown): value is DatabaseColumnType {
 }
 
 /**
- * Read the five seeded areas' lock state straight off disk.
+ * Read the seeded areas' lock state straight off disk.
  *
  * Deliberately NOT `isDomainLive`/`listDomains` through the hinge: the validator
  * must see a locked area in order to offer it. A missing area is simply absent

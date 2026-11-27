@@ -1,9 +1,9 @@
 # Areas
 
 Areas are the life areas LifeQuest organises around. Every vault has one base
-area, **Life**, and may have any number of narrower areas — the five seeded ones
-(**Health**, **Mind**, **Finance**, **Business**, **Relationships**) plus any you
-create. An area owns doctrine, a database, pages, saved views and its own
+area, **Life**, and may have any number of narrower areas — the seven seeded ones
+(**Health**, **Mind**, **Finance**, **Business**, **Relationships**, **Spiritual**,
+**Career**) plus any you create. An area owns doctrine, a database, pages, saved views and its own
 Dashboard board in one folder in the vault. The **area lens** in the window title
 bar chooses which area the area-scoped screens are showing. [The wiki
 home](./index.md) has the full page index.
@@ -11,10 +11,14 @@ home](./index.md) has the full page index.
 ## Where it lives
 
 - **The lens**: in the window title bar's lens tab, centred on the strip between
-  the rail and the trailing controls. It reads **Life** — the union lens — then
-  each unlocked area. With fewer than two unlocked areas the tab is a quiet,
-  inert **Life** label rather than a control; it becomes a segmented control once
-  a second area opens.
+  the rail and the trailing controls. **LIFE** is a round button in the centre
+  of that bar — the union lens — with unlocked areas on either side, in their
+  usual order. With fewer than two unlocked areas the tab is a quiet, inert
+  **LIFE** label rather than a control; it becomes the segmented control once a
+  second area opens. That centred circle is the **Life mark** mode, the one a
+  new vault wears. **Settings → Appearance** and a theme can wear **Named
+  strip**, **Initials**, **Stack**, or a custom combination instead — see
+  [Customizations](./37-customizations.md).
 - **Managing areas**: the **Settings** sheet, tab **Areas**, at
   `/settings?tab=domains`. The legacy path `/domains` redirects there.
 - **Area content**: each area's folder is `domains/<slug>/`; doctrine is read and
@@ -23,8 +27,9 @@ home](./index.md) has the full page index.
 - **The Life lens** is the union: Data and Pages span every live area, and the
   Dashboard shows the Life board. New databases and pages created while the lens
   is on Life land in the base `life` area with no selector.
-- **The seeded areas**: a new vault writes all six area folders at creation,
-  including the five locked ones, each with its four empty doctrine documents.
+- **The seeded areas**: a new vault writes all eight area folders at creation,
+  including the seven locked ones, each with its four empty doctrine documents.
+  An older vault gains **Spiritual** and **Career**, locked, the next time it opens.
 
 ## What it is for
 
@@ -36,14 +41,14 @@ The lens lets the same pages answer a narrower question without a second set of
 pages.
 
 0.2.8 adds a lock state so that a new vault is not handed a taxonomy to fill in
-before it has been lived in. The five narrow areas exist on disk from the first
+before it has been lived in. The narrow areas exist on disk from the first
 minute but stay invisible until the onboarding interview or the operator reveals
 them in Settings. **Life** is always available, and the whole-life container is a
 real base area — not a virtual lens.
 
-## The six seeded areas
+## The eight seeded areas
 
-A new vault creates these six, in this order:
+A new vault creates these eight, in this order:
 
 | Area | Slug | Unlocked at creation |
 |---|---|---|
@@ -53,11 +58,13 @@ A new vault creates these six, in this order:
 | **Finance** | `financial` | No — locked |
 | **Business** | `business` | No — locked |
 | **Relationships** | `relationships` | No — locked |
+| **Spiritual** | `spiritual` | No — locked |
+| **Career** | `career` | No — locked |
 
 The four doctrine documents are **Beliefs & Premise** (`premise.md`), **Vision &
 Desire** (`what.md`), **Purpose** (`why.md`) and **Strategy (How)** (`how.md`).
-Seed order becomes each area's `sortOrder` (0–5), and that order is what the lens
-and the Areas page show.
+Seed order becomes each area's `sortOrder` (0–7). The Areas page shows that
+order. The lens keeps it too, split so **LIFE** sits in the centre of the bar.
 
 **Finance** is the area the Finance kit installs into. The area is seeded locked;
 unlock `financial`, then Data offers the kit. The kit is optional and is offered
@@ -86,7 +93,7 @@ area; its own folder is where unscoped records land.
 
 ### Switch the lens
 
-1. Click **Life** or an unlocked area name in the window title bar's lens tab. The
+1. Click **LIFE** or an unlocked area name in the window title bar's lens tab. The
    current page stays the same; the data it lists changes.
 2. **←** and **→** move between lens options when the lens has focus.
 3. The choice is remembered per vault, so the app reopens on the lens you left it
@@ -170,7 +177,7 @@ app returns to **Life**.
 **Settings → Areas** has four parts:
 
 - **Unlock another area** — only while something is still locked: rows with the
-  area's name, its slug, and **Unlock**. The five seeded names appear here and
+  area's name, its slug, and **Unlock**. The seven seeded names appear here and
   nowhere else until they are opened.
 - **Your areas** — a card per live, unlocked area, in sort order. Each card shows
   the name (or the rename input), an **Active** badge when it is the current lens,
@@ -185,9 +192,10 @@ app returns to **Life**.
 - **Create area** — the name field and **Create**. Errors from the vault appear
   under the form.
 
-The lens in the window title bar is either a quiet **Life** label or, once a
-second area is unlocked, a segmented control: **Life**, then every live area by
-name. A lens-switch failure appears beside the control rather than as a dialog.
+The lens in the window title bar is either a quiet **LIFE** label or, once a
+second area is unlocked, a segmented control with a round **LIFE** button in
+the centre and every live area by name on either side. A lens-switch failure
+appears beside the control rather than as a dialog.
 The lens only appears while the shell is mounted; it is absent on the welcome and
 companion screens.
 
@@ -219,7 +227,7 @@ Life (general) captures as well as the ones tagged to that area
 
 ## Rules and behaviour
 
-- The vault seeds **Life** plus the five locked areas; **Life** is always
+- The vault seeds **Life** plus the seven locked areas; **Life** is always
   unlocked, is never a chip, and cannot be archived or deleted.
 - Locked means exactly `unlockedAt: null`. An **absent** `unlockedAt` field means
   unlocked, so a vault written before areas had a lock state keeps every area it

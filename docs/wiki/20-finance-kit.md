@@ -197,8 +197,8 @@ confirmation. The mechanics — validation, backup, registry merge — are cover
 ## Rules and behaviour
 
 The kit installs, it is not seeded. A new vault has the base area **Life** and
-five locked areas — Health, Mind, Finance, Business, Relationships — and no
-finance tables. The kit is a write into the Finance area and the operator
+seven locked areas — Health, Mind, Finance, Business, Relationships, Spiritual,
+Career — and no finance tables. The kit is a write into the Finance area and the operator
 chooses it. The law that matters is in [LAWS/DATABASES.md](../../LAWS/DATABASES.md):
 area databases live in the vault, a kit install proposed by an agent goes
 through Decisions, ingest rows wait for acceptance, conversational capture must

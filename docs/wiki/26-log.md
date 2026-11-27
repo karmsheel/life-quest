@@ -11,7 +11,7 @@ appends. See also [Wiki home](./index.md).
 - Rail: the footer row that closes the rail, label **Log**, scroll icon. The
   route is `/log`.
 - It is a page, not a sheet. Its rows are filtered by the lens in the window
-  strip, which reads **Life** until a second area is unlocked and becomes the
+  strip, which reads **LIFE** until a second area is unlocked and becomes the
   area band after that.
 - The page is headed **Life log**, with the line "Append-only feed of area,
   document, decision, and agent events."
@@ -69,7 +69,7 @@ them, and they print in full.
 
 | Family | Examples and when they are written |
 |---|---|
-| `domain.*` (prints as `area.*`) | `area.created`, `area.archived`, `area.unarchived`, `area.deleted`, and `area.unlocked` when an area opens. A new vault logs only **Life**'s creation; the five seeded areas arrive locked and write nothing until they are unlocked. |
+| `domain.*` (prints as `area.*`) | `area.created`, `area.archived`, `area.unarchived`, `area.deleted`, and `area.unlocked` when an area opens. A new vault logs only **Life**'s creation; the seven seeded areas arrive locked and write nothing until they are unlocked. |
 | `onboarding.*` | `onboarding.started` prints **Onboarding started**; `onboarding.completed` prints **Onboarding complete** and carries the manifest of what the interview opened. |
 | `document.*`, `page.*` | `document.created`, `document.updated`, `document.lock_changed` for doctrine and library documents; `page.created`; `page.script-applied` when a script block runs. |
 | `decision.*` | `decision.created` when a proposal is filed, `decision.resolved` when you approve or reject it, `decision.amended` when you save a correction onto a pending card, `decision.unfiled` when a proposal is withdrawn, `decision.unreadable` when a malformed decision file is skipped. |
@@ -106,7 +106,7 @@ entry of its own.
   that area's lens; an entry with no area appears only under **Life**. Review
   entries carry no area because a review spans areas, so they are visible under
   **Life** and hidden under an area lens.
-- **Locked areas leave no trace here.** The five seeded areas get no
+- **Locked areas leave no trace here.** The seven seeded areas get no
   `area.created` line while they are locked, because the Log is
   operator-visible. Unlocking one writes `area.unlocked`.
 - **A logged failure does not fail the write.** Where the Log is written after a

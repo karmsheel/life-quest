@@ -4,8 +4,8 @@
  *
  * WHY THIS RIG EXISTS
  *
- * A new vault now seeds a base `life` area (unlocked) and five LOCKED areas —
- * Health, Mind, Finance, Business, Relationships. Locked areas are invisible
+ * A new vault now seeds a base `life` area (unlocked) and seven LOCKED areas —
+ * Health, Mind, Finance, Business, Relationships, Spiritual, Career. Locked areas are invisible
  * until Settings → Areas unlocks them, and the titlebar lens is a quiet "Life"
  * label until a second area exists. This is the only rig that proves the whole
  * join over the real IPC bridge and a real vault: the seed, the quiet lens, the
@@ -258,7 +258,7 @@ async function run() {
     states.fresh = fresh;
     check("the titlebar carries the lens on first run", fresh.switcher === true, fresh.switcher);
     check("a vault with no unlocked areas shows the quiet Life label", fresh.quiet === true, fresh);
-    check("the quiet label reads Life", fresh.quietText === "Life", fresh.quietText);
+    check("the quiet label reads LIFE", fresh.quietText === "LIFE", fresh.quietText);
     check("there is no switcher to point at before a second area", fresh.tabs === null, fresh.tabs);
     check("the dashboard title reads Life", fresh.homeTitle === "Life", fresh.homeTitle);
     check("the quiet label keeps a lens-sized box", (fresh.lensBox?.height ?? 0) > 0, fresh.lensBox);
@@ -266,7 +266,7 @@ async function run() {
     const freshBytes = await shot(win, SHOT_FRESH);
     check("the first-run screen was captured", freshBytes > 20 * 1024, `${freshBytes} bytes`);
 
-    // ── 2. Settings → Areas reveals the locked five ────────────────────────
+    // ── 2. Settings → Areas reveals the locked seven ───────────────────────
     await win.webContents.executeJavaScript(`location.hash = "#/settings?tab=domains"`);
     await waitFor(win, `Boolean(document.querySelector(".locked-areas"))`, "the locked areas list", 30_000);
     const settings = await win.webContents.executeJavaScript(`(() => ({
@@ -277,7 +277,20 @@ async function run() {
       overlay: Boolean(document.querySelector(".settings-overlay")),
     }))()`);
     states.settings = settings;
-    check("the five locked areas are named exactly once each", JSON.stringify(settings.lockedNames) === JSON.stringify(["Health", "Mind", "Finance", "Business", "Relationships"]), settings.lockedNames);
+    check(
+      "the seven locked areas are named exactly once each",
+      JSON.stringify(settings.lockedNames) ===
+        JSON.stringify([
+          "Health",
+          "Mind",
+          "Finance",
+          "Business",
+          "Relationships",
+          "Spiritual",
+          "Career",
+        ]),
+      settings.lockedNames,
+    );
     check("each locked area has its own Unlock control", settings.unlockButtons === 5, settings.unlockButtons);
     check("the areas sheet is painted", settings.overlay === true, settings.overlay);
 
@@ -301,8 +314,9 @@ async function run() {
     states.unlocked = unlocked;
     const labels = (unlocked.tabs ?? []).map((tab) => tab.label);
     check("two unlocked areas turn the band into the switcher", unlocked.quiet === false, unlocked);
-    check("the switcher reads Life, Health, Finance", JSON.stringify(labels) === JSON.stringify(["Life", "Health", "Finance"]), labels);
-    check("Life is the selected lens", unlocked.tabs?.[0]?.checked === true, unlocked.tabs?.[0]);
+    check("the switcher reads Health, LIFE, Finance", JSON.stringify(labels) === JSON.stringify(["Health", "LIFE", "Finance"]), labels);
+    const lifeTab = (unlocked.tabs ?? []).find((tab) => tab.label === "LIFE");
+    check("LIFE is the selected lens", lifeTab?.checked === true, lifeTab);
     check("the dashboard is still on Life", unlocked.homeTitle === "Life", unlocked.homeTitle);
 
     // ── 5. choosing Health changes the surface ─────────────────────────────

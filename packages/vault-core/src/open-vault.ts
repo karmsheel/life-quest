@@ -4,6 +4,7 @@ import { autoApproveInsertsFromUnknown, countWeeklyVaultFiles } from "./agents.t
 import { chatQuestionsFromUnknown } from "./chat-questions.ts";
 import { decisionInboxFromUnknown } from "./decision-inbox.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
+import { ensureSeededAreas } from "./domains.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
 import { legacyOnboardingRecord, readOnboardingProposal, readOnboardingRecord } from "./onboarding.ts";
@@ -108,6 +109,11 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
     const logRes = await readLog(paths.root);
     if (!logRes.ok) return logRes;
     const log = logRes.value;
+
+    // New seeds land locked, with no log line. A stamp in .lifequest records
+    // which slugs have already been offered, so a deleted area stays deleted.
+    const seeded = await ensureSeededAreas(paths.root);
+    if (!seeded.ok) return seeded;
 
     const domains: DomainRecord[] = [];
     try {

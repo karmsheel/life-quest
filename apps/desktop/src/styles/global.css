@@ -1830,6 +1830,54 @@ a {
   max-width: 8.5rem;
 }
 
+/* LIFE is the union lens. Life mark (the default) is a round button in the
+   centre of the bar, with the unlocked areas split on either side. The two
+   sides share one width — the wider group's, set from the chips — so the
+   circle stays on the bar's centre line when the sides do not match. The
+   circle and the split are the recipe's mark and arrangement, not a class the
+   list used to opt out of: a chip mark is a normal segment, and a leading or
+   stacked arrangement does not split the row. The titlebar option padding is
+   earlier in this sheet; the circle rule is the one that wins there. */
+.domain-switcher[data-arrangement="centre"] .domain-switcher__tabs {
+  align-items: center;
+  justify-content: center;
+}
+
+.domain-switcher__side {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
+}
+
+.domain-switcher__side--leading {
+  justify-content: flex-end;
+}
+
+.domain-switcher__side--trailing {
+  justify-content: flex-start;
+}
+
+.domain-switcher[data-mark="circle"] .domain-switcher__overview {
+  flex: 0 0 auto;
+  align-self: center;
+  height: 1.625rem;
+  min-width: 1.625rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.domain-switcher[data-mark="circle"] .domain-switcher__overview .domain-switcher__name {
+  max-width: none;
+  overflow: visible;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: inherit;
+}
+
 .domain-switcher__error {
   color: var(--danger);
   font-size: 0.7rem;
@@ -1853,7 +1901,7 @@ a {
 
 .domain-switcher__life {
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.12em;
   line-height: 1;
   white-space: nowrap;
 }
@@ -14649,14 +14697,16 @@ button.chat-panel__activity-line:hover {
   overflow: hidden;
 }
 
-.domain-switcher--pill .domain-switcher__tabs {
+.domain-switcher--pill .domain-switcher__tabs,
+.domain-switcher[data-chips="pill"] .domain-switcher__tabs {
   border-radius: 999px;
   background: transparent;
   border-color: transparent;
   padding: 0;
 }
 
-.domain-switcher--pill .ui-segmented__option {
+.domain-switcher--pill .ui-segmented__option,
+.domain-switcher[data-chips="pill"] .ui-segmented__option {
   border-radius: 999px;
 }
 
@@ -15276,6 +15326,13 @@ button.chat-panel__activity-line:hover {
   flex: 0 0 auto;
 }
 
+/* Five mode names do not fit one line of a narrow sheet. The row wraps; the
+   options stay the same segmented control. */
+.theme-layout__control--wrap {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 /* Hidden is a legitimate pick, not a trap: say where the way out is. */
 .theme-layout__note {
   margin: 0;
@@ -15321,7 +15378,8 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The icon lens: one initial per area, the name kept for the screen reader. */
-.domain-switcher--icons .domain-switcher__initial {
+.domain-switcher--icons .domain-switcher__initial,
+.domain-switcher[data-labels="initials"] .domain-switcher__initial {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15333,7 +15391,8 @@ button.chat-panel__activity-line:hover {
 
 /* The list lens: the same radio group stacked in a column, for the rail's
    column or a bottom dock that wants rows rather than a strip. */
-.domain-switcher--list {
+.domain-switcher--list,
+.domain-switcher[data-arrangement="stack"] {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -15341,19 +15400,22 @@ button.chat-panel__activity-line:hover {
   gap: 0.15rem;
 }
 
-.domain-switcher--list .domain-switcher__tabs {
+.domain-switcher--list .domain-switcher__tabs,
+.domain-switcher[data-arrangement="stack"] .domain-switcher__tabs {
   flex-direction: column;
   width: 100%;
   gap: 0.15rem;
 }
 
-.domain-switcher--list .ui-segmented__option {
+.domain-switcher--list .ui-segmented__option,
+.domain-switcher[data-arrangement="stack"] .ui-segmented__option {
   justify-content: flex-start;
   width: 100%;
   text-align: left;
 }
 
-.domain-switcher--list .domain-switcher__name {
+.domain-switcher--list .domain-switcher__name,
+.domain-switcher[data-arrangement="stack"] .domain-switcher__name {
   max-width: 100%;
 }
 

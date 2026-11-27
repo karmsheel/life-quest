@@ -8,7 +8,8 @@ import { WingTabs } from "./WingTabs";
  * The rail and the titlebar own the two default homes (the rail's top band and
  * the lens centred in the strip). Every other placement is painted here, over
  * the shell, so a theme can move the wing and area switchers without either
- * component learning about themes at all.
+ * component learning where it was put. The lens reads its own shape from the
+ * worn chrome.
  */
 export function ChromeHosts() {
   const { chrome } = useTheme();
@@ -41,7 +42,7 @@ export function ChromeHosts() {
           data-chrome-slot="domain"
           data-chrome-place="below-titlebar"
         >
-          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
+          <DomainSwitcher />
         </div>
       ) : null}
 
@@ -52,7 +53,7 @@ export function ChromeHosts() {
           data-chrome-place="bottom-center"
           data-chrome-frame={chrome.domainSwitcher.frame}
         >
-          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
+          <DomainSwitcher />
         </div>
       ) : null}
 
@@ -63,7 +64,7 @@ export function ChromeHosts() {
           data-chrome-place="floating-bottom-right"
           data-chrome-frame={chrome.domainSwitcher.frame}
         >
-          <DomainSwitcher variant={chrome.domainSwitcher.variant} />
+          <DomainSwitcher />
         </div>
       ) : null}
     </>

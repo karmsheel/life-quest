@@ -18,7 +18,7 @@ Return to [Wiki home](./index.md).
 
 Life Map answers "when". The year dashboard gives you the macro scope — the shape of the year, the quarters, which days already carry something. The month page gives you the near view: a calendar with a text field for every day, the month's events listed under the grid, and two free-text fields for objectives and notes. It is a calendar, not a task board: it records what happens and what a day means, and leaves doing to the Act wing.
 
-The calendar is vault-global. With one unlocked area the lens band is a quiet **Life** label; once a second area unlocks it becomes the **Life** / area segmented control, and an area lens narrows what the **Events** panel and the event marks show. A new vault starts on **Life**, which is the whole-vault view.
+The calendar is vault-global. With one unlocked area the lens band is a quiet **LIFE** label; once a second area unlocks it becomes the segmented control with **LIFE** in the centre, and an area lens narrows what the **Events** panel and the event marks show. A new vault starts on **Life**, which is the whole-vault view.
 
 ## How to use it
 

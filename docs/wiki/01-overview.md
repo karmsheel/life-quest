@@ -6,9 +6,9 @@ want down to what they do today: doctrine, goals, projects, the timeline, daily
 work, journals, reviews, and the operator's own tables, pages and pictures, all in
 one folder on disk.
 
-A new vault opens on one surface, **Life**, with five further areas
-already on disk but locked — **Health**, **Mind**, **Finance**, **Business** and
-**Relationships**. A first-run interview in the chat dock opens the one to three
+A new vault opens on one surface, **Life**, with seven further areas
+already on disk but locked — **Health**, **Mind**, **Finance**, **Business**,
+**Relationships**, **Spiritual** and **Career**. A first-run interview in the chat dock opens the one to three
 areas the conversation actually heard. The built-in **Pi** companion runs the
 studio without Hermes; Hermes remains an optional external sidekick. [The wiki
 home](./index.md) has the full page index.
@@ -46,7 +46,7 @@ This is the difference between a product that stores your data and a product tha
 opens your data. The app is replaceable; the vault is not.
 
 The one surface is the point. A new operator is not asked to design a
-taxonomy before living in it: they land on **Life**, and the five narrower areas
+taxonomy before living in it: they land on **Life**, and the seven narrower areas
 stay on disk, invisible, until the interview or the operator reveals them.
 
 ## How to use it
@@ -54,7 +54,7 @@ stay on disk, invisible, until the interview or the operator reveals them.
 ### Start with Life, then let the interview open areas
 
 1. Create a vault and land on the Dashboard. The title bar's lens tab reads
-   **Life**; the five seeded areas are locked and appear nowhere yet.
+   **LIFE**; the seven seeded areas are locked and appear nowhere yet.
 2. The chat dock offers the **Welcome to LifeQuest** card. **Begin the
    interview** sends your first turn; the companion asks four to six open
    questions, reflects back what it heard, and opens the one to three areas the
@@ -181,8 +181,9 @@ the side switch and **Collapse chat**. See
   state is additive, and an area with no `unlockedAt` field reads as unlocked.
   Such a vault has no onboarding file either, so it is never shown a first-run
   card.
-- The interview opens at most three areas. A first session that opened all five
-  would be a taxonomy delivery in disguise, so the engine refuses that proposal.
+- The interview opens at most three areas. A first session that opened all seven
+  would be a taxonomy delivery in disguise, so the engine refuses a proposal of
+  more than three.
 - Unlocking an area does not switch the lens. After a second area opens, choose
   it in the title bar's lens tab.
 - Pi's transcripts live in app user data, never in the vault, grouped by the vault

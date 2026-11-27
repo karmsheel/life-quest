@@ -31,10 +31,10 @@ a vault is identity ([LAWS/IDENTITY.md](../../LAWS/IDENTITY.md)): the operator i
 holding the folder, and the product must not require an account to use it. One operator owns
 one vault; there is no multi-user tenancy and no shared area.
 
-A new vault seeds six area folders on disk. **Life** is the base area, always unlocked and
-never shown as a chip; the other five — Health, Mind, Finance, Business and Relationships —
-are written with their doctrine but stay locked until you open them, from Settings → Areas
-or through the first-run interview. See [Areas](./05-areas.md).
+A new vault seeds eight area folders on disk. **Life** is the base area, always unlocked and
+never shown as a chip; the other seven — Health, Mind, Finance, Business, Relationships,
+Spiritual and Career — are written with their doctrine but stay locked until you open them,
+from Settings → Areas or through the first-run interview. See [Areas](./05-areas.md).
 
 ## The folder at a glance
 
@@ -124,8 +124,10 @@ identity and four doctrine documents like any other, but the folder is invisible
 read and list in the app — no databases, pages, boards or doctrine — and the companion
 cannot name it. Locking a seeded area writes no log line, because the Log is
 operator-visible; unlocking it appends `area.unlocked` (stored as `domain.unlocked`) and
-reveals the whole folder at once. The five seeded areas arrive locked in a new vault; the
-first-run interview or Settings → Areas opens one to three of them.
+reveals the whole folder at once. The seven seeded areas arrive locked in a new vault; the
+first-run interview or Settings → Areas opens one to three of them. An older vault gains
+Spiritual and Career, locked, the next time it is opened. An area you already deleted is
+not put back.
 
 The four doctrine files are created empty and unlocked for every area, locked or not. If a
 doctrine file is missing when a vault opens, it is recreated with its title; the other files
