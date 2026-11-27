@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-27 · master `3e93429`
+Last updated: 2026-11-27 · master `d305a9c`
 
 What shipped, what broke, and what is next. This is the in-clone record: the detailed release
 notes are assembled in `.scratch/` (gitignored) into GitHub Releases, and the published
@@ -13,8 +13,8 @@ does. It is short on purpose: one section per release, plus the current state at
 |---|---|
 | Current release | **0.3.5**, tagged 2026-11-27 |
 | Released since | 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22), 0.3.4 (11-25) |
-| Master | nothing past `v0.3.5`; the next queue is [`TASKS.md`](TASKS.md) |
-| Next | decide the two stale docs branches (phone client, encrypted context layer) — keep or park |
+| Master | `d305a9c`; the phone client merged after `v0.3.5` and is unreleased; the next queue is [`TASKS.md`](TASKS.md) |
+| Next | decide the encrypted-context-layer branch, and settle the rigs master was already red on before the phone merge |
 | Open gates | `npm run typecheck` and `npm run docs:check` green on master; the packaged smoke and live update feed run at release, not in CI |
 
 ## Release history
@@ -101,7 +101,7 @@ this host before writing a report — rerun it before leaning on it.
 
 1. Settle the dock/rail surface red: either repaint the dock and the rail topband to what
    `chat-side` and `shell-sidebar` expect, or change the two rigs to the shipped look.
-2. Decide the two stale docs branches (phone client, encrypted context layer) — keep or park.
+2. Decide the encrypted-context-layer branch — keep or park.
 
 ## Open limitations
 

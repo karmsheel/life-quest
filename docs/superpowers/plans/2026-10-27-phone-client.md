@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-27
 **Spec:** [Phone client design](../specs/2026-10-26-phone-client-design.md). Decisions A and B were confirmed by the operator on 2026-10-27. When this plan and the spec disagree on behavior, follow the spec.
-**Status:** Ready to execute. This plan was approved with the spec; no code is written by this document.
+**Status:** Done. All seven tasks landed on `feat/phone-client` and merged to `master` in `0335056`; `phone-engine` and `phone-ui` are green (see `apps/desktop/e2e/artifacts/`).
 
 **Goal:** Ship the phone client VISION describes: a draft transaction queued on the phone while the studio is quit, posted only by the companion after a chat confirmation, and one pinned metric shown with its age.
 

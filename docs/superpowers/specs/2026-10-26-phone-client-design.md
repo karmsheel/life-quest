@@ -1,7 +1,7 @@
 # Phone Client — Design Spec
 
 **Date:** 2026-10-26
-**Status:** Approved — Decisions A and B confirmed by the operator on 2026-10-27. Implementation plan: [Phone client plan](../plans/2026-10-27-phone-client.md). This document changes no code and adds no tests.
+**Status:** Approved and implemented — merged to `master` in `0335056`. Decisions A and B were confirmed by the operator on 2026-10-27; [Phone client plan](../plans/2026-10-27-phone-client.md) records the build. This document changes no code and adds no tests.
 **Product:** LifeQuest — local-first life-management studio
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md) (the vault is the only source of truth), [MCP agent pairing](./2026-10-03-mcp-agent-pairing-design.md) (the door and grant vocabulary this deliberately does *not* reuse), [Receipt images](./2026-10-07-receipt-image-vault-design.md) (the capture path it builds on), [Finance kit](./2026-09-23-domain-databases-finance-kit-prs.md) (the metric it reads)
 **Answers:** What is the phone client, what may leave the vault for it, and how does a draft survive the studio being quit?

@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-11-27 · master `e124a34`
+Last updated: 2026-11-27 · master `d305a9c`
 
 The live queue. One **Now** per person or agent; **Next** is ordered but may be worked in
 parallel when each has its own worktree; **Blocked** says why and who can unblock it. Close an
@@ -34,14 +34,14 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Blocked
 
-- **None** with a stated blocker. The two stale docs branches above are *decisions*, not
-  blocked work; nobody should keep coding them until they are rebased.
+- **None** with a stated blocker. The stale docs branch above is a *decision*, not blocked
+  work; nobody should keep coding it until it is rebased.
 
 ## Done this cycle
 
 | When | What | Where |
 |---|---|---|
-| 2026-11-27 | The phone client: an installable PWA served by its own loopback door, a draft queue that survives the studio being quit, one pinned metric with its age, the companion's three draft tools, the Settings → Phone panel, the dock strip, the phone law and its wiki page — built on the 2026-10-26 spec and plan, synced over 632 commits | merge to `master`, 2026-11-27 · `e2e/artifacts/{phone-engine,phone-ui}.json` + `phone-*.png` |
+| 2026-11-27 | The phone client: an installable PWA served by its own loopback door, a draft queue that survives the studio being quit, one pinned metric with its age, the companion's three draft tools, the Settings → Phone panel, the dock strip, the phone law and its wiki page — built on the 2026-10-26 spec and plan, synced over 632+ commits | merge `0335056` · `e2e/artifacts/{phone-engine,phone-ui}.json` + `phone-*.png` |
 | 2026-11-27 | The review notebook, per-domain metrics, figures and Analytics: tabbed notebook pages with per-domain contracts, metric definitions and dated events, app-written figures and the overall table, the Analytics matrix with logging/editing/new-metric doors, definition edits through Decisions, the whole review/metrics/analytics IPC surface, law/spec/wiki and ten engine rigs + three renderer rigs | merge `e124a34` · `e2e/artifacts/{analytics,review,database-period}.json` |
 | 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
 | 2026-11-27 | The Plan page's identifiers follow its name: `BlueprintsPage`, `components/blueprints/`, the `.blueprints` class, and route `/blueprints` with the old `/track` address redirecting | merge `840781b` |
