@@ -9,15 +9,34 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 
 **Docs:** [LifeQuest project wiki](https://karmsheel.github.io/life-quest/) — the operator's guide to every feature; the source is in [docs/wiki/](docs/wiki/index.md).
 
-## Design
+## Documentation
+
+Start with the plan pack. It is the six files an agent reads before it writes anything: what
+the product is, how it is built, how it looks, what the rules are, what is being worked on, and
+what has shipped. [`AGENTS.md`](AGENTS.md) routes an agent to them; the wiki, `VISION.md` and
+`LAWS/` are the deeper sources they point at.
 
 | Doc | Description |
 |-----|-------------|
+| [PRD.md](PRD.md) | Users, requirements, scope, constraints, success signals |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Stack, folders, data flow, where each contract lives |
+| [DESIGN.md](DESIGN.md) | Colors, typography, components, motion, the vibe — and the token contract |
+| [RULES.md](RULES.md) | Coding conventions, workflow, and the never-do list |
+| [TASKS.md](TASKS.md) | The live queue, and the definition of done |
+| [PROGRESS.md](PROGRESS.md) | What shipped, what broke, what is next |
+| [AGENTS.md](AGENTS.md) | How an agent works here — read first |
 | [Project wiki](docs/wiki/index.md) | The operator's guide: every feature, how to use it, and how the system works |
 | [VISION.md](VISION.md) | Acceptance policy for future change |
-| [PRODUCT.md](PRODUCT.md) | Users, purpose, anti-references |
-| [DESIGN.md](DESIGN.md) | Token contract and primitives |
 | [LAWS/](LAWS/) | Observable product invariants |
+
+### Decision records
+
+The specs and plans behind shipped behavior — history, not rules. The rules they produced live
+in [`DESIGN.md`](DESIGN.md), [`ARCHITECTURE.md`](ARCHITECTURE.md) and the wiki. Specs written
+before 2026-11-27 cite `PRODUCT.md`, which is now [`PRD.md`](PRD.md).
+
+| Doc | Description |
+|-----|-------------|
 | [BERD systems phase 1](docs/superpowers/specs/2026-09-02-berd-systems-phase-1-design.md) | CSS-native design contract |
 | [BERD visuals phase 2](docs/superpowers/specs/2026-09-03-berd-visuals-phase-2-design.md) | Canvas/sheet, concentric radii, pill buttons |
 | [Three-pane studio](docs/superpowers/specs/2026-09-04-three-pane-studio-design.md) | Rail, main, and chat as separate 12px cards |
@@ -138,7 +157,10 @@ It checks the asar really holds the main, the preload and the renderer; then lau
 ```text
 apps/desktop/          Electron main + Vite React UI (@lifequest/desktop)
 packages/vault-core/   Vault FS library — create/open, domains, docs, decisions, log, agents
-docs/superpowers/      Design specs and implementation plans
+docs/wiki/             Operator guide, published at karmsheel.github.io/life-quest
+docs/design/screens/   The screenshots DESIGN.md embeds
+docs/superpowers/      Design specs and implementation plans (decision history)
+LAWS/                  Observable product invariants
 archive/web-skeleton/  Frozen Next.js + Prisma multi-user web app (not product runtime)
 ```
 

@@ -1,31 +1,38 @@
-# Extensions
+# Customizations
 
-**Extensions** is where the app's customisation files live as objects you can act on:
-select one, switch it on or off, edit it, or create a new one — without opening a folder or
-asking the companion to write anything.
+**Customizations** is where the shell's data files live as objects you can act on: select one,
+switch it on or off, edit it, or create a new one — without opening a folder or asking the
+companion to write anything.
 
-The name is deliberate. What the app ships today is **data**, not code: a theme file names
-colours, material steps, chrome placements, a scene and, at the top of the ladder, a
-composition of page widgets. Nothing in it can run, request, import or draw arbitrary
-markup. Calling that a *plugin* would promise an execution model and a trust story the app
-deliberately refuses (no package code, a strict content policy, one privileged window, an
-unsigned installer). **Extensions** is the umbrella for the things that extend the
-experience — today themes, later the same page grows a second kind without changing what the
-first one is. A single theme file is still a *theme* everywhere it matters: the companion
-tools are `get_theme` (the files, the kept theme, each theme's resolved scene and the pictures
-stored in the profile's `backgrounds/`), `validate_theme`, `write_theme` and
-`store_background_picture` (a vault image copied into that folder so a theme can name it), and
-the folder is `themes/`.
+The page shipped as **Extensions** until that name stopped being honest. What the app ships is
+**data**, not code: a theme file names colours, material steps, chrome placements, a scene, a
+composition of page widgets and — inside its chrome — the agent picker's own mode. Nothing in
+it can run, request, import or draw arbitrary markup. Calling any of it a *plugin* would
+promise an execution model and a trust story the app deliberately refuses (no package code, a
+strict content policy, one privileged window, an unsigned installer). **Customizations** is
+the umbrella for the shell's own layer — the parts of LifeQuest the operator is allowed to
+disagree with: themes today, and the components a theme may shape (the agent picker among
+them), with room for the next kind without changing what the first one is. The page was
+formerly Extensions; its old address `/extensions` redirects to `/customizations`, so pins and
+bookmarks still land here.
+
+A single theme file is still a *theme* everywhere it matters: the companion tools are
+`get_theme` (the files, the kept theme, each theme's resolved scene and the pictures stored in
+the profile's `backgrounds/`), `validate_theme`, `write_theme` and `store_background_picture`
+(a vault image copied into that folder so a theme can name it), and the folder is `themes/`.
 
 ## Where it lives
 
-- Wing: none. Extensions sits on the bottom shelf of the rail, below **Automations**.
-- Rail: icon **Puzzle**, label **Extensions**.
-- Route: `/extensions`.
-- Surface: a full page in the centre pane — a count line, a list of extension cards, an
+- Wing: none. Customizations sits on the bottom shelf of the rail, below **Automations**.
+- Rail: icon **Puzzle**, label **Customizations**. The row's stable id in saved preferences
+  and pinned shelves is still `extensions`: those stores resolve a row by id, so the label and
+  address moved while every operator's saved arrangement stayed put.
+- Route: `/customizations`; the page's former address `/extensions` redirects here, so old
+  bookmarks and pins keep working.
+- Surface: a full page in the centre pane — a count line, a list of customization cards, an
   inline create panel, an **Import from file** action in the page header, and an inline
-  editor with a visual **Fields** tab and a **JSON** tab, whose panel also keeps the file's
-  saved versions.
+  editor with a visual **Fields** tab (whose **Components** section picks the agent picker's
+  mode, below) and a **JSON** tab, whose panel also keeps the file's saved versions.
 
 This page is part of the [Wiki home](./index.md).
 
@@ -146,9 +153,9 @@ Below the composition, the same studio authors the rest of the theme file, so a 
 be built without opening the JSON tab.
 
 - **Chrome** — where the wing switcher and the area lens sit and how they look, the sidebar's
-  place and width, the chat dock's side and the height of the window strip: the same
-  placements and variants Settings offers, written into the file's `chrome` block instead of
-  stored as your overrides.
+  place and width, the chat dock's side, the height of the window strip and the agent picker's
+  mode (its own section below): the same placements and variants Settings offers, written into
+  the file's `chrome` block instead of stored as your overrides.
 - **Material** — the six axes: radius, elevation, type scale, density, motion and backdrop.
   They are named steps, not free values, and the shell reads them as its own tokens.
 - **Scene** — the **Sky** row (`plain`, `starfield`, `orbit`, `aurora`, `horizon` or `mesh`),
@@ -199,6 +206,61 @@ pick made there outranks the theme, is marked as yours, and survives the file be
 swapped or removed. The studio writes the file itself. The two stack — build a baseline in
 the studio, tune it in Settings — and they are deliberately not unified.
 
+## The agent picker as a component
+
+The chat dock's who-answers control is a component too, and the operator is allowed to
+disagree with its shape. A dense two-mark strip is right for someone who switches agents ten
+times an hour and wrong for someone who has picked one agent and wants the composer quiet, so
+the picker's form is data like everything else on this page.
+
+Three modes ship:
+
+- **One mark** — the default. Only the answering agent's mark, in the composer's trailing
+  gutter on a wide dock (and just above the composer when the dock is too narrow to hold a
+  gutter), with a chevron; the roster (every visible agent, with its name and blurb) opens from
+  a menu. A menu costs one click, which is why this is the quiet default.
+- **Named chip** — the same menu trigger, with the answering agent's name beside the mark: the
+  picker says who answers instead of making you recognise the mark.
+- **Quiet stack** — both marks on their own row under the composer, no capsule: one hairline
+  each, the active one marked, one click to switch. The roster is always in sight, paid for
+  with one line under the field rather than with the composer's own control row.
+
+**Custom** is your own combination of four closed axes, each a named step rather than a free
+value:
+
+| Axis | Values | What it decides |
+|---|---|---|
+| **Roster** | `Menu` / `Inline` | Whether the agents are folded into one floating trigger or laid out in the open on a row under the composer. The only axis that changes behaviour, not just pixels. |
+| **Labels** | `None` / `Agent` / `All` | How much of the agent is named: a mark, the answering agent, or every row. |
+| **Ring** | `Accent` / `Hairline` | How the active choice is marked — the brand ring, or a hairline that defers to the composer's own outline. |
+| **Size** | `Compact` / `Default` / `Large` | The mark's optical size, for a dense or an airy dock. |
+
+A custom mode is **data in the theme file, never code**: it is written as
+`chrome.agentPicker` — a `mode` name (a shipped mode or `custom`) plus, for `custom` or for a
+tweak on top of a shipped mode, `recipe: { roster, labels, ring, size }`. The vocabulary is
+closed on purpose: a theme can recombine what the renderer already draws, and nothing it names
+can add a component, a stylesheet or a script. The parser refuses an unknown mode or axis
+value by field name (`chrome.agentPicker.mode must be one of one-mark, named-chip,
+quiet-stack, custom`; `chrome.agentPicker.recipe.size must be one of compact, default,
+large`), so a bad theme is a named error in the editor rather than a dock that silently wears
+something else — and a broken third-party theme can never make the dock unopenable.
+
+There are two places to change it, and they stack the way the rest of the look does:
+
+- **Customizations studio → Components** — open a theme's **Edit** panel and pick the mode (or
+  the four axes) in **Components**. It writes the draft theme's `chrome.agentPicker`, and
+  because the studio paints the draft, the dock behind the page shows the change live.
+  **Save** writes it through the same parser gate as any other field, then previews for ten
+  seconds with **Keep** and **Revert**.
+- **Settings → Appearance** — the same control as *your* override. A pick made there outranks
+  the theme, is marked as yours, and survives the file being kept, swapped or removed;
+  **Reset to theme** hands the picker back to the theme's choice, exactly like the other rows
+  in that section.
+
+Both edit the same choice, and a theme's mode and your axis can layer: a theme that ships
+**Named chip** still lets you set just **Size → Large** without flattening the mode into four
+axes.
+
 ## History
 
 Every save over a file that already exists keeps the bytes it replaced, so a bad edit is one
@@ -224,7 +286,7 @@ press from undone.
 
 ## Creating one
 
-**New extension** opens a small panel: a name, and whether to start **Blank** or **Copy the
+**New customization** opens a small panel: a name, and whether to start **Blank** or **Copy the
 active look**.
 
 - **Blank** writes a minimal, valid file — name, label, description and the material
@@ -235,7 +297,7 @@ active look**.
 The file name is derived from the name as a slug (`Night Runway` → `night-runway.json`), with
 `-2`, `-3` … appended when that name is taken. A fresh file previews immediately; the status
 line names it and says so. Main validates the starter object before writing, so a new
-extension can never be a file the shell cannot draw.
+customization can never be a file the shell cannot draw.
 
 ## Import from a file
 
@@ -278,7 +340,7 @@ move between profiles without anyone finding a folder.
   never free positioning or CSS.
 - It cannot draw over the way out: window controls, the Settings entry and the preview bar are
   outside every theme.
-- It cannot change the vault. Extensions live in the app profile; the folder is untouched.
+- It cannot change the vault. Customizations live in the app profile; the folder is untouched.
 
 ## Related
 

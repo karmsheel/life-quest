@@ -20,7 +20,7 @@ import {
  * over the theme, marked "yours", and persisted per window; Reset hands the
  * scene back to the theme.
  *
- * Optional controlled props (D9) let the Extensions studio edit the same four
+ * Optional controlled props (D9) let the Customizations studio edit the same four
  * picks as a draft theme: `value` is the resolved scene, `onChange` receives the
  * patch, and no override is written. Settings renders it with no props and keeps
  * today's behaviour and ids.

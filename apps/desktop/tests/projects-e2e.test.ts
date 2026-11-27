@@ -90,7 +90,7 @@ const SCENARIOS = [
 ];
 
 const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Task Manager"];
-const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
+const PLAN_RAIL = ["Goals", "Life Map", "Blueprints"];
 
 type RailRow = { label: string | null; href: string | null; active: boolean };
 type Rect = {

@@ -198,11 +198,16 @@ const lifequest = {
     ipcRenderer.invoke("view:run", slug, spec) as Promise<Result<unknown>>,
   viewRunSaved: (slug: string, viewId: string) =>
     ipcRenderer.invoke("view:runSaved", slug, viewId) as Promise<Result<unknown>>,
-  // The composer's receipt: stored in the vault before the turn is posted.
-  receiptAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>
-    ipcRenderer.invoke("receipt:attach", input) as Promise<
+  // The composer's receipt: a picture the operator attached is promoted into
+  // the finance file store, so the turn that follows carries the receipt.
+  receiptPromote: (input: { id: string }) =>
+    ipcRenderer.invoke("receipt:promote", input) as Promise<
       Result<{ relPath: string; fileId: string; name: string; size: number }>
     >,
+  // Whether the receipt store exists (kit installed, Financial area live). One
+  // predicate, owned by main, so the chip's offer and the press agree.
+  receiptReady: () =>
+    ipcRenderer.invoke("receipt:ready") as Promise<Result<boolean>>,
   // The composer's general attachment: any media or file, stored in the vault
   // before the turn is posted. Main answers with the id the turn names back.
   attachmentAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>

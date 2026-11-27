@@ -41,14 +41,14 @@ export type NavItem = {
    * Where the row sits on the rail.
    *
    * `bottom` is the governed shelf: Notebox, Decisions, Daily Journal,
-   * Automations and Extensions, cordoned above the Log. `footer` is the Log itself — the one
+   * Automations and Customizations, cordoned above the Log. `footer` is the Log itself — the one
    * row that closes the rail — so the shelf can carry a divider above it without
    * counting the Log as one of its entries.
    */
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly, Analytics. Bottom shelf: Notebox, Decisions, Daily Journal, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Blueprints. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly, Analytics. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -92,9 +92,15 @@ export const NAV_ITEMS: NavItem[] = [
     // customisation files are selected, switched on or off, edited and created.
     // It is governance like the shelf above it — the look of the app belongs to
     // the operator, not to a wing.
+    //
+    // The row reads "Customizations" and links to `/customizations`, but its
+    // `id` stays "extensions" on purpose: stored rail preferences and pinned
+    // shelves resolve rows by id, so renaming it here would forget where every
+    // existing operator had put this row (or drop it from a pin). The id is an
+    // address for saved state, not the label the operator reads.
     id: "extensions",
-    href: "/extensions",
-    label: "Extensions",
+    href: "/customizations",
+    label: "Customizations",
     icon: Puzzle,
     section: "governance",
     pin: "bottom",
@@ -198,7 +204,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "track",
     href: "/track",
-    label: "Architecture",
+    label: "Blueprints",
     icon: Target,
     section: "main",
     wing: "plan",

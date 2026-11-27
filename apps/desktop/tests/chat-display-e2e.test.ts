@@ -1,22 +1,23 @@
 /**
  * The chat dock's reading settings: the shipped 1.5 line spacing, the Ctrl
- * gestures that zoom the transcript, the dock's door to Settings → Chat display,
- * the settings page itself, and the localStorage pair both surfaces share.
+ * gestures that zoom the transcript, the dock's own Chat display page, the
+ * Settings → Chat display page, and the localStorage pair every surface shares.
  *
  * The rig (`e2e/chat-display.electron.mjs`) drives two harness pages in a real
  * Electron window — `chat-panel.html?reading=1`, the shipping dock with the
  * `ChatDisplayProvider` on top, and `settings-sheet.html`, the real settings
  * sheet with the same provider — measures the layout engine's own computed type,
- * and writes `e2e/artifacts/chat-display.json` plus two pictures of the shipped
- * surfaces. This wrapper re-reads that report and restates every number the
- * suite depends on, so a regression names the field it broke instead of only
+ * and writes `e2e/artifacts/chat-display.json` plus three pictures of the
+ * shipped surfaces. This wrapper re-reads that report and restates every number
+ * the suite depends on, so a regression names the field it broke instead of only
  * "the driver said pass: false".
  *
  * Why these numbers: the transcript's base is 13px (0.8125rem of a 16px root)
  * on 1.5 line spacing, so the computed line-height is 19.5px and the ratio is
  * the reading line spacing the operator picked. A zoom notch is 10%, so 100% →
- * 14.3px, 110% → 14.3px, 120% → 15.6px. The settings page's preview is drawn
- * with the transcript's own measures, so its ratio is the same axis.
+ * 13px, 110% → 14.3px, 120% → 15.6px. The dock's display page and the settings
+ * page's preview are both drawn with the transcript's own measures, so their
+ * ratios are the same axis.
  *
  * A skipped rig is evidence of nothing, so the test only reports a run whose
  * report artifact exists — and `lifequest-e2e` is what puts THIS checkout on
@@ -42,8 +43,9 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/chat-display.json");
 
-/** The two pictures the rig writes beside the report. */
+/** The three pictures the rig writes beside the report. */
 const DOCK_SHOT = "chat-display-dock.png";
+const DISPLAY_SHOT = "chat-display-page.png";
 const SETTINGS_SHOT = "chat-display-settings.png";
 
 /** The contract's own numbers, restated so the report cannot drift on its own. */
@@ -64,9 +66,68 @@ type Box = {
 
 type Stored = { zoom?: number; lineSpacing?: number } | string | null;
 
+type ChatLocation = {
+  href: string;
+  pathname: string;
+  search: string;
+};
+
+type ZoomState = {
+  value: string | null;
+  inPresent: boolean;
+  outPresent: boolean;
+  resetPresent: boolean;
+  inDisabled: boolean | null;
+  outDisabled: boolean | null;
+};
+
+type PreviewState = {
+  present: boolean;
+  dataZoom: string | null;
+  dataLineSpacing: string | null;
+  readingScale: string;
+  readingLine: string;
+  proseFontPx: number | null;
+  proseLinePx: number | null;
+  proseRatio: number | null;
+};
+
+type LineButton = {
+  testid: string | null;
+  value: string | null;
+  pressed: string | null;
+  active: boolean;
+  label: string;
+};
+
+/** The bottom bar's Chat display settings control: a button, not a route. */
+type DisplayButton = {
+  present: boolean;
+  tag: string;
+  type: string | null;
+  ariaLabel: string | null;
+  title: string | null;
+  pressed: string | null;
+  href: string | null;
+  icon: string | null;
+  insideActionBar: boolean;
+};
+
+/** The dock's own display page, as the sample saw it. */
+type DisplayPageState = {
+  present: boolean;
+  headerPresent: boolean;
+  heading: string;
+  back: { present: boolean; label: string | null };
+  bodyPresent: boolean;
+  bodyVisible: boolean;
+  root: boolean;
+};
+
 type ChatSample = {
   viewport: { width: number; height: number };
   chatSurface: string | null;
+  location: ChatLocation;
   panel: Box;
   readingScale: string;
   readingLine: string;
@@ -78,14 +139,14 @@ type ChatSample = {
   } | null;
   answerRows: number;
   stored: Stored;
-  link: {
-    present: boolean;
-    tag: string;
-    ariaLabel: string | null;
-    title: string | null;
-    href: string | null;
-    insideActionBar: boolean;
-  } | null;
+  footer: { present: boolean; hidden: boolean | null; visible: boolean };
+  composerVisible: boolean;
+  tabs: { present: boolean; visible: boolean };
+  displayPage: DisplayPageState;
+  zoom: ZoomState;
+  preview: PreviewState | null;
+  lineButtons: LineButton[];
+  displayButton: DisplayButton;
   keyLog: {
     key: string;
     ctrl: boolean;
@@ -96,38 +157,14 @@ type ChatSample = {
   wheelLog: { ctrl: boolean; meta: boolean; deltaY: number; defaultPrevented: boolean }[];
 };
 
-type LineButton = {
-  testid: string | null;
-  value: string | null;
-  pressed: string | null;
-  active: boolean;
-  label: string;
-};
-
 type SettingsSample = {
   view: string | null;
   panelTitle: string;
   navLabels: string[];
   navChatDisplayActive: boolean;
   labels: string[];
-  zoom: {
-    value: string | null;
-    inPresent: boolean;
-    outPresent: boolean;
-    resetPresent: boolean;
-    inDisabled: boolean | null;
-    outDisabled: boolean | null;
-  };
-  preview: {
-    present: boolean;
-    dataZoom: string | null;
-    dataLineSpacing: string | null;
-    readingScale: string;
-    readingLine: string;
-    proseFontPx: number | null;
-    proseLinePx: number | null;
-    proseRatio: number | null;
-  } | null;
+  zoom: ZoomState;
+  preview: PreviewState | null;
   lineButtons: LineButton[];
   stored: Stored;
 };
@@ -158,7 +195,16 @@ type ChatDisplayReport = {
     zero: ChatSample;
   };
   persistence: { before: ChatSample; after: ChatSample };
-  dockLink: ChatSample["link"];
+  dockDisplay: {
+    control: DisplayButton;
+    locationBefore: ChatLocation;
+    page: ChatSample;
+    relaxed: ChatSample;
+    zoomed: ChatSample;
+    reset: ChatSample;
+    restored: ChatSample;
+    closed: ChatSample;
+  };
   settings: {
     sheet: { opened: boolean; clicked: boolean };
     opened: SettingsSample;
@@ -172,6 +218,7 @@ type ChatDisplayReport = {
   settingsArtifact: SettingsSample;
   artifacts: {
     dock: { path: string; bytes: number };
+    display: { path: string; bytes: number };
     settings: { path: string; bytes: number };
   };
   marks: { ms: number; label: string }[];
@@ -379,29 +426,325 @@ describe("the chat dock's reading settings", () => {
       "the answer font after the reload",
     );
 
-    // ── 5. the dock's door into Settings → Chat display ────────────────────
-    const link = report.dockLink;
-    assert.ok(link, 'the dock has no [data-testid="chat-display-settings"] link');
-    assert.equal(link!.present, true, "the dock's settings link is not present");
+    // ── 5. the dock's own display page: a button in the bar, not a route ────
+    const dockDisplay = report.dockDisplay;
+    const displayControl = dockDisplay.control;
     assert.equal(
-      link!.tag,
-      "A",
-      `the dock's settings entrance is a ${link!.tag}, not a link`,
-    );
-    assert.equal(
-      link!.ariaLabel,
-      "Chat display settings",
-      `the link's accessible name is ${JSON.stringify(link!.ariaLabel)}`,
-    );
-    assert.match(
-      link!.href ?? "",
-      /^\/settings\?tab=reading/,
-      `the link's href is ${JSON.stringify(link!.href)}, expected /settings?tab=reading`,
-    );
-    assert.equal(
-      link!.insideActionBar,
+      displayControl.present,
       true,
-      "the settings link is not in the dock's bottom action bar",
+      'the dock has no [data-testid="chat-display-settings"] control',
+    );
+    assert.equal(
+      displayControl.tag,
+      "BUTTON",
+      `the dock's display control is a <${displayControl.tag.toLowerCase()}>, not a button`,
+    );
+    assert.equal(
+      displayControl.type,
+      "button",
+      `the control's type is ${JSON.stringify(displayControl.type)}, expected "button"`,
+    );
+    assert.equal(
+      displayControl.href,
+      null,
+      `the control carries href ${JSON.stringify(displayControl.href)}; it must be a button, not a route`,
+    );
+    assert.equal(
+      displayControl.ariaLabel,
+      "Chat display settings",
+      `the control's accessible name is ${JSON.stringify(displayControl.ariaLabel)}`,
+    );
+    assert.equal(
+      displayControl.title,
+      "Chat display settings",
+      `the control's title is ${JSON.stringify(displayControl.title)}`,
+    );
+    assert.equal(
+      displayControl.pressed,
+      "false",
+      `the control reports pressed ${JSON.stringify(displayControl.pressed)} on a thread`,
+    );
+    assert.equal(
+      displayControl.icon,
+      "lucide-type",
+      `the control is not wearing the Type icon (${displayControl.icon})`,
+    );
+    assert.equal(
+      displayControl.insideActionBar,
+      true,
+      "the display control is not in the dock's bottom action bar",
+    );
+
+    const displayPage = dockDisplay.page;
+    assert.equal(
+      displayPage.chatSurface,
+      "display",
+      `pressing the control left the dock on ${JSON.stringify(displayPage.chatSurface)}, expected "display"`,
+    );
+    assert.equal(
+      displayPage.location.href,
+      dockDisplay.locationBefore.href,
+      "the dock's display control navigated the window instead of opening the dock's page",
+    );
+    assert.equal(
+      displayPage.location.href.includes("/settings"),
+      false,
+      `the window is on ${JSON.stringify(displayPage.location.href)}, a /settings route — the control must not navigate`,
+    );
+    assert.equal(
+      displayPage.displayPage.headerPresent,
+      true,
+      "the display page has no .chat-panel__header--display",
+    );
+    assert.equal(
+      displayPage.displayPage.heading,
+      "Chat display",
+      `the display page's heading is ${JSON.stringify(displayPage.displayPage.heading)}`,
+    );
+    assert.equal(
+      displayPage.displayPage.back.present,
+      true,
+      "the display page has no Back control",
+    );
+    assert.equal(
+      displayPage.displayPage.back.label,
+      "Back to chat",
+      `the Back control is labelled ${JSON.stringify(displayPage.displayPage.back.label)}`,
+    );
+    assert.equal(
+      displayPage.displayPage.bodyPresent,
+      true,
+      "the display page has no .chat-panel__body--display",
+    );
+    assert.equal(
+      displayPage.displayPage.bodyVisible,
+      true,
+      "the display page's body is not painted",
+    );
+    assert.equal(
+      displayPage.displayPage.root,
+      true,
+      "the display page has no [data-chat-display] root",
+    );
+    assert.equal(
+      displayPage.displayButton.pressed,
+      "true",
+      "the dock-bar display control does not report pressed on its own page",
+    );
+    assert.equal(
+      displayPage.footer.hidden,
+      true,
+      "the display page kept the chat footer drawn",
+    );
+    assert.equal(
+      displayPage.footer.visible,
+      false,
+      "the display page's footer is painted",
+    );
+    assert.equal(
+      displayPage.composerVisible,
+      false,
+      "the display page kept a visible composer",
+    );
+    assert.equal(
+      displayPage.tabs.present,
+      false,
+      "the display page still draws the tab strip",
+    );
+    assert.equal(
+      displayPage.zoom.value,
+      "110%",
+      `the dock's display page reads ${JSON.stringify(displayPage.zoom.value)}, expected the stored "110%"`,
+    );
+    assert.equal(
+      displayPage.zoom.inPresent &&
+        displayPage.zoom.outPresent &&
+        displayPage.zoom.resetPresent,
+      true,
+      `the display page's zoom controls are ${JSON.stringify(displayPage.zoom)}`,
+    );
+    assert.equal(
+      displayPage.lineButtons.length,
+      4,
+      `the display page offers ${displayPage.lineButtons.length} line spacings, expected 4`,
+    );
+    const displayNormal = displayPage.lineButtons.find(
+      (button) => button.testid === "chat-display-line-normal",
+    );
+    assert.ok(displayNormal, "the display page has no Normal line-spacing option");
+    assert.equal(displayNormal!.value, String(DEFAULT_RATIO));
+    assert.equal(displayNormal!.pressed, "true", "the Normal option is not pressed at the shipped 1.5");
+    assert.equal(displayNormal!.active, true, "the Normal option is not the active one");
+    const displayRelaxedBefore = displayPage.lineButtons.find(
+      (button) => button.testid === "chat-display-line-relaxed",
+    );
+    assert.ok(displayRelaxedBefore, "the display page has no Relaxed option");
+    assert.equal(displayRelaxedBefore!.value, String(RELAXED_RATIO));
+    assert.equal(
+      displayRelaxedBefore!.pressed,
+      "false",
+      "the Relaxed option is pressed while the stored spacing is 1.5",
+    );
+    assert.equal(displayPage.preview?.dataZoom, "110", `the display page's preview data-zoom is ${JSON.stringify(displayPage.preview?.dataZoom)}`);
+    assert.equal(
+      displayPage.preview?.dataLineSpacing,
+      String(DEFAULT_RATIO),
+      `the display page's preview data-line-spacing is ${JSON.stringify(displayPage.preview?.dataLineSpacing)}`,
+    );
+    assert.equal(displayPage.preview?.readingScale, "1.1");
+    assert.equal(displayPage.preview?.readingLine, String(DEFAULT_RATIO));
+    assertNear(
+      displayPage.preview?.proseFontPx,
+      fontAt(110),
+      fontTolerance,
+      "the dock display page's preview font-size at 110%",
+    );
+    assertNear(
+      displayPage.preview?.proseRatio,
+      DEFAULT_RATIO,
+      ratioTolerance,
+      "the dock display page's preview line ratio at 1.5",
+    );
+
+    // The dock page's controls are the settings page's controls: they write the
+    // same provider storage and the preview wears it.
+    const displayRelaxed = dockDisplay.relaxed;
+    assert.equal(
+      displayRelaxed.preview?.dataLineSpacing,
+      String(RELAXED_RATIO),
+      `pressing Relaxed on the dock page left the preview at ${JSON.stringify(displayRelaxed.preview?.dataLineSpacing)}`,
+    );
+    assertNear(
+      displayRelaxed.preview?.proseRatio,
+      RELAXED_RATIO,
+      ratioTolerance,
+      "the dock page's preview line ratio after Relaxed",
+    );
+    assert.equal(
+      storedOf(displayRelaxed).lineSpacing,
+      RELAXED_RATIO,
+      `localStorage ${STORAGE_KEY} is ${JSON.stringify(displayRelaxed.stored)} after Relaxed on the dock page`,
+    );
+    assert.equal(
+      storedOf(displayRelaxed).zoom,
+      110,
+      "pressing Relaxed on the dock page changed the stored zoom",
+    );
+    const displayRelaxedButton = displayRelaxed.lineButtons.find(
+      (button) => button.testid === "chat-display-line-relaxed",
+    );
+    assert.ok(displayRelaxedButton, "the dock page's Relaxed button did not render");
+    assert.equal(displayRelaxedButton!.pressed, "true");
+    assert.equal(displayRelaxedButton!.active, true);
+    assert.equal(
+      displayRelaxed.zoom.value,
+      "110%",
+      `changing line spacing moved the dock page's zoom to ${JSON.stringify(displayRelaxed.zoom.value)}`,
+    );
+
+    const displayZoomed = dockDisplay.zoomed;
+    assert.equal(
+      displayZoomed.zoom.value,
+      "120%",
+      `the dock page's + left the read-back at ${JSON.stringify(displayZoomed.zoom.value)}, expected "120%"`,
+    );
+    assert.equal(
+      displayZoomed.preview?.dataZoom,
+      "120",
+      `the dock page's preview data-zoom is ${JSON.stringify(displayZoomed.preview?.dataZoom)} after +`,
+    );
+    assertNear(
+      displayZoomed.preview?.proseFontPx,
+      fontAt(120),
+      fontTolerance,
+      "the dock page's preview font-size after +",
+    );
+    assertNear(
+      displayZoomed.preview?.proseRatio,
+      RELAXED_RATIO,
+      ratioTolerance,
+      "zooming the dock page must not change the line spacing",
+    );
+    assert.equal(
+      storedOf(displayZoomed).zoom,
+      120,
+      `localStorage ${STORAGE_KEY} is ${JSON.stringify(displayZoomed.stored)} after + on the dock page`,
+    );
+
+    const displayReset = dockDisplay.reset;
+    assert.equal(
+      displayReset.zoom.value,
+      "100%",
+      `the dock page's reset read-back is ${JSON.stringify(displayReset.zoom.value)}`,
+    );
+    assert.equal(
+      displayReset.preview?.dataZoom,
+      "100",
+      `reset left the dock preview's data-zoom at ${JSON.stringify(displayReset.preview?.dataZoom)}`,
+    );
+    assert.equal(
+      displayReset.preview?.dataLineSpacing,
+      String(DEFAULT_RATIO),
+      `reset left the dock preview's line spacing at ${JSON.stringify(displayReset.preview?.dataLineSpacing)}`,
+    );
+    assertNear(
+      displayReset.preview?.proseFontPx,
+      BASE_FONT_PX,
+      fontTolerance,
+      "the dock preview's prose font-size after reset",
+    );
+    assertNear(
+      displayReset.preview?.proseRatio,
+      DEFAULT_RATIO,
+      ratioTolerance,
+      "the dock preview's line ratio after reset",
+    );
+    assert.equal(storedOf(displayReset).zoom, 100, "reset did not store zoom 100 from the dock page");
+    assert.equal(
+      storedOf(displayReset).lineSpacing,
+      DEFAULT_RATIO,
+      "reset did not store the 1.5 line spacing from the dock page",
+    );
+
+    // The dock page must leave the pair the Settings leg below is written
+    // against: 110% / 1.5 (reset put 100%, one zoom-in puts it back).
+    const displayRestored = dockDisplay.restored;
+    assert.equal(
+      displayRestored.zoom.value,
+      "110%",
+      `the pair left for the Settings leg reads ${JSON.stringify(displayRestored.zoom.value)}, expected "110%"`,
+    );
+    assert.equal(displayRestored.preview?.dataZoom, "110");
+    assert.equal(displayRestored.preview?.dataLineSpacing, String(DEFAULT_RATIO));
+    assert.equal(storedOf(displayRestored).zoom, 110);
+    assert.equal(storedOf(displayRestored).lineSpacing, DEFAULT_RATIO);
+
+    // The same control closes the page: the thread and its composer come back.
+    const displayClosed = dockDisplay.closed;
+    assert.equal(
+      displayClosed.chatSurface,
+      "thread",
+      `a second press left the dock on ${JSON.stringify(displayClosed.chatSurface)}, expected "thread"`,
+    );
+    assert.equal(
+      displayClosed.composerVisible,
+      true,
+      "closing the dock's display page did not give the thread its composer back",
+    );
+    assert.equal(
+      displayClosed.footer.visible,
+      true,
+      "closing the dock's display page left the footer hidden",
+    );
+    assert.equal(
+      displayClosed.displayButton.pressed,
+      "false",
+      "the display control stayed pressed after it closed its own page",
+    );
+    assert.equal(
+      displayClosed.location.href,
+      dockDisplay.locationBefore.href,
+      "closing the dock's display page moved the window",
     );
 
     // ── 6. Settings → Chat display ─────────────────────────────────────────
@@ -630,11 +973,20 @@ describe("the chat dock's reading settings", () => {
       `the dock screenshot is ${report.artifacts.dock.path}, expected ${DOCK_SHOT}`,
     );
     assert.equal(
+      report.artifacts.display.path.endsWith(DISPLAY_SHOT),
+      true,
+      `the dock display-page screenshot is ${report.artifacts.display.path}, expected ${DISPLAY_SHOT}`,
+    );
+    assert.equal(
       report.artifacts.settings.path.endsWith(SETTINGS_SHOT),
       true,
       `the settings screenshot is ${report.artifacts.settings.path}, expected ${SETTINGS_SHOT}`,
     );
-    for (const shot of [report.artifacts.dock, report.artifacts.settings]) {
+    for (const shot of [
+      report.artifacts.dock,
+      report.artifacts.display,
+      report.artifacts.settings,
+    ]) {
       assert.equal(fs.existsSync(shot.path), true, `screenshot missing: ${shot.path}`);
       assert.ok(shot.bytes > 0, `screenshot is empty: ${shot.path}`);
     }

@@ -240,7 +240,7 @@ under the buttons. Nothing is modified.
 3. **Write one doctrine page.** Choose the **Define** wing, open **Dream**, and
    pick the **Beliefs & Premise** card for an open area. Type in the editor and
    press **Save**. The other documents are on **Dream**, **Vision** and
-   **Architecture**; see [Doctrine](./07-doctrine.md).
+   **Blueprints**; see [Doctrine](./07-doctrine.md).
 4. **Put one thing on the board.** Choose the **Act** wing and open **Task
    Manager** (`/act`), then add a card under **Today** — or capture a thought,
    picture or link on **Notebox** (`/chain`).

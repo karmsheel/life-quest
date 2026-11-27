@@ -13,27 +13,29 @@ import { describe, it } from "node:test";
  * The rig boots the real app against a throwaway profile, vault and Hermes home,
  * seeds two chats on each agent (a fake Hermes host gateway for the external
  * one, a fake OpenAI-compatible endpoint for the built-in one), opens two Hermes
- * tabs, then clicks the Pi pill with a MutationObserver watching `#root`.
+ * tabs, opens the picker and chooses Pi with a MutationObserver watching `#root`.
  *
  * The assertions below are the important report fields restated by name, so a
  * regression fails here by field instead of as a generic non-zero exit:
  *   - the connect screen never appeared (`welcomeSeen`), the dashboard node was
  *     never remounted (`dashboardGone`), the splash never returned;
- *   - the rail and tab strip swapped to the new agent's chats, the Pill became
- *     active, and the switch stayed under the latency ceiling;
+ *   - the rail and tab strip swapped to the new agent's chats, the picker's
+ *     trigger came to name Pi, and the switch stayed under the latency ceiling;
  *   - switching back restored Hermes's rail *and* both Hermes tabs;
  *   - the dock surface stayed mounted at every sample and no console errors or
  *     uncaught exceptions were logged.
  *
  * It also holds the switch's races, each also a named report field:
- *   A. one `companion:switchHarness` invoke per pill click, and no pill left
- *      pending (`switchInvokes`, `pill.pendingAtEnd`/`busyAtEnd`);
+ *   A. one `companion:switchHarness` invoke per *choice* — opening the roster
+ *      is not a switch — and no agent left pending (`switchInvokes`,
+ *      `picker.pendingAtEnd`/`busyAtEnd`);
  *   B. the chat rail never an empty column while switching
  *      (`rail.blankSamples`);
  *   C. the composer draft survives the round trip (`draft.restored`);
  *   D. per-agent tab memory (`persistence.beforeReload`) restored by a reload
  *      (`reload.tabLabels`, same active tab);
- *   E. the target pill never disabled by the switch (`pill.disabledSamples`).
+ *   E. the target row and its trigger never disabled by the switch
+ *      (`picker.targetDisabledSamples`).
  *
  * The rig must run through the bench wrapper, because the rigs load the
  * renderer the shared dev server on 127.0.0.1:5173 serves and the wrapper is
@@ -67,10 +69,22 @@ type State = {
   tabLabels: string[];
   activeTabLabel: string | null;
   tabCount: number;
-  pills: { name: string; active: boolean; disabled: boolean; pending: boolean; busy: boolean }[];
-  activePill: string | null;
-  pendingPills: string[];
-  busyPills: string[];
+  picker: {
+    mode: string | null;
+    roster: string | null;
+    labels: string | null;
+    ring: string | null;
+    size: string | null;
+    triggerAgent: string | null;
+    triggerDisabled: boolean;
+    triggerPending: boolean;
+    triggerBusy: boolean;
+    menuOpen: boolean;
+    rows: { agent: string; checked: boolean; disabled: boolean; pending: boolean; busy: boolean }[];
+  } | null;
+  activeAgent: string | null;
+  pendingAgents: string[];
+  busyAgents: string[];
   dashboard: boolean;
   markedDashboard: boolean;
   welcomeCard: boolean;
@@ -83,12 +97,16 @@ type SwitchResult = {
   clicked: boolean;
   timedOut?: boolean;
   switchMs: number;
-  activePill: string | null;
+  activeAgent: string | null;
+  rosterOpened: boolean;
+  rosterRows: string[];
+  menuClosedAfterChoice: boolean;
+  targetPendingSeen: boolean;
   railTitles: string[];
   tabLabels: string[];
   activeTabLabel: string | null;
-  pillDisabledAtEnd: boolean;
-  pillDisabledSamples: number;
+  targetDisabledAtEnd: boolean;
+  targetDisabledSamples: number;
   welcomeCardAbsent: boolean;
   markedDashboardPresent: boolean;
   chatPanelPresent: boolean;
@@ -99,7 +117,8 @@ type RestoreResult = {
   wasActive?: boolean;
   timedOut?: boolean;
   restoreMs: number;
-  activePill: string | null;
+  rosterOpened: boolean;
+  activeAgent: string | null;
   railTitles: string[];
   tabLabels: string[];
   activeTabLabel: string | null;
@@ -131,7 +150,8 @@ type Report = {
     railTitles: string[];
     tabLabels: string[];
     tabCount: number;
-    activePill: string | null;
+    activeAgent: string | null;
+    picker: State["picker"];
   };
   probe: {
     welcomeSeen: number;
@@ -160,12 +180,20 @@ type Report = {
     sampleCount: number;
     blankDetails: { t: number }[];
   };
-  pill: {
-    disabledSamples: number;
+  picker: {
+    modeOnBoot: string | null;
+    rosterOnBoot: string | null;
+    rosterOpened: boolean;
+    rosterRows: string[];
+    menuClosedAfterChoice: boolean;
+    targetPendingSeen: boolean;
+    targetDisabledSamples: number;
     pendingAfterSwitch: string[];
     busyAfterSwitch: string[];
     pendingAtEnd: string[];
     busyAtEnd: string[];
+    stateAfterSwitch: State["picker"];
+    stateRestored: State["picker"];
   };
   draft: {
     text: string;
@@ -296,7 +324,17 @@ describe("agent switch (the studio stays up)", () => {
       `the Hermes chats were not seeded: ${JSON.stringify(report.seed.hermesListed)}`,
     );
 
-    assert.equal(report.before.activePill, "Hermes", "the studio did not start on Hermes");
+    assert.equal(report.before.activeAgent, "hermes", "the studio did not start on Hermes");
+    assert.equal(
+      report.before.picker?.mode,
+      "one-mark",
+      `the picker booted in ${report.before.picker?.mode}, not the shipped default one-mark`,
+    );
+    assert.equal(
+      report.before.picker?.roster,
+      "menu",
+      "the shipped default picker is not the one-mark menu",
+    );
     assert.equal(report.before.tabCount, 2, `the rig opened ${report.before.tabCount} Hermes tabs, not 2`);
     for (const title of ["Hermes alpha", "Hermes beta"]) {
       assert.ok(
@@ -354,12 +392,27 @@ describe("agent switch (the studio stays up)", () => {
       `the tab strip still showed a Hermes tab after switching to Pi: ${JSON.stringify(report.afterSwitch.tabLabels)}`,
     );
 
-    // ── 5. The active pill is the one that was clicked ─────────────────────
-    assert.equal(report.afterSwitch.activePill, "Pi", "the Pi pill is not the active one");
+    // ── 5. The picker now names the agent that was chosen ──────────────────
+    assert.equal(report.afterSwitch.activeAgent, "pi", "the picker does not name Pi as active");
     assert.equal(
-      report.afterSwitch.pillDisabledAtEnd,
+      report.afterSwitch.targetDisabledAtEnd,
       false,
-      "the Pi pill is still disabled after the switch settled",
+      "the Pi row is still disabled after the switch settled",
+    );
+    assert.equal(
+      report.afterSwitch.rosterOpened,
+      true,
+      "the one-mark picker did not open its roster, so no choice was possible",
+    );
+    assert.deepEqual(
+      report.afterSwitch.rosterRows.slice().sort(),
+      ["hermes", "pi"],
+      `the roster listed ${JSON.stringify(report.afterSwitch.rosterRows)}`,
+    );
+    assert.equal(
+      report.afterSwitch.menuClosedAfterChoice,
+      true,
+      "the roster stayed open after the choice",
     );
 
     // ── 6. The switch was quick enough (the actual number is reported) ─────
@@ -373,7 +426,11 @@ describe("agent switch (the studio stays up)", () => {
     );
 
     // ── 7. Switching back restores the previous agent's rail and tabs ──────
-    assert.equal(report.restored.activePill, "Hermes", "the Hermes pill is not active after switching back");
+    assert.equal(
+      report.restored.activeAgent,
+      "hermes",
+      "the picker does not name Hermes as active after switching back",
+    );
     assert.ok(
       report.restored.railTitles.includes("Hermes alpha") &&
         report.restored.railTitles.includes("Hermes beta"),
@@ -406,26 +463,32 @@ describe("agent switch (the studio stays up)", () => {
       "the .chat-panel dock was absent in at least one probe sample during the switch",
     );
 
-    // ── A. One switch invoke per pill click; the pending mark clears ────────
+    // ── A. One switch invoke per choice; the pending mark clears ───────────
     assert.equal(
       report.switchInvokes.duringSwitch,
       1,
-      `one Pi pill click sent ${report.switchInvokes.duringSwitch} companion:switchHarness invokes`,
+      `one Pi choice sent ${report.switchInvokes.duringSwitch} companion:switchHarness invokes ` +
+        "(opening the roster must not invoke the switch)",
     );
     assert.equal(
       report.switchInvokes.duringRestore,
       1,
-      `one Hermes pill click sent ${report.switchInvokes.duringRestore} companion:switchHarness invokes`,
+      `one Hermes choice sent ${report.switchInvokes.duringRestore} companion:switchHarness invokes`,
+    );
+    assert.equal(
+      report.afterSwitch.targetPendingSeen,
+      true,
+      "the switch never showed a pending mark, so the operator got no feedback",
     );
     assert.deepEqual(
-      report.pill.pendingAtEnd,
+      report.picker.pendingAtEnd,
       [],
-      `the pending pill mark never cleared: ${JSON.stringify(report.pill.pendingAtEnd)}`,
+      `the pending mark never cleared: ${JSON.stringify(report.picker.pendingAtEnd)}`,
     );
     assert.deepEqual(
-      report.pill.busyAtEnd,
+      report.picker.busyAtEnd,
       [],
-      `aria-busy never cleared on the pills: ${JSON.stringify(report.pill.busyAtEnd)}`,
+      `aria-busy never cleared on the picker: ${JSON.stringify(report.picker.busyAtEnd)}`,
     );
 
     // ── B. The rail never showed an empty column during the switch ─────────
@@ -474,11 +537,11 @@ describe("agent switch (the studio stays up)", () => {
       `the reload restored a different tab in front: ${report.reload.activeTabLabel} vs ${report.restored.activeTabLabel}`,
     );
 
-    // ── E. The switch never disabled the target pill ───────────────────────
+    // ── E. The switch never disabled the target row or trigger ─────────────
     assert.equal(
-      report.pill.disabledSamples,
+      report.picker.targetDisabledSamples,
       0,
-      `the Pi pill was disabled ${report.pill.disabledSamples} samples during the switch`,
+      `the Pi row was disabled ${report.picker.targetDisabledSamples} samples during the switch`,
     );
 
     for (const shot of SHOTS) {

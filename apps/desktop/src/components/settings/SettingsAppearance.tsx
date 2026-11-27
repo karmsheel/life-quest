@@ -4,6 +4,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import type { ThemePreference } from "@/lib/theme";
+import { AgentPickerControls } from "./AgentPickerControls";
 import { MaterialControls } from "./MaterialControls";
 import { SceneControls } from "./SceneControls";
 import { BackgroundControls } from "./BackgroundControls";
@@ -58,6 +59,9 @@ export function SettingsAppearance() {
       <BackgroundControls />
       <CompositionControls />
       <LayoutControls />
+      {/* The picker's own section: same chrome override, its own "yours"
+          marker, and the Layout section's Reset clears it with the rest. */}
+      <AgentPickerControls />
       <ThemeFiles />
     </SettingsSection>
   );

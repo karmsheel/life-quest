@@ -462,6 +462,79 @@ describe("keyboard shortcuts settings and runner", () => {
       "the dock-bar shortcuts control does not report pressed on its page",
     );
 
+    // —— The bar's control is a door in both directions: a second press puts
+    //       the reference away and hands the thread back, a third restores it.
+    const dockShortcutsClosed = state(report, "dockShortcutsClosed");
+    assert.equal(
+      dockShortcutsClosed.dock?.surface,
+      "thread",
+      `a second press left the dock on ${JSON.stringify(dockShortcutsClosed.dock?.surface)}, expected "thread"`,
+    );
+    assert.equal(
+      dockShortcutsClosed.dock?.composerVisible,
+      true,
+      "a second press closed the reference without giving the thread its composer back",
+    );
+    assert.equal(
+      dockShortcutsClosed.shortcuts.pressed,
+      "false",
+      "the shortcuts control stayed pressed after it closed its own page",
+    );
+    assert.equal(
+      (dockShortcutsClosed.dock?.bar ?? []).find(
+        (entry) => entry.label === "Keyboard shortcuts",
+      )?.pressed,
+      "false",
+      "the bar's shortcuts action reports pressed on the thread it just restored",
+    );
+    assert.equal(
+      dockShortcutsClosed.dock?.shortcutsRoot,
+      false,
+      "the closed reference left its [data-chat-shortcuts] table mounted",
+    );
+    assert.equal(
+      dockShortcutsClosed.dock?.bodyVisible,
+      false,
+      "the closed reference's body is still painted",
+    );
+    assert.equal(
+      dockShortcutsClosed.dock?.footerHidden,
+      false,
+      "the thread's footer is still hidden after the reference closed",
+    );
+
+    const dockShortcutsReopened = state(report, "dockShortcutsReopened");
+    assert.equal(
+      dockShortcutsReopened.dock?.surface,
+      "shortcuts",
+      `a third press left the dock on ${JSON.stringify(dockShortcutsReopened.dock?.surface)}, expected "shortcuts"`,
+    );
+    assert.equal(
+      dockShortcutsReopened.shortcuts.pressed,
+      "true",
+      "the shortcuts control does not report pressed on the reference a third press restored",
+    );
+    assert.equal(
+      dockShortcutsReopened.dock?.composerVisible,
+      false,
+      "the restored reference kept a visible composer",
+    );
+    assert.equal(
+      dockShortcutsReopened.dock?.footerHidden,
+      true,
+      "the restored reference kept its footer visible",
+    );
+    assert.equal(
+      dockShortcutsReopened.dock?.bodyVisible,
+      true,
+      "the restored reference body is not painted",
+    );
+    assert.equal(
+      dockShortcutsReopened.dock?.rows.length,
+      15,
+      `the restored reference lists ${dockShortcutsReopened.dock?.rows.length} rows, not 15`,
+    );
+
     const dockBack = state(report, "dockBackToThread");
     assert.equal(dockBack.dock?.surface, "thread", "Back did not return the dock to the thread");
     assert.equal(dockBack.dock?.composerVisible, true, "the thread did not get its composer back");

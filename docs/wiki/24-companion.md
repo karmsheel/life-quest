@@ -309,9 +309,9 @@ connection:
    controls that need more are drawn disabled with the reason on hover:
    - the **model** and **thinking** pills — the chat keeps running on the model it
      was started with;
-   - **Attach a file** and **Attach a receipt** — a file dropped or pasted onto a
-     continued chat is refused with "A chat started on another surface can't
-     carry an attachment yet. Send it in a new chat.";
+   - the **Attach a file** control — a file dropped or pasted onto a continued
+     chat is refused with "A chat started on another surface can't carry an
+     attachment yet. Send it in a new chat.";
    - the page pill, which reads **not sent**, and the dashboard-card pills, which
      are not drawn — neither rides a continued turn;
    - **Steer** while a turn runs — a follow-up is queued instead, and the field
@@ -331,11 +331,13 @@ changes.
 
 The thread draws pictures in both directions.
 
-- **You send one.** The plus (**Attach a file**) and the picture-plus (**Attach a
-  receipt**) both take pictures. Once the turn is sent, your bubble carries a
-  **mini thumbnail** of each picture above the words, so the thread shows what the
-  turn was about rather than only a file name. Click a thumbnail for the full
-  picture; **Esc** or a click outside it closes the view.
+- **You send one.** Attach a picture with the plus (**Attach a file**). When the
+  Finance kit is installed and the Financial area live, a JPEG or PNG chip above
+  the field also carries **Use as receipt**: press it to make that picture the
+  next turn's receipt, which a purchase can cite as its source. Once the turn is
+  sent, your bubble carries a **mini thumbnail** of each picture above the words,
+  so the thread shows what the turn was about rather than only a file name. Click
+  a thumbnail for the full picture; **Esc** or a click outside it closes the view.
 - **The companion shows one.** Ask it for a diagram or a logo, or to look at a
   picture in your vault. It saves the picture inside the vault and writes it into
   its reply, and the thread draws it inline, no bigger than the column, with the
@@ -358,13 +360,13 @@ The thread draws pictures in both directions.
 | Field | **Message Pi…** / **Message Hermes…**. Enter is a newline; Ctrl/Cmd+Enter sends (or steers a live turn). Settings → **Composer** can make plain Enter send instead. Grows with the text up to a cap. |
 | Send / **Stop this run** | Sends the turn, or stops the live run cooperatively. |
 | **Steer** / **Queue** | Appear while a turn is running and the field has text: put the words into the live turn, or line them up to run next. |
-| **Attach a file** | The plus at the bottom left. Attaches any media or file as a general attachment, several per pick; chips wait above the field, each removable with **Remove "<name>"**. |
-| **Attach a receipt** | The picture-plus beside it. One JPEG or PNG, up to 25 MB, by picker, drag-and-drop or a pasted screenshot; **Remove receipt** drops it. A receipt is what the ledger cites as a transaction's source. |
+| **Attach a file** | The plus at the bottom left. Attaches any media or file as a general attachment, several per pick; chips wait above the field, each removable with **Remove "<name>"**. With the Finance kit installed and the Financial area live, a JPEG or PNG chip also carries **Use as receipt**: the picture's original is stored for the ledger, the turn cites that stored file, and the picture moves into the receipt chip in the control row. |
+| Receipt chip (**Remove receipt**) | The picture the next turn will carry as a receipt, in the control row beside the plus: its thumbnail, file name and size, and **Remove receipt**. One receipt rides one turn; **Use as receipt** on a second picture replaces it, and a refused promotion leaves the waiting receipt where it was. |
 | Page pill (**in context** / **off**) | Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
 | Card pills (**in context**) | One pill per dashboard card in context, in the order added, up to three. The `x` is **Remove "<card name>" from context**. |
 | Model pill / thinking pill | The chat's model and how hard it thinks. Choosing a model saves it on the chat's Hermes session, so it governs every later turn; with no pick the pill names the model the chat already runs on. Hermes serves a catalog; Pi's menu follows its endpoint. Absent when the companion offers no catalog. |
 
-The model and thinking pills, **Attach a file**, **Attach a receipt**, the page
+The model and thinking pills, **Attach a file**, the page
 pill and **Steer** are disabled on a chat continued from another surface, with the
 reason in their tooltip: the connection that carries that turn carries the prompt
 only. The one-line note above the box says so — see
@@ -377,14 +379,22 @@ out, up to three — see [Dashboard](./06-dashboard.md).
 
 The receipt bytes never come back to the renderer: main stores the original for
 the vault, builds a smaller copy for the model, and the turn cites the stored
-path. Attaching a receipt to a vault without the Finance kit is refused with
-"Install the Finance kit first" — see [Finance kit](./20-finance-kit.md).
+path. A chip carries **Use as receipt** only while the app's receipt store exists
+— the Finance kit installed and the Financial area live. Any other format, a
+vault without the kit, and a vault whose Financial area is archived all show no
+offer, so the press is never a dead end. What the offer cannot foresee is the
+picture's canvas: a picture over 12,000 px a side or 40 MP is refused with **That
+picture has more pixels than a receipt can hold.**, and a copy that will not
+shrink to 2 MB is refused with **This receipt could not be prepared for the
+agent.** A refused promotion leaves the attachment chip and any waiting receipt
+exactly as they were — see [Finance kit](./20-finance-kit.md).
 
 ### Look up a shortcut without leaving the page
 
 1. Choose **Keyboard shortcuts** in the dock's bottom bar. The panel becomes a
    reference: every movement in four groups — **Wings**, **Pages**, **Panels**,
-   **Surfaces** — with the keys it answers to.
+   **Surfaces** — with the keys it answers to. The button is a toggle: choose it
+   again (or choose **Back to chat**) and the dock returns to the thread it left.
 2. Each row has a pencil (**Change shortcut for <name>**). Choose it and the row
    waits for keys (**Press keys…**); the next combination with a real key saves.
    A cleared movement reads **Unassigned**.
@@ -419,8 +429,8 @@ the arrangement you left; leaving full-screen chat gives back the split.
 | Chat name | The active chat's name under the tab strip, plain neutral-gray text with no box and no pencil; the whole name is the rename target, and a click opens the field in place (a click outside or **Enter** saves, **Escape** keeps the old name). Pin and archive live in the tab's right-click menu. |
 | Source chip | Beside the chat's name when the conversation started on another surface: the surface's own mark — **Telegram**'s plane, **Discord**'s controller — in the same slot the **Chats** row and the tab strip lead the name with; a surface without a mark shows the shared-conversation icon and the surface's name — **Hermes Desktop**, **Hermes CLI**, or **another surface**. The tooltip names the surface and says this is the same conversation, continued here, not copied. Absent on a chat the app started. |
 | Transcript | Your message on the right in an accent-tinted bubble, the companion's answer as plain prose on the panel, both with **You** / **Pi** or **Hermes**, a time and a copy control, the `steered` mark; the tool activity line; approval and error panels. Its column shares the composer's margins, so on a wide dock the conversation and the field read as one column. |
-| Composer | One box: attachments and card pills above the field, the field, then a control row — add, receipt, page pill at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. A chat continued from another surface draws a one-line note above the box in place of the card pills, and the controls that connection cannot carry are disabled with the reason. |
-| Dock actions | A card centred on the composer at its own fixed width — a wider field does not stretch it — floating just inside the dock with a margin on every side and softly rounded, in the split dock and in full screen alike, holding **New chat**, **Notebox**, **Full screen chat** / **Exit full screen chat**, **Keyboard shortcuts**, **Chat display settings** (opens Settings → **Chat display**; **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too), the side switch and **Collapse chat**. The version badge is at the top of the rail, under the lockup. |
+| Composer | One box: attachments and card pills above the field, the field, then a control row — add, page pill and a waiting receipt at the left; model, thinking and send/stop at the right. The box keeps a margin on each side that grows with the dock's width, so a wide dock is a centred composer rather than an edge-to-edge field, and the transcript shares it. A chat continued from another surface draws a one-line note above the box in place of the card pills, and the controls that connection cannot carry are disabled with the reason. |
+| Dock actions | A card centred on the composer at its own fixed width — a wider field does not stretch it — floating just inside the dock with a margin on every side and softly rounded, in the split dock and in full screen alike, holding **New chat**, **Notebox**, **Full screen chat** / **Exit full screen chat**, **Keyboard shortcuts** (a toggle of the reference surface, pressed while it is in front), **Chat display settings** (the Type mark, a toggle of the **Chat display** page surface), the side switch and **Collapse chat**. A second press of either toggle, or **Back to chat**, returns the dock to the thread; the display page carries text size with **−** / percent / **+** / **Reset**, the line-spacing options and a live preview, editing the same window-local pair as Settings → **Chat display**, and neither surface draws the tab strip or the composer. **Ctrl/Cmd** and the mouse wheel over the dock zoom the chat text too. The version badge is at the top of the rail, under the lockup. |
 
 ## Rules and behaviour
 
@@ -441,7 +451,7 @@ the arrangement you left; leaving full-screen chat gives back the split.
   page they open — the pill re-arms on every navigation.
 - **The companion can read anything in the vault and most writes wait.** Reads
   need no approval. Writes to doctrine, library notes, reviews, projects, goal
-  records, Architecture templates, pins, ingest mappings, posted ledger edits,
+  records, Blueprint templates, pins, ingest mappings, posted ledger edits,
   database merges and whole-database deletions, and dashboard views go through
   [Decisions](./23-decisions.md). Direct writes are adding data (a new database, a
   new row, a batch of rows — after the confirmation in chat, and a database name
@@ -501,7 +511,8 @@ the arrangement you left; leaving full-screen chat gives back the split.
   area is where to widen it; if Hermes is not shown at all, this vault has no
   Hermes agent yet — **Agents in this vault** is where to add one.
 - **Receipts are for the ledger.** Attach a photo of a purchase only when the
-  Finance kit exists and you want a transaction logged.
+  Finance kit is installed, its Financial area is live, and you want a transaction
+  logged.
 - **The dock's Notebox surface takes text and pasted links.** It hosts the same
   records as the Notebox page, with its own composer: a pasted absolute URL becomes
   the same link chip as on the page, while pictures and other files are captured on

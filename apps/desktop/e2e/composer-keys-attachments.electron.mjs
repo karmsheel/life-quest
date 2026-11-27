@@ -19,18 +19,23 @@
  *     of the box's own control row, under the field.
  *  4. An attach that never reaches the turn: the file must ride the turn, and
  *     the turn must carry what kind of file it is.
- *  5. The composer closes while a turn runs, so a thought that arrives halfway
+ *  5. A picture's chip that offers no "Use as receipt" in a vault whose receipt
+ *     store is ready (the Finance kit installed and the Financial area live):
+ *     the receipt is chosen on the chip after the pick, so a missing action
+ *     makes the whole promotion path unreachable.
+ *  6. The composer closes while a turn runs, so a thought that arrives halfway
  *     through a long answer has nowhere to go — the field must stay open.
- *  6. A steer that never reaches the live run, or that clears the draft when it
+ *  7. A steer that never reaches the live run, or that clears the draft when it
  *     was refused: the words must survive a refusal.
- *  7. A queued message that is lost, or that never runs.
- *  8. The two attach flows collapsing into one. The add control takes any file
- *     (no `accept`, `multiple`), because an attachment is something the agent
- *     may look at. The receipt control takes one picture (`image/png`,
- *     `image/jpeg`), because a receipt is what the ledger cites as a
- *     transaction's source. One picker serving both would silently stop a clip
- *     from being attached, or a receipt from being cited.
- *  9. The operator's other keyboard is missing. Settings → Composer can put the
+ *  8. A queued message that is lost, or that never runs.
+ *  9. The one attach control losing its range, or a second receipt picker
+ *     growing back beside it. The add control takes any file (no `accept`,
+ *     `multiple`), because an attachment is something the agent may look at; a
+ *     receipt is what the ledger cites as a transaction's source, and it is
+ *     chosen afterwards on a picture's chip. A second picker would bring back
+ *     the two-buttons-one-meaning corner this feature removed, and an `accept`
+ *     filter on the one picker would silently stop a clip from being attached.
+ * 10. The operator's other keyboard is missing. Settings → Composer can put the
  *     send on plain Enter; with `lifequest-composer-send-key` set to "enter", a
  *     plain Enter must send and clear the draft, Shift+Enter must break the line
  *     and send nothing, and Ctrl/Cmd+Enter must still send — each exactly once,
@@ -114,7 +119,7 @@ async function main() {
 
     /**
      * The composer box, the field on top of it, the control row inside its
-     * bottom edge, and the two file pickers that row's controls open.
+     * bottom edge, and the one file picker that row's add control opens.
      */
     const readComposer = `(() => {
       const field = document.querySelector(".chat-panel__composer-input");
@@ -193,14 +198,15 @@ async function main() {
           plusBox.width === plusBox.height &&
           alphaOf(plusStyle.backgroundColor) > 0 &&
           radiusOf(plusStyle, plusBox.height) >= plusBox.height / 2,
-        // The two attach flows are two pickers, not one.
+        // The one file control: any media or file, with no accept filter and
+        // several files at a time. The receipt has no picker of its own — it is
+        // chosen afterwards on a picture's chip.
         attachmentInputPresent: Boolean(attachmentInput),
         attachmentAccept: attachmentInput ? attachmentInput.getAttribute("accept") : null,
         attachmentMultiple: attachmentInput ? attachmentInput.multiple : false,
         receiptInputPresent: Boolean(receiptInput),
-        receiptAccept: receiptInput ? receiptInput.getAttribute("accept") : null,
-        distinctPickers:
-          Boolean(attachmentInput) && Boolean(receiptInput) && attachmentInput !== receiptInput,
+        pickerCount: document.querySelectorAll('input[type="file"]').length,
+        legacyAttachControl: Boolean(document.querySelector(".chat-panel__attach")),
         fieldDisabled: field.disabled,
         sendCalls: (window.__lqChatCalls ?? []).length,
       };
@@ -230,10 +236,10 @@ async function main() {
       Boolean(initial.plusLabel),
       "the plus button has no aria-label",
     );
-    // Both attach flows survive, as two pickers: the add control takes any
-    // file; the receipt control takes one picture.
+    // One attach flow, not two: the add control opens the one file picker and
+    // takes anything; no receipt picker grows back beside it.
     check(
-      "the add control opens the general file picker",
+      "the add control opens the one general file picker",
       initial.attachmentInputPresent &&
         initial.attachmentAccept === null &&
         initial.attachmentMultiple === true,
@@ -241,12 +247,12 @@ async function main() {
         `multiple=${initial.attachmentMultiple}`,
     );
     check(
-      "the receipt control keeps its own image-only picker",
-      initial.receiptInputPresent &&
-        initial.receiptAccept === "image/png,image/jpeg" &&
-        initial.distinctPickers,
-      `receipt picker accept=${JSON.stringify(initial.receiptAccept)}, ` +
-        `distinct=${initial.distinctPickers}`,
+      "there is no second receipt picker beside the add control",
+      initial.receiptInputPresent === false &&
+        initial.pickerCount === 1 &&
+        initial.legacyAttachControl === false,
+      `receipt picker present=${initial.receiptInputPresent}, ` +
+        `file inputs=${initial.pickerCount}, old attach control=${initial.legacyAttachControl}`,
     );
 
     // 1 — Enter is a newline, and it sends nothing.
@@ -439,6 +445,53 @@ async function main() {
       turnWithAttachment.last?.attachments?.[0]?.kind === "video",
       `attachment ${JSON.stringify(turnWithAttachment.last?.attachments?.[0])}`,
     );
+
+    // 4b — a picture in a receipt-ready vault offers the receipt on its chip.
+    // This page's bridge answers main's receipt-store predicate (`receipt:ready`)
+    // true, so the offer must be there: the chip's action is the only way into
+    // the promotion, and a chip without it would make the feature unreachable.
+    // The fixture's bytes are not what makes it a picture here: the page stub
+    // reads the declared mime (real main sniffs bytes; receipt-attach's main leg
+    // proves that side).
+    const imageOffer = await run(`(async () => {
+      const input = document.querySelector('[data-testid="chat-attachment-input"]');
+      const file = new File([new Uint8Array([1, 2, 3, 4])], "photo.jpg", { type: "image/jpeg" });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      let chip = null;
+      for (let i = 0; i < 40; i += 1) {
+        chip = document.querySelector('[data-testid="chat-attachment"]');
+        if (chip && chip.querySelector('[data-testid="chat-attachment-receipt"]')) break;
+        await wait(100);
+      }
+      const action = chip ? chip.querySelector('[data-testid="chat-attachment-receipt"]') : null;
+      return {
+        chipKind: chip ? chip.getAttribute("data-attachment-kind") : null,
+        offer: chip ? chip.getAttribute("data-receipt-offer") : null,
+        actionText: action ? (action.textContent || "").trim() : null,
+        actionLabel: action ? action.getAttribute("aria-label") : null,
+        visible: action ? action.offsetParent !== null : false,
+      };
+    })()`);
+    check(
+      "a picture's chip offers 'Use as receipt' in a kit vault",
+      imageOffer.chipKind === "image" &&
+        imageOffer.offer === "true" &&
+        imageOffer.actionText === "Use as receipt" &&
+        imageOffer.actionLabel === "Use photo.jpg as a receipt" &&
+        imageOffer.visible === true,
+      `chip ${JSON.stringify(imageOffer)}`,
+    );
+    // Taken off again so it cannot ride a later leg's turn.
+    await run(`(() => {
+      const chip = document.querySelector('[data-testid="chat-attachment"]');
+      chip?.querySelector(".chat-panel__attachment-remove")?.click();
+      return true;
+    })()`);
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     // 5 — while a turn runs, the composer stays open, and the two gestures
     // appear as soon as there is something to say with them.
@@ -878,6 +931,7 @@ async function main() {
       afterCtrlEnter,
       attached,
       turnWithAttachment,
+      imageOffer,
       live,
       steered,
       queued,
@@ -915,8 +969,11 @@ async function main() {
     );
     console.log(
       `pickers: add accept=${JSON.stringify(report.initial.attachmentAccept)} ` +
-        `multiple=${report.initial.attachmentMultiple}; receipt accept=` +
-        `${JSON.stringify(report.initial.receiptAccept)}; distinct=${report.initial.distinctPickers}`,
+        `multiple=${report.initial.attachmentMultiple}; receipt picker=` +
+        `${report.initial.receiptInputPresent}; file inputs=${report.initial.pickerCount}`,
+    );
+    console.log(
+      `image offer: ${JSON.stringify(report.imageOffer)}`,
     );
     console.log(
       `keys: Enter sent ${report.afterEnter?.sends}, typed Enter made ` +

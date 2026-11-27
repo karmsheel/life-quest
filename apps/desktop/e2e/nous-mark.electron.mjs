@@ -2,12 +2,13 @@
  * The Nous girl's ink, in the real app, in both palettes.
  *
  * Why this exists. Hermes' mark is the Nous girl: one black ink on nothing,
- * shipped as an SVG and drawn in two places — the agent switcher's block in the
- * chat dock, and the collapsed dock's floating launcher. That single black was
- * fine on the day page and invisible at night, where the block and the launcher
- * button both step down toward the dark canvas. The fix is a white version of
- * the artwork at night: the launcher paints its mask white, and the image mark
- * inverts the same artwork. Day keeps exactly what it had.
+ * shipped as an SVG and drawn in two places — the agent picker's Hermes mark in
+ * the chat dock (in the roster menu the shipped one-mark trigger opens), and the
+ * collapsed dock's floating launcher. That single black was fine on the day page
+ * and invisible at night, where the mark and the launcher button both step down
+ * toward the dark canvas. The fix is a white version of the artwork at night: the
+ * launcher paints its mask white, and the image mark inverts the same artwork.
+ * Day keeps exactly what it had.
  *
  * A colour that cannot be seen is a paint bug, so the report is not a stylesheet
  * read: the rig captures the real window, crops each mark 1:1, and counts the
@@ -60,11 +61,11 @@ const PROBE_PROFILE = "lq-nous-mark";
 const DEV_SERVER_URL = "http://127.0.0.1:5173";
 
 /**
- * The ink floors. A 33px block holding a portrait has hundreds of ink pixels;
+ * The ink floors. A 30px disc holding a portrait has hundreds of ink pixels;
  * these are deliberately far below that, so anti-aliasing, the accent ring and
  * the portrait's own gaps cannot turn a painted mark into a failed one. They
  * are only high enough that an invisible (field-coloured) mark cannot pass: on
- * night's dark block a black mark leaves no bright pixel at all.
+ * night's dark disc a black mark leaves no bright pixel at all.
  */
 const MIN_INK_PIXELS = 40;
 /** The window/launcher sizes are CSS px; capture is scaled by the display. */
@@ -194,23 +195,49 @@ async function crop(win, box, name, scale) {
   return { image, ink: analyse(image) };
 }
 
-/** The marks as the page computed them: geometry, paint and the artwork URL. */
+/** The marks as the page computed them: geometry, paint and the artwork URL.
+ *
+ * The picker no longer shows two always-visible pills: its shipped `one-mark`
+ * mode is one trigger, and the roster — both agents' marks and names — is the
+ * menu that trigger opens. The Hermes mark this rig measures therefore lives in
+ * that menu, one click away (the flow is two clicks: open the picker, then pick
+ * a row). The read opens the menu when it is closed and leaves it open for the
+ * caller's crop; `CLOSE_PICKER` closes it afterwards.
+ */
 const READ_MARKS = `(async () => {
   const rect = (el) => {
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   };
-  const pills = [...document.querySelectorAll(".agent-switcher__pill")].map((el) => ({
-    name: el.getAttribute("aria-label"),
+  const root = document.querySelector('[data-testid="agent-picker"]');
+  const trigger = document.querySelector('[data-testid="agent-picker-trigger"]');
+  if (root && trigger && !document.querySelector('[data-testid="agent-picker-menu"]')) {
+    trigger.click();
+    const deadline = performance.now() + 3000;
+    while (
+      performance.now() < deadline &&
+      !document.querySelector('[data-testid="agent-picker-menu"]')
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  const rows = [
+    ...document.querySelectorAll(".agent-switcher .agent-switcher__option[data-agent]"),
+  ];
+  const options = rows.map((el) => ({
+    agent: el.getAttribute("data-agent"),
+    name:
+      ((el.querySelector(".agent-switcher__name") || {}).textContent || "").trim() ||
+      el.getAttribute("data-agent"),
     active: el.getAttribute("aria-checked") === "true",
-    box: rect(el),
   }));
-  const hermesPill = [...document.querySelectorAll(".agent-switcher__pill")].find(
-    (el) => el.getAttribute("aria-label") === "Hermes",
-  );
-  const image = hermesPill
-    ? hermesPill.querySelector('img[data-agent-mark="hermes"]')
+  const hermesRow = rows.find((el) => el.getAttribute("data-agent") === "hermes") || null;
+  // The disc is the mark's own circle: cropping it shows the mark as the picker
+  // wears it, not the row's name and blurb.
+  const hermesDisc = hermesRow ? hermesRow.querySelector(".agent-switcher__disc") : null;
+  const image = hermesRow
+    ? hermesRow.querySelector('img[data-agent-mark="hermes"]')
     : null;
   const launcher = document.querySelector(".chat-launcher");
   const launcherMark = launcher ? launcher.querySelector(".chat-launcher__mark") : null;
@@ -229,12 +256,18 @@ const READ_MARKS = `(async () => {
     skin: document.documentElement.getAttribute("data-skin"),
     viewport: { width: window.innerWidth, height: window.innerHeight },
     switcher: {
-      shown: Boolean(document.querySelector(".agent-switcher")),
-      items: pills.map((pill) => pill.name),
-      pills,
+      shown: Boolean(root),
+      mode: root ? root.getAttribute("data-mode") : null,
+      rosterKind: root ? root.getAttribute("data-roster") : null,
+      activeAgent:
+        (trigger && trigger.getAttribute("data-agent")) ||
+        (options.find((option) => option.active) || {}).agent ||
+        null,
+      items: options.map((option) => option.name),
+      options,
       hermes: image
         ? {
-            box: rect(hermesPill),
+            box: rect(hermesDisc || hermesRow),
             decoded,
             src: image.getAttribute("src"),
             filter: style(image, "filter"),
@@ -253,6 +286,13 @@ const READ_MARKS = `(async () => {
         }
       : null,
   };
+})()`;
+
+/** Close the roster menu a READ_MARKS opened, before the next picture or click. */
+const CLOSE_PICKER = `(() => {
+  const trigger = document.querySelector('[data-testid="agent-picker-trigger"]');
+  if (trigger && trigger.getAttribute("aria-expanded") === "true") trigger.click();
+  return true;
 })()`;
 
 async function main() {
@@ -354,17 +394,22 @@ async function main() {
   win.webContents.reload();
   await boot;
   await waitFor(
-    "the dock and both agent blocks",
+    "the dock and its agent picker",
     async () =>
       Boolean(
         await js(
-          "document.querySelectorAll('.agent-switcher__pill').length >= 2 && Boolean(document.querySelector('.chat-panel'))",
+          "document.querySelector('[data-testid=\"agent-picker-trigger\"]') !== null && Boolean(document.querySelector('.chat-panel'))",
         ),
       ),
   );
+  // The picker's shipped mode shows only the answering agent's mark, so the
+  // Hermes mark is in the roster the trigger opens. Open it here and let the
+  // artwork load; READ_MARKS reuses the open menu and leaves it up for the crop.
   await waitFor("the Hermes artwork", () =>
     js(`(async () => {
-      const img = document.querySelector('img[data-agent-mark="hermes"]');
+      const trigger = document.querySelector('[data-testid="agent-picker-trigger"]');
+      if (trigger && trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+      const img = document.querySelector('.agent-switcher__option[data-agent="hermes"] img[data-agent-mark="hermes"]');
       if (!img) return false;
       try { await img.decode(); return true; } catch { return false; }
     })()`),
@@ -377,6 +422,9 @@ async function main() {
   fs.writeFileSync(path.join(artifactsDir, "nous-mark-night-window.png"), nightWindow.toPNG());
 
   const nightSwitcher = await crop(win, night.switcher.hermes.box, "nous-mark-night-switcher", scale);
+  // The roster was opened to reach Hermes' mark; close it before the collapse
+  // leg so the next read starts from the resting dock.
+  await js(CLOSE_PICKER);
 
   // Collapse to the floating launcher, the other place the mark is worn.
   await js(`(() => {
@@ -408,7 +456,7 @@ async function main() {
   const dayCollapsed = await js(READ_MARKS);
   const dayLauncher = await crop(win, dayCollapsed.launcher.box, "nous-mark-day-launcher", scale);
 
-  // Reopen the dock to measure the block by day.
+  // Reopen the dock to measure the picker mark by day.
   await js(`(() => {
     const launcher = document.querySelector(".chat-launcher");
     if (launcher) launcher.click();
@@ -423,6 +471,7 @@ async function main() {
   const dayWindow = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "nous-mark-day-window.png"), dayWindow.toPNG());
   const daySwitcher = await crop(win, day.switcher.hermes.box, "nous-mark-day-switcher", scale);
+  await js(CLOSE_PICKER);
 
   // ── System: no `data-theme`, the media query is the only signal ──────────
   await js(`(() => {
@@ -439,8 +488,9 @@ async function main() {
   );
   await sleep(700);
   const systemOpen = await js(READ_MARKS);
-  // The launcher only exists while the dock is collapsed: read the block's
-  // paint from the open dock, then collapse to read the button's ink.
+  await js(CLOSE_PICKER);
+  // The launcher only exists while the dock is collapsed: read the picker
+  // mark's paint from the open dock, then collapse to read the button's ink.
   await js(`(() => {
     const collapse = document.querySelector('[data-testid="chat-collapse"]');
     if (collapse) collapse.click();
@@ -512,17 +562,17 @@ async function main() {
   // the dock mounting on the reload after it.
   check("engaged a ready Pi and opened the vault", configured.engaged === "ready" && configured.openedOk, JSON.stringify(configured));
   check("the switcher offers Hermes and Pi", night.switcher.items.join(",") === "Hermes,Pi", JSON.stringify(night.switcher.items));
-  check("the Hermes block decodes its artwork", hermes(night)?.decoded === true, JSON.stringify(hermes(night)?.src));
+  check("the Hermes mark in the picker decodes its artwork", hermes(night)?.decoded === true, JSON.stringify(hermes(night)?.src));
   check("night is the explicit dark palette", night.dataTheme === "dark", String(night.dataTheme));
   check("the night artwork is inverted to its white version", hermes(night)?.filter === "invert(1)", String(hermes(night)?.filter));
-  check("the night block paints white ink", nightSwitcher.ink.brightPixels >= MIN_INK_PIXELS, JSON.stringify(nightSwitcher.ink));
+  check("the night picker mark paints white ink", nightSwitcher.ink.brightPixels >= MIN_INK_PIXELS, JSON.stringify(nightSwitcher.ink));
   check("the night launcher paints its mask white", nightCollapsed.launcher?.color === "rgb(255, 255, 255)", String(nightCollapsed.launcher?.color));
   check("the night launcher paints white ink", nightLauncher.ink.brightPixels >= MIN_INK_PIXELS, JSON.stringify(nightLauncher.ink));
   check("the launcher is still the Nous girl", String(nightCollapsed.launcher?.markMask).includes("girl_steampunk"), String(nightCollapsed.launcher?.markMask));
 
   check("day is the explicit light palette", day.dataTheme === "light", String(day.dataTheme));
   check("the day artwork keeps the shipped black", hermes(day)?.filter === "none", String(hermes(day)?.filter));
-  check("the day block paints dark ink", daySwitcher.ink.darkPixels >= MIN_INK_PIXELS, JSON.stringify(daySwitcher.ink));
+  check("the day picker mark paints dark ink", daySwitcher.ink.darkPixels >= MIN_INK_PIXELS, JSON.stringify(daySwitcher.ink));
   check("the day launcher keeps the shipped dark gray", dayCollapsed.launcher?.color === "rgb(51, 51, 51)", String(dayCollapsed.launcher?.color));
   check("the day launcher paints dark ink", dayLauncher.ink.darkPixels >= MIN_INK_PIXELS, JSON.stringify(dayLauncher.ink));
 

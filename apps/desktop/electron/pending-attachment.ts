@@ -72,6 +72,18 @@ export const pendingAttachments = {
   },
 
   /**
+   * Remove one attachment from the pending set, leaving the rest.
+   *
+   * The remove happens when a picture is promoted into the receipt slot: the
+   * same bytes cannot be both the general file the turn names by id and the
+   * receipt the turn names by path, so the attachment leaves the store the
+   * moment the receipt takes its place.
+   */
+  remove(id: string): void {
+    slot = slot.filter((value) => value.id !== id);
+  },
+
+  /**
    * The attachments the turn named, removed from the pending set.
    *
    * An id that is not pending yields nothing rather than an error: the turn

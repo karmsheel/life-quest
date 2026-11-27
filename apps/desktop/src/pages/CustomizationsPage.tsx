@@ -19,7 +19,12 @@ import {
 } from "@/lib/themes/theme-file";
 
 /**
- * Settings has the list; this page is the workshop.
+ * Settings has the list; Customizations is the workshop.
+ *
+ * The page is not only theme files: it is where the operator customises the
+ * shell, so anything the shell can wear from a data file — a theme today, the
+ * agent picker's own mode among its chrome — is an object to select, switch,
+ * edit and create here rather than a hand-edited folder.
  *
  * Everything the companion can write is here as a first-class object the
  * operator can select, switch on or off, edit and create without leaving the
@@ -29,7 +34,7 @@ import {
  * draw — and an edit that would not parse is refused by field name before
  * anything is written.
  *
- * "Active" is the kept file — the extension the window is actually wearing.
+ * "Active" is the kept file — the customization the window is actually wearing.
  * Switching it off hands the window back its default look; switching another on
  * replaces it, because a window wears exactly one theme file at a time.
  */
@@ -151,7 +156,7 @@ function themeOfRaw(raw: string): ThemeFile | null {
   }
 }
 
-export default function ExtensionsPage() {
+export default function CustomizationsPage() {
   const {
     themeFiles,
     keptFile,
@@ -286,7 +291,7 @@ export default function ExtensionsPage() {
     setStatus(null);
     const label = draftLabel.trim();
     if (label.length < 2) {
-      setError("Give the extension a name of at least two characters.");
+      setError("Give the customization a name of at least two characters.");
       return;
     }
     const base = slugOf(label);
@@ -314,7 +319,7 @@ export default function ExtensionsPage() {
           ...(JSON.parse(raw) as Record<string, unknown>),
           name: base,
           label,
-          description: `Created in Extensions, copied from ${source}.`,
+          description: `Created in Customizations, copied from ${source}.`,
         };
       } catch (error) {
         setError(`Could not copy ${source}: ${messageOf(error)}`);
@@ -324,7 +329,7 @@ export default function ExtensionsPage() {
       starter = {
         name: base,
         label,
-        description: "Created in Extensions. Add colours, chrome, material, scene or widgets — nothing here can ship code.",
+        description: "Created in Customizations. Add colours, chrome, material, scene or widgets — nothing here can ship code.",
         material: {
           radius: "soft",
           shadow: "soft",
@@ -519,21 +524,22 @@ export default function ExtensionsPage() {
   const activeFile = keptFile;
 
   return (
-    <div className="extensions-page" data-testid="extensions-page">
-      <header className="extensions-page__header">
+    <div className="customizations-page" data-testid="customizations-page">
+      <header className="customizations-page__header">
         <div>
-          <h1 className="stub-page__title">Extensions</h1>
+          <h1 className="stub-page__title">Customizations</h1>
           <p className="stub-page__desc muted">
             Data files that change how LifeQuest looks and behaves. Today that is
-            themes — palette, material, chrome, scene and page widgets — written
-            here or by the companion. Nothing here is code: every save is
-            re-validated by the main process, and a refusal names the field.
+            themes — palette, material, chrome, scene, page widgets and the
+            agent picker's own mode — written here or by the companion. Nothing
+            here is code: every save is re-validated by the main process, and a
+            refusal names the field.
           </p>
         </div>
-        <div className="extensions-page__header-actions">
+        <div className="customizations-page__header-actions">
           <Button
             variant="outline"
-            data-testid="extensions-import"
+            data-testid="customizations-import"
             disabled={importing}
             onClick={() => void onImport()}
           >
@@ -542,7 +548,7 @@ export default function ExtensionsPage() {
           </Button>
           <Button
             variant="outline"
-            data-testid="extensions-open-folder"
+            data-testid="customizations-open-folder"
             onClick={() => void openThemesFolder()}
           >
             <FolderOpen size={13} aria-hidden />
@@ -550,7 +556,7 @@ export default function ExtensionsPage() {
           </Button>
           <Button
             variant="primary"
-            data-testid="extensions-create"
+            data-testid="customizations-create"
             disabled={creating || busy}
             onClick={() => {
               setCreating(true);
@@ -559,13 +565,13 @@ export default function ExtensionsPage() {
             }}
           >
             <Plus size={14} aria-hidden />
-            New extension
+            New customization
           </Button>
         </div>
       </header>
 
-      <p className="extensions-page__summary muted" data-testid="extensions-count">
-        {themeFiles.length} extension{themeFiles.length === 1 ? "" : "s"} ·{" "}
+      <p className="customizations-page__summary muted" data-testid="customizations-count">
+        {themeFiles.length} customization{themeFiles.length === 1 ? "" : "s"} ·{" "}
         {activeFile ? (
           <>
             active: <code>{activeFile}</code>
@@ -582,47 +588,47 @@ export default function ExtensionsPage() {
       </p>
 
       {themeError ? (
-        <p className="form-error" role="alert" data-testid="extensions-error">
+        <p className="form-error" role="alert" data-testid="customizations-error">
           {themeError}
         </p>
       ) : null}
       {error ? (
-        <p className="form-error" role="alert" data-testid="extensions-page-error">
+        <p className="form-error" role="alert" data-testid="customizations-page-error">
           {error}
         </p>
       ) : null}
       {status ? (
-        <p className="form-message" role="status" data-testid="extensions-status">
+        <p className="form-message" role="status" data-testid="customizations-status">
           {status}
         </p>
       ) : null}
 
       {creating ? (
         <section
-          className="extensions-page__create"
-          aria-label="New extension"
-          data-testid="extension-create-panel"
+          className="customizations-page__create"
+          aria-label="New customization"
+          data-testid="customization-create-panel"
         >
-          <label className="extensions-page__field">
+          <label className="customizations-page__field">
             <span>Name</span>
             <input
               type="text"
               value={draftLabel}
-              data-testid="extension-create-label"
+              data-testid="customization-create-label"
               placeholder="e.g. Night Runway"
               maxLength={48}
               onChange={(event) => setDraftLabel(event.target.value)}
             />
           </label>
-          <fieldset className="extensions-page__source">
+          <fieldset className="customizations-page__source">
             <legend>Start from</legend>
             <label>
               <input
                 type="radio"
-                name="extension-source"
+                name="customization-source"
                 value="blank"
                 checked={draftSource === "blank"}
-                data-testid="extension-create-blank"
+                data-testid="customization-create-blank"
                 onChange={() => setDraftSource("blank")}
               />
               Blank — name, material baseline, nothing else
@@ -630,27 +636,27 @@ export default function ExtensionsPage() {
             <label>
               <input
                 type="radio"
-                name="extension-source"
+                name="customization-source"
                 value="current"
                 checked={draftSource === "current"}
-                data-testid="extension-create-copy"
+                data-testid="customization-create-copy"
                 onChange={() => setDraftSource("current")}
               />
               Copy the active look{keptFile ? ` (${keptFile})` : ""}
             </label>
           </fieldset>
-          <div className="extensions-page__create-actions">
+          <div className="customizations-page__create-actions">
             <Button
               variant="primary"
-              data-testid="extension-create-submit"
+              data-testid="customization-create-submit"
               disabled={busy}
               onClick={() => void onCreate()}
             >
-              {busy ? "Creating…" : "Create extension"}
+              {busy ? "Creating…" : "Create customization"}
             </Button>
             <Button
               variant="ghost"
-              data-testid="extension-create-cancel"
+              data-testid="customization-create-cancel"
               onClick={() => {
                 setCreating(false);
                 setError(null);
@@ -665,13 +671,13 @@ export default function ExtensionsPage() {
 
       {editing ? (
         <section
-          className="extensions-page__editor"
+          className="customizations-page__editor"
           aria-label={`Editing ${editing.file}`}
-          data-testid="extension-editor"
+          data-testid="customization-editor"
         >
-          <div className="extensions-page__editor-header">
+          <div className="customizations-page__editor-header">
             <div>
-              <h2 className="extensions-page__editor-title">
+              <h2 className="customizations-page__editor-title">
                 <Pencil size={14} aria-hidden />
                 Editing <code>{editing.file}</code>
               </h2>
@@ -684,7 +690,7 @@ export default function ExtensionsPage() {
             </div>
             <Button
               variant="ghost"
-              data-testid="extension-editor-cancel"
+              data-testid="customization-editor-cancel"
               onClick={closeEditor}
             >
               <X size={13} aria-hidden />
@@ -693,7 +699,7 @@ export default function ExtensionsPage() {
           </div>
 
           <div
-            className="extensions-page__tabs"
+            className="customizations-page__tabs"
             role="tablist"
             aria-label="Editor view"
           >
@@ -703,8 +709,8 @@ export default function ExtensionsPage() {
               role="tab"
               aria-selected={editing.tab === "fields"}
               tabIndex={editing.tab === "fields" ? 0 : -1}
-              className={`extensions-page__tab${editing.tab === "fields" ? " is-active" : ""}`}
-              data-testid="extension-editor-tab-fields"
+              className={`customizations-page__tab${editing.tab === "fields" ? " is-active" : ""}`}
+              data-testid="customization-editor-tab-fields"
               onClick={() => {
                 if (!switchTab("fields")) focusTab("json");
               }}
@@ -718,8 +724,8 @@ export default function ExtensionsPage() {
               role="tab"
               aria-selected={editing.tab === "json"}
               tabIndex={editing.tab === "json" ? 0 : -1}
-              className={`extensions-page__tab${editing.tab === "json" ? " is-active" : ""}`}
-              data-testid="extension-editor-tab-json"
+              className={`customizations-page__tab${editing.tab === "json" ? " is-active" : ""}`}
+              data-testid="customization-editor-tab-json"
               onClick={() => switchTab("json")}
               onKeyDown={onTabKeyDown}
             >
@@ -750,7 +756,7 @@ export default function ExtensionsPage() {
                   refusal={saveRefused ? themeError : null}
                 />
               ) : (
-                <p className="extensions-page__empty">
+                <p className="customizations-page__empty">
                   This file does not parse, so there is no fields view to draw.
                   Fix it in the JSON tab and switch back to Fields once it is
                   valid.
@@ -760,10 +766,10 @@ export default function ExtensionsPage() {
           ) : (
             <div role="tabpanel" aria-label="JSON editor">
               <textarea
-                className="extensions-page__editor-raw"
+                className="customizations-page__editor-raw"
                 spellCheck={false}
                 value={editing.raw}
-                data-testid="extension-editor-raw"
+                data-testid="customization-editor-raw"
                 aria-label={`Raw JSON of ${editing.file}`}
                 onChange={(event) =>
                   setEditing({ ...editing, raw: event.target.value })
@@ -771,21 +777,21 @@ export default function ExtensionsPage() {
               />
               <p
                 className={
-                  validation?.ok ? "extensions-page__valid" : "form-error"
+                  validation?.ok ? "customizations-page__valid" : "form-error"
                 }
                 role={validation?.ok ? "status" : "alert"}
-                data-testid="extension-editor-status"
+                data-testid="customization-editor-status"
               >
                 {validation === null
                   ? ""
                   : validation.ok
-                    ? `Valid extension — ${validation.label}${validation.widgets === null ? "" : `, ${validation.widgets} widgets`}.`
+                    ? `Valid customization — ${validation.label}${validation.widgets === null ? "" : `, ${validation.widgets} widgets`}.`
                     : validation.error}
               </p>
-              <div className="extensions-page__editor-actions">
+              <div className="customizations-page__editor-actions">
                 <Button
                   variant="primary"
-                  data-testid="extension-editor-save"
+                  data-testid="customization-editor-save"
                   disabled={!validation?.ok || editing.saving}
                   onClick={() => void onSave()}
                 >
@@ -796,51 +802,51 @@ export default function ExtensionsPage() {
           )}
 
           <section
-            className="extensions-page__history"
+            className="customizations-page__history"
             aria-label={`History of ${editing.file}`}
-            data-testid="extension-history"
+            data-testid="customization-history"
           >
-            <h3 className="extensions-page__history-title">History</h3>
-            <p className="extensions-page__history-note muted">
+            <h3 className="customizations-page__history-title">History</h3>
+            <p className="customizations-page__history-note muted">
               Every save keeps the bytes it replaces, outside the theme list. A
               restore writes the snapshot back through the same gate, so it
               previews and is itself undoable.
             </p>
             {history === null ? (
-              <p className="extensions-page__history-empty">Loading…</p>
+              <p className="customizations-page__history-empty">Loading…</p>
             ) : historyFailed ? (
-              <p className="extensions-page__history-empty">
+              <p className="customizations-page__history-empty">
                 History could not be read — the error is above.
               </p>
             ) : history.length === 0 ? (
               <p
-                className="extensions-page__history-empty"
-                data-testid="extension-history-empty"
+                className="customizations-page__history-empty"
+                data-testid="customization-history-empty"
               >
                 No saved versions yet — the first save starts history.
               </p>
             ) : (
-              <ul className="extensions-page__history-list">
+              <ul className="customizations-page__history-list">
                 {history.map((version) => (
                   <li
                     key={version.id}
-                    className="extensions-page__history-row"
-                    data-testid="extension-history-row"
+                    className="customizations-page__history-row"
+                    data-testid="customization-history-row"
                     data-version-id={version.id}
                     data-label={version.label}
                   >
-                    <span className="extensions-page__history-time">
+                    <span className="customizations-page__history-time">
                       {relativeTime(version.savedAt)}
                     </span>
-                    <span className="extensions-page__history-label">
+                    <span className="customizations-page__history-label">
                       {version.label}
                     </span>
-                    <span className="extensions-page__history-bytes">
+                    <span className="customizations-page__history-bytes">
                       {version.bytes} B
                     </span>
                     <Button
                       variant="ghost"
-                      data-testid="extension-history-restore"
+                      data-testid="customization-history-restore"
                       aria-label={`Restore version ${version.label}, saved ${relativeTime(version.savedAt)}`}
                       disabled={restoringId !== null}
                       onClick={() => void onRestore(version.id)}
@@ -856,13 +862,13 @@ export default function ExtensionsPage() {
       ) : null}
 
       {themeFiles.length === 0 ? (
-        <p className="extensions-page__empty">
-          No extensions yet. Create one here, or let the companion write a
+        <p className="customizations-page__empty">
+          No customizations yet. Create one here, or let the companion write a
           <code> .json</code> file into the profile&rsquo;s <code>themes/</code>{" "}
           folder.
         </p>
       ) : (
-        <ul className="extensions-page__list">
+        <ul className="customizations-page__list">
           {themeFiles.map(({ file, theme }) => {
             const isActive = keptFile === file;
             const confirming = confirmFile === file;
@@ -873,83 +879,83 @@ export default function ExtensionsPage() {
                 key={file}
                 className={
                   isActive
-                    ? "extension-card extension-card--active"
-                    : "extension-card"
+                    ? "customization-card customization-card--active"
+                    : "customization-card"
                 }
-                data-testid={`extension-${file.replace(/\.json$/i, "")}`}
+                data-testid={`customization-${file.replace(/\.json$/i, "")}`}
                 data-active={isActive ? "true" : "false"}
               >
-                <div className="extension-card__main">
-                  <div className="extension-card__title">
-                    <Blocks size={15} aria-hidden className="extension-card__icon" />
-                    <h2 className="extension-card__label">{theme.label}</h2>
-                    <code className="extension-card__file">{file}</code>
+                <div className="customization-card__main">
+                  <div className="customization-card__title">
+                    <Blocks size={15} aria-hidden className="customization-card__icon" />
+                    <h2 className="customization-card__label">{theme.label}</h2>
+                    <code className="customization-card__file">{file}</code>
                     {previewing ? (
                       <span
-                        className="extension-card__pill"
-                        data-testid="extension-previewing"
+                        className="customization-card__pill"
+                        data-testid="customization-previewing"
                       >
                         Previewing
                       </span>
                     ) : null}
                     {isActive ? (
                       <span
-                        className="extension-card__pill extension-card__pill--active"
-                        data-testid="extension-active"
+                        className="customization-card__pill customization-card__pill--active"
+                        data-testid="customization-active"
                       >
                         Active
                       </span>
                     ) : null}
                     {gallery ? (
                       <span
-                        className="extension-card__pill extension-card__pill--gallery"
-                        data-testid="extension-gallery-chip"
+                        className="customization-card__pill customization-card__pill--gallery"
+                        data-testid="customization-gallery-chip"
                       >
                         Gallery
                       </span>
                     ) : null}
                   </div>
                   {theme.description ? (
-                    <p className="extension-card__desc">{theme.description}</p>
+                    <p className="customization-card__desc">{theme.description}</p>
                   ) : null}
                   {gallery ? (
                     <p
-                      className="extension-card__gallery-note"
-                      data-testid="extension-gallery-note"
+                      className="customization-card__gallery-note"
+                      data-testid="customization-gallery-note"
                     >
                       Bundled example — remove it and it stays gone.
                     </p>
                   ) : null}
-                  <p className="extension-card__chips">
+                  <p className="customization-card__chips">
                     {chipsOf(theme).map((chip) => (
-                      <span className="extension-chip" key={chip}>
+                      <span className="customization-chip" key={chip}>
                         {chip}
                       </span>
                     ))}
                   </p>
                 </div>
-                <div className="extension-card__actions">
-                  <label className="extension-switch">
-                    <span className="extension-switch__label">Active</span>
+                <div className="customization-card__actions">
+                  <label className="customization-switch">
+                    <span className="customization-switch__label">Active</span>
                     <button
                       type="button"
                       role="switch"
-                      className="extension-switch__control"
+                      className="customization-switch__control"
                       aria-checked={isActive}
                       aria-label={`${isActive ? "Deactivate" : "Activate"} ${theme.label}`}
-                      data-testid="extension-toggle"
+                      data-testid="customization-toggle"
                       onClick={() =>
                         isActive
                           ? void clearKeptTheme()
                           : keepThemeFile(file)
                       }
                     >
-                      <span className="extension-switch__knob" aria-hidden />
+                      <span className="customization-switch__knob" aria-hidden />
                     </button>
                   </label>
                   <Button
                     variant="outline"
-                    data-testid="extension-try"
+                    data-testid="customization-try"
                     aria-label={`Preview ${theme.label} — 10-second preview`}
                     onClick={() => applyThemeFile(file)}
                   >
@@ -957,7 +963,7 @@ export default function ExtensionsPage() {
                   </Button>
                   <Button
                     variant="ghost"
-                    data-testid="extension-edit"
+                    data-testid="customization-edit"
                     aria-label={`Edit ${theme.label}`}
                     onClick={() => void onEdit(file)}
                   >
@@ -967,7 +973,7 @@ export default function ExtensionsPage() {
                   <Button
                     variant="ghost"
                     destructive={confirming}
-                    data-testid="extension-remove"
+                    data-testid="customization-remove"
                     aria-label={
                       confirming
                         ? `Remove? ${file} — press again to confirm`
@@ -980,7 +986,7 @@ export default function ExtensionsPage() {
                   {confirming ? (
                     <Button
                       variant="ghost"
-                      data-testid="extension-remove-cancel"
+                      data-testid="customization-remove-cancel"
                       aria-label={`Cancel removing ${file}`}
                       onClick={() => setConfirmFile(null)}
                     >

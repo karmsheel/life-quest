@@ -215,7 +215,7 @@ view**.
 Agent writes from chat, an automation, or a paired MCP agent go through the same
 proposal path. The targets the shipped companion tools file are: doctrine
 documents, library notes (title, body and areas), reviews, projects (create,
-update, close), goals, Architecture templates (day types, default week, default
+update, close), goals, Blueprint templates (day types, default week, default
 weekly items), dashboard pin boards, ingest mappings, assumption sets, row
 updates and deletes, column additions, database merges and whole-database
 deletions, agent-built dashboard views, and the agent-pairing request a new MCP

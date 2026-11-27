@@ -1,7 +1,7 @@
 /**
  * Theme files, one write path.
  *
- * Four gestures now end in the same place: the Extensions editor's Save, the
+ * Four gestures now end in the same place: the Customizations editor's Save, the
  * companion's `write_theme`, restoring a saved version, and importing a file.
  * If each one wrote the directory itself they would drift on the two things
  * that matter — the parser every file must pass, and the atomic write that

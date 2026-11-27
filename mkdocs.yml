@@ -95,7 +95,7 @@ nav:
   - Plan:
       - Goals: 10-goals.md
       - Life Map: 11-life-map.md
-      - Architecture: 08-architecture.md
+      - Blueprints: 08-architecture.md
   - Act:
       - Projects: 12-projects.md
       - Daily Schedule: 13-daily-schedule.md
@@ -106,7 +106,7 @@ nav:
       - Notebox: 15-quick-notes.md
       - Daily Journal: 16-daily-journal.md
       - Automations: 17-automations.md
-      - Extensions: 37-extensions.md
+      - Customizations: 37-customizations.md
       - Decisions: 23-decisions.md
       - Log: 26-log.md
   - Companion:

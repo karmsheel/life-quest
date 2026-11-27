@@ -1,6 +1,6 @@
-# Architecture
+# Blueprints
 
-Architecture is the page that defines how a year's weeks are shaped. It holds
+Blueprints is the page that defines how a year's weeks are shaped. It holds
 the Strategy (How) document for each area and three planning surfaces: **Day
 types** (named templates with a colour and a checklist), the **Default week**
 (which day type each weekday inherits), and **Real week** (a chosen week of the
@@ -8,14 +8,14 @@ selected year, inherited from the default or detached and edited). It is the
 Plan wing's template editor, and its Default week is what the Daily Schedule
 copies into today.
 
-Architecture plans the week; it does not record the day. The live day belongs to
+Blueprints plans the week; it does not record the day. The live day belongs to
 [Daily Schedule](./13-daily-schedule.md). The year's events and months belong to
 the [Life Map](./11-life-map.md). Both pages share one selected year and one map
 file.
 
 ## Where it lives
 
-- Plan wing, rail label **Architecture**, icon Target, route `/track`.
+- Plan wing, rail label **Blueprints**, icon Target, route `/track`.
 - The Strategy (How) editor opens at `/track/:slug/how`; the index lists every
   unlocked area and links there.
 - The **area lens** in the window title bar filters only that index and the
@@ -23,7 +23,7 @@ file.
 - Page, not a sheet. It is the only place day types, the default week, and real
   weeks are edited.
 - A **Year** selector sits in the page header, next to the heading
-  **Architecture**. It shares its selection with the [Life
+  **Blueprints**. It shares its selection with the [Life
   Map](./11-life-map.md): picking a year on one page opens the other on the same
   year.
 
@@ -32,7 +32,7 @@ Return to [Wiki home](./index.md).
 ## What it is for
 
 A weekday is not one thing. Monday may be a deep-work day with a long checklist,
-Saturday a recovery day with almost nothing on it. Architecture lets you name
+Saturday a recovery day with almost nothing on it. Blueprints lets you name
 those day types once, decide which type each weekday normally inherits, and then
 adjust a particular week without changing the default. The plan is deliberately
 separate from the execution: editing a template never rewires a day you have
@@ -40,7 +40,7 @@ already lived, and the Life Map's archive keeps the plan a year actually ran on.
 
 ## How to use it
 
-1. Open **Architecture** from the Plan rail. The page loads the selected year
+1. Open **Blueprints** from the Plan rail. The page loads the selected year
    and, if that year is archived, shows **Read-only archive** and disables the
    editing controls.
 2. Use the **Year** selector to change the year. Years are labelled `YYYY`;
@@ -177,7 +177,7 @@ week, day columns, priority tags, and the grid all come from the year's
 snapshot, frozen the first time the vault is opened in a later calendar year.
 Nothing on this page can change an archive.
 
-**The area lens.** Architecture's templates are vault-global. The lens filters
+**The area lens.** Blueprints' templates are vault-global. The lens filters
 only the Strategy (How) list and the **Events this week** list; it never hides a
 day type or a weekday. That matches the filter law: the area switcher filters
 area-scoped lists, not a page's own furniture. See
@@ -206,7 +206,7 @@ applies directly as a map write, like other week data. Reads need no approval.
 
 ## Tips and edge cases
 
-- **A year must exist before it shows here.** Architecture cannot create one.
+- **A year must exist before it shows here.** Blueprints cannot create one.
   Add the current year and up to two future years on the Life Map; the vault
   also ensures the current calendar year exists when it opens.
 - **Renaming a day type does not move history.** The stored week references the

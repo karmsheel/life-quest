@@ -65,7 +65,7 @@ settings sheet instead of a smaller menu.
    `execute` reads **Act**; its routes and stored question scopes are unchanged.
 2. **Walk the rail.** Click a page under the active wing. **Home** holds
    Dashboard, Data, Pages, Documents, **Agents** and **Images**; **Define** holds
-   Dream, Vision and Ideal State; **Plan** holds Goals, Life Map and Architecture;
+   Dream, Vision and Ideal State; **Plan** holds Goals, Life Map and Blueprints;
    **Act** holds Projects, Daily Schedule and **Task Manager**; **Review** holds
    Daily, Weekly, Monthly, Quarterly and Yearly.
 3. **Change the lens.** Choose **Life** or an unlocked area in the title bar's
@@ -289,18 +289,19 @@ The chat dock:
   the composer box — a wider field does not stretch it, and it never reaches past
   the field it belongs to — floating with a margin on every side and softly
   rounded, in the split dock and in full screen alike.
-- The thread, a **Notebox** view, and the **Keyboard shortcuts** reference.
-  The history is not a dock surface: the whole chat list lives in the rail's
-  **Chats** section.
+- The thread, a **Notebox** view, the **Keyboard shortcuts** reference, and a
+  **Chat display** page. The history is not a dock surface: the whole chat list
+  lives in the rail's **Chats** section.
 - The composer: one bordered box at the foot of the dock, the field
   (*Message Pi…* or *Message Hermes…*, depending on which companion answers) and
-  a control row inside its edges — attachments and the page pill at the leading
-  end, model and thinking pills and send/stop at the trailing end. Enter breaks
-  the line; **Ctrl/Cmd+Enter** sends, and Settings → **Composer** can hand the
-  send to plain Enter instead. The box keeps a margin on each side of the
-  dock, and that margin grows as the dock is dragged wider — at the dock's
-  narrowest the composer fills it edge to edge, and on a wide dock each side is
-  about an eighth of the width — so the composer never stretches the whole bar.
+  a control row inside its edges — the add control (**Attach a file**), the page
+  pill and a waiting receipt at the leading end, model and thinking pills and
+  send/stop at the trailing end. Enter breaks the line; **Ctrl/Cmd+Enter** sends,
+  and Settings → **Composer** can hand the send to plain Enter instead. The box
+  keeps a margin on each side of the dock, and that margin grows as the dock is
+  dragged wider — at the dock's narrowest the composer fills it edge to edge, and
+  on a wide dock each side is about an eighth of the width — so the composer
+  never stretches the whole bar.
   The message text keeps the same margins: the transcript's content box is the
   composer box's width, with its scrollbar at the dock's own edge, so on a wide
   dock the conversation and the field read as one column.
@@ -309,10 +310,15 @@ The chat dock:
   chrome — floating with a margin on every side and softly rounded, and never
   wider than the field it belongs to, in the split dock and in full screen alike.
   In order: **New chat**, **Notebox**, **Full screen chat** / **Exit full screen
-  chat**, **Keyboard shortcuts** (opens the reference as a dock surface), **Chat
-  display settings** (opens Settings → **Chat display**), the two-panes side
-  switch, and **Collapse chat**. The build number is not here: it lives at the
-  top of the rail, under the lockup.
+  chat**, **Keyboard shortcuts**, **Chat display settings** (the Type mark), the
+  two-panes side switch, and **Collapse chat**. **Keyboard shortcuts** and **Chat
+  display settings** each toggle a dock surface of their own: a press puts the
+  reference or the **Chat display** page on the pane, a second press — or that
+  page's **Back to chat** — returns the dock to the thread it left, and the
+  button wears the pressed fill while its surface is in front. Neither surface
+  draws the tab strip or the composer. The display page edits the same text size
+  and line spacing as Settings → **Chat display**. The build number is not here:
+  it lives at the top of the rail, under the lockup.
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 
@@ -386,8 +392,9 @@ the dock and settings — are rebindable on Settings → Keyboard and listed in 
 dock's **Keyboard shortcuts** reference. That reference sits in the dock's bottom
 bar; it draws the same fifteen rows with a pencil on each that records a new key
 in place, the same refusals as the settings page, **Unassigned** for a cleared
-row, and **Back to chat** to return. The bindings and their refusals are
-catalogued in [Settings](./28-settings.md).
+row, and **Back to chat** to return — the bar's button is a toggle, so a second
+press closes the reference too. The bindings and their refusals are catalogued
+in [Settings](./28-settings.md).
 
 ## Tips and edge cases
 
