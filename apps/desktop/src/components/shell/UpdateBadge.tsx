@@ -16,10 +16,10 @@ import { UpdateDialog } from "./UpdateDialog";
  *    "you're up to date", or why the check could not answer.
  *
  * At rest it stays the quiet line it has always been — the bar's muted ink, no
- * fill, no halo. It gains the glow (and the words beside it) only when there is
- * something to install, because the glow is a state, not a button style. The one
- * thing it gains from being a control everywhere is the affordance a control
- * needs: hover ink, a focus ring, and a pointer.
+ * fill, no halo. It gains the glow, and the words centred under it, only when
+ * there is something to install, because the glow is a state, not a button style.
+ * The one thing it gains from being a control everywhere is the affordance a
+ * control needs: hover ink, a focus ring, and a pointer.
  */
 export function UpdateBadge() {
   const { current, available, phase, shown, previewing, refresh } = useUpdate();
@@ -48,14 +48,6 @@ export function UpdateBadge() {
 
   return (
     <>
-      {available ? (
-        <p
-          className="update-badge__label"
-          data-update-label={previewing ? "preview" : "available"}
-        >
-          Update available
-        </p>
-      ) : null}
       <button
         type="button"
         ref={trigger}
@@ -87,6 +79,14 @@ export function UpdateBadge() {
       >
         v{current}
       </button>
+      {available ? (
+        <p
+          className="update-badge__label"
+          data-update-label={previewing ? "preview" : "available"}
+        >
+          Update available
+        </p>
+      ) : null}
       <UpdateDialog open={open} onClose={closePanel} />
     </>
   );

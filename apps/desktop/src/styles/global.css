@@ -1080,11 +1080,11 @@ a {
   justify-content: center;
   gap: 0.45rem;
   flex: 0 0 auto;
-  /* One lockup row, the breath between it and the version line, one version
-     line, and the inset above and below. Box-sizing makes the content box
-     exactly the pair's height plus that breath, which is what pins the mark's
-     top edge to the inset rather than centring it in a leftover strip. */
-  height: calc(
+  /* One lockup row, the breath between it and the version, the version, and
+     the inset above and below. This is a floor, not a cap: the "Update
+     available" line under the number may grow the band, and the collapsed
+     column still keeps this height so the wing tabs do not jump. */
+  min-height: calc(
     3.25rem + var(--rail-header-inset) + var(--rail-header-inset) -
       var(--density-gap-rail)
   );
@@ -1102,15 +1102,17 @@ a {
   container-name: rail-header;
 }
 
-/* The build number's slot under the lockup: centred small print, not a row of its
-   own — the version is a control (see `UpdateBadge`), so the slot is carved out of
-   the header's drag band and the pill keeps only the room its own ink needs. The
-   slot is what the thin rail hides: 56px cannot hold the version as a target. */
+/* The build number's slot under the lockup: a column, centred on the rail. The
+   number is the control (see `UpdateBadge`); "Update available" is the line under
+   it, centred on the same axis, and only while there is something to install.
+   The slot is carved out of the header's drag band. The thin rail hides it:
+   56px cannot hold the version as a target. */
 .nav-rail__version {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.1rem;
+  gap: 0.2rem;
   max-width: 100%;
   min-width: 0;
   -webkit-app-region: no-drag;
@@ -1121,9 +1123,8 @@ a {
   padding: 0.1rem 0.3rem;
 }
 
-/* The caption's words ride beside the version only while the header has room:
-   under a narrow rail they retreat and the glow alone is the signal, exactly as
-   the caption row used to do. */
+/* The caption sits under the version only while the header has room for the
+   words. Under a narrow rail they retreat and the glow alone is the signal. */
 @container rail-header (max-width: 11rem) {
   .nav-rail__version .update-badge__label {
     display: none;
@@ -1640,35 +1641,28 @@ a {
   letter-spacing: 0.02em;
 }
 
-/* The words that come with the glow: `Update available`, beside the build number
-   and only while there is something to install. In the rail's version slot under
-   the lockup the words ride inline to the number's left, so they take the line's
-   height rather than a line of their own and stay small and uppercase — a state
-   caption in the chrome, not prose.
+/* The words that come with the glow: `Update available`, centred under the build
+   number and only while there is something to install. Small and uppercase — a
+   state caption in the chrome, not prose. The version slot's column centres this
+   line on the number.
 
    It wears the state ink for the same reason the pill does: this is not
    decoration, it is "there is something for you to do". Nothing is tabbable
-   here; the pill beside it is the control, and the words are its reason.
+   here; the pill above it is the control, and the words are its reason.
 
-   The words are the one thing on the line that may retreat: the container query
-   beside `.nav-rail__version` hides them when the column is too narrow to hold
-   them (the thin rail keeps the glow alone). The shrink is a last resort under a
-   wider font, so the caption can never push the pill out of the column's
-   padding — the pill is the control and the halo needs that room. */
+   The words retreat when the header is too narrow to hold them (the container
+   query on `.nav-rail__version`). The thin rail hides the number with them. */
 .update-badge__label {
-  margin: 0 0 0 0.15rem;
+  margin: 0;
   padding: 0;
   color: var(--accent);
   font-size: 0.55rem;
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: 0.02em;
+  text-align: center;
   text-transform: uppercase;
   white-space: nowrap;
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* The build number, under the rail's lockup. It is the app's one manual way to
