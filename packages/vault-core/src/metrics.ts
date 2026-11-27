@@ -623,6 +623,13 @@ export async function defineMetric(
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
       }
+      // An events definition needs somewhere for its rows to go, so the area's
+      // `metrics` database is created with the first definition (spec §10.2).
+      // It is idempotent and only ever touches a live area.
+      if (validated.value.source === "events") {
+        const ensured = await ensureMetricsDatabase(root, slug);
+        if (!ensured.ok) return ensured;
+      }
       const now = new Date().toISOString();
       const definition: MetricDefinition = {
         ...validated.value,

@@ -30,6 +30,7 @@ import {
   runView,
   runViewBlocks,
   todayLocalIso,
+  toolAllowed,
   unlockDomain,
   validateViewSpec,
   vaultPaths,
@@ -200,6 +201,19 @@ describe("metrics e2e", () => {
       assert.equal(sessionsOnDisk.eventKey, "training");
       assert.equal(sessionsOnDisk.schemaVersion, 1);
       assert.equal(sessionsOnDisk.createdBy, "user", "the definition did not attribute the operator");
+      const metricsDb = await getDatabase(vaultRoot, "health", "metrics");
+      assert.equal(metricsDb.ok, true, "the first events definition did not create the area's metrics database");
+      assert.equal(metricsDb.ok ? metricsDb.value.name : "", "Metrics", "the events database is not named Metrics");
+      assert.deepEqual(
+        metricsDb.ok ? metricsDb.value.columns.map((c) => [c.name, c.type]) : [],
+        [
+          ["date", "date"],
+          ["metric", "text"],
+          ["value", "number"],
+          ["note", "text"],
+        ],
+        "the events database does not have the designed columns",
+      );
       const listedHealth = await listMetricDefinitions(vaultRoot, "health");
       assert.equal(listedHealth.ok, true);
       assert.equal(
@@ -651,6 +665,35 @@ describe("metrics e2e", () => {
         new Set(ALL_TOOL_DEFS.map((def) => def.name)).size,
         "a metric tool duplicated an existing tool name",
       );
+
+      // The pairing gate: reads are grantable, define/log are immediate writes
+      // that still need the area in the grant, and an unclassified name fails
+      // closed. A read-only grant must not be able to define or log.
+      const financeGrant = {
+        agentId: "agent-1",
+        name: "Agent",
+        access: "write" as const,
+        domainSlugs: ["financial"],
+        schedule: false,
+      };
+      const readOnlyGrant = { ...financeGrant, access: "read" as const };
+      const classification = {
+        listRead: toolAllowed("list_metrics", readOnlyGrant),
+        summaryRead: toolAllowed("get_metrics_summary", readOnlyGrant),
+        defineWrite: toolAllowed("define_metric", financeGrant),
+        logWrite: toolAllowed("log_metric", financeGrant),
+        defineReadOnly: toolAllowed("define_metric", readOnlyGrant),
+        logReadOnly: toolAllowed("log_metric", readOnlyGrant),
+        unknown: toolAllowed("redefine_metric", financeGrant),
+      };
+      checks.grantClassification = classification;
+      assert.equal(classification.listRead, "allow", "list_metrics is not grantable as a read");
+      assert.equal(classification.summaryRead, "allow", "get_metrics_summary is not grantable as a read");
+      assert.equal(classification.defineWrite, "allow", "a write grant cannot define a metric");
+      assert.equal(classification.logWrite, "allow", "a write grant cannot log a metric event");
+      assert.equal(classification.defineReadOnly, "FORBIDDEN", "a read-only grant can define a metric");
+      assert.equal(classification.logReadOnly, "FORBIDDEN", "a read-only grant can log a metric event");
+      assert.equal(classification.unknown, "FORBIDDEN", "an unclassified metric tool did not fail closed");
 
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
