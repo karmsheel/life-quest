@@ -270,6 +270,10 @@ type Page = {
   startLabel: string | null;
   unlockPresent: boolean;
   emptyPresent: boolean;
+  /** The unwritten sheet's headings and prompts, or null once the editor is up. */
+  placeholder: string | null;
+  /** Pixels between the open tab's bottom and the sheet's top. Null on Daily. */
+  tabSeat: { gap: number } | null;
   layout: Layout;
 };
 
@@ -357,10 +361,13 @@ type Report = {
     financeDone: Page;
     financeDoneRail: RailState;
     scopesAfterFinance: Record<string, ScopeState>;
+    unstartedMind: Page;
     startedMind: { page: Page; start: StartCall };
     completedMind: Page;
+    unstartedBusiness: Page;
     startedBusiness: { page: Page; start: StartCall };
     completedBusiness: Page;
+    unstartedRelationships: Page;
     startedRelationships: { page: Page; start: StartCall };
     completedRelationships: Page;
     allDone: Page;
@@ -1159,6 +1166,27 @@ describe("review ui e2e", () => {
       { slug: "relationships", name: "Relationships" },
     ] as const;
     for (const area of remaining) {
+      const unstarted = report.checks[`unstarted${area.name}`];
+      assert.equal(unstarted.emptyPresent, true, `the unwritten ${area.name} page drew no sheet`);
+      for (const heading of ["Look-back", "Keep", "Change", "Next-period intent"]) {
+        assert.match(
+          String(unstarted.placeholder),
+          new RegExp(heading),
+          `the unwritten ${area.name} page is missing ${heading}`,
+        );
+      }
+      assert.match(String(unstarted.placeholder), /What happened\./);
+      assert.equal(unstarted.status, "Not started", `the unwritten ${area.name} page is not Not started`);
+      assert.equal(
+        unstarted.startLabel,
+        `Start the ${area.name} review`,
+        `the unwritten ${area.name} page offers another start`,
+      );
+      assert.equal(unstarted.layout.editor, null, `the unwritten ${area.name} page drew an editor`);
+      assert.ok(
+        unstarted.tabSeat != null && unstarted.tabSeat.gap >= 0 && unstarted.tabSeat.gap <= 1,
+        `the ${area.name} tab sits ${unstarted.tabSeat?.gap}px off its page`,
+      );
       const startedArea = report.checks[`started${area.name}`];
       const completed = report.checks[`completed${area.name}`];
       assert.equal(
@@ -1255,6 +1283,12 @@ describe("review ui e2e", () => {
       "the daily empty state does not offer one general start",
     );
     assert.equal(dailyOpen.emptyPresent, true, "the daily review did not draw its empty state");
+    assert.match(String(dailyOpen.placeholder), /Look-back/);
+    assert.match(String(dailyOpen.placeholder), /Next-period intent/);
+    assert.match(String(dailyOpen.placeholder), /What happened\./);
+    assert.equal(dailyOpen.status, "Not started", "the unwritten daily review is not Not started");
+    assert.equal(dailyOpen.layout.editor, null, "the unwritten daily review drew an editor");
+    assert.equal(dailyOpen.tabSeat, null, "the daily review seated a tab on a page that has none");
     const dailyStart = report.checks.dailyStart;
     // The rig is on the Relationships lens when it navigates to Daily: a daily
     // review that honoured the lens would start an area scope.

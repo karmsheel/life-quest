@@ -70,7 +70,18 @@ period heading:
 - Above the tabs a progress line counts the work: `2 of 5 areas done · Life
   review unlocks when every area is done`, then `Every area is reviewed — the
   life review is ready` when the last area is done, and `Review complete —
-  read-only.` once the overall page is marked complete.
+  read-only.` once the overall page is marked complete. The line appears once
+  the period has a notebook.
+
+A page that has not been started is still a page. The active tab sits on the
+same square sheet the editor uses. Inside it are the four headings the review
+will carry — **Look-back**, **Keep**, **Change**, **Next-period intent** — with
+one prompt under each: **What happened.**, **What to keep.**, **What to
+change.**, **What the next period is for.** The line under the sheet reads
+**Not started**. Under that are **Write it myself** and the start button for the
+open page: **Start the life review**, **Start the Health review** (named for the
+area that is open), or **Start the interview** on Daily. Neither creates the
+file until you press it. Daily is the same sheet, with no tabs.
 
 The **area lens in the window title bar and the tabs are one selection**: press
 a tab and the lens moves to that area; choose an area in the lens and the page
@@ -337,10 +348,11 @@ cannot be quietly rewritten.
    and a review that has not opened yet cannot be paged to. The calendar offers
    only periods whose window has opened, and choosing any day inside a week
    takes you to that week.
-3. On **Daily**, a period with no file says **No review for this period yet.**
-   and offers **Start the interview** (create the file, fill the figures the
-   area's metric definitions produce, open the companion chat) or **Write it myself**
-   (create the file and edit it without starting a session).
+3. On **Daily**, a period with no file shows the unwritten sheet: the four
+   headings, the prompts under them, and **Not started**. **Start the interview**
+   creates the file, fills the figures the metric definitions produce, and opens
+   the companion chat. **Write it myself** creates the file and opens the editor
+   without a session.
 4. On **Weekly** and longer, the checklist is the way in. Press an area row — say
    **Health review** — and:
    - the period's notebook is created if it has none, with the overall page and
@@ -390,8 +402,8 @@ notes in this period.** and offers **Write today's note**.
 |---|---|
 | Eyebrow, period heading and pager | The grey eyebrow naming the wing and cadence (for example **Review / Weekly**); the period as the page's one heading (for example `21-27 Sep '26 (W39)`), centred with a **calendar** key beside it; wordless arrow keys on the column's edges; a **Locked** badge when locked. |
 | **Review checklist** | Weekly and longer only; a vertical column beside the report where the sheet has room for the 48rem page and the rail together, and a full-width row between the header and the report where it does not — the reading column is never narrowed to make room for it. **Life review** first, then one button per live area with **Not started** / **In progress** / **Done**, a `<done> of <total> areas done` count, and the hint that the life review waits for every area. |
-| Status text | Under the document: **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. There is no scope line above the body — the checklist's selected row says which review the page is on. |
-| Editor | The Daily Journal's live markdown box at the journal's height, with square corners and its own review title as the first line — `W46 Review: 9-15 Nov '26` — placeholder **Write this review.**, read-only while locked. |
+| Status text | Under the document: **Saved**, **Saving…**, **Not saved**, **Locked**, or **Not started** while the page has not been opened. |
+| Editor | The Daily Journal's live markdown box at the journal's height, with square corners and its own review title as the first line — `W46 Review: 9-15 Nov '26` — placeholder **Write this review.**, read-only while locked. Before the file exists, the same box shows the four headings and their prompts. |
 | Action buttons | **Start interview** (resumes the active scope's session), **Plan next period**, a mark-complete button — **Mark life review complete** / **Mark Health review complete** / **Mark review complete** on Daily — while the review is open, and **Unlock** once it is locked. The mark-complete button is gone on a locked review: the companion marks the review complete itself once you have answered its interview. **Start interview** and **Mark life review complete** are disabled for Life until every area is done. |
 | **Review rules** | A collapsible panel: the cadence's standing rules and any hand-written `lifequest-snapshot` custom figures, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |
@@ -616,11 +628,11 @@ neither, so the log stays a record of changes rather than of Starts.
 
 ## Tips and edge cases
 
-- A brand-new period has no file, so there is no editor yet. On Weekly and longer
-  press an area row in the checklist to create the file with that area's section;
-  on Daily use **Start the interview** or **Write it myself**. Typing into a
-  period with no file cannot save because the vault refuses a write to a review
-  that does not exist.
+- A brand-new period has no file. The page shows the unwritten sheet, and the
+  line under it reads **Not started**. On Daily, **Start the interview** or
+  **Write it myself** creates it. On Weekly and longer, **Start the life review**
+  or the open area's **Start the … review** creates that page. The sheet is not
+  editable until then: the vault refuses a write to a review that does not exist.
 - The checklist is per period. Finishing **Health review** this week does not
   tick it for next week: every period has its own file and its own statuses.
 - The **Life review** row is disabled while any live area is not done. If an area
