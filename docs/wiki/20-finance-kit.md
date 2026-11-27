@@ -3,8 +3,9 @@
 The Finance kit is the first optional kit: a schema, a set of meaning, and six
 starter pages installed into the **Finance** area in one step. It
 gives you a household ledger — accounts, categories, transactions, budgets,
-recurring items, holdings, assumption sets — plus spend, budget, net-worth and
-scenario pages, and a captured purchase can be logged from chat or from a photo
+recurring items, holdings, assumption sets — plus cash in / cash out / net cash
+flow figures, spend, budget, net-worth and scenario pages, and a captured
+purchase can be logged from chat or from a photo
 of the receipt. The kit is not seeded into a new vault: the Finance area ships
 locked like the other four, and the kit is installed into it once it is unlocked.
 
@@ -155,7 +156,8 @@ counts, and the next open finds the work done and writes nothing.
 The starter pages are pinned on the **Finance** board and the **Life** board:
 
 - **Ledger** — a markdown intro and the Transactions table.
-- **Spend** — the total spent, and a bar chart of spending by date.
+- **Spend** — the total spent, and a bar chart of spending by date. (The review
+  figures use the ledger's gross vocabulary above, not this page's block.)
 - **Budget** — **Budget vs actual**: one row per budget with Category, Period,
   Planned, Spent and Remaining. Empty: **No budgets yet.**
 - **Net worth** — the total in ZAR, plus the ZAR and USD components. Until a rate
@@ -209,6 +211,7 @@ What the install writes.
 | Live rows | `domains/financial/data/domain.sqlite` |
 | Six starter pages | `domains/financial/pages/<pageId>.json` |
 | Two assumption sets | rows in the Assumption sets database |
+| Three metric definitions: Cash in, Cash out, Net cash flow | `domains/financial/metrics/<id>.json` |
 | Finance board pins | `domains/financial/pins.json` |
 | Life board pins | `.lifequest/overview-pins.json` |
 | `.gitignore` lines for the SQLite file and cache | vault root |
@@ -272,6 +275,34 @@ installed or the Finance area is locked or archived. The rate is read on vault o
 while the app is running. Until a rate exists, USD figures are left unconverted
 and the cards say so.
 
+### Review figures: gross cash in, gross cash out, net
+
+The Finance page of a review carries three figures instead of one "Spending this
+period" number. All three read the Transactions database over the review period
+and the period before it:
+
+- **Cash in** — the sum of the positive amounts. This is gross income.
+- **Cash out** — the sum of the negative amounts, printed as the positive size of
+  what went out. The figure's display flips the sign; the ledger rows are never
+  changed.
+- **Net cash flow** — the sum of every amount, and its heading says "transfers
+  included", because that is what net means.
+
+A **transfer** is two rows sharing a `transfer_id` — money moving between your own
+accounts, not income and not spend. Cash in and Cash out exclude both transfer
+legs, so a R1,000 move between accounts neither inflates income nor spend; Net
+includes them and cancels to zero. The exclusion is the general
+`is-not-set` filter (a cell that was never filled), which is why it is part of the
+metrics engine rather than a finance special case.
+
+The three definitions are shipped with the kit and stored as one JSON per metric
+at `domains/financial/metrics/cash-in.json`, `cash-out.json` and
+`net-cash-flow.json`. A vault that installed the kit before the figures existed
+gets them on its first review Start; either way only ABSENT files are written, so
+an operator's edit of a definition is never overwritten. Defining a new metric
+applies immediately; editing or deleting an existing definition waits on a
+product decision and is not exposed yet.
+
 Plan arithmetic, in plain terms. Budget spend is the sum of negative
 transactions in the budget's category, period and currency, excluding transfers;
 remaining is planned minus spent. Net worth is each account's opening balance
@@ -283,7 +314,9 @@ projection horizon is clamped to 1–60 months. Scenario compare runs the live b
 and the chosen assumption set(s) through the same projection.
 
 No gauges, no board views. Finance blocks are a ledger table, a metric, a
-bar chart, budget vs actual, net worth, and scenario compare. There is no gauge
+bar chart, budget vs actual, net worth, and scenario compare. The three review
+figures are metric definitions read over a period, not a dashboard: there are no
+streaks, scores or colour judgements. There is no gauge
 block and no kanban view.
 
 ## Tips and edge cases

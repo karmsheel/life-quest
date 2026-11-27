@@ -192,6 +192,8 @@ explicit confirmed action. It is restated in [LAWS/DATABASES.md](../../LAWS/DATA
 | Ingest mappings, one JSON per mapping | `domains/<slug>/data/mappings/<mappingId>.json` |
 | Adapter sync state | `domains/<slug>/data/sync-index.json`, `sync-queue.json`, `conflicts.json` |
 | Views | `domains/<slug>/views/<viewId>.json` |
+| Metric definitions | `domains/<slug>/metrics/<id>.json` |
+| Metric events (manual metrics) | the area's `metrics` database in `domains/<slug>/data/domain.sqlite` |
 | Disposable analytics cache | `.lifequest/cache/` |
 
 The SQLite file (plus its `-wal` / `-shm` companions) and the cache are appended to the
@@ -289,6 +291,40 @@ The companion's read tools need no approval: `list_databases`, `get_database`, `
 split above. Views saved to an unlocked Dashboard board are applied directly; on a locked
 board they wait in Decisions. Conversational capture is the other direct write, and only when
 the amount and account are clear — see [Finance kit](./20-finance-kit.md).
+
+### Metrics: definitions and dated events
+
+A metric is the operator's named measurement for an area, and it is one object
+with one query path:
+
+- **Where a definition lives.** One JSON per metric at
+  `domains/<slug>/metrics/<id>.json` — the same per-object pattern as saved
+  views, so a definition is git-portable and two concurrent edits cannot drop
+  each other. It carries the label, the unit, the source, the aggregation, an
+  optional target and display formatting.
+- **A `derived` metric** carries one view spec: a database in the area, filters,
+  a measure and its column, and a date column the period window acts on. It is
+  validated when it is defined, so a bad spec is refused before a figure or a
+  report can use it. A metric spec must answer exactly one value: no composed
+  blocks, no grouping, no series, no row listing.
+- **An `events` metric** has an `eventKey` instead of a spec. Logging an event
+  writes one dated row into the area's **Metrics** database (columns `date`,
+  `metric`, `value`, `note`; the `metric` cell is the eventKey), with today and
+  `1` as the defaults. "Training sessions" is the count of those rows and
+  "Training minutes" the sum of their values, so two definitions can share one
+  event key with no roll-up rules.
+- **Reading a value.** Both sources compile to an ordinary view spec whose
+  window is the review period (and the previous period of the same cadence), and
+  the view engine runs it — the same path a dashboard card takes. A window with
+  no rows answers "no data", never a fabricated zero.
+
+The `metrics` database is created on the first logged event, only in a live area,
+and it is reused with its columns intact afterwards. Metric definitions are
+created immediately (a new definition is the "define it now" act); changing or
+deleting an existing definition is not exposed yet because it changes what a
+review measures, and that governance is still an open product question. The
+companion's tools are `define_metric`, `log_metric`, `list_metrics` and
+`get_metrics_summary`.
 
 ### JSON restore is deliberate
 
