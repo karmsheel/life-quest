@@ -215,6 +215,7 @@ type Report = {
         };
       } | null;
       hint: string | null;
+      emptyAreaHint: string | null;
       rowPresent: boolean;
     };
     editDefinition: {
@@ -639,6 +640,11 @@ describe("analytics ui e2e", () => {
       checks.derivedForm.input?.definition.spec,
       undefined,
       "the renderer built a ViewSpec; a derived draft must let the engine build it",
+    );
+    assert.match(
+      String(checks.derivedForm.emptyAreaHint),
+      /Data/,
+      "the derived form did not point at Data for an area with no databases",
     );
     assert.equal(
       checks.derivedForm.rowPresent,

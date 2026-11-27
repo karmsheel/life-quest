@@ -11,7 +11,11 @@
  * metric definitions and event rows, and `metricEvents` / `metricLogEvent` /
  * `metricDefine` / `dbUpsertRow` / `dbDeleteRow` mutate exactly those rows. So
  * "the matrix reloaded with the new number" is a claim about the data the page
- * re-read through the bridge, not about a call that happened.
+ * re-read through the bridge, not about a call that happened. `dbList` answers
+ * the registry the derived form reads, `metricGet` the definition an edit
+ * prefills from, and `metricPropose` records a Decision without moving the file
+ * — so "the matrix kept the old definition" is a claim about the unchanged
+ * definition, not about a proposal that was merely sent.
  *
  * ── How this can fail (written before the assertions) ─────────────────────────
  *

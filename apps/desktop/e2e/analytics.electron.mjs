@@ -1278,6 +1278,22 @@ async function main() {
     if (sourceSet !== "derived") {
       failure("the New metric form has no derived source option");
     }
+    // An area without databases must say so and point at Data, rather than
+    // offering an empty database select with no explanation.
+    await setSelectValue(win, "analytics-metric-area", "health");
+    let emptyAreaHint = null;
+    try {
+      await waitFor(
+        win,
+        `(document.querySelector('[data-testid="analytics-metric-derived-hint"]')?.textContent ?? "").includes("Data")`,
+        "the derived form's no-database hint",
+      );
+      emptyAreaHint = (
+        await sample(win)
+      ).derivedHint;
+    } catch (error) {
+      failure(String(error instanceof Error ? error.message : error));
+    }
     const derivedAreaSet = await setSelectValue(win, "analytics-metric-area", "financial");
     if (!derivedAreaSet) failure("the New metric form has no Finance area option");
     try {
@@ -1337,6 +1353,7 @@ async function main() {
       checks.derivedForm = {
         input: derivedDefine ?? null,
         hint: derivedForm.derivedHint,
+        emptyAreaHint,
         rowPresent: derivedForm.rows.some(
           (row) => row.testid === "analytics-row-financial-card-spend",
         ),
