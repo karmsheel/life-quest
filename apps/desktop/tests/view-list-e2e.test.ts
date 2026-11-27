@@ -15,6 +15,7 @@ import {
   listPinBoard,
   listViews,
   runSavedView,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 import { startPairingDoors } from "../electron/pairing-door.ts";
@@ -242,6 +243,14 @@ describe("recent transactions listing e2e", () => {
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
     const vaultId = (created as { ok: true; value: { lifequest: { id: string } } }).value.lifequest.id;
+
+    // The card reads the seeded Finance area's kit, so the area is live.
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     // ── a real finance kit, with a ledger in it ──────────────────────────────
     const kit = await applyFinanceKitInstall(vaultRoot);

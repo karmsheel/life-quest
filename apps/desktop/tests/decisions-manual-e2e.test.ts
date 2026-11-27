@@ -185,10 +185,10 @@ describe("manual decisions e2e", () => {
     assert.deepEqual(manualTab.form?.labels, [
       "What did you decide?",
       "Why? (optional)",
-      "Domain (optional)",
+      "Area (optional)",
     ]);
     assert.deepEqual(manualTab.form?.domainOptions, [
-      "No domain",
+      "No area",
       "Financial",
       "Health",
     ]);

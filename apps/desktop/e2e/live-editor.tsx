@@ -37,6 +37,9 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type {
   DoctrineDocument,
+  ReviewNotebook,
+  ReviewPageBody,
+  ReviewPageWriteOutcome,
   ReviewRecord,
   VaultSnapshot,
 } from "@lifequest/vault-core";
@@ -157,17 +160,76 @@ let reviewRecord: ReviewRecord | null = {
   locked: false,
   updatedAt: "2026-10-18T00:00:00.000Z",
   title: "Week of 12 Oct 2026",
+  rev: 0,
   scopes: { overall: { status: "draft", sessionId: null } },
   bodyMarkdown: REVIEW_BODY,
 };
+
+/** The notebook the Review page opens: the overall page this rig's review has. */
+function notebookOf(): ReviewNotebook {
+  const record = reviewRecord;
+  return {
+    cadence: "weekly",
+    period: record?.period ?? "2026-10-12",
+    title: record?.title ?? "Week of 12 Oct 2026",
+    weekStartDay: "monday",
+    locked: record?.locked ?? false,
+    order: ["overall"],
+    rev: record?.rev ?? 0,
+    pages: [
+      {
+        scope: "overall",
+        title: record?.title ?? "Week of 12 Oct 2026",
+        status: "draft",
+        sessionId: null,
+        rev: 1,
+        updatedAt: record?.updatedAt ?? "2026-10-18T00:00:00.000Z",
+        chars: (record?.bodyMarkdown ?? REVIEW_BODY).length,
+      },
+    ],
+    path: "C:\\harness\\vault\\reviews",
+    legacy: false,
+  };
+}
+
+/** The overall page as the page API answers it. */
+function reviewPageBody(): ReviewPageBody {
+  const record = reviewRecord;
+  return {
+    scope: "overall",
+    title: record?.title ?? "Week of 12 Oct 2026",
+    status: "draft",
+    sessionId: null,
+    rev: 1,
+    updatedAt: record?.updatedAt ?? "2026-10-18T00:00:00.000Z",
+    locked: record?.locked ?? false,
+    bodyMarkdown: record?.bodyMarkdown ?? REVIEW_BODY,
+  };
+}
 
 /** Every bridge method the pages are allowed to reach. Anything else is named. */
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The Review page this rig can navigate to subscribes to the vault's change
+  // signal, so the channel is modelled as a quiet watcher — this rig is about
+  // the editor, and nothing on it writes the review.
+  onVaultDataChanged: () => () => {},
+  // The shell's theme provider reads the profile's theme files on mount and
+  // watches them. This rig is about the editor, and a call it does not model is
+  // an unexpected bridge call — but the watcher's answer must be a function, or
+  // the provider's cleanup throws and takes the whole page down with it.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
+  // The dock's receipt chip asks main whether the kit is installed; these rigs
+  // run without a finance kit, so the chip stays out of the way. It is a
+  // promise: ChatPanel chains `.then` on it, and a plain object throws in the
+  // mount effect (which unmounts the page before the rig's ready flag).
+  receiptReady: () => Promise.resolve({ ok: true as const, value: false }),
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () => ok([]),
@@ -212,12 +274,47 @@ const bridge: Record<string, unknown> = {
     return Promise.resolve(ok({ bytes: new Uint8Array([1]), mime: "image/png" }));
   },
   libraryList: () => ok({ records: [], skipped: 0 }),
+  // A lock write refreshes the vault snapshot, and the snapshot now carries the
+  // Decisions inbox. An empty inbox is the honest answer here; the rig is not
+  // about decisions.
+  decisionList: () => ok([]),
 
   reviewGet: (cadence: string, period: string) => {
     harness.liveEditorCalls?.push(`reviewGet:${cadence}:${period}`);
     return Promise.resolve(
       reviewRecord ? ok(reviewRecord) : fail("Review file not found"),
     );
+  },
+  reviewNotebookGet: (cadence: string, period: string) => {
+    harness.liveEditorCalls?.push(`reviewNotebookGet:${cadence}:${period}`);
+    if (!reviewRecord) return Promise.resolve(fail("Review file not found"));
+    return Promise.resolve(ok(notebookOf()));
+  },
+  reviewPageGet: (cadence: string, period: string, scope: string) => {
+    harness.liveEditorCalls?.push(`reviewPageGet:${cadence}:${period}:${scope}`);
+    if (!reviewRecord) return Promise.resolve(fail("Review file not found"));
+    if (scope !== "overall") return Promise.resolve(fail("Review page not found"));
+    return Promise.resolve(ok(reviewPageBody()));
+  },
+  reviewPageEnsure: (cadence: string, period: string, scope: string) => {
+    harness.liveEditorCalls?.push(`reviewPageEnsure:${cadence}:${period}:${scope}`);
+    return Promise.resolve(ok(notebookOf()));
+  },
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    next: string,
+    _baseRev: number,
+  ) => {
+    harness.liveEditorCalls?.push(`reviewPageWrite:${cadence}:${period}:${scope}`);
+    harness.liveEditorReviewWrites?.push({ cadence, period, body: next });
+    if (reviewRecord) reviewRecord = { ...reviewRecord, bodyMarkdown: next };
+    return Promise.resolve({
+      ok: true,
+      page: reviewPageBody(),
+      notebookRev: (reviewRecord?.rev ?? 0) + 1,
+    } satisfies ReviewPageWriteOutcome);
   },
   reviewEnsure: (cadence: string, period: string) => {
     harness.liveEditorCalls?.push(`reviewEnsure:${cadence}:${period}`);

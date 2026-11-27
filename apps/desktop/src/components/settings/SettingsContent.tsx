@@ -8,6 +8,9 @@ import {
 import { normalizeSettingsQuery, searchSettingsSections } from "@/lib/settings-search";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsAppearance } from "./SettingsAppearance";
+import { SettingsShortcuts } from "./SettingsShortcuts";
+import { SettingsReading } from "./SettingsReading";
+import { SettingsComposer } from "./SettingsComposer";
 import { SettingsCompanionPrompts } from "./SettingsCompanionPrompts";
 import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
@@ -15,6 +18,8 @@ import { SettingsVault } from "./SettingsVault";
 import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsDeveloper } from "./SettingsDeveloper";
 import { SettingsQuestions } from "./SettingsQuestions";
+import { SettingsDecisions } from "./SettingsDecisions";
+import { SettingsReview } from "./SettingsReview";
 import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
@@ -52,6 +57,12 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
   switch (view) {
     case "appearance":
       return <SettingsAppearance />;
+    case "shortcuts":
+      return <SettingsShortcuts />;
+    case "reading":
+      return <SettingsReading />;
+    case "composer":
+      return <SettingsComposer />;
     case "domains":
       return <SettingsDomains />;
     case "vault":
@@ -60,8 +71,12 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsHermes />;
     case "agent":
       return <SettingsCompanionPrompts />;
+    case "review":
+      return <SettingsReview />;
     case "questions":
       return <SettingsQuestions />;
+    case "decisions":
+      return <SettingsDecisions />;
     case "updates":
       return <SettingsUpdates />;
     case "about":

@@ -20,6 +20,18 @@ export const PROJECT_PRIORITY_LABELS: Record<ProjectPriority, string> = {
   high: "High priority",
 };
 
+/**
+ * The type names the create/detail forms offer through a datalist. They are
+ * suggestions only: the field is free text and the operator may write their own.
+ */
+export const PROJECT_TYPE_SUGGESTIONS: readonly string[] = [
+  "Mobile App",
+  "Desktop/web",
+  "YouTube",
+  "Physical product",
+  "Service",
+];
+
 /** A collated task says which board column it sits in. */
 export const TASK_COLUMN_LABELS: Record<TaskColumn, string> = {
   done: "Done",

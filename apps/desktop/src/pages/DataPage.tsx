@@ -5,15 +5,33 @@ import type {
   IngestFileResult,
   IngestSourceKind,
 } from "@lifequest/vault-core";
+import {
+  findBaseArea,
+  isAreaLive,
+  liveAreas,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 import { FxRatePanel } from "@/components/data/FxRatePanel";
 
 export default function DataPage() {
   const { snapshot } = useVault();
   const lens = useDomainLens();
+  /*
+   * The vault's live revision. A database can now be merged or deleted by
+   * approving a Decision, and the Decisions sheet is painted OVER this page
+   * rather than replacing it (AppRoutes keeps this route mounted while
+   * `/decisions` is in the address bar). Nothing here navigates on approval, so
+   * without this the list would keep drawing the four duplicate tables the
+   * operator just collapsed until they left the page and came back. Every write
+   * already announces itself on this revision; a database list is a cheap read.
+   */
+  const live = useLiveData();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,8 +55,18 @@ export default function DataPage() {
   } | null>(null);
 
   const domainSlug = lens.kind === "domain" ? lens.slug : null;
-  const showDomainSelect = lens.kind !== "domain";
-  const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
+  /** The vault's own container: new records on Life land here, no selector. */
+  const baseArea = findBaseArea(snapshot?.domains ?? []);
+  /**
+   * Life creates into the base area when the vault has one. A legacy vault has
+   * no base area, so it keeps the selector it always had. A domain lens already
+   * names its target and shows no selector either way.
+   */
+  const showDomainSelect = lens.kind !== "domain" && !baseArea;
+  /** Everything the operator can see, base included (its name is "Life"). */
+  const liveDomains = liveAreas(snapshot?.domains ?? []);
+  /** What a new database can be assigned to: unlocked areas, never the base. */
+  const pickAreas = unlockedAreas(snapshot?.domains ?? []);
   const financialLive = liveDomains.some((d) => d.slug === "financial");
   const showFinanceInstall =
     financialLive &&
@@ -56,8 +84,10 @@ export default function DataPage() {
     const kitRes = await api().kitList("financial");
     setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
 
-    // Load financial capture settings if financial domain is live and kit installed
-    const finLive = snapshot?.domains.some((d) => d.slug === "financial" && !d.meta.archivedAt);
+    // Load financial capture settings if the Finance area is live and the kit is installed
+    const finLive = (snapshot?.domains ?? []).some(
+      (d) => d.slug === "financial" && isAreaLive(d),
+    );
     const kitInstalled = kitRes.ok && (kitRes.value as string[]).includes("finance");
     if (finLive && kitInstalled) {
       const settingsRes = await api().kitFinanceSettings();
@@ -79,7 +109,7 @@ export default function DataPage() {
         setTransactionalAccounts(transactional.map((a) => ({ id: a.id, name: a.cells.name as string })));
       }
     }
-  }, [domainSlug, snapshot?.domains]);
+  }, [domainSlug, snapshot?.domains, live]);
 
   useEffect(() => {
     void load();
@@ -89,12 +119,14 @@ export default function DataPage() {
     e.preventDefault();
     setError(null);
     if (showDomainSelect && !selectedDomain) {
-      setError("Select a domain to create a database in.");
+      setError("Select an area to create a database in.");
       return;
     }
-    const target = showDomainSelect ? selectedDomain : domainSlug;
+    const target = showDomainSelect
+      ? selectedDomain
+      : (domainSlug ?? baseArea?.slug);
     if (!target) {
-      setError("No domain available.");
+      setError("No area available.");
       return;
     }
     setBusy(true);
@@ -113,14 +145,16 @@ export default function DataPage() {
     }
   }
 
-  const targetDomain = showDomainSelect ? selectedDomain : domainSlug;
+  const targetDomain = showDomainSelect
+    ? selectedDomain
+    : (domainSlug ?? baseArea?.slug);
   const domainEntries = entries.filter((e) => e.domainSlug === targetDomain);
 
   async function onIngestFile(file: File) {
     setError(null);
     setIngestStatus(null);
     if (!targetDomain) {
-      setError("Select a domain first.");
+      setError("Select an area first.");
       return;
     }
     if (!selectedDbId) {
@@ -173,7 +207,7 @@ export default function DataPage() {
     e.preventDefault();
     setError(null);
     if (!pendingMap || !targetDomain || !selectedDbId) {
-      setError("Select a domain and database to propose a mapping.");
+      setError("Select an area and database to propose a mapping.");
       return;
     }
     const res = await api().ingestProposeMapping(targetDomain, {
@@ -210,10 +244,10 @@ export default function DataPage() {
   return (
     <div className="page-content data-studio">
       <header className="data-studio__header">
-        <p className="data-studio__eyebrow">Data</p>
+        <WingEyebrow page="Data" />
         <h1 className="data-studio__title">Databases</h1>
         <p className="data-studio__lead">
-          Domain books in this vault. Create one here, or import rows from a file.
+          Area books in this vault. Create one here, or import rows from a file.
         </p>
       </header>
 
@@ -298,14 +332,14 @@ export default function DataPage() {
               </label>
               {showDomainSelect ? (
                 <label className="data-field">
-                  <span className="data-field__label">Domain</span>
+                  <span className="data-field__label">Area</span>
                   <select
                     value={selectedDomain}
                     onChange={(e) => setSelectedDomain(e.target.value)}
                     className="input-field"
                   >
-                    <option value="">Select domain…</option>
-                    {liveDomains.map((d) => (
+                    <option value="">Select area…</option>
+                    {pickAreas.map((d) => (
                       <option key={d.slug} value={d.slug}>{d.meta.name}</option>
                     ))}
                   </select>
@@ -403,7 +437,7 @@ export default function DataPage() {
                 <h2>Finance</h2>
               </div>
               <p className="data-studio__hint">
-                Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+                Install the kit into the Finance area. It adds the ledger databases and starter pages.
               </p>
               <Button
                 variant="primary"

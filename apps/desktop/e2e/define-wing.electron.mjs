@@ -13,9 +13,10 @@
  *
  *  1. The wing is called Define. The rail carries exactly
  *     Home / Define / Plan / Act / Review — no tab still says "Vision".
- *  2. The Define wing's rail carries Dream, Vision and Ideal State, and the Home wing's
- *     rail carries Dashboard / Data / Pages / Documents / Personnel — Documents
- *     moved, it was not duplicated.
+ *  2. The Define wing's rail carries Dream, Vision and Ideal State, and the
+ *     Home wing's
+ *     rail carries Dashboard / Data / Pages / Documents / Agents / Images — Images
+ *     moved to Home, it was not duplicated.
  *  3. Dream lost the Vision & Desire card and kept the other three; Vision
  *     carries exactly that one card, and no page carries a card twice.
  *  4. The Vision card opens the `what` document of its own domain under
@@ -50,7 +51,7 @@ const SIZE = { width: 1280, height: 900 };
 /** The wings the rail must carry, in order — the rename's whole point. */
 const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 /** The wing rails, as the operator sees them. */
-const HOME_RAIL = ["Dashboard", "Data", "Pages", "Documents", "Personnel"];
+const HOME_RAIL = ["Dashboard", "Data", "Pages", "Documents", "Agents", "Images"];
 const DEFINE_RAIL = ["Dream", "Vision", "Ideal State"];
 /** Dream keeps three of the four doctrine cards; Vision carries the fourth. */
 const DREAM_CARDS = ["Beliefs & Premise", "Purpose", "Strategy (How)"];
@@ -114,7 +115,7 @@ const SAMPLE = `(() => {
     editorReadOnly: editorBox ? editorBox.getAttribute("data-read-only") === "true" : null,
     editorBackHref: back ? back.getAttribute("href") : null,
     documentsHeading: text(document.querySelector(".documents-page h1")),
-    documentsComposer: Boolean(document.querySelector(".documents-page .library-composer")),
+    documentsComposer: Boolean(document.querySelector(".documents-page .doc-tree")),
     calls: (window.defineWingCalls ?? []).slice(),
     errors: (window.defineWingErrors ?? []).slice(),
     overflow: {
@@ -271,9 +272,9 @@ async function main() {
     check(
       "the governed shelf and the Log are untouched",
       same(home.pinned.map((l) => l.label), [
-        "Life-Chain",
+        "Notebox",
         "Decisions",
-        "Daily Note",
+        "Daily Journal",
         "Automations",
       ]) && same(home.pinnedBottom.map((l) => l.label), ["Log"]),
       `shelf ${JSON.stringify(home.pinned.map((l) => l.label))} footer ${JSON.stringify(home.pinnedBottom.map((l) => l.label))}`,
@@ -306,7 +307,7 @@ async function main() {
       `root class ${dream.pageRootClass}`,
     );
     check(
-      "the lens is Overview: both live domains listed",
+      "the Life lens lists both live areas",
       same(dream.groups.map((g) => g.heading), ["Health", "Financial"]),
       `groups ${JSON.stringify(dream.groups.map((g) => g.heading))}`,
     );

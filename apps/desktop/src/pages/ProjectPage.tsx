@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   PROJECT_PRIORITIES,
   PROJECT_STATUSES,
+  unlockedAreas,
   type Project,
   type ProjectPriority,
   type ProjectStatus,
@@ -17,6 +18,7 @@ import {
   formatProjectWhen,
   PROJECT_PRIORITY_LABELS,
   PROJECT_STATUS_LABELS,
+  PROJECT_TYPE_SUGGESTIONS,
   TASK_COLUMN_LABELS,
 } from "@/lib/projects";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -41,6 +43,9 @@ const DECISION_STATUS_LABELS: Record<string, string> = {
 type Attrs = {
   title: string;
   summary: string;
+  projectType: string;
+  source: string;
+  sourceUrl: string;
   status: ProjectStatus;
   priority: "" | ProjectPriority;
   goalId: string;
@@ -57,6 +62,9 @@ type Standing = {
 const EMPTY_ATTRS: Attrs = {
   title: "",
   summary: "",
+  projectType: "",
+  source: "",
+  sourceUrl: "",
   status: "open",
   priority: "",
   goalId: "",
@@ -69,6 +77,9 @@ function attrsFrom(project: Project): Attrs {
   return {
     title: project.title,
     summary: project.summary ?? "",
+    projectType: project.projectType ?? "",
+    source: project.source ?? "",
+    sourceUrl: project.sourceUrl ?? "",
     status: project.status,
     priority: project.priority ?? "",
     goalId: project.goalId ?? "",
@@ -100,6 +111,18 @@ function byNewest<T extends { createdAt: string }>(records: T[]): T[] {
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, Math.trunc(value)));
+}
+
+/**
+ * A linked signal's one-line summary. An attachment-only capture has no body to
+ * clip, so it names itself the way the Life-Chain row does: the file or the
+ * address. The task made from it already carries the same fallback.
+ */
+function signalSummary(signal: SignalRecord): string {
+  if (signal.body.trim()) return clip(signal.body);
+  if (signal.attachment?.kind === "link") return clip(signal.attachment.url);
+  if (signal.attachment?.kind === "image") return clip(signal.attachment.name);
+  return "";
 }
 
 function clip(value: string, max = 180): string {
@@ -193,12 +216,9 @@ export default function ProjectPage() {
     );
   }, [project?.domainSlug, snapshot]);
 
+  // A project is assigned to an area: unlocked areas only, base hidden.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -253,6 +273,9 @@ export default function ProjectPage() {
     project !== null &&
     (attrs.title !== project.title ||
       attrs.summary !== (project.summary ?? "") ||
+      attrs.projectType !== (project.projectType ?? "") ||
+      attrs.source !== (project.source ?? "") ||
+      attrs.sourceUrl !== (project.sourceUrl ?? "") ||
       attrs.status !== project.status ||
       attrs.priority !== (project.priority ?? "") ||
       attrs.goalId !== (project.goalId ?? "") ||
@@ -297,6 +320,9 @@ export default function ProjectPage() {
     const next = await save({
       title: attrs.title.trim(),
       summary: attrs.summary.trim(),
+      projectType: attrs.projectType.trim() || null,
+      source: attrs.source.trim() || null,
+      sourceUrl: attrs.sourceUrl.trim() || null,
       status: attrs.status,
       priority: attrs.priority || null,
       goalId: attrs.goalId || null,
@@ -361,7 +387,7 @@ export default function ProjectPage() {
 
       <header className="act-page__header project-detail__header">
         <div>
-          <p className="act-page__eyebrow muted">Execute · Project</p>
+          <p className="act-page__eyebrow muted">Project</p>
           <h1 className="act-page__title" data-testid="project-title">
             {project.title}
           </h1>
@@ -382,6 +408,23 @@ export default function ProjectPage() {
       <div className="project-detail__meta">
         <span>{goalLabel}</span>
         <span>{domainLabel}</span>
+        {project.projectType ? (
+          <span data-testid="project-type">{project.projectType}</span>
+        ) : null}
+        {project.source ? (
+          <span data-testid="project-source">From {project.source}</span>
+        ) : null}
+        {project.sourceUrl ? (
+          <a
+            className="project-detail__source-link"
+            data-testid="project-source-link"
+            href={project.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {project.sourceUrl}
+          </a>
+        ) : null}
         {project.priority ? (
           <span>{PROJECT_PRIORITY_LABELS[project.priority]}</span>
         ) : null}
@@ -628,6 +671,50 @@ export default function ProjectPage() {
             />
           </label>
           <label className="field">
+            <span>Type</span>
+            <input
+              value={attrs.projectType}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, projectType: e.target.value }))
+              }
+              aria-label="Project type"
+              data-testid="project-detail-type"
+              list="project-type-suggestions"
+              placeholder="e.g. Mobile App"
+            />
+            <datalist id="project-type-suggestions">
+              {PROJECT_TYPE_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+          </label>
+          <label className="field">
+            <span>Source</span>
+            <input
+              value={attrs.source}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, source: e.target.value }))
+              }
+              aria-label="Project source"
+              data-testid="project-detail-source"
+              placeholder="The person or place the idea came from"
+            />
+          </label>
+          <label className="field project-detail__span2">
+            <span>Source link</span>
+            <input
+              type="text"
+              inputMode="url"
+              value={attrs.sourceUrl}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, sourceUrl: e.target.value }))
+              }
+              aria-label="Project source URL"
+              data-testid="project-detail-source-url"
+              placeholder="https://…"
+            />
+          </label>
+          <label className="field">
             <span>Status</span>
             <select
               value={attrs.status}
@@ -693,7 +780,7 @@ export default function ProjectPage() {
             </select>
           </label>
           <label className="field">
-            <span>Domain</span>
+            <span>Area</span>
             <select
               value={attrs.domainSlug}
               onChange={(e) =>
@@ -752,6 +839,32 @@ export default function ProjectPage() {
           </div>
         </form>
       </section>
+
+      {(project.repoUrls ?? []).length > 0 ? (
+        <section
+          className="project-detail__section"
+          data-testid="project-repositories"
+        >
+          <div className="project-detail__section-head">
+            <h2 className="project-detail__section-title">Repositories</h2>
+          </div>
+          <ul className="project-detail__repos">
+            {(project.repoUrls ?? []).map((url) => (
+              <li key={url}>
+                <a
+                  className="project-detail__repo-link"
+                  data-testid="project-repo-link"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <h2 className="project-detail__group-title">Around this project</h2>
 
@@ -820,7 +933,7 @@ export default function ProjectPage() {
                     </strong>
                   ) : null}
                   {signal.title ? " — " : null}
-                  {clip(signal.body)}
+                  {signalSummary(signal)}
                   <span className="project-detail__signal-meta muted">
                     {formatProjectWhen(signal.createdAt)}
                   </span>

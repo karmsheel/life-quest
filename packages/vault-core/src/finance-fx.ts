@@ -13,6 +13,7 @@ import {
   type FxRateSource,
   type Result,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 /**
  * The USD→ZAR rate, read from a source the operator names.
@@ -139,7 +140,7 @@ async function fxWritable(root: string): Promise<Result<true>> {
   try {
     await assertPhysicalContainment(root, paths.domainJson(FINANCE_DOMAIN_SLUG), "read");
     const meta = JSON.parse(await fs.readFile(paths.domainJson(FINANCE_DOMAIN_SLUG), "utf8"));
-    if (meta.archivedAt != null) {
+    if (!isLiveAreaMeta(meta)) {
       return { ok: false, error: `Domain not found or archived: ${FINANCE_DOMAIN_SLUG}` };
     }
   } catch {

@@ -32,10 +32,14 @@
  *     reported and the app does NOT quit, so a failed upgrade never leaves the
  *     operator with no app at all.
  * 12. The check is asked for again in the same session — the session's answer is
- *     kept, because the product asks once, at launch. `force` is the operator
- *     asking by hand — the rail's build number and Settings → Updates — and only
- *     those do that.
- * 13. An install request names an asset main did not just offer, a name that is
+ *     kept, because the launch asks once and an unforced read replays it. `force`
+ *     is a read the caller chose: the operator's own click on the rail's build
+ *     number or Settings → Updates, and the watch's tick. A watch read that
+ *     cannot answer leaves the session's answer alone.
+ * 13. A release is published after the app is already running — the watch reads
+ *     the feed on a clock and reports the new version to the renderer once, so
+ *     the operator learns of it without clicking anything.
+ * 14. An install request names an asset main did not just offer, a name that is
  *     not a `-setup.exe`, no declared size, or a URL on a trusted host that is
  *     not one of this repository's release assets — refused before a byte moves.
  *     A real install also asks the operator in a native dialog first.
@@ -478,15 +482,38 @@ let sessionCheck: Promise<UpdateCheckResult> | null = null;
  */
 let offeredInstaller: UpdateAsset | null = null;
 
+export type UpdateCheckOptions = {
+  /** Reach the feed even when the session already has an answer. */
+  force?: boolean;
+  /**
+   * A read on the watch's own clock rather than the operator asking.
+   *
+   * A background read that *fails* (offline, a 404, a rate limit) must not erase
+   * the session's last answer or the installer it offered: a release the operator
+   * can still install is not made stale by a check that did not happen. The
+   * operator's own forced check keeps the older behaviour — a failed manual check
+   * clears the offer, because the answer on screen was the one they just asked
+   * for.
+   */
+  background?: boolean;
+};
+
 /**
- * Ask for the newest release. Without `force` the session keeps its first
- * answer, which is what makes the product's cadence "once, at launch"; Settings
- * passes `force` because the operator asked by hand.
+ * Ask for the newest release.
+ *
+ * Without `force` the session keeps its first answer, which is the launch's
+ * check. Settings → *Check now* and the rail's build number pass `force` because
+ * the operator asked by hand. The watch (`startUpdateWatch`) also passes `force`
+ * — with `background: true` — because its whole job is to reach the network
+ * again and notice a release published after the launch.
  */
 export async function checkForUpdate(
-  options: { force?: boolean } = {},
+  options: UpdateCheckOptions = {},
 ): Promise<UpdateCheckResult> {
   if (!options.force && sessionCheck) return sessionCheck;
+
+  // The answer to fall back to if a background read cannot reach the feed.
+  const previousCheck = sessionCheck;
 
   const run = (async (): Promise<UpdateCheckResult> => {
     const fetched = await fetchLatestRelease();
@@ -496,16 +523,30 @@ export async function checkForUpdate(
 
   sessionCheck = run;
   const result = await run;
+  // A read that was overtaken by a newer one — the operator's forced check landing
+  // while a watch read was in flight, or the other way round — must not write the
+  // session's state when it lands: the newer answer already did.
+  const isLatest = sessionCheck === run;
   // A failed check is not an answer worth keeping: the operator's next attempt
-  // should reach the network again rather than replay a dead end.
+  // should reach the network again rather than replay a dead end. A background
+  // read is the exception — it is not the operator asking, and a failed read must
+  // leave the offer they can still install exactly where it was.
   if (!result.ok) {
-    sessionCheck = null;
-    offeredInstaller = null;
-  } else if (result.decision.state === "available" && result.decision.installer) {
-    const { name, url, size } = result.decision.installer;
-    offeredInstaller = { name, url, size };
-  } else {
-    offeredInstaller = null;
+    if (options.background) {
+      if (isLatest) sessionCheck = previousCheck;
+      return result;
+    }
+    if (isLatest) {
+      sessionCheck = null;
+      offeredInstaller = null;
+    }
+  } else if (isLatest) {
+    if (result.decision.state === "available" && result.decision.installer) {
+      const { name, url, size } = result.decision.installer;
+      offeredInstaller = { name, url, size };
+    } else {
+      offeredInstaller = null;
+    }
   }
   return result;
 }
@@ -514,6 +555,125 @@ export async function checkForUpdate(
 export function resetUpdateSession(): void {
   sessionCheck = null;
   offeredInstaller = null;
+}
+
+// —— the watch ———————————————————————————————————————————————————————————————
+
+/**
+ * How often a running app reads the feed.
+ *
+ * The launch's check answers for the moment the operator arrives. A release
+ * published while they are working used to stay invisible until they clicked the
+ * build number — and they had no reason to click it, because nothing told them
+ * there was news (that is the reported fault this cadence repairs). An hour puts
+ * a fresh release in front of a running studio within an hour of it being
+ * published, and the feed is one anonymous GET of a public document: one read an
+ * hour, and no credential anywhere.
+ */
+export const UPDATE_POLL_MS = 60 * 60_000;
+
+/** The fastest a caller may ask the watch to run — the e2e rig uses this floor. */
+export const MIN_UPDATE_POLL_MS = 250;
+
+/**
+ * What the watch reports: a release to announce, or the news that a release it
+ * already announced is no longer offered (withdrawn, unpublished, downgraded).
+ * The two are one shape so the renderer applies one rule: the feed's latest
+ * answer replaces the one on screen.
+ */
+export type UpdateWatchNews =
+  | Extract<UpdateDecision, { state: "available" }>
+  | Extract<UpdateDecision, { state: "current" }>;
+
+type RunningWatch = { stop: () => void };
+
+let watch: RunningWatch | null = null;
+
+function pollIntervalOf(asked: number | undefined): number {
+  if (
+    typeof asked === "number" &&
+    Number.isFinite(asked) &&
+    asked >= MIN_UPDATE_POLL_MS
+  ) {
+    return Math.round(asked);
+  }
+  return UPDATE_POLL_MS;
+}
+
+/**
+ * Read the feed on a clock, and report a release it has not reported before.
+ *
+ * The ways this can go wrong, written down before the code:
+ *
+ *  1. A read that is slower than the interval — a tick that is still in flight is
+ *     skipped, so reads cannot queue faster than they finish and two flights can
+ *     never land out of order.
+ *  2. A read that fails — offline, a 404, a rate limit — is quiet: no news, no
+ *     notification, and the previous offer stands (`background` leaves the
+ *     session's answer alone). A check that did not happen is not news.
+ *  3. The same release read on every tick — announced once, not repeatedly.
+ *     `reported` remembers the version already announced, and is cleared when the
+ *     feed stops offering it, so a release withdrawn and published again is news
+ *     again.
+ *  4. The watch being started twice — one timer, because two pollers would
+ *     double the feed traffic and could announce the same release twice.
+ *  5. A listener throwing — the timer survives it, or one renderer bug would
+ *     stop the app ever hearing about a release again.
+ *  6. A "current" answer with nothing previously announced — quiet, not news.
+ *     Only a release that *was* announced and then stopped being offered is
+ *     worth telling the renderer about, so an app that has been up to date all
+ *     along never repaints its badge.
+ */
+export function startUpdateWatch(
+  onNews: (news: UpdateWatchNews) => void,
+  options: { intervalMs?: number } = {},
+): () => void {
+  if (watch) return watch.stop;
+
+  let reported: string | null = null;
+  let inFlight = false;
+
+  const timer = setInterval(() => {
+    if (inFlight) return;
+    inFlight = true;
+    void checkForUpdate({ force: true, background: true })
+      .then((result) => {
+        if (!result.ok) return;
+        const decision = result.decision;
+        if (decision.state === "available") {
+          if (decision.latest === reported) return;
+          reported = decision.latest;
+          try {
+            onNews(decision);
+          } catch {
+            // A listener bug is not the feed's failure: keep the clock running
+            // so the next release can still be announced.
+          }
+        } else if (decision.state === "current" && reported !== null) {
+          reported = null;
+          try {
+            onNews(decision);
+          } catch {
+            // Same as above: the next tick must still be able to report.
+          }
+        }
+      })
+      .catch(() => {
+        // `checkForUpdate` answers its failures; it does not reject today. If it
+        // ever does, one bad read must not stop the watch forever.
+      })
+      .finally(() => {
+        inFlight = false;
+      });
+  }, pollIntervalOf(options.intervalMs));
+
+  watch = {
+    stop: () => {
+      clearInterval(timer);
+      watch = null;
+    },
+  };
+  return watch.stop;
 }
 
 // —— download and hand over ——————————————————————————————————————————————————

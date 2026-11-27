@@ -1,10 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Blocks,
   Calendar,
   CalendarCheck,
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  ChartNoAxesColumn,
   ClipboardList,
   Clock,
   Compass,
@@ -13,10 +15,11 @@ import {
   FileText,
   FolderKanban,
   Goal,
-  Home,
+  Image as ImageIcon,
+  Inbox,
   Map,
+  Puzzle,
   NotebookPen,
-  Radio,
   ScrollText,
   Sparkles,
   Target,
@@ -37,21 +40,21 @@ export type NavItem = {
   /**
    * Where the row sits on the rail.
    *
-   * `bottom` is the governed shelf: Life-Chain, Decisions, Daily Note and
-   * Automations, cordoned above the Log. `footer` is the Log itself — the one
+   * `bottom` is the governed shelf: Notebox, Decisions, Daily Journal,
+   * Automations and Customizations, cordoned above the Log. `footer` is the Log itself — the one
    * row that closes the rail — so the shelf can carry a divider above it without
    * counting the Log as one of its entries.
    */
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Execute: Projects, Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Life-Chain, Decisions, Daily Note, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Blueprints. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly, Analytics. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
     href: "/chain",
-    label: "Life-Chain",
-    icon: Radio,
+    label: "Notebox",
+    icon: Inbox,
     section: "main",
     pin: "bottom",
   },
@@ -68,14 +71,14 @@ export const NAV_ITEMS: NavItem[] = [
     // reads back. Governance, not a wing — it belongs to no domain.
     id: "note",
     href: "/notes",
-    label: "Daily Note",
+    label: "Daily Journal",
     icon: NotebookPen,
     section: "governance",
     pin: "bottom",
   },
   {
-    // Directly under Daily Note: the shelf of one-click jobs that read a page
-    // and open a chat with the agent. The Daily Note's "Analyze note" is the
+    // Directly under Daily Journal: the shelf of one-click jobs that read a page
+    // and open a chat with the agent. The Daily Journal's "Analyze note" is the
     // first of them.
     id: "automations",
     href: "/automations",
@@ -85,10 +88,31 @@ export const NAV_ITEMS: NavItem[] = [
     pin: "bottom",
   },
   {
+    // Directly under Automations: the workshop where the data-only
+    // customisation files are selected, switched on or off, edited and created.
+    // It is governance like the shelf above it — the look of the app belongs to
+    // the operator, not to a wing.
+    //
+    // The row reads "Customizations" and links to `/customizations`, but its
+    // `id` stays "extensions" on purpose: stored rail preferences and pinned
+    // shelves resolve rows by id, so renaming it here would forget where every
+    // existing operator had put this row (or drop it from a pin). The id is an
+    // address for saved state, not the label the operator reads.
+    id: "extensions",
+    href: "/customizations",
+    label: "Customizations",
+    icon: Puzzle,
+    section: "governance",
+    pin: "bottom",
+  },
+  {
+    // The rail row wears the mark a built-in card's heading wears (BuiltInBadge):
+    // the Dashboard is the pin board, so its icon is the board's own badge, not
+    // the house glyph it used to carry.
     id: "dashboard",
     href: "/home",
     label: "Dashboard",
-    icon: Home,
+    icon: Blocks,
     section: "main",
     wing: "home",
   },
@@ -119,8 +143,19 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "personnel",
     href: "/personnel",
-    label: "Personnel",
+    label: "Agents",
     icon: Users,
+    section: "main",
+    wing: "home",
+  },
+  {
+    // The pictures a vision is made of, and the one document they are written
+    // beside. Under Home, not Define: the library is part of what the operator
+    // already has, not part of what they are defining.
+    id: "images",
+    href: "/images",
+    label: "Images",
+    icon: ImageIcon,
     section: "main",
     wing: "home",
   },
@@ -168,8 +203,8 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "track",
-    href: "/track",
-    label: "Architecture",
+    href: "/blueprints",
+    label: "Blueprints",
     icon: Target,
     section: "main",
     wing: "plan",
@@ -193,9 +228,12 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "execute",
   },
   {
+    // The task board itself: what to do next, and what the agents are doing
+    // about it. The row's id stays "act" — that is the wing's own name in the
+    // loop, and it keeps stored paths and settings resolving.
     id: "act",
     href: "/act",
-    label: "Act",
+    label: "Task Manager",
     icon: Zap,
     section: "main",
     wing: "execute",
@@ -237,6 +275,17 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/review/yearly",
     label: "Yearly",
     icon: CalendarCheck,
+    section: "main",
+    wing: "review",
+  },
+  {
+    // The Review wing's one non-cadence page. It sits after the cadence ladder
+    // because it compares periods rather than opening one: it is review work,
+    // but it is not another period to fill. It wears the matrix's mark.
+    id: "analytics",
+    href: "/review/analytics",
+    label: "Analytics",
+    icon: ChartNoAxesColumn,
     section: "main",
     wing: "review",
   },

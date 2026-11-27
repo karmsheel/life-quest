@@ -15,6 +15,8 @@ import {
 } from "./library-documents.ts";
 import { getDocument, saveDocument } from "./domain-documents.ts";
 import { listDomains } from "./domains.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
+import { isDomainLive } from "./domain-databases.ts";
 import { createDecision } from "./decisions.ts";
 import { projectGet } from "./projects.ts";
 
@@ -51,7 +53,7 @@ export const DOCUMENT_TOOL_DEFS: MapToolDef[] = [
   },
   {
     name: "update_document",
-    description: "Update a library document by id, or a doctrine document by domainSlug + kind (locked → pending decision)",
+    description: "Update a library document by id (title, body, domain slugs), or a doctrine document by domainSlug + kind (locked → pending decision)",
     parameters: {
       type: "object",
       properties: {
@@ -60,6 +62,7 @@ export const DOCUMENT_TOOL_DEFS: MapToolDef[] = [
         kind: { type: "string" },
         title: { type: "string" },
         body: { type: "string" },
+        domainSlugs: { type: "array", items: { type: "string" } },
       },
     },
   },
@@ -114,6 +117,9 @@ export async function executeDocumentTool(
         }
       }
       for (const domain of domainsResult.value) {
+        // Locked areas do not exist for the companion either: their doctrine is
+        // not a document it can read or list.
+        if (!isLiveAreaMeta(domain.meta)) continue;
         for (const kind of ["premise", "what", "why", "how"] as DocumentKind[]) {
           const doc = await getDocument(root, domain.slug, kind);
           if (doc.ok) {
@@ -156,6 +162,9 @@ export async function executeDocumentTool(
       if (!isDocumentKind(kind)) {
         return { error: { code: "MALFORMED", message: `Unknown document kind: ${kind}` } };
       }
+      if (!(await isDomainLive(root, domainSlug))) {
+        return { error: { code: "NOT_FOUND", message: `Document not found: ${domainSlug}/${kind}` } };
+      }
       const docResult = await getDocument(root, domainSlug, kind);
       if (!docResult.ok) {
         return { error: { code: "MALFORMED", message: docResult.error } };
@@ -196,6 +205,23 @@ export async function executeDocumentTool(
     }
 
     case "update_document": {
+      // A library note's domain list is part of the note the operator sees, so an
+      // agent may propose it alongside a title and body. Not doctrine: its one
+      // area comes from the target, and the tool says so rather than silently
+      // dropping the argument.
+      const domainSlugsArg = args.domainSlugs;
+      let requestedDomainSlugs: string[] | undefined;
+      if (domainSlugsArg !== undefined) {
+        if (
+          !Array.isArray(domainSlugsArg) ||
+          !domainSlugsArg.every((slug) => typeof slug === "string")
+        ) {
+          return {
+            error: { code: "MALFORMED", message: "domainSlugs must be an array of strings" },
+          };
+        }
+        requestedDomainSlugs = domainSlugsArg;
+      }
       const id = args.id;
       if (typeof id === "string" && id.length > 0) {
         const libResult = await libraryGet(root, id);
@@ -205,7 +231,17 @@ export async function executeDocumentTool(
         const patch: LibraryUpdatePatch = {};
         if (typeof args.title === "string" && args.title.trim()) patch.title = args.title;
         if (typeof args.body === "string") patch.bodyMarkdown = args.body;
-        if (patch.title === undefined && patch.bodyMarkdown === undefined) {
+        if (requestedDomainSlugs !== undefined) {
+          const nextDomains = uniqueDomains(requestedDomainSlugs);
+          if (!sameDomains(nextDomains, libResult.value.domainSlugs)) {
+            patch.domainSlugs = nextDomains;
+          }
+        }
+        if (
+          patch.title === undefined &&
+          patch.bodyMarkdown === undefined &&
+          patch.domainSlugs === undefined
+        ) {
           return { error: { code: "MALFORMED", message: "No changes provided" } };
         }
         if (actor.type === "agent") {
@@ -218,6 +254,9 @@ export async function executeDocumentTool(
             previousTitle: existing.title,
             proposedBodyMarkdown: patch.bodyMarkdown ?? existing.bodyMarkdown,
             previousBodyMarkdown: existing.bodyMarkdown,
+            ...(patch.domainSlugs !== undefined
+              ? { proposedDomainSlugs: patch.domainSlugs }
+              : {}),
             actor,
           });
           if (!decisionResult.ok) {
@@ -239,6 +278,15 @@ export async function executeDocumentTool(
       }
       if (!isDocumentKind(kind)) {
         return { error: { code: "MALFORMED", message: `Unknown document kind: ${kind}` } };
+      }
+      if (requestedDomainSlugs !== undefined) {
+        return {
+          error: {
+            code: "MALFORMED",
+            message:
+              "domainSlugs only applies to a library note; a doctrine document's area comes from domainSlug",
+          },
+        };
       }
       const current = await getDocument(root, domainSlug, kind);
       if (!current.ok) {
@@ -289,6 +337,28 @@ export async function executeDocumentTool(
     default:
       return { error: { code: "MALFORMED", message: "Unknown tool" } };
   }
+}
+
+/** The vault's domain rule, applied to an argument before it is compared or written. */
+function uniqueDomains(slugs: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of slugs) {
+    const slug = raw.trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  return out;
+}
+
+/** Same tags in any order: an argument that changes nothing files no Decision. */
+function sameDomains(a: string[], b: string[]): boolean {
+  const left = uniqueDomains(a);
+  const right = uniqueDomains(b);
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
 }
 
 function isDocumentKind(kind: string): kind is DocumentKind {

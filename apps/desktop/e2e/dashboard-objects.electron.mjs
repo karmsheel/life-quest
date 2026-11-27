@@ -104,7 +104,7 @@ const SAMPLE = `(() => {
 async function applyAppTheme(win) {
   await win.loadURL(`${url}?v=theme-seed`);
   await win.webContents.executeJavaScript(`(() => {
-    localStorage.setItem("lifequest-skin", "forge-os");
+    localStorage.setItem("lifequest-skin", "forge");
     localStorage.setItem("lifequest-theme", "dark");
     return true;
   })()`);

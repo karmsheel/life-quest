@@ -2,13 +2,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { autoApproveInsertsFromUnknown, countWeeklyVaultFiles } from "./agents.ts";
 import { chatQuestionsFromUnknown } from "./chat-questions.ts";
+import { decisionInboxFromUnknown } from "./decision-inbox.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
+import { legacyOnboardingRecord, readOnboardingProposal, readOnboardingRecord } from "./onboarding.ts";
 import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
 import { listPlanningIndex } from "./planning-stubs.ts";
-import { listReviewIndex } from "./reviews.ts";
+import { listReviewIndex, migrateLegacyReviews } from "./reviews.ts";
+import { reviewAvailabilityFromUnknown } from "./review-availability.ts";
 import {
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
@@ -20,6 +23,8 @@ import {
   type DomainRecord,
   type Goal,
   type LifequestJson,
+  type OnboardingProposal,
+  type OnboardingRecord,
   type PlanningIndexEntry,
   type Result,
   type ReviewIndexEntry,
@@ -64,6 +69,17 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
           : "monday",
       autoApproveInserts: autoApproveInsertsFromUnknown(parsedSettings.autoApproveInserts),
       chatQuestions: chatQuestionsFromUnknown(parsedSettings.chatQuestions),
+      // A vault written before these switches existed has no key at all; the
+      // tolerant read gives it both defaults rather than leaving the renderer to
+      // guess, so the settings page and the watcher never disagree.
+      decisionInbox: decisionInboxFromUnknown(parsedSettings.decisionInbox),
+      // Same rule for the review windows: a vault written before they existed
+      // has no key, and reading must not rewrite settings.json. The tolerant
+      // read gives it the shipped defaults so the Review page, the period pack
+      // and the write gate all agree on which review is open.
+      reviewAvailability: reviewAvailabilityFromUnknown(
+        parsedSettings.reviewAvailability,
+      ),
     };
 
     const agentsRaw = await fs.readFile(paths.agentsJson, "utf8");
@@ -131,6 +147,17 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       goalsError = goalsRes.error;
     }
 
+    // The notebook migration runs before the first index read, so the app never
+    // shows a period twice (legacy file + notebook) and never reads a half-split
+    // one. A failure is not fatal: un-migrated periods keep reading through the
+    // compatibility projection, and the next open retries (the marker is only
+    // written when the pass completed).
+    try {
+      await migrateLegacyReviews(paths.root);
+    } catch {
+      // Reported per period by the migration itself; open keeps working.
+    }
+
     let reviews: ReviewIndexEntry[] = [];
     const reviewsRes = await listReviewIndex(paths.root);
     if (reviewsRes.ok) {
@@ -150,6 +177,19 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       weeklyFileCount = 0;
     }
 
+    // Onboarding drives the dock's first-run cards, so both are filled on every
+    // open. A missing or malformed record already reads as completed inside
+    // `readOnboardingRecord`; the fallback here is defence in depth so a bad file
+    // can never fail the whole open. A malformed proposal simply means no card.
+    const onboardingRes = await readOnboardingRecord(paths.root);
+    const onboarding: OnboardingRecord = onboardingRes.ok
+      ? onboardingRes.value
+      : legacyOnboardingRecord();
+    const onboardingProposalRes = await readOnboardingProposal(paths.root);
+    const onboardingProposal: OnboardingProposal | null = onboardingProposalRes.ok
+      ? onboardingProposalRes.value
+      : null;
+
     return {
       ok: true,
       value: {
@@ -167,6 +207,8 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         reviews,
         planning,
         weeklyFileCount,
+        onboarding,
+        onboardingProposal,
       },
     };
   } catch (e) {

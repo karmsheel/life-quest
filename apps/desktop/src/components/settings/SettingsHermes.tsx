@@ -1,30 +1,18 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
 import { SettingsFact } from "@/components/ui/SettingsFact";
+import { PiEndpointForm } from "@/components/settings/PiEndpointForm";
+import { SettingsAgents } from "@/components/settings/SettingsAgents";
+import { SettingsVaultAgents } from "@/components/settings/SettingsVaultAgents";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
 import { api } from "@/lib/ipc";
+import { companionStatusSummary } from "@/lib/companion-status-copy";
 import { useCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
-import type { CompanionStatus, McpDoors } from "@/vite-env";
-
-function statusSummary(status: CompanionStatus | null, ensuring: boolean): string {
-  if (ensuring || !status) return "Connecting…";
-  if (status.kind === "ready") {
-    const how = status.startedByLifeQuest ? "started by LifeQuest" : "attached";
-    return `Ready · ${status.baseUrl} · ${how}`;
-  }
-  if (status.kind === "needs_install") return "Hermes CLI not found on PATH.";
-  if (status.kind === "profile_error") return status.message;
-  if (status.kind === "port_busy") return `Port ${status.port} is busy.`;
-  if (status.kind === "gateway_exited") return status.detail || "Gateway exited.";
-  if (status.kind === "hermes_too_old") return "Hermes is too old for the Sessions API.";
-  if (status.kind === "auth_error") return "Companion API key was rejected.";
-  return "Companion disconnected.";
-}
+import type { McpDoors } from "@/vite-env";
 
 /** The loopback doors' default ports, shown while the door is not bound yet. */
 const LOCAL_DOOR = "http://127.0.0.1:8643/mcp";
@@ -40,7 +28,7 @@ const NO_VAULT: McpDoors = {
 
 export function SettingsHermes() {
   const { snapshot } = useVault();
-  const { status, ensuring, retry, profile } = useCompanion();
+  const { status, ensuring, retry, harness } = useCompanion();
   const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -110,7 +98,7 @@ export function SettingsHermes() {
     <SettingsSection
       icon={<Sparkles size={16} />}
       title="Hermes"
-      subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
+      subtitle="The companion and the agents this vault runs on"
       banner={
         error || message ? (
           <>
@@ -131,10 +119,10 @@ export function SettingsHermes() {
       {/*
         MCP doors first: they are the two addresses every other agent on this
         machine needs in order to reach the vault, and the thing an operator
-        comes to this page to copy. They used to sit under the profile picker,
-        below the fold on a normal window — local plumbing at the end of the
-        page. The block opts out of page-context capture: the doors are local
-        plumbing, not content for a model turn.
+        comes to this page to copy. They used to sit under the old app-level
+        agent picker, below the fold on a normal window — local plumbing at the
+        end of the page. The block opts out of page-context capture: the doors
+        are local plumbing, not content for a model turn.
       */}
       <section
         className="settings-hermes__block"
@@ -173,7 +161,7 @@ export function SettingsHermes() {
           }
           role="status"
         >
-          {statusSummary(status, ensuring)}
+          {companionStatusSummary(status, ensuring)}
         </p>
 
         {status?.kind === "ready" && status.modelWarning ? (
@@ -182,14 +170,13 @@ export function SettingsHermes() {
           </p>
         ) : null}
 
-        {ready ? (
+        {ready && harness !== "pi" ? (
           <div className="settings-facts" data-testid="hermes-facts">
-            <SettingsFact label="CLI" value={ready.cliPath} />
-            <SettingsFact label="Profile" value={ready.profilePath} />
-            <SettingsFact label="API" value={ready.baseUrl} />
+            <SettingsFact label="CLI" value={ready.cliPath ?? ""} />
+            <SettingsFact label="Profile" value={ready.profilePath ?? ""} />
+            <SettingsFact label="API" value={ready.baseUrl ?? ""} />
           </div>
         ) : null}
-
         <div className="settings-hermes__actions">
           <Button
             type="button"
@@ -200,27 +187,34 @@ export function SettingsHermes() {
           >
             {ensuring ? "Checking…" : "Recheck"}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!ready}
-            onClick={() => void api().companionOpenProfileFolder()}
-          >
-            Open profile folder
-          </Button>
+          {harness === "pi" ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!ready}
+              onClick={() => void api().companionOpenProfileFolder()}
+            >
+              Open profile folder
+            </Button>
+          )}
         </div>
       </section>
 
       {/*
-        The same picker the setup screen offers, so switching the companion's
-        profile later does not mean being stuck first: every installed Hermes
-        profile, the active one marked, and the app's own `lifequest` on
-        offer. Choosing one re-runs the ensure against it.
+        The vault's agent choice lives in one section now: a vault is the
+        profile that is loaded, so its companion is part of the vault, not an
+        app-wide setting. The dock's switcher shows the same binding as pills.
       */}
-      <section className="settings-hermes__block" data-testid="hermes-profile">
-        <h3 className="settings-hermes__heading">Companion profile</h3>
-        <CompanionProfilePicker />
-      </section>
+      <SettingsVaultAgents />
+
+      <SettingsAgents />
+
+      {harness === "pi" ? (
+        <section className="settings-hermes__block" data-testid="pi-endpoint">
+          <h3 className="settings-hermes__heading">Built-in endpoint</h3>
+          <PiEndpointForm disabled={ensuring} />
+        </section>
+      ) : null}
 
       <section className="settings-hermes__block" data-testid="hermes-behaviour">
         <h3 className="settings-hermes__heading">Chat behaviour</h3>

@@ -1,0 +1,77 @@
+name: docs
+
+# Builds the project wiki from docs/wiki/ and publishes it to GitHub Pages.
+# The wiki source stays plain Markdown in the repository; this workflow only
+# stages it (see scripts/build-docs.mjs) and runs MkDocs Material.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/wiki/**"
+      - "LAWS/**"
+      - "VISION.md"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - "scripts/build-docs.mjs"
+      - "scripts/docs-check.mjs"
+      - "apps/desktop/package.json"
+      - ".github/workflows/docs.yml"
+  # A published release is news the site should carry: the generated Releases
+  # page is rebuilt from the feed, even when no wiki page changed.
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install MkDocs Material
+        run: pip install -r requirements-docs.txt
+
+      - name: Check the wiki is current
+        run: node scripts/docs-check.mjs
+
+      - name: Stage the wiki
+        run: node scripts/build-docs.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -11,7 +11,6 @@ import {
   formatSignalWhen,
   groupSignalsByDay,
   localDayKey,
-  signalDomainLabel,
   signalVisible,
   taskForSignal,
   taskFromSignalBody,
@@ -28,6 +27,7 @@ function signal(
     sourceRef: null,
     title: null,
     domainSlug: null,
+    attachment: null,
     ...partial,
   };
 }
@@ -119,30 +119,6 @@ describe("groupSignalsByDay", () => {
     );
     assert.equal(groups[1]?.label, "Yesterday");
     assert.equal(groups[1]?.items[0]?.id, "y");
-  });
-});
-
-describe("signalDomainLabel", () => {
-  it("labels null as - unassigned -", () => {
-    assert.equal(signalDomainLabel(null, []), "- unassigned -");
-  });
-
-  it("prefers domain name over slug", () => {
-    assert.equal(
-      signalDomainLabel("health", [{ slug: "health", name: "Health" }]),
-      "Health",
-    );
-  });
-
-  it("uses meta.name for an archived slug", () => {
-    assert.equal(
-      signalDomainLabel("health", [{ slug: "health", name: "Health" }]),
-      "Health",
-    );
-  });
-
-  it("falls back to the raw slug when unknown", () => {
-    assert.equal(signalDomainLabel("mystery", []), "mystery");
   });
 });
 

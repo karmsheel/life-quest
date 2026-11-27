@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   DatabaseColumn,
   DatabaseListEntry,
@@ -23,9 +23,51 @@ async function loadBatches(slug: string, id: string, setBatches: (b: IngestBatch
   }
 }
 
+/**
+ * A period deep link's parameters. The Analytics matrix links a derived cell
+ * here as `/data/<areaSlug>/<dbId>?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>&columnId=<id>`
+ * so the operator lands on the rows behind that cell's number.
+ */
+type PeriodFilter = { from: string; to: string; columnId: string };
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A real calendar day, not merely the shape `YYYY-MM-DD` can wear. */
+function isCalendarDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * The period a link asked for, or null when the link is incomplete or cannot be
+ * trusted. The column is checked later, once `dbGet` says which columns exist:
+ * a `columnId` that is missing, unknown or not a date column means the page
+ * behaves exactly as it does without a link.
+ */
+function readPeriodFilter(params: URLSearchParams): PeriodFilter | null {
+  const from = params.get("from");
+  const to = params.get("to");
+  const columnId = params.get("columnId");
+  if (!from || !to || !columnId) return null;
+  if (!isCalendarDate(from) || !isCalendarDate(to)) return null;
+  if (from > to) return null;
+  return { from, to, columnId };
+}
+
 export default function DatabasePage() {
   const { slug = "", dbId = "" } = useParams<{ slug: string; dbId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  /**
+   * The period a link asked for, read ONCE as the page opens. It is state rather
+   * than a derived value on purpose: clearing the chip strips the URL, and the
+   * rows it showed must stay on screen instead of the page falling back to
+   * whatever a re-read of the now-empty URL would mean.
+   */
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter | null>(() =>
+    readPeriodFilter(searchParams),
+  );
   const { snapshot } = useVault();
   /** The vault's live revision: the ledger table re-reads when a row lands. */
   const live = useLiveData();
@@ -183,6 +225,17 @@ export default function DatabasePage() {
     await load();
   }
 
+  /** Drop the period: all rows again, and the link's three params leave the URL. */
+  function clearPeriodFilter() {
+    setPeriodFilter(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("from");
+    next.delete("to");
+    next.delete("columnId");
+    const search = next.toString();
+    navigate({ search: search ? `?${search}` : "" }, { replace: true });
+  }
+
   if (loadError) {
     return (
       <div className="page-content data-studio">
@@ -197,6 +250,24 @@ export default function DatabasePage() {
   }
 
   const domainName = snapshot?.domains.find((d) => d.slug === slug)?.meta.name ?? slug;
+
+  // The link only means something against a real date column of this database.
+  // An unvalidated `columnId` (or a "date" the column does not hold) leaves the
+  // page exactly as it was without the link.
+  const filterColumn = periodFilter
+    ? meta.columns.find((col) => col.id === periodFilter.columnId && col.type === "date") ?? null
+    : null;
+  const visibleRows =
+    periodFilter && filterColumn
+      ? rows.filter((row) => {
+          const cell = row.cells[periodFilter.columnId];
+          return (
+            typeof cell === "string" &&
+            cell >= periodFilter.from &&
+            cell <= periodFilter.to
+          );
+        })
+      : rows;
 
   return (
     <div className="page-content data-studio database-page">
@@ -358,7 +429,24 @@ export default function DatabasePage() {
       <section className="data-studio__panel">
         <div className="data-studio__panel-head">
           <h2>Rows</h2>
-          <Button onClick={onAddRow}>Add row</Button>
+          <div className="data-studio__panel-actions">
+            {periodFilter && filterColumn ? (
+              <span className="data-studio__period-filter" data-testid="db-period-filter">
+                <span className="data-studio__period-filter-range">
+                  Showing {periodFilter.from} → {periodFilter.to}
+                </span>
+                <Button
+                  variant="ghost"
+                  className="data-studio__period-filter-clear"
+                  data-testid="db-period-filter-clear"
+                  onClick={clearPeriodFilter}
+                >
+                  Clear
+                </Button>
+              </span>
+            ) : null}
+            <Button onClick={onAddRow}>Add row</Button>
+          </div>
         </div>
       <div className="data-studio__table-scroll">
       <table className="data-table">
@@ -371,7 +459,7 @@ export default function DatabasePage() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <tr key={row.id}>
               {meta.columns.map((col) => (
                 <td key={col.id}>

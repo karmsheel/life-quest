@@ -46,6 +46,11 @@
  *     invariants claimed here: the block never exceeds its `max-height`, it
  *     scrolls its own overflow rather than growing, every row keeps its line
  *     box, and the newest call is reachable by scrolling the block.
+ * 12. Thinking placeholder typeset as prose — before the first frame the panel
+ *     shows `Thinking…`; with no typography of its own it inherited the panel's
+ *     16px body size and the browser's paragraph margins, painting half again
+ *     the size of the work log beside it. Measured against the live status row
+ *     it sits above, so the claim is "same line of type", not "smaller".
  * * The frames are byte-for-byte the shape the gateway sends, fed through the
  * app's own `parseSseBlock` — the driver never hand-builds an event object, so
  * failures 6 and 7 are asserted against the wire format rather than against the
@@ -208,6 +213,51 @@ const STATE = `(() => {
 })()`;
 
 /**
+ * The live placeholder and the status row under it, read as type.
+ *
+ * This is a typography claim, not a text claim: before the first frame arrives
+ * the panel says `Thinking…` alone, so it has to be one of the work log's own
+ * lines. What that means is measured here — the size, style and margins it
+ * paints with, against the `Working… 1s` row that follows it in the same
+ * column, and the fact that the two stack instead of sharing a line.
+ */
+const THINKING_TYPE = `(() => {
+  const read = (el) => {
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return {
+      text: el.textContent.trim(),
+      fontSize: parseFloat(cs.fontSize),
+      fontSizeCss: cs.fontSize,
+      fontStyle: cs.fontStyle,
+      fontWeight: cs.fontWeight,
+      color: cs.color,
+      marginTop: parseFloat(cs.marginTop),
+      marginBottom: parseFloat(cs.marginBottom),
+      lineHeight: cs.lineHeight,
+      boxHeight: Number(rect.height.toFixed(2)),
+      top: Number(rect.top.toFixed(2)),
+      bottom: Number(rect.bottom.toFixed(2)),
+      display: cs.display
+    };
+  };
+  const thinking = document.querySelector(".chat-panel__thinking");
+  const status = document.querySelector(".chat-panel__process-status");
+  const body = document.querySelector(".chat-panel__body");
+  const thinkingRect = thinking ? thinking.getBoundingClientRect() : null;
+  const statusRect = status ? status.getBoundingClientRect() : null;
+  return {
+    thinking: read(thinking),
+    status: read(status),
+    /** The size the panel would paint prose at — what the placeholder must not inherit. */
+    bodyFontSize: body ? getComputedStyle(body).fontSize : null,
+    /** Its own line: the status row starts below it, not beside it. */
+    stacked: Boolean(thinkingRect && statusRect) && thinkingRect.bottom <= statusRect.top + 0.5
+  };
+})()`;
+
+/**
  * What the open disclosure is doing after the run grew under it.
  *
  * The row is `overflow: hidden` so it can ellipsize, which drops its automatic
@@ -352,10 +402,19 @@ async function main() {
     throw new Error(`timed out waiting for ${label}`);
   };
 
-  /** A send while a turn is live lands on the stop square, not the composer. */
+  /**
+   * Wait for the running turn to close.
+   *
+   * The composer no longer goes inert while a turn is live — the operator has
+   * to be able to steer the running turn, or line the next message up behind
+   * it — so "the field is enabled" says nothing about whether a turn is
+   * running. The SEND CONTROL is the witness: it wears the stop square while
+   * the turn is live, and it is either the arrow or absent once the turn is
+   * over. Only the stop state means "a turn is still running".
+   */
   const settle = () =>
     waitFor(
-      `document.querySelector(".chat-panel__composer-input").disabled === false`,
+      `document.querySelector(".chat-panel__send")?.getAttribute("data-state") !== "stop"`,
       "the running turn to close",
       12_000,
     );
@@ -567,6 +626,10 @@ async function main() {
     const rest = await state();
     await run(SEND("Do the thing", LIVE_MS));
     await waitFor(`Boolean(document.querySelector(".chat-panel__thinking"))`, "the thinking row");
+    // The only moment the placeholder exists: no block has landed yet. Read its
+    // type and take the picture from the same frame.
+    const thinkingType = await run(THINKING_TYPE);
+    const thinkingShot = await shoot("thinking");
     const beforeTools = await state();
 
     // --- stage A: three calls in flight -------------------------------------
@@ -678,19 +741,20 @@ async function main() {
     const afterNextFrame = await state();
 
     // --- opening another chat drops the turn's evidence ---------------------
-    // The chat rows live in the list view, and they are disabled while a turn is
-    // live — exactly as in the app — so the last stream is waited out first.
+    // The chats live in the sidebar now, so that is where another chat is
+    // opened — the dock's own history picker is gone. Its rows are disabled
+    // while a turn is live, exactly as in the app, so the last stream is waited
+    // out first.
     await settle();
     const switched = await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      document.querySelector('.chat-panel__icon-btn[aria-label="All chats"]').click();
-      await wait(160);
-      const rows = [...document.querySelectorAll(".chat-panel__session")];
-      // Select by the chat's own title, not by which row looks unselected: the
+      const rows = [...document.querySelectorAll(".chats-rail__row")];
+      // Select by the chat's own label, not by which row looks unselected: the
       // active marker depends on state the rig should not have to guess at.
-      const other = rows.find((el) =>
-        (el.getAttribute("title") || el.textContent).includes("Second chat")
+      const otherRow = rows.find((li) =>
+        (li.querySelector(".chats-rail__label")?.textContent || "").includes("Second chat")
       );
+      const other = otherRow?.querySelector(".chats-rail__row-main") ?? null;
       if (!other) {
         return { clicked: false, reason: "no second chat among " + rows.length + " rows" };
       }
@@ -954,13 +1018,14 @@ async function main() {
         withActivity: stageA.thinking,
         nextTurn: nextTurn.thinking,
       },
+      thinkingType,
       reset: {
         newTurnBlocks: nextTurn.activityBlocks,
         switchedActivity: switched.activity,
         switchedAfterClick: switched.afterClick,
         switchedTranscript: switched.transcript,
       },
-      screenshots: [collapsedShot, expandedShot, rowInkShot, grownShot],
+      screenshots: [thinkingShot, collapsedShot, expandedShot, rowInkShot, grownShot],
       failures,
       pass: failures.length === 0,
     };

@@ -10,10 +10,18 @@
      a single column, the way Hermes Desktop's does. */
   --shell-nav-width: var(--shell-sidebar-width);
   --shell-sidebar-width: 16rem;
+  /* The rail collapsed to its icon column: one control wide — the icons, the
+     header's toggle and the rail's own insets — rather than nothing. The sidebar
+     never leaves the layout, so its column stays reserved at this width and the
+     page starts beside it. */
+  --shell-nav-width-collapsed: var(--shell-sidebar-width-collapsed);
+  --shell-sidebar-width-collapsed: 3.5rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
-  /* The band across the top of the studio: one height for the sheet's top bar and
-     the dock's header, so their underlines land on the same line at the seam. */
+  /* The band under the window strip: one height for the rail's wing switcher and
+     the dock's header, so the two chrome rows stay level across the pane seam.
+     The sheet carries no band of its own — its page starts at the strip's bottom
+     edge, under the titlebar's domain tab. */
   --shell-topbar-height: 2.75rem;
   --window-titlebar-height: 32px;
   --shell-frame: 12px;
@@ -21,6 +29,12 @@
 
   --canvas-base: #faf9f7;
   --background: #fffefc;
+  /* The window's top strip, from the rail's trailing edge to the window's
+     trailing edge. By day it wears the mat, so the chrome above and beside the
+     sheet reads as one band; at night the skin steps it down between the mat and
+     the page (see `forgeVarsFromColors`). The rail's own column stays the mat all
+     the way to the top edge. */
+  --titlebar-bg: var(--canvas-base);
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
@@ -40,6 +54,16 @@
   --input: #c9d0da;
   --ring: #2563eb;
 
+  /* The logo's three inks: the LIFE word, the Q emblem and the UEST word. They
+     are theme tokens, not a baked picture: a skin writes them from its palette
+     (`forgeVarsFromColors`), a theme file may override them
+     (`colors.logoLife` / `logoIcon` / `logoUest`), and the splash reads the same
+     names. These are the shipped day fallbacks — night is the brand's cream/ember
+     pair in `[data-theme="dark"]` below. */
+  --life-color: #1e1e22;
+  --icon-color: #b4532a;
+  --uest-color: #1e1e22;
+
   --bg-panel: #fdfcfa;
   --bg-subtle: #f4f5f7;
   --bg-fill-tertiary: rgba(0, 0, 0, 0.03);
@@ -47,6 +71,22 @@
   --border-soft: #edf0f4;
   --line: var(--border);
   --sidebar-border: var(--border);
+
+  /* The divider: the app's separating line, and the one ink a palette must not
+     own. The sidebar's three grouping lines draw with this pair — 1px of a
+     neutral gray — because the rail's sections are structure, not brand. Skins
+     write `--border` and `--line` from their own palette (Forge's ember border
+     is how these lines went orange); nothing writes `--divider`, so no skin or
+     theme file can tint them again. The ink is declared by *mode*, not by theme:
+     the day value is a light neutral that sits quietly on the paper mat, and the
+     dark blocks below sink it toward the night mat — one standard in every theme,
+     at each mode's own weight. The width is drawn as a border (see
+     `.nav-rail__divider`), so the engine snaps it to whole device pixels: one
+     device pixel on a scaled display, where a background fill of the same 1px
+     could spread over two. */
+  --divider: #c8c8c8;
+  --divider-width: 1px;
+
   --text-strong: #0d0c0a;
   --text-soft: #989590;
   --text-faint: #b3b0a8;
@@ -54,6 +94,20 @@
   --primary-hover-foreground: #ffffff;
   --accent-soft: #f5d8cb;
   --accent-tint: #fbeee5;
+
+  /* The raised button's face and its two lit edges. The face is the skin's own
+     accent sunk into the page canvas, so every palette colours it with its
+     brand — in Nous that is the brand blue at a third of its lightness, which is
+     the one control on the Daily Note that reads as a key rather than as another
+     outline chip beside the prose. The values are per mode because the ladder
+     inverts at night: by day the light step is the sheet showing through, at
+     night it is the accent lifted off it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 44%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 60%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 76%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.5);
+  --raised-lip: color-mix(in srgb, var(--primary) 74%, var(--background));
+  --raised-fg: var(--foreground);
 
   /* The ink of the app's own scrollbar thumb. A neutral, and deliberately the
      same mid ink a skin gives muted text rather than the accent: the bar is
@@ -96,6 +150,28 @@
     0 1.25rem 1.75rem -0.875rem color-mix(in srgb, #000 6%, transparent),
     0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
   --stroke-nous: color-mix(in srgb, var(--foreground) 8%, transparent);
+
+  /* Density: the material layer's spacing ladder. Shell components consume
+     these and nothing else; a theme picks a named step and the stylesheet owns
+     what each step means, exactly as it does for radius and elevation. */
+  /* The page's own side margin, spent on every routed page so the sheet reads
+     as inset from the rail and the seam. The chat bar's own gutter is 1.35rem
+     at the shipped dock; the operator asked for a roomier 2rem here, so the
+     page is the wider of the two rather than a copy of it. */
+  --density-pad-page-x: 2rem;
+  --density-pad-page-y: 1.25rem;
+  --density-pad-page-bottom: 1.5rem;
+  /* The space between a board's cards and blocks. A page's stack and its card
+     grids all read this one step, so "more air between the cards" is one
+     number instead of fifteen, and the density ladder still owns it. */
+  --space-board-gap: 1.25rem;
+  --density-pad-rail-x: 0.35rem;
+  --density-gap-rail: 0.2rem;
+  --density-pad-row-x: 0.55rem;
+  --density-pad-row-y: 0.42rem;
+  --density-pad-dock-x: 0.75rem;
+  --density-pad-chat: 0.875rem;
+  --density-gap-chat: 0.875rem;
 
   --radius-xs: 6px;
   --radius-sm: 12px;
@@ -150,10 +226,15 @@
   color-scheme: dark;
 
   /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-     up off it, and the mat — the rail, the titlebar, the window frame — wears the
-     same quiet band as the chat dock's bottom action row. */
+     up off it, and the mat — the rail and the window frame — wears the same quiet
+     band as `--muted-surface`. The titlebar and the dock's bottom action row are
+     the one surface that takes its own step: darker than the mat they cap, still
+     clear of the page canvas, so the window strip and the dock's bar read as
+     chrome above and below the rail. */
   --canvas-base: #1f1e1c;
   --background: #1a1917;
+  /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+  --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
   --foreground: #e8e4dc;
   --card: #222120;
   --card-foreground: var(--foreground);
@@ -172,6 +253,19 @@
   --border: #333128;
   --input: #46433c;
   --ring: #2563eb;
+  /* Night inverts the ladder, so the divider sinks with it: the same neutral
+     hairline, darker than its day ink so it reads on the near-black mat instead
+     of glowing off it. The thickness stays `--divider-width`. */
+  --divider: #3a3a3a;
+
+  /* The supplied lockup's ink on the night mat: both words cream, the Q emblem
+     ember. UEST keeps its own token so a theme can diverge, but the shipped
+     brand draws the two words the same. Forge's dark palette declares these
+     same three (see `presets.ts`); this is the no-skin stand-in, so a boot that
+     has not painted a palette yet never draws the day inks on the night mat. */
+  --life-color: #f8e5c8;
+  --icon-color: #c66a3d;
+  --uest-color: #f8e5c8;
 
   --bg-panel: #222120;
   --bg-subtle: #1c1b1a;
@@ -187,6 +281,16 @@
   --primary-hover-foreground: #1a1917;
   --accent-soft: #3d2318;
   --accent-tint: #2e1a12;
+
+  /* The raised face at night: the accent lifted off the page for the light step
+     and sunk toward it for the shade, with a lip darker than either so the
+     control sits on the sheet instead of in it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.18);
+  --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+  --raised-fg: var(--foreground);
 
   --map-gold: #e0c36a;
   --map-red: #e06b65;
@@ -226,10 +330,13 @@
     color-scheme: dark;
 
     /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-       up off it, and the mat — the rail, the titlebar, the window frame — wears the
-       same quiet band as the chat dock's bottom action row. */
+       up off it, and the mat — the rail and the window frame — wears the same quiet
+       band as `--muted-surface`; the titlebar and the dock's action row step below
+       it, still clear of the page. */
     --canvas-base: #1f1e1c;
     --background: #1a1917;
+    /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+    --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
     --foreground: #e8e4dc;
     --card: #222120;
     --card-foreground: var(--foreground);
@@ -248,6 +355,8 @@
     --border: #333128;
     --input: #46433c;
     --ring: #2563eb;
+    /* The night divider ink, for the no-preference boot before a skin paints. */
+    --divider: #3a3a3a;
 
     --bg-panel: #222120;
     --bg-subtle: #1c1b1a;
@@ -261,6 +370,13 @@
     --primary-hover-foreground: #1a1917;
     --accent-soft: #3d2318;
     --accent-tint: #2e1a12;
+
+    --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+    --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+    --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+    --raised-highlight: rgba(255, 255, 255, 0.18);
+    --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+    --raised-fg: var(--foreground);
 
     --map-gold: #e0c36a;
     --map-red: #e06b65;

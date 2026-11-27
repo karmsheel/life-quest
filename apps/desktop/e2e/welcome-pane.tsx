@@ -10,8 +10,8 @@
  *  2. Pane short of an edge it should reach — bottom or trailing inset, or a
  *     leading inset it should not have (the rail does not exist here).
  *  3. Pane tucked under the titlebar — its top edge level with the window's top
- *     rather than one pane gap below the strip, so the strip and the pane read
- *     as one surface instead of two.
+ *     rather than meeting the strip's bottom edge, so the strip and the pane
+ *     read as one surface instead of two.
  *  4. Rounded corners — a corner radius on a box flush with the window's edge
  *     leaves a notch the canvas shows through, which is the gap coming back.
  *  5. Floating on a shadow — a pane flush with three window edges has its shadow

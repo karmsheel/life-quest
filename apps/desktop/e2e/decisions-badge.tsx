@@ -466,14 +466,17 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown> | unknown> 
     // holding on to what it was given, and `decisionResolve` is the only writer.
     return ok(vault.decisions.map((decision) => ({ ...decision })));
   },
-  // The rail renders the real `UpdateBadge`, so the real `UpdateProvider` asks
-  // its own channel at mount. Answering it here is what keeps "unexpected bridge
-  // calls" an assertion about the badge rather than about the update feed.
+  // The dock renders the real `UpdateBadge`, so the real `UpdateProvider` asks
+  // its own channel at mount, and subscribes to the watch's push channel (the
+  // app's clock is not this page's business). Answering both here is what keeps
+  // "unexpected bridge calls" an assertion about the badge rather than about the
+  // update feed.
   updateCheck: async () => ({
     ok: true,
     decision: { state: "current", current: appVersion, latest: appVersion },
   }),
   onUpdateProgress: () => () => {},
+  onUpdateDecision: () => () => {},
 };
 
 (window as unknown as { lifequest: object }).lifequest = new Proxy(stubs, {
@@ -582,6 +585,10 @@ function Harness() {
     </div>
   );
 }
+
+// The dock remembers its tab strip between runs; an earlier rig's strip would
+// open tabs this one never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

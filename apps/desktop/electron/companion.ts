@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,27 +19,51 @@ import {
   type HermesProfileInfo,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
-import { refreshServedProfile } from "./hermes-control.ts";
+import { refreshServedProfile, queryGatewayControl } from "./hermes-control.ts";
+import {
+  CONTINUATION_LOST,
+  CONTINUATION_UNAVAILABLE,
+  GatewayContinuation,
+  endpointSupportsContinuation,
+  type GatewayEndpoint,
+} from "./hermes-gateway-ws.ts";
 import { getFileUnsolicited } from "./companion-filing.ts";
 import {
   getCompanionProfile,
   setCompanionProfile,
 } from "./recent-vaults.ts";
 import {
+  currentVaultAgentBinding,
+  getVaultAgentBinding,
+  setVaultAgentBinding,
+} from "./vault-agents.ts";
+import { currentVaultScope } from "./vault-scope.ts";
+import {
   readCompanionPrompts,
   type CompanionPrompts,
 } from "./companion-prompts.ts";
 import {
+  mergeArchivedSessions,
+  readArchivedSessions,
+} from "./companion-archived.ts";
+import {
   buildInstructions,
   buildTurnInput,
   createdSessionFromPayload,
+  isContinuableSession,
   messagesFromPayload,
   modelCatalogFromPayload,
+  PAUSED_CONVERSATION_MESSAGE,
+  PAUSED_RECOVERED_IDLE_REASON,
+  PAUSED_RECOVERED_REASON,
+  sanitizeTranscriptRows,
+  onboardingContextOf,
   runtimeRequestBody,
   sessionFromPayload,
   sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
+  type ChatStreamOutcome,
   type CompanionInstructionsInput,
   type CompanionModelCatalog,
   type CompanionRuntimeOverride,
@@ -58,63 +83,87 @@ import {
   type CompanionReady,
   type CompanionStatus,
 } from "./companion-lifecycle.ts";
+import type { HarnessStatus } from "./harness/types.ts";
+import { onHarnessStatusChanged, publishHarnessStatus } from "./harness/status-bus.ts";
 
-export type PublicCompanionStatus = Exclude<CompanionStatus, { kind: "ready" }> | {
-  kind: "ready";
-  port: number;
-  baseUrl: string;
-  startedByLifeQuest: boolean;
-  profilePath: string;
-  cliPath: string;
-  childPid: number | null;
-  modelWarning?: string;
-};
+export type PublicCompanionStatus = HarnessStatus;
 
+/**
+ * The Hermes status as the app sees it.
+ *
+ * `harness` and `detail` are added here, at the seam, so every consumer — the
+ * setup screen, Settings, the gate — can read one shape regardless of which
+ * companion answered. A port and a profile path are Hermes facts; they stay
+ * present but optional, because a built-in companion has neither.
+ */
 export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
   if (status.kind !== "ready") return status;
   const { apiKey: _key, ...rest } = status;
-  return rest;
+  const how = rest.startedByLifeQuest ? "started by LifeQuest" : "attached";
+  return {
+    ...rest,
+    harness: "hermes",
+    detail: `Ready · ${rest.baseUrl} · ${how}`,
+  };
 }
 
 let current: CompanionStatus = { kind: "needs_install" };
 
 /**
+ * How long a chat stream may go without a single byte before this side declares
+ * the transport dead.
+ *
+ * The gateway is chatty while a turn is live: it writes an SSE keepalive
+ * comment every ten seconds even when the agent is thinking or running a slow
+ * tool, and every delta and tool frame lands on the same socket. So a silence
+ * far longer than that is not a slow turn — it is a stream that stopped, a
+ * gateway that wedged, or a connection that was cut without the socket saying
+ * so. Without a bound the turn stayed "running" for as long as the app stayed
+ * open: the composer would not take another message, the rail's dot kept
+ * pulsing, and restarting the app was the only way out. A turn the operator had
+ * already watched stream its answer in could still be shown as in flight.
+ */
+const PRODUCT_STREAM_IDLE_MS = 45_000;
+let streamIdleMs = PRODUCT_STREAM_IDLE_MS;
+
+/**
+ * Shorten the silence a chat stream is allowed, for the e2e seam only.
+ *
+ * The product keeps its 45-second bound; the seam's gate in `main.ts` is the
+ * only caller, and it only exists in a dev build with `LIFEQUEST_E2E` set. A
+ * rig that waited 45 real seconds for the bound would spend more time proving
+ * the clock than the behaviour.
+ */
+export function setChatStreamIdleMs(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 500) return;
+  streamIdleMs = Math.round(ms);
+}
+
+/** The sentence a stream that stopped gets, in the operator's own terms. */
+const STREAM_LOST =
+  "The companion stopped sending while this turn was running. The turn was closed and the chat was re-read, so any answer it stored is in the transcript. Send again if the reply is not there.";
+
+/**
  * Everyone who wants to hear that the companion's status moved.
  *
- * The status can now change AFTER it is first reported: the model probe lands
- * once the host has answered for its catalog, which is ~0.6s behind the ready
- * status. Before this, `current` was written once per ensure and the renderer
- * only ever saw the value its own `companion:ensure` call returned — so a fact
- * discovered a moment later had no way to reach the screen that shows it.
- *
- * A listener that throws is caught, exactly as `data-revision.ts` does it: this
- * is called from inside an ensure's success path, and a broken consumer must
- * not be able to turn a working companion into a failed one.
+ * The listener set lives on the app's bus (`harness/status-bus.ts`), not here:
+ * the renderer subscribes once, before any harness is chosen, and a built-in
+ * companion's status has to reach the same screen. This module keeps the
+ * function name the rest of the app imports.
  */
-const statusListeners = new Set<(status: PublicCompanionStatus) => void>();
-
-/** Listen for status changes. Returns the unsubscribe. */
 export function onCompanionStatusChanged(
   listener: (status: PublicCompanionStatus) => void,
 ): () => void {
-  statusListeners.add(listener);
-  return () => {
-    statusListeners.delete(listener);
-  };
+  return onHarnessStatusChanged(listener);
 }
 
 /** Store the status and tell everyone. Returns the wire shape (no API key). */
 function publish(status: CompanionStatus): PublicCompanionStatus {
   current = status;
-  const next = publicStatus(status);
-  for (const listener of [...statusListeners]) {
-    try {
-      listener(next);
-    } catch {
-      // The consumer's failure is its own; the status it heard about is still true.
-    }
-  }
-  return next;
+  // Tagged with this harness: a switch may already have moved the app to the
+  // other companion, and a late answer from a gateway that was restarting when
+  // the operator clicked must not be painted as the agent they are now on.
+  return publishHarnessStatus("hermes", publicStatus(status));
 }
 
 /**
@@ -380,6 +429,10 @@ function failureText(e: unknown): string {
  * as ready and starts one only when none answers. It never replaces a running
  * gateway, which is exactly the difference from `gateway restart`.
  *
+ * The answer's stdout is returned because the `--json` form also names the
+ * owner's internal session API — the endpoint a continued chat needs (see
+ * `hermes-gateway-ws.ts`). A caller that only wants the gateway up ignores it.
+ *
  * Older Hermes has no `ensure` verb. There the fallback is `gateway start` from
  * the ROOT home: under multiplexing a named profile may not own a gateway of its
  * own, so starting from the profile home would be refused with exit 78.
@@ -388,13 +441,12 @@ async function ensureGatewayRuntime(
   cli: string,
   profileHome: string,
   rootEnv: Record<string, string>,
-): Promise<void> {
+): Promise<HermesRun> {
   try {
-    await runHermes(cli, ["gateway", "ensure", "--json", "--timeout", "30"], {
+    return await runHermes(cli, ["gateway", "ensure", "--json", "--timeout", "30"], {
       ...rootEnv,
       HERMES_HOME: profileHome,
     });
-    return;
   } catch (e) {
     if (
       !/invalid choice|unknown command|unrecognized arguments/i.test(
@@ -404,7 +456,7 @@ async function ensureGatewayRuntime(
       throw e;
     }
   }
-  await runHermes(cli, ["gateway", "start"], rootEnv);
+  return runHermes(cli, ["gateway", "start"], rootEnv);
 }
 
 /**
@@ -660,17 +712,34 @@ export function companionStatus(): PublicCompanionStatus {
 }
 
 /**
- * The profile the companion runs on: `lifequest` until the operator picks
- * another in the picker, and remembered across launches in the app prefs.
+ * The profile the companion runs on.
  *
- * Read once, lazily, because the first `companionEnsure` can arrive before
- * anything has had a chance to load the prefs file — and `needs_install` must
- * not have to wait on a settings read to answer.
+ * The open vault owns it: a vault is a profile, so the agent binding names the
+ * Hermes profile this process may touch, and a switch moves it before anything
+ * reads the gateway. Only before a vault exists — the setup screen — does the
+ * app-level choice still answer; it is also the value the one-time adoption
+ * copies into the vault that was open at the upgrade.
  */
 let activeProfile: string | null = null;
 let profileLoaded = false;
 
 async function activeProfileName(): Promise<string> {
+  const scope = currentVaultScope();
+  if (scope) {
+    try {
+      const binding = await getVaultAgentBinding(scope.id);
+      if (binding.hermesProfile && isSafeProfileName(binding.hermesProfile)) {
+        return binding.hermesProfile;
+      }
+    } catch {
+      // An unreadable binding falls through to the app's own profile, which the
+      // ensure then seeds and reports on.
+    }
+    return PROFILE_NAME;
+  }
+  // No vault yet: the app-level choice, read once, lazily (the first
+  // `companionEnsure` can arrive before anything has had a chance to load the
+  // prefs file, and `needs_install` must not wait on a settings read to answer).
   if (!profileLoaded) {
     try {
       const stored = await getCompanionProfile();
@@ -684,6 +753,19 @@ async function activeProfileName(): Promise<string> {
 }
 
 /**
+ * The active companion profile's home on this machine.
+ *
+ * The chat's read door allows one directory outside the vault — the profile's
+ * `native-inputs/`, where Hermes keeps its copy of a picture the operator sent —
+ * and that allowance is only as tight as the profile it names. The profile is
+ * resolved exactly the way the gateway path resolves it, so a transcript hint
+ * can never point the door at a profile the app is not on.
+ */
+export async function activeProfileHome(): Promise<string> {
+  return profileDir(hermesRoot(process.env, os.homedir()), await activeProfileName());
+}
+
+/**
  * The `ensure` that is running right now, if one is.
  *
  * The post-bind door check must not cycle the profile while an ensure is
@@ -693,6 +775,21 @@ async function activeProfileName(): Promise<string> {
  * whose startup covers the binding.
  */
 let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
+/**
+ * The profile the last ensure was asked for.
+ *
+ * A vault switch can move the choice while a gateway is still starting. The
+ * run in flight then answers for a profile the vault no longer uses, and
+ * handing its promise back would leave the new vault's profile never ensured —
+ * the dock would show the old agent's status under the new vault's binding.
+ * A caller whose profile is no longer the one that ran waits it out and asks
+ * again for the one now in force.
+ */
+let lastEnsuredFor: string | null = null;
+
+async function sameProfileInForce(name: string | null): Promise<boolean> {
+  return name !== null && name === (await activeProfileName());
+}
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   /**
@@ -709,15 +806,32 @@ export async function companionEnsure(): Promise<PublicCompanionStatus> {
    * A profile switch is the one caller with a new answer to ask for: it waits
    * for the run already in flight and then starts its own (see
    * `companionUseProfile`), so deduplicating here cannot pin it to the profile
-   * it is leaving.
+   * it is leaving. A vault switch does the same. The loop is the wait: it only
+   * leaves once no run is in flight, so the run started after it cannot overlap
+   * the one it was waiting for.
    */
-  if (ensureInFlight) return ensureInFlight;
+  while (ensureInFlight) {
+    let failure: unknown;
+    const settled = await ensureInFlight.catch((e: unknown) => {
+      failure = e;
+      return undefined;
+    });
+    if (await sameProfileInForce(lastEnsuredFor)) {
+      // A joiner sees the same verdict the original caller would have: a run
+      // that threw keeps throwing at the caller rather than being flattened
+      // into a stale status.
+      if (failure !== undefined) throw failure;
+      return settled ?? companionStatus();
+    }
+  }
   // The profile is looked up INSIDE the shared promise, before the first
   // suspension: `await activeProfileName()` in the caller's own frame would let a
   // second call slip past the guard while the first was still reading prefs,
   // and that is precisely the overlap this is here to stop.
   const run = (async () => {
-    const status = await ensureCompanion(realIo(), await activeProfileName());
+    const profile = await activeProfileName();
+    lastEnsuredFor = profile;
+    const status = await ensureCompanion(realIo(), profile);
     const published = publish(status);
     // Deliberately not awaited: every launch calls this, and the probe is a
     // round-trip to a host that may be slow, absent, or restarting. It answers
@@ -749,8 +863,12 @@ export async function companionProfilesList(): Promise<{
  * This is the way out of a stuck connect. A machine whose host never served
  * `/p/lifequest` is no longer a dead end: the operator sees every profile this
  * Hermes install has, picks one, and the app seeds it (soul, MCP entry, eager
- * tool search) and attaches to it. The choice is persisted, so the next launch
- * comes up on the same profile.
+ * tool search) and attaches to it.
+ *
+ * The choice's home follows the vault: while one is open the profile is the
+ * vault's agent binding (picking a profile makes this vault a Hermes vault), and
+ * only before a vault exists does it live in the app-level prefs. That is what
+ * keeps the next vault from inheriting this one's agent.
  *
  * The name is validated here even though the renderer is ours: a name that is
  * not a plain segment would escape `profiles/` or the `/p/` prefix, and the
@@ -763,8 +881,20 @@ export async function companionUseProfile(name: string): Promise<PublicCompanion
   }
   activeProfile = trimmed;
   profileLoaded = true;
+  const scope = currentVaultScope();
   try {
-    await setCompanionProfile(trimmed);
+    if (scope) {
+      // Choosing a profile binds it to the vault the same way adding an agent
+      // does: it becomes the vault's Hermes agent, while which companion answers
+      // is still the operator's separate "Use Hermes" decision.
+      const current = await getVaultAgentBinding(scope.id);
+      await setVaultAgentBinding(scope.id, {
+        harness: current.harness,
+        hermesProfile: trimmed,
+      });
+    } else {
+      await setCompanionProfile(trimmed);
+    }
   } catch {
     // A prefs write that fails costs the choice its memory, not this session.
   }
@@ -881,10 +1011,18 @@ async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
  * it. The E2E rigs point the chat client at their own recording server with it,
  * because the alternative — making them drive the real discovery path — would
  * have them write an API key into the operator's own Hermes profile.
+ *
+ * `profilePath` is the profile the attached status claims to be for. It is
+ * empty for a rig that attaches without a vault-scoped agent (the historical
+ * shape), and the rig's own throwaway profile path when the open vault binds an
+ * agent: the transport guard refuses a ready status whose profile is not the
+ * vault's bound one, and a fake gateway that claimed no profile would be refused
+ * for the very vault the rig just bound.
  */
 export function companionAttachToGateway(
   baseUrl: string,
   apiKey: string,
+  profilePath = "",
 ): PublicCompanionStatus {
   const normalized = baseUrl.replace(/\/$/, "");
   current = {
@@ -892,7 +1030,7 @@ export function companionAttachToGateway(
     port: portFromBaseUrl(normalized),
     baseUrl: normalized,
     startedByLifeQuest: false,
-    profilePath: "",
+    profilePath,
     cliPath: "",
     childPid: null,
     apiKey,
@@ -946,14 +1084,46 @@ export async function companionWriteMcpProfile(
 }
 
 export async function companionShutdown(): Promise<void> {
+  shutdownContinuation();
   await shutdownCompanion(current, realIo());
 }
 
+/**
+ * The sentence a transport call gets while the companion is moving to this
+ * vault's agent. Callers treat it as "wait for the switch", not as a defect.
+ */
+const SWITCHING_AGENT = "The companion is switching to this vault's agent.";
+
+/**
+ * The ready status on hand — but only while it belongs to the agent the open
+ * vault is bound to.
+ *
+ * A vault switch between two Hermes-bound vaults is not instantaneous on the
+ * transport: `rememberOpen` binds the new profile and starts its ensure in the
+ * background, so until that ensure lands `current` still holds the PREVIOUS
+ * profile's ready status, and its baseUrl serves the PREVIOUS profile's
+ * sessions. A session list/create/read answered from it would paint the other
+ * vault's chats into this one — a correct answer for the wrong agent, which no
+ * renderer-side vault epoch can detect. So a transport call made while the bound
+ * profile and the ready status's own profile path disagree is refused.
+ *
+ * Nothing is mutated for this: the ensure in flight publishes the real verdict,
+ * and the caller asks again when it lands. The ensure path does not come through
+ * here, so a switch can always complete.
+ */
 function readyOrError(): CompanionStatus & { kind: "ready" } {
-  if (current.kind !== "ready") {
+  const status = current;
+  if (status.kind !== "ready") {
     throw new Error("Companion is not ready");
   }
-  return current;
+  const bound = currentVaultAgentBinding()?.hermesProfile ?? null;
+  if (bound) {
+    const expected = profileDir(hermesRoot(process.env, os.homedir()), bound);
+    // A ready status with no profile path cannot be shown to be this vault's,
+    // so it is refused as well: waiting is better than another vault's answer.
+    if (status.profilePath !== expected) throw new Error(SWITCHING_AGENT);
+  }
+  return status;
 }
 
 async function hermesFetch(
@@ -1067,6 +1237,12 @@ async function errorDetail(res: Response, fallback: string): Promise<string> {
  * `includeArchived` is the sidebar's view option: archived rows come back
  * instead of being dropped, so the operator can see and restore them. Hidden
  * rows never cross the boundary either way.
+ *
+ * The gateway list cannot carry an archived row: its Sessions API lists with
+ * `include_archived=False` and has no query parameter that changes that (see
+ * `companion-archived.ts`). So the archived half of that view is read from the
+ * attached profile's own store and folded in here. The read only happens when
+ * the view asks for it, so the working list pays nothing for it.
  */
 export async function companionSessionsList(
   options: { includeArchived?: boolean } = {},
@@ -1074,6 +1250,7 @@ export async function companionSessionsList(
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
+    const includeArchived = options.includeArchived === true;
     const res = await gatewayCall("Listing chats", () =>
       hermesFetch("/api/sessions?limit=200"),
     );
@@ -1081,12 +1258,15 @@ export async function companionSessionsList(
     if (unreachable) return { ok: false, error: unreachable };
     const response = res as Response;
     if (!response.ok) return { ok: false, error: `Sessions list failed (${response.status})` };
-    return {
-      ok: true,
-      value: sessionsFromPayload(await response.json(), {
-        includeArchived: options.includeArchived === true,
-      }),
-    };
+    const live = sessionsFromPayload(await response.json(), { includeArchived });
+    // The list is where a chat's surface becomes known. Remember it so a send
+    // can pick the transport without another read (see `sessionSource`).
+    for (const row of live) rememberSessionSource(row);
+    if (!includeArchived) return { ok: true, value: live };
+    const profilePath = current.kind === "ready" ? current.profilePath : "";
+    const archived = await readArchivedSessions(profilePath);
+    for (const row of archived) rememberSessionSource(row);
+    return { ok: true, value: mergeArchivedSessions(live, archived) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -1114,6 +1294,7 @@ export async function companionSessionCreate(
     }
     const created = createdSessionFromPayload(await response.json(), trimmed);
     if (!created) return { ok: false, error: "Create session missing id" };
+    rememberSessionSource(created);
     return { ok: true, value: created };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1174,9 +1355,51 @@ export async function companionSessionMessages(
   | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`);
-    if (!res.ok) return { ok: false, error: `Messages failed (${res.status})` };
-    return { ok: true, value: messagesFromPayload(await res.json()) };
+    const res = await gatewayCall("Reading a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) return { ok: false, error: `Messages failed (${response.status})` };
+    return { ok: true, value: sanitizeTranscriptRows(messagesFromPayload(await response.json())) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * POST /api/sessions/{id}/model — persist the model this chat runs on.
+ *
+ * The gateway locks a session to the model it was created with, and a per-turn
+ * `model` in the chat body does not move that lock: a retiree therefore keeps
+ * failing until the lock itself is rewritten, which is this call. The model is
+ * trimmed here because the gateway treats a blank id as a request to clear it.
+ */
+export async function companionSessionModelSet(
+  id: string,
+  target: { model: string; provider?: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const model = target.model.trim();
+    if (!model) return { ok: false, error: "No model to set." };
+    const provider = target.provider?.trim() ?? "";
+    const res = await gatewayCall("Setting the chat's model", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}/model`, {
+        method: "POST",
+        body: JSON.stringify({ model, ...(provider ? { provider } : {}) }),
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Model change failed (${response.status})`),
+      };
+    }
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -1194,6 +1417,17 @@ export type CompanionSessionPatch = {
  *
  * All three are durable Hermes-side flags, so Hermes Desktop (and every other
  * channel on this profile) sees the same state; LifeQuest keeps no copy.
+ *
+ * ONLY FLAGS CROSS THE WIRE
+ *
+ * The host gateway's PATCH is a strict allowlist — `title`, `end_reason`,
+ * `pinned`, `archived`, `hidden`, `unread` — and answers anything else with 400
+ * `unsupported_session_field` before a write is attempted. So a body carrying a
+ * mutation identity (`request_id` / `expected_revision`) is not fenced: it is
+ * refused. Those fields belong to Hermes' *dashboard* backend
+ * (`hermes_cli/web_server_sessions.py`, which fences its `session.mutate` RPC),
+ * not to the `/api/sessions` API this app attaches to. The archive is therefore
+ * the operator's plain flag write, and the gateway's own answer is the verdict.
  */
 export async function companionSessionPatch(
   id: string,
@@ -1207,14 +1441,22 @@ export async function companionSessionPatch(
     if (Object.keys(body).length === 0) {
       return { ok: false, error: "Session update had nothing to change" };
     }
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      return { ok: false, error: await errorDetail(res, `Session update failed (${res.status})`) };
+    const res = await gatewayCall("Updating a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Session update failed (${response.status})`),
+      };
     }
-    const updated = sessionFromPayload(await res.json());
+    const updated = sessionFromPayload(await response.json());
     if (!updated) return { ok: false, error: "Session update returned no session" };
     return { ok: true, value: updated };
   } catch (e) {
@@ -1228,6 +1470,10 @@ export async function companionSessionPatch(
  * This is not `archived` in a stronger key: the store's own delete, so the row
  * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
  * copy of a chat, so there is nothing to reconcile here afterwards.
+ *
+ * No body and no fence fields: this app attaches to the host gateway's
+ * `/api/sessions` API, which takes the delete as a plain request (see
+ * `companionSessionPatch` for why a mutation identity does not belong here).
  */
 export async function companionSessionDelete(
   id: string,
@@ -1235,19 +1481,422 @@ export async function companionSessionDelete(
   { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      return { ok: false, error: await errorDetail(res, `Delete session failed (${res.status})`) };
+    const res = await gatewayCall("Deleting a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Delete session failed (${response.status})`),
+      };
     }
-    const body = (await res.json()) as { id?: unknown; deleted?: unknown };
-    // The gateway answers `{object, id, deleted}`; `deleted: false` means the row
-    // was already gone, which is the outcome the caller wanted either way.
-    if (typeof body?.id !== "string") return { ok: false, error: "Delete session returned no id" };
-    return { ok: true, value: { id: body.id, deleted: body.deleted !== false } };
+    const body = (await response.json()) as {
+      id?: unknown;
+      session_id?: unknown;
+      deleted?: unknown;
+      already_absent?: unknown;
+    };
+    /**
+     * The gateway's receipt names the row it retired: the host answers
+     * `{object: "hermes.session.deleted", id, deleted}`. `session_id` is read
+     * too, because the dashboard backend words its receipt that way and a host
+     * that adopted that shape should not be reported as a failed delete. What
+     * matters is that the receipt names a row at all: a reply that names none
+     * is not a delete this app can claim.
+     */
+    const named = [body?.id, body?.session_id].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
+    if (!named) {
+      const alreadyAbsent = body?.deleted === false || body?.already_absent === true;
+      if (alreadyAbsent) {
+        sessionSourceCache.delete(id);
+        return { ok: true, value: { id, deleted: true } };
+      }
+      return { ok: false, error: "Delete session returned no id" };
+    }
+    sessionSourceCache.delete(id);
+    return { ok: true, value: { id: named, deleted: body.deleted !== false } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * How long a paused-chat recovery waits for the message queued behind the lost
+ * turn to produce its answer, and how often it asks the transcript.
+ *
+ * Waiting is the point: the recovery acknowledges the lost turn, and Hermes then
+ * runs the send that was committed but never executed. Its answer lands in the
+ * transcript, not on the stream that already closed, so the app polls the
+ * transcript instead of showing a turn that never answers. The window is a
+ * bound on the UI's "running" state, not on the agent: a slower answer still
+ * lands, and the operator's next send asks for the chat again.
+ */
+const PAUSE_RECOVERY_POLL_MS = 400;
+const PAUSE_RECOVERY_WINDOW_MS = 30_000;
+
+/**
+ * Acknowledge the turn Hermes fenced as unknown so the paused conversation runs
+ * again.
+ *
+ * `hermes sessions discard` is the non-interactive form of the host's own
+ * `/discard`: it resolves the exact unknown admission through
+ * `prompt.resolve_unknown`, without replaying the lost turn. The CLI is already
+ * how this app drives its host (`gateway ensure`, `config set`), and the
+ * session-control surface it speaks is the only one that can resolve an unknown
+ * turn — the HTTP sessions API the dock chats over has no route for it. The same
+ * `HERMES_HOME` and multiplexing flags the gateway was ensured with are used, so
+ * the command reaches the host that is actually serving this vault's profile.
+ */
+async function discardLostTurn(sessionId: string): Promise<void> {
+  const cli = await whichHermes();
+  if (!cli) throw new Error("The Hermes CLI is not on PATH.");
+  const home = hermesRoot(process.env, os.homedir());
+  const profile = await activeProfileName();
+  await runHermes(
+    cli,
+    ["-p", profile, "sessions", "discard", sessionId, "--yes"],
+    { HERMES_HOME: home, GATEWAY_MULTIPLEX_PROFILES: "true" },
+  );
+}
+
+/**
+ * Recover a conversation Hermes paused, and read back the transcript it
+ * continues in. Throws when the host cannot be made to recover at all.
+ *
+ * The transcript before the discard is the baseline: the assistant row on top
+ * of it is the answer to the message that was queued behind the lost turn, and
+ * it is what proves the chat runs again. Returning the rows rather than a
+ * boolean lets the caller hand the turn an authoritative snapshot, so the dock
+ * paints the recovered conversation instead of trusting its own partial view.
+ */
+async function recoverPausedChat(
+  sessionId: string,
+): Promise<{ snapshot: TranscriptMessage[]; resumed: boolean }> {
+  const before = await companionSessionMessages(sessionId);
+  const baseline = before.ok ? before.value.length : 0;
+  await discardLostTurn(sessionId);
+  let latest: TranscriptMessage[] = before.ok ? before.value : [];
+  const deadline = Date.now() + PAUSE_RECOVERY_WINDOW_MS;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, PAUSE_RECOVERY_POLL_MS));
+    const read = await companionSessionMessages(sessionId);
+    if (read.ok) {
+      latest = read.value;
+      if (read.value.length > baseline && read.value.at(-1)?.role === "assistant") {
+        return { snapshot: read.value, resumed: true };
+      }
+    }
+    if (Date.now() >= deadline) return { snapshot: latest, resumed: false };
+  }
+}
+
+// ── Continued chats: conversations another surface owns ─────────────────────
+//
+// The Chats list has always shown every conversation on the companion profile,
+// including ones started on Telegram, Discord, Hermes Desktop or the CLI. The
+// API transport cannot write those: Hermes refuses a turn aimed at a session
+// another surface owns (`permission_denied`), because it would run a second
+// agent beside the live owner. This section continues such a chat over the
+// gateway's own canonical WebSocket instead — the door Hermes documents for
+// exactly this ("attach through the gateway WebSocket"), and the one Hermes
+// Desktop uses. The session is shared, not copied: the reply lands in the same
+// Hermes transcript the platform's bot reads.
+
+/** The surface each listed chat came from, as the last list read named it. */
+const sessionSourceCache = new Map<string, string>();
+
+function rememberSessionSource(row: HermesSession | null | undefined): void {
+  if (!row) return;
+  sessionSourceCache.set(row.id, row.source);
+}
+
+/**
+ * The surface a chat belongs to.
+ *
+ * The list read usually has it; a chat that was opened by id before any list
+ * answer (a deep link, a review's stored session id) asks the gateway for its own
+ * row rather than guessing. An unreadable answer is "" — the API transport's
+ * own label — so an old or unknown row keeps the path it has always used.
+ */
+async function sessionSource(sessionId: string): Promise<string> {
+  const cached = sessionSourceCache.get(sessionId);
+  if (cached !== undefined) return cached;
+  try {
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) return "";
+    const row = sessionFromPayload(await res.json());
+    if (!row) return "";
+    rememberSessionSource(row);
+    return row.source;
+  } catch {
+    return "";
+  }
+}
+
+type ContinuationCache = {
+  home: string;
+  transport: GatewayContinuation;
+};
+
+let continuationCache: ContinuationCache | null = null;
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "127.0.0.1" || url.hostname === "[::1]" || url.hostname === "::1") &&
+      Boolean(url.port) &&
+      !url.username &&
+      !url.password &&
+      (url.pathname === "" || url.pathname === "/") &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The owner's internal session API, from `hermes gateway ensure --json`.
+ *
+ * The same ensure the app already runs to attach (it starts a gateway only when
+ * none answers and never replaces a running one) also names the endpoint a
+ * continued chat dials. Older Hermes prints an exit-code status instead of JSON;
+ * that is the "too old for a continued chat" refusal, named.
+ */
+async function discoverContinuationEndpoint(
+  profileHome: string,
+): Promise<GatewayEndpoint> {
+  const cli = await whichHermes();
+  if (!cli) {
+    throw new Error(
+      "The agent needs the Hermes CLI on your PATH. Install Hermes, then try again.",
+    );
+  }
+  const root = hermesRoot(process.env, os.homedir());
+  const run = await ensureGatewayRuntime(cli, profileHome, {
+    HERMES_HOME: root,
+    GATEWAY_MULTIPLEX_PROFILES: "true",
+  });
+  // The `--json` answer is one JSON object on stdout; an older or noisier build
+  // may put a line of prose before it, so the last object line is the fallback.
+  const stdout = run.stdout.trim();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(stdout);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      payload = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // fall through to the line scan
+  }
+  if (!payload) {
+    const line = stdout
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter((part) => part.startsWith("{"))
+      .pop();
+    if (line) {
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          payload = parsed as Record<string, unknown>;
+        }
+      } catch {
+        payload = null;
+      }
+    }
+  }
+  if (!payload) throw new Error(CONTINUATION_UNAVAILABLE);
+  const raw =
+    payload.endpoint && typeof payload.endpoint === "object"
+      ? (payload.endpoint as Record<string, unknown>)
+      : null;
+  if (payload.state !== "ready" || !raw) throw new Error(CONTINUATION_UNAVAILABLE);
+  const capabilities = Array.isArray(raw.capabilities)
+    ? raw.capabilities.filter((value): value is string => typeof value === "string")
+    : [];
+  const apiOrigin = typeof raw.api_origin === "string" ? raw.api_origin : "";
+  const instanceId = typeof raw.instance_id === "string" ? raw.instance_id : "";
+  const profileId = typeof raw.profile_id === "string" ? raw.profile_id : "";
+  if (
+    raw.runtime_protocol !== 1 ||
+    !instanceId ||
+    !profileId ||
+    !isLoopbackOrigin(apiOrigin) ||
+    !endpointSupportsContinuation({ capabilities })
+  ) {
+    throw new Error(CONTINUATION_UNAVAILABLE);
+  }
+  const controlHome =
+    typeof raw.control_home === "string" && raw.control_home
+      ? path.resolve(raw.control_home)
+      : path.resolve(profileId);
+  const resolvedProfile = path.resolve(profileId);
+  // A served secondary's store is not the launch profile's: `session.resume`
+  // has to be told which named profile to read (Hermes' `profile` parameter).
+  // The launch profile — multiplexed or standalone — needs nothing.
+  const servedSecondary =
+    typeof raw.control_home === "string" &&
+    raw.control_home !== "" &&
+    resolvedProfile !== controlHome;
+  const profileName = servedSecondary ? path.basename(resolvedProfile) : null;
+  if (profileName !== null && !isSafeProfileName(profileName)) {
+    throw new Error(CONTINUATION_UNAVAILABLE);
+  }
+  return {
+    apiOrigin: apiOrigin.replace(/\/$/, ""),
+    instanceId,
+    profileId: resolvedProfile,
+    profileName,
+    capabilities,
+    controlHome,
+  };
+}
+
+/**
+ * Mint the one-use ticket the gateway's WebSocket demands, over the same local
+ * control socket the app already uses to make the host re-read a profile.
+ */
+async function mintContinuationTicket(endpoint: GatewayEndpoint): Promise<string> {
+  const grant = await queryGatewayControl(endpoint.controlHome, "session-ticket", {
+    profile_id: endpoint.profileId,
+    instance_id: endpoint.instanceId,
+    purpose: "interactive",
+    scope: "host",
+  });
+  const ticket = grant && typeof grant.ticket === "string" ? grant.ticket : "";
+  if (!ticket) throw new Error(CONTINUATION_UNAVAILABLE);
+  return ticket;
+}
+
+/**
+ * The transport for the profile in force.
+ *
+ * One socket per profile serves every continued chat on it, so a second
+ * continued send does not reconnect. A failure tears the entry down: the next
+ * send rediscovers the owner (a gateway restart changes its instance id, and a
+ * ticket minted for the old one is refused).
+ */
+async function continuationFor(profileHome: string): Promise<GatewayContinuation> {
+  if (continuationCache && continuationCache.home === profileHome) {
+    return continuationCache.transport;
+  }
+  // A different profile's transport is not this vault's conversation any more:
+  // close it rather than leave its socket (and any live turn) behind.
+  if (continuationCache) {
+    continuationCache.transport.close();
+    continuationCache = null;
+  }
+  const endpoint = await discoverContinuationEndpoint(profileHome);
+  const transport = new GatewayContinuation(endpoint, () =>
+    mintContinuationTicket(endpoint),
+  );
+  continuationCache = { home: profileHome, transport };
+  return transport;
+}
+
+/** Close the continued-chat socket (quit, agent switch, profile change). */
+function shutdownContinuation(): void {
+  const cached = continuationCache;
+  continuationCache = null;
+  cached?.transport.close();
+}
+
+function continuationOwningRun(runId: string): GatewayContinuation | null {
+  const cached = continuationCache;
+  if (!cached) return null;
+  return cached.transport.ownsRun(runId) ? cached.transport : null;
+}
+
+/** The gateway's refusal, in the operator's own words. */
+function continuationError(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (detail === CONTINUATION_UNAVAILABLE || detail === CONTINUATION_LOST) {
+    return detail;
+  }
+  if (/permission_denied/.test(detail)) {
+    return "Hermes will not let this app write that chat. Open it in the surface it came from, or restart Hermes and try again.";
+  }
+  if (/not_found/.test(detail)) {
+    return "Hermes doesn't have this chat any more. Reopen it from the Chats list.";
+  }
+  if (/profile_mismatch/.test(detail)) {
+    return "The Hermes gateway is serving a different profile than this vault's agent. Recheck the companion in Settings › Hermes.";
+  }
+  if (/admission_conflict/.test(detail)) {
+    return "The gateway is already handling a message for this chat. Wait for it to finish.";
+  }
+  if (/queue_full/.test(detail)) {
+    return "This chat already has a message waiting to run.";
+  }
+  if (/session_authority|WebSocket did not answer|session-authority/.test(detail)) {
+    return CONTINUATION_UNAVAILABLE;
+  }
+  return detail || "The companion could not continue this chat.";
+}
+
+/**
+ * One turn on a chat another surface owns, over the gateway WebSocket.
+ *
+ * The turn's frames are translated to the same `ChatStreamEvent` shapes the API
+ * stream emits, so every existing surface (timeline, approval card, Stop) works
+ * unchanged. The per-turn model/thinking pick and attachments are not carried
+ * by this door; the renderer disables those controls for these chats instead of
+ * dropping them silently.
+ */
+async function continuationChatStream(
+  sessionId: string,
+  input: string,
+  onEvent: (evt: ChatStreamEvent) => void,
+): Promise<ChatStreamOutcome> {
+  const attempt = async (): Promise<void> => {
+    const profileHome = await activeProfileHome();
+    const transport = await continuationFor(profileHome);
+    await transport.submit({
+      sessionId,
+      text: input,
+      runId: `wsrun_${crypto.randomUUID()}`,
+      submissionId: crypto.randomUUID(),
+      onEvent,
+    });
+  };
+  try {
+    await attempt();
+    // The transport settled this turn on its own terminal frame before
+    // returning; telling the renderer so keeps its safety-net settle from
+    // racing the frames (see `ChatStreamOutcome`).
+    return { ok: true, settlesOnStream: true };
+  } catch (e) {
+    // A stale owner is the one failure worth a second try: a gateway restart
+    // changes its instance id, and a ticket minted for the old one is refused.
+    // Neither attempt can have started a turn (a refusal happens before
+    // admission), so rediscovering and dialling again is safe. A permanent
+    // refusal (permission_denied, not_found, an old Hermes) is reported once.
+    const detail = e instanceof Error ? e.message : String(e);
+    const stale = /ticket|closed|did not answer|refused the connection|instance/i.test(
+      detail,
+    );
+    shutdownContinuation();
+    if (stale && !/permission_denied|not_found/.test(detail)) {
+      try {
+        await attempt();
+        return { ok: true, settlesOnStream: true };
+      } catch (again) {
+        shutdownContinuation();
+        return { ok: false, error: continuationError(again) };
+      }
+    }
+    return { ok: false, error: continuationError(e) };
   }
 }
 
@@ -1258,9 +1907,21 @@ export async function companionSessionDelete(
  * composer's own stored preference, so a chat that is opened in Hermes Desktop
  * keeps running whatever that client asks for.
  *
- * A receipt rides the same call when the operator attached one. The attachment
- * is already in hand here: main took it out of the pending slot, so this
- * function never sees a path it cannot also produce the bytes for.
+ * Attachments ride the same call. The attachments are already in hand here:
+ * main took them out of the pending slot, so this function never sees a path it
+ * cannot also produce the bytes for. A receipt arrives on the older
+ * `attachment` argument and keeps its own wording; the general attachments
+ * arrive as a list and are described by kind.
+ *
+ * THE STREAM IS BOUNDED BY SILENCE, NOT BY A TOTAL TIMEOUT
+ *
+ * A turn may legitimately run for an hour, so there is no deadline on the whole
+ * request. What cannot be legitimate is a socket that produces nothing at all:
+ * the gateway writes a keepalive comment every ten seconds while it is working,
+ * so a silence longer than `streamIdleMs` means the stream is gone, whatever the
+ * socket thinks. When that happens the request is aborted and the turn is
+ * failed with a sentence the operator can act on. The renderer then settles the
+ * turn, which is the part that clears the running dot and unlocks the composer.
  */
 export async function companionChatStream(
   sessionId: string,
@@ -1269,20 +1930,105 @@ export async function companionChatStream(
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
   attachment?: TurnAttachment | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  attachments?: TurnAttachment[] | null,
+): Promise<ChatStreamOutcome> {
+  // A chat another surface owns is continued over the gateway's canonical
+  // WebSocket (see `hermes-gateway-ws.ts`): the API transport would refuse it,
+  // because Hermes will not run a second agent beside the chat's live owner.
+  // The decision is the session's own label, read here rather than passed in, so
+  // every caller — the composer, a review's stored session, an automation —
+  // gets the right door without knowing about it.
+  if (isContinuableSession(await sessionSource(sessionId))) {
+    // This door carries text only. A receipt or an attachment handed to a
+    // continued turn is refused by name rather than dropped on the floor: the
+    // operator would otherwise read the reply as having seen the file.
+    if (attachment || (attachments && attachments.length > 0)) {
+      return {
+        ok: false,
+        error:
+          "A chat started on another surface can't carry an attachment yet. Send it in a new chat.",
+      };
+    }
+    return continuationChatStream(sessionId, input, onEvent);
+  }
+  // Terminal tracking lives outside the try so a dropped socket can still settle
+  // the turn instead of leaving a permanent spinner.
+  let terminated = false;
+  let started = false;
+  // Set when the host says this conversation is paused behind a lost turn. The
+  // token is never reported: a paused chat is recoverable, so this function
+  // recovers it and settles the turn on the transcript instead.
+  let paused = false;
+  // One abort controller owns the whole request, and one timer measures the
+  // silence. Every byte received pushes the timer out; nothing else does.
+  const stall = new AbortController();
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const armIdle = () => {
+    if (idle !== undefined) clearTimeout(idle);
+    idle = setTimeout(() => stall.abort(), streamIdleMs);
+    // A watchdog must never be the reason the app process stays alive.
+    idle.unref?.();
+  };
+  /**
+   * Recover a paused chat and settle the turn on what the transcript says.
+   *
+   * `ok` means the conversation is usable again: the turn ends with the recovery
+   * note and the re-read rows, so the answer to the queued message paints without
+   * the operator sending anything. `ok: false` is the old dead end, kept as a
+   * fallback for a host that cannot be recovered (an older Hermes, no CLI) — and
+   * only then does the "start a new chat" sentence reach the screen.
+   */
+  const finishPaused = async (): Promise<
+    { ok: true } | { ok: false; error: string }
+  > => {
+    terminated = true;
+    let recovered: { snapshot: TranscriptMessage[]; resumed: boolean } | null = null;
+    try {
+      recovered = await recoverPausedChat(sessionId);
+    } catch {
+      // The CLI refused or could not reach the host: the chat is still paused.
+      recovered = null;
+    }
+    if (recovered !== null) {
+      onEvent({
+        type: "run.incomplete",
+        reason: recovered.resumed ? PAUSED_RECOVERED_REASON : PAUSED_RECOVERED_IDLE_REASON,
+        // Only a transcript that actually grew has an answer for THIS turn. The
+        // pre-discard rows belong to earlier turns, and handing them over would
+        // paint some older reply as if it answered the message that was lost.
+        ...(recovered.resumed && recovered.snapshot.length > 0
+          ? { snapshot: recovered.snapshot }
+          : {}),
+      });
+      return { ok: true };
+    }
+    onEvent({ type: "error", message: PAUSED_CONVERSATION_MESSAGE });
+    if (started) {
+      onEvent({ type: "run.incomplete", reason: "the stream closed before the turn finished" });
+    }
+    return { ok: false, error: PAUSED_CONVERSATION_MESSAGE };
+  };
   try {
-    const instructions = attachment
-      ? { ...ctx, attachedFile: { relPath: attachment.relPath, name: attachment.name } }
-      : ctx;
+    const instructions: CompanionInstructionsInput = {
+      ...ctx,
+      ...(attachment
+        ? { attachedFile: { relPath: attachment.relPath, name: attachment.name } }
+        : {}),
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    };
+    // Armed before the fetch: a gateway that accepts the connection and never
+    // answers is the same failure as one that goes silent mid-turn.
+    armIdle();
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
         method: "POST",
         body: JSON.stringify({
-          input: buildTurnInput(input, attachment),
+          input: buildTurnInput(input, attachments, attachment),
           instructions: buildInstructions(instructions),
           ...runtimeRequestBody(runtime),
         }),
+        signal: stall.signal,
       },
     );
     if (!res.ok || !res.body) {
@@ -1291,20 +2037,66 @@ export async function companionChatStream(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
+    const deliver = (evt: ChatStreamEvent) => {
+      if (evt.type === "error" && evt.paused) {
+        // Not an error to report: the host fenced a lost turn and paused this
+        // conversation, and the way out is to acknowledge that turn, not to
+        // tell the operator to abandon the chat. Recovered below, once the
+        // stream has stopped (the host closes it right after this frame).
+        paused = true;
+        return;
+      }
+      if (evt.type === "run.completed" || evt.type === "run.stopped" || evt.type === "run.incomplete") {
+        terminated = true;
+      }
+      if (evt.type === "run.started") started = true;
+      onEvent(evt);
+    };
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      // Bytes are the only heartbeat this side can see: keepalive comments are
+      // dropped by the SSE parser, so they must not be mistaken for a stall.
+      armIdle();
       buf += decoder.decode(value, { stream: true });
       const split = splitSse(buf);
       buf = split.rest;
-      for (const evt of split.events) onEvent(evt);
+      for (const evt of split.events) deliver(evt);
     }
     const tail = splitSse(buf + "\n\n");
-    for (const evt of tail.events) onEvent(evt);
-    onEvent({ type: "run.completed" });
+    for (const evt of tail.events) deliver(evt);
+    // The host paused this conversation behind a lost turn. That is not the end
+    // of the chat: acknowledge the lost turn, let the message committed behind it
+    // run, and settle THIS turn on the transcript that recovery produces.
+    if (paused) return await finishPaused();
+    // A stream that closes without its terminal frame is not a finished turn:
+    // the gateway died, the socket dropped, or the handler errored after the
+    // last delta. Reporting it as completed is how a half-finished turn used to
+    // read like a whole one. `run.incomplete` says what actually happened; the
+    // terminal frame carries the snapshot, so this one carries only the reason.
+    if (!terminated) {
+      onEvent({ type: "run.incomplete", reason: "the stream closed before the turn finished" });
+    }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // A paused frame that arrived before the transport died still names a
+    // recoverable chat, so the recovery outranks the transport's own sentence.
+    if (paused) return await finishPaused();
+    // The abort is ours, so it gets our sentence rather than undici's.
+    const message = stall.signal.aborted
+      ? STREAM_LOST
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    // A transport failure mid-turn (a dropped socket, or our own silence
+    // watchdog) is still a turn that ended badly. Without a terminal frame the
+    // panel would keep the turn "running" forever.
+    if (started && !terminated) {
+      onEvent({ type: "run.incomplete", reason: message });
+    }
+    return { ok: false, error: message };
+  } finally {
+    if (idle !== undefined) clearTimeout(idle);
   }
 }
 
@@ -1337,10 +2129,22 @@ export async function companionApproval(
   requestId: string,
   allow: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // A continued chat's approval waits on its WebSocket as a server request; its
+  // run id names the turn that transport owns. Answering it here is what keeps
+  // the approval card identical across transports.
+  const continuation = continuationOwningRun(runId);
+  if (continuation) {
+    return continuation.answerApproval(runId, requestId, allow)
+      ? { ok: true }
+      : { ok: false, error: "That approval is no longer waiting." };
+  }
   try {
     const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
       method: "POST",
-      body: JSON.stringify({ request_id: requestId, allow }),
+      // Hermes 0.22.5 refuses `{allow}` (400) and fences approvals on
+      // `choice`: once | session | always | deny. "Approve once" is the dock's
+      // one button; "deny" is the same button's other state.
+      body: JSON.stringify({ request_id: requestId, choice: allow ? "once" : "deny" }),
     });
     if (!res.ok) return { ok: false, error: `Approval failed (${res.status})` };
     return { ok: true };
@@ -1357,12 +2161,87 @@ export async function companionApproval(
 export async function companionRunStop(
   runId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // A continued chat's Stop is `session.interrupt` on its gateway socket; the
+  // gateway answers the RPC and ends the run with its own terminal frame.
+  const continuation = continuationOwningRun(runId);
+  if (continuation) {
+    try {
+      const stopped = await continuation.interruptRun(runId);
+      return stopped
+        ? { ok: true }
+        : { ok: false, error: "That turn is no longer running." };
+    } catch (e) {
+      return { ok: false, error: continuationError(e) };
+    }
+  }
   try {
     const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
       method: "POST",
     });
     if (!res.ok) return { ok: false, error: `Stop failed (${res.status})` };
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Steer a live run: add guidance to a turn that is already running.
+ *
+ * The gateway takes the text and hands it to the running agent, which reads it
+ * at its next step - the agent abandons what it was doing and answers the
+ * steer. That is how the operator says "actually, keep it to the second page"
+ * without cancelling the turn and losing the work already done.
+ *
+ * The gateway answers in three ways that mean different things to the
+ * operator, and each one gets its own sentence, because "steer failed" tells
+ * the operator nothing about whether their message went anywhere:
+ *
+ *  - 200: the steer was accepted and the agent has it;
+ *  - 404 `run_not_found`: the run id is unknown to the gateway. The gateway
+ *    resolves the run BEFORE it looks at the text, so this also answers 404
+ *    for an empty steer;
+ *  - 409 `run_not_accepting_steer`: the run is known but is not running - it
+ *    finished between the keypress and this call, or it is waiting for an
+ *    approval, or it is already stopping;
+ *  - 400 `invalid_steer_input`: the text was empty.
+ *
+ * The empty text is refused HERE, before the call, so the operator is told
+ * what is wrong with their own input rather than being sent to the far end
+ * for a verdict about a run they may never have heard of.
+ */
+export async function companionRunSteer(
+  runId: string,
+  text: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const steerText = typeof text === "string" ? text.trim() : "";
+  if (!steerText) {
+    return { ok: false, error: "Type what you want the agent to do instead." };
+  }
+  try {
+    const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
+      method: "POST",
+      body: JSON.stringify({ input: steerText }),
+    });
+    if (res.ok) return { ok: true };
+    if (res.status === 404) {
+      return {
+        ok: false,
+        error: "That turn is no longer running, so the message could not be steered into it.",
+      };
+    }
+    if (res.status === 409) {
+      return {
+        ok: false,
+        error: "That turn has already finished, so the message could not be steered into it.",
+      };
+    }
+    // Anything else: the gateway's own message names the reason in one
+    // sentence, and the status alone does not.
+    return {
+      ok: false,
+      error: await errorDetail(res, `Steer failed (${res.status})`),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -1439,7 +2318,19 @@ async function currentInstructionsContext(): Promise<CompanionInstructionsInput>
       // false and so does this, so the two texts agree.
       locked: false,
       vaultOpen: Boolean(snapshot),
+      // The picture rule tells the companion where the vault is, so the path the
+      // preview names is the path a turn would name.
+      vaultRoot: snapshot?.rootPath ?? null,
       fileUnsolicited,
+      // The Settings preview has to show the same paragraph the turn would: a
+      // companion that is told the rubric on one screen and not the other is
+      // the drift this page exists to end. Null once the record is complete.
+      onboarding: snapshot
+        ? onboardingContextOf(
+            snapshot.onboarding,
+            snapshot.onboardingProposal !== null,
+          )
+        : null,
     };
   } catch {
     return {
@@ -1448,6 +2339,7 @@ async function currentInstructionsContext(): Promise<CompanionInstructionsInput>
       aboutMe: "",
       locked: false,
       vaultOpen: false,
+      vaultRoot: null,
       fileUnsolicited,
     };
   }

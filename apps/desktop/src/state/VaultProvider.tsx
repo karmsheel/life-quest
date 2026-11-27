@@ -11,6 +11,7 @@ import {
 import type { Result, VaultSettings, VaultSnapshot } from "@lifequest/vault-core";
 import {
   domainLens,
+  isAreaLive,
   lensSlug,
   overviewLens,
   type DomainLens,
@@ -27,9 +28,9 @@ import {
 export type VaultContextValue = {
   /** Null when no vault is open (welcome flow). */
   snapshot: VaultSnapshot | null;
-  /** Domain lens for the open vault. Overview when none is saved. */
+  /** Area lens for the open vault. Life (the overview lens) when none is saved. */
   lens: DomainLens;
-  /** Active domain slug derived from the lens; null in Overview. */
+  /** Active area slug derived from the lens; null on the Life lens. */
   activeSlug: string | null;
   /** True until first vaultGetSnapshot completes. */
   booting: boolean;
@@ -62,6 +63,8 @@ const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const [lens, setLensState] = useState<DomainLens>(overviewLens());
   const lensRef = useRef(lens);
   lensRef.current = lens;
@@ -88,8 +91,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLens = useCallback(async (next: DomainLens) => {
-    setLensState(next);
-    const result = await api().domainSetActive(lensSlug(next));
+    // A locked or archived area is invisible, so it cannot be the lens: any
+    // request for one lands on Life instead (the engine makes the same call
+    // for the persisted pref).
+    const current = snapshotRef.current;
+    const resolved =
+      next.kind === "domain" &&
+      current !== null &&
+      !current.domains.some((d) => d.slug === next.slug && isAreaLive(d))
+        ? overviewLens()
+        : next;
+    setLensState(resolved);
+    const result = await api().domainSetActive(lensSlug(resolved));
     if (!result.ok) {
       setError(result.error);
     } else {
@@ -114,7 +127,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
     const previousVaultId = vaultIdRef.current;
     vaultIdRef.current = next.lifequest.id;
-    // Same-vault refresh only. A vault switch must not write Overview
+    // Same-vault refresh only. A vault switch must not write Life
     // onto the destination; restoreLens applies that vault's own lens.
     if (shouldClearLensForSnapshot(previousVaultId, next, lensRef.current)) {
       setLensState(overviewLens());
@@ -137,7 +150,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       try {
         await api().domainSetActive(null);
       } catch {
-        // Screen is already Overview. A stale slug is cleared on the next open.
+        // Screen is already Life. A stale slug is cleared on the next open.
       }
     }
   }, [applySnapshot]);
@@ -395,4 +408,42 @@ export function useVault(): VaultContextValue {
     throw new Error("useVault must be used within VaultProvider");
   }
   return ctx;
+}
+
+/**
+ * A subtree whose vault snapshot stands still while it is covered.
+ *
+ * The counterpart of `LiveDataHold`, for the other signal a page's query runs
+ * on. A sheet keeps the page behind it mounted but dims it behind a scrim; that
+ * page is the one the operator is not reading. Answering a queue of decisions
+ * refreshes the snapshot after each answer (editors behind the sheet pick up the
+ * approved body), and every page effect keyed on `reloadGeneration` or on the
+ * snapshot re-ran inside a surface nobody could see.
+ *
+ * Held, the subtree keeps the last snapshot it showed and is handed the current
+ * one the moment the sheet leaves — one catch-up pass, in the same paint as the
+ * page coming back, instead of a wave of queries under the scrim.
+ *
+ * The hold is on the page's subtree only (see `PageCoverHold`), so the rail, the
+ * dock and the shell keep their own live view of the vault: the chat has to keep
+ * streaming, and the inbox is inside the sheet, not under it.
+ */
+export function VaultHold({
+  held,
+  children,
+}: {
+  held: boolean;
+  children: ReactNode;
+}) {
+  const value = useVault();
+  /** The snapshot the subtree last showed while it was visible. */
+  const visibleRef = useRef(value);
+  useEffect(() => {
+    if (!held) visibleRef.current = value;
+  }, [held, value]);
+  return (
+    <VaultContext.Provider value={held ? visibleRef.current : value}>
+      {children}
+    </VaultContext.Provider>
+  );
 }

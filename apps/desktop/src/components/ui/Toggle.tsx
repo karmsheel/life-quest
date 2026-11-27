@@ -12,11 +12,17 @@
  * The switch carries no caption of its own. A settings row already says what the
  * setting is in its label and description, and an "On"/"Off" beside the thumb
  * would repeat the thumb's own position in words.
+ *
+ * A caption is the one exception: where the switch stands beside a name that
+ * does not describe it — a domain's row with its own arms-restore switch — the
+ * words belong to the switch, and they are part of its button so the whole
+ * control, not just the thumb, is the target.
  */
 export function Toggle({
   checked,
   onChange,
   label,
+  caption,
   disabled = false,
   className = "",
 }: {
@@ -25,6 +31,8 @@ export function Toggle({
   onChange: (next: boolean) => void;
   /** The control's accessible name, e.g. "Preview the update badge". */
   label: string;
+  /** Visible words beside the track, when the row's own label is not this bit. */
+  caption?: string;
   disabled?: boolean;
   className?: string;
 }) {
@@ -45,6 +53,7 @@ export function Toggle({
         onChange(!checked);
       }}
     >
+      {caption ? <span className="ui-toggle__caption">{caption}</span> : null}
       <span className="ui-toggle__track" aria-hidden="true">
         <span className="ui-toggle__thumb" />
       </span>

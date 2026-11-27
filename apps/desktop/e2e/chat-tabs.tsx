@@ -8,8 +8,9 @@
  *  1. The sidebar does not list the profile's chats — the list is still only
  *     reachable from inside the dock, which is the bug this rig exists for.
  *  2. A row click loads the wrong chat, or loads it without opening the dock.
- *  3. The tab strip appears with one chat (noise) or not at all with two (the
- *     parallel affordance never shows).
+ *  3. The tab strip is missing with one chat (so its plus cannot open a second
+ *     one), absent with two (the parallel affordance never shows), or the plus
+ *     opens no tab / steals the chat in front.
  *  4. A second send waits on the first — the store kept one `sending` flag, so
  *     the two turns serialise instead of running together.
  *  5. Deltas cross: a frame tagged with one chat lands in the other chat's
@@ -39,19 +40,82 @@
  *     or unarchive failing to rejoin the working list.
  * 15. Archived chats leaking into the default view — the archived rows are only
  *     drawn when the view asks for them, and never while the view is off.
+ * 16. A row menu clipped by the list it lives in — with a long history scrolled
+ *     to the last chat, the three-dot menu hangs below its row, past the foot of
+ *     the scrolling list, so half the menu is out of sight and reaching it means
+ *     scrolling. The menu has to open into the room above the row instead, stay
+ *     wholly inside the list's viewport without moving it, and still open
+ *     downward for a row that has the room under it.
+ * 17. A middle click that is not the browser's tab-close — the press lands on
+ *     one tab but another closes, a background tab's close moves the thread, or
+ *     a pinned square is dropped by the button when Unpin is its only way out.
+ *     The press has to be swallowed too: left alone, a middle button starts
+ *     X11's primary-selection paste under the strip.
+ * 18. Mod+W that is not the browser's tab-close — it does not close the tab in
+ *     front, it closes a tab while the strip is not drawn (one chat, no pinned
+ *     band), or it swallows the key where there is no tab to close. The key is
+ *     the platform's when the dock has nothing to offer it.
+ * 19. A tab squeezed past its floor — at the dock's narrowest a non-pinned tab
+ *     shrinks below the room three of its own label's characters need in the
+ *     label's computed font, plus the ellipsis glyph that truncation puts after
+ *     them: the ellipsis costs about a character's width, so a floor sized for
+ *     three characters alone renders two and "…". The tab keeps a floor (still
+ *     beside its leading mark and its close control), and the label's measured
+ *     room is what proves it — three characters + "…" of its own text must fit.
+ * 20. A strip that overflows but will not scroll — with more chats than the dock
+ *     can hold at the floor, the band either keeps squeezing the tabs under the
+ *     floor or clips the last ones, and a vertical wheel over it scrolls the
+ *     page behind it instead of walking the band sideways. Past the floor the
+ *     strip must overflow (scrollWidth > clientWidth), and a wheel over it must
+ *     move scrollLeft and be default-prevented. Four unpinned chats beside the
+ *     fixture's pinned square, at the dock's floor, is what makes the band
+ *     actually overflow rather than merely fit.
+ * 21. A tab that opens out of sight — a chat appended at the band's far end is
+ *     in front but its tab is past the visible edge (or under the sticky
+ *     full-screen corner), so the operator has a conversation on screen and no
+ *     tab to find it by. The strip has to scroll the tab in front into its
+ *     visible band, ending before the sticky trailing control, and not further.
+ * 22. A kickoff mark missing, unpainted or lying — a chat the app started as a
+ *     task, a review, a plan or an automation draws the plain status dot instead
+ *     of its icon (or no leading slot at all); the mark is not written to the
+ *     profile's remembered map, so a restart loses it; it takes over the tab's
+ *     accessible name or close label; or its slot steals the label's room and
+ *     drops the tab under the three-characters-plus-ellipsis floor. A chat the
+ *     operator opened from the list must stay plain: no icon, no `data-icon`.
+ * 23. Ctrl+Tab that is not the browser's tab-switch — it does not walk the strip
+ *     at all, walks it in the wrong direction, does not wrap at the ends, hops
+ *     while the dock is on another surface or collapsed, or drops the caret out
+ *     of the chat composer it was pressed from (the chatbar is where the
+ *     operator is when they reach for it). With no strip drawn, or only one tab
+ *     in it, there is no tab to reach and the platform keeps the key.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
- * ChatSessionsProvider, the real CSS and layout engine — is shipping code.
+ * ChatSessionsProvider, the real ShortcutRunner, the real CSS and layout engine
+ * — is shipping code.
+ *
+ * The profile's remembered kickoff marks are seeded here too: the fixture's
+ * automation chat is marked before mount, exactly as a previous run's write
+ * would have left it, and the page exposes `window.__lqRequestSession` from
+ * inside `ChatDockProvider` so the driver can hand the dock a task chat through
+ * the shipping request door, the way a page does.
+ *
+ * The restore rig (`chat-tabs-restore.electron.mjs`) drives this same page: it
+ * boots it twice as two Electron processes over one profile with `?keep=1` (do
+ * not clear the remembered tab strip or its kickoff marks) and reads the landing
+ * each time.
  */
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
-import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { ChatDockProvider, useChatDock } from "@/state/ChatDockProvider";
+import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
-import type { CompanionStreamFrame } from "@/vite-env";
+import type { SessionIcon } from "@/state/session-icons";
+import type { CompanionStreamFrame, HermesSession } from "@/vite-env";
 import {
   createdSessionFromPayload,
   sessionFromPayload,
@@ -69,9 +133,24 @@ type HarnessWindow = {
   __lqPatchCalls?: PatchCall[];
   __lqDeleteCalls?: string[];
   __lqMessageCalls?: string[];
+  __lqCreateCalls?: string[];
   __lqStopCalls?: string[];
   __lqListOptions?: ({ includeArchived?: boolean } | null)[];
   __lqFinishChat?: (sessionId: string) => void;
+  /**
+   * Grow the profile's session table by this many chats, oldest last, so the
+   * driver can scroll the sidebar to a real foot. Answers with the row total.
+   */
+  __lqSeedChats?: (count: number) => number;
+  /** The live store, so the driver can re-read the list after seeding it. */
+  __lqChat?: { loadSessions: () => Promise<unknown> };
+  /**
+   * The dock's own request door, reached from inside `ChatDockProvider`: the
+   * driver creates a chat through the stub bridge and asks the dock to show it
+   * as the task that started it, exactly as the Act board does with
+   * `chatDock.requestSession({ id, session, icon })`.
+   */
+  __lqRequestSession?: (session: HermesSession, icon?: SessionIcon) => void;
   chatTabsHarnessReady?: Promise<void>;
 };
 
@@ -80,8 +159,35 @@ harness.__lqCalls = [];
 harness.__lqPatchCalls = [];
 harness.__lqDeleteCalls = [];
 harness.__lqMessageCalls = [];
+harness.__lqCreateCalls = [];
 harness.__lqStopCalls = [];
 harness.__lqListOptions = [];
+
+/**
+ * How this boot treats the profile's remembered chat state.
+ *
+ * `keep=1` is the restore rig's switch: it boots the same profile twice (twice
+ * as two real Electron processes) and needs the tab strip the first boot wrote,
+ * so it must not be cleared. Every other boot clears the profile-local chat
+ * memory so the landing is deterministic — a leftover strip from an earlier rig
+ * would otherwise decide how many tabs are drawn before the rig clicks anything.
+ *
+ * `archived=id,id` makes the fixture answer as if Hermes archived those rows
+ * while the app was shut; it is how the restore rig proves a remembered tab for
+ * a chat that no longer exists is dropped instead of resurrected.
+ *
+ * `pinned=0` is the restore rig's switch: a pinned chat is always a tab in the
+ * dock's strip, so the fixture's default pinned row would draw a square at every
+ * boot and the restore assertions would be about the pin instead of the memory.
+ * With the switch the profile has no pinned chats and the strip is exactly the
+ * remembered one. The default (no param) keeps "Pinned note" pinned.
+ */
+const query = new URLSearchParams(window.location.search);
+const keepChatMemory = query.get("keep") === "1";
+const forceUnpinned = query.get("pinned") === "0";
+const archivedWhileShut = new Set(
+  (query.get("archived") ?? "").split(",").filter(Boolean),
+);
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
@@ -226,10 +332,46 @@ const MESSAGES: Record<string, { role: "user" | "assistant"; content: string }[]
   "chat-delta": [{ role: "user", content: "Delta seed" }],
 };
 
-const rows: FixtureRow[] = ROWS.map((row) => ({ ...row }));
+const rows: FixtureRow[] = ROWS.map((row) => ({
+  ...row,
+  archived: archivedWhileShut.has(row.id) ? 1 : row.archived,
+  // The restore rig drives this page as a profile with no pinned chats; every
+  // other rig keeps the fixture's own pin.
+  pinned: forceUnpinned ? 0 : row.pinned,
+}));
 const listeners = new Set<(frame: CompanionStreamFrame) => void>();
 /** The pending `companionChatStream` promise per chat, so the driver owns time. */
 const chatResolvers = new Map<string, (value: { ok: true }) => void>();
+
+/**
+ * Append `count` live chats to the profile table, oldest last, and answer with
+ * the row total.
+ *
+ * The sidebar's list is a scroll port, and the reported fault only exists once
+ * the history is longer than it: the driver grows the table at the end of the
+ * run and then scrolls the sidebar to a foot that really has been reached. The
+ * rows are pushed (not unshifted) so they land under the fixture's own chats,
+ * where the last of them is the row at the foot of the scrolled list.
+ */
+harness.__lqSeedChats = (count) => {
+  const start = rows.length;
+  const now = Math.floor(Date.now() / 1000);
+  for (let index = 0; index < count; index += 1) {
+    const at = now - 10_000 - index * 60;
+    rows.push({
+      id: `chat-seed-${start + index}`,
+      title: `Seed chat ${String(start + index + 1).padStart(2, "0")}`,
+      preview: "Seeded history",
+      last_active: at,
+      started_at: at,
+      message_count: 2,
+      pinned: 0,
+      archived: 0,
+      hidden: 0,
+    });
+  }
+  return rows.length;
+};
 
 harness.__lqEmit = (sessionId, event) => {
   for (const listener of [...listeners]) {
@@ -246,7 +388,32 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback below is wrong
+  // for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page, leaving the driver waiting
+  // on a ready flag that never comes.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
+  // The theme chrome repaints the window's caption strip; the harness has no
+  // Electron frame, so the shipped overlay API is stubbed as absent-but-callable.
+  windowChrome: {
+    get: () => Promise.resolve({ overlay: true, platform: "win32" }),
+    setTitleBarOverlay: () => Promise.resolve(),
+    minimize: () => {},
+    toggleMaximize: () => {},
+    close: () => {},
+    isMaximized: () => Promise.resolve(false),
+    onMaximizeChange: () => () => {},
+  },
   pinsList: () => ok({ locked: false, pins: [] }),
+  // The chain surface reads this the moment it is opened. The rig only claims
+  // that the chain STAYS up through a sidebar archive, so an empty chain is
+  // enough — but it has to be an answer, not the Proxy's `null`, or the pane
+  // would paint a failed read instead of the surface under test.
+  signalChainList: () => ok({ records: [], skipped: 0 }),
   companionSessionsList: (options?: { includeArchived?: boolean }) => {
     harness.__lqListOptions = [...(harness.__lqListOptions ?? []), options ?? null];
     // The shipping parser and filter decide what the sidebar receives; hidden
@@ -258,8 +425,12 @@ const bridge: Record<string, unknown> = {
     return ok((MESSAGES[id] ?? []).map((message) => ({ ...message })));
   },
   companionSessionCreate: (title: string) => {
+    harness.__lqCreateCalls = [...(harness.__lqCreateCalls ?? []), title];
+    // A fresh id per create: the store keys tabs, transcripts and runs by it, so
+    // a second blank chat reusing the first one's id would make two tabs share a
+    // chat. The driver archives and re-creates, so this path runs twice.
     const row: FixtureRow = {
-      id: "chat-new",
+      id: `chat-created-${harness.__lqCreateCalls.length}`,
       title: title || null,
       preview: null,
       last_active: Date.now() / 1000,
@@ -317,6 +488,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -324,21 +499,84 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// A previous run's last chat would decide the landing view; clear it so the rig
-// always starts on the same chat. The pinned order is client-side state too, so
-// a leftover order from an earlier run would reorder the list under the rig.
-window.localStorage.removeItem("lifequest.companion.lastSessionId");
-window.localStorage.removeItem("lifequest.companion.runtimePins");
-window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+// A previous run's last chat would decide the landing view, and a remembered
+// tab strip would decide the strip before the rig has clicked anything; clear
+// both so the harness always starts from the same place, and with the strip's
+// remembered kickoff marks too — a stale icon would dress a tab before the rig
+// has asked for one. The restore rig keeps them all on purpose.
+if (!keepChatMemory) {
+  window.localStorage.removeItem("lifequest.companion.lastSessionId");
+  window.localStorage.removeItem("lifequest.companion.runtimePins");
+  window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+  window.localStorage.removeItem("lifequest.companion.openTabs");
+  window.localStorage.removeItem("lifequest.companion.sessionIcons");
+}
+
+/**
+ * Seed the mark the fixture's automation chat would have been given by the
+ * scheduler before this boot: the legacy per-profile slot, which is exactly what
+ * the shipping store reads on a harness page (no vault, no agent). It has to be
+ * in place before the providers mount — the store hydrates it during the landing
+ * — and it merges rather than replaces, so a restore boot keeps the marks the
+ * previous boot wrote.
+ */
+try {
+  const ICONS_KEY = "lifequest.companion.sessionIcons";
+  const raw = window.localStorage.getItem(ICONS_KEY);
+  const icons = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  icons["chat-delta"] = "automation";
+  window.localStorage.setItem(ICONS_KEY, JSON.stringify(icons));
+} catch {
+  // A storage refusal costs the fixture its mark, not the page.
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-tabs.html");
 
+/**
+ * Hands the driver the shipping store's own `loadSessions`, so a table it seeded
+ * through the bridge is re-read by the real provider instead of the driver
+ * waiting for some unrelated refresh. It has to sit INSIDE the shell, where
+ * `AppShell` mounts `ChatSessionsProvider` — the page route is that place.
+ */
+function HarnessChatHandle() {
+  const chat = useChatSessions();
+  useEffect(() => {
+    harness.__lqChat = chat;
+  }, [chat]);
+  return null;
+}
+
+/**
+ * Hands the driver the dock's own request door. A page that starts a chat asks
+ * the dock to show it with `requestSession({ id, session, icon })`, and the
+ * panel consumes it: the chat gets a tab of its own, named from the row the page
+ * passed, wearing the kickoff mark of the work that started it. The harness has
+ * no page that can call it, so the driver reaches the same function here.
+ */
+function HarnessChatDockHandle() {
+  const dock = useChatDock();
+  useEffect(() => {
+    harness.__lqRequestSession = (session, icon) => {
+      dock.requestSession({ id: session.id, session, icon });
+    };
+    return () => {
+      delete harness.__lqRequestSession;
+    };
+  }, [dock]);
+  return null;
+}
+
 createRoot(root).render(
   <StrictMode>
     <MemoryRouter initialEntries={["/home"]}>
-      <VaultProvider>
+      {/* The shell reads the theme context (nav placement, the strip's own
+          chrome), so the harness mounts the real provider above it. */}
+      <ThemeProvider>
+        <VaultProvider>
         <ChatDockProvider>
+          {/* The dock's own door, inside the provider that owns it. */}
+          <HarnessChatDockHandle />
           <NavDockProvider>
             {/* The real shell, sidebar and dock: the chats section is a part of
                 the sidebar now, so a rig that mounted it as its own column
@@ -347,13 +585,21 @@ createRoot(root).render(
               <Route element={<AppShell />}>
                 <Route
                   path="/home"
-                  element={<div className="chat-tabs-harness-page" />}
+                  element={
+                    <>
+                      <div className="chat-tabs-harness-page" />
+                      {/* Inside the shell's own store, which the driver reaches
+                          through this handle. */}
+                      <HarnessChatHandle />
+                    </>
+                  }
                 />
               </Route>
             </Routes>
           </NavDockProvider>
         </ChatDockProvider>
-      </VaultProvider>
+        </VaultProvider>
+      </ThemeProvider>
     </MemoryRouter>
   </StrictMode>,
 );
@@ -364,6 +610,10 @@ const ready = new Promise<void>((resolve) => {
 });
 
 const waitForSurface = () => {
+  // The thread header is the whole settlement test: every landing is a thread
+  // now. A profile whose operator closed every tab before quitting lands on the
+  // thread's blank slate, not on a history list, and the restore rig takes it
+  // through both in one run.
   const settled =
     document.querySelector(".nav-rail") &&
     document.querySelector(".chats-rail") &&

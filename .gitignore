@@ -23,3 +23,7 @@ apps/desktop/e2e/artifacts/
 
 # Landing E2E captures are regenerable with `node apps/landing/scripts/e2e.mjs`
 apps/landing/e2e/artifacts/*.png
+
+# MkDocs staging and build output (docs site is generated in CI)
+.docs-build/
+site/

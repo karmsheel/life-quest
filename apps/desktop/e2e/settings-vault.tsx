@@ -1,8 +1,9 @@
 /**
- * E2E harness for the settings vault-folder switch (driven by
+ * E2E harness for the Vault settings page (driven by
  * `settings-vault.electron.mjs`).
  *
  * A system-in-isolation rig, so the ways it can fail are written down first:
+ *
  *  1. The page shows the folder and nothing else — no control to change it.
  *     A static path with no switch is the exact regression this rig guards.
  *  2. The click does nothing: the platform picker is never asked for a folder.
@@ -20,6 +21,30 @@
  *  9. The control is a raw button instead of the app's own Button primitive.
  * 10. The control stays live while an open is in flight, so a second dialog
  *     can be asked over the first one.
+ * 11. Rows go back to stacking: the label, its description and its control pile
+ *     up against each other instead of the name sitting on the leading edge and
+ *     the control on the trailing one. This is the exact layout the human asked
+ *     to fix, so it is measured, not eyeballed: the gap between the copy and the
+ *     control, and the row's own padding, are read back from the real layout.
+ * 12. The week-start control is a full-width bar under its heading again, or it
+ *     is no longer on the heading's line. The human asked for it smaller and in
+ *     line with "Week starts on"; both are geometry assertions here.
+ * 13. The restore checkbox is still a checkbox, the switch does not sit on the
+ *     leading edge of the row's controls, it is too small to read as a switch,
+ *     or floating without its owning row: the books rows are measured per
+ *     domain, and the switch's own track is measured against the row.
+ * 14. The destructive button is armed before the switch is: a restore fires with
+ *     the gate closed. The rig clicks Restore on a fresh row and asserts it is
+ *     disabled and that no restore call was made, then arms only one domain and
+ *     proves the other domain's restore is still closed.
+ * 15. A successful restore leaves the row armed, so the next stray press is a
+ *     second destructive act the operator did not ask for.
+ * 16. A refused restore shows nothing, or shows its error on a different row.
+ * 17. Buttons in the rows keep the app's pill radius: the human asked for that
+ *     to change on this page, and the computed radius is what the sheet wears.
+ * 18. The "cannot change while weekly files exist" hint appears even when the
+ *     setting is live — a paragraph explaining a constraint that is not there.
+ *     The rig reloads with weekly files present and reads the disabled state.
  *
  * The IPC bridge is stubbed (there is no Electron preload on a dev-server
  * page); the settings page, the shell's own ancestor chain, the real CSS and
@@ -27,7 +52,7 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { SettingsVault } from "@/components/settings/SettingsVault";
+import { SettingsOverlay } from "@/components/settings/SettingsOverlay";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import "@/styles/global.css";
@@ -46,6 +71,22 @@ window.confirm = () => {
 const ROOT_A = "/harness/vault-a";
 const ROOT_B = "/harness/vault-b";
 const REFUSAL = "No LifeQuest vault in that folder.";
+const RESTORE_REFUSAL = "Books.json for this domain could not be read.";
+
+/** The settings object the stubbed settingsUpdate patches and hands back. */
+const settings = {
+  hermesBaseUrl: "http://127.0.0.1:1",
+  theme: "dark" as const,
+  weekStartDay: "monday" as const,
+};
+
+/**
+ * `weeklyFiles` is read from the page's query string so the driver can reload
+ * into the locked state the week-start row describes without a second harness.
+ */
+const weeklyFiles = Number(
+  new URLSearchParams(window.location.search).get("weeklyFiles") ?? 0,
+);
 
 const snapshot = (id: string, name: string, rootPath: string) => ({
   rootPath,
@@ -55,11 +96,7 @@ const snapshot = (id: string, name: string, rootPath: string) => ({
     name,
     createdAt: "2026-01-01T00:00:00.000Z",
   },
-  settings: {
-    hermesBaseUrl: "http://127.0.0.1:1",
-    theme: "dark" as const,
-    weekStartDay: "monday" as const,
-  },
+  settings: { ...settings },
   domains: [
     {
       slug: "health",
@@ -74,6 +111,32 @@ const snapshot = (id: string, name: string, rootPath: string) => ({
       },
       documents: { why: null, what: null, how: null, premise: null },
     },
+    {
+      slug: "finance",
+      meta: {
+        name: "Finance",
+        description: null,
+        color: null,
+        sortOrder: 1,
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      documents: { why: null, what: null, how: null, premise: null },
+    },
+    {
+      slug: "retired",
+      meta: {
+        name: "Retired",
+        description: null,
+        color: null,
+        sortOrder: 2,
+        archivedAt: "2026-01-02T00:00:00.000Z",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+      documents: { why: null, what: null, how: null, premise: null },
+    },
   ],
   agents: [],
   decisions: [],
@@ -84,15 +147,29 @@ const snapshot = (id: string, name: string, rootPath: string) => ({
   goalsError: null,
   reviews: [],
   planning: [],
-  weeklyFileCount: 0,
+  weeklyFileCount: weeklyFiles,
 });
 
 /** The vault that is open when the page loads, and the one it switches to. */
 const SNAPSHOT_A = snapshot("vault-a", "Harness Vault A", ROOT_A);
 const SNAPSHOT_B = snapshot("vault-b", "Harness Vault B", ROOT_B);
 
-type Calls = { dialog: (string | null)[]; open: string[]; recent: number };
-const calls: Calls = { dialog: [], open: [], recent: 0 };
+type Calls = {
+  dialog: (string | null)[];
+  open: string[];
+  recent: number;
+  settings: Record<string, unknown>[];
+  export: string[];
+  restore: string[];
+};
+const calls: Calls = {
+  dialog: [],
+  open: [],
+  recent: 0,
+  settings: [],
+  export: [],
+  restore: [],
+};
 
 /** What the platform picker answers on the next click; null = cancelled. */
 let dialogAnswer: string | null = ROOT_B;
@@ -100,6 +177,8 @@ let dialogAnswer: string | null = ROOT_B;
 let openRefuses = false;
 /** How long `vaultOpen` takes, so the rig can catch the control mid-flight. */
 let openDelayMs = 0;
+/** Whether the next `dbRestoreBooks` refuses. */
+let restoreRefuses = false;
 
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT_A),
@@ -113,6 +192,28 @@ const bridge: Record<string, unknown> = {
   onVaultFileChanged: () => () => {},
   domainGetActive: () => Promise.resolve(null),
   domainSetActive: () => ok(null),
+  settingsUpdate: (patch: Record<string, unknown>) => {
+    calls.settings.push(patch);
+    Object.assign(settings, patch);
+    return ok({ ...settings });
+  },
+  dbExportBooks: (slug: string) => {
+    calls.export.push(slug);
+    return ok(null);
+  },
+  dbRestoreBooks: (slug: string, options: { confirm: boolean }) => {
+    calls.restore.push(slug);
+    if (!options?.confirm) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "restore was not confirmed",
+      });
+    }
+    if (restoreRefuses) {
+      return Promise.resolve({ ok: false as const, error: RESTORE_REFUSAL });
+    }
+    return ok(null);
+  },
   dialogOpenDirectory: () => {
     calls.dialog.push(dialogAnswer);
     return Promise.resolve(dialogAnswer);
@@ -164,8 +265,35 @@ const knobs = {
   setOpenDelay: (ms: number) => {
     openDelayMs = ms;
   },
+  /** Make the next restore refuse. */
+  setRestoreRefuses: (value: boolean) => {
+    restoreRefuses = value;
+  },
 };
 (window as unknown as { vaultKnobs: typeof knobs }).vaultKnobs = knobs;
+
+/**
+ * The shape of the sheet's scrolling column, not just its card: the section
+ * spacing rule is a child combinator off `.settings-overlay__main-scroll`, and
+ * a page mounted straight into `.shell__content` would measure a layout the
+ * operator never sees.
+ */
+/*
+ * The real settings sheet, opened on its Vault page — chrome, section nav,
+ * search field and all. The page is measured inside the frame it ships in: the
+ * panel takes ~90% of the window, the nav reserves its 13rem, and the page sits
+ * in the scrolling main column. Mounting the page at the window's full width
+ * would assert a layout the operator never sees.
+ */
+function HarnessPage() {
+  return (
+    <SettingsOverlay
+      activeView="vault"
+      onViewChange={() => {}}
+      onClose={() => {}}
+    />
+  );
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from settings-vault.html");
@@ -177,11 +305,7 @@ createRoot(root).render(
         <div className="app-root">
           <div className="app-root__body">
             <div className="shell">
-              <main className="shell__main">
-                <div className="shell__content">
-                  <SettingsVault />
-                </div>
-              </main>
+              <HarnessPage />
             </div>
           </div>
         </div>
@@ -195,17 +319,27 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
-// Both halves have to be up before the driver measures: the vault's own
-// identity list, and the folder switch's control inside it.
+// Every half of the page has to be up before the driver measures: the identity
+// list, the folder row's control, the week-start control, and one books row's
+// switch. Waiting on a single element would let the driver measure a page that
+// is still painting its second card.
 const waitForPage = () => {
   const identity = document.querySelector(".settings-vault");
-  const folderRow = Array.from(
-    document.querySelectorAll(".settings-card__row"),
-  ).find((row) =>
-    (row.querySelector(".settings-card__label")?.textContent ?? "").trim() ===
-    "Vault folder",
+  const rows = Array.from(document.querySelectorAll(".settings-card__row"));
+  const labelOf = (row: Element) =>
+    (row.querySelector(".settings-card__label")?.textContent ?? "").trim();
+  const folderRow = rows.find((row) => labelOf(row) === "Vault folder");
+  const weekRow = rows.find((row) => labelOf(row) === "Week starts on");
+  const booksSwitch = rows
+    .find((row) => row.classList.contains("settings-card__row--books"))
+    ?.querySelector('[role="switch"]');
+  const okToMeasure = Boolean(
+    identity &&
+      folderRow?.querySelector("button") &&
+      weekRow?.querySelector(".ui-segmented") &&
+      booksSwitch,
   );
-  if (!identity || !folderRow?.querySelector("button")) {
+  if (!okToMeasure) {
     requestAnimationFrame(waitForPage);
     return;
   }

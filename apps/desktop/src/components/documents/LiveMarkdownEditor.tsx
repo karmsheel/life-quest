@@ -10,6 +10,7 @@ import {
   type DragEvent as ReactDragEvent,
 } from "react";
 import { MarkdownView } from "./MarkdownView";
+import type { WikiResolver } from "@/lib/wiki-links";
 
 /**
  * One box, live preview — the Obsidian model, without the second pane.
@@ -120,12 +121,122 @@ function lineAround(text: string, index: number): { start: number; end: number; 
   return { start, end, text: text.slice(start, end) };
 }
 
-function onFirstLine(text: string, index: number): boolean {
-  return !text.slice(0, index).includes("\n");
-}
+/**
+ * The visual line the caret sits on, and how many lines the box shows in all.
+ *
+ * An arrow key asks a *layout* question — is there a line above/below the caret?
+ * — and the layout is not the text. A paragraph typed as one long line wraps over
+ * several lines on screen, and a paragraph carrying a hard break (`Shift+Enter`)
+ * may wrap each of its lines again. Until this measured the wrap, the handler
+ * answered from the text's own newlines, so a wrapped paragraph counted as one
+ * line: ArrowUp/ArrowDown left it on the first press, and a block whose wrapped
+ * line sat at its start (or its end) behaved the opposite way in each direction —
+ * which is the operator's "some skip to the bottom of the paragraph going down and
+ * go line by line going up; others do the opposite".
+ *
+ * A textarea keeps its text outside the document, so it cannot be measured
+ * directly: the same text is laid out in a hidden div that copies the box's
+ * computed type (family, size, weight, line height, spacing, tab size, direction)
+ * and the box's own wrapping, and the caret's line is read off it. The caret's
+ * line is the line the character AT the caret renders on — at a soft wrap that is
+ * the line the caret itself is drawn at — and at the end of the text, the last
+ * line.
+ *
+ * The mirror is built, measured and removed inside one keydown, so it never
+ * outlives the frame and is never painted; it is `aria-hidden` besides.
+ */
+function caretVisualLine(
+  el: HTMLTextAreaElement,
+  text: string,
+  caret: number,
+): { line: number; lines: number } {
+  const style = getComputedStyle(el);
+  const lineHeight =
+    Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
+  // The box's height IS the wrap's height (it is set to its content's
+  // scrollHeight), so its scrollHeight counts the lines it draws.
+  const shown = Math.max(
+    1,
+    Math.round(
+      (el.scrollHeight -
+        (Number.parseFloat(style.paddingTop) || 0) -
+        (Number.parseFloat(style.paddingBottom) || 0)) /
+        lineHeight,
+    ),
+  );
+  if (caret >= text.length) return { line: shown - 1, lines: shown };
 
-function onLastLine(text: string, index: number): boolean {
-  return !text.slice(index).includes("\n");
+  const mirror = document.createElement("div");
+  mirror.setAttribute("aria-hidden", "true");
+  mirror.style.cssText = [
+    "position:absolute",
+    "top:0",
+    "left:-10000px",
+    "visibility:hidden",
+    "pointer-events:none",
+    "margin:0",
+    "padding:0",
+    "border:0",
+    "box-sizing:content-box",
+    "white-space:pre-wrap",
+    "overflow-wrap:break-word",
+    `width:${el.clientWidth}px`,
+    `font-family:${style.fontFamily}`,
+    `font-size:${style.fontSize}`,
+    `font-weight:${style.fontWeight}`,
+    `font-style:${style.fontStyle}`,
+    `font-variant:${style.fontVariant}`,
+    `font-variant-numeric:${style.fontVariantNumeric}`,
+    `font-variant-ligatures:${style.fontVariantLigatures}`,
+    `font-variant-caps:${style.fontVariantCaps}`,
+    `font-feature-settings:${style.fontFeatureSettings}`,
+    `font-kerning:${style.fontKerning}`,
+    `line-height:${style.lineHeight}`,
+    `letter-spacing:${style.letterSpacing}`,
+    `word-spacing:${style.wordSpacing}`,
+    `text-indent:${style.textIndent}`,
+    `text-transform:${style.textTransform}`,
+    `word-break:${style.wordBreak}`,
+    `tab-size:${style.tabSize}`,
+    `direction:${style.direction}`,
+    `unicode-bidi:${style.unicodeBidi}`,
+  ].join(";");
+  const head = document.createTextNode(text.slice(0, caret));
+  const at = document.createTextNode(text.slice(caret, caret + 1));
+  const tail = document.createTextNode(text.slice(caret + 1));
+  mirror.append(head, at, tail);
+  document.body.append(mirror);
+  let line = 0;
+  try {
+    const top = mirror.getBoundingClientRect().top;
+    // One rect per rendered line; a line wrapped around an inline boundary can
+    // report twice, so the tops are deduplicated before they are counted.
+    const rows = document.createRange();
+    rows.selectNodeContents(mirror);
+    const rects = rows.getClientRects();
+    const rowTops: number[] = [];
+    for (let index = 0; index < rects.length; index += 1) {
+      const rect = rects[index];
+      if (!rect) continue;
+      const rowTop = Math.round(rect.top - top);
+      if (!rowTops.includes(rowTop)) rowTops.push(rowTop);
+    }
+    rowTops.sort((a, b) => a - b);
+    const character = document.createRange();
+    character.setStart(at, 0);
+    character.setEnd(at, 1);
+    const charRect = character.getClientRects()[0] ?? character.getBoundingClientRect();
+    const charTop = Math.round(charRect.top - top);
+    // Two pixels of slack: every rect of one rendered line shares a top exactly,
+    // so this only forgives sub-pixel rounding.
+    for (let row = 0; row < rowTops.length; row += 1) {
+      const rowTop = rowTops[row];
+      if (rowTop !== undefined && rowTop <= charTop + 2) line = row;
+    }
+  } finally {
+    mirror.remove();
+  }
+  return { line, lines: Math.max(shown, line + 1) };
 }
 
 /**
@@ -313,6 +424,13 @@ export type LiveMarkdownEditorProps = {
   testId?: string;
   /** Open the caret on an empty note: an empty page is an invitation to write. */
   autoFocusEmpty?: boolean;
+  /**
+   * Open the caret in the note when the box mounts. Focus mode is the caller:
+   * the operator opened the box to write, so the last paragraph is the writing
+   * line and the caret lands at the end of it — on an empty note that is the
+   * same empty line `autoFocusEmpty` opens.
+   */
+  autoEdit?: boolean;
   /** Read the note and never write it: a locked document. */
   readOnly?: boolean;
   /**
@@ -322,6 +440,8 @@ export type LiveMarkdownEditorProps = {
   onInsertFile?: (file: File) => Promise<string | null>;
   /** Layout the host wants on the box itself. */
   className?: string;
+  /** Resolve `[[target]]` while a block is shown. Omitted, the token stays text. */
+  resolveWiki?: WikiResolver;
 };
 
 export function LiveMarkdownEditor({
@@ -332,9 +452,11 @@ export function LiveMarkdownEditor({
   placeholder,
   testId,
   autoFocusEmpty = false,
+  autoEdit = false,
   readOnly = false,
   onInsertFile,
   className,
+  resolveWiki,
 }: LiveMarkdownEditorProps) {
   const [blocks, setBlocks] = useState<string[]>(() => parseBlocks(value));
   const [editing, setEditing] = useState<number | null>(null);
@@ -386,6 +508,19 @@ export function LiveMarkdownEditor({
     caret.current = 0;
     setEditing(0);
   }, [autoFocusEmpty, blocks, readOnly]);
+
+  // A box mounted to be written in opens on the writing line. `autoFocusEmpty`
+  // above is the page's invitation on an empty day; this is focus mode's, on a
+  // day that already has prose: the caret goes to the end of the last paragraph,
+  // because the operator opened this box to continue the note rather than to
+  // read it and then find the box.
+  useEffect(() => {
+    if (!autoEdit || autoFocused.current || readOnly) return;
+    if (blocks.length === 0) return;
+    autoFocused.current = true;
+    caret.current = null;
+    setEditing(blocks.length - 1);
+  }, [autoEdit, blocks, readOnly]);
 
   // A document that locks while its line is open closes the line: there is no
   // writing surface on a locked document at all, rather than a disabled one.
@@ -556,18 +691,23 @@ export function LiveMarkdownEditor({
       return;
     }
 
-    if (event.key === "ArrowUp" && index > 0 && onFirstLine(text, el.selectionStart)) {
-      event.preventDefault();
-      beginEdit(index - 1);
-      return;
+    // The arrows leave this block only from the box's first / last VISUAL line.
+    // Everywhere else the browser's own step is the right one: inside a wrapped
+    // paragraph a visual line is a step, and intercepting the text's newlines
+    // would step out of the paragraph instead of down it.
+    if (event.key === "ArrowUp" && index > 0) {
+      if (caretVisualLine(el, text, el.selectionStart).line === 0) {
+        event.preventDefault();
+        beginEdit(index - 1);
+        return;
+      }
     }
-    if (
-      event.key === "ArrowDown" &&
-      index < blocks.length - 1 &&
-      onLastLine(text, el.selectionEnd)
-    ) {
-      event.preventDefault();
-      beginEdit(index + 1, 0);
+    if (event.key === "ArrowDown" && index < blocks.length - 1) {
+      const caretLine = caretVisualLine(el, text, el.selectionEnd);
+      if (caretLine.line === caretLine.lines - 1) {
+        event.preventDefault();
+        beginEdit(index + 1, 0);
+      }
     }
   };
 
@@ -712,7 +852,7 @@ export function LiveMarkdownEditor({
                   <p className="note-live__blank" aria-hidden="true" />
                 )
               ) : (
-                <MarkdownView markdown={block} slug={slug} />
+                <MarkdownView markdown={block} slug={slug} resolveWiki={resolveWiki} />
               )}
             </div>
           ),

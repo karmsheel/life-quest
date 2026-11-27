@@ -232,9 +232,20 @@ describe("decisions inbox cards e2e", () => {
       `only ${dark.fullyVisibleCards.length} whole cards fit on the sheet`,
     );
     for (const one of dark.cards.filter((entry) => entry.status === "pending")) {
-      assert.equal(one.buttons.length, 2, `${one.id} should offer Approve and Reject`);
       const labels = one.buttons.map((button) => button.label).sort();
-      assert.deepEqual(labels, ["Approve", "Reject"]);
+      // The amend feature gives an editable proposal a third control: Edit sits
+      // between the two answers. A pairing Decision proposes a connection, not a
+      // document, so it has nothing to correct and keeps the answer pair.
+      assert.ok(
+        labels.includes("Approve") && labels.includes("Reject"),
+        `${one.id} does not offer both answers: ${JSON.stringify(labels)}`,
+      );
+      if (one.id === "decision-pairing") {
+        assert.deepEqual(labels, ["Approve", "Reject"]);
+      } else {
+        assert.equal(one.buttons.length, 3, `${one.id} should offer Approve, Edit and Reject`);
+        assert.deepEqual(labels, ["Approve", "Edit", "Reject"]);
+      }
       for (const button of one.buttons) {
         assert.ok(button.box.height >= 40, `${one.id} ${button.label} is ${button.box.height}px tall`);
         assert.ok(button.box.width >= 110, `${one.id} ${button.label} is ${button.box.width}px wide`);

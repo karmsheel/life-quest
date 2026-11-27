@@ -15,6 +15,7 @@ import {
   runSavedView,
   runViewBlocks,
   saveView,
+  unlockDomain,
   upsertRow,
   windowBounds,
 } from "@lifequest/vault-core";
@@ -97,6 +98,12 @@ describe("view windows and period averages e2e", () => {
 
     const created = await createVault(vaultRoot, "E2E Period Average");
     assert.equal(created.ok, true, created.ok ? "" : created.error);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const db = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
     assert.equal(db.ok, true, db.ok ? "" : db.error);
@@ -357,21 +364,36 @@ describe("view windows and period averages e2e", () => {
     // ── 8. the door: the companion's own two calls ─────────────────────────
     // preview_view is what the agent checks with; save_view is the one call that
     // saves AND pins. Both go through executeViewTool, which is the function the
-    // app's MCP door calls for every companion tool call.
-    const preview = (await executeViewTool(vaultRoot, ACTOR, "preview_view", {
-      domainSlug: "financial",
-      spec: monthlyAverage,
-    })) as { blocks?: { rows: [string, number][] }[]; error?: { message: string } };
+    // app's MCP door calls for every companion tool call — at the SAME injected
+    // instant the direct runs above use, because "the previous four whole months"
+    // is a claim about the clock: a door call left on the wall clock would start
+    // answering a different number the month after this fixture was written.
+    const preview = (await executeViewTool(
+      vaultRoot,
+      ACTOR,
+      "preview_view",
+      {
+        domainSlug: "financial",
+        spec: monthlyAverage,
+      },
+      noonOn(today),
+    )) as { blocks?: { rows: [string, number][] }[]; error?: { message: string } };
     checks.preview = preview.error ?? preview.blocks?.[0]?.rows ?? null;
     assert.equal(preview.error, undefined, `preview_view refused the average card: ${preview.error?.message}`);
     assert.deepEqual(preview.blocks?.[0]?.rows, [["value", 250]]);
 
-    const applied = (await executeViewTool(vaultRoot, ACTOR, "save_view", {
-      domainSlug: "financial",
-      boardSlug: null,
-      spec: { ...monthlyAverage, title: "Average monthly spend (previous 4 months)" },
-      span: 2,
-    })) as {
+    const applied = (await executeViewTool(
+      vaultRoot,
+      ACTOR,
+      "save_view",
+      {
+        domainSlug: "financial",
+        boardSlug: null,
+        spec: { ...monthlyAverage, title: "Average monthly spend (previous 4 months)" },
+        span: 2,
+      },
+      noonOn(today),
+    )) as {
       applied?: boolean;
       viewId?: string;
       card?: { blocks?: { rows: [string, number][] }[] };
@@ -396,10 +418,16 @@ describe("view windows and period averages e2e", () => {
     // come back naming the field to add rather than the rule it broke.
     const refusals: Record<string, string> = {};
     const refused = async (label: string, spec: Record<string, unknown>): Promise<void> => {
-      const reply = (await executeViewTool(vaultRoot, ACTOR, "preview_view", {
-        domainSlug: "financial",
-        spec: { ...monthlyAverage, ...spec },
-      })) as {
+      const reply = (await executeViewTool(
+        vaultRoot,
+        ACTOR,
+        "preview_view",
+        {
+          domainSlug: "financial",
+          spec: { ...monthlyAverage, ...spec },
+        },
+        noonOn(today),
+      )) as {
         error?: {
           message: string;
           fix?: {

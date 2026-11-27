@@ -1,23 +1,33 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  CalendarClock,
   FlaskConical,
+  Inbox,
+  Keyboard,
   Layers,
   MessageCircleQuestion,
+  MessageSquareText,
   Palette,
   RefreshCw,
   ScrollText,
   Sparkles,
+  Type,
   User,
 } from "lucide-react";
 
 export type SettingsViewId =
   | "appearance"
+  | "shortcuts"
+  | "reading"
+  | "composer"
   | "domains"
   | "vault"
   | "hermes"
   | "agent"
+  | "review"
   | "questions"
+  | "decisions"
   | "updates"
   | "about"
   | "developer";
@@ -55,8 +65,78 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
+    id: "shortcuts",
+    label: "Keyboard",
+    icon: Keyboard,
+    keywords: [
+      "keyboard",
+      "shortcut",
+      "shortcuts",
+      "key",
+      "keys",
+      "binding",
+      "bindings",
+      "hotkey",
+      "hotkeys",
+      "movement",
+      "movements",
+      "navigate",
+      "navigation",
+      "toggle",
+      "panel",
+    ],
+  },
+  {
+    id: "reading",
+    label: "Chat display",
+    icon: Type,
+    keywords: [
+      "chat",
+      "display",
+      "text",
+      "font",
+      "type",
+      "typography",
+      "size",
+      "zoom",
+      "line",
+      "spacing",
+      "line spacing",
+      "reading",
+      "prose",
+      "dock",
+      "transcript",
+    ],
+  },
+  {
+    id: "composer",
+    label: "Composer",
+    icon: MessageSquareText,
+    keywords: [
+      "composer",
+      "message",
+      "messages",
+      "chat",
+      "box",
+      "send",
+      "sends",
+      "enter",
+      "return",
+      "ctrl",
+      "control",
+      "cmd",
+      "command",
+      "modifier",
+      "newline",
+      "line break",
+      "keyboard",
+      "key",
+      "keys",
+    ],
+  },
+  {
     id: "domains",
-    label: "Domains",
+    label: "Areas",
     icon: Layers,
     keywords: ["domain", "lens", "area", "archive", "life area", "focus"],
   },
@@ -103,6 +183,27 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
+    id: "review",
+    label: "Review",
+    icon: CalendarClock,
+    keywords: [
+      "review",
+      "reviews",
+      "daily",
+      "weekly",
+      "monthly",
+      "quarterly",
+      "yearly",
+      "cadence",
+      "opens",
+      "window",
+      "schedule",
+      "time",
+      "available",
+      "availability",
+    ],
+  },
+  {
     id: "questions",
     label: "Questions",
     icon: MessageCircleQuestion,
@@ -118,6 +219,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "chat",
       "ask",
       "suggested",
+    ],
+  },
+  {
+    id: "decisions",
+    label: "Decisions",
+    icon: Inbox,
+    keywords: [
+      "decision",
+      "decisions",
+      "inbox",
+      "proposal",
+      "proposals",
+      "approve",
+      "approval",
+      "auto",
+      "automatic",
+      "open",
+      "close",
+      "popup",
+      "sheet",
     ],
   },
   {
@@ -138,7 +259,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "developer",
     label: "Developer",
     icon: FlaskConical,
-    keywords: ["developer", "flag", "flags", "bench", "experimental", "debug", "preview"],
+    keywords: [
+      "developer",
+      "flag",
+      "flags",
+      "bench",
+      "experimental",
+      "debug",
+      "preview",
+      "logo",
+      "brand",
+      "wordmark",
+      "lockup",
+    ],
   },
 ];
 

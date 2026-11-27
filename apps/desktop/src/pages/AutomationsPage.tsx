@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { formatLocalIsoDate, periodTodayLocalIso } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import {
   automationContextFor,
@@ -39,7 +40,7 @@ const WEEKDAYS = [
 ] as const;
 
 const NEW_PROMPT =
-  "Summarize what changed in the Daily Note for {{dateLabel}} and name the three things I should do next.";
+  "Summarize what changed in the Daily Journal for {{dateLabel}} and name the three things I should do next.";
 
 type Draft = {
   id: string | null;
@@ -226,7 +227,7 @@ export default function AutomationsPage() {
         const body = note.ok ? note.value.bodyMarkdown : "";
         if (!body.trim()) {
           setPageError(
-            "No Daily Note for today. Write today's note first, or run this from its page.",
+            "No Daily Journal for today. Write today's note first, or run this from its page.",
           );
           return;
         }
@@ -239,11 +240,13 @@ export default function AutomationsPage() {
         setPageError(created.error);
         return;
       }
-      chatDock.requestSession(
-        created.value.id,
-        renderAutomationPrompt(record.prompt, { date, dateLabel }),
-        context,
-      );
+      chatDock.requestSession({
+        id: created.value.id,
+        kickoff: renderAutomationPrompt(record.prompt, { date, dateLabel }),
+        automationContext: context,
+        session: created.value,
+        icon: "automation",
+      });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -366,6 +369,7 @@ export default function AutomationsPage() {
     <div className="automations-page">
       <header className="automations-page__header">
         <div>
+          <WingEyebrow page="Automations" />
           <h1 className="stub-page__title">Automations</h1>
           <p className="stub-page__desc muted">
             One-click and scheduled jobs that read a page and open a chat with the
@@ -438,7 +442,7 @@ export default function AutomationsPage() {
                   })
                 }
               >
-                <option value="daily-note">Daily Note</option>
+                <option value="daily-note">Daily Journal</option>
                 <option value="none">No page (prompt only)</option>
               </select>
             </label>
@@ -557,7 +561,7 @@ export default function AutomationsPage() {
           </label>
           <p className="automation-editor__hint muted">
             Use {"{{dateLabel}}"} for the day the automation runs, and{" "}
-            {"{{date}}"} for its ISO date. With the Daily Note in context, the
+            {"{{date}}"} for its ISO date. With the Daily Journal in context, the
             whole note is handed to the agent.
           </p>
 
@@ -627,7 +631,7 @@ export default function AutomationsPage() {
           <p>No automations yet. Create one to put a page in front of the agent.</p>
         </div>
       ) : (
-        <>
+        <div className="automations-page__groups">
           <section
             className="automations-page__group"
             aria-labelledby="automations-manual"
@@ -672,7 +676,7 @@ export default function AutomationsPage() {
               <p className="muted">None yet.</p>
             )}
           </section>
-        </>
+        </div>
       )}
 
       {dialog}

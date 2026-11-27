@@ -164,13 +164,20 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
 
   // Night inverts the day ladder for every dark palette: the page canvas — the
   // sheet, the dock, the boot pane — is the palette's deepest ink, the cards and
-  // the panels step up off it, and the mat the rail and the titlebar wear is the
-  // palette's quiet band, the very ink `--muted-surface` gives the dock's bottom
-  // action row. The frame and that row are then one material in every skin, and
-  // nothing in the window paints below the page.
+  // the panels step up off it, and the mat the rail and the window frame wear is
+  // the palette's quiet band, `--muted-surface`. Nothing in the window paints
+  // below the page.
+  //
+  // The titlebar and the dock's bottom action row are the exception: at night they
+  // step halfway from the mat toward the page — darker than the rail they cap,
+  // still lighter than the page — so the window strip above and the dock's bar
+  // below read as chrome rather than another stretch of the mat. Day keeps the
+  // one-band rule: there the strip and the bar stay the mat.
+  const canvasBase = dark ? muted : canvasBaseFromColors(c, elevated, dark);
   const vars: ForgeSkinVars = {
     "--background": dark ? bg : elevated,
-    "--canvas-base": dark ? muted : canvasBaseFromColors(c, elevated, dark),
+    "--canvas-base": canvasBase,
+    "--titlebar-bg": dark ? mix(canvasBase, bg, 0.5) : canvasBase,
     "--foreground": c.foreground,
     "--card": elevated,
     "--card-foreground": c.cardForeground ?? c.foreground,
@@ -205,6 +212,14 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
     "--primary-hover-foreground": readableOn(accentHover),
     "--accent-soft": accentSoft,
     "--accent-tint": accentTint,
+    // The logo's three inks, written on every palette: a theme that names them
+    // (Forge night is the brand trio) keeps its own, and one that does not gets
+    // a derived trio that can never disappear into its surface — the word in the
+    // palette's ink, the emblem in its brand accent. This is the "logo follows
+    // the theme" half of the contract; the overrides are the variables themselves.
+    "--life-color": pickHex(c.logoLife, c.foreground),
+    "--icon-color": pickHex(c.logoIcon, c.primary),
+    "--uest-color": pickHex(c.logoUest, c.logoLife, c.foreground),
     "--red-bg": mix(destructive, bg, dark ? 0.82 : 0.9),
     "--red-border": mix(destructive, bg, dark ? 0.65 : 0.75),
     ...composerVars(c, border),
@@ -268,10 +283,24 @@ export function applySkinVars(
   }
 }
 
+/**
+ * Take a skin off the element: remove every token a skin may write, so the
+ * defaults in `tokens.css` are what is left.
+ *
+ * `applySkin` calls this before it writes the next palette. A skin writes only
+ * the tokens it declares, and some tokens are conditional: a palette with a
+ * `composerRing` also gets the accent-tinted shadows and fills from
+ * `shadowVars`, while the other built-ins leave those to `tokens.css`. Without
+ * the clear, switching from such a skin to one that declares no line accent
+ * leaves the old accent's shadows behind — Forge's orange glow survived a
+ * switch to the colourless Graphite and hung around every raised control as an
+ * orange halo.
+ */
 export function clearSkinVars(el: HTMLElement = document.documentElement): void {
   const toRemove = [
     "--background",
     "--canvas-base",
+    "--titlebar-bg",
     "--foreground",
     "--card",
     "--card-foreground",
@@ -302,6 +331,9 @@ export function clearSkinVars(el: HTMLElement = document.documentElement): void 
     "--primary-hover-foreground",
     "--accent-soft",
     "--accent-tint",
+    "--life-color",
+    "--icon-color",
+    "--uest-color",
     "--red-bg",
     "--red-border",
     "--green",
@@ -339,8 +371,16 @@ export function applySkin(
   mode: "light" | "dark",
   el: HTMLElement = document.documentElement,
 ): void {
-  // Clear previous skin typography so non-display skins fall back to tokens.css.
-  for (const key of FONT_VARS) el.style.removeProperty(key);
+  // The old palette leaves before the new one arrives. A skin only writes the
+  // tokens it declares, so a token the last skin wrote — and this one leaves to
+  // `tokens.css` — would otherwise survive the switch. The conditional
+  // `shadowVars`/fill block is the one that bites: Forge and Nous carry a
+  // `composerRing`, so they write accent-tinted shadows on top of the shipped
+  // ones, while Graphite writes none and would inherit them — the orange halo a
+  // Forge → Graphite switch left around the Daily Note's raised Analyze key.
+  // Clearing first means a switch lands on the same tokens a fresh window in
+  // that skin would paint.
+  clearSkinVars(el);
   applySkinVars(forgeVarsFromSkin(skin, mode), el);
   el.setAttribute("data-skin", skin.name);
 }

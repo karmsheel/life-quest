@@ -62,6 +62,9 @@ type Box = {
 };
 
 type State = {
+  /** How many `.update-badge__label` captions the bar holds. */
+  captionCount: number;
+  viewport: { width: number; height: number };
   reducedMotion: boolean;
   calls: {
     check: number;
@@ -79,6 +82,12 @@ type State = {
     ariaLabel: string | null;
     ariaHaspopup: string | null;
     ariaExpanded: string | null;
+    inVersion: boolean;
+    inRail: boolean;
+    inHeader: boolean;
+    inFoot: boolean;
+    inDockBar: boolean;
+    underLockup: boolean;
     boxShadow: string;
     color: string;
     background: string;
@@ -106,10 +115,60 @@ type State = {
       resolved: { accent: string; accentFill: string };
     };
   } | null;
+  version: {
+    box: Box;
+    padding: { top: number; right: number; bottom: number; left: number };
+    display: string;
+    flexDirection: string;
+    alignItems: string;
+    justifyContent: string;
+    gap: string;
+    /** The slot is not the query container; the header is (see the header fields). */
+    containerType: string;
+    containerName: string;
+    inHeader: boolean;
+    containsChip: boolean;
+    containsLabel: boolean;
+    childCount: number;
+    firstChildIsChip: boolean;
+    lastChildIsLabel: boolean;
+    lastControlIsChip: boolean;
+    lastControlAriaLabel: string | null;
+    controls: {
+      tag: string;
+      ariaLabel: string | null;
+      testId: string | null;
+      className: string;
+      box: Box | null;
+    }[];
+    /** The header's own box and container identity: the words' retreat is a query on it. */
+    headerBox: Box | null;
+    headerContainerType: string | null;
+    headerContainerName: string | null;
+    brandBox: Box | null;
+    footBox: Box | null;
+    footRowBox: Box | null;
+    footChildCount: number | null;
+    logRowBox: Box | null;
+    vaultBox: Box | null;
+    toggleInFootRow: boolean;
+    metaRowRetired: boolean;
+  } | null;
+  toggle: {
+    ariaLabel: string | null;
+    box: Box;
+    display: string;
+  } | null;
   label: {
     tag: string;
     text: string;
     dataLabel: string | null;
+    inVersion: boolean;
+    underChip: boolean;
+    /** `none` in the thin rail: the caption leaves the layout, it does not shrink. */
+    display: string;
+    visibility: string;
+    focusables: number;
     box: { left: number; right: number; top: number; bottom: number } | null;
     color: string;
     fontSize: string;
@@ -118,21 +177,32 @@ type State = {
     role: string | null;
     overflow: { scrollWidth: number; clientWidth: number };
   } | null;
-  logRow: {
-    box: { left: number; right: number; top: number; bottom: number } | null;
-    text: string;
-  } | null;
   rail: {
-    box: { left: number; right: number };
+    box: Box;
     scrollTop: number;
     scrollHeight: number;
     clientHeight: number;
+    display: string;
+    direction: string;
+  } | null;
+  railHeader: {
+    box: Box;
+    display: string;
+    containerType: string;
+    containerName: string;
   } | null;
   dialog: Dialog | null;
   backdropPresent: boolean;
   chipFocused: boolean | null;
   listenerAttached: boolean | null;
-  dom: { hasRail: boolean; hasChip: boolean; errors: string[] | null };
+  dom: {
+    hasRail: boolean;
+    hasVersionSlot: boolean;
+    hasChip: boolean;
+    hasShell: boolean;
+    metaRowRetired: boolean;
+    errors: string[] | null;
+  };
   settings: {
     summaryState: string | null;
     summaryText: string | null;
@@ -179,6 +249,13 @@ type Report = {
     animation: string | null;
   };
   screenshots: string[];
+  /** The thin-rail probe: what the icon column keeps of the version line. */
+  narrowGlow: {
+    reach: number;
+    room: number;
+    captionDisplay: string | null;
+    version: Box | null;
+  };
 };
 
 /** The `rgb(...)` inside an `rgb()`/`rgba()` colour, or a `color(srgb …)` one. */
@@ -270,6 +347,123 @@ describe("auto-update badge", () => {
       afterRemount,
     } = report.states;
 
+    // The badge's home is the rail's version slot: the div inside the header,
+    // directly under the centred lockup, with the number and then the caption
+    // stacked and centred. The foot below is one row now — the Log, the vault chip
+    // and the collapse toggle — and the old caption row (`.nav-rail__meta`) is
+    // gone from the DOM.
+    const version = available.version;
+    assert.ok(version, "the rail's version slot rendered nothing");
+    assert.equal(available.chip?.inRail, true, "the chip left the rail");
+    assert.equal(available.chip?.inVersion, true, "the chip left the rail's version slot");
+    assert.equal(available.chip?.inHeader, true, "the chip is not inside the rail's header");
+    assert.equal(available.chip?.inFoot, false, "the chip is back in the rail's foot");
+    assert.equal(available.chip?.inDockBar, false, "the chip is still in the dock's action bar");
+    assert.equal(version?.containsChip, true, "the version slot does not contain the chip");
+    assert.equal(version?.inHeader, true, "the version slot is not inside the header");
+    assert.equal(
+      available.chip?.underLockup,
+      true,
+      `the chip is not under the lockup: chip ${JSON.stringify(available.chip?.box)}, lockup ${JSON.stringify(version?.brandBox)}`,
+    );
+    // The header's band holds the lockup and the version line, in that order, and
+    // the version line is centred on the rail's own column.
+    assert.ok(
+      Boolean(version?.box && version?.headerBox && version?.brandBox) &&
+        version.brandBox.bottom <= version.box.top + 1 &&
+        version.box.top >= version.headerBox.top &&
+        version.box.bottom <= version.headerBox.bottom,
+      `the version line is not under the lockup in the header: line ${JSON.stringify(version?.box)}, lockup ${JSON.stringify(version?.brandBox)}, header ${JSON.stringify(version?.headerBox)}`,
+    );
+    assert.ok(
+      version?.box &&
+        available.rail?.box &&
+        Math.abs(
+          (version.box.left + version.box.right) / 2 -
+            (available.rail.box.left + available.rail.box.right) / 2,
+        ) <= 2,
+      `the version line is not centred on the column: line ${JSON.stringify(version?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
+    );
+    // The version slot's only control is the chip: the words are a paragraph, and
+    // the sidebar's toggle lives in the foot row now, not beside the number.
+    assert.equal(
+      version?.childCount,
+      2,
+      `the version slot holds ${version?.childCount} children, expected the words and the number`,
+    );
+    assert.equal(version?.containsLabel, true, "the version slot does not hold the words");
+    assert.equal(
+      version?.controls.length,
+      1,
+      `the version slot holds ${version?.controls.length} controls, expected the badge alone`,
+    );
+    assert.equal(version?.lastControlIsChip, true, "the chip is not the version slot's control");
+    assert.equal(version?.firstChildIsChip, true, "the number is not the version slot's first line");
+    assert.equal(version?.lastChildIsLabel, true, "the caption is not the version slot's second line");
+    assert.equal(
+      version?.lastControlAriaLabel,
+      available.chip?.ariaLabel,
+      `the version slot's control is ${JSON.stringify(version?.lastControlAriaLabel)}`,
+    );
+    assert.equal(
+      available.toggle?.ariaLabel,
+      "Collapse sidebar",
+      `the sidebar toggle is labelled ${JSON.stringify(available.toggle?.ariaLabel)}`,
+    );
+    assert.equal(
+      version?.toggleInFootRow,
+      true,
+      "the sidebar toggle left the rail's foot row",
+    );
+    // The foot is one row now: the Log, the vault chip and the toggle, with no
+    // version line under them and no retired caption row anywhere.
+    assert.equal(version?.metaRowRetired, true, "the retired .nav-rail__meta is back in the DOM");
+    assert.equal(
+      version?.footChildCount,
+      1,
+      `the rail's foot has ${version?.footChildCount} children, expected its one row`,
+    );
+    assert.ok(
+      Boolean(version?.footRowBox && version?.logRowBox && version?.vaultBox) &&
+        version.logRowBox.left >= version.footRowBox.left - 1 &&
+        version.vaultBox.left >= version.logRowBox.right - 1 &&
+        Boolean(available.toggle?.box) &&
+        available.toggle.box.left >= version.vaultBox.right - 1 &&
+        available.toggle.box.right <= version.footRowBox.right + 1,
+      `the foot row is not Log / vault / toggle: Log ${JSON.stringify(version?.logRowBox)}, vault ${JSON.stringify(version?.vaultBox)}, toggle ${JSON.stringify(available.toggle?.box)}, row ${JSON.stringify(version?.footRowBox)}`,
+    );
+    assert.ok(
+      Boolean(version?.box && version?.footRowBox) && version.box.bottom < version.footRowBox.top,
+      `the version line reached the foot: line ${JSON.stringify(version?.box)}, foot row ${JSON.stringify(version?.footRowBox)}`,
+    );
+    // Inside the version line's own box: the number is the line's content, not
+    // something bleeding into the rail's gutter.
+    assert.ok(
+      available.chip &&
+        version &&
+        available.chip.box.left >= version.box.left + version.padding.left - 0.5 &&
+        available.chip.box.right <= version.box.right - version.padding.right + 0.5 &&
+        available.chip.box.top >= version.box.top &&
+        available.chip.box.bottom <= version.box.bottom,
+      `the chip spills past the version line's box: chip ${JSON.stringify(available.chip?.box)}, line ${JSON.stringify(version?.box)}, padding ${JSON.stringify(version?.padding)}`,
+    );
+    // The version line stays inside the header and inside the rail's column.
+    assert.ok(
+      Boolean(version?.box && version?.headerBox && available.rail?.box) &&
+        version.box.left >= available.rail.box.left &&
+        version.box.right <= available.rail.box.right,
+      `the version line left the rail's column: line ${JSON.stringify(version?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
+    );
+    // The chip sits inside the version line. The line is the taller of the two
+    // once the caption is stacked under the number.
+    assert.ok(
+      available.chip &&
+        version &&
+        available.chip.box.height <=
+          version.box.height - version.padding.top - version.padding.bottom + 1,
+      `the chip is taller than the version line: chip ${available.chip?.box.height}px, line ${JSON.stringify(version?.box)}`,
+    );
+
     // The version line is the operator's manual way in, so it is a control in
     // every state — but a quiet one: no glow, no caption, no release named until
     // the feed has one.
@@ -306,6 +500,24 @@ describe("auto-update badge", () => {
       upToDate.label,
       null,
       `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
+    );
+    // The caption is a second line, so the version line and the header band are
+    // taller while an offer is up. The band keeps its place and its width, and
+    // it grows by no more than the extra line.
+    const headerGrowth =
+      (available.railHeader?.box.height ?? 0) - (upToDate.railHeader?.box.height ?? 0);
+    const lineGrowth =
+      (available.version?.box.height ?? 0) - (upToDate.version?.box.height ?? 0);
+    assert.ok(
+      available.railHeader?.box &&
+        upToDate.railHeader?.box &&
+        Math.abs(available.railHeader.box.left - upToDate.railHeader.box.left) <= 1 &&
+        Math.abs(available.railHeader.box.width - upToDate.railHeader.box.width) <= 1 &&
+        Math.abs(available.railHeader.box.top - upToDate.railHeader.box.top) <= 1 &&
+        headerGrowth > 0 &&
+        lineGrowth > 0 &&
+        headerGrowth <= lineGrowth + 1,
+      `the caption did not grow the header under the version: available ${JSON.stringify(available.railHeader?.box)} / line ${available.version?.box.height}px, up-to-date ${JSON.stringify(upToDate.railHeader?.box)} / line ${upToDate.version?.box.height}px`,
     );
 
     // The manual check at rest: one launch check, then the operator's click
@@ -419,9 +631,11 @@ describe("auto-update badge", () => {
       "the build number stopped reading the running version",
     );
 
-    // The caption: a glowing pill is a state without a sentence, so the rail says
-    // what it means — above the pill, only while it is true, and never as a
-    // second focus stop in a column of nav rows.
+    // The caption: a glowing number is a state without a sentence, so the rail's
+    // version slot says what it means — the words exist while the offer does,
+    // centred on the line under the number, and never as a second focus stop in
+    // the chrome. The wide rail has room for them; the thin rail retires them
+    // (the probe below is the other half of that claim).
     assert.equal(
       available.label?.text,
       "Update available",
@@ -434,13 +648,41 @@ describe("auto-update badge", () => {
       "the caption became a focus stop with nothing to do",
     );
     assert.equal(available.label?.role, null, "the caption claims a role it does not have");
-    assert.ok(
-      (available.label?.box?.bottom ?? Infinity) <= (available.chip?.box?.top ?? -Infinity),
-      `the caption is not above the build number: ${JSON.stringify(available.label?.box)} vs ${JSON.stringify(available.chip?.box)}`,
+    assert.equal(
+      available.label?.focusables,
+      0,
+      "the caption grew a control of its own",
+    );
+    assert.equal(
+      available.label?.inVersion,
+      true,
+      "the caption is not inside the rail's version slot",
+    );
+    assert.equal(
+      available.label?.underChip,
+      true,
+      "the caption is not the line under the chip",
+    );
+    assert.notEqual(
+      available.label?.display,
+      "none",
+      `the wide rail retired the caption (display: ${JSON.stringify(available.label?.display)})`,
     );
     assert.ok(
-      (available.logRow?.box?.bottom ?? Infinity) <= (available.label?.box?.top ?? -Infinity),
-      `the caption landed on the Log row: ${JSON.stringify(available.logRow?.box)} vs ${JSON.stringify(available.label?.box)}`,
+      available.label?.box &&
+        available.chip?.box &&
+        available.label.box.top >= available.chip.box.bottom - 1 &&
+        available.label.box.top - available.chip.box.bottom <= 12,
+      `the caption is not under the chip: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
+    );
+    assert.ok(
+      available.label?.box &&
+        available.chip?.box &&
+        Math.abs(
+          (available.label.box.left + available.label.box.right) / 2 -
+            (available.chip.box.left + available.chip.box.right) / 2,
+        ) <= 2,
+      `the caption is not centred on the chip: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
     );
     assert.ok(
       (available.label?.overflow.scrollWidth ?? Infinity) <=
@@ -474,7 +716,7 @@ describe("auto-update badge", () => {
     );
     assert.equal(
       available.chip?.halo.animationName,
-      "nav-rail-version-breathe",
+      "update-badge-breathe",
       "the halo does not breathe",
     );
 
@@ -501,11 +743,87 @@ describe("auto-update badge", () => {
       assert.equal(layer.x, 0, `a halo layer is offset horizontally by ${layer.x}px`);
       assert.equal(layer.y, 0, `a halo layer is offset vertically by ${layer.y}px — that is a drop shadow`);
     }
-    // And it has to fit: the rail clips its overflow at its own edge, so a bloom
-    // reaching past the padding around the chip would be sliced off flat.
+    // And it has to fit: the bar runs to the window's corner and the dock clips
+    // at that edge, so a bloom reaching past the bar's own box would be sliced
+    // off flat.
     assert.ok(
       report.glow.reach <= report.glow.room,
-      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the rail gives it — it would be clipped`,
+      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the header gives the version line — it would be clipped`,
+    );
+
+    // ── the thin rail: the version line retires with the words ───────────────
+    // The header is the query's container, measured: collapsing the rail to its
+    // icon column must take the whole version slot out of the layout rather than
+    // squeeze the build number into the column's edge, where its halo would be
+    // clipped. The wide rail's version line comes back on reopening.
+    const narrow = report.states.narrow;
+    assert.ok(narrow, "the rig never collapsed the rail");
+    assert.ok(
+      (narrow.rail?.box.width ?? Number.POSITIVE_INFINITY) <= 58,
+      `the rail did not actually collapse: ${JSON.stringify(narrow.rail?.box)}`,
+    );
+    assert.equal(
+      narrow.version?.headerContainerName,
+      "rail-header",
+      `the header's container name is ${JSON.stringify(narrow.version?.headerContainerName)}`,
+    );
+    assert.ok(
+      (narrow.version?.headerContainerType ?? "").includes("inline-size"),
+      `the header's container-type is ${JSON.stringify(narrow.version?.headerContainerType)}`,
+    );
+    assert.equal(
+      narrow.version?.display,
+      "none",
+      `the thin rail left the version line in the layout (display: ${JSON.stringify(narrow.version?.display)})`,
+    );
+    assert.equal(
+      narrow.captionCount,
+      1,
+      `the thin rail holds ${narrow.captionCount} captions, expected the retired one`,
+    );
+    assert.equal(
+      narrow.label?.inVersion,
+      true,
+      "the retired caption is not the version slot's own element",
+    );
+    // The slot takes no room in the icon column: the number is not painted, and
+    // the expand emblem is not here (it moved up into the header).
+    assert.equal(
+      narrow.chip?.inRail,
+      true,
+      "the build number left the rail's DOM",
+    );
+    assert.ok(
+      narrow.chip?.box &&
+        narrow.chip.box.width === 0 &&
+        narrow.chip.box.height === 0,
+      `the number still paints in the thin rail: ${JSON.stringify(narrow.chip?.box)}`,
+    );
+    assert.equal(
+      narrow.toggle,
+      null,
+      "the sidebar toggle stayed in the thin rail's version line",
+    );
+    // ...and reopening leaves the shipped wide rail untouched: the version line
+    // and the number come back to the boxes they had, and the words return.
+    const narrowRestored = report.states.narrowRestored;
+    assert.ok(narrowRestored, "the rig never reopened the rail");
+    assert.notEqual(
+      narrowRestored.label?.display,
+      "none",
+      "the caption stayed retired after the rail came back wide",
+    );
+    assert.equal(
+      narrowRestored.label?.text,
+      "Update available",
+      "the restored caption does not read 'Update available'",
+    );
+    assert.ok(
+      narrowRestored.version?.box &&
+        available.version?.box &&
+        Math.abs(narrowRestored.version.box.width - available.version.box.width) <= 1 &&
+        Math.abs(narrowRestored.version.box.left - available.version.box.left) <= 1,
+      `the restored version line is ${JSON.stringify(narrowRestored.version?.box)}, not the shipped ${JSON.stringify(available.version?.box)}`,
     );
 
     // The chip wears the palette's own inks, not new ones.
@@ -520,11 +838,22 @@ describe("auto-update badge", () => {
       `the chip is not on the accent's translucent fill: ${available.chip?.background}`,
     );
 
-    // The glow must not break the rail's own contract: a halo is not a reflow.
-    assert.equal(available.rail?.scrollTop, 0, "the glow scrolled the rail's topband away");
+    // The rail's own contract still holds — it is one column with its topband in
+    // the window's top strip, and it does not scroll — but the badge no longer
+    // lives in it, so no claim here says the rail grows for the glow.
+    assert.equal(available.rail?.scrollTop, 0, "the rail scrolled its topband away");
     assert.ok(
       (available.rail?.scrollHeight ?? 0) <= (available.rail?.clientHeight ?? 0),
-      `the glow made the rail taller than its column: ${available.rail?.scrollHeight}px in ${available.rail?.clientHeight}px`,
+      `the rail is taller than its column: ${available.rail?.scrollHeight}px in ${available.rail?.clientHeight}px`,
+    );
+    assert.equal(available.rail?.display, "flex", "the rail is not a flex column");
+    assert.equal(available.rail?.direction, "column", "the rail stopped being one column");
+    assert.ok(
+      available.railHeader?.box &&
+        Math.abs(
+          available.railHeader.box.width - (available.rail?.box.width ?? 0),
+        ) <= 2,
+      `the rail's topband no longer spans its column: topband ${JSON.stringify(available.railHeader?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
     );
 
     // One check per launch, even under StrictMode's second mount effect.
@@ -603,6 +932,11 @@ describe("auto-update badge", () => {
     assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
     assert.equal(junk.dialog, null, "a junk answer opened the popup unasked");
     assert.equal(
+      junk.chip?.inVersion,
+      true,
+      "a junk answer took the chip out of the rail's version slot",
+    );
+    assert.equal(
       junk.label,
       null,
       `a junk answer claimed an update was available: ${JSON.stringify(junk.label?.text)}`,
@@ -641,9 +975,9 @@ describe("auto-update badge", () => {
       `unmounting with a junk progress handle threw: ${JSON.stringify(afterRemount.dom.errors)}`,
     );
     assert.equal(
-      afterRemount.rail !== null && afterRemount.chip?.tag === "button",
+      afterRemount.version?.containsChip === true && afterRemount.chip?.tag === "button",
       true,
-      "the rail did not survive the provider's remount",
+      "the rail's version slot did not survive the provider's remount",
     );
 
     for (const file of report.screenshots) {
@@ -687,7 +1021,7 @@ describe("auto-update badge", () => {
     const {
       developer,
       previewOn,
-      previewRail,
+      previewBar,
       previewDialog,
       shadowed,
       shadowedDialog,
@@ -795,36 +1129,43 @@ describe("auto-update badge", () => {
     assert.equal(
       previewOn.settings?.storedPreview,
       "1",
-      "turning the switch on did not write the preference the rail reads",
+      "turning the switch on did not write the preference the badge reads",
     );
     assert.equal(
       previewOn.settings?.previewState,
       "previewing",
-      `the page misreported what the rail is showing: ${previewOn.settings?.previewState}`,
+      `the page misreported what the badge is showing: ${previewOn.settings?.previewState}`,
     );
 
-    // And the rail really glows from it, with the feed offering nothing.
+    // And the dock's bar really glows from it, with the feed offering nothing.
     assert.equal(
-      previewRail.chip?.tag,
+      previewBar.chip?.tag,
       "button",
       "the preview did not turn the build number into a control",
     );
     assert.equal(
-      previewRail.chip?.dataPreview,
+      previewBar.chip?.dataPreview,
       "true",
       "the glowing chip does not say it is a preview",
     );
     // The preview is the surface built to catch a broken affordance before a
     // release, so it has to show the caption the release will.
     assert.equal(
-      previewRail.label?.dataLabel,
+      previewBar.label?.dataLabel,
       "preview",
-      `the preview does not say the caption is a preview: ${JSON.stringify(previewRail.label)}`,
+      `the preview does not say the caption is a preview: ${JSON.stringify(previewBar.label)}`,
     );
     assert.equal(
-      previewRail.label?.text,
+      previewBar.label?.text,
       "Update available",
-      `the preview dropped the caption: ${JSON.stringify(previewRail.label?.text)}`,
+      `the preview dropped the caption: ${JSON.stringify(previewBar.label?.text)}`,
+    );
+    // The caption element is the same one the release draws, in the rail's
+    // version slot and marked as a preview.
+    assert.equal(
+      previewBar.label?.inVersion,
+      true,
+      "the preview's caption left the rail's version slot",
     );
     assert.equal(
       report.glow.layers.length,
@@ -884,7 +1225,7 @@ describe("auto-update badge", () => {
     );
 
     // The switch clears up after itself: a preference left behind would glow the
-    // rail on the next launch with no visible cause.
+    // badge on the next launch with no visible cause.
     assert.equal(
       developerOn.settings?.previewChecked,
       true,

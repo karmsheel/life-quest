@@ -30,6 +30,7 @@ import {
   executeViewTool,
   listDecisions,
   setPinBoardLocked,
+  unlockDomain,
   upsertRow,
   USER_ACTOR,
   withDecisionDisplayLabels,
@@ -68,6 +69,12 @@ describe("decision field names on read", () => {
     try {
       const created = await createVault(root, "Decision Fields");
       assert.equal(created.ok, true, created.ok ? "" : created.error);
+      const unlockFinancial = await unlockDomain(root, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
 
       const database = await createDatabase(root, "financial", { name: "Bottles" });
       assert.equal(database.ok, true, database.ok ? "" : database.error);

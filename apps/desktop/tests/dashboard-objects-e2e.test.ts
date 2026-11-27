@@ -15,6 +15,7 @@ import {
   getView,
   runViewBlocks,
   saveView,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -79,6 +80,12 @@ describe("dashboard data objects e2e", () => {
     try {
       const created = await createVault(vaultRoot, "E2E Objects");
       assert.equal(created.ok, true, created.ok ? "" : created.error);
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
 
       const transactions = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
       assert.equal(transactions.ok, true, transactions.ok ? "" : transactions.error);
@@ -441,10 +448,16 @@ describe("dashboard data objects e2e", () => {
       assert.ok(blockProps.databaseId, "the door's schema does not advertise a per-object database");
       assert.deepEqual(VIEW_VOCABULARY.palette, ["accent", "warm", "cool", "mono"]);
 
-      const preview = (await executeViewTool(vaultRoot, ACTOR, "preview_view", {
-        domainSlug: "financial",
-        spec,
-      })) as {
+      const preview = (await executeViewTool(
+        vaultRoot,
+        ACTOR,
+        "preview_view",
+        {
+          domainSlug: "financial",
+          spec,
+        },
+        at,
+      )) as {
         error?: { message: string };
         blocks: Array<{
           id: string;
@@ -464,10 +477,16 @@ describe("dashboard data objects e2e", () => {
 
       // ── 6. the refusals name the fix ─────────────────────────────────────
       async function refused(label: string, bad: Record<string, unknown>): Promise<string> {
-        const reply = (await executeViewTool(vaultRoot, ACTOR, "preview_view", {
-          domainSlug: "financial",
-          spec: { ...spec, ...bad },
-        })) as { error?: { message: string; fix?: unknown } };
+        const reply = (await executeViewTool(
+          vaultRoot,
+          ACTOR,
+          "preview_view",
+          {
+            domainSlug: "financial",
+            spec: { ...spec, ...bad },
+          },
+          at,
+        )) as { error?: { message: string; fix?: unknown } };
         assert.ok(reply.error, `"${label}" was accepted but should have been refused`);
         assert.ok(reply.error?.fix, `"${label}" was refused without a fix`);
         return reply.error!.message;

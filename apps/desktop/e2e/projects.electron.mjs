@@ -10,16 +10,16 @@
  * repeatable artifact; the test file `tests/projects-e2e.test.ts` refuses a
  * report that does not hold.
  *
- * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real `TopBar`,
- * `WingProvider`/`wingForPath`) with the real `ProjectsPage` and `ProjectPage` on
- * their routes, against a recording stub vault. The claims, and what makes each
- * falsifiable:
+ * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real
+ * `WindowTitleBar` with its domain tab, `WingProvider`/`wingForPath`) with the
+ * real `ProjectsPage` and `ProjectPage` on their routes, against a recording stub
+ * vault. The claims, and what makes each falsifiable:
  *
  *  1. `rail-execute` — a cold load of `/projects` selects Execute, and the rail's
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
  *     is the move from Plan to Execute, read off the shipped rail.
  *  2. `rail-plan` / `wing-switch` — clicking Plan shows Goals, Life Map,
- *     Architecture and NOT Projects; clicking Act lands back on `/projects`
+ *     Blueprints and NOT Projects; clicking Act lands back on `/projects`
  *     with the Projects row active. The route is the wing's own.
  *  3. `list-attributes` / `list-count` — every built-in attribute a row is
  *     specified to show is on the row: state note, status chip, priority, goal,
@@ -64,8 +64,8 @@ const SIZE = { width: 1280, height: 1000 };
 const DETAIL_SIZE = { width: 1280, height: 1180 };
 
 const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
-const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
-const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
+const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Task Manager"];
+const PLAN_RAIL = ["Goals", "Life Map", "Blueprints"];
 const LIST_ORDER = ["p-exec", "p-paused", "p-closed", "p-trip"];
 
 const SHOTS = {
@@ -136,6 +136,7 @@ const SAMPLE = `(() => {
       id: row.dataset.projectId ?? null,
       statusAttr: row.dataset.status ?? null,
       title: text(row.querySelector(".projects-row__title")),
+      type: text(row.querySelector('[data-testid="project-row-type"]')),
       status: text(row.querySelector(".projects-chip")),
       statusClass: row.querySelector(".projects-chip")?.className ?? null,
       priority: text(row.querySelector(".projects-row__priority")),
@@ -174,6 +175,9 @@ const SAMPLE = `(() => {
         domain: value(byTestId("project-detail-domain")),
         start: value(byTestId("project-detail-start")),
         target: value(byTestId("project-detail-target")),
+        projectType: value(byTestId("project-detail-type")),
+        source: value(byTestId("project-detail-source")),
+        sourceUrl: value(byTestId("project-detail-source-url")),
       }
     : null;
 
@@ -195,7 +199,7 @@ const SAMPLE = `(() => {
     pinned: links("governance"),
     footer: links("footer"),
     pageHeading: text(page && page.querySelector("h1")),
-    eyebrow: text(page && page.querySelector(".act-page__eyebrow")),
+    eyebrow: text(page && page.querySelector("[data-testid='wing-eyebrow']")),
     count: text(page && page.querySelector(".projects-page__count")),
     headingRect: rect(heading),
     headerRect: rect(header),
@@ -249,6 +253,28 @@ const SAMPLE = `(() => {
           statusData: attr(byTestId("project-status"), "data-status"),
           summary: text(document.querySelector(".project-detail__summary")),
           meta: Array.from(document.querySelectorAll(".project-detail__meta > span")).map(text),
+          type: text(byTestId("project-type")),
+          source: text(byTestId("project-source")),
+          sourceLink: (() => {
+            const link = byTestId("project-source-link");
+            return link
+              ? { text: text(link), href: attr(link, "href"), target: attr(link, "target") }
+              : null;
+          })(),
+          repositories: (() => {
+            const section = byTestId("project-repositories");
+            if (!section) return null;
+            return {
+              heading: text(section.querySelector(".project-detail__section-title")),
+              links: Array.from(
+                section.querySelectorAll('[data-testid="project-repo-link"]'),
+              ).map((link) => ({
+                text: text(link),
+                href: attr(link, "href"),
+                target: attr(link, "target"),
+              })),
+            };
+          })(),
           stateNote: text(document.querySelector(".project-detail__state-note")),
           nextAction: text(document.querySelector(".project-detail__next-text")),
           progress: text(byTestId("project-progress-value")),
@@ -498,13 +524,13 @@ async function main() {
       )}`,
     );
     check(
-      "top-bar-tabs",
+      "rail-wing-tabs",
       same(initial.tabs.map((tab) => tab.label), WING_TABS),
       `tabs ${JSON.stringify(initial.tabs.map((tab) => tab.label))}`,
     );
     check(
       "page-eyebrow",
-      initial.eyebrow === "Execute" && initial.pageHeading === "Projects",
+      initial.eyebrow === "Projects" && initial.pageHeading === "Projects",
       `eyebrow ${JSON.stringify(initial.eyebrow)}, heading ${JSON.stringify(initial.pageHeading)}`,
     );
 
@@ -569,6 +595,14 @@ async function main() {
         initial.rows[3]?.priority === "Low priority",
       `rows ${JSON.stringify(initial.rows)}`,
     );
+    check(
+      "list-type",
+      same(
+        initial.rows.map((row) => row.type),
+        ["Desktop/web", "Service", "Mobile App", "Physical product"],
+      ),
+      `row types ${JSON.stringify(initial.rows.map((row) => row.type))}`,
+    );
     const listShot = await shoot(SHOTS.list);
 
     // ── the status filter narrows the register ──────────────────────────────
@@ -622,6 +656,18 @@ async function main() {
     await waitFor(`Boolean(document.querySelector('[data-testid="project-detail"]'))`, "the project detail to render");
     win.setContentSize(DETAIL_SIZE.width, DETAIL_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
+    // The page is taller than the viewport: grow the capture until the whole
+    // detail page — the header through the Repositories section — fits in one
+    // shot, so the artifact itself proves the section reached the screen.
+    const pageHeight = await run(`(() => {
+      const content = document.querySelector(".shell__content");
+      if (!content) return 0;
+      return Math.ceil(content.getBoundingClientRect().top + content.scrollHeight);
+    })()`);
+    if (typeof pageHeight === "number" && pageHeight > DETAIL_SIZE.height) {
+      win.setContentSize(DETAIL_SIZE.width, Math.min(pageHeight + 16, 4000));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     const detail = await sample();
     const view = detail.detail;
     check("detail-route", detail.route === "/projects/p-exec", `route ${detail.route}`);
@@ -640,6 +686,34 @@ async function main() {
         view?.progress === "60%" &&
         view?.progressData === "60",
       `header ${JSON.stringify(view)}`,
+    );
+    check(
+      "detail-source",
+      view?.type === "Desktop/web" &&
+        view?.source === "From Hermes" &&
+        view?.sourceLink?.href === "https://example.com/execute-wing" &&
+        view?.sourceLink?.text === "https://example.com/execute-wing" &&
+        view?.sourceLink?.target === "_blank",
+      `provenance ${JSON.stringify({
+        type: view?.type,
+        source: view?.source,
+        sourceLink: view?.sourceLink,
+      })}`,
+    );
+    check(
+      "detail-repositories",
+      view?.repositories?.heading === "Repositories" &&
+        same(
+          view?.repositories?.links.map((link) => link.text),
+          [
+            "https://github.com/karmsheel/life-quest",
+            "https://gitlab.com/karmsheel/vault-core",
+          ],
+        ) &&
+        (view?.repositories?.links ?? []).every(
+          (link) => link.href === link.text && link.target === "_blank",
+        ),
+      `repositories ${JSON.stringify(view?.repositories)}`,
     );
     check(
       "detail-progress",
@@ -827,6 +901,9 @@ async function main() {
     const NEW_TITLE = "Draft the winter plan";
     const NEW_SUMMARY = "Three weeks, one bag, no laptop";
     const NEW_CONTEXT = "Book the flights before the fare rises.";
+    const NEW_TYPE = "YouTube";
+    const NEW_SOURCE = "A friend's channel";
+    const NEW_URL = "https://example.com/winter-plan";
     await openModal();
     const callsBeforeCreate = (await sample()).calls.length;
     check(
@@ -839,6 +916,9 @@ async function main() {
       await typeInto('[data-testid="project-create-summary"]', NEW_SUMMARY),
       "the summary field would not take the one attribute",
     );
+    const typedType = await typeInto('[data-testid="project-create-type"]', NEW_TYPE);
+    const typedSource = await typeInto('[data-testid="project-create-source"]', NEW_SOURCE);
+    const typedUrl = await typeInto('[data-testid="project-create-source-url"]', NEW_URL);
     check(
       "modal-create-context-open",
       await run(`(() => {
@@ -887,6 +967,22 @@ async function main() {
         String(createArg?.bodyMarkdown ?? "").includes(NEW_CONTEXT),
       `modal ${JSON.stringify(created.modal)}, count ${JSON.stringify(created.count)}, ` +
         `rows ${JSON.stringify(created.rows.slice(0, 1))}, calls ${JSON.stringify(createCalls)}`,
+    );
+    check(
+      "modal-create-attrs",
+      typedType === true &&
+        typedSource === true &&
+        typedUrl === true &&
+        createArg?.projectType === NEW_TYPE &&
+        createArg?.source === NEW_SOURCE &&
+        createArg?.sourceUrl === NEW_URL &&
+        created.rows[0]?.type === NEW_TYPE,
+      `typed ${JSON.stringify({ type: typedType, source: typedSource, url: typedUrl })}, ` +
+        `call ${JSON.stringify({
+          projectType: createArg?.projectType,
+          source: createArg?.source,
+          sourceUrl: createArg?.sourceUrl,
+        })}, row type ${JSON.stringify(created.rows[0]?.type)}`,
     );
 
     // ── clean: no page errors, and nothing outside the chat surface unmodelled

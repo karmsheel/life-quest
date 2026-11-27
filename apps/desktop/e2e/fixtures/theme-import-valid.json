@@ -1,0 +1,11 @@
+{
+  "name": "import-probe",
+  "label": "Import Probe",
+  "description": "Queued for the E2E import seam: a valid theme file copied into themes/import-probe.json.",
+  "chrome": {
+    "wingSwitcher": {
+      "place": "titlebar-left",
+      "variant": "labels"
+    }
+  }
+}

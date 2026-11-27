@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,9 +22,15 @@ import {
 } from "lucide-react";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useOptionalCompanion } from "@/state/CompanionProvider";
+import { companionStatusSummary } from "@/lib/companion-status-copy";
+import { SESSION_ICON } from "@/lib/session-icon";
+import { platformMarkFor } from "@/lib/platform-mark";
 import { useConfirm } from "@/components/ui/useConfirm";
+import { Link } from "react-router-dom";
 import {
   formatSessionWhen,
+  isContinuableSession,
   sessionLabel,
 } from "../../../electron/companion-client.ts";
 import type { HermesSession } from "@/vite-env";
@@ -80,8 +87,8 @@ function writePinnedOrder(ids: string[]): void {
  * reachable once the operator had already opened the dock. Here it is part of
  * the one wide sidebar: one click loads a chat into the dock (opening it first
  * if it was collapsed). A plain click is navigation and takes over the tab on
- * screen; a middle click, or the row's "Open in new tab", is the only gesture
- * that adds a tab.
+ * screen; a middle click, the row's "Open in new tab", or the New chat button
+ * below is what adds a tab.
  *
  * Pinning follows the desktop reference client rather than two labelled
  * sections: there is no "Pinned"/"Recent" eyebrow, the pinned chats simply form
@@ -90,16 +97,20 @@ function writePinnedOrder(ids: string[]): void {
  * keyboard and rename/delete); a pinned row keeps a filled pin at rest in the
  * slot the hover pin button will occupy, so the state is legible without
  * hovering. Pinning fronts the row in the pinned band, unpinning drops it back
- * to the activity order, and archiving takes it out of the list.
+ * to the activity order, and archiving takes it out of the list. A pinned row
+ * hides the archive hover control and the Archive/Delete entries in its menu:
+ * a pin is a promise that the chat stays in the working set, so both gestures
+ * are one unpin away rather than hidden behind an accidental click. Every pin
+ * is also a tab in the dock's strip — see `ChatSessionsProvider.tabIds`.
  *
  * The header carries the two controls the list needs to stay usable as it
  * grows. The magnifier does not open a second row under the heading: the field
  * takes the header's own line, where the title and both icons were, focused and
  * ready for the query; the cross, a press anywhere outside it, or Escape hands
- * the usual header back. The sliders open the view menu that decides whether
- * archived chats are listed. Archived rows come back below the live ones in
- * their own greyed, tagged band, restorable but never openable — the chat is
- * out of the working set, but not lost.
+ * the usual header back. The sliders open the view menu that decides how
+ * archived chats are listed: hidden, listed below the live ones, or alone in
+ * their own greyed, tagged band. Archived rows are restorable but never
+ * openable — the chat is out of the working set, but not lost.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -117,8 +128,18 @@ export function ChatsSidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  /**
+   * Which side of its row the open menu hangs on. The list is the scroll port
+   * that clips the menu, so a menu drawn under a row near the foot of that port
+   * would be half outside it and reachable only by scrolling. The side is
+   * measured when the menu opens; see the layout effect below.
+   */
+  const [menuPlacement, setMenuPlacement] = useState<"below" | "above">("below");
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | null>(null);
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const needle = query.trim().toLowerCase();
   const matches = (s: HermesSession) => {
@@ -153,9 +174,43 @@ export function ChatsSidebar() {
   }, [shown, pinnedOrder]);
   const recent = shown.filter((s) => !s.pinned && !s.archived);
   const archived = shown.filter((s) => s.archived);
-  const ordered = [...pinned, ...recent];
+  /**
+   * The archived-only view drops the working list: the operator asked to work
+   * through the archive, and a live row between the archived ones would be the
+   * one thing that view is not for. The dock is untouched either way — its
+   * working list never carries an archived chat.
+   */
+  const onlyArchived = chat.archivedView === "only";
+  const ordered = onlyArchived ? [] : [...pinned, ...recent];
   const matchCount = ordered.length + archived.length;
-  const liveCount = chat.openTabs.filter((id) => chat.runOf(id).sending).length;
+  const liveCount = chat.tabIds.filter((id) => chat.runOf(id).sending).length;
+  const listEmpty =
+    chat.sessionsLoaded &&
+    (onlyArchived ? archived.length === 0 : chat.sessions.length === 0);
+  /*
+   * The rail's other state. A switch moves the list to the new agent at once;
+   * while that agent's store is being read, the rail says what it is doing
+   * rather than showing "No chats yet" — an empty rail that is wrong for a
+   * moment is what made a switch look like the chats had been wiped.
+   *
+   * An agent that cannot answer at all is a third state. The studio stays open
+   * (it opened with an agent, and an agent is a service), so the rail is where
+   * that agent's own sentence belongs — with the way to fix it, never a silent
+   * empty column.
+   */
+  const companion = useOptionalCompanion();
+  const agentName =
+    companion?.harnesses?.find((entry) => entry.active)?.name ?? "the agent";
+  const agentStatus = companion?.status ?? null;
+  const agentStarting = companion?.switching != null;
+  const agentTrouble =
+    Boolean(companion) &&
+    companion?.switching == null &&
+    agentStatus !== null &&
+    agentStatus.kind !== "ready" &&
+    agentStatus.kind !== "switching";
+  const listLoading =
+    !chat.sessionsLoaded && !chat.listError && !listEmpty && !agentTrouble;
 
   /** Load one chat into the dock, opening the dock if it was put away. */
   async function openChat(id: string) {
@@ -208,7 +263,10 @@ export function ChatsSidebar() {
     });
   }
 
-  /** Archive takes the chat out of the list; leaving that list is the gesture. */
+  /**
+   * Archive takes the chat out of the list; if it had a tab, that tab closes
+   * with it and the strip hands the front to its neighbour.
+   */
   function archiveChat(s: HermesSession) {
     setMenuId(null);
     void chat.patchSession(s.id, { archived: true });
@@ -246,6 +304,51 @@ export function ChatsSidebar() {
     return () =>
       document.removeEventListener("pointerdown", onPointerDown, true);
   }, [searchOpen, closeSearch]);
+
+  /**
+   * Open the row menu on whichever side of the row has room for it.
+   *
+   * The list scrolls inside itself, and a scroll port clips its contents: the
+   * menu is drawn against its row, so the last row's menu used to hang below the
+   * foot of the port — half of it out of sight, and the operator had to scroll
+   * to reach the rest. That is backwards: a menu opens into the space that
+   * exists, and the space that exists at the foot of a scrolled list is above
+   * the row.
+   *
+   * The menu is measured after it mounts (a layout effect, so no frame paints in
+   * the wrong place). It stays below whenever it fits there, which is the
+   * common case and the one the pointer expects; only a menu that would not fit
+   * under the row is flipped over it, and only when the room overhead is the
+   * larger of the two. If neither side can hold the whole menu — a very short
+   * window — the winning side's room becomes the menu's max height, so the menu
+   * scrolls itself instead of being clipped by the list.
+   */
+  useLayoutEffect(() => {
+    if (!menuId) {
+      setMenuPlacement("below");
+      setMenuMaxHeight(null);
+      return;
+    }
+    const menu = menuRef.current;
+    const list = listRef.current;
+    const row = menu?.closest<HTMLElement>(".chats-rail__row") ?? null;
+    if (!menu || !list || !row) return;
+    const listBox = list.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    // The menu's natural height, not the drawn one: a menu clamped by the last
+    // pass must still report the room it really needs, or the clamp and the
+    // unclamp would trade places on every pass.
+    const border = menu.offsetHeight - menu.clientHeight;
+    const menuHeight = menu.scrollHeight + border;
+    const below = Math.max(0, listBox.bottom - rowBox.bottom);
+    const above = Math.max(0, rowBox.top - listBox.top);
+    // Downward unless it does not fit there and the overhead is roomier.
+    const placement =
+      below >= menuHeight || below >= above ? "below" : "above";
+    const room = placement === "below" ? below : above;
+    setMenuPlacement(placement);
+    setMenuMaxHeight(menuHeight > room ? Math.max(0, Math.floor(room)) : null);
+  }, [menuId, menuPlacement]);
 
   function startRename(s: HermesSession) {
     setMenuId(null);
@@ -289,16 +392,33 @@ export function ChatsSidebar() {
     const archived = s.archived === true;
     const menuOpen = menuId === s.id;
     const renaming = renamingId === s.id;
+    // A chat another surface owns is continued over the gateway WebSocket
+    // rather than written through the API transport. The row carries the fact
+    // for the dock's source chip and for the E2E rig; it is not a badge on the
+    // row itself, because the list is about where a chat is, not where it began.
+    const continuable = isContinuableSession(s);
+    // The same origin mark the dock's tab wears: a chat the app started as a
+    // task, a review, a plan or an automation run leads its name with that
+    // feature's icon; a chat the operator opened keeps the quiet status dot.
+    const iconKind = chat.sessionIcons[s.id] ?? null;
+    const OriginIcon = iconKind ? SESSION_ICON[iconKind] : null;
+    // A chat from another surface leads its name with that platform's mark —
+    // Telegram's plane, Discord's controller — instead of the plain dot, so the
+    // rail says where the conversation began without adding a word to its title.
+    const PlatformMark = platformMarkFor(s.source);
     return (
       <li
         key={s.id}
         className="chats-rail__row"
+        data-continuable={continuable ? "true" : undefined}
+        data-source={continuable ? s.source : undefined}
         data-active={active || undefined}
         data-archived={archived || undefined}
         data-pinned={s.pinned || undefined}
         data-menu-open={menuOpen || undefined}
         data-live={run.sending || undefined}
         data-approval={run.approval !== null || undefined}
+        data-icon={iconKind ?? undefined}
       >
         {renaming ? (
           <form
@@ -357,7 +477,21 @@ export function ChatsSidebar() {
                 if (e.button === 1) e.preventDefault();
               }}
             >
-              <span className="chats-rail__dot" aria-hidden />
+              {/*
+                The row's leading slot, the same one the dock's tab keeps: the
+                quiet status dot for a chat the operator opened, or the origin
+                icon of the work that started it. The live pulse and the
+                approval ring paint this slot either way.
+              */}
+              <span className="chats-rail__mark" aria-hidden>
+                {OriginIcon ? (
+                  <OriginIcon className="chats-rail__mark-icon" size={11} />
+                ) : PlatformMark ? (
+                  <PlatformMark className="chats-rail__mark-icon" size={11} />
+                ) : (
+                  <span className="chats-rail__dot" />
+                )}
+              </span>
               <span className="chats-rail__label">{label}</span>
               {archived ? (
                 <span className="chats-rail__archived-tag">Archived</span>
@@ -382,8 +516,11 @@ export function ChatsSidebar() {
               replaces at rest sits there, and archive is its neighbour — the
               same pair, in the same places, as the reference client. Both are
               paint-only until the row is hovered (or focused, so the keyboard
-              can reach them), which is what keeps a quiet list quiet. An
-              archived row has no working verbs: its menu offers Unarchive.
+              can reach them), which is what keeps a quiet list quiet. A pinned
+              row has no archive control at all: unpinning first is what brings
+              archive back, so a pinned chat cannot leave the working set by
+              accident. An archived row has no working verbs: its menu offers
+              Unarchive.
             */}
             <span className="chats-rail__actions">
               <button
@@ -405,16 +542,18 @@ export function ChatsSidebar() {
               </button>
               {archived ? null : (
                 <>
-                  <button
-                    type="button"
-                    className="chats-rail__archive-btn"
-                    aria-label="Archive chat"
-                    title="Archive chat"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => archiveChat(s)}
-                  >
-                    <Archive size={14} aria-hidden />
-                  </button>
+                  {s.pinned ? null : (
+                    <button
+                      type="button"
+                      className="chats-rail__archive-btn"
+                      aria-label="Archive chat"
+                      title="Archive chat"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => archiveChat(s)}
+                    >
+                      <Archive size={14} aria-hidden />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="chats-rail__pin-btn"
@@ -434,7 +573,13 @@ export function ChatsSidebar() {
               )}
             </span>
             {menuOpen ? (
-              <div className="chats-rail__menu" role="menu">
+              <div
+                className="chats-rail__menu"
+                role="menu"
+                ref={menuRef}
+                data-menu-placement={menuPlacement}
+                style={menuMaxHeight === null ? undefined : { maxHeight: menuMaxHeight }}
+              >
                 {archived ? (
                   <button
                     type="button"
@@ -483,7 +628,7 @@ export function ChatsSidebar() {
                 >
                   <Pencil size={12} aria-hidden /> Rename
                 </button>
-                {archived ? null : (
+                {archived || s.pinned ? null : (
                   <button
                     type="button"
                     role="menuitem"
@@ -493,15 +638,24 @@ export function ChatsSidebar() {
                     <Archive size={12} aria-hidden /> Archive
                   </button>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Delete chat"
-                  className="chats-rail__menu-danger"
-                  onClick={() => deleteChat(s)}
-                >
-                  Delete
-                </button>
+                {/*
+                  Archive and delete are one gesture further away while the chat
+                  is pinned: the menu keeps Unpin and Rename, and the row is out
+                  of the working set's reach until the operator unpins it. The
+                  commands are hidden rather than disabled so a pinned row does
+                  not offer a control that only refuses.
+                */}
+                {s.pinned ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Delete chat"
+                    className="chats-rail__menu-danger"
+                    onClick={() => deleteChat(s)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             ) : null}
           </>
@@ -597,32 +751,47 @@ export function ChatsSidebar() {
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={!chat.showArchived}
+                    aria-checked={chat.archivedView === "hide"}
                     aria-label="Hide archived chats"
                     onClick={() => {
-                      chat.setShowArchived(false);
+                      chat.setArchivedView("hide");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {!chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "hide" ? <Check size={12} /> : null}
                     </span>
                     Hide archived
                   </button>
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={chat.showArchived}
+                    aria-checked={chat.archivedView === "show"}
                     aria-label="Show archived chats"
                     onClick={() => {
-                      chat.setShowArchived(true);
+                      chat.setArchivedView("show");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "show" ? <Check size={12} /> : null}
                     </span>
                     Show archived
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chat.archivedView === "only"}
+                    aria-label="Only archived chats"
+                    onClick={() => {
+                      chat.setArchivedView("only");
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <span className="chats-rail__check" aria-hidden>
+                      {chat.archivedView === "only" ? <Check size={12} /> : null}
+                    </span>
+                    Only archived
                   </button>
                 </div>
               ) : null}
@@ -642,6 +811,15 @@ export function ChatsSidebar() {
         <span>New chat</span>
       </button>
 
+      {agentTrouble && agentStatus ? (
+        <div className="chats-rail__error" role="status">
+          <p>{companionStatusSummary(agentStatus, false)}</p>
+          <Link to="/settings?tab=hermes" className="chats-rail__text-btn">
+            Companion settings
+          </Link>
+        </div>
+      ) : null}
+
       {chat.listError ? (
         <div className="chats-rail__error" role="alert">
           <p>{chat.listError}</p>
@@ -655,9 +833,17 @@ export function ChatsSidebar() {
         </div>
       ) : null}
 
-      <div className="chats-rail__list">
-        {chat.sessionsLoaded && chat.sessions.length === 0 ? (
-          <p className="chats-rail__empty">No chats yet</p>
+      <div className="chats-rail__list" ref={listRef}>
+        {agentTrouble && !chat.sessionsLoaded ? null : listLoading ? (
+          <p className="chats-rail__empty chats-rail__empty--loading">
+            {agentStarting
+              ? `Starting ${agentName}…`
+              : `Loading ${agentName}\u2019s chats…`}
+          </p>
+        ) : listEmpty ? (
+          <p className="chats-rail__empty">
+            {onlyArchived ? "No archived chats" : "No chats yet"}
+          </p>
         ) : (
           <ul className="chats-rail__rows" aria-label="Chats">
             {ordered.map(renderRow)}

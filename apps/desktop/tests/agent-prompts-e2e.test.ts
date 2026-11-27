@@ -226,9 +226,9 @@ describe("companion prompts e2e", () => {
     assert.equal(checks.instructionsHasCardSkill, true, "the instructions do not teach the one-call card path");
     assert.equal(checks.instructionsHasEditPath, true, "the instructions do not teach how to change an existing card");
     assert.equal(
-      text.includes("Active domain: Financial (financial)"),
+      text.includes("Active area: Financial (financial)"),
       true,
-      "the instructions lost the active domain line",
+      "the instructions lost the active area line",
     );
 
     // ── 6b. the database write split, and the confirmation it depends on ──
@@ -254,87 +254,244 @@ describe("companion prompts e2e", () => {
       "the instructions do not require the chat's agreement before a direct write",
     );
 
-    // The locked board says the other thing, and the two must not both be true.
+    // ── 6c. the three surfaces the agent reads instead of guessing ────────
+    // Projects, the Life-Chain and Pages have read tools since 2026-10-27, but
+    // neither the SOUL nor the per-turn instructions ever named them, so the
+    // companion still reached for get_document and list_documents and concluded
+    // it could not see the operator's projects or pages. A tool the agent is
+    // never told about is a tool it does not use: the prompt half of the same
+    // fix is asserted here, in both texts, because the SOUL reaches every
+    // channel (Hermes Desktop included) and the per-turn block reaches only the
+    // app's own chat.
+    const surfaceTools = [
+      "list_projects",
+      "get_project",
+      "list_signals",
+      "get_signal",
+      "create_signal",
+      "list_pages",
+      "get_page",
+    ];
+    checks.soulNamesSurfaces = {
+      projects: COMPANION_SOUL.includes("PROJECTS are first-class records"),
+      lifeChain: COMPANION_SOUL.includes("THE LIFE-CHAIN"),
+      pages: COMPANION_SOUL.includes("PAGES are each domain's own document"),
+      tools: surfaceTools.filter((tool) => COMPANION_SOUL.includes(tool)),
+      notADocument: COMPANION_SOUL.includes("first-class records, not documents"),
+      projectWritesFileADecision: COMPANION_SOUL.includes("close_project change nothing until the operator approves"),
+      pagesReadOnly: COMPANION_SOUL.includes("the one page change you apply yourself is a script block"),
+    };
+    assert.equal(checks.soulNamesSurfaces.projects, true, "the SOUL never names Projects as first-class records");
+    assert.equal(checks.soulNamesSurfaces.lifeChain, true, "the SOUL never names the Life-Chain");
+    assert.equal(checks.soulNamesSurfaces.pages, true, "the SOUL never names Pages");
+    assert.deepEqual(
+      checks.soulNamesSurfaces.tools,
+      surfaceTools,
+      "the SOUL does not name every surface tool it now has",
+    );
+    assert.equal(checks.soulNamesSurfaces.notADocument, true, "the SOUL does not say a project is not a document");
+    assert.equal(
+      checks.soulNamesSurfaces.projectWritesFileADecision,
+      true,
+      "the SOUL does not say project writes file a Decision",
+    );
+    assert.equal(
+      checks.soulNamesSurfaces.pagesReadOnly,
+      true,
+      "the SOUL does not say pages are read-only apart from a script block",
+    );
+    assert.equal(
+      COMPANION_SOUL.includes(SOUL_STAMP),
+      true,
+      "the seed that names the surfaces carries no stamp",
+    );
+
+    const textSurfaceTools = surfaceTools.filter((tool) => text.includes(tool));
+    checks.instructionsNameSurfaces = {
+      tools: textSurfaceTools,
+      notADocument: text.includes("a project is not a document"),
+      captureAppliesAtOnce: text.includes("create_signal, which applies at once"),
+      pagesReadOnly: text.includes("read-only apart from apply_script_block"),
+    };
+    assert.deepEqual(
+      checks.instructionsNameSurfaces.tools,
+      surfaceTools,
+      "the per-turn instructions do not name every surface tool",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.notADocument,
+      true,
+      "the instructions do not say a project is not a document",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.captureAppliesAtOnce,
+      true,
+      "the instructions do not say a capture applies at once",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.pagesReadOnly,
+      true,
+      "the instructions do not say pages are read-only apart from a script block",
+    );
+    // A locked board says the other thing, and the two must not both be true.
     const lockedText = buildInstructions({ ...context, viewingBoardLocked: true });
     checks.lockedLine = /LOCKED/.test(lockedText);
     assert.equal(checks.lockedLine, true, "a locked board is not named as locked in the instructions");
     assert.equal(/UNLOCKED/.test(lockedText), false, "a locked board is described as unlocked");
 
-    // ── 8. the card the operator put in front of the chat ─────────────────
-    // The whole point of the pill is that the operator never has to describe
-    // the card. Three kinds of card are changed three different ways, and the
-    // instructions have to say the one that actually works for the card in hand.
-    const viewCard = buildInstructions({
-      ...context,
-      focusedCard: {
-        label: "Weekly expenses",
-        pinId: "view:financial:v-weekly",
-        kind: "view",
-        boardSlug: null,
-        domainSlug: "financial",
-        viewId: "v-weekly",
-      },
-    });
-    checks.focusedView = {
-      names: viewCard.includes('the card titled "Weekly expenses"'),
-      ids: viewCard.includes('viewId "v-weekly"') && viewCard.includes('domainSlug "financial"'),
-      board: viewCard.includes("the Overview dashboard"),
-      means: /"this card", "it", or "this block"/.test(viewCard),
-      changePath: /get_view/.test(viewCard) && /save_view carrying the same viewId/.test(viewCard),
+    // ── 8. the cards the operator put in front of the chat ────────────────
+    // The whole point of the pills is that the operator never has to describe
+    // the cards. Three kinds of card are changed three different ways, and the
+    // instructions have to say the one that actually works for each card in
+    // hand. One card keeps the shipped one-card wording word for word; two and
+    // three are laid out one numbered line per card with its own change path.
+    const viewCard = {
+      label: "Weekly expenses",
+      pinId: "view:financial:v-weekly",
+      kind: "view" as const,
+      boardSlug: null,
+      domainSlug: "financial",
+      viewId: "v-weekly",
     };
-    assert.equal(checks.focusedView.names, true, "the card in context is not named");
-    assert.equal(checks.focusedView.ids, true, "the card's own ids are missing");
-    assert.equal(checks.focusedView.board, true, "the board the card sits on is not named");
-    assert.equal(checks.focusedView.means, true, "the instructions never say what 'this card' means");
-    assert.equal(checks.focusedView.changePath, true, "the in-place change path is not taught");
+    const pageCard = {
+      label: "Ledger",
+      pinId: "page:financial:ledger",
+      kind: "page" as const,
+      boardSlug: "financial",
+      domainSlug: "financial",
+      pageId: "ledger",
+    };
+    const systemCard = {
+      label: "Goals",
+      pinId: "sys:goal-progress",
+      kind: "system" as const,
+      boardSlug: "financial",
+      domainSlug: null,
+      system: "goal-progress",
+    };
+    const numberedLines = (text: string) =>
+      text.split("\n").filter((line) => /^\d+\. /.test(line));
 
-    const systemCard = buildInstructions({
-      ...context,
-      focusedCard: {
-        label: "Goals",
-        pinId: "sys:goal-progress",
-        kind: "system",
-        boardSlug: "financial",
-        domainSlug: null,
-        system: "goal-progress",
-      },
-    });
-    checks.focusedSystem = {
-      names: systemCard.includes('the card titled "Goals"'),
-      board: systemCard.includes("the financial dashboard"),
-      noSpec: /no viewId and save_view cannot change it/.test(systemCard),
+    const oneCard = buildInstructions({ ...context, focusedCards: [viewCard] });
+    checks.focusedOneCard = {
+      // The shipped one-card wording, character for character: the old turn is
+      // the turn it always was when one card is in front of the chat.
+      opening: oneCard.includes(
+        'The operator has put ONE dashboard card in front of this chat as context: the card titled "Weekly expenses" on the Life dashboard (pinId "view:financial:v-weekly", viewId "v-weekly", domainSlug "financial").',
+      ),
+      names: oneCard.includes('the card titled "Weekly expenses"'),
+      ids:
+        oneCard.includes('pinId "view:financial:v-weekly"') &&
+        oneCard.includes('viewId "v-weekly"') &&
+        oneCard.includes('domainSlug "financial"'),
+      board: oneCard.includes("the Life dashboard"),
+      means: oneCard.includes(
+        'When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.',
+      ),
+      changePath:
+        oneCard.includes(
+          "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug",
+        ) &&
+        oneCard.includes("save_view's reply carries the card's own rows"),
+      // One card is prose, not a numbered list.
+      numberedLines: numberedLines(oneCard).length,
     };
-    assert.equal(checks.focusedSystem.names, true, "the built-in card is not named");
-    assert.equal(checks.focusedSystem.board, true, "the board the built-in card sits on is not named");
-    assert.equal(
-      checks.focusedSystem.noSpec,
-      true,
-      "a built-in card was offered a view spec it does not have",
-    );
+    assert.equal(checks.focusedOneCard.opening, true, "the one-card wording changed");
+    assert.equal(checks.focusedOneCard.names, true, "the card in context is not named");
+    assert.equal(checks.focusedOneCard.ids, true, "the card's own ids are missing");
+    assert.equal(checks.focusedOneCard.board, true, "the board the card sits on is not named");
+    assert.equal(checks.focusedOneCard.means, true, "the instructions never say what 'this card' means");
+    assert.equal(checks.focusedOneCard.changePath, true, "the in-place change path is not taught");
+    assert.equal(checks.focusedOneCard.numberedLines, 0, "a one-card turn became a numbered list");
 
-    const pageCard = buildInstructions({
-      ...context,
-      focusedCard: {
-        label: "Ledger",
-        pinId: "page:financial:ledger",
-        kind: "page",
-        boardSlug: "financial",
-        domainSlug: "financial",
-        pageId: "ledger",
-      },
-    });
-    checks.focusedPage = {
-      names: pageCard.includes('the card titled "Ledger"'),
-      isAPage: /It is a page card, not a saved view/.test(pageCard),
-      noSpec: /save_view cannot change it/.test(pageCard),
+    const twoCardText = buildInstructions({ ...context, focusedCards: [viewCard, pageCard] });
+    const twoLines = numberedLines(twoCardText);
+    checks.focusedTwoCards = {
+      header: twoCardText.includes(
+        "The operator has put TWO dashboard cards in front of this chat as context:",
+      ),
+      lines: twoLines,
+      oneLinePerCard: twoLines.length === 2,
+      first:
+        twoLines[0]?.includes('the card titled "Weekly expenses" on the Life dashboard') === true &&
+        twoLines[0]?.includes('viewId "v-weekly"') === true &&
+        twoLines[0]?.includes('domainSlug "financial"') === true &&
+        /get_view/.test(twoLines[0] ?? "") &&
+        /save_view carrying the same viewId/.test(twoLines[0] ?? ""),
+      // The page is a page card, not a view: its line must not offer a viewId
+      // or a save_view path.
+      second:
+        twoLines[1]?.includes('the card titled "Ledger" on the financial dashboard') === true &&
+        twoLines[1]?.includes('pageId "ledger"') === true &&
+        /page card, not a saved view/.test(twoLines[1] ?? "") &&
+        /read the page and edit the page/.test(twoLines[1] ?? "") &&
+        !/viewId "/.test(twoLines[1] ?? ""),
+      eachNamedOnce:
+        (twoCardText.match(/"Weekly expenses"/g) ?? []).length === 1 &&
+        (twoCardText.match(/"Ledger"/g) ?? []).length === 1,
+      rule:
+        twoCardText.includes('When the operator says "these cards", they mean all 2 of them.') &&
+        twoCardText.includes("ask which of the named cards they mean") &&
+        twoCardText.includes("do not ask which cards are in context"),
     };
-    assert.equal(checks.focusedPage.names, true, "the page card is not named");
-    assert.equal(checks.focusedPage.isAPage, true, "a page card was described as a view");
+    assert.equal(checks.focusedTwoCards.header, true, "the two-card turn did not count the cards");
+    assert.equal(checks.focusedTwoCards.oneLinePerCard, true, "the two-card turn was not one line per card");
+    assert.equal(checks.focusedTwoCards.first, true, "the view card's line lost its ids or its change path");
+    assert.equal(checks.focusedTwoCards.second, true, "the page card was given a view's change path");
+    assert.equal(checks.focusedTwoCards.eachNamedOnce, true, "a card was named twice or not at all");
+    assert.equal(checks.focusedTwoCards.rule, true, "the two-card block never said what 'these cards' means");
+
+    const threeCardText = buildInstructions({
+      ...context,
+      focusedCards: [viewCard, pageCard, systemCard],
+    });
+    const threeLines = numberedLines(threeCardText);
+    checks.focusedThreeCards = {
+      header: threeCardText.includes(
+        "The operator has put THREE dashboard cards in front of this chat as context:",
+      ),
+      lines: threeLines,
+      oneLinePerCard: threeLines.length === 3,
+      order:
+        threeLines[0]?.includes('"Weekly expenses"') === true &&
+        threeLines[1]?.includes('"Ledger"') === true &&
+        threeLines[2]?.includes('"Goals"') === true,
+      viewPath: /get_view/.test(threeLines[0] ?? "") && /save_view/.test(threeLines[0] ?? ""),
+      pagePath: /page card, not a saved view/.test(threeLines[1] ?? ""),
+      // The built-in card has no spec for save_view to rewrite; its line must
+      // say so and name the records behind it as the thing to change.
+      systemPath:
+        threeLines[2]?.includes('built-in card "goal-progress"') === true &&
+        /built-in board card, not a saved view/.test(threeLines[2] ?? "") &&
+        /change those records with the tool that owns them/.test(threeLines[2] ?? "") &&
+        !/viewId "/.test(threeLines[2] ?? ""),
+      eachNamedOnce:
+        (threeCardText.match(/"Weekly expenses"/g) ?? []).length === 1 &&
+        (threeCardText.match(/"Ledger"/g) ?? []).length === 1 &&
+        (threeCardText.match(/"Goals"/g) ?? []).length === 1,
+      rule:
+        threeCardText.includes('When the operator says "these cards", they mean all 3 of them.') &&
+        threeCardText.includes("if more than one could be meant, ask which of the named cards they mean"),
+      noOldKey: !/focusedCard[^s]/.test(threeCardText),
+    };
+    assert.equal(checks.focusedThreeCards.header, true, "the three-card turn did not count the cards");
+    assert.equal(checks.focusedThreeCards.oneLinePerCard, true, "the three-card turn was not one line per card");
+    assert.equal(checks.focusedThreeCards.order, true, "the cards were not listed in the order they were chosen");
+    assert.equal(checks.focusedThreeCards.viewPath, true, "the view card's line lost its view path");
+    assert.equal(checks.focusedThreeCards.pagePath, true, "the page card was described as a view");
+    assert.equal(checks.focusedThreeCards.systemPath, true, "the built-in card was offered a view spec");
+    assert.equal(checks.focusedThreeCards.eachNamedOnce, true, "a card was named twice or not at all");
+    assert.equal(checks.focusedThreeCards.rule, true, "the three-card block lost the ambiguity rule");
+    assert.equal(checks.focusedThreeCards.noOldKey, true, "the instructions still name a focusedCard key");
 
     // And the ordinary turn — nobody pointed at a card — is unchanged: no line,
-    // and not even the word.
+    // and not even the words.
     checks.noCardLine =
-      !/in front of this chat as context/.test(text) && !/focusedCard/.test(text);
+      !/in front of this chat as context/.test(text) &&
+      !/focusedCards/.test(text) &&
+      !/focusedCard[^s]/.test(text) &&
+      !/"these cards"/.test(text) &&
+      !/named cards/.test(text);
     assert.equal(
       checks.noCardLine,
       true,

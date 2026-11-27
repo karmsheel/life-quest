@@ -47,11 +47,17 @@ type Dialog = {
 
 type State = {
   viewport: { width: number; height: number };
+  title: string;
+  subtitle: string;
+  sectionTitles: string[];
   cards: string[];
+  locked: { name: string; slug: string }[];
   archived: string[];
+  createPlaceholder: string | null;
   sheet: Box | null;
   archiveCalls: string[];
   deleteCalls: string[];
+  unlockCalls: string[];
   dialog: Dialog | null;
 };
 
@@ -133,19 +139,58 @@ describe("the app's own confirm dialog on a settings surface", () => {
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
 
-    const { landing, asked, declined, archived, deleteAsked, deleted } = report.states;
+    const { landing, asked, declined, archived, deleteAsked, deleted, unlocked } =
+      report.states;
 
-    // The page is the real settings page: two live domains and one archived, so
-    // both asks (archive a live one, delete an archived one) exist to click.
-    assert.deepEqual(landing.cards, ["Health", "Career"], "the live domain cards");
+    // The page is the real Settings → Areas: the base Life area (never listed),
+    // two unlocked areas, one archived area and two seeded areas still locked —
+    // so the unlock list, both asks and the create form all have their fixture.
+    assert.equal(landing.title, "Areas", "the settings section is not titled Areas");
+    assert.match(
+      landing.subtitle,
+      /Life shows everything/,
+      `the settings section still talks about Overview: "${landing.subtitle}"`,
+    );
+    assert.deepEqual(
+      landing.sectionTitles,
+      ["Unlock another area", "Your areas", "Archived", "Create area"],
+      "the Areas sections are missing or out of contract order",
+    );
+    assert.deepEqual(landing.cards, ["Health", "Career"], "the live area cards");
+    assert.deepEqual(
+      landing.locked,
+      [
+        { name: "Mind", slug: "mind" },
+        { name: "Finance", slug: "financial" },
+      ],
+      "the locked seeded areas are not offered to unlock",
+    );
     assert.equal(landing.archived.length, 1, "the archived row");
+    assert.equal(
+      landing.createPlaceholder,
+      "e.g. Woodworking",
+      `the create form asks with the wrong placeholder: ${JSON.stringify(landing.createPlaceholder)}`,
+    );
+    assert.ok(
+      !landing.cards.includes("Life") &&
+        !landing.locked.some((row) => row.name === "Life") &&
+        !landing.archived.some((row) => row.includes("Life")),
+      "the base Life area is listed in Settings → Areas",
+    );
     assert.equal(landing.dialog, null, "a question was open before anything was clicked");
+    assert.deepEqual(landing.unlockCalls, [], "an unlock ran before it was clicked");
     assert.ok(landing.sheet, "the harness did not render the shell's own content pane");
 
     // Archive — the soft write: it asks, and it does not wear the danger.
     const archive = asked.dialog;
     assert.ok(archive, "the archive wrote without asking");
-    assert.equal(archive.title, "Archive domain", "the question is not named for the write");
+    assert.equal(archive.title, "Archive area", "the question is not named for the write");
+    assert.equal(
+      archive.message,
+      "The area leaves the active switcher list. Its folder and everything in it stay in the vault.",
+      "the archive question does not say what archive does, in area words",
+    );
+    assert.equal(archive.confirmLabel, "Archive area", "the confirm control is not the area verb");
     assert.match(archive.message, /switcher list/, "the question does not say what archive does");
     assert.deepEqual(asked.archiveCalls, [], "the archive wrote before it was answered");
     assert.ok(
@@ -185,12 +230,14 @@ describe("the app's own confirm dialog on a settings surface", () => {
     assert.deepEqual(archived.deleteCalls, [], "the archive called delete");
     assert.equal(archived.dialog, null, "answering did not close the question");
 
-    // Delete — the final write: the question names the domain, and the control
+    // Delete — the final write: the question names the area, and the control
     // wears the destructive token while the archive's does not.
     const remove = deleteAsked.dialog;
     assert.ok(remove, "the delete wrote without asking");
-    assert.equal(remove.title, "Delete domain", "the question is not named for the write");
-    assert.match(remove.message, /Career \(old\)/, "the question does not name the domain it takes");
+    assert.equal(remove.title, "Delete area", "the question is not named for the write");
+    assert.equal(remove.confirmLabel, "Delete area", "the delete confirm is not the area verb");
+    assert.match(remove.message, /Career \(old\)/, "the question does not name the area it takes");
+    assert.match(remove.message, /area/, "the delete question still says domain");
     assert.deepEqual(deleteAsked.deleteCalls, [], "the delete wrote before it was answered");
     assert.match(
       remove.confirmClass ?? "",
@@ -206,8 +253,25 @@ describe("the app's own confirm dialog on a settings surface", () => {
       `the delete's card is not centred in the window: ${remove.offsetFromWindowX}, ${remove.offsetFromWindowY}`,
     );
 
-    assert.deepEqual(deleted.deleteCalls, ["career-old"], "the delete answered the wrong domain");
+    assert.deepEqual(deleted.deleteCalls, ["career-old"], "the delete answered the wrong area");
     assert.deepEqual(deleted.archiveCalls, ["health"], "the delete archived something");
     assert.equal(deleted.dialog, null, "answering the delete did not close the question");
+
+    // Unlock — a reveal, not an activation: the locked row's slug travels on the
+    // call, the row leaves "Unlock another area", and the area appears under
+    // "Your areas" without any confirm dialog.
+    assert.deepEqual(unlocked.unlockCalls, ["mind"], "the unlock answered the wrong area");
+    assert.deepEqual(
+      unlocked.locked,
+      [{ name: "Finance", slug: "financial" }],
+      "unlocking Mind did not leave Finance as the only locked area",
+    );
+    assert.ok(
+      unlocked.cards.includes("Mind"),
+      `the unlocked area did not appear under Your areas: ${JSON.stringify(unlocked.cards)}`,
+    );
+    assert.equal(unlocked.dialog, null, "unlocking asked a question it should not ask");
+    assert.deepEqual(unlocked.archiveCalls, ["health"], "the unlock archived something");
+    assert.deepEqual(unlocked.deleteCalls, ["career-old"], "the unlock deleted something");
   });
 });

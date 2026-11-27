@@ -29,26 +29,68 @@
   color: var(--foreground, #e8e4dc);
 }
 
-.splash__title {
-  margin: 0;
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: center;
-  font-size: clamp(2.5rem, 8vw, 4.5rem);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1;
-}
-
-.splash__letter {
-  display: inline-block;
+/*
+ * The active lockup, injected by the `lifequest-splash-logo` plugin from the
+ * same files the rail draws. Its three inks are scoped here rather than read
+ * from the app's tokens: the splash paints before any palette is applied, and
+ * these are the brand defaults the mark was supplied with. The light variant
+ * inks it dark so the cream never disappears into paper.
+ *
+ * All four variants are in the document; `data-logo` on <html> (set by
+ * theme-boot.js from the operator's pick) decides which one is on stage.
+ */
+.splash__logo {
+  --life-color: #1e1e22;
+  --icon-color: #b4532a;
+  --uest-color: #1e1e22;
+  width: min(28rem, 72vw);
   opacity: 0;
-  animation: splash-letter 320ms ease-out forwards;
-  animation-delay: calc(var(--i, 0) * 40ms);
+  animation: splash-logo-in 420ms ease-out forwards;
 }
 
-.splash__letter--space {
-  width: 0.4em;
+[data-theme="dark"] .splash__logo {
+  --life-color: #f8e5c8;
+  --icon-color: #c66a3d;
+  /* The two words share the cream; UEST keeps its own token for themes that
+     want the words to diverge. */
+  --uest-color: #f8e5c8;
+}
+
+.splash__logo-variant {
+  display: none;
+}
+
+.splash__logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.splash__logo .life-text {
+  fill: var(--life-color);
+}
+
+.splash__logo .quest-icon {
+  fill: var(--icon-color);
+}
+
+.splash__logo .uest-text {
+  fill: var(--uest-color);
+}
+
+/* The lockup's flanking dashes are not drawn: the mark is the words and the Q
+   alone on every surface, so the rail's `.lifequest-logo` hides the same two
+   elements. They stay in the bundled art, unwritten by the theme. */
+.splash__logo .life-rule,
+.splash__logo .uest-rule {
+  display: none;
+}
+
+[data-logo="modern"] .splash__logo-variant[data-splash-logo="modern"],
+[data-logo="athletic"] .splash__logo-variant[data-splash-logo="athletic"],
+[data-logo="classic"] .splash__logo-variant[data-splash-logo="classic"],
+[data-logo="minimal"] .splash__logo-variant[data-splash-logo="minimal"] {
+  display: block;
 }
 
 .splash__bar {
@@ -71,14 +113,14 @@
   pointer-events: none;
 }
 
-@keyframes splash-letter {
+@keyframes splash-logo-in {
   from {
     opacity: 0;
-    transform: translateY(0.15em);
+    transform: translateY(0.4rem) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -93,7 +135,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .splash__letter,
+  .splash__logo,
   .splash__bar {
     animation: none;
     opacity: 1;

@@ -11,10 +11,13 @@
  *
  *  1. The row renders when there is no catalog (companion down, no providers) —
  *     the composer must be exactly what it was before this feature.
- *  2. The row paints chrome of its own, or the menu opens *downward* off the
- *     bottom of the window, where nothing can be clicked.
+ *  2. The row paints chrome of its own, sits outside the composer box's control
+ *     row, or the menu opens *downward* off the bottom of the window, where
+ *     nothing can be clicked.
  *  3. A pill submits the draft: the row lives inside the composer's form, so a
- *     control without `type="button"` turns Enter into a send.
+ *     control without `type="button"` turns Enter into a send. The row also
+ *     needs to keep its order: the add control leads it, then the page pill
+ *     (and the waiting receipt), with the runtime pick at the trailing end.
  *  4. A pick that never reaches the turn: the pill must hand `runtime` to the
  *     chat call, and only the fields the operator actually chose.
  *  5. The capability gates drift from the Desktop rule — the thinking pill
@@ -143,14 +146,17 @@ async function main() {
           height: pill.offsetHeight,
           wrap: getComputedStyle(pill).borderTopWidth,
         })),
-        // The line under the field, and the two ends of it: the attach control
-        // owns the left end, the runtime pick the right. Measured against the
-        // field's own box, so "under the composer" is a number, not a claim.
+        // The control row inside the composer box's bottom edge: the leading
+        // cluster (add control, page pill, waiting receipt) and the trailing
+        // cluster (the runtime pick, then send). Measured against the box's own
+        // rect, so "inside the composer" is a number, not a claim.
         line: (() => {
-          const lineEl = document.querySelector(".chat-panel__composer-runtime");
-          const attachEl = document.querySelector(".chat-panel__attach");
+          const dockEl = document.querySelector(".chat-panel__composer-dock");
+          const boxEl = document.querySelector(".chat-panel__composer-box");
+          const plusEl = document.querySelector(".chat-panel__composer-plus");
+          const pageEl = document.querySelector('[data-testid="chat-page-context"]');
           const pickEl = document.querySelector(".chat-panel__composer-controls");
-          if (!lineEl || !attachEl || !pickEl) return null;
+          if (!dockEl || !boxEl || !plusEl || !pickEl) return null;
           const box = (el) => {
             const r = el.getBoundingClientRect();
             return {
@@ -158,17 +164,56 @@ async function main() {
               right: Math.round(r.right),
               top: Math.round(r.top),
               bottom: Math.round(r.bottom),
+              width: Math.round(r.width),
             };
           };
-          const attach = box(attachEl);
+          const plus = box(plusEl);
+          const page = pageEl ? box(pageEl) : null;
           const pick = box(pickEl);
+          const dock = box(dockEl);
+          const composer = box(boxEl);
+          const fieldBottom = Math.round(field.getBoundingClientRect().bottom);
+          const inside = (candidate) =>
+            candidate.left >= composer.left - 0.5 &&
+            candidate.right <= composer.right + 0.5 &&
+            candidate.top >= composer.top - 0.5 &&
+            candidate.bottom <= composer.bottom + 0.5;
+          const leftOf = (a, b) => Boolean(a && b) && a.right <= b.left + 1;
           return {
-            fieldBottom: Math.round(field.getBoundingClientRect().bottom),
-            line: box(lineEl),
-            attach,
+            fieldBottom,
+            box: composer,
+            dock,
+            plus,
+            page,
             pick,
-            sameLine: attach.top < pick.bottom && pick.top < attach.bottom,
-            attachGroup: Boolean(document.querySelector(".chat-panel__receipts")),
+            // The dock is the box's own bottom row, under the field.
+            dockInsideBox:
+              dock.left >= composer.left - 0.5 &&
+              dock.right <= composer.right + 0.5 &&
+              dock.bottom <= composer.bottom + 0.5,
+            dockBelowField: dock.top >= fieldBottom - 0.5,
+            controlsInsideBox:
+              inside(plus) && inside(pick) && (!page || inside(page)),
+            controlsBelowField:
+              plus.top >= fieldBottom - 0.5 &&
+              pick.top >= fieldBottom - 0.5 &&
+              (!page || page.top >= fieldBottom - 0.5),
+            sameRow:
+              plus.top < pick.bottom &&
+              pick.top < plus.bottom &&
+              (!page || (plus.top < page.bottom && page.top < plus.bottom)),
+            // The add control leads the row now: it is the leftmost control,
+            // then the page pill; the runtime pick holds the trailing end.
+            plusLeftOfPage: page ? leftOf(plus, page) : null,
+            pageLeftOfPick: page ? leftOf(page, pick) : null,
+            plusLeadsRow:
+              plus.left <= pick.left &&
+              (!page || plus.left <= page.left) &&
+              plus.left - dock.left <= 12,
+            // The pick is the row's right end, less the dock's own end padding
+            // and the box's border (the send control is absent on an empty
+            // draft, so nothing sits to its right).
+            pickRightGap: Math.round(dock.right - pick.right),
           };
         })(),
       };
@@ -283,19 +328,30 @@ async function main() {
       "the pills are not below the composer field",
     );
     check(
-      "the attach control sits under the field, at the left end of the line",
-      Boolean(initial.line?.attach) &&
-        initial.line.attach.top >= initial.line.fieldBottom &&
-        Math.abs(initial.line.attach.left - initial.line.line.left) <= 1 &&
-        initial.line.attach.right < initial.line.pick.left,
-      `attach ${JSON.stringify(initial.line?.attach)} on line ${JSON.stringify(initial.line?.line)}, ` +
+      "the dock sits inside the composer box, under the field",
+      initial.line?.dockInsideBox === true &&
+        initial.line?.dockBelowField === true &&
+        initial.line?.controlsInsideBox === true &&
+        initial.line?.controlsBelowField === true,
+      `dock ${JSON.stringify(initial.line?.dock)} in box ${JSON.stringify(initial.line?.box)}, ` +
         `field bottom ${initial.line?.fieldBottom}`,
     );
     check(
-      "the runtime pick sits at the right end of that same line",
-      initial.line?.sameLine === true &&
-        Math.abs(initial.line.pick.right - initial.line.line.right) <= 1,
-      `pick ${JSON.stringify(initial.line?.pick)} on line ${JSON.stringify(initial.line?.line)}`,
+      "the add control leads the dock row, then the page pill",
+      initial.line?.plusLeadsRow === true &&
+        initial.line?.plusLeftOfPage === true &&
+        initial.line?.pageLeftOfPick === true,
+      `plus ${JSON.stringify(initial.line?.plus)} / page ${JSON.stringify(initial.line?.page)} ` +
+        `on dock ${JSON.stringify(initial.line?.dock)}`,
+    );
+    check(
+      "the runtime pick sits near the right end of the same row",
+      initial.line?.sameRow === true &&
+        initial.line?.pageLeftOfPick === true &&
+        initial.line?.pickRightGap >= 0 &&
+        initial.line.pickRightGap <= 12,
+      `pick ${JSON.stringify(initial.line?.pick)} on dock ${JSON.stringify(initial.line?.dock)} ` +
+        `(right gap ${initial.line?.pickRightGap}px)`,
     );
     check(
       "two pills at rest: the model and its thinking level",
@@ -466,22 +522,23 @@ async function main() {
     // The pin belongs to the *chat*, not the client: the other chat opens on its
     // own — absent — pin, and each chat's turn carries only what its own chat was
     // left on. This is the whole point of following Desktop's per-chat model.
-    const switchToChat = async (index) => {
-      await run(`(async () => {
-        const el = document.querySelector('[aria-label="Chat history"]');
+    //
+    // The chat is switched from the sidebar, where the history lives now: the
+    // dock no longer carries a list of chats to pick a row from. The rows are
+    // named, and this rig has only two.
+    const SIDEBAR_LABELS = ["Harness", "Second chat"];
+    const switchToChat = (index) =>
+      run(`(async () => {
+        const label = ${JSON.stringify(SIDEBAR_LABELS)}[${index}];
+        const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+          (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === label
+        );
+        const el = row?.querySelector(".chats-rail__row-main");
         if (!el) return false;
         el.click();
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
         return true;
       })()`);
-      return run(`(async () => {
-        const el = document.querySelectorAll(".chat-panel__session")[${index}];
-        if (!el) return false;
-        el.click();
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
-        return true;
-      })()`);
-    };
 
     await switchToChat(1);
     const secondRow = await run(readRow);
@@ -810,9 +867,10 @@ async function main() {
         `${report.initial.pills?.map((p) => `${p.label}${p.override === "true" ? "*" : ""}`).join(" | ")}`,
     );
     console.log(
-      `line: attach ${JSON.stringify(report.initial.line?.attach)} | ` +
-        `pick ${JSON.stringify(report.initial.line?.pick)} | ` +
-        `line ${JSON.stringify(report.initial.line?.line)} (field bottom ${report.initial.line?.fieldBottom})`,
+      `row: plus ${JSON.stringify(report.initial.line?.plus)} | ` +
+        `page ${JSON.stringify(report.initial.line?.page)} | ` +
+        `pick ${JSON.stringify(report.initial.line?.pick)} (dock ${JSON.stringify(report.initial.line?.dock)}, ` +
+        `field bottom ${report.initial.line?.fieldBottom}, pick right gap ${report.initial.line?.pickRightGap}px)`,
     );
     console.log(
       `menu: opens upward ${report.menu?.opensUpward}, inside the panel ${report.menu?.insidePanel}, ` +

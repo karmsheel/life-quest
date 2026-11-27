@@ -108,12 +108,18 @@ type Sample = {
     svgs: number;
     icon: string | null;
   } | null;
-  attach: { label: string | null; svgs: number; icon: string | null } | null;
+  plus: { label: string | null; svgs: number; icon: string | null } | null;
   line: { children: string[] } | null;
   inLine: boolean;
-  attachBeforePill: boolean;
-  attachLeftOfPill: boolean;
+  plusBeforePill: boolean;
+  plusLeftOfPill: boolean;
   sameRow: boolean;
+  /** The composer box's own rect, and where the pill sits in it. */
+  box: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+  fieldBottom: number | null;
+  pillInBox: boolean;
+  pillBelowField: boolean;
+  pillOnBoxLeftHalf: boolean;
   pageHeading: string | null;
   railText: string | null;
   calls: number;
@@ -140,7 +146,8 @@ describe("page context e2e", () => {
     const byName = new Map(report.checks.scenarios.map((s) => [s.name, s]));
     for (const name of [
       "the-pill-is-on-by-default",
-      "the-pill-sits-beside-the-attach-control",
+      "the-pill-sits-beside-the-add-control",
+      "the-pill-sits-inside-the-composer-box",
       "clicking-the-pill-turns-it-off",
       "a-turn-sent-while-off-quotes-nothing",
       "walking-to-another-page-turns-it-back-on",
@@ -154,16 +161,22 @@ describe("page context e2e", () => {
       assert.equal(scenario.pass, true, `${driver} failed ${name}: ${scenario.detail ?? ""}`);
     }
 
-    // Landing: on, named the way the rail names it, and beside the receipt
+    // Landing: on, named the way the rail names it, and beside the add
     // control rather than somewhere else on the line.
     const landing = report.checks.landing;
     assert.equal(landing.path, "/home");
     assert.equal(landing.pill?.label, "Dashboard");
     assert.equal(landing.pill?.state, "on");
     assert.equal(landing.pill?.pressed, "true");
-    assert.equal(landing.attachBeforePill, true, "the pill is not after the attach control");
-    assert.equal(landing.inLine, true, "the pill left the composer's footer line");
-    assert.equal(landing.attach?.label, "Attach a receipt", "the attach control changed");
+    assert.equal(landing.plusBeforePill, true, "the pill is not after the add control");
+    assert.equal(landing.inLine, true, "the pill left the composer's receipts group");
+    assert.equal(landing.plus?.label, "Attach a file", "the add control changed");
+
+    // The pill is part of the one bordered composer box now: inside the box's
+    // bottom edge, under the field, and on the box's bottom-left half.
+    assert.equal(landing.pillInBox, true, "the pill left the composer box");
+    assert.equal(landing.pillBelowField, true, "the pill is not under the field");
+    assert.equal(landing.pillOnBoxLeftHalf, true, "the pill is not on the box's left half");
 
     // Off is a state, not a disappearance: the pill and its name stay put.
     assert.equal(report.checks.off?.state, "off");

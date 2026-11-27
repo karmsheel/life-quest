@@ -211,7 +211,9 @@ const bridge: Record<string, unknown> = {
   dbGet: () => ok(DATABASE),
   decisionList: () => ok([]),
   logList: () => ok([]),
-  kitList: () => ok([]),
+  // ChatPanel's receipt-store predicate: this page never attaches a picture, so
+  // a bare-vault answer is the honest one and the chip's offer stays absent.
+  receiptReady: () => ok(false),
   deadlineGetDismissed: () => ok(false),
   deadlineMaybeNotify: () => ok(null),
   deadlineDismiss: () => ok(true),
@@ -251,6 +253,10 @@ const bridge: Record<string, unknown> = {
   },
   has: () => true,
 });
+
+// The dock remembers its tab strip between runs; an earlier rig's strip would
+// open tabs this one never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
 
 /**
  * The second screen, kept deliberately small: a heading, a sentence, a list and

@@ -11,10 +11,17 @@ import {
   canDispatchAgent,
   DOCUMENT_KIND_LABELS,
   DOCTRINE_ORDER,
+  liveAreas,
   recordVisible,
 } from "@lifequest/vault-core/pure";
-import type { MapCommand } from "@lifequest/vault-core/map";
+import type { MapCommand, Task } from "@lifequest/vault-core/map";
 import { api } from "@/lib/ipc";
+import {
+  sendToAgentContext,
+  sendToAgentKickoff,
+  sendToAgentTitle,
+} from "@/lib/task-send";
+import { useChatDock } from "@/state/ChatDockProvider";
 import {
   documentsToUnlockDocs,
   useActiveDomain,
@@ -22,6 +29,8 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { RecurringTasksSection } from "@/components/recurring/RecurringTasksSection";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 
 /**
  * The doctrine headings the agent prompt carries. The page no longer renders
@@ -67,15 +76,16 @@ function ActContent() {
   const { snapshot, reloadGeneration, refresh } = useVault();
   const [params] = useSearchParams();
   const taskParam = params.get("task");
+  // The Dashboard's manage link lands here already asking to be shown the
+  // recurring section.
+  const manageRecurring = params.get("manage") === "recurring";
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
+  const chatDock = useChatDock();
 
+  // Every live area, base included: the brief on Life carries all of them.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => liveAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -93,7 +103,7 @@ function ActContent() {
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  const title = activeDomain?.meta.name ?? "Overview";
+  const title = activeDomain?.meta.name ?? "Life";
 
   useEffect(() => {
     void (async () => {
@@ -140,10 +150,10 @@ function ActContent() {
     (agent: AgentHire): string => {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
-      } for the domain "${title}".`;
+      } for the area "${title}".`;
       const brief = buildBrief(activeDomain, liveDomains);
       return `${head}\n\nExecute against this doctrine — stay aligned with Premise → Vision → Purpose → Strategy (How):\n\n${brief}\n\nTask: ${
-        promptDraft.trim() || "Propose the next concrete action for this domain."
+        promptDraft.trim() || "Propose the next concrete action for this area."
       }`;
     },
     [activeDomain, liveDomains, promptDraft, title],
@@ -204,12 +214,54 @@ function ActContent() {
     if (result.ok) await refresh();
   }
 
+  /**
+   * Give a task to a fresh companion chat.
+   *
+   * The chat is created first so the dock can open onto its real session id;
+   * the kickoff then travels as that chat's first message, built from the same
+   * board data the card is drawn from. The board keeps the card where it is
+   * until the agent itself moves it — a send-to-agent is a promise to work the task,
+   * not a claim that it is done.
+   */
+  const onSendToAgent = useCallback(
+    async (task: Task): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!snapshot?.map) {
+        return { ok: false, error: "The task board is still loading." };
+      }
+      try {
+        const created = await api().companionSessionCreate(sendToAgentTitle(task));
+        if (!created.ok) return { ok: false, error: created.error };
+        chatDock.requestSession({
+          id: created.value.id,
+          kickoff: sendToAgentKickoff(
+            task,
+            sendToAgentContext(snapshot.map, task, snapshot.goals, projects),
+          ),
+          session: created.value,
+          // The tab wears the Act board's mark: this chat is a task's work.
+          icon: "task",
+        });
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : "Failed to hand the task over",
+        };
+      }
+    },
+    [chatDock, projects, snapshot],
+  );
+
   return (
     <div className="act-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Act</p>
+          <WingEyebrow page="Task Manager" />
           <h1 className="act-page__title">{title}</h1>
+          <p className="stub-page__desc muted">
+            Six horizons. Drag a task to move it, or open its menu to edit it.
+          </p>
         </div>
       </header>
 
@@ -219,10 +271,17 @@ function ActContent() {
           goals={snapshot.goals}
           projects={projects}
           onCommand={(c) => void onMapCommand(c)}
+          onSendToAgent={onSendToAgent}
           initialOpenId={taskParam}
         />
       ) : snapshot?.mapError ? (
         <p className="form-error" role="alert">{snapshot.mapError}</p>
+      ) : null}
+
+      {/* Directly after the board and before the agent runner: recurrence is a
+          schedule beside the board's horizons, not a seventh column on it. */}
+      {snapshot?.map ? (
+        <RecurringTasksSection scrollOnMount={manageRecurring} />
       ) : null}
 
       <section className="act-page__section">
@@ -236,11 +295,11 @@ function ActContent() {
         {activeAgents.length === 0 ? (
           <div className="act-page__empty">
             <p className="muted">
-              No active agents. Scan Hermes and hire agents in Personnel, then
+              No active agents. Scan Hermes and hire agents in Agents, then
               return here to dispatch them against this doctrine.
             </p>
             <Link to="/personnel" className="act-page__link">
-              Go to Personnel →
+              Go to Agents →
             </Link>
           </div>
         ) : (

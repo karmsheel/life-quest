@@ -15,6 +15,7 @@ import {
   type PageWriteResult,
   type Result,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 // The three predicates below read a block field that arrives as `unknown` —
 // a page's blocks are operator/agent-authored JSON — so each one takes the raw
@@ -157,7 +158,7 @@ async function isDomainLive(root: string, slug: string): Promise<boolean> {
     await assertNoSymlinkLeaf(metaPath);
     const raw = await fs.readFile(metaPath, "utf8");
     const meta = JSON.parse(raw);
-    return meta.archivedAt == null;
+    return isLiveAreaMeta(meta);
   } catch {
     return false;
   }
@@ -218,7 +219,7 @@ export async function listPages(
           try {
             const raw = await fs.readFile(metaPath, "utf8");
             const meta = JSON.parse(raw);
-            if (meta.archivedAt == null) slugs.push(entry.name);
+            if (isLiveAreaMeta(meta)) slugs.push(entry.name);
           } catch {}
         }
       } catch {}

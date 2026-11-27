@@ -43,6 +43,22 @@ app.setPath("userData", path.join(artifactsDir, "userdata", "chat-chain"));
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-sessions.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
+/**
+ * The dock's bottom action bar, in order: the new-chat slot, the chain, the
+ * keyboard-shortcuts reference (the titlebar no longer carries it), the
+ * side-switch (the dock starts on the right, so its label asks for the left),
+ * and the way out. There is no history slot: the whole history is the sidebar's.
+ */
+const ACTION_SLOTS = [
+  "New chat",
+  "Notebox",
+  "Full screen chat",
+  "Keyboard shortcuts",
+  "Chat display settings",
+  "Move chat to the left of the page",
+  "Collapse chat"
+];
+
 const SAMPLE = `(() => {
   const box = (el) => {
     if (!el) return null;
@@ -73,7 +89,10 @@ const SAMPLE = `(() => {
     panel: box(panel),
     heading: text(document.querySelector(".chat-panel__heading")),
     threadHeader: Boolean(document.querySelector(".chat-panel__header--thread")),
-    chatListPresent: document.querySelector(".chat-panel__list") !== null,
+    // Which surface the dock is on, read off the shipped attribute. The dock has
+    // three: a thread, the chain, the shortcuts reference — the chat list is the
+    // sidebar's, not a surface of this pane.
+    surface: panel ? panel.getAttribute("data-chat-surface") : null,
     chatBody: chatBody
       ? { box: box(chatBody), display: style(chatBody, "display"), hidden: chatBody.hidden }
       : null,
@@ -196,11 +215,36 @@ const SAMPLE = `(() => {
       : { present: false },
     footer: footer ? { box: box(footer), hidden: footer.hidden } : null,
     actionsBar: box(document.querySelector(".chat-panel__actions")),
-    actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => ({
-      label: b.getAttribute("aria-label"),
-      pressed: b.getAttribute("aria-pressed") === "true",
-      disabled: b.disabled === true
-    })),
+    composerBox: box(document.querySelector(".chat-panel__composer-box")),
+    actionsBarBackground: (() => {
+      const el = document.querySelector(".chat-panel__actions");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    footerBackground: (() => {
+      const el = document.querySelector(".chat-panel__footer");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    headerIconSize: (() => {
+      // The header's last chrome icon is the agent picker's chevron: its chat
+      // controls moved to the tab and row menus.
+      const svg = document.querySelector(".chat-panel__header--thread svg");
+      return svg ? Math.round(svg.getBoundingClientRect().width) : null;
+    })(),
+    actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => {
+      const svg = b.querySelector("svg");
+      return {
+        label: b.getAttribute("aria-label"),
+        pressed: b.getAttribute("aria-pressed") === "true",
+        disabled: b.disabled === true,
+        opacity: Number(getComputedStyle(b).opacity),
+        iconSize: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
+        icon: svg
+          ? Array.from(svg.classList)
+              .filter((c) => c.indexOf("lucide-") === 0)
+              .join(" ")
+          : null
+      };
+    }),
     // Painted bubbles only: the thread's bubbles stay in the DOM while another
     // surface is up (the body is hidden, not unmounted), and a display:none row
     // has a 0x0 box — counting nodes reports a transcript that is not on screen.
@@ -374,6 +418,26 @@ async function main() {
     return Math.max(Math.abs(x[0] - y[0]), Math.abs(x[1] - y[1]), Math.abs(x[2] - y[2]));
   };
 
+  /**
+   * The alpha channel of a computed colour. A transparent surface is the
+   * redesign's claim (the row card is the page's card, not a tinted slab), and
+   * `rgba(...)`/`color(srgb ... / a)` are both what Chromium can answer with.
+   */
+  const alphaOf = (value) => {
+    const raw = String(value ?? "").trim();
+    const slash = raw.match(/\/\s*([\d.]+%?)\s*\)/);
+    if (slash) {
+      return slash[1].endsWith("%")
+        ? Number(slash[1].slice(0, -1)) / 100
+        : Number(slash[1]);
+    }
+    const legacy = raw.match(
+      /^rgba\(\s*[\d.]+[,\s]+[\d.]+[,\s]+[\d.]+\s*,\s*([\d.]+)\s*\)$/,
+    );
+    if (legacy) return Number(legacy[1]);
+    return 1;
+  };
+
   let report;
   const screenshots = [];
   const timeout = setTimeout(() => {
@@ -414,26 +478,73 @@ async function main() {
       `${landing.signalListCalls} list calls`,
     );
     check(
+      "the action bar holds its seven slots, in order",
+      JSON.stringify(landing.actions.map((slot) => slot.label)) ===
+        JSON.stringify(ACTION_SLOTS),
+      `slots ${JSON.stringify(landing.actions.map((slot) => slot.label))}`,
+    );
+    check(
+      "every action slot is live",
+      landing.actions.every((slot) => slot.disabled === false),
+      `disabled ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
+    );
+    check(
+      "the slots wear seven distinct icons, all one size and undimmed",
+      new Set(landing.actions.map((slot) => slot.icon)).size === ACTION_SLOTS.length &&
+        new Set(landing.actions.map((slot) => slot.iconSize)).size === 1 &&
+        (landing.actions[0]?.iconSize ?? 0) >= 18 &&
+        landing.actions.every((slot) => slot.opacity === 1),
+      `icons ${JSON.stringify(landing.actions.map((slot) => [slot.icon, slot.iconSize, slot.opacity]))}`,
+    );
+    check(
+      "the action icons are larger than the thread header's",
+      // A header with no chrome icon at all is the shipped shape now (a title
+      // and the agent picker): nothing to be larger than, so the check stands
+      // down rather than inventing a comparison.
+      landing.headerIconSize === null ||
+        (landing.actions[0]?.iconSize ?? 0) > landing.headerIconSize,
+      `${landing.actions[0]?.iconSize}px in the bar vs ${landing.headerIconSize}px in the header`,
+    );
+    check(
+      "the action bar floats inside the dock's bottom, clear of the composer",
+      Boolean(landing.actionsBar && landing.panel) &&
+        landing.actionsBar.bottom < landing.panel.bottom &&
+        landing.actionsBar.bottom <= landing.panel.bottom - 4 &&
+        landing.actionsBar.top >= (landing.footer?.box.bottom ?? 0),
+      `bar ${JSON.stringify(landing.actionsBar)} in panel ${JSON.stringify(landing.panel)}, composer ends ${landing.footer?.box.bottom}px`,
+    );
+    check(
+      "the action bar keeps the composer box's measure",
+      Boolean(
+        landing.actionsBar &&
+          landing.composerBox &&
+          Math.abs(landing.actionsBar.width - landing.composerBox.width) <= 1 &&
+          Math.abs(landing.actionsBar.left - landing.composerBox.left) <= 1 &&
+          Math.abs(landing.actionsBar.right - landing.composerBox.right) <= 1,
+      ),
+      `bar ${JSON.stringify(landing.actionsBar)} vs composer box ${JSON.stringify(landing.composerBox)}`,
+    );
+    check(
       "the chain slot is live on landing, and not marked active",
-      landing.actions[2]?.disabled === false && landing.actions[2]?.pressed === false,
-      `slot ${JSON.stringify(landing.actions[2])}`,
+      landing.actions[1]?.disabled === false && landing.actions[1]?.pressed === false,
+      `slot ${JSON.stringify(landing.actions[1])}`,
     );
 
     // 2 — the slot swaps the panel to the chain and reads it.
-    const clicked = await clickAria("Life-Chain");
+    const clicked = await clickAria("Notebox");
     const chain = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === expected.total,
       "the chain view lists every signal",
     );
-    check("clicked the Life-Chain slot", clicked, "no Life-Chain slot in the bottom bar");
+    check("clicked the Notebox slot", clicked, "no Notebox slot in the bottom bar");
     check(
       "the chain header names the surface",
-      chain.heading === "Life-Chain",
+      chain.heading === "Notebox",
       `heading "${chain.heading}"`,
     );
     check(
-      "the chain slot is marked active, and history is not",
-      chain.actions[2]?.pressed === true && chain.actions[0]?.pressed === false,
+      "the chain slot is marked active, and the new-chat slot is not",
+      chain.actions[1]?.pressed === true && chain.actions[0]?.pressed === false,
       `slots ${JSON.stringify(chain.actions.map((slot) => [slot.label, slot.pressed]))}`,
     );
     check(
@@ -555,14 +666,26 @@ async function main() {
       `stamps ${JSON.stringify(chain.items.slice(0, 3).map((item) => [item.day, item.time]))}`,
     );
     check(
-      "the assignment picker sits under the message box, not under the rail",
+      "the row card is unpainted like the page card",
+      chain.items.every((item) => alphaOf(item.messageBackground) === 0),
+      `message backgrounds ${JSON.stringify(chain.items.slice(0, 3).map((item) => item.messageBackground))}`,
+    );
+    check(
+      "the assignment picker sits inside the card at its foot, half the card's width",
       chain.items.every(
         (item) =>
           item.assignBox !== null &&
-          item.assignBox.top >= item.message.bottom - 1 &&
-          Math.abs(item.assignBox.left - item.message.left) <= 1,
+          item.message !== null &&
+          item.assignBox.left >= item.message.left - 1 &&
+          item.assignBox.right <= item.message.right + 1 &&
+          item.assignBox.top >= item.message.top - 1 &&
+          item.assignBox.bottom <= item.message.bottom + 1 &&
+          item.assignBox.width >= item.message.width * 0.4 - 1 &&
+          item.assignBox.width <= item.message.width * 0.55 + 1 &&
+          item.message.bottom - item.assignBox.bottom >= 0 &&
+          item.message.bottom - item.assignBox.bottom <= 16,
       ),
-      `first row assign ${JSON.stringify(oldestRow.assignBox)} under message ${JSON.stringify(oldestRow.message)}`,
+      `first row assign ${JSON.stringify(oldestRow.assignBox)} in message ${JSON.stringify(oldestRow.message)}`,
     );
     check(
       "the picker offers unassigned and the live domains, and no archived one",
@@ -885,10 +1008,10 @@ async function main() {
     screenshots.push(await shot("row-controls"));
 
     // 6 — a short chain rests on the composer instead of hanging from the top.
-    await clickAria("Life-Chain");
+    await clickAria("Notebox");
     const backToThread = await waitFor(
       (state) => state.threadHeader && state.chatField.present === true,
-      "the Life-Chain slot toggles back to the thread",
+      "the Notebox slot toggles back to the thread",
     );
     check(
       "the chain slot toggles the panel back",
@@ -896,7 +1019,7 @@ async function main() {
       `chain body hidden ${backToThread.chainBody?.hidden}, chat field ${backToThread.chatField.present}`,
     );
     await run("window.__lqSignalLimit = 3");
-    await clickAria("Life-Chain");
+    await clickAria("Notebox");
     const short = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === 3,
       "the short chain lists three signals",
@@ -931,27 +1054,32 @@ async function main() {
     );
     screenshots.push(await shot("short"));
 
-    // 7 — the chat list is still one click away, and the chain's own read is
-    // what puts the logged signals back on screen.
+    // 7 — leaving the chain lands back on the thread, and coming back is the
+    // chain's own read: that is what puts the logged signals back on screen.
+    // There is no chats list to leave for — the history is the sidebar's — so
+    // the slot toggles between the chain and the thread it was opened from.
     await run("window.__lqSignalLimit = null");
-    const historyClicked = await clickAria("Chat history");
-    const chatList = await waitFor(
-      (state) => state.chatListPresent === true,
-      "the chats list opens from the chain",
+    const backClicked = await clickAria("Notebox");
+    const chainClosed = await waitFor(
+      (state) => state.surface === "thread" && state.threadHeader === true,
+      "the chain slot toggles back to the thread",
     );
-    check("clicked Chat history", historyClicked, "no Chat history slot");
+    check("clicked the chain slot to leave the chain", backClicked, "no Notebox slot");
     check(
-      "the chats list replaces the chain",
-      chatList.chatListPresent === true && chatList.chainBody?.hidden === true,
-      `list ${chatList.chatListPresent}, chain hidden ${chatList.chainBody?.hidden}`,
+      "the thread replaces the chain",
+      chainClosed.surface === "thread" &&
+        chainClosed.threadHeader === true &&
+        chainClosed.chatField.present === true &&
+        chainClosed.chainBody?.hidden === true,
+      `surface ${chainClosed.surface}, chain hidden ${chainClosed.chainBody?.hidden}`,
     );
     check(
-      "the chats list did not ask for the chain",
-      chatList.signalListCalls === short.signalListCalls,
-      `${chatList.signalListCalls} list calls vs ${short.signalListCalls}`,
+      "leaving the chain did not ask for it again",
+      chainClosed.signalListCalls === short.signalListCalls,
+      `${chainClosed.signalListCalls} list calls vs ${short.signalListCalls}`,
     );
 
-    await clickAria("Life-Chain");
+    await clickAria("Notebox");
     const reread = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === afterDelete,
       "the chain re-reads both logged signals",
@@ -1001,7 +1129,7 @@ async function main() {
         deleted,
         backToThread,
         short,
-        chatList,
+        chainClosed,
         reread,
       },
       screenshots,
@@ -1044,7 +1172,7 @@ async function main() {
       ["assigned", states.assigned],
       ["deleted", states.deleted],
       ["chain (short)", states.short],
-      ["chat list", states.chatList],
+      ["left the chain", states.chainClosed],
       ["re-read", states.reread],
     ];
     for (const [name, state] of rows) {
@@ -1052,7 +1180,7 @@ async function main() {
       const newest = items[items.length - 1];
       table.push([
         name,
-        state.threadHeader ? "thread" : state.chatListPresent ? "list" : state.chainBody?.hidden === false ? "chain" : "—",
+        state.surface ?? (state.threadHeader ? "thread" : "—"),
         String(items.length),
         String(state.chainBody?.clientHeight ?? "—"),
         String(state.chainBody?.scrollHeight ?? "—"),

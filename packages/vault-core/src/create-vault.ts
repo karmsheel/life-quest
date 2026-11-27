@@ -1,18 +1,21 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { DEFAULT_DECISION_INBOX_SETTINGS } from "./decision-inbox.ts";
 import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { openVault } from "./open-vault.ts";
 import { vaultPaths } from "./paths.ts";
+import { defaultReviewAvailability } from "./review-availability.ts";
 import {
   DEFAULT_HERMES_URL,
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
-  SEED_DOMAINS,
+  AREA_SEEDS,
   type DomainMeta,
   type LifequestJson,
+  type OnboardingRecord,
   type Result,
   type VaultSettings,
   type VaultSnapshot,
@@ -53,18 +56,32 @@ export async function createVault(
       weekStartDay: "monday",
       autoApproveInserts: [],
       chatQuestions: [],
+      decisionInbox: { ...DEFAULT_DECISION_INBOX_SETTINGS },
+      reviewAvailability: defaultReviewAvailability(),
+      agentScopes: [],
     };
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);
     await atomicWriteFile(paths.logJsonl, "");
 
-    for (let i = 0; i < SEED_DOMAINS.length; i++) {
-      const seed = SEED_DOMAINS[i]!;
+    // A new vault has not run the interview yet. The file is what makes it
+    // eligible for the first-run card: a vault with no onboarding file reads as
+    // `completed`, which is the rule that keeps existing vaults quiet.
+    const onboarding: OnboardingRecord = {
+      status: "not_started",
+      startedAt: null,
+      completedAt: null,
+      unlockedAreas: [],
+    };
+    await atomicWriteFile(paths.onboardingJson, `${JSON.stringify(onboarding, null, 2)}\n`);
+
+    for (const seed of AREA_SEEDS) {
       const meta: DomainMeta = {
         name: seed.name,
         description: null,
         color: null,
-        sortOrder: i,
+        sortOrder: seed.sortOrder,
+        unlockedAt: seed.locked ? null : now,
         archivedAt: null,
         createdAt: now,
         updatedAt: now,
@@ -84,13 +101,17 @@ export async function createVault(
         await atomicWriteFile(paths.documentMd(seed.slug, kind), md);
       }
 
-      const logRes = await appendLog(paths.root, {
-        domainSlug: seed.slug,
-        type: "domain.created",
-        summary: `Created domain ${seed.name}`,
-        payload: { name: seed.name },
-      });
-      if (!logRes.ok) return logRes;
+      // A locked area has no log line: the Log is operator-visible, and a
+      // locked area must not be named there. Unlocking logs its own event.
+      if (!seed.locked) {
+        const logRes = await appendLog(paths.root, {
+          domainSlug: seed.slug,
+          type: "domain.created",
+          summary: `Created area ${seed.name}`,
+          payload: { name: seed.name },
+        });
+        if (!logRes.ok) return logRes;
+      }
     }
 
     return openVault(paths.root);

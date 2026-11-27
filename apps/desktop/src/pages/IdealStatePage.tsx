@@ -8,6 +8,7 @@ import {
 import { MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { asHeld, sameNote } from "@/lib/note-body";
 import { api } from "@/lib/ipc";
@@ -585,7 +586,11 @@ export default function IdealStatePage() {
     <div className="ideal-state">
       <div className="ideal-state__layout">
         <header className="ideal-state__header">
+          <WingEyebrow page="Ideal State" />
           <h1>Ideal State</h1>
+          <p className="stub-page__desc muted">
+            The future you are writing toward. One document open, the rest beside it.
+          </p>
         </header>
 
         {error ? (

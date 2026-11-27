@@ -1,17 +1,16 @@
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
   DatabaseColumnSpec,
   DatabaseColumnType,
   DatabaseDecisionBody,
+  DatabaseMergeSource,
   DatabaseMeta,
 } from "./types.ts";
 import {
   DATABASE_COLUMN_TYPES,
-  FINANCE_DB_IDS,
-  FINANCE_DOMAIN_SLUG,
 } from "./types.ts";
 import {
   addDatabaseColumn,
@@ -24,10 +23,20 @@ import {
   rowDisplayLabel,
   isDomainLive,
   listDatabases,
+  describePayeeIssues,
   listRows,
+  normaliseFinancePayeeCells,
   upsertRow,
   validateRowCells,
 } from "./domain-databases.ts";
+import {
+  MERGE_SOURCES_MAX,
+  databaseRowFingerprint,
+  describeDatabaseLifecycleRefusal,
+  isFinanceDatabase as isFinanceDb,
+  planDatabaseMerge,
+  readDatabaseColumnSignature,
+} from "./database-lifecycle.ts";
 import { listSyncConflicts } from "./adapters.ts";
 import { listInstalledKits } from "./finance-kit.ts";
 import { createDecision, listDecisions } from "./decisions.ts";
@@ -210,7 +219,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
       "database for relation), so a bad schema writes nothing. Returns " +
       "{ applied: true, databaseId, name, columns } where columns is how many were created; claim the " +
       "database exists only when applied is true. Use add_column to add a column to a database that " +
-      "already exists (that files a pending Decision).",
+      "already exists (that files a pending Decision). Call list_databases first and reuse an existing " +
+      "database with the same name; a duplicate name is refused.",
     parameters: {
       type: "object",
       properties: {
@@ -261,6 +271,62 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
         relationDatabaseId: { type: "string", description: "Required for type 'relation'." },
       },
       required: ["domainSlug", "databaseId", "name", "type"],
+    },
+  },
+  {
+    name: "delete_database",
+    description:
+      "Propose deleting a whole database and every row in it. This removes data that already exists, so " +
+      "it files ONE pending Decision and writes nothing: the database and its rows are still there until " +
+      "the operator approves it in Decisions, and a rejected Decision must not be retried as a silent " +
+      "write. Refused, with nothing filed, when the database is linked to an outside adapter, belongs to " +
+      "the Finance kit, is the target of another database's relation column, or is read by a saved " +
+      "dashboard view; the error names what has to be removed first. Returns " +
+      "{ decisionId, status: 'pending', posted: false, databaseId, name, rowCount }.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+      },
+      required: ["domainSlug", "databaseId"],
+    },
+  },
+  {
+    name: "merge_databases",
+    description:
+      "Propose collapsing one or more duplicate databases into a target database and then deleting the " +
+      "sources. This changes data that already exists, so it files ONE pending Decision and writes " +
+      "nothing: rows move into the target only when the operator approves it in Decisions. Columns are " +
+      "matched by name; a source column with no match is added to the target; select options are " +
+      "unioned; a relation column must point at the same database in both. Each moved row keeps its own " +
+      "created and updated timestamps, and rows whose mapped cells exactly duplicate a row already in " +
+      "the target are skipped unless dedupe is false. sourceDatabaseIds must be 1 to 20 distinct " +
+      "databases in the same area as the target, and must not include it. Refused, with nothing filed, " +
+      "when any database is adapter-linked or owned by the Finance kit, or when a SOURCE is referenced " +
+      "by another database's relation column or read by a saved view. Returns " +
+      "{ decisionId, status: 'pending', posted: false, targetDatabaseId, targetName, " +
+      "sources: [{ databaseId, name, rowCount }], rowsToMove, newColumns, dedupe }.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        targetDatabaseId: {
+          type: "string",
+          description: "The database that survives and receives the moved rows.",
+        },
+        sourceDatabaseIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "1 to 20 databases to move into the target and delete.",
+        },
+        dedupe: {
+          type: "boolean",
+          description:
+            "Skip rows whose mapped cells exactly duplicate an existing target row (default true).",
+        },
+      },
+      required: ["domainSlug", "targetDatabaseId", "sourceDatabaseIds"],
     },
   },
 ];
@@ -550,10 +616,11 @@ async function validateNewDatabaseColumns(
  * KAR-65 §3.2: used only to title a Decision and enable the extra finance checks.
  * It is deliberately NOT used to decide whether to gate: the gate is
  * unconditional, for every database in every live domain under any sotMode.
+ *
+ * The predicate itself lives in `database-lifecycle.ts`, beside the refusal it
+ * feeds: a finance database is one of the two lifecycles' untouchable tables, and
+ * the propose and apply paths must agree about which ones those are.
  */
-const isFinanceDb = (domainSlug: string, databaseId: string): boolean =>
-  domainSlug === FINANCE_DOMAIN_SLUG &&
-  (Object.values(FINANCE_DB_IDS) as string[]).includes(databaseId);
 
 function decisionTitle(
   op: DatabaseDecisionBody["op"],
@@ -642,11 +709,15 @@ async function checkConflicts(
  * (`upsert_row` with no id) and a BATCH OF NEW ROWS (`insert_rows`).
  *
  * Changing what the vault already holds still goes through Decisions:
- * `upsert_row` with an id (an update), `delete_row`, and `add_column` all file
- * one pending Decision and write nothing until the operator approves it. That
+ * `upsert_row` with an id (an update), `delete_row`, `add_column`,
+ * `delete_database` and `merge_databases` all file one pending Decision and
+ * write nothing until the operator approves it. That
  * is the operator's own line — "the update or delete of existing data should
  * definitely go through the decision gate" — and it is why the direct path
- * below is limited to creates.
+ * below is limited to creates. Deleting a whole database and moving its rows
+ * into another one (2026-11-15) are changes to data that exists, so they are on
+ * the gated side for the same reason; LAWS/DATABASES.md says so in as many
+ * words.
  *
  * Ingest mappings and batches keep their own gate (LAWS/DATABASES.md): they are
  * not the companion adding a row it was asked for, they are a file import whose
@@ -866,13 +937,23 @@ export async function executeDatabaseTool(
       if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
         return fail("VALIDATION", "cells must be a JSON object keyed by column id");
       }
-      const cellMap = cells as Record<string, unknown>;
+      const rawCellMap = cells as Record<string, unknown>;
       // validateCells passes vacuously on {}, so an empty map is rejected here.
-      if (Object.keys(cellMap).length === 0) {
+      if (Object.keys(rawCellMap).length === 0) {
         return fail("VALIDATION", "cells must not be empty");
       }
 
       const { slug: domainSlug } = live;
+      // Normalise before the write is labelled or filed, so a pending Decision
+      // shows the cells that will actually land — not the polluted payee.
+      const normalisedPayee = await normaliseFinancePayeeCells(
+        root,
+        domainSlug,
+        String(args.databaseId),
+        rawCellMap,
+      );
+      const cellMap = normalisedPayee.cells;
+      const payeeWarnings = describePayeeIssues(normalisedPayee.issues);
       const databaseId = String(args.databaseId);
       const rowId = isNonEmptyString(args.id) ? String(args.id) : null;
 
@@ -924,6 +1005,7 @@ export async function executeDatabaseTool(
           databaseId,
           rowId: written.value.id,
           rowCount: 1,
+          ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
         };
       }
 
@@ -950,7 +1032,13 @@ export async function executeDatabaseTool(
       });
       if ("error" in filed) return filed;
       const decisionId = String((filed as { decisionId: string }).decisionId);
-      return { decisionId, status: "pending", posted: false, rowCount: 1 };
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        rowCount: 1,
+        ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
+      };
     }
 
     case "delete_row": {
@@ -1002,6 +1090,28 @@ export async function executeDatabaseTool(
       }
       const { slug: domainSlug } = live;
       const name = String(args.name).trim();
+
+      // Prevention belongs with the tool, not only with the prompt. The
+      // companion minted four "Supplement log" tables because "call
+      // list_databases first" is advice a model forgets; a second database whose
+      // name (trimmed, case-insensitive) already exists in this area is refused,
+      // and the message tells it which id to reuse. The Data page can still make
+      // a same-named database by hand — this rule is about the tool path.
+      const existingDatabases = await listDatabases(root, domainSlug);
+      if (existingDatabases.ok) {
+        const key = name.toLowerCase();
+        const collision = existingDatabases.value.find(
+          (entry) => entry.database.name.trim().toLowerCase() === key,
+        );
+        if (collision) {
+          return fail(
+            "VALIDATION",
+            `A database named "${collision.database.name.trim()}" already exists in ${domainSlug} ` +
+              `(id ${collision.database.id}). Use it instead of creating another; rename the new ` +
+              "one if it is genuinely different.",
+          );
+        }
+      }
 
       const validatedColumns = await validateNewDatabaseColumns(
         root,
@@ -1110,6 +1220,197 @@ export async function executeDatabaseTool(
       });
     }
 
+    // ─── Database lifecycle: one pending Decision each, nothing written. ──────
+    case "delete_database": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      // The guards are refusals, not errors: nothing is filed, and the message
+      // says what has to be removed first. They are re-checked on approve.
+      const refusal = await describeDatabaseLifecycleRefusal(root, domainSlug, databaseId);
+      if (refusal) return fail("VALIDATION", refusal);
+
+      // The row count the operator is shown and the digest the apply re-checks
+      // are read together, from the same table snapshot.
+      const rows = await databaseRowFingerprint(root, domainSlug, databaseId);
+      if (!rows.ok) return engineError(rows.error);
+
+      const body: DatabaseDecisionBody = {
+        op: "delete-database",
+        databaseName: dbMeta.name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+        rowCount: rows.value.rowCount,
+        fingerprint: rows.value.fingerprint,
+      };
+      const filed = await fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId },
+        proposedTitle: `Delete database "${dbMeta.name}"`,
+        body,
+        previousBodyMarkdown: null,
+      });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        databaseId,
+        name: dbMeta.name,
+        rowCount: rows.value.rowCount,
+      };
+    }
+
+    case "merge_databases": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.targetDatabaseId)) {
+        return fail("VALIDATION", "targetDatabaseId is required");
+      }
+      const { slug: domainSlug } = live;
+      const targetDatabaseId = String(args.targetDatabaseId).trim();
+
+      const rawSources = args.sourceDatabaseIds;
+      if (!Array.isArray(rawSources)) {
+        return fail("VALIDATION", "sourceDatabaseIds must be an array of database ids");
+      }
+      if (rawSources.length < 1 || rawSources.length > MERGE_SOURCES_MAX) {
+        return fail(
+          "VALIDATION",
+          `sourceDatabaseIds must contain 1 to ${MERGE_SOURCES_MAX} database ids`,
+        );
+      }
+      const sourceIds: string[] = [];
+      const seenSourceIds = new Set<string>();
+      for (let i = 0; i < rawSources.length; i++) {
+        if (!isNonEmptyString(rawSources[i])) {
+          return fail("VALIDATION", `sourceDatabaseIds[${i}] must be a non-empty database id`);
+        }
+        const id = String(rawSources[i]).trim();
+        if (seenSourceIds.has(id)) {
+          return fail("VALIDATION", `sourceDatabaseIds names the same database twice: ${id}`);
+        }
+        seenSourceIds.add(id);
+        sourceIds.push(id);
+      }
+      if (sourceIds.includes(targetDatabaseId)) {
+        return fail("VALIDATION", "A database cannot be merged into itself");
+      }
+      const dedupe = args.dedupe === undefined || args.dedupe === null ? true : args.dedupe;
+      if (typeof dedupe !== "boolean") {
+        return fail("VALIDATION", "dedupe must be a boolean");
+      }
+
+      const target = await getDatabase(root, domainSlug, targetDatabaseId);
+      if (!target.ok) return engineError(target.error);
+      const targetMeta = target.value;
+
+      // Adapter/kit guards apply to the target as well: it survives, but the
+      // merge writes its schema and rows. Relation/view references only block the
+      // SOURCES — a card or a relation onto the surviving table stays valid, and
+      // refusing it would block collapsing duplicates into the table the operator
+      // already reads.
+      const targetRefusal = await describeDatabaseLifecycleRefusal(
+        root,
+        domainSlug,
+        targetDatabaseId,
+        { references: false },
+      );
+      if (targetRefusal) return fail("VALIDATION", targetRefusal);
+
+      const sourceMetas: DatabaseMeta[] = [];
+      for (const sourceId of sourceIds) {
+        const meta = await getDatabase(root, domainSlug, sourceId);
+        if (!meta.ok) return engineError(meta.error);
+        const refusal = await describeDatabaseLifecycleRefusal(root, domainSlug, sourceId);
+        if (refusal) return fail("VALIDATION", refusal);
+        sourceMetas.push(meta.value);
+      }
+
+      // The column plan is what the operator approves, so a conflict in it is a
+      // refusal now rather than a half-applied merge later.
+      const plan = await planDatabaseMerge(root, domainSlug, targetMeta, sourceMetas);
+      if (!plan.ok) return engineError(plan.error);
+
+      const sources: DatabaseMergeSource[] = [];
+      let rowsToMove = 0;
+      for (const meta of sourceMetas) {
+        const rows = await databaseRowFingerprint(root, domainSlug, meta.id);
+        if (!rows.ok) return engineError(rows.error);
+        rowsToMove += rows.value.rowCount;
+        sources.push({
+          databaseId: meta.id,
+          name: meta.name,
+          rowCount: rows.value.rowCount,
+          fingerprint: rows.value.fingerprint,
+          columns: readDatabaseColumnSignature(meta),
+        });
+      }
+
+      // The merge's own digest is a summary of the source fingerprints. The
+      // per-source fields are what the apply re-checks; this one lets the card
+      // and the log carry one value for the whole move.
+      const fingerprint = createHash("sha256")
+        .update(
+          [...sources]
+            .sort((a, b) => a.databaseId.localeCompare(b.databaseId))
+            .map((source) => `${source.databaseId}:${source.fingerprint}`)
+            .join("\n"),
+        )
+        .digest("hex");
+
+      const body: DatabaseDecisionBody = {
+        op: "merge-databases",
+        databaseName: targetMeta.name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+        sources,
+        newColumns: plan.value.newColumns,
+        widenedColumns: plan.value.widenedColumns,
+        expectedColumns: readDatabaseColumnSignature(targetMeta),
+        dedupe,
+        fingerprint,
+      };
+      const filed = await fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId: targetDatabaseId },
+        proposedTitle:
+          `Merge ${sourceMetas.length} ` +
+          `${sourceMetas.length === 1 ? "database" : "databases"} into "${targetMeta.name}"`,
+        body,
+        previousBodyMarkdown: null,
+      });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        targetDatabaseId,
+        targetName: targetMeta.name,
+        sources: sources.map((source) => ({
+          databaseId: source.databaseId,
+          name: source.name,
+          rowCount: source.rowCount,
+        })),
+        rowsToMove,
+        newColumns: plan.value.newColumns.map((spec) => spec.name),
+        dedupe,
+      };
+    }
+
     case "insert_rows": {
       const live = await requireLiveDomain(root, args.domainSlug);
       if (!live.ok) return live.result;
@@ -1134,6 +1435,7 @@ export async function executeDatabaseTool(
         (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
       )?.id;
       const seenExternal = new Set<string>();
+      const batchPayeeWarnings = new Set<string>();
       const ids: string[] = [];
       const rows: Array<{ id: string; cells: Record<string, unknown> }> = [];
       const labels: string[] = [];
@@ -1143,9 +1445,19 @@ export async function executeDatabaseTool(
         if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must be a JSON object keyed by column id`);
         }
-        const cellMap = cells as Record<string, unknown>;
-        if (Object.keys(cellMap).length === 0) {
+        const draftCellMap = cells as Record<string, unknown>;
+        if (Object.keys(draftCellMap).length === 0) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must not be empty`);
+        }
+        const normalisedPayee = await normaliseFinancePayeeCells(
+          root,
+          domainSlug,
+          databaseId,
+          draftCellMap,
+        );
+        const cellMap = normalisedPayee.cells;
+        for (const warning of describePayeeIssues(normalisedPayee.issues)) {
+          batchPayeeWarnings.add(warning);
         }
 
         const typed = await validateRowCells(root, domainSlug, databaseId, cellMap);
@@ -1193,6 +1505,7 @@ export async function executeDatabaseTool(
         databaseId,
         rowCount: rows.length,
         rowIds: ids,
+        ...(batchPayeeWarnings.size > 0 ? { warnings: [...batchPayeeWarnings] } : {}),
       };
     }
 

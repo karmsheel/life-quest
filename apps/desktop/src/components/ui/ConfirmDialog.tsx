@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./Button.tsx";
 
 export type ConfirmDialogProps = {
@@ -24,6 +25,16 @@ export type ConfirmDialogProps = {
  * it, so a flow that depends on it can only be tested through a stub. This is
  * the in-window equivalent — a fixed backdrop over the viewport with a centred
  * card — and it is what a destructive write asks through.
+ *
+ * It is drawn in a portal on `document.body`, not where the caller rendered it.
+ * The row that asks lives inside a pane — the sidebar, the dock — and those
+ * panes are positioned, z-indexed columns of the shell: a `position: fixed`
+ * backdrop inside one of them is trapped in that column's stacking context, so a
+ * sibling pane painted later covers the half of the card that hangs over it. It
+ * also fails the other way round: the sheet's scrim would paint over a question
+ * asked from the rail. Portalling gives the question the window's own stack,
+ * which is what a modal promise means; the stylesheet's `z-index` then orders it
+ * against the app's other surfaces, whichever pane raised it.
  */
 export function ConfirmDialog({
   open,
@@ -58,7 +69,7 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="confirm-dialog-backdrop"
       role="presentation"
@@ -108,6 +119,7 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

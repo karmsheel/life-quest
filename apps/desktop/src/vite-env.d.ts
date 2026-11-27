@@ -6,6 +6,7 @@ import type {
   DatabaseListEntry,
   DatabaseMeta,
   DatabaseRow,
+  DecisionAmendment,
   DecisionRecord,
   DocumentKind,
   DoctrineDocument,
@@ -19,6 +20,9 @@ import type {
   LibraryListResult,
   LibraryUpdatePatch,
   ManualDecisionRecord,
+  OnboardingConfirmOptions,
+  OnboardingConfirmResult,
+  OnboardingRecord,
   Project,
   ProjectCreateInput,
   ProjectListResult,
@@ -30,6 +34,11 @@ import type {
   AutomationInput,
   AutomationRecord,
   AutomationRunPatch,
+  AnalyticsMatrix,
+  MetricDefinition,
+  MetricDefinitionDraft,
+  MetricEventRow,
+  MetricEvents,
   PageBlock,
   PageListEntry,
   PageRecord,
@@ -40,16 +49,25 @@ import type {
   IdealStateDocument,
   IdealStateIndexEntry,
   IdealStateUpdatePatch,
+  ImageMimeType,
+  ImageSaveInput,
+  ImageUpdatePatch,
+  VaultImage,
+  VisionBoard,
+  VisionBoardBlock,
   PeriodPack,
   Pin,
   PinBoardRead,
   PinWriteResult,
+  CompanionBriefRead,
+  BriefDismissalReason,
   PlanningStub,
   Result,
   ReviewCadence,
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
+  ReviewWriteOutcome,
   ScriptApplyResult,
   ScriptRunResult,
   SavedView,
@@ -84,34 +102,117 @@ type RecentVaultEntry = {
   lastOpenedAt: string;
 };
 
+type HarnessId = "hermes" | "pi";
+
+/** One file in the app profile's `themes/` directory, as main read it. */
+type ThemeFileEntry =
+  | { file: string; raw: string; mtime: number }
+  | { file: string; error: string };
+
+/**
+ * One saved version of one theme file, as main keeps it under
+ * `theme-history/`. `savedAt` is the real ISO timestamp; `id` is the name the
+ * restore call takes.
+ */
+type ThemeVersion = {
+  id: string;
+  savedAt: string;
+  label: string;
+  bytes: number;
+};
+
+/**
+ * One companion's status, whichever companion answered.
+ *
+ * `harness` and `detail` are the harness-neutral part: the renderer shows the
+ * sentence and never formats a port or a profile path itself. The Hermes fields
+ * are optional because a built-in companion has neither.
+ *
+ * Every status on the wire is tagged with the agent that produced it, so a late
+ * answer from an agent the operator has since switched away from can be
+ * dropped instead of painted over the one now in front. `switching` is the
+ * answer a switch gives at once, before the target has come up.
+ */
 type CompanionStatus =
   | {
       kind: "ready";
-      port: number;
-      baseUrl: string;
-      startedByLifeQuest: boolean;
-      profilePath: string;
-      cliPath: string;
-      childPid: number | null;
+      harness: HarnessId;
+      /** One sentence: "Ready · <provider> · <model>" or "Ready · <url> · attached". */
+      detail: string;
       /**
        * Set when the model probe found the pinned model missing from this
-       * profile's catalog. Arrives AFTER the first ready status, on
+       * companion's catalog. Arrives AFTER the first ready status, on
        * `onCompanionStatusChanged`, so the splash never waits for it.
        */
       modelWarning?: string;
+      // Hermes-only facts.
+      port?: number;
+      baseUrl?: string;
+      startedByLifeQuest?: boolean;
+      profilePath?: string;
+      cliPath?: string;
+      childPid?: number | null;
     }
-  | { kind: "needs_install" }
-  | { kind: "profile_error"; message: string; path?: string }
-  | { kind: "port_busy"; port: number }
+  | { kind: "needs_install"; harness?: HarnessId }
+  /** Built in, but no endpoint/model/key configured yet. */
+  | { kind: "needs_setup"; message?: string; harness?: HarnessId }
+  | { kind: "profile_error"; message: string; path?: string; harness?: HarnessId }
+  | { kind: "port_busy"; port: number; harness?: HarnessId }
   /**
    * What the Hermes CLI said when the gateway could not be brought up. Whichever
    * stream carried it — Hermes prints its refusals on stdout — plus the exit-code
    * fallback when it said nothing at all.
    */
-  | { kind: "gateway_exited"; detail: string }
-  | { kind: "disconnected" }
-  | { kind: "hermes_too_old"; version?: string }
-  | { kind: "auth_error" };
+  | { kind: "gateway_exited"; detail: string; harness?: HarnessId }
+  | { kind: "disconnected"; harness?: HarnessId }
+  | { kind: "hermes_too_old"; version?: string; harness?: HarnessId }
+  | { kind: "auth_error"; harness?: HarnessId }
+  /** Chosen from the switcher, not up yet: the ensure is running in the background. */
+  | { kind: "switching"; harness: HarnessId };
+
+/**
+ * What a harness can put in a turn's work log. The renderer omits what is
+ * false instead of drawing an empty placeholder; `reasoning` says whether the
+ * row is a real delta stream or a lossy preview.
+ */
+type HarnessTurnCapabilities = {
+  toolRows: boolean;
+  toolArgs: boolean;
+  toolCallIds: boolean;
+  toolResultsLive: boolean;
+  toolResultsOnSettle: boolean;
+  toolDurations: boolean;
+  toolProgress: boolean;
+  reasoning: "delta" | "preview" | "none";
+  commentary: boolean;
+  steps: boolean;
+  usage: boolean;
+  history: boolean;
+  approvals: boolean;
+  steering: boolean;
+};
+
+/** One companion the picker offers. */
+type HarnessSummary = {
+  id: HarnessId;
+  name: string;
+  blurb: string;
+  kind: "external" | "embedded";
+  active: boolean;
+  /** Which mark the switcher draws. */
+  icon: string;
+  capabilities: HarnessTurnCapabilities;
+};
+
+/** The built-in companion's endpoint, as Settings reads it. The key is never returned. */
+type PiSettings = {
+  baseUrl: string;
+  model: string;
+  providerName: string;
+  hasKey: boolean;
+  /** False when OS secure storage is unavailable and the key is session-only. */
+  keyPersisted: boolean;
+};
 
 /** One installed Hermes profile, as the picker lists it. */
 type CompanionProfileInfo = {
@@ -130,6 +231,52 @@ type CompanionProfilesResult = {
   profiles: CompanionProfileInfo[];
 };
 
+/**
+ * Which agent a vault runs on. A vault is the profile that is loaded, so its
+ * companion choice and its Hermes agent are the vault's, never the app's.
+ */
+export type VaultAgentBinding = {
+  harness: HarnessId;
+  hermesProfile: string | null;
+};
+
+/**
+ * One Hermes profile the operator could bind, with the vaults it already works
+ * on. A non-empty `usedBy` is the reuse warning: memory, skills and knowledge
+ * would be shared with those vaults.
+ */
+export type VaultAgentProfile = {
+  name: string;
+  path: string;
+  isDefault: boolean;
+  hasSoul: boolean;
+  hasConfig: boolean;
+  usedBy: { vaultId: string; vaultName: string }[];
+};
+
+/** Settings → Agents in this vault, in one read. */
+export type VaultAgentsState = {
+  vaultId: string | null;
+  binding: VaultAgentBinding;
+  installedProfiles: VaultAgentProfile[];
+  vaultOpen: boolean;
+};
+
+/** Create a new agent for the vault, or reuse an installed one explicitly. */
+export type VaultAgentAddInput =
+  | { mode: "fresh"; name?: string }
+  | { mode: "existing"; profile: string };
+
+/**
+ * The open vault's agent changed: its binding was applied on vault open, or the
+ * operator switched from the dock. The harness id can move while neither
+ * agent's status does, so this is its own push rather than a status event.
+ */
+export type CompanionHarnessChanged = {
+  harness: HarnessId;
+  vaultId: string | null;
+};
+
 type CompanionInstructionsContext = {
   domainName: string | null;
   domainSlug: string | null;
@@ -141,8 +288,12 @@ type CompanionInstructionsContext = {
    * view, which gates nothing.
    */
   viewingBoardLocked?: boolean;
-  /** The one dashboard card the operator put in front of this chat, if any. */
-  focusedCard?: FocusedCardContext | null;
+  /**
+   * The dashboard cards the operator put in front of this chat, in the order
+   * they were chosen. Absent means nobody pointed at a card, and the turn is the
+   * turn it always was.
+   */
+  focusedCards?: FocusedCardContext[] | null;
   /**
    * The page the operator has open, when the composer's page-context pill is
    * on. Absent means the pill is off, and the turn is the turn it always was.
@@ -151,9 +302,28 @@ type CompanionInstructionsContext = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  /**
+   * The open vault's absolute root, when one is open.
+   *
+   * The picture rule tells the companion to save a generated or shared picture
+   * into the vault before writing the markdown tag that draws it, and the
+   * gateway's working directory is neither the vault nor stable — so a turn
+   * names the root it may save under. Absent when no vault is open.
+   */
+  vaultRoot?: string | null;
   reviewContext?: string;
   /** The page material an automation opened this chat with, already fenced. */
   automationContext?: string;
+  /**
+   * The vault's onboarding interview, while it is unfinished. Absent or null
+   * once the record is complete, which is what keeps the five-area rubric out
+   * of every later turn. Main re-derives it from the snapshot before sending, so
+   * a stale renderer value cannot re-offer a finished interview.
+   */
+  onboarding?: {
+    status: "not_started" | "in_progress";
+    proposalPending: boolean;
+  } | null;
   fileUnsolicited?: boolean;
 };
 
@@ -175,15 +345,63 @@ type FocusedCardContext = {
   system?: string;
 };
 
+/** Exact token accounting for one turn, when the harness reports it. */
+type TurnUsage = {
+  input?: number;
+  output?: number;
+  total?: number;
+};
+
+/**
+ * One picture a transcript row carries. `src` (a data URL) paints directly;
+ * `ref` is a path main reads through `chat:imageRead`, because a reloaded
+ * Hermes turn records where the gateway kept the operator's picture rather than
+ * the bytes. A row has at least one of them.
+ */
+export type TranscriptImage = { name: string; ref?: string; src?: string };
+
+/**
+ * One structured transcript row, as history rebuilds it: a user message, an
+ * assistant message with the calls it requested, or a tool result. The flat
+ * `{role, content, at}` rows older stubs return are a strict subset.
+ */
+type TranscriptMessage = {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  at?: number;
+  /** User rows: the pictures this message carried. */
+  images?: TranscriptImage[];
+  toolCalls?: { id: string; name: string; args?: unknown }[];
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  reasoning?: string;
+  usage?: TurnUsage;
+};
+
+type TranscriptEntry = TranscriptMessage;
+
 type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string; target: string }
-  | { type: "tool.completed"; name: string }
+  | { type: "reasoning.delta"; text: string }
+  | { type: "assistant.commentary"; text: string; alreadyStreamed?: boolean }
+  | { type: "assistant.final"; text: string }
+  | { type: "tool.started"; name: string; target: string; callId?: string; args?: unknown }
+  | { type: "tool.progress"; callId: string; text: string }
+  | {
+      type: "tool.completed";
+      name: string;
+      callId?: string;
+      isError?: boolean;
+      durationMs?: number;
+      resultPreview?: string;
+    }
+  | { type: "usage"; usage: TurnUsage }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
-  | { type: "run.stopped" }
-  | { type: "run.incomplete"; reason: string }
-  | { type: "run.completed" }
+  | { type: "run.stopped"; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.incomplete"; reason: string; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | { type: "run.completed"; usage?: TurnUsage; stopReason?: string; snapshot?: TranscriptEntry[] }
   | { type: "error"; message: string }
   /** Pending Decisions this turn's fenced proposals became (app-sent). */
   | { type: "decisions.filed"; ids: string[]; titles: string[] }
@@ -206,6 +424,15 @@ type HermesSession = {
   title: string;
   preview: string | null;
   lastActive: number | null;
+  /**
+   * The model this chat's gateway session is locked to, or null when the
+   * gateway did not say. Hermes runs an existing chat on the model its session
+   * was created with, so this — not the composer's pill — is what the next turn
+   * actually uses.
+   */
+  model: string | null;
+  /** The surface that created the chat (`api_server`, `local`, …). */
+  source: string;
   /** Durable Hermes-side flag: pinned chats sort into their own section. */
   pinned: boolean;
   /**
@@ -272,9 +499,30 @@ type LifequestApi = {
   ) => Promise<Result<DomainRecord>>;
   domainArchive: (slug: string) => Promise<Result<DomainRecord>>;
   domainUnarchive: (slug: string) => Promise<Result<DomainRecord>>;
+  /** Unlock a seeded area. A flag flip: nothing is created or moved. */
+  domainUnlock: (slug: string) => Promise<Result<DomainRecord>>;
   domainDelete: (slug: string) => Promise<Result<{ slug: string }>>;
   domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;
+  /**
+   * Begin the onboarding interview. Idempotent: `in_progress` and `completed`
+   * come back unchanged, and `onboarding.started` is logged exactly once.
+   * *Begin* is the operator's click, so this is the actor it records.
+   */
+  onboardingStart: () => Promise<Result<OnboardingRecord>>;
+  /**
+   * Apply the pending confirmation card as one operator-confirmed batch:
+   * unlock the heard areas, write their doctrine (the companion is the author),
+   * create the one table and the one note, and complete the record.
+   */
+  onboardingConfirm: (
+    options?: OnboardingConfirmOptions,
+  ) => Promise<Result<OnboardingConfirmResult>>;
+  /**
+   * Decline the pending proposal. Nothing is written; the record stays
+   * `in_progress` so the dock returns to *Continue the interview*.
+   */
+  onboardingDiscard: () => Promise<Result<OnboardingRecord>>;
   documentGet: (
     slug: string,
     kind: DocumentKind,
@@ -308,6 +556,10 @@ type LifequestApi = {
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
   }) => Promise<Result<DecisionRecord>>;
+  decisionAmend: (
+    id: string,
+    input: DecisionAmendment,
+  ) => Promise<Result<DecisionRecord>>;
   decisionResolve: (
     id: string,
     resolution: "approved" | "rejected",
@@ -326,6 +578,13 @@ type LifequestApi = {
     patch: SignalUpdatePatch,
   ) => Promise<Result<SignalRecord>>;
   signalChainDelete: (id: string) => Promise<Result<SignalRecord>>;
+  signalChainReadImage: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
+  /** A capture's non-image file, read back so the renderer can save a copy. */
+  signalChainReadFile: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
   libraryList: () => Promise<Result<LibraryListResult>>;
   libraryCreate: (input: LibraryCreateInput) => Promise<Result<LibraryDocument>>;
   libraryGet: (id: string) => Promise<Result<LibraryDocument>>;
@@ -394,22 +653,77 @@ type LifequestApi = {
    * the new status, so the caller re-renders from one call.
    */
   companionUseProfile: (name: string) => Promise<CompanionStatus>;
+  companionHarnesses: () => Promise<HarnessSummary[]>;
+  /**
+   * The BOOT path: pick a companion and wait for it to come up, so the setup
+   * screen can report a failure in that agent's own words.
+   */
+  companionUseHarness: (id: HarnessId) => Promise<CompanionStatus>;
+  /**
+   * The switch made from the open studio. Answers at once with what is already
+   * known about the target (or a `switching` status); the target's ensure lands
+   * later on `onCompanionStatusChanged`.
+   */
+  companionSwitchHarness: (id: HarnessId) => Promise<CompanionStatus>;
+  /**
+   * The agents in this vault: which companion it runs on, whether it has a
+   * Hermes agent, and the profiles the operator could reuse.
+   */
+  vaultAgentsGet: () => Promise<VaultAgentsState>;
+  /**
+   * Add a Hermes agent to the open vault — a fresh profile the companion seeds
+   * on first use, or an installed one reused (the caller has shown the shared
+   * memory warning).
+   */
+  vaultAgentsAddHermes: (
+    input: VaultAgentAddInput,
+  ) => Promise<Result<VaultAgentBinding>>;
+  /** Remove the vault's Hermes agent; the vault falls back to Pi. */
+  vaultAgentsRemoveHermes: () => Promise<Result<VaultAgentBinding>>;
+  /**
+   * The open vault's agent changed after its binding was applied, or because
+   * the operator switched. Distinguish it from the status push: the harness id
+   * can move while neither agent's status moves.
+   */
+  onCompanionHarnessChanged: (
+    cb: (payload: CompanionHarnessChanged) => void,
+  ) => () => void;
+  companionPiSettings: () => Promise<PiSettings>;
+  companionPiSettingsSave: (input: {
+    baseUrl?: string;
+    model?: string;
+    providerName?: string;
+    apiKey?: string | null;
+  }) => Promise<CompanionStatus>;
   companionSessionsList: (options?: {
     includeArchived?: boolean;
   }) => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
-  companionSessionMessages: (
-    id: string,
-  ) => Promise<
-    Result<{ role: "user" | "assistant"; content: string; at?: number }[]>
-  >;
+  companionSessionMessages: (id: string) => Promise<Result<TranscriptMessage[]>>;
+  /**
+   * One picture a chat bubble wants to draw. `ref` is what the transcript
+   * stored — a vault-relative path, or the gateway's absolute `native-inputs`
+   * hint — and main decides whether it may be read. A refusal is the bubble's
+   * quiet missing chip, never an error page.
+   */
+  chatImageRead: (ref: string) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
+  /**
+   * Persist the model this chat runs on.
+   *
+   * A turn's own `model`/`provider` is ignored by the gateway for an existing
+   * chat (its session keeps the model it was created with), so choosing a model
+   * has to move the session's own lock.
+   */
+  companionSessionModelSet: (payload: {
+    sessionId: string;
+    model: string;
+    provider?: string;
+  }) => Promise<Result<true>>;
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
   ) => Promise<Result<HermesSession>>;
-  companionSessionDelete: (
-    id: string,
-  ) => Promise<Result<{ id: string; deleted: boolean }>>;
+  companionSessionDelete: (id: string) => Promise<Result<{ id: string; deleted: boolean }>>;
   /** The gateway's model inventory for this profile, for the composer's pills. */
   companionModelOptions: () => Promise<
     { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
@@ -422,7 +736,18 @@ type LifequestApi = {
     runtime?: CompanionRuntimeOverride | null;
     /** The receipt waiting in main for this turn, by the path main minted. */
     receiptRelPath?: string | null;
-  }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
+    /** The files this turn carries, named by the ids main minted. */
+    attachments?: Array<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      mime: string;
+      size: number;
+      relPath?: string;
+    }> | null;
+  }) => Promise<
+    Result<true> | { ok: true; settlesOnStream?: boolean } | { ok: false; error: string }
+  >;
   companionApproval: (payload: {
     runId: string;
     requestId: string;
@@ -430,6 +755,14 @@ type LifequestApi = {
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionRunStop: (
     runId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Steer the live run: the words go into the turn that is already working,
+   * rather than waiting for the next one.
+   */
+  companionRunSteer: (
+    runId: string,
+    text: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
   companionGetFiling: () => Promise<boolean>;
@@ -457,6 +790,31 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
   ) => Promise<Result<ReviewRecord>>;
+  /** The period's notebook summary: tabs, lock and page statuses, no bodies. */
+  reviewNotebookGet: (
+    cadence: ReviewCadence,
+    period: string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** One page's body and rev, for the page the operator is reading. */
+  reviewPageGet: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewPageBody>>;
+  /** Create one page (and the notebook) without starting an interview. */
+  reviewPageEnsure: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** Write one page against the rev it was read at. */
+  reviewPageWrite: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+    body: string,
+    baseRev: number,
+  ) => Promise<ReviewPageWriteOutcome>;
   reviewEnsure: (
     cadence: ReviewCadence,
     period: string,
@@ -466,7 +824,8 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
     body: string,
-  ) => Promise<Result<ReviewRecord>>;
+    baseRev?: number,
+  ) => Promise<ReviewWriteOutcome>;
   reviewMarkDone: (
     cadence: ReviewCadence,
     period: string,
@@ -496,6 +855,53 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<Result<ReviewPrepopulateResult>>;
+  /**
+   * The Analytics matrix: rows = metric definitions, columns = the last recent
+   * periods of `cadence`, scoped by the lens (null = Life, every live area).
+   * `count` defaults to 8; the engine also reads one older window so the oldest
+   * column can still show a delta.
+   */
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => Promise<Result<AnalyticsMatrix>>;
+  /** One events metric's logged rows for one period, with the metrics
+   *  database's minted column ids so a row can be edited through dbUpsertRow. */
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => Promise<Result<MetricEvents>>;
+  /** Log one dated event. Applies immediately; the engine logs `metric.logged`. */
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => Promise<Result<MetricEventRow>>;
+  /** Create one metric definition from the bridge draft (events or derived).
+   *  Creation applies immediately; an existing id is refused here — propose the
+   *  edit through metricPropose. */
+  metricDefine: (input: {
+    area: string;
+    definition: MetricDefinitionDraft;
+  }) => Promise<Result<MetricDefinition>>;
+  /** Read one definition, e.g. to prefill the Analytics edit form. */
+  metricGet: (input: {
+    area: string;
+    metricId: string;
+  }) => Promise<Result<MetricDefinition>>;
+  /** File a Decision proposing an edit or delete of an existing definition.
+   *  Nothing changes until the operator approves it. */
+  metricPropose: (input: {
+    area: string;
+    metricId: string;
+    action: "update" | "delete";
+    definition?: MetricDefinitionDraft;
+  }) => Promise<Result<{ decisionId: string }>>;
   planningEnsure: (
     cadence: ReviewCadence,
     period: string,
@@ -506,20 +912,42 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<
-    Result<{ sessionId: string; created: boolean; kickoff: string }>
+    Result<{
+      sessionId: string;
+      created: boolean;
+      kickoff: string;
+      /** The chat's own row, so the dock lists it before the next list read. */
+      session: HermesSession;
+    }>
   >;
   planningStartOrResume: (
     cadence: ReviewCadence,
     period: string,
     scope: "overall" | string,
   ) => Promise<
-    Result<{ sessionId: string; created: boolean; kickoff: string }>
+    Result<{
+      sessionId: string;
+      created: boolean;
+      kickoff: string;
+      /** The chat's own row, so the dock lists it before the next list read. */
+      session: HermesSession;
+    }>
   >;
   /** The one note a day has. Missing is `Daily note not found`, not an error. */
   dailyNoteGet: (date: string) => Promise<Result<DailyNote>>;
   dailyNoteWrite: (date: string, body: string) => Promise<Result<DailyNote>>;
   dailyNoteList: () => Promise<Result<DailyNoteIndexEntry[]>>;
   dailyNoteWindow: (start: string, end: string) => Promise<Result<DailyNote[]>>;
+  /**
+   * The companion's brief: one record for the studio. The card reads it here;
+   * the companion's `set_companion_brief` tool is the only writer, and the
+   * operator's only verb is dismissing one item.
+   */
+  briefGet: () => Promise<Result<CompanionBriefRead>>;
+  briefDismiss: (
+    itemId: string,
+    reason: BriefDismissalReason,
+  ) => Promise<Result<CompanionBriefRead>>;
   /**
    * Ideal State: any number of titled, freeform markdown documents in the
    * Define wing. The operator is the only author.
@@ -534,6 +962,25 @@ type LifequestApi = {
     patch: IdealStateUpdatePatch,
   ) => Promise<Result<IdealStateDocument>>;
   idealStateDelete: (id: string) => Promise<Result<IdealStateDocument>>;
+  /**
+   * Define → Images: the vault-level picture library and the one vision
+   * document written beside it. The renderer hands over bytes and asks for
+   * bytes back; it never names a vault path.
+   */
+  imagesList: () => Promise<Result<VaultImage[]>>;
+  imagesSave: (input: ImageSaveInput) => Promise<Result<VaultImage>>;
+  imagesRead: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
+  imagesUpdate: (
+    id: string,
+    patch: ImageUpdatePatch,
+  ) => Promise<Result<VaultImage>>;
+  imagesDelete: (id: string) => Promise<Result<{ id: string }>>;
+  imagesBoardGet: () => Promise<Result<VisionBoard>>;
+  imagesBoardSave: (input: {
+    blocks: VisionBoardBlock[];
+  }) => Promise<Result<VisionBoard>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () => Promise<Result<string | null>>;
   deadlineMaybeNotify: () => Promise<
@@ -542,7 +989,9 @@ type LifequestApi = {
   /**
    * Auto-update. `updateCheck` without `force` answers with the session's one
    * answer — the launch's check; `force` re-reads the feed, which is what the
-   * rail's build number and Settings do when the operator asks by hand.
+   * rail's build number and Settings do when the operator asks by hand. The
+   * launch's own answer is no longer the only one the app gets: main also reads
+   * the feed on a clock and pushes a fresh answer over `onUpdateDecision`.
    * `updateInstall` downloads the release's installer, hands it to Windows, and
    * quits the app so the installer can replace it.
    */
@@ -561,6 +1010,12 @@ type LifequestApi = {
   onUpdateProgress: (
     cb: (progress: { downloaded: number; total: number }) => void,
   ) => () => void;
+  /**
+   * Main's watch read the feed: an available release to surface, or the news
+   * that the one it announced is no longer offered. Shaped like an
+   * `UpdateDecision`, and validated by the renderer before it is drawn.
+   */
+  onUpdateDecision: (cb: (decision: UpdateDecision) => void) => () => void;
   // KAR-55 domain databases
   dbList: (domainSlug: string | null) => Promise<Result<DatabaseListEntry[]>>;
   dbGet: (slug: string, dbId: string) => Promise<Result<DatabaseMeta>>;
@@ -584,14 +1039,39 @@ type LifequestApi = {
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string }>>;
   /**
-   * Stores one receipt in the finance file store and leaves the copy for the
-   * next turn waiting in main. The bytes never come back through this bridge.
+   * Promotes one picture already attached in the composer into the receipt the
+   * next turn carries: main reads the stored original, keeps the finance copy
+   * and the re-encoded model copy, and moves the picture to the receipt slot.
+   * The bytes never come back through this bridge.
    */
-  receiptAttach: (input: {
+  receiptPromote: (input: {
+    id: string;
+  }) => Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>>;
+  /**
+   * Whether the receipt store can take a picture now — the Finance kit
+   * installed and its area live. The composer offers "Use as receipt" only on a
+   * true answer; main owns the predicate so the offer and the press agree.
+   */
+  receiptReady: () => Promise<Result<boolean>>;
+  /**
+   * Stores one general attachment — any image, clip, recording or document — in
+   * the vault and leaves it waiting in main for the next turn. The bytes never
+   * come back through this bridge.
+   */
+  attachmentAttach: (input: {
     bytes: Uint8Array;
     mime: string;
     name: string;
-  }) => Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>>;
+  }) => Promise<
+    Result<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      size: number;
+      mime: string;
+      relPath: string;
+    }>
+  >;
   // KAR-58 books export and restore
   dbExportBooks: (slug: string) => Promise<Result<DomainBooksExport>>;
   dbRestoreBooks: (
@@ -695,6 +1175,58 @@ type LifequestApi = {
   ingestAccept: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   ingestReject: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
+  /** The app profile's `themes/` directory, as main last read it. */
+  themesList: () => Promise<Result<ThemeFileEntry[]>>;
+  /** The kept theme's file name, stored in main so the companion tools agree. */
+  themeGetState: () => Promise<Result<{ keptFile: string | null }>>;
+  themeSetKept: (
+    file: string | null,
+  ) => Promise<Result<{ keptFile: string | null }>>;
+  themeDelete: (file: string) => Promise<Result<{ deleted: boolean }>>;
+  /** Read one theme file's raw JSON text — the Customizations editor's load. */
+  themeRead: (file: string) => Promise<Result<string>>;
+  /**
+   * Write one theme file after main's own validation. The refusal names the
+   * field; only a valid file is written, and the renderer hears `theme:changed`.
+   */
+  themeWrite: (
+    file: string,
+    raw: string,
+  ) => Promise<Result<{ file: string }>>;
+  themeOpenFolder: () => Promise<Result<boolean>>;
+  themeExport: (theme: unknown) => Promise<Result<{ path: string } | null>>;
+  /**
+   * The saved versions behind one theme file, newest first. Main keeps them
+   * outside `themes/`, so they never appear in the theme list.
+   */
+  themeHistory: (
+    file: string,
+  ) => Promise<Result<{ file: string; versions: ThemeVersion[] }>>;
+  /** Put one saved version back; main versions the bytes it replaces. */
+  themeRestore: (
+    file: string,
+    id: string,
+  ) => Promise<Result<{ file: string; label: string }>>;
+  /**
+   * Copy a theme file from disk through main's dialog and validation. `null`
+   * is the operator cancelling; the copy previews like any write, never kept.
+   */
+  themeImport: () => Promise<Result<{ file: string; label: string } | null>>;
+  /**
+   * Choose a background picture through main's dialog. Main copies it into the
+   * app profile's `backgrounds/` and answers with the stored file name; `null`
+   * is the operator cancelling, and a refusal carries main's own sentence.
+   */
+  themePickBackground: () => Promise<Result<{ file: string } | null>>;
+  /**
+   * One stored background picture's bytes, for the worn scene to draw. A
+   * failure is a quiet `null` to the page: the drawn preset keeps painting.
+   */
+  themeReadBackground: (
+    file: string,
+  ) => Promise<Result<{ file: string; mime: string; bytes: Uint8Array }>>;
+  /** Main saw the directory move; the renderer reads it again. */
+  onThemesChanged: (cb: () => void) => () => void;
   /**
    * The vault changed: re-read whatever the page draws. `revision` only ever
    * moves forward, so a listener can ignore a value it has already seen.
@@ -728,6 +1260,12 @@ declare global {
 
 export type {
   ChatStreamEvent,
+  HarnessTurnCapabilities,
+  TranscriptEntry,
+  TranscriptImage,
+  TranscriptMessage,
+  TurnUsage,
+  CompanionHarnessChanged,
   CompanionInstructionsContext,
   CompanionModelCatalog,
   CompanionModelChoice,
@@ -740,11 +1278,18 @@ export type {
   CompanionSkill,
   CompanionStatus,
   FocusedCardContext,
+  HarnessId,
+  HarnessSummary,
   HermesSession,
   LifequestApi,
   PageContextInput,
+  PiSettings,
   RecentVaultEntry,
   Result,
   UpdateAsset,
   UpdateDecision,
+  VaultAgentAddInput,
+  VaultAgentBinding,
+  VaultAgentProfile,
+  VaultAgentsState,
 };

@@ -8,6 +8,14 @@
  * `scratch-live-dashboard` pinned shows up on the operator's Dashboard through
  * `pins:list` → `HomePage` → `ViewCard` → `view:runSaved`, with no stub anywhere.
  *
+ * The lock is no longer a header switch: it is the FIRST item of the page's
+ * three-dot menu. Every lock interaction here therefore opens `board-page-menu`,
+ * chooses `board-lock-toggle`, waits for `aria-checked` to flip while the popover
+ * is still mounted (the page re-renders on the write; the menu's open state lives
+ * in the page tree and must survive it), and only then presses Escape so the page
+ * can be read again. A direct click finds nothing while the menu is shut, and a
+ * control that closed the menu would fail the open-menu half of that wait.
+ *
  * Run from `apps/desktop`, with the dev server up and the main bundle built:
  *
  *   <electron> e2e/dashboard-live-app.electron.mjs
@@ -83,13 +91,57 @@ function waitFor(win, expression, label, timeoutMs = 30_000) {
 const SAMPLE = `(() => {
   const badge = document.querySelector('[data-testid="board-lock-badge"]');
   const title = document.querySelector(".home-dashboard__title");
+  const trigger = document.querySelector('[data-testid="board-page-menu"]');
+  const popover = document.querySelector('[data-testid="board-page-menu-popover"]');
+  const lock = document.querySelector('[data-testid="board-lock-toggle"]');
+  const add = document.querySelector('[data-testid="board-add-toggle"]');
+  const item = (el) => {
+    if (!el) return null;
+    const label = el.querySelector(".page-menu__item-label");
+    return {
+      testid: el.dataset.testid ?? null,
+      role: el.getAttribute("role"),
+      label: el.getAttribute("aria-label"),
+      caption: label ? (label.textContent || "").trim() : (el.textContent || "").trim(),
+      checked: el.getAttribute("aria-checked"),
+      locked: el.dataset.locked ?? null,
+      expanded: el.getAttribute("aria-expanded"),
+    };
+  };
   return {
     title: title ? title.textContent.trim() : null,
     badge: badge ? badge.textContent.trim() : null,
     locked: badge ? badge.dataset.locked : null,
-    toggle: document.querySelector('[data-testid="board-lock-toggle"]')
-      ? document.querySelector('[data-testid="board-lock-toggle"]').textContent.trim()
-      : null,
+    // The live board's page menu: the trigger is always there, the popover and
+    // its items only while it is open. The lock and the pin board are read from
+    // inside the menu now — there is no header control to read while shut.
+    menu: {
+      trigger: trigger
+        ? {
+            testid: trigger.dataset.testid ?? null,
+            label: trigger.getAttribute("aria-label"),
+            haspopup: trigger.getAttribute("aria-haspopup"),
+            expanded: trigger.getAttribute("aria-expanded"),
+            svgs: trigger.querySelectorAll("svg").length,
+          }
+        : null,
+      popover: popover
+        ? {
+            role: popover.getAttribute("role"),
+            label: popover.getAttribute("aria-label"),
+            testid: popover.dataset.testid ?? null,
+            items: [...popover.querySelectorAll('[role="menuitemcheckbox"], [role="menuitem"]')].map(
+              (el) => el.dataset.testid ?? null,
+            ),
+          }
+        : null,
+    },
+    toggle: lock ? (lock.textContent || "").trim() : null,
+    toggleRole: lock ? lock.getAttribute("role") : null,
+    toggleChecked: lock ? lock.getAttribute("aria-checked") : null,
+    toggleLabel: lock ? lock.getAttribute("aria-label") : null,
+    addToggle: Boolean(add),
+    addItem: item(add),
     cards: Array.from(document.querySelectorAll(".view-card__title")).map((e) => e.textContent.trim()),
     tables: Array.from(document.querySelectorAll(".view-card__table")).map((t) =>
       Array.from(t.querySelectorAll("tbody tr")).map((tr) =>
@@ -129,7 +181,6 @@ const SAMPLE = `(() => {
     chrome: document.querySelectorAll(".home-pin__chrome").length,
     pinCount: document.querySelectorAll(".home-dashboard__grid > .home-pin").length,
     addPin: Boolean(document.querySelector('[data-testid="board-add-pin"]')),
-    addToggle: Boolean(document.querySelector('[data-testid="board-add-toggle"]')),
   };
 })()`;
 
@@ -148,6 +199,70 @@ function mouse(win, type, x, y) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Open the page's three-dot menu and wait for its popover.
+ *
+ * The lock and the pin board live inside it now: a direct click on
+ * `board-lock-toggle` finds nothing while the menu is shut, so every lock
+ * interaction in this rig opens the menu first.
+ */
+async function openPageMenu(win) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-page-menu"]').click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-page-menu-popover"]'))`,
+    "the page menu to open",
+  );
+}
+
+/** Escape at the document: the page menu's own dismissal, and it returns focus. */
+async function pressEscape(win) {
+  await win.webContents.executeJavaScript(
+    `document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`,
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-page-menu-popover"]')`,
+    "the page menu to close",
+  );
+}
+
+/**
+ * Choose the lock item, and prove the live menu STAYS OPEN across the write.
+ *
+ * The page re-renders when the lock write resolves, but the menu's open state
+ * lives in the page's own tree, so the popover and its item must survive the
+ * flip. The rig waits for `aria-checked` to reach `expectChecked` while the
+ * popover is still there, records that state, and only then dismisses the menu
+ * so the page can be read again.
+ */
+async function chooseLock(win, expectChecked) {
+  await openPageMenu(win);
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
+  );
+  const whileOpen = await waitFor(
+    win,
+    `(() => {
+       const el = document.querySelector('[data-testid="board-lock-toggle"]');
+       const popover = document.querySelector('[data-testid="board-page-menu-popover"]');
+       if (!el || !popover) return null;
+       if (el.getAttribute('aria-checked') !== '${expectChecked}') return null;
+       return {
+         checked: el.getAttribute('aria-checked'),
+         locked: el.dataset.locked ?? null,
+         menuOpen: true,
+         caption: (el.textContent || '').trim(),
+       };
+     })()`,
+    `the live lock item to read aria-checked=${expectChecked} with the menu still open`,
+  );
+  await pressEscape(win);
+  return whileOpen;
+}
 
 /** The centre of a selector's box, in the CSS pixels `sendInputEvent` takes. */
 async function pointAt(win, selector) {
@@ -279,22 +394,78 @@ async function main() {
     );
   }
   if (board.locked !== "false") failure(`the Overview board read locked=${JSON.stringify(board.locked)}`);
-  if (board.toggle !== "Lock") failure(`the live board's control read ${JSON.stringify(board.toggle)}`);
   if (board.chrome === 0) failure("the live unlocked board drew no pin chrome");
-  // Adding is a control now, not a permanent row: it is offered at the top of
-  // the page and draws the row when asked. This board already carries every
-  // system pin, every finance page and the new card, so nothing is left to pin —
-  // and the honest answer to "is there an add path?" is no control at all. The
-  // chrome count above is what proves the unlocked board is editable.
+  // Adding is a control now, not a permanent row, and it lives behind the page's
+  // three-dot menu. The page menu is opened once and dismissed with Escape so
+  // the operator's board is left as it was found; its items are read from inside
+  // the popover, because a closed menu puts none of them in the document.
+  await openPageMenu(win);
+  const overviewMenu = await win.webContents.executeJavaScript(SAMPLE);
+  checks.overviewMenu = overviewMenu;
+  await pressEscape(win);
+  const liveMenu = overviewMenu.menu;
+  if (!liveMenu.trigger) {
+    failure("the live board drew no page-menu trigger");
+  } else {
+    if (liveMenu.trigger.haspopup !== "menu") {
+      failure(`the live trigger's aria-haspopup read ${JSON.stringify(liveMenu.trigger.haspopup)}`);
+    }
+    if (liveMenu.trigger.expanded !== "true") {
+      failure(`the live trigger read aria-expanded=${JSON.stringify(liveMenu.trigger.expanded)} while open`);
+    }
+    if (liveMenu.trigger.label !== "Dashboard actions") {
+      failure(`the live trigger is named ${JSON.stringify(liveMenu.trigger.label)}`);
+    }
+    if (liveMenu.trigger.svgs !== 1) {
+      failure(`the live trigger drew ${liveMenu.trigger.svgs} svg(s), expected one`);
+    }
+  }
+  if (liveMenu.popover?.role !== "menu") {
+    failure(`the live page menu's popover read role ${JSON.stringify(liveMenu.popover?.role)}`);
+  } else {
+    if (liveMenu.popover.label !== "Dashboard actions") {
+      failure(`the live popover is named ${JSON.stringify(liveMenu.popover.label)}`);
+    }
+    if (liveMenu.popover.testid !== "board-page-menu-popover") {
+      failure(`the live popover's test id read ${JSON.stringify(liveMenu.popover.testid)}`);
+    }
+    // The lock is the menu's first item on the operator's own board too.
+    if (liveMenu.popover.items?.[0] !== "board-lock-toggle") {
+      failure(
+        `the live menu's first item is ${JSON.stringify(liveMenu.popover.items?.[0])}, expected the lock`,
+      );
+    }
+  }
+  // The lock is a `menuitemcheckbox` state, not an action: its position and the
+  // badge are the state, and the caption stays "Lock" in both positions.
+  if (overviewMenu.toggleRole !== "menuitemcheckbox") {
+    failure(`the live lock item's role read ${JSON.stringify(overviewMenu.toggleRole)}`);
+  }
+  if (overviewMenu.toggleChecked !== "false") {
+    failure(`the live lock item read aria-checked=${JSON.stringify(overviewMenu.toggleChecked)}`);
+  }
+  if (overviewMenu.toggleLabel !== "Lock this dashboard") {
+    failure(`the live lock item is named ${JSON.stringify(overviewMenu.toggleLabel)}`);
+  }
+  if (overviewMenu.toggle !== "Lock") {
+    failure(`the live board's lock item read ${JSON.stringify(overviewMenu.toggle)}`);
+  }
+  // Recorded, not assumed: the operator's board already carries every system pin,
+  // every finance page and the new card, so the honest answer to "is there an add
+  // path?" may be no pin-board item at all. What the chrome count above proves is
+  // that the unlocked board is editable.
   checks.addPinRowOffered = board.addPin;
-  checks.pinBoardOffered = board.addToggle;
+  checks.pinBoardOffered = overviewMenu.addToggle;
 
-  // ── the lock toggle, over the real IPC channel ───────────────────────────
+  // ── the lock item, over the real IPC channel ─────────────────────────────
   // `pins:setLocked` is the one channel this feature adds; a rig with a stubbed
-  // bridge can never prove the preload and main agree on its name and arity.
-  await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
-  );
+  // bridge can never prove the preload and main agree on its name and arity. The
+  // menu stays open across the write — the popover and the item must survive the
+  // page's re-render — and Escape dismisses it before the page is read again.
+  checks.lockOn = await chooseLock(win, "true");
+  if (checks.lockOn?.menuOpen !== true) {
+    failure("choosing the lock item did not keep the live page menu open");
+  }
   await waitFor(
     win,
     `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'true'; })()`,
@@ -315,9 +486,10 @@ async function main() {
   }
 
   // ...and back, so the operator's board is left as it was found (unlocked).
-  await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
-  );
+  checks.unlockOn = await chooseLock(win, "false");
+  if (checks.unlockOn?.menuOpen !== true) {
+    failure("choosing the lock item did not keep the live page menu open");
+  }
   await waitFor(
     win,
     `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'false'; })()`,
@@ -390,9 +562,12 @@ async function main() {
 
       // A locked board has no arrange affordance at all, and a gesture over it
       // must not reach the bridge: no lift, and no new proposal in the inbox.
-      await win.webContents.executeJavaScript(
-        `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
-      );
+      // The lock is chosen from the open page menu, which stays open across the
+      // write and is dismissed with Escape before the board is read.
+      checks.dragLockOn = await chooseLock(win, "true");
+      if (checks.dragLockOn?.menuOpen !== true) {
+        failure("choosing the lock item did not keep the live page menu open");
+      }
       await waitFor(
         win,
         `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'true'; })()`,
@@ -436,9 +611,10 @@ async function main() {
         failure(`the locked live board changed its order: ${JSON.stringify(afterLockedGesture)}`);
       }
       // ...and back, so the operator's board is left unlocked.
-      await win.webContents.executeJavaScript(
-        `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
-      );
+      checks.dragLockOff = await chooseLock(win, "false");
+      if (checks.dragLockOff?.menuOpen !== true) {
+        failure("choosing the lock item did not keep the live page menu open");
+      }
       await waitFor(
         win,
         `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'false'; })()`,

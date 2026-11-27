@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { getDocument } from "./domain-documents.ts";
-import { libraryGet } from "./library-documents.ts";
+import { libraryGet, normalizeDomains } from "./library-documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import {
@@ -19,7 +20,9 @@ import {
   type DatabaseBatchDecisionBody,
   type DatabaseColumnType,
   type DatabaseDecisionBody,
+  type DecisionAmendment,
   type DecisionRecord,
+  type DefineMetricInput,
   type DocumentKind,
   type DocumentTarget,
   type GoalsCommand,
@@ -31,7 +34,12 @@ import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
 import { checkDatabaseCells } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
-import { getReview, applyLockedReviewBody } from "./reviews.ts";
+import {
+  getReview,
+  applyLockedReviewBody,
+  getReviewPageBody,
+  applyReviewPageBody,
+} from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
 
 function isDocumentKind(kind: string): kind is DocumentKind {
@@ -61,6 +69,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isReviewPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isMetricDefinitionExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
@@ -83,6 +93,31 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         type: "review",
         cadence: String(t.cadence) as ReviewCadence,
         period: String(t.period),
+      };
+    } else if (t.type === "review-page") {
+      // The rev is the page version the proposal was filed against; a Decision
+      // written before the field existed (or for the legacy review target) reads
+      // as absent and the apply falls back to the current page's rev.
+      target = {
+        type: "review-page",
+        cadence: String(t.cadence) as ReviewCadence,
+        period: String(t.period),
+        scope: String(t.scope),
+        ...(typeof t.rev === "number" ? { rev: t.rev } : {}),
+      };
+    } else if (t.type === "metric-definition") {
+      // The proposed definition travels in the target, and `baseUpdatedAt` is
+      // the definition version it was filed against (null on a legacy record:
+      // then the apply reads the current file and does no staleness check).
+      target = {
+        type: "metric-definition",
+        domainSlug: String(t.domainSlug),
+        metricId: String(t.metricId),
+        action: t.action === "delete" ? "delete" : "update",
+        ...(isRecordValue(t.definition)
+          ? { definition: t.definition as unknown as DefineMetricInput }
+          : {}),
+        baseUpdatedAt: typeof t.baseUpdatedAt === "string" ? t.baseUpdatedAt : null,
       };
     } else if (t.type === "doctrine") {
       target = {
@@ -194,6 +229,13 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     target.type === "database-batch"
   ) {
     domainSlugs = [target.domainSlug];
+  } else if (target.type === "review-page") {
+    // A page Decision reads under the area lens its page belongs to; the overall
+    // page is the whole life, so it carries no domain.
+    domainSlugs = target.scope === "overall" ? [] : [target.scope];
+  } else if (target.type === "metric-definition") {
+    // A definition belongs to its area, so its Decision is shown under that lens.
+    domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
   }
@@ -217,11 +259,43 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     typeof raw.proposedBodyMarkdown === "string" ? raw.proposedBodyMarkdown : "";
   const previousBodyMarkdown =
     typeof raw.previousBodyMarkdown === "string" ? raw.previousBodyMarkdown : null;
+  // A domain change is written into the Decision file, so it has to be read back
+  // out of it: the inbox noticed this class of bug before, where a field that
+  // only existed on write disappeared on the next load. An older Decision has
+  // neither key, and reads as "this proposal does not touch the tags".
+  const proposedDomainSlugs =
+    Array.isArray(raw.proposedDomainSlugs) &&
+    raw.proposedDomainSlugs.every((slug) => typeof slug === "string")
+      ? (raw.proposedDomainSlugs as string[])
+      : null;
+  const previousDomainSlugs =
+    Array.isArray(raw.previousDomainSlugs) &&
+    raw.previousDomainSlugs.every((slug) => typeof slug === "string")
+      ? (raw.previousDomainSlugs as string[])
+      : null;
   const resolvedAt =
     typeof raw.resolvedAt === "string" ? raw.resolvedAt : null;
   // KAR-64: reason must be in the rebuilt field set, not just on write, or it is
   // dropped on every subsequent read.
   const reason = typeof raw.reason === "string" ? raw.reason : null;
+
+  // Operator amendments, rebuilt for the same reason `reason` is: a field that
+  // is written but not read back disappears on the next load of the inbox.
+  const amendedAt = typeof raw.amendedAt === "string" ? raw.amendedAt : null;
+  const amendedBy =
+    typeof raw.amendedBy === "object" &&
+    raw.amendedBy !== null &&
+    "type" in raw.amendedBy
+      ? (raw.amendedBy as Actor)
+      : null;
+  const amendmentNote =
+    typeof raw.amendmentNote === "string" ? raw.amendmentNote : null;
+  const originalProposedTitle =
+    typeof raw.originalProposedTitle === "string" ? raw.originalProposedTitle : null;
+  const originalProposedBodyMarkdown =
+    typeof raw.originalProposedBodyMarkdown === "string"
+      ? raw.originalProposedBodyMarkdown
+      : null;
 
   // For legacy records missing proposedTitle, keep the file title as the decision title.
   const title =
@@ -238,10 +312,17 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     previousTitle,
     proposedBodyMarkdown,
     previousBodyMarkdown,
+    proposedDomainSlugs,
+    previousDomainSlugs,
     actor,
     createdAt,
     resolvedAt,
     reason,
+    amendedAt,
+    amendedBy,
+    amendmentNote,
+    originalProposedTitle,
+    originalProposedBodyMarkdown,
   };
 }
 
@@ -265,6 +346,35 @@ function isReviewExplicitTarget(raw: Record<string, unknown>): boolean {
     isReviewCadence(raw.cadence) &&
     typeof raw.period === "string" &&
     raw.period.length > 0
+  );
+}
+
+function isReviewPageExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "review-page" &&
+    typeof raw.cadence === "string" &&
+    isReviewCadence(raw.cadence) &&
+    typeof raw.period === "string" &&
+    raw.period.length > 0 &&
+    typeof raw.scope === "string" &&
+    raw.scope.length > 0
+  );
+}
+
+/**
+ * A metric-definition target names a live area (or a saved database, for a
+ * derived metric), a metric id, and either an update payload or a delete. It is
+ * never a lockable document: creating applies at once, and the Decision itself
+ * is the governed change.
+ */
+function isMetricDefinitionExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "metric-definition" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.metricId === "string" &&
+    raw.metricId.length > 0 &&
+    (raw.action === "update" || raw.action === "delete")
   );
 }
 
@@ -382,10 +492,57 @@ async function writeDecisionFile(
  */
 const reportedUnreadableDecisions = new Set<string>();
 
+/**
+ * How many Decision files are read at once.
+ *
+ * The inbox is re-read on every write (the rail badge and the page both poll it
+ * on the vault's change signal), and a real vault holds ~800 Decision files
+ * totalling ~40 MB. Read strictly one at a time, `listDecisions` cost over a
+ * second there; reading a bounded batch measured roughly twice as fast, because
+ * the files are small and the disk answers several at once. It stays bounded
+ * rather than `Promise.all`: a larger inbox would otherwise be thousands of
+ * open descriptors in one tick, and the read shares the event loop with the
+ * badge polls it feeds.
+ */
+const DECISION_READ_CONCURRENCY = 8;
+
+/**
+ * Run `run` over `items` with at most `limit` in flight, preserving order.
+ *
+ * Local to this file on purpose — it is a dozen lines and the repo takes no
+ * dependency for it. Each worker claims its index before awaiting, and the
+ * result lands at that index, so callers get an array that matches `items` even
+ * though the reads finish out of order.
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      out[index] = await run(items[index]!, index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return out;
+}
+
 export async function listDecisions(rootPath: string): Promise<Result<DecisionRecord[]>> {
   try {
     const paths = vaultPaths(rootPath);
-    const decisions: DecisionRecord[] = [];
+    // The directory is validated ONCE, not once per file. `assertPhysicalContainment`
+    // walks `.lifequest` and `decisions` with lstat; doing that for every one of
+    // 800 files was three lstats per file and is why the inbox was the slowest
+    // read in the app. The per-file question that is left — is this entry a
+    // symlink? — is already answered by the dirent `readdir` produced.
+    await assertPhysicalContainment(rootPath, paths.decisionsDir, "read");
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(paths.decisionsDir, { withFileTypes: true });
@@ -395,47 +552,64 @@ export async function listDecisions(rootPath: string): Promise<Result<DecisionRe
       }
       throw e;
     }
+
+    const files: Array<{ name: string; filePath: string }> = [];
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      // A symlinked decision file is refused for the same reason a symlinked
+      // ancestor was: reading through the link would take the inbox outside the
+      // vault. `isFile()` already excludes a link, but the refusal is named here
+      // so the guard reads as a ruling rather than as a file-type filter.
+      if (entry.isSymbolicLink()) continue;
       const id = entry.name.replace(/\.json$/, "");
-      let filePath: string;
       try {
-        filePath = paths.decisionJson(id);
-        await assertPhysicalContainment(rootPath, filePath, "read");
+        // The same segment fence the path builder applies, minus the per-file
+        // lstat walk: a hostile NAME (traversal, separators) is skipped like a
+        // symlinked or unparseable one, so it cannot blank the inbox.
+        assertSafeSegment(id, "decision id");
       } catch {
-        // An invalid or symlinked filename is skipped, like an unparseable one:
-        // one hostile file must not blank the inbox.
         continue;
       }
-      try {
-        const decision = await readDecisionFile(filePath);
-        decisions.push(decision);
-      } catch (e) {
-        // ONE bad file must not blank the whole inbox. The old read let a single
-        // unparseable Decision throw out of here, so `decision:list` answered an
-        // error and the page drew "No pending proposals." — every Decision the
-        // operator had, made invisible by one file. The broken file is left on
-        // disk (never deleted or rewritten); it is reported once so it can be
-        // repaired, and the rest of the inbox is read.
-        if (!reportedUnreadableDecisions.has(filePath)) {
-          reportedUnreadableDecisions.add(filePath);
-          try {
-            await appendLog(rootPath, {
-              domainSlug: null,
-              type: "decision.unreadable",
-              summary: `Could not read the Decision file ${entry.name}`,
-              payload: {
-                file: entry.name,
-                error: e instanceof Error ? e.message : String(e),
-              },
-              actor: null,
-            });
-          } catch {
-            // The read path is not a write path; a log failure changes nothing.
-          }
-        }
-      }
+      // Built from the validated directory rather than through
+      // `paths.decisionJson`, which would re-walk `.lifequest/decisions` for
+      // every file. The directory was checked above and the leaf is a regular
+      // file per the dirent.
+      files.push({ name: entry.name, filePath: path.join(paths.decisionsDir, entry.name) });
     }
+
+    const decisions = (
+      await mapLimit(files, DECISION_READ_CONCURRENCY, async ({ name, filePath }) => {
+        try {
+          return await readDecisionFile(filePath);
+        } catch (e) {
+          // ONE bad file must not blank the whole inbox. The old read let a
+          // single unparseable Decision throw out of here, so `decision:list`
+          // answered an error and the page drew "No pending proposals." — every
+          // Decision the operator had, made invisible by one file. The broken
+          // file is left on disk (never deleted or rewritten); it is reported
+          // once so it can be repaired, and the rest of the inbox is read.
+          if (!reportedUnreadableDecisions.has(filePath)) {
+            reportedUnreadableDecisions.add(filePath);
+            try {
+              await appendLog(rootPath, {
+                domainSlug: null,
+                type: "decision.unreadable",
+                summary: `Could not read the Decision file ${name}`,
+                payload: {
+                  file: name,
+                  error: e instanceof Error ? e.message : String(e),
+                },
+                actor: null,
+              });
+            } catch {
+              // The read path is not a write path; a log failure changes nothing.
+            }
+          }
+          return null;
+        }
+      })
+    ).filter((decision): decision is DecisionRecord => decision !== null);
+
     decisions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return { ok: true, value: decisions };
   } catch (e) {
@@ -453,6 +627,16 @@ export async function createDecision(
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
     /**
+     * The library note's tags as the proposal would leave them, or null when the
+     * proposal does not touch them. [] is a proposal to untag the note.
+     */
+    proposedDomainSlugs?: string[] | null;
+    /**
+     * The note's tags when the proposal was filed. Optional: for an existing note
+     * the record derives them from the note itself rather than trusting a caller.
+     */
+    previousDomainSlugs?: string[] | null;
+    /**
      * Domain slugs for a target that does not carry them itself. Only used for an
      * agent library target whose file does not exist yet, and for a goal target.
      */
@@ -469,6 +653,12 @@ export async function createDecision(
       if (!input.target.domainSlug.trim()) {
         return { ok: false, error: "domainSlug is required" };
       }
+      if (!(await isDomainLive(rootPath, input.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Area is locked or unavailable: ${input.target.domainSlug}`,
+        };
+      }
     } else if (input.target.type === "library") {
       if (!input.target.id.trim()) {
         return { ok: false, error: "library id is required" };
@@ -479,6 +669,33 @@ export async function createDecision(
       }
       if (!input.target.period.trim()) {
         return { ok: false, error: "period is required" };
+      }
+    } else if (input.target.type === "review-page") {
+      if (!isReviewCadence(input.target.cadence)) {
+        return { ok: false, error: `Invalid review cadence: ${input.target.cadence}` };
+      }
+      if (!input.target.period.trim()) {
+        return { ok: false, error: "period is required" };
+      }
+      if (!input.target.scope.trim()) {
+        return { ok: false, error: "scope is required" };
+      }
+    } else if (input.target.type === "metric-definition") {
+      // A metric definition is not a lockable document; the store write is what
+      // the approval performs, so the shape is all this door checks. The area's
+      // liveness and the definition that the proposal is against are read on
+      // the propose path (metrics.ts), where they can still be reported.
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
+      }
+      if (!input.target.metricId.trim()) {
+        return { ok: false, error: "metricId is required" };
+      }
+      if (input.target.action !== "update" && input.target.action !== "delete") {
+        return { ok: false, error: `Invalid metric action: ${String(input.target.action)}` };
+      }
+      if (input.target.action === "update" && !input.target.definition) {
+        return { ok: false, error: "A metric update needs the proposed definition" };
       }
     } else if (input.target.type === "page") {
       if (!input.target.domainSlug.trim()) {
@@ -546,6 +763,33 @@ export async function createDecision(
       return { ok: false, error: "proposedBodyMarkdown is required" };
     }
 
+    // A proposed domain change is only a library-note thing. Every slug is
+    // validated against the vault's areas here, at propose time, rather than when
+    // the operator approves: a card in the inbox must always be able to land.
+    let proposedDomainSlugs: string[] | null = null;
+    if (input.proposedDomainSlugs !== undefined && input.proposedDomainSlugs !== null) {
+      if (!isLibraryTarget(input.target)) {
+        return { ok: false, error: "proposedDomainSlugs only applies to a library note" };
+      }
+      if (
+        !Array.isArray(input.proposedDomainSlugs) ||
+        !input.proposedDomainSlugs.every((slug) => typeof slug === "string")
+      ) {
+        return { ok: false, error: "proposedDomainSlugs must be an array of strings" };
+      }
+      const normalized = await normalizeDomains(rootPath, input.proposedDomainSlugs);
+      if (!normalized.ok) return normalized;
+      proposedDomainSlugs = normalized.value;
+    }
+    if (
+      input.previousDomainSlugs !== undefined &&
+      input.previousDomainSlugs !== null &&
+      (!Array.isArray(input.previousDomainSlugs) ||
+        !input.previousDomainSlugs.every((slug) => typeof slug === "string"))
+    ) {
+      return { ok: false, error: "previousDomainSlugs must be an array of strings" };
+    }
+
     // Load the target and confirm it is locked (pages/pins/goals/day templates are NOT lockable).
     // An agent actor skips the lock check for doctrine and library: the whole point of an
     // agent write is to propose a change to a document the operator has not locked yet.
@@ -587,6 +831,35 @@ export async function createDecision(
           error: "Review must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "review-page") {
+      // A page proposal only makes sense against a finished review: the page is
+      // read-only then, and the Decision is how a change gets made.
+      const pageRes = await getReviewPageBody(
+        rootPath,
+        input.target.cadence,
+        input.target.period,
+        input.target.scope,
+      );
+      if (!pageRes.ok) return pageRes;
+      docLocked = pageRes.value.locked;
+      if (!docLocked) {
+        return {
+          ok: false,
+          error: "Review must be locked before proposing a change",
+        };
+      }
+    } else if (input.target.type === "metric-definition") {
+      // A definition is not lockable — changing it is already the governed act.
+      // The area must be live (an archived area must not gain a pending card);
+      // the propose path has already read the definition itself.
+      if (!(await isDomainLive(rootPath, input.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Domain not found or archived: ${input.target.domainSlug}`,
+        };
+      }
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else if (input.target.type === "page") {
       // Pages are not lockable. Verify the page exists.
       const { getPage } = await import("./pages.ts");
@@ -687,7 +960,7 @@ export async function createDecision(
       }
     }
 
-    const domainSlugs: string[] =
+    let domainSlugs: string[] =
       input.target.type === "doctrine"
         ? [input.target.domainSlug]
         : input.target.type === "page"
@@ -708,7 +981,13 @@ export async function createDecision(
                     ? [input.target.domainSlug]
                   : input.target.type === "review"
                     ? []
-                    : input.target.type === "goal"
+                    : input.target.type === "review-page"
+                      ? input.target.scope === "overall"
+                        ? []
+                        : [input.target.scope]
+                      : input.target.type === "metric-definition"
+                        ? [input.target.domainSlug]
+                      : input.target.type === "goal"
                       ? input.domainSlugs ?? []
                       : input.target.type === "day-template"
                         ? []
@@ -718,11 +997,25 @@ export async function createDecision(
                             ? libraryNote.value.domainSlugs
                             : (input.domainSlugs ?? []);
 
+    // A re-tag touches both areas while it is pending: the card stays in the lens
+    // it is leaving as well as the one it is moving to, so neither view hides it.
+    const previousDomainSlugs =
+      proposedDomainSlugs !== null
+        ? (libraryNote?.value.domainSlugs ?? input.previousDomainSlugs ?? [])
+        : null;
+    if (proposedDomainSlugs !== null) {
+      domainSlugs = [...new Set([...domainSlugs, ...proposedDomainSlugs])];
+    }
+
     // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
     // "Proposed change to" would make the inbox read "Proposed change to
-    // Finance bot".
+    // Finance bot". A metric-definition title is the same shape ("Edit the
+    // Training minutes metric"): the proposer names the verb and the metric,
+    // and the generic "Proposed change to" wrapper would bury both.
     const title =
-      input.target.type === "agent-pairing" && input.proposedTitle
+      (input.target.type === "agent-pairing" ||
+        input.target.type === "metric-definition") &&
+      input.proposedTitle
         ? input.proposedTitle
         : `Proposed change to ${documentTargetLabel(input.target, input.proposedTitle ?? "")}`;
 
@@ -740,10 +1033,19 @@ export async function createDecision(
       previousTitle: input.previousTitle ?? null,
       proposedBodyMarkdown: input.proposedBodyMarkdown,
       previousBodyMarkdown: input.previousBodyMarkdown ?? null,
+      proposedDomainSlugs,
+      previousDomainSlugs,
       actor: input.actor,
       createdAt: now,
       resolvedAt: null,
       reason: null,
+      // A freshly filed proposal has no amendment yet; the fields exist on every
+      // record so the inbox never has to guess whether it can trust their absence.
+      amendedAt: null,
+      amendedBy: null,
+      amendmentNote: null,
+      originalProposedTitle: null,
+      originalProposedBodyMarkdown: null,
     };
 
     await fs.mkdir(paths.decisionsDir, { recursive: true });
@@ -755,6 +1057,305 @@ export async function createDecision(
       summary: `Created decision: ${title}`,
       payload: { id, targetType: input.target.type, title },
       actor: input.actor,
+    });
+    if (!logRes.ok) return logRes;
+
+    return { ok: true, value: decision };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Targets whose proposal body is a document's markdown rather than a JSON payload.
+ *
+ * Approval writes these bodies as prose (`applyApprovedBody`), so an amendment
+ * may be prose too. A review is prose as well: `applyLockedReviewBody` writes
+ * the body into the review file, and review-tools files markdown there. Every
+ * other target parses its body as JSON at apply time, and a body that does not
+ * parse is a Decision that can never land — so the amend path refuses it before
+ * the operator approves something doomed.
+ */
+function isProseTarget(target: DocumentTarget): boolean {
+  return (
+    target.type === "doctrine" ||
+    target.type === "library" ||
+    target.type === "review" ||
+    target.type === "review-page"
+  );
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Where inside the proposal body the title approval writes actually lives.
+ *
+ * Approval reads the display title from two different places depending on the
+ * target: a project's `title` / a goal's `name` are written by their apply
+ * paths, while a doctrine or page writes `proposedTitle` over the file's title.
+ * An amendment that edited only the card's title would therefore fix the
+ * spelling on screen and still land the typo in the project file, so the body
+ * path is named here and the amend path keeps both in agreement.
+ */
+function bodyTitlePath(target: DocumentTarget, body: Record<string, unknown>): string[] | null {
+  switch (target.type) {
+    case "project":
+      if (body.type === "createProject") return ["title"];
+      if (body.type === "updateProject" && isRecordValue(body.patch)) return ["patch", "title"];
+      return null;
+    case "goal":
+      // A delete carries no name; every other goal command may set one.
+      return body.type === "deleteGoal" ? null : ["name"];
+    case "database":
+      // Only a create names the database itself; add-column's `name` is a column.
+      return body.op === "create-database" ? ["name"] : null;
+    case "day-template":
+      return typeof body.name === "string" ? ["name"] : null;
+    case "view":
+      return isRecordValue(body.spec) ? ["spec", "title"] : null;
+    default:
+      return null;
+  }
+}
+
+/** The title value at a body path, or null when the path is not a string there. */
+function titleAtPath(body: Record<string, unknown>, path: readonly string[]): string | null {
+  let cursor: unknown = body;
+  for (const key of path) {
+    if (!isRecordValue(cursor)) return null;
+    cursor = cursor[key];
+  }
+  return typeof cursor === "string" && cursor.trim() ? cursor.trim() : null;
+}
+
+/** Write a title into the body where approval will read it. */
+function setTitleAtPath(
+  body: Record<string, unknown>,
+  path: readonly string[],
+  title: string,
+): boolean {
+  let cursor: Record<string, unknown> = body;
+  for (const key of path.slice(0, -1)) {
+    const next = cursor[key];
+    if (!isRecordValue(next)) return false;
+    cursor = next;
+  }
+  cursor[path[path.length - 1]!] = title;
+  return true;
+}
+
+/** The proposal title the body itself carries, when it carries one. */
+function proposalTitleFromBody(
+  target: DocumentTarget,
+  body: Record<string, unknown>,
+): string | null {
+  const path = bodyTitlePath(target, body);
+  return path ? titleAtPath(body, path) : null;
+}
+
+/**
+ * Fields that name what a Decision applies to rather than what it says.
+ *
+ * An amendment is the operator correcting the proposal, not replacing what it
+ * targets: editing a project id would retarget the file approval writes, and
+ * swapping `op` or `type` would change the command under the card they read.
+ * Both are refused even through the exact-proposal editor.
+ */
+const STRUCTURAL_BODY_KEYS = ["id", "op", "type"] as const;
+
+function structuralBodyChange(before: unknown, after: unknown): string | null {
+  if (!isRecordValue(before) || !isRecordValue(after)) return null;
+  for (const key of STRUCTURAL_BODY_KEYS) {
+    const wasThere = key in before;
+    const isThere = key in after;
+    if (wasThere !== isThere) return `A proposal's ${key} cannot be added or removed`;
+    if (wasThere && before[key] !== after[key]) {
+      return `A proposal's ${key} cannot be changed; it names what the Decision applies to`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Let the operator correct a pending proposal without leaving the inbox.
+ *
+ * Approval applies whatever the record holds, so "approve with changes" needs no
+ * separate apply path: the amendment rewrites the pending proposal, and the
+ * existing approve path writes the edited version. What this function adds is
+ * the part a raw file edit would skip — the record keeps the proposal the agent
+ * actually filed (`originalProposed*`), the title and the body are kept in
+ * agreement for targets that write the title from the body, and the edit is
+ * named in the life log next to the proposal it changed.
+ *
+ * `revert` is the undo: it restores the proposal as filed and clears the
+ * amendment, so a correction the operator regrets is one click, not a re-prompt.
+ */
+export async function amendDecision(
+  rootPath: string,
+  id: string,
+  input: DecisionAmendment,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<DecisionRecord>> {
+  try {
+    const paths = vaultPaths(rootPath);
+    const filePath = paths.decisionJson(id);
+    await assertPhysicalContainment(rootPath, filePath, "read");
+
+    let decision: DecisionRecord;
+    try {
+      decision = await readDecisionFile(filePath);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Decision not found: ${id}` };
+      }
+      throw e;
+    }
+
+    // An answered Decision is history. Editing it would change what the operator
+    // approved after the fact, and the applied file would no longer match it.
+    if (decision.status !== "pending") {
+      return { ok: false, error: `Decision is already ${decision.status}` };
+    }
+
+    const now = new Date().toISOString();
+
+    if (input.revert) {
+      if (decision.amendedAt === null || decision.originalProposedBodyMarkdown === null) {
+        return { ok: false, error: "This Decision has no original proposal to restore" };
+      }
+      decision = {
+        ...decision,
+        proposedTitle: decision.originalProposedTitle,
+        proposedBodyMarkdown: decision.originalProposedBodyMarkdown,
+        originalProposedTitle: null,
+        originalProposedBodyMarkdown: null,
+        amendedAt: null,
+        amendedBy: null,
+        amendmentNote: null,
+      };
+      await writeDecisionFile(rootPath, filePath, decision);
+      const revertLog = await appendLog(paths.root, {
+        domainSlug: decision.domainSlugs[0] ?? null,
+        type: "decision.amended",
+        summary: `Restored the original proposal: ${decision.title}`,
+        payload: {
+          id: decision.id,
+          targetType: decision.target.type,
+          reverted: true,
+        },
+        actor,
+      });
+      if (!revertLog.ok) return revertLog;
+      return { ok: true, value: decision };
+    }
+
+    if (input.proposedTitle === undefined && input.proposedBodyMarkdown === undefined) {
+      return { ok: false, error: "An amendment needs a new title or a new proposal body" };
+    }
+
+    let proposedTitle = decision.proposedTitle;
+    const titleGiven = input.proposedTitle !== undefined && input.proposedTitle !== null;
+    if (titleGiven) {
+      if (typeof input.proposedTitle !== "string" || !input.proposedTitle.trim()) {
+        return { ok: false, error: "proposedTitle must be a non-empty string" };
+      }
+      proposedTitle = input.proposedTitle.trim();
+    }
+
+    let proposedBodyMarkdown = decision.proposedBodyMarkdown;
+    const bodyGiven = input.proposedBodyMarkdown !== undefined;
+    if (bodyGiven) {
+      if (typeof input.proposedBodyMarkdown !== "string") {
+        return { ok: false, error: "proposedBodyMarkdown must be a string" };
+      }
+      if (isProseTarget(decision.target)) {
+        proposedBodyMarkdown = input.proposedBodyMarkdown;
+      } else {
+        let nextBody: unknown;
+        try {
+          nextBody = JSON.parse(input.proposedBodyMarkdown);
+        } catch {
+          return {
+            ok: false,
+            error: "The proposal body must be valid JSON for this Decision",
+          };
+        }
+        let oldBody: unknown = null;
+        try {
+          oldBody = JSON.parse(decision.proposedBodyMarkdown);
+        } catch {
+          // A stored proposal that is not JSON has no structure to protect; the
+          // body being amended parses, which is what the apply path needs.
+        }
+        const violation = structuralBodyChange(oldBody, nextBody);
+        if (violation) return { ok: false, error: violation };
+        proposedBodyMarkdown = input.proposedBodyMarkdown;
+      }
+    }
+
+    if (!isProseTarget(decision.target)) {
+      // A title-only edit still has to move the body, or approval keeps the old
+      // spelling. This is also how a caller that sends no body at all is safe.
+      if (titleGiven && !bodyGiven && proposedTitle !== null) {
+        try {
+          const body: unknown = JSON.parse(proposedBodyMarkdown);
+          if (isRecordValue(body)) {
+            const path = bodyTitlePath(decision.target, body);
+            if (path && setTitleAtPath(body, path, proposedTitle)) {
+              proposedBodyMarkdown = JSON.stringify(body);
+            }
+          }
+        } catch {
+          // The stored body was not JSON; there is no body field to keep in step.
+        }
+      }
+      // The body is authoritative wherever it carries the title approval writes,
+      // so the card and the file can never disagree after an amendment.
+      try {
+        const body: unknown = JSON.parse(proposedBodyMarkdown);
+        if (isRecordValue(body)) {
+          const derived = proposalTitleFromBody(decision.target, body);
+          if (derived !== null) proposedTitle = derived;
+        }
+      } catch {
+        // Same as above: nothing to derive from a prose-shaped stored body.
+      }
+    }
+
+    decision = {
+      ...decision,
+      proposedTitle,
+      proposedBodyMarkdown,
+      // Only the first amendment captures the original. A later correction must
+      // not overwrite what the agent asked for with an earlier correction.
+      originalProposedTitle:
+        decision.amendedAt === null
+          ? decision.proposedTitle
+          : decision.originalProposedTitle,
+      originalProposedBodyMarkdown:
+        decision.amendedAt === null
+          ? decision.proposedBodyMarkdown
+          : decision.originalProposedBodyMarkdown,
+      amendedAt: now,
+      amendedBy: actor,
+      amendmentNote:
+        typeof input.note === "string" && input.note.trim() ? input.note.trim() : null,
+    };
+
+    await writeDecisionFile(rootPath, filePath, decision);
+
+    const logRes = await appendLog(paths.root, {
+      domainSlug: decision.domainSlugs[0] ?? null,
+      type: "decision.amended",
+      summary: `Amended decision: ${decision.title}`,
+      payload: {
+        id: decision.id,
+        targetType: decision.target.type,
+        note: decision.amendmentNote,
+      },
+      actor,
     });
     if (!logRes.ok) return logRes;
 
@@ -892,6 +1493,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     if (typeof target.mappingId === "string") {
       assertSafeSegment(target.mappingId, "mapping id");
     }
+    if (typeof target.metricId === "string" && target.metricId) {
+      assertSafeSegment(target.metricId, "metric id");
+    }
     if (typeof target.id === "string" && target.id) {
       assertSafeSegment(target.id, "document id");
     }
@@ -907,6 +1511,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     }
     if (typeof target.period === "string") {
       assertSafeSegment(target.period, "review period");
+    }
+    if (typeof target.scope === "string") {
+      assertSafeSegment(target.scope, "review page scope");
     }
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
@@ -953,8 +1560,70 @@ async function applyApprovedBody(
         decision.target.cadence,
         decision.target.period,
         decision.proposedBodyMarkdown,
+        undefined,
+        // What the Decision was proposed against: the apply keeps a heading whose
+        // file content moved on since then (three-way merge), so approving a
+        // proposal cannot resurrect another area's stale prose.
+        decision.previousBodyMarkdown ?? undefined,
       );
       if (!res.ok) return { ok: false, error: res.error, terminal: false };
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "review-page") {
+      const current = await getReviewPageBody(
+        rootPath,
+        decision.target.cadence,
+        decision.target.period,
+        decision.target.scope,
+      );
+      if (!current.ok) return { ok: false, error: current.error, terminal: false };
+      const applied = await applyReviewPageBody(rootPath, {
+        cadence: decision.target.cadence,
+        period: decision.target.period,
+        scope: decision.target.scope,
+        bodyMarkdown: decision.proposedBodyMarkdown,
+        baseRev: typeof decision.target.rev === "number" ? decision.target.rev : current.value.rev,
+      });
+      if (!applied.ok) {
+        if (applied.code === "CONFLICT") {
+          // The page moved since the proposal was approved. The Decision stays
+          // pending with the notice, rather than writing prose the operator never
+          // saw or rejecting a proposal that is still wanted.
+          return {
+            ok: false,
+            error: "The page changed after this proposal was approved; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "metric-definition") {
+      // The store write lives in metrics.ts, exactly as a page write lives in
+      // reviews.ts; this path only decides what a refusal means. A stale
+      // definition leaves the Decision pending with the notice (the operator
+      // asked for a change that is still wanted, against an older version),
+      // and an invalid payload leaves it pending so it can be amended.
+      const { applyMetricDefinitionChange } = await import("./metrics.ts");
+      const applied = await applyMetricDefinitionChange(
+        rootPath,
+        decision.target,
+        decision.actor,
+        decision.proposedBodyMarkdown,
+      );
+      if (!applied.ok) {
+        if (applied.stale) {
+          return {
+            ok: false,
+            error:
+              "The metric definition changed after this proposal was approved, so the proposal is " +
+              "stale; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "page") {
@@ -1391,9 +2060,79 @@ async function applyApprovedBody(
         return { ok: true, value: undefined };
       }
 
+      if (body.op === "delete-database") {
+        // The whole check-and-write lives in database-lifecycle.ts: the propose
+        // path and this path must agree about the guards, the fingerprint and
+        // what "changed since this was proposed" means. Everything it refuses is
+        // a fact about the vault, so re-approving changes nothing and the outcome
+        // is terminal; anything else is I/O and stays retryable.
+        const { applyDatabaseDelete, isTerminalDatabaseLifecycleError } = await import(
+          "./database-lifecycle.ts"
+        );
+        const applied = await applyDatabaseDelete(
+          rootPath,
+          domainSlug,
+          databaseId,
+          decision.domainSlugs,
+          body,
+          decision.actor,
+        );
+        if (!applied.ok) {
+          return {
+            ok: false,
+            error: applied.error,
+            terminal: isTerminalDatabaseLifecycleError(applied.error),
+          };
+        }
+        return { ok: true, value: undefined };
+      }
+
+      if (body.op === "merge-databases") {
+        const { applyDatabaseMerge, isTerminalDatabaseLifecycleError } = await import(
+          "./database-lifecycle.ts"
+        );
+        // The body names its sources; a malformed list is a Decision that can
+        // never apply, but it is not the vault's fault — the amend path can still
+        // correct it, so it is reported as retryable exactly as an unknown op is.
+        const proposedSources = Array.isArray(body.sources) ? body.sources : [];
+        const sourceIds = proposedSources.map((source) =>
+          source && typeof source.databaseId === "string" ? source.databaseId : "",
+        );
+        if (sourceIds.length === 0 || sourceIds.some((id) => !id)) {
+          return {
+            ok: false,
+            error: "A merge Decision names at least one source database",
+            terminal: false,
+          };
+        }
+        const applied = await applyDatabaseMerge(
+          rootPath,
+          domainSlug,
+          databaseId,
+          sourceIds,
+          body,
+          decision.actor,
+        );
+        if (!applied.ok) {
+          return {
+            ok: false,
+            error: applied.error,
+            terminal: isTerminalDatabaseLifecycleError(applied.error),
+          };
+        }
+        return { ok: true, value: undefined };
+      }
+
       return { ok: false, error: `Unknown database op: ${body.op}`, terminal: false };
     }
     if (decision.target.type === "doctrine") {
+      if (!(await isDomainLive(rootPath, decision.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Area is locked or unavailable: ${decision.target.domainSlug}`,
+          terminal: false,
+        };
+      }
       const paths = vaultPaths(rootPath);
       const docPath = paths.documentMd(decision.target.domainSlug, decision.target.kind);
       await assertPhysicalContainment(rootPath, docPath, "read");
@@ -1451,10 +2190,23 @@ async function applyApprovedBody(
       const now = new Date().toISOString();
       const nextTitle =
         decision.proposedTitle !== null ? decision.proposedTitle : existing.title;
+      // A proposal that changes the tags applies them; one that does not leaves
+      // them exactly as the note had them. Re-validated here because the vault can
+      // move between the filing and the answer.
+      let nextDomainSlugs = existing.domainSlugs;
+      if (decision.proposedDomainSlugs !== null) {
+        const normalized = await normalizeDomains(rootPath, decision.proposedDomainSlugs);
+        if (!normalized.ok) {
+          // An area directory that was removed cannot come back by approving
+          // again, so this is terminal rather than a stranded pending card.
+          return { ok: false, error: normalized.error, terminal: true };
+        }
+        nextDomainSlugs = normalized.value;
+      }
       const md = serializeFrontmatter(
         {
           title: nextTitle,
-          domains: JSON.stringify(existing.domainSlugs),
+          domains: JSON.stringify(nextDomainSlugs),
           createdAt: existing.createdAt,
           updatedAt: now,
           deletedAt: existing.deletedAt,
@@ -1535,6 +2287,15 @@ export async function resolveDecision(
       const applyRes = await applyApprovedBody(rootPath, decision);
       if (!applyRes.ok) {
         if (applyRes.terminal) {
+          // An operator-edited proposal is not terminal in the sense KAR-64
+          // meant. That ruling rests on "re-approving re-validates identically",
+          // and it no longer holds once the proposal can be corrected: recording
+          // a rejection here would destroy the Decision the operator was in the
+          // middle of fixing. It stays pending, the error goes back to the inbox,
+          // and the operator can amend it again or reject it deliberately.
+          if (decision.amendedAt !== null) {
+            return { ok: false, error: applyRes.error };
+          }
           // Permanent: record the outcome instead of stranding the decision
           // pending forever with no way for anyone to act on it. The operator
           // did approve this, so `reason` is what tells the two rejections apart.

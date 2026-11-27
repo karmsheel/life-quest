@@ -53,6 +53,7 @@ import {
   projectCreate,
   projectGet,
   readLog,
+  unlockDomain,
   withDecisionDisplayLabels,
 } from "@lifequest/vault-core";
 import type { DecisionRecord, LifeEvent } from "@lifequest/vault-core";
@@ -98,6 +99,12 @@ async function freshVault(label: string): Promise<string> {
   roots.push(root);
   const created = await createVault(root, `Decision Intake ${label}`);
   assert.equal(created.ok, true, created.ok ? "" : created.error);
+  // Every fence below names a seeded area; the rig unlocks the ones it uses so
+  // the funnel runs against visible areas, not locked ones.
+  for (const area of ["health", "mind"]) {
+    const unlock = await unlockDomain(root, area);
+    assert.equal(unlock.ok, true, unlock.ok ? "" : `unlockDomain(${area}) failed: ${unlock.error}`);
+  }
   return root;
 }
 
@@ -446,12 +453,12 @@ describe("decision intake funnel", () => {
           "The goal is created. Two more things from the same turn:",
           fence({
             kind: "doctrine",
-            domainSlug: "intellectual",
+            domainSlug: "mind",
             documentKind: "how",
             title: "Strategy (How)",
             body: doctrineBody,
           }),
-          fence({ kind: "library", title: "Weekly review ritual", body: "Sunday, 18:00.", domainSlugs: ["intellectual"] }),
+          fence({ kind: "library", title: "Weekly review ritual", body: "Sunday, 18:00.", domainSlugs: ["mind"] }),
         ].join("\n\n");
 
         const collected = collectImpliedTurn({
@@ -535,7 +542,7 @@ describe("decision intake funnel", () => {
           decisions: [
             {
               kind: "doctrine",
-              domainSlug: "emotional",
+              domainSlug: "mind",
               documentKind: "what",
               title: "Vision & Desire",
               body: "I want to name what I feel before it names me.",
@@ -544,9 +551,9 @@ describe("decision intake funnel", () => {
               kind: "library",
               title: "Journaling prompts",
               body: "What did I avoid today, and why?",
-              domainSlugs: ["emotional"],
+              domainSlugs: ["mind"],
             },
-            { kind: "goal", command: { type: "createGoal", name: "Weekly review", domainSlug: "emotional" } },
+            { kind: "goal", command: { type: "createGoal", name: "Weekly review", domainSlug: "mind" } },
           ],
         });
 

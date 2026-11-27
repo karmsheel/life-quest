@@ -57,10 +57,51 @@ export const REVIEW_CADENCES = [
 ] as const;
 export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
 
+/**
+ * When a cadence's next review becomes writable.
+ *
+ * A review looks back on a period that has not finished yet, so writing it the
+ * instant the period starts would mean writing it from nothing. A window is
+ * when the period is far enough along: `daysBeforeEnd` counts backwards from the
+ * period's last calendar day (0 = the last day itself) and `timeOfDay` is the
+ * local wall-clock moment it opens. Before that instant the app shows the
+ * PREVIOUS period's review, which is the one whose window has opened.
+ */
+export type ReviewWindow = {
+  /** Whole days before the period's last day on which the review opens. 0 = its last day. */
+  daysBeforeEnd: number;
+  /** Local wall-clock time, "HH:MM" 24h. */
+  timeOfDay: string;
+};
+
+/** One window per cadence, the value of `settings.json`'s `reviewAvailability`. */
+export type ReviewAvailability = Record<ReviewCadence, ReviewWindow>;
+
 export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
   | { type: "review"; cadence: ReviewCadence; period: string }
+  // The notebook's page. `scope` is "overall" or a live area slug. A page
+  // Decision carries the page `rev` it was proposed against in `rev`, so an
+  // apply that finds a newer page refuses STALE instead of overwriting prose
+  // the operator never saw. Legacy `{type:"review"}` Decisions read as the
+  // overall page (one release).
+  | { type: "review-page"; cadence: ReviewCadence; period: string; scope: string; rev?: number }
+  // A metric definition CHANGE. Creating a definition applies immediately, but
+  // editing or deleting one changes what a review measures, so it is filed as a
+  // Decision (spec §10.6) and applied only on approval. `definition` is the
+  // proposed update payload; `baseUpdatedAt` is the definition's `updatedAt`
+  // when the proposal was filed (`null` when the record carries none), so an
+  // apply that finds a newer file refuses STALE instead of overwriting a change
+  // the operator never saw.
+  | {
+      type: "metric-definition";
+      domainSlug: string;
+      metricId: string;
+      action: "update" | "delete";
+      definition?: DefineMetricInput;
+      baseUpdatedAt: string | null;
+    }
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
@@ -89,12 +130,54 @@ export type DocumentTarget =
   | { type: "agent-pairing"; agentId: string };
 
 /**
+ * One column's identity, without its options or relation target.
+ *
+ * A merge plan matches columns by name, but the staleness guard is about the
+ * schema as a whole: an id, a name or a type that moved is a schema the operator
+ * never saw. `id` is what makes the signature order-insensitive — two reads of
+ * the same schema join in the same order.
+ */
+export type DatabaseColumnSignature = {
+  id: string;
+  name: string;
+  type: DatabaseColumnType;
+};
+
+/**
+ * One source database of a merge proposal, frozen at propose time.
+ *
+ * The apply path re-reads the vault and compares both halves of this record:
+ * `fingerprint`/`rowCount` catch moved rows, `columns` catches a schema that
+ * changed while the Decision sat pending. `name` is here because the card names
+ * the database, and a database can be gone by the time the card is redrawn.
+ */
+export type DatabaseMergeSource = {
+  databaseId: string;
+  name: string;
+  rowCount: number;
+  fingerprint: string;
+  columns: DatabaseColumnSignature[];
+};
+
+/**
  * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.
  * DecisionRecord has no cells field, so cells are serialised as JSON into the
  * markdown fields — the same pattern the page, pins, and mapping branches use.
+ *
+ * `delete-database` and `merge-databases` (2026-11-15) are the destructive
+ * database-level ops: both file ONE pending Decision and write nothing until the
+ * operator approves it (LAWS/DATABASES.md: a change to, or deletion of, existing
+ * data is gated). The target names the doomed database for a delete and the
+ * surviving target for a merge.
  */
 export type DatabaseDecisionBody = {
-  op: "upsert" | "delete" | "create-database" | "add-column";
+  op:
+    | "upsert"
+    | "delete"
+    | "create-database"
+    | "add-column"
+    | "delete-database"
+    | "merge-databases";
   /** Resolved at propose time for the operator's benefit. */
   databaseName: string | null;
   /** Human label for the affected row, or null. */
@@ -134,6 +217,20 @@ export type DatabaseDecisionBody = {
   columnNames?: Record<string, string>;
   /** add-column only, resolved on read: the relation target's name. */
   relationDatabaseName?: string;
+  /** delete-database only: the row count the operator is deleting. */
+  rowCount?: number;
+  /** delete-database and merge-databases: sha256 over the affected rows. */
+  fingerprint?: string;
+  /** merge-databases only. */
+  sources?: DatabaseMergeSource[];
+  /** merge-databases only: columns the merge will add to the target. */
+  newColumns?: DatabaseColumnSpec[];
+  /** merge-databases only: target select columns whose options widen. */
+  widenedColumns?: Array<{ columnId: string; options: string[] }>;
+  /** merge-databases only: target schema at propose time (staleness guard). */
+  expectedColumns?: DatabaseColumnSignature[];
+  /** merge-databases only. */
+  dedupe?: boolean;
 };
 
 /** A batch insert Decision. Cells live in proposedBodyMarkdown, same as a row write. */
@@ -153,11 +250,27 @@ export type DatabaseBatchDecisionBody = {
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
-export const SEED_DOMAINS = [
-  { slug: "health", name: "Health" },
-  { slug: "intellectual", name: "Intellectual" },
-  { slug: "emotional", name: "Emotional" },
-  { slug: "financial", name: "Financial" },
+/**
+ * The vault's always-unlocked base area. It is the whole-life container that
+ * owns records created before any area is unlocked, and it is never a chip of
+ * its own: the "Life" lens is the union of every live area, and `life` is the
+ * area the union falls back to for records with no narrower home.
+ */
+export const BASE_AREA_SLUG = "life";
+
+/**
+ * What a new vault seeds. A locked area exists on disk — identity and four
+ * empty doctrine documents — but is invisible to the operator until the
+ * onboarding interview or Settings unlocks it. Locked areas are deliberately
+ * absent from the switcher, the doctrine index and every domain-scoped list.
+ */
+export const AREA_SEEDS = [
+  { slug: BASE_AREA_SLUG, name: "Life", sortOrder: 0, locked: false },
+  { slug: "health", name: "Health", sortOrder: 1, locked: true },
+  { slug: "mind", name: "Mind", sortOrder: 2, locked: true },
+  { slug: "financial", name: "Finance", sortOrder: 3, locked: true },
+  { slug: "business", name: "Business", sortOrder: 4, locked: true },
+  { slug: "relationships", name: "Relationships", sortOrder: 5, locked: true },
 ] as const;
 export const DEFAULT_HERMES_URL = "http://localhost:8642";
 
@@ -174,6 +287,14 @@ export type DomainMeta = {
   color: string | null;
   sortOrder: number;
   archivedAt: string | null;
+  /**
+   * When the operator unlocked this area. `null` means locked: seeded on disk
+   * but hidden from the switcher, the doctrine index and every domain-scoped
+   * list until the onboarding interview or Settings unlocks it. An absent field
+   * means unlocked, so a vault written before areas had a lock state reads
+   * exactly as it always did.
+   */
+  unlockedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -219,6 +340,37 @@ export type ChatQuestion = {
   createdAt: string;
 };
 
+/**
+ * How the Decisions inbox interrupts whatever the operator is doing.
+ *
+ * The inbox is a sheet the operator opens to approve the proposals the companion
+ * files. Both switches are about the sheet moving on its own: `autoOpen` raises
+ * it when a new proposal arrives, and `autoClose` puts it away once the last
+ * pending one is answered. They are separate because the operator may want the
+ * inbox to announce itself without it also deciding when the interruption ends
+ * — or the reverse, closing quietly while only ever opening it by hand.
+ */
+export type DecisionInboxSettings = {
+  /** Open the inbox when the companion files a decision. */
+  autoOpen: boolean;
+  /** Close the inbox when the last pending decision is answered. */
+  autoClose: boolean;
+};
+
+/**
+ * One agent's domain rules.
+ *
+ * `domains` empty means "every domain": the agent is offered everywhere. A
+ * non-empty list narrows it to those slugs. `defaultFor` is a subset of the
+ * operator's domains where entering the domain also selects this agent.
+ */
+export type AgentScope = {
+  /** The harness/agent id, e.g. "pi" or "hermes". */
+  agentId: string;
+  domains: string[];
+  defaultFor: string[];
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
@@ -233,6 +385,20 @@ export type VaultSettings = {
   autoApproveInserts: AutoApproveInsert[];
   /** Saved questions the chat composer offers, in the operator's own order. */
   chatQuestions: ChatQuestion[];
+  /** Whether the Decisions inbox opens and closes itself. */
+  decisionInbox: DecisionInboxSettings;
+  /**
+   * When each cadence's new review becomes writable. Before a period's window
+   * opens the app keeps showing the previous period's review, so a review is
+   * never written against a period that has barely begun.
+   */
+  reviewAvailability: ReviewAvailability;
+  /**
+   * Which domains each agent is offered in, and where it is the domain's
+   * default. Absent/empty means every agent is offered everywhere and none is a
+   * domain default; Pi remains the app's main agent.
+   */
+  agentScopes: AgentScope[];
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";
@@ -249,12 +415,184 @@ export type ReviewRecord = {
   title: string;
   scopes: Record<string, ReviewScopeState>;
   bodyMarkdown: string;
+  /**
+   * The review's content version for compare-and-swap, in the compatibility
+   * projection. A notebook has one rev per page, so this is a monotonic
+   * composite: the manifest rev plus every page rev. Any structural change or
+   * real body write moves it, so a page editor that read it still conflicts
+   * when another writer lands between its read and its save.
+   *
+   * A legacy single-file review reads its own `rev` (0 for files written before
+   * the field existed), which is a version no write produces.
+   */
+  rev: number;
+  /** The notebook's page summaries, when the record is the compatibility projection. */
+  pages?: ReviewPageSummary[];
+  /** The compatibility content rev (the same number as `rev`), named for the notebook. */
+  notebookRev?: number;
 };
+
+/**
+ * One scope's page as the companion reads and writes it.
+ *
+ * A page is the operator's unit of work: the overall review, or one area's
+ * report. In today's single-file storage it is a projection of the file — the
+ * `overall` H2s for the overall page, one area's `###` headings for an area
+ * page — and the writer merges a page back into the file by scope, so two area
+ * sessions no longer replace each other's prose.
+ */
+export type ReviewPageBody = {
+  scope: string;
+  /** The page's display title: the notebook title for `overall`, the area name otherwise. */
+  title: string;
+  /** `missing` when the page does not exist yet (never started). */
+  status: "missing" | "draft" | "done";
+  sessionId: string | null;
+  /** The page's own rev at read time; pass it back to detect a stale write. */
+  rev: number;
+  updatedAt: string | null;
+  locked: boolean;
+  bodyMarkdown: string;
+};
+
+/** One page with the notebook identity it belongs to. */
+export type ReviewPage = ReviewPageBody & {
+  cadence: ReviewCadence;
+  period: string;
+};
+
+/**
+ * One notebook page as stored: the markdown file's parsed contents.
+ *
+ * Page files are the unit of concurrent work: they own their prose, status,
+ * session id and rev, and no other page's write touches them. The manifest owns
+ * identity, order and lock.
+ */
+export type ReviewPageFile = {
+  schemaVersion: 1;
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  bodyMarkdown: string;
+};
+
+/** The notebook manifest (`review.json`): identity, order and lock. */
+export type ReviewManifest = {
+  schemaVersion: 1;
+  cadence: ReviewCadence;
+  period: string;
+  weekStartDay: WeekStartDay;
+  title: string;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** The read-only notebook a period presents to the app. */
+export type ReviewPageSummary = {
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  chars: number;
+};
+
+export type ReviewNotebook = {
+  cadence: ReviewCadence;
+  period: string;
+  title: string;
+  weekStartDay: WeekStartDay;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  pages: ReviewPageSummary[];
+  /** Absolute path of the notebook directory (or the legacy file it projects). */
+  path: string;
+  /** True when the period is still a single legacy file the migration has not split. */
+  legacy: boolean;
+};
+
+/** Why a page write was refused. `LEGACY_LAYOUT` asks the caller to retry after migration. */
+export type ReviewPageWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "GATED"
+  | "NOT_OPEN"
+  | "NOT_FOUND"
+  | "MALFORMED"
+  | "LEGACY_LAYOUT";
+
+/** A page write's answer: the page as written, or a refusal with the page as it stands. */
+export type ReviewPageWriteOutcome =
+  | { ok: true; page: ReviewPageBody; notebookRev: number }
+  | {
+      ok: false;
+      code: ReviewPageWriteCode;
+      error: string;
+      /** The same sentence as `error`, under the name the engine API documents. */
+      message: string;
+      current?: ReviewPageBody;
+    };
+
+/** One period's outcome in the legacy→notebook migration. */
+export type ReviewMigrationPeriod = {
+  cadence: ReviewCadence;
+  period: string;
+  status: "migrated" | "skipped" | "failed";
+  reason?: string;
+};
+
+/** What the one-release migration did, stored in its marker file. */
+export type ReviewMigrationReport = {
+  schemaVersion: 1;
+  migratedAt: string;
+  alreadyDone: boolean;
+  periods: ReviewMigrationPeriod[];
+};
+
+/**
+ * Why a review write was refused. `CONFLICT` is the one a caller must handle
+ * rather than retry blindly: the page it read is no longer the page on disk.
+ */
+export type ReviewWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "GATED"
+  | "NOT_OPEN"
+  | "MALFORMED"
+  | "NOT_FOUND"
+  | "LEGACY_LAYOUT";
+
+/**
+ * A review write's answer. A refusal carries the current file for `CONFLICT`,
+ * so the caller can show "this changed on disk" without a second read.
+ */
+export type ReviewWriteOutcome =
+  | { ok: true; value: ReviewRecord }
+  | {
+      ok: false;
+      error: string;
+      code: ReviewWriteCode;
+      current?: ReviewRecord;
+    };
 export type ReviewIndexEntry = {
   cadence: ReviewCadence;
   period: string;
   locked: boolean;
   scopes: Record<string, { status: "draft" | "done"; sessionId: string | null }>;
+  /** Latest write across the manifest and its pages. */
+  updatedAt?: string;
+  /** How many pages the notebook holds (overall included). */
+  pageCount?: number;
+  /** How many pages are `done`. */
+  doneCount?: number;
   error?: string;
 };
 
@@ -283,6 +621,14 @@ export type ReviewSnapshotDirective = {
    * `all` leaves the spec's window as it was written.
    */
   window: "period" | "all";
+  /**
+   * Display-only sign handling, mirroring a metric definition's
+   * `formatting.magnitude`: `abs` prints a negative total as its gross size
+   * (Cash out), `negate` flips the sign. It is applied where the value is
+   * PRINTED and never to the query or the stored number, so a review can read
+   * "Cash out 3,000" while the ledger keeps -3,000.
+   */
+  magnitude?: "abs" | "negate" | null;
   spec: Omit<ViewSpec, "schemaVersion">;
 };
 
@@ -316,12 +662,74 @@ export type ReviewSkill = {
   exists: boolean;
 };
 
+/**
+ * One app-written metric figure, as the pass plans it.
+ *
+ * A figure is NOT a snapshot directive: an operator's fence carries a view spec
+ * the app executes, while a figure is written from the area's metric definition
+ * (Phase 4) through `getMetricsSummary`. The two share the marker-placement
+ * machinery and the outcome vocabulary, not the query source — a snapshot is a
+ * rule the operator wrote, a figure is a number the app already knows how to
+ * read. `kind` is what tells the two apart in a pass's outcomes.
+ */
+export type ReviewMetricFigureDirective = {
+  kind: "metric";
+  /** The stable marker id, `metric:<definitionId>`. */
+  id: string;
+  /** The metric definition the figure reads, without the marker prefix. */
+  definitionId: string;
+  /** The area whose page the figure lands on. */
+  domain: string;
+  /** Figures live under the area page's own Look-back. */
+  section: "Look-back";
+  /** The definition's label, printed bold above the value. */
+  title: string;
+  /** The definition's unit, display only: `ZAR` prints in parentheses. */
+  unit: string;
+  /** The definition's display formatting; the figure never changes the query. */
+  formatting: MetricFormatting | null;
+};
+
+/**
+ * The overall page's cross-domain block. It is one app-rendered table over one
+ * run per definition — a `ViewSpec` answers one domain per call, so this cannot
+ * be a directive, and a fake "overall domain" spec would be a second engine.
+ */
+export type ReviewMetricsOverallDirective = {
+  kind: "overall";
+  id: "metrics:overall";
+  domain: "";
+  section: "Look-back";
+  title: "Metrics this period";
+};
+
+export type ReviewFigureDirective =
+  | ReviewMetricFigureDirective
+  | ReviewMetricsOverallDirective;
+
+/** How one app-written figure ended up, in the same words a snapshot outcome uses. */
+export type ReviewFigureOutcome = {
+  kind: "metric" | "overall";
+  id: string;
+  /** The definition behind a metric figure (absent for the overall block). */
+  definitionId?: string;
+  domain: string;
+  section: string;
+  title: string;
+  status: "written" | "unchanged" | "failed";
+  /** Why it failed, or why a stale figure was removed. */
+  reason?: string;
+};
+
+/** One pass's outcome: an operator fence's snapshot, or an app-written figure. */
+export type ReviewPrepopulateOutcome = ReviewSnapshotOutcome | ReviewFigureOutcome;
+
 /** What one pre-population pass did to a review, and why for each part. */
 export type ReviewPrepopulateResult = {
   cadence: ReviewCadence;
   period: string;
   scope: string;
-  outcomes: ReviewSnapshotOutcome[];
+  outcomes: ReviewPrepopulateOutcome[];
   /** How many directives ended up written or refreshed. */
   applied: number;
   /**
@@ -334,6 +742,175 @@ export type ReviewPrepopulateResult = {
   locked: boolean;
   /** The review body after the pass — the file's own, unchanged when locked. */
   bodyMarkdown: string;
+};
+
+// ---------------------------------------------------------------------------
+// Metrics (2026-11-26 metrics design, §10). A metric definition is the
+// operator's named measurement, stored as one git-portable JSON per metric
+// under `domains/<slug>/metrics/<id>.json`. The rows it reads are ordinary
+// rows in the area's own database (the `metrics` events table for a manually
+// logged metric, or whatever database a derived spec names), so figures run
+// through the one view engine rather than a second aggregation path.
+// ---------------------------------------------------------------------------
+
+/** Where a metric's rows come from. */
+export const METRIC_SOURCES = ["derived", "events"] as const;
+export type MetricSource = (typeof METRIC_SOURCES)[number];
+
+/** The measures a metric may fold its rows with. `avg-per` stays a view-only measure. */
+export const METRIC_AGGREGATIONS = ["sum", "count", "last", "avg"] as const;
+export type MetricAggregation = (typeof METRIC_AGGREGATIONS)[number];
+
+export const METRIC_DIRECTIONS = ["higher-is-better", "lower-is-better", "neutral"] as const;
+export type MetricDirection = (typeof METRIC_DIRECTIONS)[number];
+
+/** Display-only sign handling; never applied to the query or the stored number. */
+export const METRIC_MAGNITUDES = ["abs", "negate"] as const;
+export type MetricMagnitude = (typeof METRIC_MAGNITUDES)[number];
+
+/**
+ * How a metric's value is printed. All of it is display-only: a `prefix` never
+ * enters the SQL, and `magnitude` never changes what the query returned.
+ */
+export type MetricFormatting = {
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  magnitude?: MetricMagnitude | null;
+};
+
+/**
+ * One operator-owned metric definition, exactly the object spec §10.1 names.
+ *
+ * `derived` carries a spec — validated against the area's own databases at
+ * definition time — and `events` carries the `metric` cell value its rows
+ * carry. `aggregation` is the fold for an events metric and display metadata
+ * for a derived one, whose query stays in `spec` (the same split a saved view
+ * makes between its data and its drawing).
+ */
+export type MetricDefinition = {
+  schemaVersion: 1;
+  /** Stable id; a review figure is found by `metric:<id>`. */
+  id: string;
+  domainSlug: string;
+  /** "Training minutes" */
+  label: string;
+  /** "minutes" | "sessions" | "pages" | "ZAR" | free text, display only. */
+  unit: string;
+  source: MetricSource;
+  /** derived: the one query that answers the metric. Validated on write. */
+  spec?: Omit<ViewSpec, "schemaVersion">;
+  /** events: the `metric` cell value the logged rows carry. */
+  eventKey?: string;
+  aggregation: MetricAggregation;
+  direction?: MetricDirection;
+  target?: number | null;
+  formatting?: MetricFormatting;
+  createdBy: "user" | "agent";
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * A definition write's payload: the definition minus the fields the store owns.
+ *
+ * A `derived` definition normally carries its validated one-number `spec`. The
+ * bridge forms — the Analytics "New metric" form and a Decision's edit draft —
+ * cannot build a full ViewSpec, so they may instead name the parts a one-number
+ * query is made of: `databaseId`, `measureColumnId` and `timeColumnId`. The
+ * engine synthesizes the same spec it validates for a hand-written one, so
+ * there is never a second query vocabulary and the renderer never holds a spec.
+ */
+export type DefineMetricInput = Omit<
+  MetricDefinition,
+  "schemaVersion" | "domainSlug" | "createdBy" | "createdAt" | "updatedAt"
+> & {
+  /** derived convenience form: the database the one-number query reads. */
+  databaseId?: string;
+  /** derived convenience form: the number column folded (null/absent for count). */
+  measureColumnId?: string | null;
+  /** derived convenience form: the date column the period window acts on. */
+  timeColumnId?: string;
+};
+
+/**
+ * What the bridge accepts where a full definition would be sent: a create, or
+ * the proposed payload of an update Decision.
+ *
+ * The two arms are the two sources, and neither carries a `spec` — the engine
+ * builds and validates the one-number query a derived metric runs. An `events`
+ * draft names the `eventKey` its logged rows carry; a `derived` draft names the
+ * database and the two columns the engine should query.
+ */
+export type MetricDefinitionDraft =
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: MetricAggregation;
+      eventKey: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    }
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "derived";
+      aggregation: MetricAggregation;
+      databaseId: string;
+      measureColumnId?: string | null;
+      timeColumnId: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    };
+
+/**
+ * One metric's answered value for a review period and the one before it.
+ *
+ * `value`/`previousValue`/`delta` are null when the window held no rows at all
+ * — never a fabricated zero, because a metric that was not tracked and a metric
+ * that was genuinely zero are different statements, and only one of them is
+ * true. `formatting` is carried so Phase 5/6 render from the definition rather
+ * than from a second copy of it.
+ */
+export type MetricSummary = {
+  id: string;
+  label: string;
+  unit: string;
+  source: MetricSource;
+  value: number | null;
+  previousValue: number | null;
+  delta: number | null;
+  direction: MetricDirection | null;
+  target: number | null;
+  formatting: MetricFormatting | null;
+  window: { start: string; end: string };
+  previousWindow: { start: string; end: string };
+  /** The instant the read ran, ISO — a review window opens before the period ends. */
+  asOf: string;
+  /** Where the number came from, for the figure's provenance line. */
+  provenance: { databaseId: string; eventKey?: string };
+};
+
+/**
+ * One definition the metrics layer could not use, reported rather than thrown.
+ *
+ * Two failures look the same to a caller: a file that is malformed on disk and a
+ * well-formed definition that cannot ANSWER (a derived metric whose source
+ * database was deleted, a spec that is no longer runnable). Both are reported
+ * here; the second carries `metricId`, and its summary answers null rather than a
+ * fabricated value.
+ */
+export type MetricDefinitionProblem = {
+  /** Vault-relative file, so the operator can open the one that is wrong. */
+  file: string;
+  /** The definition that could not answer, for a run failure (absent for a file read failure). */
+  metricId?: string;
+  reason: string;
 };
 
 export type PlanningStub = {
@@ -403,6 +980,75 @@ export type IdealStateUpdatePatch = {
   bodyMarkdown?: string;
 };
 
+// Define → Images (2026-10-28). A vault-level picture library and the one
+// written vision board beside it. Pictures are stored as files, so the vault
+// keeps what the operator uploaded; the two JSON files are the library's index
+// and the board's blocks.
+export const IMAGE_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+] as const;
+export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
+
+/** The extension a sniffed kind is stored under. The bytes decide, never the name. */
+export const IMAGE_MIME_EXT: Record<ImageMimeType, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/** One picture in the operator's library, as the page draws it. */
+export type VaultImage = {
+  id: string;
+  /** Vault-relative path, `images/files/<id>.<ext>`; never absolute. */
+  relPath: string;
+  /** The name the operator's file had, kept for display only. */
+  name: string;
+  caption: string;
+  mime: ImageMimeType;
+  bytes: number;
+  /** The canvas the uploader reported, or null when it did not say. */
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+};
+
+/**
+ * One block of the vision document. Deliberately the small, stable set the
+ * operator asked for — text, heading, bullets and a picture with its caption —
+ * rather than a general rich-text document.
+ */
+export type VisionBoardBlock =
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "heading"; text: string }
+  | { id: string; kind: "bullets"; items: string[] }
+  | { id: string; kind: "image"; imageId: string; caption: string };
+
+export type VisionBoardBlockKind = VisionBoardBlock["kind"];
+
+/** The one long document beside the library. */
+export type VisionBoard = {
+  blocks: VisionBoardBlock[];
+  updatedAt: string;
+};
+
+export type ImageSaveInput = {
+  bytes: Uint8Array;
+  /** Declared by the renderer; the sniffed bytes are authoritative. */
+  mime: string;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type ImageUpdatePatch = {
+  name?: string;
+  caption?: string;
+};
+
 export type AgentHire = {
   id: string;
   hermesAgentId: string;
@@ -430,6 +1076,66 @@ export type SignalType = (typeof SIGNAL_TYPES)[number];
 export const SIGNAL_SOURCES = ["manual", "automation", "notion"] as const;
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
+/**
+ * Where a capture stands as work: captured into the `inbox`, then moved on by
+ * the operator's triage. These are the five and only five states the store
+ * writes; a record written before the inbox existed reads as `"inbox"`.
+ */
+export const SIGNAL_STATUSES = [
+  "inbox",
+  "triaged",
+  "acting",
+  "done",
+  "dropped",
+] as const;
+export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
+
+/** The operator's own ordering. `null` is "not set", not "normal". */
+export const SIGNAL_PRIORITIES = ["high", "normal", "low"] as const;
+export type SignalPriority = (typeof SIGNAL_PRIORITIES)[number];
+
+/**
+ * A picture a signal carries, stored as a file under `signal-chain/files/` and
+ * referenced from the signal's JSON by its vault-relative path. The bytes decide
+ * the kind and the extension, never the uploaded name; the name is a label.
+ */
+export type SignalImageAttachment = {
+  kind: "image";
+  /** Vault-relative, `.lifequest/signal-chain/files/<uuid>.<ext>`; never absolute. */
+  relPath: string;
+  name: string;
+  mime: ImageMimeType;
+  width: number | null;
+  height: number | null;
+};
+
+/** A web link a signal carries. Absolute http(s) only, as the page validates. */
+export type SignalLinkAttachment = {
+  kind: "link";
+  url: string;
+};
+
+/**
+ * Any other file a signal carries, stored beside the pictures under
+ * `signal-chain/files/` and named by its vault-relative path. Unlike a picture,
+ * the extension comes from the name the operator attached; active content
+ * (a page, a script, an app) is refused at write time, because the vault must
+ * never hand the renderer something a click could run.
+ */
+export type SignalFileAttachment = {
+  kind: "file";
+  /** Vault-relative, `.lifequest/signal-chain/files/<uuid>[.<ext>]`; never absolute. */
+  relPath: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
+export type SignalAttachment =
+  | SignalImageAttachment
+  | SignalLinkAttachment
+  | SignalFileAttachment;
+
 export type SignalRecord = {
   id: string;
   createdAt: string;
@@ -439,15 +1145,73 @@ export type SignalRecord = {
   source: SignalSource;
   sourceRef: string | null;
   title: string | null;
+  /** The description. Empty is allowed only when an attachment says why. */
   body: string;
   domainSlug: string | null;
+  /**
+   * The project this capture belongs to, a live id from `projects/`. Optional
+   * on disk: a signal written before the inbox existed has no key and reads
+   * back as null.
+   */
+  projectId?: string | null;
+  /**
+   * Where the capture stands as work. Optional on disk for the same reason; an
+   * absent key reads as `"inbox"`, never as undefined.
+   */
+  status?: SignalStatus;
+  /** The operator's own ordering, or null (absent on old records). */
+  priority?: SignalPriority | null;
+  /** Where it came in from, free text, e.g. "Chrome — AI tab group". */
+  capturedFrom?: string | null;
+  /** A picture, a link or a file, or null for a plain text capture. */
+  attachment: SignalAttachment | null;
+};
+
+/**
+ * An attachment on its way in. The renderer hands over bytes for a picture or a
+ * file — it never names a vault path — and the URL for a link; the vault mints
+ * the path.
+ */
+export type SignalImageInput = {
+  kind: "image";
+  bytes: Uint8Array;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type SignalLinkInput = {
+  kind: "link";
+  url: string;
+};
+
+/**
+ * A file on its way in. The renderer hands over the bytes and the name it saw;
+ * the vault mints the stored path and derives a safe extension from the name.
+ * `mime` is a hint: an unrecognised one is stored as `application/octet-stream`.
+ */
+export type SignalFileInput = {
+  kind: "file";
+  bytes: Uint8Array;
+  name: string;
+  mime?: string;
 };
 
 export type SignalCreateInput = {
   type: SignalType;
+  /** May be empty only when `attachment` is present. */
   body: string;
   title?: string | null;
   domainSlug?: string | null;
+  /** A live project id from `projects/`; omitted or null is unfiled. */
+  projectId?: string | null;
+  /** Where the capture lands as work; omitted reads as `"inbox"`. */
+  status?: SignalStatus;
+  /** The operator's ordering; omitted or null is unset. */
+  priority?: SignalPriority | null;
+  /** Where it came in from, free text; omitted or null is unknown. */
+  capturedFrom?: string | null;
+  attachment?: SignalImageInput | SignalLinkInput | SignalFileInput | null;
 };
 
 export type SignalUpdatePatch = {
@@ -455,6 +1219,9 @@ export type SignalUpdatePatch = {
   body?: string;
   title?: string | null;
   domainSlug?: string | null;
+  projectId?: string | null;
+  status?: SignalStatus;
+  priority?: SignalPriority | null;
 };
 
 export type SignalChainListResult = {
@@ -528,6 +1295,22 @@ export type Project = {
   title: string;
   /** One line: what this is. */
   summary: string;
+  /**
+   * Free text: what kind of thing this is — "Mobile App", "Desktop/web",
+   * "YouTube", "Physical product", "Service". Null when the project does not
+   * say. Captured with an idea so the register knows what was written down.
+   */
+  projectType: string | null;
+  /** Free text: the person or place the idea came from, or null. */
+  source: string | null;
+  /** An absolute http(s) URL the idea came from, or null. Never any other scheme. */
+  sourceUrl: string | null;
+  /**
+   * Absolute http(s) URLs of the project's repositories, in the order the
+   * operator or companion named them. Empty when the project has none; stored
+   * as a YAML block sequence in the frontmatter.
+   */
+  repoUrls: string[];
   /** The context document (the markdown body of the file). */
   bodyMarkdown: string;
   /** Where it stands right now, in the operator's own words. */
@@ -553,6 +1336,10 @@ export type Project = {
 export type ProjectFields = {
   title?: string;
   summary?: string;
+  projectType?: string | null;
+  source?: string | null;
+  sourceUrl?: string | null;
+  repoUrls?: string[] | null;
   bodyMarkdown?: string;
   stateNote?: string;
   goalId?: string | null;
@@ -586,6 +1373,10 @@ export type ProjectListEntry = {
   id: string;
   title: string;
   summary: string;
+  projectType: string | null;
+  source: string | null;
+  sourceUrl: string | null;
+  repoUrls: string[];
   stateNote: string;
   goalId: string | null;
   domainSlug: string | null;
@@ -608,6 +1399,10 @@ export type ProjectCommand =
       domainSlug: string | null;
       bodyMarkdown?: string;
       summary?: string;
+      projectType?: string | null;
+      source?: string | null;
+      sourceUrl?: string | null;
+      repoUrls?: string[] | null;
       stateNote?: string;
       status?: ProjectStatus;
       priority?: ProjectPriority | null;
@@ -630,6 +1425,18 @@ export type DecisionRecord = {
   previousTitle: string | null;
   proposedBodyMarkdown: string;
   previousBodyMarkdown: string | null;
+  /**
+   * The library note's domain list as the proposal would leave it, or null when
+   * the proposal does not touch the tags.
+   *
+   * A plain `.md` note's domains live in its frontmatter, and until this field a
+   * proposal could only carry a title and a body — so an agent asked to re-tag a
+   * note had no Decision to file and no tool to call. Null is "no change", []
+   * is the real proposal to untag, which is why this is not simply optional.
+   */
+  proposedDomainSlugs: string[] | null;
+  /** The note's tags when the proposal was filed; null when domains do not change. */
+  previousDomainSlugs: string[] | null;
   actor: Actor;
   createdAt: string;
   resolvedAt: string | null;
@@ -639,6 +1446,40 @@ export type DecisionRecord = {
    * every other case, including a transient apply failure that stays retryable.
    */
   reason: string | null;
+  /**
+   * When the operator last edited the proposal before answering it, or null.
+   *
+   * A Decision is the agent's proposal, and approval applies whatever the record
+   * holds. The operator can correct a proposal in the inbox — a misspelt project
+   * name, a detail worth adding — and these fields are how the record admits that
+   * what was approved is theirs, not the proposer's. They are also what the
+   * resolve path reads to decide whether a terminal apply failure is fixable.
+   */
+  amendedAt: string | null;
+  /** Who made the last amendment. Always the operator today. */
+  amendedBy: Actor | null;
+  /** The operator's reason for the edit, in their own words, or null. */
+  amendmentNote: string | null;
+  /**
+   * The proposal exactly as it was filed, kept from the first amendment so the
+   * inbox can show (and restore) what the agent actually asked for.
+   */
+  originalProposedTitle: string | null;
+  originalProposedBodyMarkdown: string | null;
+};
+
+/**
+ * The operator's edit to a pending Decision's proposal.
+ *
+ * Every field is optional because an amendment may touch only the title, only
+ * the body, or only the note. `revert` is the one exception: it restores the
+ * proposal as filed and clears the amendment, ignoring the other fields.
+ */
+export type DecisionAmendment = {
+  proposedTitle?: string | null;
+  proposedBodyMarkdown?: string;
+  note?: string | null;
+  revert?: boolean;
 };
 
 /**
@@ -713,6 +1554,92 @@ export type GoalsApplyContext = {
   liveDomainSlugs: readonly string[];
 };
 
+// ---------------------------------------------------------------------------
+// The onboarding interview (P1, 2026-11-08). The record is the vault's memory
+// that the first-run interview happened; the proposal is the companion's single
+// confirmation card, written once and applied only when the operator confirms.
+// Both live under `.lifequest/` and both are read on every `openVault`, because
+// the dock's cards are gated on them.
+// ---------------------------------------------------------------------------
+
+export const ONBOARDING_STATUSES = ["not_started", "in_progress", "completed"] as const;
+export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
+
+/**
+ * The onboarding interview's record, `.lifequest/onboarding.json`.
+ *
+ * A vault with no file reads as `completed`: that is how every vault written
+ * before the interview existed avoids being shown a first-run card. A new vault
+ * gets the file at creation with `not_started`. Reading never creates the file.
+ */
+export type OnboardingRecord = {
+  status: OnboardingStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  /** The seeded areas the interview unlocked, in the order they were confirmed. */
+  unlockedAreas: string[];
+};
+
+/** One seeded area the interview heard, with the four doctrine drafts. */
+export type OnboardingAreaProposal = {
+  slug: string; // seeded, currently-locked area slug, one of the five
+  name: string; // derived from AREA_SEEDS, not trusted from the model
+  doctrine: { kind: DocumentKind; bodyMarkdown: string }[];
+};
+
+/** The one table the interview's clearest ask produced, if it produced one. */
+export type OnboardingTableProposal = {
+  areaSlug: string; // one of this proposal's area slugs
+  name: string;
+  columns: { name: string; type: DatabaseColumnType; options?: string[] }[];
+};
+
+/** The interview's one note — the first "life picture", written to the base area. */
+export type OnboardingNoteProposal = { title: string; bodyMarkdown: string };
+
+/**
+ * The onboard proposal as stored, `.lifequest/onboarding-proposal.json`.
+ *
+ * The companion writes it through `propose_onboarding_unlock`, and that call now
+ * APPLIES it: the areas are opened and the doctrine, table and note are written
+ * in the same request (P1 Amendment 2, 2026-11-09). The file is then kept as the
+ * announcement card's RECEIPT — the dock reads it to say what was opened, and it
+ * survives a reload until the operator acknowledges it. A legacy/first-run
+ * proposal is one written but not yet applied; the apply path treats both alike.
+ */
+export type OnboardingProposal = {
+  areas: OnboardingAreaProposal[]; // 1..3
+  table: OnboardingTableProposal | null;
+  note: OnboardingNoteProposal; // required: the interview's one note
+  createdAt: string;
+};
+
+/** What the confirmation/announcement card's unticked lines mean to the apply path. */
+export type OnboardingConfirmOptions = {
+  /** Doctrine kinds to leave unwritten (the card's unticked lines). */
+  skipDoctrineKinds?: DocumentKind[];
+  /** Include the proposal's table (default true). */
+  includeTable?: boolean;
+  /** Include the interview note (default true). */
+  includeNote?: boolean;
+  /**
+   * Keep `.lifequest/onboarding-proposal.json` after the batch applies (default
+   * false). The passive-open path sets this: the companion opens the areas itself,
+   * and the kept proposal is the announcement card's RECEIPT — it is what the dock
+   * reads to say what was opened, and it survives a reload until the operator
+   * acknowledges it (`discardOnboardingProposal`). A kept receipt never changes
+   * the record: that is already `completed`.
+   */
+  keepProposal?: boolean;
+};
+
+/** What one confirmed batch actually did. */
+export type OnboardingConfirmResult = {
+  areas: string[]; // slugs unlocked
+  table: boolean; // created or not
+  note: boolean; // written or not
+};
+
 export type VaultSnapshot = {
   rootPath: string;
   lifequest: LifequestJson;
@@ -728,6 +1655,10 @@ export type VaultSnapshot = {
   reviews: ReviewIndexEntry[];
   planning: PlanningIndexEntry[];
   weeklyFileCount: number;
+  /** The onboarding record; a vault with no file reads as `completed`. */
+  onboarding: OnboardingRecord;
+  /** The pending confirmation, or null. Drives the dock card. */
+  onboardingProposal: OnboardingProposal | null;
 };
 
 export const DATABASE_COLUMN_TYPES = [
@@ -815,6 +1746,11 @@ export type FinanceKitSettings = {
   defaultCaptureAccountId: string | null;
   /** Null until the operator changes it; the default source is used instead. */
   fxSource?: FxRateSource | null;
+  /**
+   * The last payee-sanitiser migration this vault has run. Absent means the
+   * one-time history repair has not run yet; the app runs it on vault open.
+   */
+  payeeSanitiserVersion?: number;
 };
 
 export type CaptureOutcome =
@@ -832,7 +1768,17 @@ export type CaptureOutcome =
     };
 
 export type KitInstallResult =
-  | { applied: true; alreadyInstalled: boolean }
+  | {
+      applied: true;
+      alreadyInstalled: boolean;
+      /**
+       * Shipped metric definitions that could not be written during the install.
+       * The kit itself still installed (a ledger must not fail because one
+       * definition file is unwritable), so these are reported, not thrown — the
+       * same shape the metrics summary uses for a definition that cannot answer.
+       */
+      metricProblems?: string[];
+    }
   | { applied: false; decision: DecisionRecord };
 
 // KAR-61 Finance kit constants
@@ -865,6 +1811,11 @@ export type DatabaseRow = {
   createdAt: string;
   updatedAt: string;
   cells: Record<string, unknown>;
+  /**
+   * What the write path had to change to make the row honest — the payee
+   * sanitiser reports here rather than storing a polluted field silently.
+   */
+  warnings?: string[];
 };
 
 export type DatabaseListEntry = {
@@ -954,15 +1905,163 @@ export type PageListEntry = {
   page: PageRecord;
 };
 
+/**
+ * The built-in cards a board can carry.
+ *
+ * The order is the order the pin row offers them in, so a kind added later sits
+ * at the end of that row rather than pushing the ones the operator already knows
+ * down. Where a card is SEEDED is a different question, answered in `pins.ts`:
+ * the companion brief is first on a new board even though it is last here,
+ * because it is the card the operator is meant to read before the others.
+ */
 export const SYSTEM_PIN_KINDS = [
   "goal-progress",
   "deadline",
   "today-week",
   "pending-decisions",
   "recent-log",
-  "doctrine-progress",
+  "companion-brief",
 ] as const;
 export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];
+
+/**
+ * The companion's brief: the answer to "what would you tell me if you had thirty
+ * seconds with me this morning".
+ *
+ * It exists because the durable things in a daily note — a decision, a watch, a
+ * commitment, a pattern — have nowhere to live: every other surface is either a
+ * task (which is action) or a signal (a write-only capture list). The brief is
+ * the companion's reading of the day, re-derived each day rather than appended
+ * to, and the operator is the one who dismisses what it got right or wrong.
+ *
+ * An ITEM is typed, sourced and expiring. Free text is deliberately not allowed:
+ * a line with no kind cannot be measured, a line with no source cannot be
+ * checked, and a line with no expiry becomes furniture.
+ *
+ * A DISMISSAL is the operator's answer to one item — or, for `expired-unseen`,
+ * the reader's own record that nobody acted on it. The log is how the companion
+ * learns what it got wrong; it is not a second list of items.
+ */
+export const BRIEF_KINDS = ["watch", "prompt", "ahead", "commitment", "pattern"] as const;
+export type BriefKind = (typeof BRIEF_KINDS)[number];
+
+/** How each kind is named on the card. */
+export const BRIEF_KIND_LABELS: Record<BriefKind, string> = {
+  watch: "Watch",
+  prompt: "Prompt",
+  ahead: "Ahead",
+  commitment: "Commitment",
+  pattern: "Pattern",
+};
+
+/** One way the operator answered an item. */
+export const BRIEF_DISMISSAL_REASONS = [
+  "done",
+  "not-useful",
+  "wrong",
+  "later",
+  "expired-unseen",
+] as const;
+export type BriefDismissalReason = (typeof BRIEF_DISMISSAL_REASONS)[number];
+
+/**
+ * The reasons the operator can choose. `expired-unseen` is absent on purpose:
+ * it is not clicked by anyone, it is recorded by the reader when an item passes
+ * its expiry with no answer.
+ */
+export const BRIEF_OPERATOR_REASONS = ["done", "not-useful", "wrong", "later"] as const;
+export type BriefOperatorReason = (typeof BRIEF_OPERATOR_REASONS)[number];
+
+export const BRIEF_REASON_LABELS: Record<BriefDismissalReason, string> = {
+  done: "Done",
+  "not-useful": "Not useful",
+  wrong: "Wrong",
+  later: "Later",
+  "expired-unseen": "Expired unseen",
+};
+
+/** The most items one brief may carry. A brief is a glance, not a report. */
+export const BRIEF_ITEMS_MAX = 5;
+/** The item's line, as the operator reads it. */
+export const BRIEF_TEXT_MAX = 120;
+/** The justification beneath the line. */
+export const BRIEF_WHY_MAX = 160;
+/** The card's quiet "not refreshed since <date>" line after this long. */
+export const BRIEF_STALE_MS = 48 * 60 * 60 * 1000;
+
+export type BriefItem = {
+  id: string;
+  kind: BriefKind;
+  /** The line the operator reads. */
+  text: string;
+  /** The justification: why this line is on the brief. */
+  why: string;
+  /** Where it came from: "note 2026-11-05", "signal:<id>", "task:<id>",
+   * "conversation 2026-11-04". Free-form on purpose — the brief cites a place
+   * in the operator's own record, and those places do not share an id space. */
+  sourceRef: string;
+  /** null = vault-wide; a slug filters the item to that board's lens. */
+  domainSlug: string | null;
+  /** 1 is read first, 5 last. */
+  priority: number;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type BriefDismissal = {
+  itemId: string;
+  dismissedAt: string;
+  reason: BriefDismissalReason;
+};
+
+/**
+ * The brief as stored in `.lifequest/companion-brief.json`, rewritten wholesale
+ * on every write.
+ *
+ * `dismissalLog` is the only part that survives a replacement: a new brief
+ * replaces the items, but the record of what the operator did with yesterday's
+ * items is the companion's feedback and must not be erased by its next write.
+ */
+export type CompanionBrief = {
+  /** When the companion last wrote the brief; null while nothing is stored. */
+  writtenAt: string | null;
+  writtenBy: "companion" | null;
+  items: BriefItem[];
+  dismissalLog: BriefDismissal[];
+};
+
+/** One item as the writer sends it. The server mints `id` and `createdAt`, and
+ * fills `expiresAt` from the kind when the writer omits it. */
+export type BriefItemInput = {
+  id?: string;
+  kind: BriefKind;
+  text: string;
+  why: string;
+  sourceRef?: string;
+  domainSlug?: string | null;
+  priority: number;
+  expiresAt?: string;
+};
+
+/**
+ * The brief as the card and the tool read it.
+ *
+ * `items` is the ACTIVE set: current, not dismissed, sorted by priority. An item
+ * whose expiry has passed is not active — it appears in `recentlyExpired` for
+ * one day, so the card can draw it faded with the word expired before it
+ * disappears, and in `dismissalLog` as `expired-unseen` forever after (inside
+ * the log's retention).
+ */
+export type CompanionBriefRead = {
+  writtenAt: string | null;
+  writtenBy: "companion" | null;
+  items: BriefItem[];
+  recentlyExpired: BriefItem[];
+  /** The newest twenty, newest first, as the companion tool reports them. */
+  dismissals: BriefDismissal[];
+  /** Files that could not be trusted (a corrupt record), never a throw. */
+  problems: string[];
+};
 
 /**
  * The size the operator gave a card by hand, if any.
@@ -1025,11 +2124,21 @@ export type Pin =
  * no field and reads as unlocked, and the flag is persisted on the next write.
  * That is the read-migration the document lock already uses, and it keeps
  * `schemaVersion: 1`.
+ *
+ * `companionBriefSeeded` is the same kind of read-migration for the companion
+ * brief card (2026-11-05). A board written before that card existed has no
+ * marker, so the read path puts the brief first, exactly as a new board starts;
+ * the marker is written on the board's next write. `true` means the seed has
+ * happened, so a brief the operator archives stays archived instead of
+ * returning on every read. A board that never carried the card and is never
+ * written still gets it, which is the half that makes the feature arrive
+ * without a migration step.
  */
 export type PinBoard = {
   schemaVersion: 1;
   pins: Pin[];
   locked?: boolean;
+  companionBriefSeeded?: boolean;
 };
 
 /** One board as a reader sees it: the pins, and whether the page is locked. */
@@ -1221,6 +2330,12 @@ export type PeriodPack = {
   liveDays: LiveDay[];
   events: MapEvent[];
   previousReview: ReviewRecord | null;
+  /**
+   * The current period's notebook pages (summary only, no bodies), so a review
+   * session can see which pages exist and their status without reading each one.
+   * Bodies live in `domainSections` (overall) and the compatibility record.
+   */
+  reviewPages?: ReviewPageSummary[];
   /** Daily notes whose date falls inside the period window, oldest first. */
   dailyNotes: DailyNote[];
   domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }>;
@@ -1309,12 +2424,36 @@ export type ViewPresentation = (typeof VIEW_PRESENTATIONS)[number];
 
 export const VIEW_MEASURES = ["sum", "count", "last"] as const;
 
-export type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in";
+export type ViewFilterOp =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  /**
+   * Presence tests, not comparisons: `is-set` matches a cell that holds
+   * something (non-null and not the empty string), `is-not-set` matches a cell
+   * that holds nothing (null, absent or empty). They take no value.
+   *
+   * They exist because SQL NULL comparisons are false, so `neq ""` silently
+   * drops rows whose cell was never filled — which is exactly the finance
+   * ledger's transfer legs (`transfer_id` is empty) and the one filter gross
+   * spend needs. Their meaning is stated once, here and in the SQL builder.
+   */
+  | "is-set"
+  | "is-not-set";
 
 export type ViewFilter = {
   columnId: string;
   op: ViewFilterOp;
-  value: unknown;
+  /**
+   * The value to compare against. Absent for the presence ops (`is-set`,
+   * `is-not-set`), which ask about the cell rather than compare it — the
+   * validator refuses a supplied value there instead of silently ignoring it.
+   */
+  value?: unknown;
 };
 
 export type ViewTimeWindow =

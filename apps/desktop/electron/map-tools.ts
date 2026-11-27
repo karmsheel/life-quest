@@ -13,8 +13,14 @@ import {
   executeDocumentTool,
   REVIEW_TOOL_DEFS,
   executeReviewTool,
+  METRICS_TOOL_DEFS,
+  executeMetricsTool,
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
+  COMPANION_BRIEF_TOOL_DEFS,
+  executeCompanionBriefTool,
+  ONBOARDING_TOOL_DEFS,
+  executeOnboardingTool,
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
@@ -33,16 +39,21 @@ import {
   executeProjectReadTool,
   isProjectReadTool,
   projectGet,
+  projectToolArgumentError,
   listDecisions,
+  listSignals,
   libraryGet,
   connectedDecisionVisible,
   connectedGoalVisible,
+  isLiveAreaMeta,
   connectedReviewVisible,
   connectedLibraryVisible,
+  connectedSignalVisible,
   connectedBoardAllowed,
   connectedWriteDomainsAllowed,
   connectedWriteKind,
   projectConnectedPack,
+  projectConnectedProjectRead,
   projectConnectedReview,
   projectConnectedState,
   reviewHeadingSlugs,
@@ -57,14 +68,17 @@ import {
   type MapCommand,
   type MapToolDef,
   type Result,
+  type SignalRecord,
   type Actor as VaultActor,
 } from "@lifequest/vault-core";
 import { noteDataChanged, toolMayChangeData } from "./data-revision.ts";
+import { invalidateDecisionList } from "./decision-list-cache.ts";
 import { hermesChatWithTools } from "./hermes-proxy.ts";
+import { THEME_TOOL_DEFS, executeThemeTool } from "./theme-tools.ts";
 
 const AGENT_ACTOR = { type: "agent", id: "companion", name: "Hermes" } as const;
 
-const SYSTEM = `You are the LifeQuest planner. Use tools to read and change the map and tasks. About me is lifestyle context, not a command surface. You may update Premise, Vision, Purpose, Strategy (How), and library notes with update_document / create_library_document. If a document is locked, your update becomes a pending Decision. You cannot lock or unlock documents. Goals are vault-wide outcomes in goals.json; Life Map events are single-date deadlines that may link to a Goal.`;
+const SYSTEM = `You are the LifeQuest planner. Use tools to read and change the map and tasks. Recurring tasks are standing records beside the board (create_recurring_task / update_recurring_task / complete_recurring_task / delete_recurring_task); they show on the Dashboard's Today & this week card when due and are not the same thing as a task card. About me is lifestyle context, not a command surface. You may update Premise, Vision, Purpose, Strategy (How), and library notes with update_document / create_library_document. If a document is locked, your update becomes a pending Decision. You cannot lock or unlock documents. Goals are vault-wide outcomes in goals.json; Life Map events are single-date deadlines that may link to a Goal.`;
 
 export async function runPlannerLoop(opts: {
   root: string;
@@ -79,7 +93,7 @@ export async function runPlannerLoop(opts: {
   const actor = opts.actor ?? AGENT_ACTOR;
   // The same composed constant the MCP server registers, so the planner's tool
   // list can never disagree with the server about what exists.
-  const openaiTools = ALL_TOOL_DEFS.map((t) => ({
+  const openaiTools = [...ALL_TOOL_DEFS, ...THEME_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -154,7 +168,15 @@ export async function executeTool(
   grant?: ConnectedGrant,
 ): Promise<unknown> {
   const result = await executeToolInner(root, activeSlug, name, args, actor, grant);
-  if (toolMayChangeData(name)) noteDataChanged();
+  if (toolMayChangeData(name)) {
+    // The tool door writes rows, documents and Decisions without passing the
+    // IPC registrar, so its writes invalidate the inbox's cached list here.
+    // Coarse on purpose: a tool this classification does not name may have
+    // written anything, and one wasted re-read is cheaper than a card that
+    // never appears.
+    invalidateDecisionList();
+    noteDataChanged();
+  }
   return result;
 }
 
@@ -193,6 +215,14 @@ async function executeToolInner(
       actor: { type: "agent", id: grant.agentId, name: grant.name },
     });
   }
+  // Theme tools are app-profile state, not vault state, so they dispatch before
+  // the vault is opened: a theme may be inspected even when no vault is. The
+  // root still rides along because one of them copies a vault picture into the
+  // profile — the tool refuses on its own when there is no vault.
+  if (THEME_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeThemeTool(name, rec, root);
+  }
+
   const snap = await openVault(root);
   if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
 
@@ -203,6 +233,15 @@ async function executeToolInner(
   // get_review, list_reviews, write_review, mark_review_done, unlock_review, get_period_pack
   if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeReviewTool(root, actor, name, rec);
+  }
+
+  // define_metric, log_metric, list_metrics, get_metrics_summary — metric
+  // definitions and dated events. Creating a definition or logging an event
+  // applies at once; the two reads run through the same view engine the review
+  // figures use, so the tool door cannot produce a second opinion about a
+  // number.
+  if (METRICS_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeMetricsTool(root, actor, name, rec);
   }
 
   // list_daily_notes, get_daily_note — the operator's journal, read-only. A
@@ -229,9 +268,9 @@ async function executeToolInner(
 
   // list_databases, get_database, list_rows, get_row, and the write tools —
   // create_database and insert_rows apply at once, while an upsert_row with an
-  // id, delete_row and add_column file a Decision — plus the read-only
-  // list_decisions. The actor is passed in from executeTool and is never read
-  // from args.
+  // id, delete_row, add_column, delete_database and merge_databases file a
+  // Decision — plus the read-only list_decisions. The actor is passed in from
+  // executeTool and is never read from args.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDatabaseTool(root, actor, name, rec);
   }
@@ -244,11 +283,32 @@ async function executeToolInner(
     return executePageTool(root, actor, name, rec);
   }
 
-  // list_signals, get_signal, create_signal — the Life-Chain. Creating a signal
-  // applies at once, exactly like a task write: a signal is a note, not a
-  // document change, and the chain is where the companion files what it noticed.
+  // list_signals, get_signal, create_signal, update_signal — Notebox. A
+  // capture or a triage change applies at once, exactly like a task write: a
+  // signal is a note, not a document change, and the chain is where the
+  // companion files what it noticed and works the inbox.
   if (SIGNAL_TOOL_DEFS.some((t) => t.name === name)) {
     return executeSignalTool(root, actor, name, rec);
+  }
+
+  // get_companion_brief, set_companion_brief — the companion brief. The write
+  // tool is companion-only, and `setCompanionBrief` enforces that itself; a
+  // connected agent is refused both tools by name in `toolAllowed` (the record
+  // belongs to the studio, not to any one domain). Dismissal is intentionally
+  // absent: it is the operator's verb and travels over IPC, not the tool door.
+  if (COMPANION_BRIEF_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeCompanionBriefTool(root, actor, name, rec);
+  }
+
+  // propose_onboarding_unlock — the interview's one confirmation card. The tool
+  // writes `.lifequest/onboarding-proposal.json` and nothing else; the card is
+  // the consent, and the operator's Confirm is what unlocks, drafts and writes
+  // through the IPC verbs. It is companion-only (the grant gate refuses it
+  // before this point) because the areas it may open are not any one hire's.
+  // The `executeTool` wrapper above already announces the write, so the dock's
+  // confirmation card appears on the operator's open window without a reload.
+  if (ONBOARDING_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeOnboardingTool(root, actor, name, rec);
   }
 
   // list_projects, get_project — direct reads of the operator's projects and the
@@ -260,9 +320,9 @@ async function executeToolInner(
   if (name === "get_state") return { state: snap.value.map };
   if (name === "get_doctrine") {
     const requested = rec.domainSlug as string | undefined;
-    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    const live = snap.value.domains.filter((d) => isLiveAreaMeta(d.meta));
     if (requested) {
-      const domain = snap.value.domains.find((d) => d.slug === requested);
+      const domain = live.find((d) => d.slug === requested);
       if (!domain) return { error: { code: "NOT_FOUND", message: "Domain not found" } };
       return {
         slug: domain.slug,
@@ -305,6 +365,8 @@ async function executeToolInner(
     };
   }
   if (name === "list_goals") return { goals: snap.value.goals, goalsError: snap.value.goalsError };
+  const projectArgError = projectToolArgumentError(name, rec);
+  if (projectArgError) return { error: { code: "MALFORMED", message: projectArgError } };
   const projectCmd = commandForProjectTool(name, rec);
   if (projectCmd) {
     // KAR-7: agent project create and close wait for approval. File a pending
@@ -367,7 +429,7 @@ async function executeConnectedTool(
     }
     const snap = await openVault(root);
     if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
-    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    const live = snap.value.domains.filter((d) => isLiveAreaMeta(d.meta));
     const pick = (d: (typeof live)[number]) => ({
       slug: d.slug,
       name: d.meta.name,
@@ -389,6 +451,7 @@ async function executeConnectedTool(
     name === "get_database" ||
     name === "list_rows" ||
     name === "get_row" ||
+    name === "get_page" ||
     name === "run_script_block"
   ) {
     if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
@@ -397,7 +460,15 @@ async function executeConnectedTool(
   // A list scoped to one domain is still a read of that domain: an ungranted
   // domain answers as missing rather than as a successful empty list, which
   // would confirm the domain exists.
-  if (name === "list_databases" && rec.domainSlug !== undefined && rec.domainSlug !== null) {
+  if (
+    (name === "list_databases" ||
+      name === "list_pages" ||
+      name === "list_projects" ||
+      name === "list_signals" ||
+      name === "list_metrics") &&
+    rec.domainSlug !== undefined &&
+    rec.domainSlug !== null
+  ) {
     if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
   }
 
@@ -417,6 +488,32 @@ async function executeConnectedTool(
     }
   }
 
+  if (name === "get_project") {
+    const result = await executeProjectReadTool(root, name, rec);
+    // A project the grant does not cover and a project that does not exist are
+    // the same answer, as they are for every other single-record read here. The
+    // engine's own "Project not found" string is not distinguishable from an
+    // out-of-grant project, so a miss is answered in the grant's own words.
+    if (isGrantError(result)) {
+      const code = (result as { error?: { code?: string } }).error?.code;
+      return code === "NOT_FOUND" ? grantRefusal("NOT_FOUND") : result;
+    }
+    const projected = projectConnectedProjectRead(result as Record<string, unknown>, grant);
+    return projected ?? grantRefusal("NOT_FOUND");
+  }
+
+  if (name === "get_signal") {
+    const result = await executeSignalTool(root, actor, name, rec);
+    if (isGrantError(result)) {
+      const code = (result as { error?: { code?: string } }).error?.code;
+      return code === "NOT_FOUND" ? grantRefusal("NOT_FOUND") : result;
+    }
+    const signal = (result as { signal?: SignalRecord }).signal;
+    return signal && connectedSignalVisible(signal, grant)
+      ? { signal }
+      : grantRefusal("NOT_FOUND");
+  }
+
   if (name === "get_review" || name === "list_reviews") {
     const result = await executeReviewTool(root, actor, name, rec);
     // Before the generic grant-error check, because the engine's own NOT_FOUND
@@ -432,7 +529,15 @@ async function executeConnectedTool(
     if (name === "get_review") {
       const review = (result as { review: ReviewRecord }).review;
       if (!connectedReviewVisible(review.scopes, grant)) return grantRefusal("NOT_FOUND");
-      return { review: projectConnectedReview(review, grant, headings) };
+      // A scoped read names the page it wants; a page outside the grant answers
+      // NOT_FOUND exactly like a missing one, so the agent cannot map the review.
+      const scope = typeof rec.scope === "string" ? rec.scope : null;
+      if (scope !== null && !granted(scope)) return grantRefusal("NOT_FOUND");
+      const projected = projectConnectedReview(review, grant, headings);
+      if (scope === null) return { review: projected };
+      const page = (result as { page?: unknown }).page;
+      if (page === undefined) return grantRefusal("NOT_FOUND");
+      return { review: projected, page };
     }
     const { reviews } = result as { reviews: ReviewIndexEntry[] };
     return {
@@ -533,6 +638,45 @@ async function executeConnectedTool(
     };
   }
 
+  if (name === "list_projects") {
+    const result = await executeProjectReadTool(root, name, rec);
+    if (isGrantError(result)) return result;
+    const { projects } = result as { projects: Array<Record<string, unknown>> };
+    // A project with no domain stays with the companion, and a list is defined
+    // by its scope: the rows outside the assignment are dropped, not refused.
+    const visible = projects.filter(
+      (project) => typeof project.domainSlug === "string" && granted(project.domainSlug),
+    );
+    return { projects: visible, total: visible.length };
+  }
+
+  if (name === "list_pages" || name === "get_page") {
+    // `get_page`'s domain was checked above, before the tool ran: a page in a
+    // domain the grant does not cover is `NOT_FOUND`, never "no such page".
+    const result = await executePageTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    if (name === "get_page") return result;
+    const { pages } = result as { pages: Array<{ domainSlug: string }> };
+    const visible = pages.filter((entry) => granted(entry.domainSlug));
+    return { pages: visible, total: visible.length };
+  }
+
+  if (name === "list_signals") {
+    const result = await executeSignalTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const listed = result as {
+      signals: SignalRecord[];
+      total: number;
+      skipped?: number;
+    };
+    const visible = listed.signals.filter((signal) => connectedSignalVisible(signal, grant));
+    // `total` is the filtered count, not the companion's: the agent's chain is
+    // the assigned domains' slice, and the unfiltered number would count
+    // signals it may not read. `skipped` stays the reader's own malformed-file
+    // count, which names no record.
+    return { signals: visible, total: visible.length, skipped: listed.skipped ?? 0 };
+  }
+
   if (name === "list_goals") {
     const snap = await openVault(root);
     if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
@@ -540,6 +684,33 @@ async function executeConnectedTool(
       goals: snap.value.goals.filter((g) => connectedGoalVisible(g, grant)),
       goalsError: snap.value.goalsError,
     };
+  }
+
+  // ── metrics: a definition belongs to one area, so it is visible only when
+  // that area is in the grant. The ungranted-area case was refused above when
+  // the call named a domain; an all-areas listing is filtered here, problems
+  // included — a problem's file path names its area, so a malformed file in an
+  // ungranted area must not leak the slug.
+  if (name === "list_metrics") {
+    const result = await executeMetricsTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const listed = result as {
+      metrics: Array<{ domainSlug: string }>;
+      problems: Array<{ file?: string }>;
+    };
+    const visible = listed.metrics.filter((metric) => granted(metric.domainSlug));
+    const problems = listed.problems.filter((problem) => {
+      const match = /^domains\/([^/]+)\//.exec(problem.file ?? "");
+      return match ? granted(match[1]) : false;
+    });
+    return { metrics: visible, problems };
+  }
+
+  if (name === "get_metrics_summary") {
+    // A summary is a read of one area's metric values, so an ungranted area is
+    // NOT_FOUND exactly like a missing one.
+    if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+    return executeMetricsTool(root, actor, name, rec);
   }
 
   // The live week belongs to no domain, so the Schedule gate has already
@@ -584,6 +755,9 @@ async function executeConnectedTool(
         proposedTitle: d.proposedTitle,
         createdAt: d.createdAt,
         reason: d.reason,
+        // The operator may have corrected the proposal before answering it; a
+        // proposer that cannot see that would re-file the version already fixed.
+        amended: d.amendedAt !== null,
       })),
     };
   }
@@ -605,6 +779,9 @@ async function executeConnectedTool(
   if (VIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeViewTool(root, actor, name, rec);
   }
+  if (METRICS_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeMetricsTool(root, actor, name, rec);
+  }
 
   // ── writes, already past the grant's domain check ─────────────────────────
   //
@@ -617,8 +794,20 @@ async function executeConnectedTool(
     return executeCaptureTool(root, actor, name, rec);
   }
 
+  // A Life-Chain capture and a triage change apply at once, as they do for the
+  // companion: a capture adds data and a triage edit works the operator's own
+  // inbox, and neither is doctrine. Both signals' domains were checked before
+  // this point, so a write outside the grant never arrives.
+  if (name === "create_signal" || name === "update_signal") {
+    return executeSignalTool(root, actor, name, rec);
+  }
+
   // A goal or project write files a Decision and does not touch goals.json or
   // the project file, exactly as the companion's does.
+  const connectedProjectArgError = projectToolArgumentError(name, rec);
+  if (connectedProjectArgError) {
+    return { error: { code: "MALFORMED", message: connectedProjectArgError } };
+  }
   const connectedProjectCmd = commandForProjectTool(name, rec);
   if (connectedProjectCmd) {
     return proposeProjectDecision(root, connectedProjectCmd, actor);
@@ -764,12 +953,21 @@ async function connectedWriteRefusal(
   }
 
   // ── databases ────────────────────────────────────────────────────────────
+  // Every database tool names its area as `domainSlug`, and a domain tool
+  // outside the grant must never reach the engine. create_database and
+  // insert_rows are additions and apply at once; the rest change or remove data
+  // that exists and file a Decision. delete_database and merge_databases are the
+  // same shape as the other Decision writes here: one area named, no second
+  // domain argument (a merge is same-area by contract), so the grant check is
+  // the one argument.
   if (
     name === "upsert_row" ||
     name === "delete_row" ||
     name === "create_database" ||
     name === "insert_rows" ||
-    name === "add_column"
+    name === "add_column" ||
+    name === "delete_database" ||
+    name === "merge_databases"
   ) {
     return allow([rec.domainSlug as string | null | undefined]);
   }
@@ -778,6 +976,14 @@ async function connectedWriteRefusal(
   if (name === "mark_review_done") {
     // `scope: "overall"` is the companion's, not the agent's.
     return allow([rec.scope as string | null | undefined]);
+  }
+  // ── metrics ──────────────────────────────────────────────────────────────
+  if (name === "define_metric" || name === "log_metric") {
+    // Creating a definition and logging a dated event apply immediately (§10.6),
+    // and both write inside exactly one area. The grant must cover it; the
+    // per-call check runs before the engine, so a refused write never creates a
+    // definition file or a row.
+    return allow([rec.domainSlug as string | null | undefined]);
   }
   if (name === "write_review" || name === "unlock_review") {
     // Both act on the whole review file, whose body carries the `overall`
@@ -828,6 +1034,32 @@ async function connectedWriteRefusal(
     // a real board, so it is judged as a domain name — and a grant that does
     // not cover it refuses, which is the right call: Overview is everything.
     return allow([rec.domainSlug === undefined ? undefined : (rec.domainSlug as string | null)]);
+  }
+
+  // ── Notebox ──────────────────────────────────────────────────────────
+  if (name === "create_signal") {
+    // A capture is a write, and a write names the domain it lands in. An
+    // unassigned capture reads as `[undefined]`, which `allow` refuses: a
+    // signal with no domain is the operator's own and stays with the companion.
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "update_signal") {
+    // The signal being changed is a write on its current domain even when the
+    // arguments name no area: retitling a health capture is a write to health.
+    // A change of area touches both sides, so the new slug is judged with it;
+    // an explicit null is a move to unassigned and stays FORBIDDEN. A signal
+    // with no domain is the companion's and a miss is the tool's answer, so
+    // neither reaches `allow`.
+    const id = typeof rec.id === "string" ? rec.id : "";
+    if (!id) return null;
+    const listed = await listSignals(root);
+    const existing = listed.ok
+      ? listed.value.records.find((signal) => signal.id === id)
+      : undefined;
+    if (!existing) return null;
+    if (!existing.domainSlug) return grantRefusal("FORBIDDEN");
+    return allow([existing.domainSlug, ...namedDomain()]);
   }
 
   // The capture tools name no domain argument; `toolAllowed` has already

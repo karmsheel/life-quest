@@ -67,13 +67,13 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
  * for every page in this window, including the harness the rig actually loads.
  * Without this the rig renders the base tokens, and a design review would be
  * judging a palette the operator never sees. Both values mirror the product
- * defaults: the Forge OS skin, and dark.
+ * defaults: the Forge skin, and dark.
  */
 async function applyAppTheme(win) {
   await win.loadURL(`${url}?v=theme-seed`);
   await win.webContents.executeJavaScript(
     `(() => {
-       localStorage.setItem("lifequest-skin", "forge-os");
+       localStorage.setItem("lifequest-skin", "forge");
        localStorage.setItem("lifequest-theme", "dark");
        return true;
      })()`,
@@ -481,7 +481,7 @@ async function main() {
   const sessionPartition = `view-card-${Date.now()}`;
   // The rig opens a real window on the operator's desktop: paint it in the
   // SKIN the app itself defaults to, not the base tokens. A view card is judged
-  // against the theme the operator actually sees, and `forge-os` night is that
+  // against the theme the operator actually sees, and `forge` night is that
   // theme — a rig on bare tokens reviews a palette no one runs.
   nativeTheme.themeSource = "dark";
 

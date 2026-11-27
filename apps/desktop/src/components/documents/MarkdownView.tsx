@@ -2,15 +2,22 @@ import { useEffect, useMemo, useRef } from "react";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
 import { containMarkdownLink } from "@/lib/markdown-links";
 import { api } from "@/lib/ipc";
+import type { WikiResolver } from "@/lib/wiki-links";
 
 export function MarkdownView({
   markdown,
   slug,
+  resolveWiki,
 }: {
   markdown: string;
   slug: string;
+  /** When set, `[[target]]` becomes a link. Callers that omit it keep plain text. */
+  resolveWiki?: WikiResolver;
 }) {
-  const html = useMemo(() => doctrineMarkdownToHtml(markdown), [markdown]);
+  const html = useMemo(
+    () => doctrineMarkdownToHtml(markdown, resolveWiki),
+    [markdown, resolveWiki],
+  );
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

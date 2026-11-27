@@ -11,10 +11,12 @@ import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 import AutomationsPage from "@/pages/AutomationsPage";
+import CustomizationsPage from "@/pages/CustomizationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
-import ArchitecturePage from "@/pages/ArchitecturePage";
+import BlueprintsPage from "@/pages/BlueprintsPage";
 import ChainPage from "@/pages/ChainPage";
 import ChartPage from "@/pages/ChartPage";
 import DataPage from "@/pages/DataPage";
@@ -26,6 +28,7 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
 import VisionPage from "@/pages/VisionPage";
 import IdealStatePage from "@/pages/IdealStatePage";
+import ImagesPage from "@/pages/ImagesPage";
 import GoalsPage from "@/pages/GoalsPage";
 import ProjectPage from "@/pages/ProjectPage";
 import ProjectsPage from "@/pages/ProjectsPage";
@@ -37,10 +40,15 @@ import ReviewPage from "@/pages/ReviewPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { DecisionInboxAutoOpen } from "@/components/decisions/DecisionInboxAutoOpen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
+import { PageCoverProvider } from "@/components/shell/PageCoverHold";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { AgentsProvider } from "@/state/AgentsProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
+import { ShortcutsProvider } from "@/state/ShortcutsProvider";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
@@ -63,7 +71,7 @@ function RequireVault({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { snapshot, booting } = useVault();
-  const { status, ensuring } = useCompanion();
+  const { status, ensuring, readyOnce } = useCompanion();
   /*
    * Settings and Decisions are sheets over the app, not pages of it (see
    * `SheetOverlay`), so the routes keep rendering the page the operator was on
@@ -71,7 +79,19 @@ function AppRoutes() {
    */
   const { background, sheet, sheetOverBackground } = useSheetBackground();
 
-  if (ensuring || !status || status.kind !== "ready") {
+  /*
+   * The connect screen is the BOOT surface, not a mode the app can be thrown
+   * back into.
+   *
+   * Once a companion has answered `ready`, the studio stays: switching agents,
+   * a late status, even an agent that is coming up must never replace the page
+   * the operator is looking at. That teardown — the dashboard unmounting and
+   * the "Connecting…" screen reappearing for a moment — was the jitter an
+   * operator read as every agent reconnecting. A first boot with no companion
+   * still lands here, because the studio may not open without one
+   * (LAWS/COMPANION.md).
+   */
+  if (!readyOnce && (ensuring || !status || status.kind !== "ready")) {
     return <CompanionSetupScreen />;
   }
 
@@ -80,7 +100,7 @@ function AppRoutes() {
   }
 
   return (
-    <>
+    <PageCoverProvider covered={sheetOverBackground}>
       <Routes location={background}>
         <Route path="/welcome" element={<WelcomePage />} />
         <Route
@@ -111,19 +131,35 @@ function AppRoutes() {
             element={<DoctrineEditorPage backTo="/vision" />}
           />
           <Route path="/ideal-state" element={<IdealStatePage />} />
+          <Route path="/images" element={<ImagesPage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
           <Route path="/chart" element={<ChartPage />} />
-          <Route path="/track" element={<ArchitecturePage />} />
+          <Route path="/blueprints" element={<BlueprintsPage />} />
+          <Route
+            path="/blueprints/:slug/:kind"
+            element={<DoctrineEditorPage backTo="/blueprints" />}
+          />
+          {/* The Plan page's old address. Pins and stored page links kept it
+              alive; the redirect keeps them working without the old route. */}
+          <Route path="/track" element={<Navigate to="/blueprints" replace />} />
           <Route
             path="/track/:slug/:kind"
-            element={<DoctrineEditorPage backTo="/track" />}
+            element={<Navigate to="/blueprints" replace />}
           />
           <Route path="/act" element={<ActPage />} />
           <Route path="/notes" element={<DailyNotePage />} />
           <Route path="/automations" element={<AutomationsPage />} />
+          <Route path="/customizations" element={<CustomizationsPage />} />
+          {/* The old address. Pins and bookmarks kept /extensions alive; the
+              redirect keeps them working without keeping the old name in the UI. */}
+          <Route path="/extensions" element={<Navigate to="/customizations" replace />} />
           <Route path="/daily" element={<DailySchedulePage />} />
+          {/* The literal route sits beside the cadence parameter; React Router
+              ranks the static segment higher, so /review/analytics is the
+              matrix and never the "analytics" cadence. */}
+          <Route path="/review/analytics" element={<AnalyticsPage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />
@@ -142,7 +178,11 @@ function AppRoutes() {
       </Routes>
       {sheetOverBackground && sheet === "settings" ? <SettingsPage /> : null}
       {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
-    </>
+      {/* Inside the router and the vault, outside every page: a filing has to be
+          able to open the inbox from wherever the operator happens to be, and
+          the sheet it opens must sit over the page they were already reading. */}
+      <DecisionInboxAutoOpen />
+    </PageCoverProvider>
   );
 }
 
@@ -162,18 +202,24 @@ export default function App() {
                   function of the vault and the clock, and this is the one place
                   both are watched for the whole app. */}
               <LiveDataProvider>
+                <AgentsProvider>
                 <AutomationScheduler />
                 <SplashGate />
                 <ChatDockProvider>
                   <NavDockProvider>
-                    <div className="app-root">
-                      <WindowTitleBar />
-                      <div className="app-root__body">
-                        <AppRoutes />
-                      </div>
-                    </div>
+                    <ShortcutsProvider>
+                      <ChatDisplayProvider>
+                        <div className="app-root">
+                          <WindowTitleBar />
+                          <div className="app-root__body">
+                            <AppRoutes />
+                          </div>
+                        </div>
+                      </ChatDisplayProvider>
+                    </ShortcutsProvider>
                   </NavDockProvider>
                 </ChatDockProvider>
+                </AgentsProvider>
               </LiveDataProvider>
             </VaultProvider>
           </CompanionProvider>

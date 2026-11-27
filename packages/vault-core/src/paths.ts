@@ -268,6 +268,22 @@ export function vaultPaths(root: string) {
     get signalChainDir(): string {
       return build(".lifequest", "signal-chain");
     },
+    // A capture's picture is a file beside the records, not a base64 copy in
+    // JSON: the vault must keep the bytes the operator dropped. The directory
+    // sits inside signal-chain/ and the listing skips it because it is not a
+    // `.json` file.
+    get signalChainFilesDir(): string {
+      return build(".lifequest", "signal-chain", "files");
+    },
+    signalChainFile: (id: string, ext: string) =>
+      build(
+        ".lifequest",
+        "signal-chain",
+        "files",
+        assertSafeSegment(id, "signal attachment id") +
+          "." +
+          assertSafeSegment(ext, "signal attachment extension"),
+      ),
     domainDir: (slug: string) => build("domains", assertDomainSlug(slug)),
     domainJson: (slug: string) => build("domains", assertDomainSlug(slug), "domain.json"),
     documentMd: (slug: string, kind: string) =>
@@ -291,6 +307,27 @@ export function vaultPaths(root: string) {
     get aboutMd(): string {
       return build(".lifequest", "about.md");
     },
+    /**
+     * The companion's brief. One record for the whole studio — the card exists
+     * per board, the items do not — so it lives beside the other single-record
+     * vault files rather than inside a domain. It is rewritten wholesale on
+     * every write, which is why it is not inside map.json: that file carries
+     * the operator's hand-written map.
+     */
+    get companionBriefJson(): string {
+      return build(".lifequest", "companion-brief.json");
+    },
+    /**
+     * The onboarding interview's record (P1, 2026-11-08). A vault with no file
+     * reads as `completed`; a new vault writes it at creation.
+     */
+    get onboardingJson(): string {
+      return build(".lifequest", "onboarding.json");
+    },
+    /** The companion's pending confirmation card, awaiting the operator's answer. */
+    get onboardingProposalJson(): string {
+      return build(".lifequest", "onboarding-proposal.json");
+    },
     get documentsDir(): string {
       return build("documents");
     },
@@ -307,12 +344,53 @@ export function vaultPaths(root: string) {
     },
     reviewsCadenceDir: (cadence: string) =>
       build("reviews", assertSafeSegment(cadence, "review cadence")),
+    // The pre-notebook layout: one markdown file per period. Read during the
+    // compatibility release (and by the migration), never written once the
+    // period is a notebook.
     reviewMd: (cadence: string, period: string) =>
       build(
         "reviews",
         assertSafeSegment(cadence, "review cadence"),
         assertSafeSegment(period, "review period") + ".md",
       ),
+    // A period is a notebook directory: a manifest plus one markdown page per
+    // scope. The directory scan of `reviews/<cadence>/` names both shapes while
+    // legacy periods remain, so the index is one list either way.
+    reviewNotebookDir: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+      ),
+    reviewManifest: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        "review.json",
+      ),
+    reviewPageMd: (cadence: string, period: string, scope: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        assertSafeSegment(scope, "review scope") + ".md",
+      ),
+    // The one-release migration's archive: legacy files moved here so a scan of
+    // `reviews/<cadence>/` never sees them as a second period.
+    get reviewsLegacyArchiveDir(): string {
+      return build(".lifequest", "legacy-reviews");
+    },
+    reviewLegacyArchiveMd: (cadence: string, period: string) =>
+      build(
+        ".lifequest",
+        "legacy-reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period") + ".md",
+      ),
+    get reviewMigrationMarker(): string {
+      return build(".lifequest", "migrations", "reviews-notebook-v1.json");
+    },
     // The cadence's standing rules for a review session. It lives under
     // `.lifequest` rather than beside the periods so that a directory scan of
     // `reviews/<cadence>/` still finds review files and nothing else.
@@ -321,6 +399,14 @@ export function vaultPaths(root: string) {
     },
     reviewSkillMd: (cadence: string) =>
       build(".lifequest", "reviews", assertSafeSegment(cadence, "review cadence") + ".md"),
+    // A live area's page contract: the headings a new page of that area is
+    // seeded with, and the order the page keeps them in. One file per area,
+    // beside the cadence skills, so `reviews/<cadence>/` holds periods only.
+    get reviewPageTemplatesDir(): string {
+      return build(".lifequest", "reviews", "pages");
+    },
+    reviewPageTemplateMd: (slug: string) =>
+      build(".lifequest", "reviews", "pages", assertDomainSlug(slug) + ".md"),
     get planningDir(): string {
       return build("planning");
     },
@@ -349,6 +435,27 @@ export function vaultPaths(root: string) {
     },
     idealStateMd: (id: string) =>
       build("notes", "ideal-state", assertSafeSegment(id, "ideal state id") + ".md"),
+    // Define → Images: one vault-level picture library. The index names the
+    // pictures and the board holds the operator's blocks; the pictures
+    // themselves are files under `images/files/`, never encoded into JSON.
+    get imagesDir(): string {
+      return build("images");
+    },
+    get imagesFilesDir(): string {
+      return build("images", "files");
+    },
+    get imagesLibraryJson(): string {
+      return build("images", "library.json");
+    },
+    get imagesBoardJson(): string {
+      return build("images", "board.json");
+    },
+    imageFile: (id: string, ext: string) =>
+      build(
+        "images",
+        "files",
+        assertSafeSegment(id, "image id") + "." + assertSafeSegment(ext, "image extension"),
+      ),
     // KAR-55 domain database paths
     domainDataDir: (slug: string) => build("domains", assertDomainSlug(slug), "data"),
     domainSqlite: (slug: string) =>
@@ -403,6 +510,17 @@ export function vaultPaths(root: string) {
         assertDomainSlug(slug),
         "views",
         assertSafeSegment(viewId, "view id") + ".json",
+      ),
+    // Metric definitions (2026-11-26 metrics design): one operator-owned JSON
+    // per metric, exactly like a saved view, so a definition is a git-portable
+    // object with no wholesale file to clobber.
+    domainMetricsDir: (slug: string) => build("domains", assertDomainSlug(slug), "metrics"),
+    domainMetric: (slug: string, metricId: string) =>
+      build(
+        "domains",
+        assertDomainSlug(slug),
+        "metrics",
+        assertSafeSegment(metricId, "metric id") + ".json",
       ),
     get overviewPins(): string {
       return build(".lifequest", "overview-pins.json");

@@ -55,7 +55,12 @@ function uniqueSlugs(slugs: string[]): string[] {
   return out;
 }
 
-async function normalizeDomains(
+/**
+ * The vault's one validation of a note's domain list: trimmed, unique, and every
+ * slug an existing area directory. Exported because a Decision that proposes a
+ * domain change validates the proposal against the same rule as a direct write.
+ */
+export async function normalizeDomains(
   rootPath: string,
   slugs: string[] | undefined,
 ): Promise<Result<string[]>> {

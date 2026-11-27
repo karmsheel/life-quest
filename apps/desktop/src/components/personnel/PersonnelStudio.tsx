@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AgentHire, ConnectedAgent } from "@lifequest/vault-core";
-import { lensSlug, recordVisible } from "@lifequest/vault-core/pure";
+import {
+  lensSlug,
+  recordVisible,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useVault } from "@/state/VaultProvider";
 
 type ScannedAgent = {
@@ -25,8 +30,9 @@ export function PersonnelStudio() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
-  // Assignment takes a live domain only; an archived one is not offered.
-  const liveDomains = domains.filter((d) => !d.meta.archivedAt);
+  // A caller is scoped to areas; the base `life` container is not one of them,
+  // and locked areas are invisible until unlocked.
+  const liveDomains = unlockedAreas(domains);
 
   const [hires, setHires] = useState<AgentHire[]>([]);
   const [scanned, setScanned] = useState<ScannedAgent[]>([]);
@@ -285,7 +291,8 @@ export function PersonnelStudio() {
   return (
     <div className="personnel-studio">
       <header className="personnel-studio__header">
-        <h1 className="stub-page__title">Personnel</h1>
+        <WingEyebrow page="Agents" />
+        <h1 className="stub-page__title">Agents</h1>
         <p className="stub-page__desc muted">
           The companion, the agents connected over MCP, and the Hermes agents you
           have hired.
@@ -323,6 +330,8 @@ export function PersonnelStudio() {
         </div>
       ) : null}
 
+      <div className="personnel-studio__layout">
+      <div className="personnel-studio__main">
       {/* KAR-70: the companion is pre-paired and keeps the whole vault. It has
           no domain editor, no Write or Schedule switch, and no revoke — there is
           nothing to grant it that it does not already have. */}
@@ -349,14 +358,6 @@ export function PersonnelStudio() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => void mint()}
-              disabled={busyId === "invite"}
-            >
-              {busyId === "invite" ? "…" : "Invite an agent"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
               onClick={() => void loadAgents()}
               disabled={agentsLoading}
             >
@@ -365,32 +366,7 @@ export function PersonnelStudio() {
           </div>
         </div>
 
-        {invite ? (
-          // The code is a one-time pairing credential: the page-context read
-          // must never carry it into a model turn, so its block opts out of
-          // `capturePageOutline` wholesale.
-          <div
-            className="personnel-studio__invite"
-            role="status"
-            data-page-context="ignore"
-          >
-            <p className="muted">
-              Send this code to the agent. It is shown once and expires{" "}
-              {new Date(invite.expiresAt).toLocaleString()}.
-            </p>
-            <code className="personnel-studio__code">{invite.code}</code>
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={() => void dropInvite(invite.id)}
-              disabled={busyId === `invite:${invite.id}`}
-            >
-              Drop
-            </button>
-          </div>
-        ) : null}
-
-{unusedInvites.length > 0 ? (
+        {unusedInvites.length > 0 ? (
           <div className="personnel-studio__invites">
             <h3 className="personnel-studio__section-subtitle muted">
               Unused invites
@@ -442,9 +418,9 @@ export function PersonnelStudio() {
                   ) : (
                     <>
                       <fieldset className="personnel-studio__domains">
-                        <legend className="muted">Domains</legend>
+                        <legend className="muted">Areas</legend>
                         {liveDomains.length === 0 ? (
-                          <p className="muted">No live domains.</p>
+                          <p className="muted">No live areas.</p>
                         ) : (
                           liveDomains.map((d) => (
                             <label
@@ -512,54 +488,6 @@ export function PersonnelStudio() {
 
       <section className="personnel-studio__section">
         <div className="personnel-studio__section-head">
-          <h2 className="personnel-studio__section-title">Scan</h2>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => void scan()}
-            disabled={scanning}
-          >
-            {scanning ? "Scanning…" : "Scan Hermes agents"}
-          </button>
-        </div>
-
-        {scanned.length === 0 ? (
-          <p className="muted personnel-studio__empty">
-            {scanning
-              ? "Probing Hermes…"
-              : "No scan results yet. Run a scan to list available agents."}
-          </p>
-        ) : (
-          <ul className="personnel-studio__list">
-            {scanned.map((agent) => {
-              const alreadyHired = hiredAgentIds.has(agent.id);
-              return (
-                <li key={agent.id} className="personnel-card">
-                  <div className="personnel-card__body">
-                    <strong className="personnel-card__name">{agent.name}</strong>
-                    <p className="personnel-card__meta muted">{agent.id}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={alreadyHired || busyId === `hire:${agent.id}`}
-                    onClick={() => void hire(agent)}
-                  >
-                    {alreadyHired
-                      ? "Hired"
-                      : busyId === `hire:${agent.id}`
-                        ? "…"
-                        : "Hire"}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="personnel-studio__section">
-        <div className="personnel-studio__section-head">
           <h2 className="personnel-studio__section-title">Active hires</h2>
           <button
             type="button"
@@ -610,6 +538,94 @@ export function PersonnelStudio() {
           </ul>
         )}
       </section>
+      </div>
+      <aside className="personnel-studio__rail">
+        <section className="personnel-studio__section">
+          <div className="personnel-studio__section-head">
+            <h2 className="personnel-studio__section-title">Invite</h2>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void mint()}
+              disabled={busyId === "invite"}
+            >
+              {busyId === "invite" ? "…" : "Invite an agent"}
+            </button>
+          </div>
+          {invite ? (
+            <div
+              className="personnel-studio__invite"
+              role="status"
+              data-page-context="ignore"
+            >
+              <p className="muted">
+                Send this code to the agent. It is shown once and expires{" "}
+                {new Date(invite.expiresAt).toLocaleString()}.
+              </p>
+              <code className="personnel-studio__code">{invite.code}</code>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => void dropInvite(invite.id)}
+                disabled={busyId === `invite:${invite.id}`}
+              >
+                Drop
+              </button>
+            </div>
+          ) : (
+            <p className="muted personnel-studio__empty">
+              A one-time code appears here. Pairing is approved in Decisions.
+            </p>
+          )}
+        </section>
+        <section className="personnel-studio__section">
+          <div className="personnel-studio__section-head">
+            <h2 className="personnel-studio__section-title">Scan</h2>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void scan()}
+              disabled={scanning}
+            >
+              {scanning ? "Scanning…" : "Scan Hermes agents"}
+            </button>
+          </div>
+          {scanned.length === 0 ? (
+            <p className="muted personnel-studio__empty">
+              {scanning
+                ? "Probing Hermes…"
+                : "No scan results yet. Run a scan to list available agents."}
+            </p>
+          ) : (
+            <ul className="personnel-studio__list">
+              {scanned.map((agent) => {
+                const alreadyHired = hiredAgentIds.has(agent.id);
+                return (
+                  <li key={agent.id} className="personnel-card">
+                    <div className="personnel-card__body">
+                      <strong className="personnel-card__name">{agent.name}</strong>
+                      <p className="personnel-card__meta muted">{agent.id}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={alreadyHired || busyId === `hire:${agent.id}`}
+                      onClick={() => void hire(agent)}
+                    >
+                      {alreadyHired
+                        ? "Hired"
+                        : busyId === `hire:${agent.id}`
+                          ? "…"
+                          : "Hire"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </aside>
+      </div>
     </div>
   );
 }

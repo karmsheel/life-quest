@@ -10,9 +10,36 @@
 .projects-page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  max-width: 56rem;
+  gap: var(--space-board-gap);
+  width: 100%;
   min-width: 0;
+}
+
+.projects-page__register {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-panel);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.projects-page__register-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.projects-page__register-head h2 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .projects-page__count {
@@ -67,7 +94,7 @@
   gap: 0.35rem 1.25rem;
   padding: 0.75rem 0.35rem;
   color: inherit;
-  border-radius: var(--radius-xs);
+  border-radius: 2px;
   transition: background var(--dur-quick) var(--ease-out);
 }
 
@@ -573,6 +600,20 @@
 
 .project-detail__actor {
   font-size: 0.75rem;
+}
+
+.project-detail__repos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-detail__repo-link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
 .project-detail__group-title {

@@ -38,11 +38,17 @@
  * 10. A dashboard-view Decision names the columns in its Measure and Group by
  *     rows the same way: as filed it reads "sum of 1b2c3d4e…", as read
  *     "sum of Volume", and the stored spec keeps the ids.
+ * 11. A library note's domain change is on the card, above the prose: rendered
+ *     with the note's previous and proposed tags, the card reads "Domains
+ *     Business → Finance" while the Current/Proposed body panes keep the note's
+ *     text and no JSON payload appears. This is the update_document domain gap:
+ *     the proposal the tool could not file before.
  *
  * NOT covered here: that the main process resolves those names in the first
  * place (the vault-core suites that did that over a real vault went with the
  * unit tests, and nothing here replaces them), and the approve/reject round
- * trip.
+ * trip. The write and approval of a domain change are covered by
+ * `tests/library-document-domains-e2e.test.ts`.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -77,6 +83,11 @@ const custom = JSON.parse(
   fs.readFileSync(path.join(here, "fixtures/decision-custom-fields.json"), "utf8"),
 );
 const view = JSON.parse(fs.readFileSync(path.join(here, "fixtures/decision-view.json"), "utf8"));
+// A library note re-tagged from one area to another: the one story whose proposal
+// is prose, and the one that puts the note's domain change on the card.
+const libraryDomains = JSON.parse(
+  fs.readFileSync(path.join(here, "fixtures/decision-library-domains.json"), "utf8"),
+);
 
 /** Everything an operator can read, minus the collapsed "Exact proposal". */
 const READABLE = `(() => {
@@ -208,6 +219,32 @@ const SAMPLE_VIEW = `(() => {
   };
 })()`;
 
+/**
+ * A library note being re-tagged. Its proposal is prose rather than a JSON body,
+ * so this sampler also proves the domain line sits above the body panes the
+ * operator already reads.
+ */
+const SAMPLE_DOMAIN = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const line = document.querySelector(".decision-card__domain-change");
+  const children = line ? Array.from(line.children) : [];
+  const panes = Array.from(document.querySelectorAll(".decision-prose"));
+  return {
+    domainLine: line
+      ? {
+          label: text(line.querySelector(".muted")),
+          from: text(line.querySelector(".decision-value--was")),
+          to: text(children[children.length - 1]),
+          text: text(line)
+        }
+      : null,
+    paneLabels: Array.from(document.querySelectorAll(".decision-prose-pane__label")).map(text),
+    current: panes.length > 1 ? text(panes[0]) : null,
+    proposed: panes.length > 0 ? text(panes[panes.length - 1]) : null,
+    hasExactProposal: !!document.querySelector(".decision-source")
+  };
+})()`;
+
 const errors = [];
 
 const failure = (message) => {
@@ -249,16 +286,38 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
  * Render one body, and return the card as the operator reads it.
  *
  * `previousCells` is the cell map the vault held before the write; the card
- * takes it as the JSON text it renders, so it is stringified here.
+ * takes it as the JSON text it renders, so it is stringified here. A library
+ * note is the exception: its proposal is markdown, handed over as prose, and a
+ * re-tag also carries the two domain lists.
  */
-async function render(win, target, body, previousCells, sampler = SAMPLE, name = "card") {
+async function render(
+  win,
+  target,
+  body,
+  previousCells,
+  sampler = SAMPLE,
+  name = "card",
+  domainChange = null,
+) {
   const committed = await win.webContents.executeJavaScript(
     "window.decisionBodyCommits ?? 0",
   );
-  const previous = previousCells ? JSON.stringify(previousCells, null, 2) : null;
+  const proseTarget = target.type === "library";
+  const previous = proseTarget
+    ? typeof previousCells === "string"
+      ? previousCells
+      : null
+    : previousCells
+      ? JSON.stringify(previousCells, null, 2)
+      : null;
+  const extras = domainChange
+    ? `, proposedDomainSlugs: ${JSON.stringify(domainChange.proposed)}, ` +
+      `previousDomainSlugs: ${JSON.stringify(domainChange.previous)}, ` +
+      `domainNames: ${JSON.stringify(domainChange.names ?? {})}`
+    : "";
   await win.webContents.executeJavaScript(
     `window.renderDecisionBody({ target: ${JSON.stringify(target)}, ` +
-      `body: ${JSON.stringify(body)}, previous: ${JSON.stringify(previous)} })`,
+      `body: ${JSON.stringify(body)}, previous: ${JSON.stringify(previous)}${extras} })`,
   );
   await waitFor(win, `(window.decisionBodyCommits ?? 0) > ${committed}`, `${name} to commit`);
   return win.webContents.executeJavaScript(sampler);
@@ -754,6 +813,56 @@ async function main() {
     JSON.stringify(view.resolved);
   if (!checks.viewExactPayloadUnchanged) failure("the view card rewrote the body it was handed");
 
+  // ── a library note re-tagged: the card names both lists ──────────────────
+  // Last on purpose: the rig screenshots whatever it rendered most recently, and
+  // this is the state the artifact exists to show.
+  const libraryDomainsCard = await render(
+    win,
+    libraryDomains.target,
+    libraryDomains.body,
+    libraryDomains.previousBody,
+    SAMPLE_DOMAIN,
+    "library note (domain change)",
+    {
+      previous: libraryDomains.previousDomainSlugs,
+      proposed: libraryDomains.proposedDomainSlugs,
+      names: libraryDomains.domainNames,
+    },
+  );
+  checks.libraryDomainLine = libraryDomainsCard.domainLine;
+  checks.libraryDomainPaneLabels = libraryDomainsCard.paneLabels;
+  checks.libraryDomainShowsCurrentBody = /spreadsheet/.test(libraryDomainsCard.current ?? "");
+  checks.libraryDomainShowsProposedBody = /Ledger note/.test(libraryDomainsCard.proposed ?? "");
+  checks.libraryDomainHasNoPayload = !libraryDomainsCard.hasExactProposal;
+  const wantDomain = libraryDomains.expected;
+  if (!libraryDomainsCard.domainLine) {
+    failure("the library note card has no domain line");
+  } else if (
+    libraryDomainsCard.domainLine.label !== wantDomain.label ||
+    libraryDomainsCard.domainLine.from !== wantDomain.from ||
+    libraryDomainsCard.domainLine.to !== wantDomain.to
+  ) {
+    failure(
+      `the domain line reads ${JSON.stringify(libraryDomainsCard.domainLine)}, ` +
+        `expected ${JSON.stringify(wantDomain)}`,
+    );
+  }
+  if (JSON.stringify(libraryDomainsCard.paneLabels) !== JSON.stringify(wantDomain.paneLabels)) {
+    failure(
+      `the prose panes read ${JSON.stringify(libraryDomainsCard.paneLabels)}, ` +
+        `expected ${JSON.stringify(wantDomain.paneLabels)}`,
+    );
+  }
+  if (!checks.libraryDomainShowsProposedBody) {
+    failure("the domain card no longer shows the proposed note body");
+  }
+  if (!checks.libraryDomainShowsCurrentBody) {
+    failure("the domain card no longer shows the current note body");
+  }
+  if (!checks.libraryDomainHasNoPayload) {
+    failure("a prose note card grew an exact-proposal payload");
+  }
+
   checks.consoleErrors = consoleErrors;
 
   const report = {
@@ -765,6 +874,7 @@ async function main() {
       "fixtures/decision-batch.json",
       "fixtures/decision-custom-fields.json",
       "fixtures/decision-view.json",
+      "fixtures/decision-library-domains.json",
     ],
     viewport: resolved.viewport,
     checks,
@@ -782,6 +892,7 @@ async function main() {
     customBatch,
     viewRaw,
     viewResolved,
+    libraryDomains: libraryDomainsCard,
   };
 
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -817,6 +928,11 @@ async function main() {
   console.log(`batch fields as read:  ${JSON.stringify(checks.customBatchFields)}`);
   console.log(`view as filed:  ${viewRaw.fields.map((f) => `${f.label}=${f.value}`).join("  |  ")}`);
   console.log(`view as read:   ${viewResolved.fields.map((f) => `${f.label}=${f.value}`).join("  |  ")}`);
+  console.log(
+    `library domains: ${JSON.stringify(libraryDomainsCard.domainLine)}  panes ${JSON.stringify(
+      libraryDomainsCard.paneLabels,
+    )}`,
+  );
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

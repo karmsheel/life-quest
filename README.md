@@ -1,17 +1,42 @@
 # LifeQuest
 
+[![docs](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml)
+[![docs-check](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml)
+
 **Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Premise → Vision → Purpose → Strategy), Decisions, Life log, and agent roster live as plain files beside each other. The studio does not open without the companion. Capture is not the studio.
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
 
-## Design
+**Docs:** [LifeQuest project wiki](https://karmsheel.github.io/life-quest/) — the operator's guide to every feature; the source is in [docs/wiki/](docs/wiki/index.md).
+
+## Documentation
+
+Start with the plan pack. It is the six files an agent reads before it writes anything: what
+the product is, how it is built, how it looks, what the rules are, what is being worked on, and
+what has shipped. [`AGENTS.md`](AGENTS.md) routes an agent to them; the wiki, `VISION.md` and
+`LAWS/` are the deeper sources they point at.
 
 | Doc | Description |
 |-----|-------------|
+| [PRD.md](PRD.md) | Users, requirements, scope, constraints, success signals |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Stack, folders, data flow, where each contract lives |
+| [DESIGN.md](DESIGN.md) | Colors, typography, components, motion, the vibe — and the token contract |
+| [RULES.md](RULES.md) | Coding conventions, workflow, and the never-do list |
+| [TASKS.md](TASKS.md) | The live queue, and the definition of done |
+| [PROGRESS.md](PROGRESS.md) | What shipped, what broke, what is next |
+| [AGENTS.md](AGENTS.md) | How an agent works here — read first |
+| [Project wiki](docs/wiki/index.md) | The operator's guide: every feature, how to use it, and how the system works |
 | [VISION.md](VISION.md) | Acceptance policy for future change |
-| [PRODUCT.md](PRODUCT.md) | Users, purpose, anti-references |
-| [DESIGN.md](DESIGN.md) | Token contract and primitives |
 | [LAWS/](LAWS/) | Observable product invariants |
+
+### Decision records
+
+The specs and plans behind shipped behavior — history, not rules. The rules they produced live
+in [`DESIGN.md`](DESIGN.md), [`ARCHITECTURE.md`](ARCHITECTURE.md) and the wiki. Specs written
+before 2026-11-27 cite `PRODUCT.md`, which is now [`PRD.md`](PRD.md).
+
+| Doc | Description |
+|-----|-------------|
 | [BERD systems phase 1](docs/superpowers/specs/2026-09-02-berd-systems-phase-1-design.md) | CSS-native design contract |
 | [BERD visuals phase 2](docs/superpowers/specs/2026-09-03-berd-visuals-phase-2-design.md) | Canvas/sheet, concentric radii, pill buttons |
 | [Three-pane studio](docs/superpowers/specs/2026-09-04-three-pane-studio-design.md) | Rail, main, and chat as separate 12px cards |
@@ -28,6 +53,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Cold start](docs/superpowers/specs/2026-10-17-cold-start-does-not-wait-on-the-companion-design.md) | What held the splash for 57s, and what the splash is allowed to wait on |
 | [Model probe](docs/superpowers/specs/2026-10-20-model-probe-asks-the-host-design.md) | The retired-model warning: asked of the host, answered after the boot |
 | [Projects on the Execute wing](docs/superpowers/specs/2026-10-27-projects-execute-wing-design.md) | A built-in project page with real attributes, collated context, and companion tools |
+| [Define → Images](docs/superpowers/specs/2026-10-28-define-images-board-design.md) | A vault picture library under Images, and the Notion-shaped vision board on the Vision page |
 | [Walrus integration report](docs/research/2026-10-19-walrus-integration-report.md) | What Walrus does and does not buy a vault, and the four integrations worth the work |
 
 ## Prerequisites
@@ -36,7 +62,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 |------|--------|
 | **Node.js 20+** | Developed on Node 22; 20 LTS minimum target |
 | **npm** | Workspaces monorepo |
-| **Hermes gateway** | Required for the studio. Default `http://localhost:8642`. Capture is not the studio. |
+| **A companion** | Required for the studio. The built-in one needs an OpenAI-compatible endpoint (a local Ollama or LM Studio works); Hermes is the optional external sidekick. Capture is not the studio. |
 
 ## Quick start
 
@@ -75,13 +101,13 @@ It prints the size and SHA-256 of each, and writes `release/release-manifest.jso
 
 ### Who hears about a release
 
-The app asks GitHub Releases **once per launch** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the foot of the left rail starts to glow; clicking it opens a popup that names both versions, the release's notes, and the installer — and offers to download it and run it. After the installer is up, the app quits so it can be replaced.
+The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the top of the rail, under the LifeQuest lockup, glows and an *Update available* caption appears centred under it — including when the release lands while the app is open. Clicking the glowing number opens one dialog: both versions, the release's notes, and the installer, with an offer to download it and run it. There is no in-window pop-up for the news; after the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
 
 The release repository is public, so the check is one anonymous read and the app holds no token for it. With nothing to read, it reports that it could not check — it never claims to be up to date.
 
 Two things it will not do. It never offers a version that is not strictly newer, so an older or unreadable tag is reported rather than installed. And it only ever downloads an installer from a GitHub host, checked again after redirects; anything else is refused before a byte moves.
 
-**Settings → Developer** carries one switch, *Preview the update badge*, which makes the rail glow and opens the popup as if a release had been published. The preview carries no installer, so nothing can be downloaded from it; Settings → Updates still reports what the feed really said; and a real release outranks the preview. It is the only way to look at the upgrade affordance without cutting a release.
+**Settings → Developer** carries one switch, *Preview the update badge*, which makes the build number glow and opens the popup as if a release had been published. The preview carries no installer, so nothing can be downloaded from it; Settings → Updates still reports what the feed really said; and a real release outranks the preview. It is the only way to look at the upgrade affordance without cutting a release.
 
 `node apps/desktop/e2e/update-live-feed.mjs` reads the real feed, through the real main process and the real network, and prints what the app would decide — *up to date*, or what it would offer. It is deliberately not in `npm test`, because it needs GitHub to answer; run it before cutting a release, and again after publishing one.
 
@@ -99,6 +125,9 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173, except the cold-start rig, which serves the built `dist/` itself and skips unless `npm run build` has run |
 | `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
+| `npm run docs:check` | Check the wiki against the app: version, routes, rail labels, Settings tabs, links and nav (also run by `npm run release` and CI) |
+| `npm run docs:serve` | Preview the wiki locally with MkDocs Material (install `requirements-docs.txt` first) |
+| `npm run docs:build` | Build the wiki site into `site/` (what GitHub Pages deploys) |
 
 ### Acceptance against a real vault
 
@@ -128,19 +157,25 @@ It checks the asar really holds the main, the preload and the renderer; then lau
 ```text
 apps/desktop/          Electron main + Vite React UI (@lifequest/desktop)
 packages/vault-core/   Vault FS library — create/open, domains, docs, decisions, log, agents
-docs/superpowers/      Design specs and implementation plans
+docs/wiki/             Operator guide, published at karmsheel.github.io/life-quest
+docs/design/screens/   The screenshots DESIGN.md embeds
+docs/superpowers/      Design specs and implementation plans (decision history)
+LAWS/                  Observable product invariants
 archive/web-skeleton/  Frozen Next.js + Prisma multi-user web app (not product runtime)
 ```
 
-## Hermes (required for the studio)
+## The companion (required for the studio)
 
-The studio does not open without the companion. Capture is not the studio.
+The studio does not open without the companion. Capture is not the studio. There are two, and the chat bar's picker switches between them:
 
-1. Run a Hermes / OpenAI-compatible gateway (default **`http://localhost:8642`**).
-2. In the app: **Settings → Hermes** — base URL, API key if required, **Test connection**.
-3. Chat and Personnel scan go through the **Electron main process** proxy; the renderer never holds the raw key.
+- **Pi — built in.** No install. On a fresh machine the setup screen asks for an OpenAI-compatible endpoint and a model; a local server (Ollama, LM Studio, llama.cpp) needs no key. The endpoint, the model and the key live in app userData; the key is sealed by OS secure storage and never enters the vault.
+- **Hermes — external sidekick.** Run a Hermes gateway (default **`http://localhost:8642`**) and pick Hermes in the chat bar. The app attaches to its `lifequest` profile or starts it, and Settings → Hermes manages the profile, the model and the MCP doors.
 
-LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, memory, skills, and transcripts.
+The chat bar carries a vertical **agent switcher** (one block per agent, with its own mark). Agents can be scoped to domains in Settings → Hermes → Agents by domain: an agent scoped to Health is only offered while the operator is in Health, and an agent set as a domain's default is selected when that domain is entered. Pi is the main and default agent.
+
+Whichever answers, the vault is written through the **Electron main process** and the same MCP door, under the same lock and Decision rules; the renderer never holds a raw key. LifeQuest owns the vault, the MCP door, and the UI. The companion owns the agent loop and the transcripts, in app userData rather than in the vault.
+
+Why: [Pi as a built-in companion](docs/superpowers/specs/2026-10-21-pi-companion-decision.md) and [the harness seam](docs/superpowers/specs/2026-10-21-agent-harness-seam-design.md).
 
 ## Vault identity
 

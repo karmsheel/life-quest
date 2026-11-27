@@ -1,11 +1,24 @@
 /**
- * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the three rigs
- * that drive it: composer sizing (`composer-autogrow.electron.mjs`), the
- * composer's runtime row (`composer-model-pills.electron.mjs`) and how tool
- * activity is shown (`tool-run.electron.mjs`). They are wrapped together
- * because they share one page, one dev-server probe and one shape of report
- * read back; each rig is still its own Electron process writing its own
- * artifact, so a failure names the concern it belongs to.
+ * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the rigs that
+ * drive it: composer sizing (`composer-autogrow.electron.mjs`), the composer's
+ * runtime row (`composer-model-pills.electron.mjs`), how tool activity is shown
+ * (`tool-run.electron.mjs`), the whole turn timeline
+ * (`turn-timeline.electron.mjs`), the general attachments and the steer verb, the
+ * composer's keys, attachments and live-turn gestures, and the picture the
+ * composer promotes into a receipt (`receipt-attach.electron.mjs`). They are
+ * wrapped together
+ * because they share one page, one dev-server probe and one shape of report read
+ * back; each rig is still its own Electron process writing its own artifact, so
+ * a failure names the concern it belongs to.
+ *
+ * The transcript-anchor rig lives in its own file
+ * (`transcript-anchor-e2e.test.ts`): it is the one driver that loads the long
+ * thread and long chain fixtures and collapses the dock, so it keeps its own
+ * process rather than joining this file's page-wide `concurrency: 2` group.
+ *
+ * The page mounts the real sidebar beside the dock, because the dock's history
+ * picker is gone: a rig that switches chats clicks the sidebar's row, which is
+ * the gesture the app ships.
  */
 
 import assert from "node:assert/strict";
@@ -69,7 +82,18 @@ function runDriver(): Promise<number> {
  * server down the test skips; `npm run dev` in another shell turns it on.
  */
 
-describe("chat panel rigs", { concurrency: true }, () => {
+/**
+ * The rigs run a couple at a time, not all of them at once.
+ *
+ * Each rig is its own Electron app driving a real window with real timers,
+ * and several of them wait on a window to settle before they measure it. Run
+ * all of them at once on one box, those waits stop being waits and become
+ * coin tosses: the rig that measures a settled composer reads one that is
+ * still settling, and fails for a reason that has nothing to do with the code
+ * under test. Two at a time keeps the machine's load inside what the rigs'
+ * own timing budgets were written for.
+ */
+describe("chat panel rigs", { concurrency: 2 }, () => {
   describe("composer autogrow", () => {
     it("grows the field with the draft and clamps it at half the panel", async (t) => {
       if (!(await devServerUp())) {
@@ -87,14 +111,23 @@ describe("chat panel rigs", { concurrency: true }, () => {
         restHeightPx: number;
         capPx: number;
         restPanelHeight: number;
-        samples: { step: string; fieldHeight: number; fieldSpansRow: boolean }[];
+        samples: { step: string; fieldHeight: number; fieldSpansRow: boolean; rowIsComposerBox: boolean }[];
         resizeChecks: { step: string; fieldHeight: number; expectedCap: number }[];
         send: {
           hiddenWhileEmpty: boolean;
           controlPx: number;
-          gutterPx: number;
-          removedColumnPx: number;
-          insideField: { inside: boolean };
+          paddingRestPx: { left: number; right: number };
+          paddingWithTextPx: { left: number; right: number };
+          fieldWidthPx: number;
+          fieldUsableWidthPx: number;
+          inBox: {
+            left: number;
+            top: number;
+            rightGap: number;
+            bottomGap: number;
+            belowField: boolean;
+            inside: boolean;
+          } | null;
           click: { present: boolean; enabled: boolean; calls: string[]; draftAfter: string; sendPresentAfter: boolean };
           stream: {
             decoded: { type: string; runId: string } | null;
@@ -121,8 +154,10 @@ describe("chat panel rigs", { concurrency: true }, () => {
             outlineStyle: string;
             focused: boolean;
             matchesFocus: boolean;
-            matchesFocusVisible: boolean;
+            matchesFocusWithin: boolean;
             documentFocused: boolean;
+            fieldBorderWidth: string;
+            fieldBoxShadow: string;
           };
           focused: {
             borderWidth: string;
@@ -132,14 +167,17 @@ describe("chat panel rigs", { concurrency: true }, () => {
             outlineStyle: string;
             focused: boolean;
             matchesFocus: boolean;
-            matchesFocusVisible: boolean;
+            matchesFocusWithin: boolean;
             documentFocused: boolean;
+            fieldBorderWidth: string;
+            fieldBoxShadow: string;
           };
           accent: string;
           border: string;
           ring: { reference1px: string; reference2px: string };
           devicePixelRatio: number;
           borderWidthDevicePx: number;
+          fieldBorderWidthDevicePx: number;
           footerBackground: string;
           footerBorderTopWidth: string;
           footerPaddingTop: number;
@@ -171,16 +209,34 @@ describe("chat panel rigs", { concurrency: true }, () => {
         );
       }
 
-      // The inline send control: hidden while the composer is empty, inside the
-      // field's own box when it shows, and still submitting the form.
+      // The send control: hidden while the composer is empty; with text it sits
+      // in the composer box's own control row, at the box's bottom-right corner
+      // under the field, so the field keeps its whole writing width and its
+      // padding does not change when the control appears.
       assert.equal(report.send.hiddenWhileEmpty, true, "send control rendered on an empty composer");
-      assert.equal(report.send.insideField.inside, true, "send control sat outside the field");
+      assert.ok(report.send.inBox, "the send control's place in the composer box was not measured");
+      assert.equal(report.send.inBox!.inside, true, "send control sat outside the composer box");
+      assert.equal(report.send.inBox!.belowField, true, "send control was not below the field");
       assert.ok(
-        report.send.gutterPx < report.send.removedColumnPx,
-        `gutter ${report.send.gutterPx}px did not beat the removed ${report.send.removedColumnPx}px column`,
+        report.send.inBox!.rightGap >= 0 && report.send.inBox!.rightGap <= 12,
+        `send control is ${report.send.inBox!.rightGap}px from the box's right edge`,
+      );
+      assert.ok(
+        report.send.inBox!.bottomGap >= 0 && report.send.inBox!.bottomGap <= 12,
+        `send control is ${report.send.inBox!.bottomGap}px from the box's bottom edge`,
+      );
+      assert.deepEqual(
+        report.send.paddingRestPx,
+        report.send.paddingWithTextPx,
+        "the field's padding changed when the send control appeared (a gutter survived)",
       );
       for (const sample of report.samples) {
-        assert.equal(sample.fieldSpansRow, true, `${sample.step} did not give the field the full row width`);
+        assert.equal(sample.fieldSpansRow, true, `${sample.step} did not give the field the full box width`);
+        assert.equal(
+          sample.rowIsComposerBox,
+          true,
+          `${sample.step}'s field did not sit directly in the composer box`,
+        );
       }
       assert.equal(report.send.click.present && report.send.click.enabled, true, "send control unusable");
       assert.equal(report.send.click.calls.length, 1, "icon button did not submit exactly once");
@@ -226,9 +282,10 @@ describe("chat panel rigs", { concurrency: true }, () => {
         "the marker vanished when the stream closed",
       );
 
-      // The composer's own chrome: the accent ring lives on the field, the band
-      // around it paints nothing of its own, and selecting the field adds light
-      // rather than a second colour.
+      // The composer's own chrome: the accent ring lives on the composer box,
+      // the field inside it is frameless, the band around it paints nothing of
+      // its own, and selecting anything in the box adds light rather than a
+      // second colour.
       assert.equal(
         alphaOf(report.composer.footerBackground),
         0,
@@ -236,14 +293,14 @@ describe("chat panel rigs", { concurrency: true }, () => {
       );
       assert.equal(report.composer.footerBorderTopWidth, "0px", "the composer band kept its hairline");
       assert.ok(report.composer.footerPaddingTop > 0, "the composer band lost its gutter");
-      assert.equal(report.composer.restingRing.borderStyle, "solid", "the field's ring is not solid");
+      assert.equal(report.composer.restingRing.borderStyle, "solid", "the composer box's ring is not solid");
       // Thickness is checked against a reference element measured in the same
       // renderer, never a hard-coded string: Chromium snaps a used border width
       // down to whole device pixels, so 2px renders as 1.6px on a 125% display.
       assert.equal(
         report.composer.restingRing.borderWidth,
         report.composer.ring.reference2px,
-        `the field's ring is not the 2px reference: ${report.composer.restingRing.borderWidth} vs ${report.composer.ring.reference2px}`,
+        `the composer box's ring is not the 2px reference: ${report.composer.restingRing.borderWidth} vs ${report.composer.ring.reference2px}`,
       );
       assert.ok(
         parseFloat(report.composer.ring.reference2px) >
@@ -252,19 +309,41 @@ describe("chat panel rigs", { concurrency: true }, () => {
       );
       assert.ok(
         report.composer.borderWidthDevicePx >= 2,
-        `the field's ring is under 2 device px: ${report.composer.borderWidthDevicePx} at dpr ${report.composer.devicePixelRatio}`,
+        `the composer box's ring is under 2 device px: ${report.composer.borderWidthDevicePx} at dpr ${report.composer.devicePixelRatio}`,
       );
       assert.equal(
         report.composer.restingRing.borderColor,
         report.composer.accent,
-        `the field's ring is not the accent: ${report.composer.restingRing.borderColor} vs ${report.composer.accent}`,
+        `the composer box's ring is not the accent: ${report.composer.restingRing.borderColor} vs ${report.composer.accent}`,
       );
       assert.notEqual(
         report.composer.restingRing.borderColor,
         report.composer.border,
-        "the field still wears the neutral hairline",
+        "the composer box still wears the neutral hairline",
       );
-      assert.equal(report.composer.restingRing.boxShadow, "none", "an unselected field already glows");
+      assert.equal(report.composer.restingRing.boxShadow, "none", "an unselected composer box already glows");
+      assert.equal(
+        report.composer.restingRing.matchesFocusWithin,
+        false,
+        "an unselected composer box already matches :focus-within",
+      );
+      // The field is a bare writing surface inside the box: the box owns the
+      // ring and the glow, so the field has neither.
+      assert.equal(
+        report.composer.restingRing.fieldBorderWidth,
+        "0px",
+        `the field kept a border of ${report.composer.restingRing.fieldBorderWidth}`,
+      );
+      assert.equal(
+        report.composer.fieldBorderWidthDevicePx,
+        0,
+        `the field's border renders as ${report.composer.fieldBorderWidthDevicePx} device px`,
+      );
+      assert.equal(
+        report.composer.focused.fieldBoxShadow,
+        "none",
+        `the field painted a shadow of its own: ${report.composer.focused.fieldBoxShadow}`,
+      );
       assert.equal(
         report.composer.focused.focused,
         true,
@@ -275,12 +354,22 @@ describe("chat panel rigs", { concurrency: true }, () => {
         true,
         "the field held activeElement without matching :focus, so a glow would measure nothing",
       );
+      assert.equal(
+        report.composer.focused.matchesFocusWithin,
+        true,
+        "the composer box did not light up for the focused field (:focus-within)",
+      );
       assert.match(report.composer.focused.boxShadow, /0px 0px 0px 3px/, "no focus ring in the glow");
       assert.match(report.composer.focused.boxShadow, /0px 0px 14px 2px/, "no soft halo in the glow");
       assert.equal(
         report.composer.focused.borderColor,
         report.composer.restingRing.borderColor,
         "selection changed the ring's colour instead of adding light",
+      );
+      assert.equal(
+        report.composer.focused.fieldBorderWidth,
+        report.composer.restingRing.fieldBorderWidth,
+        "selection changed the field's border instead of lighting the box",
       );
       assert.equal(report.composer.focused.outlineStyle, "none", "the focus outline was not suppressed");
     });
@@ -334,15 +423,25 @@ describe("chat panel rigs", { concurrency: true }, () => {
       rowBelowField: boolean;
       menuClosed: boolean;
       pills: Pill[];
-      /** The line under the field: its box, and where the attach control and
-       *  the runtime pick sit on it. Null when either end is missing. */
+      /** The row inside the composer box's bottom edge: the dock, the add
+       *  and page controls leading it, and the runtime pick trailing it. Null
+       *  when any required control is missing. */
       line: {
         fieldBottom: number;
-        line: { left: number; right: number; top: number; bottom: number };
-        attach: { left: number; right: number; top: number; bottom: number };
-        pick: { left: number; right: number; top: number; bottom: number };
-        sameLine: boolean;
-        attachGroup: boolean;
+        box: { left: number; right: number; top: number; bottom: number; width: number };
+        dock: { left: number; right: number; top: number; bottom: number; width: number };
+        plus: { left: number; right: number; top: number; bottom: number; width: number };
+        page: { left: number; right: number; top: number; bottom: number; width: number } | null;
+        pick: { left: number; right: number; top: number; bottom: number; width: number };
+        dockInsideBox: boolean;
+        dockBelowField: boolean;
+        controlsInsideBox: boolean;
+        controlsBelowField: boolean;
+        sameRow: boolean;
+        plusLeftOfPage: boolean | null;
+        pageLeftOfPick: boolean | null;
+        plusLeadsRow: boolean;
+        pickRightGap: number;
       } | null;
     };
     defaultThinking: { rows: string[]; closedByEscape: boolean };
@@ -434,22 +533,37 @@ describe("chat panel rigs", { concurrency: true }, () => {
       );
       assert.equal(report.initial.rowBorderTopWidth, "0px", "the runtime row painted a hairline");
       assert.equal(report.initial.rowBelowField, true, "the pills are not under the field");
-      assert.ok(report.initial.line, "the footer line under the field was not measured");
-      assert.ok(
-        report.initial.line!.attach.top >= report.initial.line!.fieldBottom,
-        `the attach control is not under the field: ${JSON.stringify(report.initial.line!.attach)} vs field bottom ${report.initial.line!.fieldBottom}`,
+      assert.ok(report.initial.line, "the composer box's control row was not measured");
+      assert.equal(
+        report.initial.line!.dockInsideBox && report.initial.line!.dockBelowField,
+        true,
+        `the dock is not the box's bottom row under the field: dock ${JSON.stringify(report.initial.line!.dock)} box ${JSON.stringify(report.initial.line!.box)}`,
       );
-      assert.ok(
-        Math.abs(report.initial.line!.attach.left - report.initial.line!.line.left) <= 1 &&
-          report.initial.line!.attach.right < report.initial.line!.pick.left,
-        `the attach control is not at the left end of the line: attach ${JSON.stringify(report.initial.line!.attach)} pick left ${report.initial.line!.pick.left}`,
+      assert.equal(
+        report.initial.line!.controlsInsideBox && report.initial.line!.controlsBelowField,
+        true,
+        "the add/page/pick controls are not inside the box below the field",
       );
-      assert.equal(report.initial.line!.sameLine, true, "the attach control and the pick are not on one line");
-      assert.ok(
-        Math.abs(report.initial.line!.pick.right - report.initial.line!.line.right) <= 1,
-        `the runtime pick is not at the right end of the line: pick ${JSON.stringify(report.initial.line!.pick)} line right ${report.initial.line!.line.right}`,
+      assert.equal(
+        report.initial.line!.plusLeadsRow && report.initial.line!.plusLeftOfPage,
+        true,
+        `the add control does not lead the row: plus ${JSON.stringify(report.initial.line!.plus)} page ${JSON.stringify(report.initial.line!.page)}`,
       );
-      assert.equal(report.initial.line!.attachGroup, true, "the attach control left its receipt group");
+      assert.equal(
+        report.initial.line!.pageLeftOfPick,
+        true,
+        `the page pill is not left of the runtime pick: page ${JSON.stringify(report.initial.line!.page)} pick ${JSON.stringify(report.initial.line!.pick)}`,
+      );
+      assert.equal(
+        report.initial.line!.pageLeftOfPick,
+        true,
+        `the page pill is not left of the runtime pick: page ${JSON.stringify(report.initial.line!.page)} pick ${JSON.stringify(report.initial.line!.pick)}`,
+      );
+      assert.equal(report.initial.line!.sameRow, true, "the dock's controls are not on one row");
+      assert.ok(
+        report.initial.line!.pickRightGap >= 0 && report.initial.line!.pickRightGap <= 12,
+        `the runtime pick is ${report.initial.line!.pickRightGap}px from the dock's right end`,
+      );
       assert.equal(report.initial.pills.length, 2, "expected exactly the model and thinking pills");
       assert.equal(report.initial.pills[0]?.label, "space-bunny-alpha", "the model pill lost the default label");
       assert.equal(report.initial.pills[0]?.override, "false", "an unpicked model pill claimed an override");
@@ -725,6 +839,23 @@ describe("chat panel rigs", { concurrency: true }, () => {
     insideTranscript?: boolean;
   };
 
+  /** One line of the work log, read as type rather than as text. */
+  type TypeLine = {
+    text: string;
+    fontSize: number;
+    fontSizeCss: string;
+    fontStyle: string;
+    fontWeight: string;
+    color: string;
+    marginTop: number;
+    marginBottom: number;
+    lineHeight: string;
+    boxHeight: number;
+    top: number;
+    bottom: number;
+    display: string;
+  };
+
   type ToolRunReport = {
     pass: boolean;
     failures: string[];
@@ -754,6 +885,13 @@ describe("chat panel rigs", { concurrency: true }, () => {
       opened: { expanded: string; rows: string[]; caretOpen: boolean };
     };
     thinking: { beforeTools: boolean; withActivity: boolean; nextTurn: boolean };
+    /** The live `Thinking…` line's type, against the status row under it. */
+    thinkingType: {
+      thinking: TypeLine | null;
+      status: TypeLine | null;
+      bodyFontSize: string | null;
+      stacked: boolean;
+    };
     /** What the one row carrying underscores + descenders actually painted. */
     rowInk: {
       missing?: boolean;
@@ -924,6 +1062,36 @@ describe("chat panel rigs", { concurrency: true }, () => {
       assert.equal(report.decode.nameOnly.name, "read_file");
       assert.equal(report.decode.completion.ok, undefined, "a completion claimed a status");
 
+      // The placeholder is a work-log line, not prose: it is set at the same
+      // size as the `Working… 1s` row it sits above, keeps that row's quiet
+      // italic face, carries no paragraph margins of its own (the flex gap owns
+      // the spacing), and occupies its own line. The measured contrast is the
+      // body size the panel would otherwise hand it.
+      const thinkingLine = report.thinkingType.thinking;
+      const statusLine = report.thinkingType.status;
+      assert.ok(thinkingLine && statusLine, "the live placeholder or its status row was missing");
+      assert.equal(thinkingLine.text, "Thinking…");
+      assert.equal(thinkingLine.fontSize, statusLine.fontSize);
+      assert.ok(
+        thinkingLine.fontSize < parseFloat(report.thinkingType.bodyFontSize ?? "0"),
+        `the placeholder paints at ${thinkingLine.fontSizeCss}, the panel's prose size`,
+      );
+      assert.equal(thinkingLine.fontStyle, "italic");
+      assert.equal(thinkingLine.fontStyle, statusLine.fontStyle);
+      assert.ok(
+        Math.abs(thinkingLine.boxHeight - statusLine.boxHeight) <= 1,
+        `the placeholder's line box is ${thinkingLine.boxHeight}px against the status row's ${statusLine.boxHeight}px`,
+      );
+      assert.ok(
+        thinkingLine.marginTop === 0 && thinkingLine.marginBottom === 0,
+        `the placeholder carries paragraph margins (${thinkingLine.marginTop}px/${thinkingLine.marginBottom}px), ` +
+          `which float it away from the work log`,
+      );
+      assert.equal(report.thinkingType.stacked, true, "the status row did not start below the placeholder");
+      const thinkingShot = report.screenshots.find((file) => file.endsWith("tool-run-thinking.png"));
+      assert.ok(thinkingShot, "the rig took no picture of the live placeholder");
+      assert.equal(fs.existsSync(thinkingShot), true, "the live-placeholder picture was not written");
+
       // The live markers, and the two resets.
       assert.equal(report.thinking.beforeTools, true);
       assert.equal(report.thinking.withActivity, false);
@@ -938,7 +1106,643 @@ describe("chat panel rigs", { concurrency: true }, () => {
     });
   });
 
+  // ——— the turn timeline ———————————————————————————————————————————————
+  //
+  // The whole turn, not the tool block: reasoning, rows, narration, answer,
+  // fold/footer, stream death, stop, capability omission and a reload from the
+  // structured transcript. The rig writes the artifact; this block re-reads it
+  // and restates the numbers so the suite is not trusting only the driver's own
+  // pass/fail loop.
+
+  const TURN_TIMELINE_REPORT = path.join(desktopRoot, "e2e/artifacts/turn-timeline.json");
+
+  function runTurnTimelineDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/turn-timeline.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  /** One tool row as the DOM reports it. */
+  type TimelineRow = {
+    text: string | null;
+    status?: string | null;
+    durationMs?: string | null;
+    durationSource?: string | null;
+  };
+
+  /** One turn as the rig sampled it off the screen. */
+  type TimelineSample = {
+    status?: string | null;
+    user?: string | null;
+    answer?: string | null;
+    answerOutsideProcess?: boolean;
+    process?: {
+      state?: string | null;
+      header?: string | null;
+      statusLine?: string | null;
+      reasoning?: { text: string | null; fidelity?: string | null }[];
+      commentary?: (string | null)[];
+      narration?: (string | null)[];
+      toolArgs?: (string | null)[];
+      toolResults?: (string | null)[];
+      rows?: TimelineRow[];
+    } | null;
+    footer?: { status?: string | null; text?: string | null } | null;
+    usage?: string | null;
+    notes?: { kind?: string | null; text?: string | null }[];
+  };
+
+  type TimelineCheck = { name: string; pass: boolean; detail: string };
+
+  type TurnTimelineReport = {
+    pass: boolean;
+    failures: string[];
+    url: string;
+    session: string;
+    script: {
+      calls: number;
+      rows: string[];
+      answer: string;
+      narration: string;
+      commentary: string;
+      usage: { input: number; output: number; total: number };
+    };
+    live: {
+      running: TimelineSample | null;
+      beforeFinal: TimelineSample | null;
+      settled: TimelineSample | null;
+      /** The settled turn with its disclosure opened: where rows/narration live. */
+      opened: TimelineSample | null;
+    };
+    settled: {
+      fold: TimelineSample | null;
+      secondTurn: TimelineSample | null;
+      bothFolded: { user: string | null; process: string | null }[];
+      afterFirstOpen: TimelineSample | null;
+      afterSecondOpen: TimelineSample | null;
+    };
+    incomplete: TimelineSample | null;
+    stopped: TimelineSample | null;
+    capability: {
+      hermes: { live: TimelineSample | null; settled: TimelineSample | null };
+      floor: TimelineSample | null;
+    };
+    history: {
+      initial: TimelineSample | null;
+      opened: TimelineSample | null;
+      sameRows: boolean;
+    };
+    screenshots: string[];
+    checks: TimelineCheck[];
+    counts: {
+      checks: number;
+      passed: number;
+      failed: number;
+      turnsPlayed: number;
+      framesPlayed: number;
+      toolCalls: number;
+      rows: number;
+    };
+  };
+
+  describe("turn timeline", () => {
+    it("runs a turn live, folds it on settle, and rebuilds it from history", async (t) => {
+      if (!(await devServerUp())) {
+        t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+        return;
+      }
+
+      fs.rmSync(TURN_TIMELINE_REPORT, { force: true });
+      const exitCode = await runTurnTimelineDriver();
+      assert.equal(fs.existsSync(TURN_TIMELINE_REPORT), true, "driver wrote no report artifact");
+
+      const report = JSON.parse(
+        fs.readFileSync(TURN_TIMELINE_REPORT, "utf8"),
+      ) as TurnTimelineReport;
+
+      assert.deepEqual(report.failures, []);
+      assert.equal(report.pass, true);
+      assert.equal(exitCode, 0, "driver exited non-zero");
+
+      // Every named check passed, and the report's own counts agree with the
+      // list it wrote: a check that was silently skipped would show up as a
+      // count mismatch rather than as a clean run.
+      assert.equal(report.checks.length, report.counts.checks, "the check list and its count disagree");
+      assert.equal(report.checks.filter((entry) => entry.pass).length, report.counts.passed);
+      assert.equal(report.checks.filter((entry) => !entry.pass).length, report.counts.failed);
+      assert.equal(report.counts.failed, 0);
+      assert.equal(report.counts.toolCalls, 3);
+      assert.equal(report.counts.rows, report.script.rows.length);
+      assert.equal(report.counts.turnsPlayed, 6, "the rig did not play the scripted turns");
+      assert.ok(report.counts.framesPlayed >= 20, `only ${report.counts.framesPlayed} wire frames were played`);
+
+      // The live turn: one row per call in order, one failed row marked, the
+      // answer outside the process, and the narration/commentary inside it.
+      const live = report.live.opened?.process;
+      assert.ok(live, "the live turn rendered no process group when reopened");
+      assert.deepEqual(
+        live.rows?.map((row) => row.text),
+        report.script.rows,
+        "the tool rows did not follow the calls",
+      );
+      assert.deepEqual(
+        live.rows?.map((row) => row.status),
+        ["completed", "completed", "failed"],
+        "the rows did not close as done/done/failed",
+      );
+      assert.equal(report.live.settled?.answer, report.script.answer);
+      assert.equal(report.live.settled?.answerOutsideProcess, true);
+      assert.match(live.narration?.join(" ") ?? "", new RegExp(report.script.narration));
+      assert.match(live.commentary?.join(" ") ?? "", new RegExp(report.script.commentary));
+
+      // The settled turn: folded, recapped, and its footer/usage exact.
+      const fold = report.settled.fold;
+      assert.equal(fold?.process?.state, "closed", "a completed turn did not fold");
+      assert.match(fold?.process?.header ?? "", /worked for/i);
+      assert.equal(fold?.footer?.status, "completed");
+      assert.match(fold?.footer?.text ?? "", /tokens/i);
+      // The unit ladder restated: past a million the footer reads in M at one
+      // decimal, and a thousands-sized turn keeps the k it always had.
+      assert.equal(fold?.usage, "\u00b7 1.2M tokens");
+      assert.equal(report.settled.secondTurn?.usage, "\u00b7 14.2k tokens");
+      assert.equal(fold?.answerOutsideProcess, true);
+      // Fold state is per turn: opening one did not open the other.
+      assert.equal(report.settled.afterFirstOpen?.process?.state, "open");
+      assert.equal(report.settled.afterSecondOpen?.process?.state, "open");
+      assert.equal(
+        report.settled.bothFolded.find((entry) => entry.user === "And again")?.process,
+        "closed",
+      );
+
+      // A dead stream is not a completed turn; a stop is not either.
+      assert.equal(report.incomplete?.footer?.status, "incomplete");
+      assert.match(report.incomplete?.footer?.text ?? "", /ended before finishing/i);
+      assert.match(report.incomplete?.footer?.text ?? "", /iteration budget/i);
+      assert.equal(report.incomplete?.process?.state, "open");
+      assert.equal(report.stopped?.footer?.status, "stopped");
+      assert.match(report.stopped?.answer ?? "", /Only what arrived/);
+      assert.equal(report.stopped?.process?.state, "open");
+
+      // Capability omission: the Hermes descriptor discloses results only on
+      // settle and never claims a harness duration; the floor descriptor shows
+      // no reasoning, no usage, no disclosures.
+      const hermes = report.capability.hermes;
+      assert.equal(
+        hermes.live?.process?.toolResults?.length,
+        0,
+        "a live result was disclosed where the descriptor says none exists",
+      );
+      assert.equal(
+        hermes.live?.process?.reasoning?.[0]?.fidelity,
+        "preview",
+        "the thinking row did not say it was a preview",
+      );
+      assert.ok(
+        (hermes.settled?.process?.toolResults?.length ?? 0) > 0,
+        "the terminal snapshot's results never appeared",
+      );
+      assert.ok(
+        (hermes.settled?.process?.rows ?? []).every((row) => row.durationSource !== "harness"),
+        "a harness-measured duration was claimed where the descriptor has none",
+      );
+      assert.equal(report.capability.floor?.usage, null, "a floor harness grew a usage line");
+      assert.equal(report.capability.floor?.process?.reasoning?.length, 0);
+      assert.equal(report.capability.floor?.process?.toolResults?.length, 0);
+      assert.equal(report.capability.floor?.process?.toolArgs?.length, 0);
+      assert.equal(report.capability.floor?.process?.rows?.[0]?.text, "read_file \u00b7 AGENTS.md");
+
+      // History: the same rows/fold/footer/answer from the transcript alone.
+      assert.equal(report.history.sameRows, true, "history rebuilt a different set of rows");
+      assert.deepEqual(
+        report.history.opened?.process?.rows?.map((row) => row.text),
+        live.rows?.map((row) => row.text),
+        "the reloaded rows are not the live rows",
+      );
+      assert.equal(report.history.initial?.process?.state, "closed", "history did not fold");
+      assert.equal(report.history.opened?.answer, report.script.answer);
+      assert.equal(report.history.opened?.footer?.status, "completed");
+
+      // Pictures the operator can open later, from the rig's own capturePage.
+      assert.ok(report.screenshots.length >= 2, "the rig left fewer than two pictures");
+      for (const picture of report.screenshots) {
+        assert.equal(fs.existsSync(picture), true, `missing screenshot artifact ${picture}`);
+      }
+    });
+  });
+
   const RECEIPT_REPORT = path.join(desktopRoot, "e2e/artifacts/receipt-attach.json");
+
+  const KEYS_REPORT = path.join(
+    desktopRoot,
+    "e2e/artifacts/composer-keys-attachments.json",
+  );
+
+  const ATTACHMENTS_REPORT = path.join(
+    desktopRoot,
+    "e2e/artifacts/attachments.json",
+  );
+
+  function runAttachmentsDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/attachments.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  type AttachmentsReport = {
+    pass: boolean;
+    failures: string[];
+    scenarios: { name: string; pass: boolean; detail: string | null }[];
+    measurements?: {
+      turnBody?: unknown;
+      instructions?: string;
+      stored?: Record<string, { relPath: string; name: string; size: number; kind: string }>;
+    };
+    picture?: string | null;
+  };
+
+  /**
+   * The attachment rig drives the main process against a real throwaway vault:
+   * the stored bytes, the pending store, the turn body the gateway receives
+   * and the instructions the agent is given. It needs no dev server.
+   */
+  describe("general attachments and the steer verb", () => {
+    it("stores a file the agent can read and posts an image inline", async () => {
+      fs.rmSync(ATTACHMENTS_REPORT, { force: true });
+      const exitCode = await runAttachmentsDriver();
+      assert.equal(
+        fs.existsSync(ATTACHMENTS_REPORT),
+        true,
+        "driver wrote no report artifact",
+      );
+
+      const report = JSON.parse(
+        fs.readFileSync(ATTACHMENTS_REPORT, "utf8"),
+      ) as AttachmentsReport;
+
+      assert.equal(
+        exitCode,
+        0,
+        `the attachments rig exited ${exitCode}: ${report.failures.join("; ")}`,
+      );
+      assert.equal(
+        report.pass,
+        true,
+        `the rig reported failures: ${report.failures.join("; ")}`,
+      );
+      assert.deepEqual(report.failures, []);
+
+      // Every scenario the rig names must have run and passed: a rig that
+      // quietly stops checking one is a shorter green run, not a green run.
+      const byName = new Map(report.scenarios.map((s) => [s.name, s]));
+      assert.ok(
+        report.scenarios.length >= 30,
+        `the rig reported only ${report.scenarios.length} scenario(s)`,
+      );
+      for (const scenario of report.scenarios) {
+        assert.equal(
+          scenario.pass,
+          true,
+          `"${scenario.name}" failed: ${scenario.detail ?? "no detail"}`,
+        );
+      }
+      assert.ok(byName.size >= 30, "the rig's scenarios have no names");
+
+      // The stored file: in the vault, under its own name, with its own bytes.
+      const stored = report.measurements?.stored ?? {};
+      assert.ok(stored.image, "no image was stored");
+      assert.ok(stored.video, "no video was stored");
+      assert.match(
+        stored.image.relPath ?? "",
+        /^attachments\/files\/[0-9a-f-]{36}\/.+/,
+        `the image was stored at ${stored.image.relPath}`,
+      );
+      assert.equal(stored.video.kind, "video", "the video was not stored as a video");
+
+      // The turn body: the image rides inline, and the video does not — the
+      // gateway rejects a file part outright.
+      const body = JSON.stringify(report.measurements?.turnBody ?? "");
+      assert.match(body, /image_url/, "the image did not ride the turn inline");
+      assert.doesNotMatch(
+        body,
+        /clip\.mp4/,
+        "a non-image attachment was inlined into the turn",
+      );
+
+      // The instructions: the agent is told where every file is, on this
+      // machine, because a relative path is a path it cannot open.
+      const instructions = report.measurements?.instructions ?? "";
+      assert.match(instructions, /attachments\/files\//, "the file's vault path is missing");
+      assert.match(instructions, /clip\.mp4/, "the attached file is not named");
+      assert.match(
+        instructions,
+        /absolute path|on this machine at \//,
+        "the absolute path is missing",
+      );
+    });
+  });
+
+  function runKeysDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/composer-keys-attachments.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  type KeysReport = {
+    pass: boolean;
+    failures: string[];
+    initial: {
+      fieldPresent: boolean;
+      plusPresent: boolean;
+      plusLabel: string | null;
+      plusBackground: string | null;
+      plusRadiusPx: number | null;
+      plusBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      boxBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      dockBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      plusInsideBox: boolean;
+      plusInsideDock: boolean;
+      plusBelowField: boolean;
+      plusOnLeftHalf: boolean;
+      plusBottomLeft: boolean;
+      plusCircular: boolean;
+      attachmentInputPresent: boolean;
+      attachmentAccept: string | null;
+      attachmentMultiple: boolean;
+      receiptInputPresent: boolean;
+      pickerCount: number;
+      legacyAttachControl: boolean;
+    };
+    afterEnter: { sends: number; before: string; after: string };
+    afterRealEnter: { value: string; lines: number; sends: number };
+    afterCtrlEnter: { sends: number; value: string; calls: { input: string }[] };
+    attached: {
+      calls: { mime: string; name: string; bytes: number }[];
+      chip: string | null;
+      chipKind: string | null;
+      chipPresent: boolean;
+    };
+    turnWithAttachment: {
+      last: {
+        input?: string;
+        attachments?: { id: string; kind: string; name: string }[] | null;
+      };
+    };
+    imageOffer: {
+      chipKind: string | null;
+      offer: string | null;
+      actionText: string | null;
+      actionLabel: string | null;
+      visible: boolean;
+    };
+    live: {
+      whileEmpty?: { disabled: boolean; steerButton: boolean };
+      during: { disabled: boolean; steerButton: boolean; queueButton: boolean };
+    };
+    steered: {
+      armed?: boolean;
+      calls: { runId: string; text: string }[];
+      draft: string;
+      transcript: string[];
+    };
+    queued: { armed?: boolean; rows: string[]; draft: string };
+    enterMode?: {
+      plain: { stored: string | null; sends: number; calls: { input: string }[]; draft: string };
+      shift: { value: string; lines: number; sends: number };
+      ctrl: { sends: number; last: { input?: string } | undefined; draft: string };
+    };
+    screenshots: string[];
+  };
+
+  /**
+   * The keys/attachments rig drives the real ChatPanel in a real window, so it
+   * needs the Vite dev server. With the server down the test skips.
+   */
+  describe("composer keys, attachments and live-turn gestures", () => {
+    it("sends on Ctrl+Enter, steers and queues while a turn runs", async (t) => {
+      if (!(await devServerUp())) {
+        t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+        return;
+      }
+
+      fs.rmSync(KEYS_REPORT, { force: true });
+      const exitCode = await runKeysDriver();
+      assert.equal(fs.existsSync(KEYS_REPORT), true, "driver wrote no report artifact");
+
+      const report = JSON.parse(fs.readFileSync(KEYS_REPORT, "utf8")) as KeysReport;
+      assert.equal(
+        exitCode,
+        0,
+        `the keys rig exited ${exitCode}: ${report.failures.join("; ")}`,
+      );
+      assert.deepEqual(report.failures, []);
+      assert.equal(report.pass, true);
+
+      // The add control: inside the composer box's own control row, at the
+      // box's bottom left, wearing a circular muted surface.
+      assert.equal(report.initial.fieldPresent, true, "the composer box never rendered");
+      assert.equal(report.initial.plusPresent, true, "the add control never rendered");
+      assert.equal(report.initial.plusInsideBox, true, "the add control sat outside the composer box");
+      assert.equal(report.initial.plusInsideDock, true, "the add control is not on the box's control row");
+      assert.equal(report.initial.plusBelowField, true, "the add control is not under the field");
+      assert.equal(report.initial.plusOnLeftHalf, true, "the add control is not on the box's left half");
+      assert.equal(report.initial.plusBottomLeft, true, "the add control is not at the box's bottom left");
+      assert.equal(
+        report.initial.plusCircular,
+        true,
+        `the add control is not circular: ${JSON.stringify(report.initial.plusBox)} radius ${report.initial.plusRadiusPx}px`,
+      );
+      assert.ok(
+        alphaOf(report.initial.plusBackground) > 0,
+        `the add control's surface is transparent: ${report.initial.plusBackground}`,
+      );
+      assert.ok(
+        (report.initial.plusRadiusPx ?? 0) >= (report.initial.plusBox?.height ?? Infinity) / 2,
+        `the add control's radius ${report.initial.plusRadiusPx}px is under half its ` +
+          `${report.initial.plusBox?.height}px height`,
+      );
+      assert.match(report.initial.plusLabel ?? "", /attach/i, "the add control names itself");
+
+      // One attach flow, one picker: the add control takes any file, and the
+      // receipt is chosen afterwards on a picture's chip.
+      assert.equal(report.initial.attachmentInputPresent, true, "the general attachment picker vanished");
+      assert.equal(report.initial.attachmentAccept, null, "the general picker grew an accept filter");
+      assert.equal(
+        report.initial.attachmentMultiple,
+        true,
+        "the general picker stopped taking several files",
+      );
+      assert.equal(report.initial.receiptInputPresent, false, "a second receipt picker grew back");
+      assert.equal(
+        report.initial.pickerCount,
+        1,
+        `the composer holds ${report.initial.pickerCount} file picker(s)`,
+      );
+      assert.equal(
+        report.initial.legacyAttachControl,
+        false,
+        "the removed receipt control is still in the composer",
+      );
+
+      // The keys: Enter breaks the line and sends nothing; Ctrl+Enter sends.
+      assert.equal(report.afterEnter.sends, 0, "Enter sent the message");
+      assert.equal(report.afterRealEnter.sends, 0, "a typed Enter sent the message");
+      assert.ok(
+        report.afterRealEnter.lines >= 2,
+        `a typed Enter did not break the line: ${JSON.stringify(report.afterRealEnter.value)}`,
+      );
+      assert.equal(report.afterCtrlEnter.sends, 1, "Ctrl+Enter did not send");
+      assert.equal(
+        report.afterCtrlEnter.calls[0]?.input,
+        "the whole prompt",
+        "the sent message lost its text",
+      );
+      assert.equal(report.afterCtrlEnter.value, "", "Ctrl+Enter left the draft behind");
+
+      // The attachment: any kind of file, shown as a chip and carried by the turn.
+      assert.equal(report.attached.calls.length, 1, "the picked file never reached main");
+      assert.equal(report.attached.calls[0]?.name, "clip.mp4", "the file lost its name");
+      assert.equal(report.attached.calls[0]?.mime, "video/mp4", "the file lost its kind");
+      assert.equal(report.attached.chipPresent, true, "the attachment showed no chip");
+      assert.equal(report.attached.chipKind, "video", "the chip lost the file's kind");
+      assert.equal(
+        report.turnWithAttachment.last?.attachments?.length,
+        1,
+        "the turn did not carry the attachment",
+      );
+      assert.equal(
+        report.turnWithAttachment.last?.attachments?.[0]?.kind,
+        "video",
+        "the turn did not carry the attachment's kind",
+      );
+
+      // A picture's chip offers the receipt, because this page's vault has the
+      // Finance kit: the chip's action is the only route into the promotion.
+      assert.equal(report.imageOffer.chipKind, "image", "the picture's chip lost its kind");
+      assert.equal(report.imageOffer.offer, "true", "the picture's chip carried no receipt offer");
+      assert.equal(
+        report.imageOffer.actionText,
+        "Use as receipt",
+        `the chip's action reads ${JSON.stringify(report.imageOffer.actionText)}`,
+      );
+      assert.equal(
+        report.imageOffer.actionLabel,
+        "Use photo.jpg as a receipt",
+        `the chip's action names ${JSON.stringify(report.imageOffer.actionLabel)}`,
+      );
+      assert.equal(report.imageOffer.visible, true, "the chip's action was not visible");
+
+      // While a turn runs: the composer stays open and grows the two gestures.
+      assert.equal(report.live.during.disabled, false, "the composer closed during the turn");
+      assert.equal(report.live.during.steerButton, true, "no steer gesture during the turn");
+      assert.equal(report.live.during.queueButton, true, "no queue gesture during the turn");
+
+      // The steer: it reached the live run, carried the words, and showed them.
+      assert.equal(report.steered.armed, true, "the steer gesture never armed");
+      assert.equal(report.steered.calls.length, 1, "the steer never reached the run");
+      assert.equal(report.steered.calls[0]?.runId, "run_harness_steer", "the steer named the wrong run");
+      assert.equal(
+        report.steered.calls[0]?.text,
+        "actually, focus on the budget",
+        "the steer lost the operator's words",
+      );
+      assert.equal(report.steered.draft, "", "the steer left the draft behind");
+      assert.ok(
+        report.steered.transcript.some((text) => text.includes("focus on the budget")),
+        `the steer never showed in the thread: ${JSON.stringify(report.steered.transcript)}`,
+      );
+
+      // The queue: the message waits, and says so.
+      assert.equal(report.queued.armed, true, "the queue gesture never appeared");
+      assert.ok(
+        report.queued.rows.some((row) => row.includes("summarise it")),
+        `the queued message was not shown: ${JSON.stringify(report.queued.rows)}`,
+      );
+      assert.equal(report.queued.draft, "", "queueing left the draft behind");
+
+      // The other keyboard, from Settings → Composer: with "enter" stored and
+      // the page reloaded, a plain Enter sends once and clears the draft,
+      // Shift+Enter is the line break, and Ctrl+Enter still sends exactly once.
+      assert.ok(report.enterMode, "the rig ran no enter-mode leg");
+      assert.equal(
+        report.enterMode.plain.stored,
+        "enter",
+        `the enter-mode leg did not start on the chosen keyboard: ${report.enterMode.plain.stored}`,
+      );
+      assert.equal(
+        report.enterMode.plain.sends,
+        1,
+        `plain Enter sent ${report.enterMode.plain.sends} message(s) in enter mode`,
+      );
+      assert.equal(
+        report.enterMode.plain.calls[0]?.input,
+        "enter mode prompt",
+        `plain Enter lost the draft: ${JSON.stringify(report.enterMode.plain.calls[0]?.input)}`,
+      );
+      assert.equal(
+        report.enterMode.plain.draft,
+        "",
+        `plain Enter left the draft behind: ${JSON.stringify(report.enterMode.plain.draft)}`,
+      );
+      assert.ok(
+        report.enterMode.shift.lines >= 2,
+        `Shift+Enter did not break the line: ${JSON.stringify(report.enterMode.shift.value)}`,
+      );
+      assert.equal(
+        report.enterMode.shift.sends,
+        1,
+        `Shift+Enter sent a message: ${report.enterMode.shift.sends} send(s)`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.sends,
+        2,
+        `Ctrl+Enter did not send exactly once in enter mode: ${report.enterMode.ctrl.sends} send(s)`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.last?.input,
+        "ctrl prompt",
+        `Ctrl+Enter lost the draft: ${JSON.stringify(report.enterMode.ctrl.last?.input)}`,
+      );
+      assert.equal(
+        report.enterMode.ctrl.draft,
+        "",
+        `Ctrl+Enter left the draft behind: ${JSON.stringify(report.enterMode.ctrl.draft)}`,
+      );
+    });
+  });
+
 
   /**
    * Every scenario the receipt rig must report as passing. The names are the
@@ -946,6 +1750,7 @@ describe("chat panel rigs", { concurrency: true }, () => {
    * than a shorter green run.
    */
   const RECEIPT_SCENARIOS = [
+    // The ledger's own path, unchanged: a row cites the finance store's file.
     "posts a row citing the stored receipt",
     "refuses a path escape",
     "refuses another domain's store",
@@ -955,28 +1760,45 @@ describe("chat panel rigs", { concurrency: true }, () => {
     "one receipt backs two rows",
     "correction keeps the receipt",
     "undo leaves the file",
+    // The preparation path the promotion reuses.
     "stores the original in the finance file store",
     "keeps a PNG as stored and copies it to the model as JPEG",
     "re-encodes a busy original under the copy ceiling",
     "refuses bytes that are not an image",
     "refuses an original over 25 MB",
+    "refuses a canvas bigger than a receipt can hold",
     "refuses when the Finance kit is missing",
-    "holds the prepared receipt for the turn that follows",
+    // The promotion channel: attach the picture, then press "Use as receipt".
+    "attaches the picture as a general attachment first",
+    "promotes the attached picture into the finance store and the receipt slot",
+    "moves the picture out of the general-attachment store",
+    "a refusal leaves the waiting receipt untouched",
+    "posts a row citing the promoted receipt",
+    "hands the promoted receipt to the turn that follows",
+    "refuses a non-picture and leaves it waiting",
+    "refuses a file whose bytes are not a picture and leaves it waiting",
+    "refuses an attachment it is not holding",
+    "replaces the receipt instead of holding two",
     "will not hand over a receipt it does not hold",
+    // The turn the promoted receipt rides.
     "posts a text-only turn as a plain string",
     "posts a receipt turn as a text part and an image part",
     "names the stored path in the turn's instructions",
     "keeps a busy receipt turn under the body ceiling",
     "refuses a turn naming a receipt it does not hold",
-    "shows a chip when a receipt is picked",
-    "carries the stored path on the turn and clears the chip",
-    "shows a chip when a receipt is dropped",
-    "shows a chip when a receipt is pasted",
+    // The composer's chip: the pick, the press, and the one receipt per turn.
+    "shows an attachment chip with 'Use as receipt' when a JPEG is picked",
+    "moves the picture into the receipt chip on 'Use as receipt'",
+    "carries the promoted path on the turn and no attachment",
+    "drops a picture as an attachment, not a receipt",
+    "pastes a picture as an attachment, not a receipt",
     "replaces the pending receipt rather than adding one",
     "sends no receipt once the chip is removed",
     "clears the pending receipt when the chat changes",
-    "photographs the chip and the turn that carried it",
-    "shows the refusal and keeps no chip",
+    "photographs the chip with the action and the turn that carried a receipt",
+    "shows the refusal and keeps the attachment chip",
+    "offers no 'Use as receipt' in a vault without the Finance kit",
+    "keeps the receipt chip when a later promotion is refused",
   ];
 
   function runReceiptDriver(): Promise<number> {
@@ -984,7 +1806,7 @@ describe("chat panel rigs", { concurrency: true }, () => {
       execFile(
         electron,
         [path.join(desktopRoot, "e2e/receipt-attach.electron.mjs")],
-        { cwd: desktopRoot, timeout: 120_000 },
+        { cwd: desktopRoot, timeout: 180_000 },
         (error) => {
           if (error && typeof error.code !== "number") {
             reject(error);
@@ -1003,8 +1825,8 @@ describe("chat panel rigs", { concurrency: true }, () => {
     fixture?: { path: string; bytes: number };
   };
 
-  describe("receipt attach", () => {
-    it("stores an original and cites it on the row it produces", async (t) => {
+  describe("receipt promotion", () => {
+    it("promotes an attached picture and cites it on the row it produces", async (t) => {
       if (!(await devServerUp())) {
         t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
         return;

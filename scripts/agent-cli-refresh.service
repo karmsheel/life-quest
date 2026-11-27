@@ -1,0 +1,38 @@
+[Unit]
+Description=Refresh the agent-cli evidence (mine sessions, re-benchmark, re-run E2E)
+Documentation=file:///root/projects/life-quest/scripts/refresh-agent-cli.sh
+After=network-online.target
+Wants=network-online.target
+# Retry policy lives here, not in [Service]: systemd ignores StartLimit* keys there.
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/projects/life-quest
+ExecStart=/root/projects/life-quest/scripts/refresh-agent-cli.sh
+Environment=HOME=/root
+Environment=AGENT_CLI_REPO=/root/projects/life-quest
+Environment=PATH=/root/.nvm/versions/node/v22.22.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# The refresh is CPU-and-disk light but mines ~200 session transcripts; give it
+# room and a hard ceiling so a pathological corpus can never wedge the host.
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=10
+TimeoutStartSec=3600
+# Exit 75 (EX_TEMPFAIL) means "the bench was busy, try again shortly" rather
+# than a real failure: the unit then retries instead of being marked failed.
+SuccessExitStatus=75
+Restart=on-failure
+RestartSec=300
+# It only writes under .scratch/ (gitignored) and /var/log + /var/lib.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ReadWritePaths=/root/projects/life-quest/.scratch /var/log/agent-cli-refresh /var/lib/agent-cli-refresh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -16,6 +16,7 @@ import {
   type Result,
   type ScenarioCompareReport,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 import { readRegistry } from "./domain-databases.ts";
 
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,7 +37,7 @@ async function checkKitInstalled(root: string): Promise<Result<true>> {
       "utf8",
     );
     const meta = JSON.parse(metaRaw);
-    if (meta.archivedAt != null) {
+    if (!isLiveAreaMeta(meta)) {
       return { ok: false, error: "Install the Finance kit first" };
     }
   } catch {

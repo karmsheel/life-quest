@@ -8,26 +8,37 @@
  *     back to. The rig mounts the same `useSettingsBackground` + route shape the
  *     app renders, so the background page is asserted by the driver while the
  *     sheet is up.
- *  2. **It is the window's 90%, not the sheet's.** A panel sized in `%` inside a
- *     padded, scrolling column measures its parent, not the window: 90% of
- *     ~1200px of a 1280px window is indistinguishable from 100% of the column by
- *     eye, and both are wrong.
- *  3. **The backdrop does not blur.** `backdrop-filter` is a computed property a
+ *  2. **It is the window's share, not the sheet's measure.** The settings sheet
+ *     stops at `72rem`; a panel sized in `%` inside a padded, scrolling column
+ *     measures its parent, not the window. At this rig's 1280px window the two
+ *     happen to coincide (~90%), which is exactly why the driver also asserts
+ *     the absolute width — and why `settings-vault` proves the cap on a wider
+ *     window: the panel must not grow while the mat beside it does.
+ *  3. **The search is a full-width top bar again, or it misses the frame's
+ *     edge.** It is a short, pill-ended field (20rem) centred over the panel
+ *     with the panel's top border running through its horizontal axis — half in
+ *     the sheet, half over the scrim. A rig that only checked "a search input
+ *     exists" would pass a bar that runs edge to edge, sits under the border,
+ *     hugs one side, or is a square-cornered box.
+ *  3b. **A title band comes back between the floating bar and the page.** The
+ *     panel must have no strip between its top edge and the section column: the
+ *     nav starts where the panel does, and only the search crosses that line.
+ *  4. **The backdrop does not blur.** `backdrop-filter` is a computed property a
  *     stylesheet typo silently drops; the scrim then reads as a plain dim and the
  *     "glass" is gone. The rig reads the property back, it does not trust the CSS.
- *  4. **The cross drifts to the trailing edge.** Hermes puts its close on the
+ *  5. **The cross drifts to the trailing edge.** Hermes puts its close on the
  *     right; this sheet's brief puts it top *left*, beside the search bar. A rig
  *     that only checked "a close button exists" would pass either.
- *  5. **The search filters nothing, or filters the panel away.** A query must
+ *  6. **The search filters nothing, or filters the panel away.** A query must
  *     narrow the section list, move the panel to a match it can no longer see in
  *     the list, and leave the panel standing when nothing matches — a blank
  *     settings page is not an empty result.
- *  6. **A press inside closes it.** The scrim's `mousedown` handler must not fire
- *     for presses that land on the panel; a 90% sheet dismissed by clicking the
+ *  7. **A press inside closes it.** The scrim's `mousedown` handler must not fire
+ *     for presses that land on the panel; a sheet dismissed by clicking the
  *     search bar would be unusable.
- *  7. **Escape closes a half-typed search.** It must clear the query first, and
+ *  8. **Escape closes a half-typed search.** It must clear the query first, and
  *     only close on the second press.
- *  8. **A starred theme does not reach the quick menu**, or reaches it in the
+ *  9. **A starred theme does not reach the quick menu**, or reaches it in the
  *     wrong group, or does not survive a reload. The star is written to the same
  *     storage the popover reads at mount; the rig reloads the window to prove it.
  *
@@ -38,10 +49,11 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { SettingsMenu } from "@/components/settings/SettingsMenu";
+import { ThemeQuickMenu } from "@/components/shell/ThemeQuickMenu";
 import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { ChatDisplayProvider } from "@/state/ChatDisplayProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import SettingsPage from "@/pages/SettingsPage";
@@ -60,6 +72,16 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  /*
+   * ThemeProvider reads the profile's theme files at mount and subscribes for
+   * writes from the companion. The generic `ok(null)` fallback below is wrong
+   * for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+   * unsubscribe the effect calls on cleanup — a Promise there throws, and React
+   * unmounts the sheet, leaving the driver a blank window.
+   */
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   companionEnsure: () => ok({ kind: "disconnected" }),
   companionProfilesList: () => ok({ profiles: [], active: null }),
   windowChrome: {
@@ -77,6 +99,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -86,7 +112,7 @@ const stubbed = new Proxy(bridge, {
 
 /*
  * Dark, so the theme grid is deterministic: every built-in skin resolves a night
- * palette, so all seven tiles are in the quick menu's grid.
+ * palette, so all three tiles are in the quick menu's grid.
  */
 try {
   localStorage.setItem("lifequest-theme", "dark");
@@ -142,7 +168,13 @@ function Harness() {
           Ask a question
         </button>
         <div className="rig-chrome__spacer" />
-        <SettingsMenu placement="bottom-end" />
+        {/*
+          The quick theme menu hangs off the day/night control now: the gear in
+          the titlebar opens the settings sheet and nothing else. The rig mounts
+          the day/night control so the starred-theme list still has somewhere to
+          be read from.
+        */}
+        <ThemeQuickMenu />
       </header>
       <div className="app-root__body">
         <Routes location={background}>
@@ -153,7 +185,7 @@ function Harness() {
       </div>
       <ConfirmDialog
         open={asking}
-        title="Delete domain"
+        title="Delete area"
         message="Career (old) leaves the switcher for good. This cannot be undone."
         confirmLabel="Delete"
         destructive
@@ -173,7 +205,14 @@ createRoot(root).render(
       <ThemeProvider>
         <UpdateProvider>
           <VaultProvider>
-            <Harness />
+            {/* Settings → Chat display is one of the sheet's pages, and the page
+                reads the window's reading settings from this provider. Mounting
+                it here puts the harness's sheet in the same relation the app
+                has: one provider above every route, so a line spacing picked in
+                the sheet is the one the dock behind it wears. */}
+            <ChatDisplayProvider>
+              <Harness />
+            </ChatDisplayProvider>
           </VaultProvider>
         </UpdateProvider>
       </ThemeProvider>

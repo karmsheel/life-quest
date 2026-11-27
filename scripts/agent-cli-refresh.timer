@@ -1,0 +1,17 @@
+[Unit]
+Description=Keep bin/agent-cli's evidence fresh (weekly)
+Documentation=file:///root/projects/life-quest/scripts/refresh-agent-cli.sh
+
+[Timer]
+# Once a week, early on a Monday morning (server local time) when the machine
+# is quiet and no session is likely mid-flight.
+OnCalendar=Mon *-*-* 04:17:00
+# If the machine was off at that moment, run as soon as it is back.
+Persistent=true
+# Spread the load and avoid a thundering herd with other timers.
+RandomizedDelaySec=20m
+AccuracySec=5m
+Unit=agent-cli-refresh.service
+
+[Install]
+WantedBy=timers.target

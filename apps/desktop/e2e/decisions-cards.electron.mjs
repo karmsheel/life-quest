@@ -444,9 +444,17 @@ async function main() {
   const buttonCards = pendingCards.filter((card) => card.buttons.length > 0);
   const buttonHolds = buttonCards.every((card) => {
     const labels = card.buttons.map((button) => button.label);
+    const answersPresent = labels.includes("Approve") && labels.includes("Reject");
+    // The amend feature adds a third control to an editable proposal. A pairing
+    // Decision has nothing to correct and keeps the two answers. Every control
+    // that is on the row is held to the same measure as the answers it sits by.
+    const editRule =
+      card.id === "decision-pairing"
+        ? !labels.includes("Edit")
+        : labels.includes("Edit");
     return (
-      labels.includes("Approve") &&
-      labels.includes("Reject") &&
+      answersPresent &&
+      editRule &&
       card.buttons.every(
         (button) =>
           button.box.height >= 40 &&

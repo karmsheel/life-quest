@@ -1,6 +1,11 @@
 appId: com.lifequest.desktop
 productName: LifeQuest
 executableName: LifeQuest
+# The official app icon: the emblem alone (no wordmark) on the brand's rounded
+# black tile. `build/icon.png` is the 1024px master AppIcon uses; the Windows
+# targets take the committed multi-size `build/icon.ico` so the installer, the
+# shortcuts and the taskbar all wear the same mark without a conversion step.
+icon: build/icon.png
 directories:
   output: release
 files:
@@ -35,6 +40,7 @@ electronFuses:
 win:
   # `npm run package` passes `--dir` and so builds only the first target, fast.
   # `npm run release` builds all three: the folder, the installer and the zip.
+  icon: build/icon.ico
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   target:
     - target: dir

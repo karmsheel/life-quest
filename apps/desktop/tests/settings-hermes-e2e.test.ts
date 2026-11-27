@@ -15,7 +15,7 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/settings-hermes.json");
 const SCREENSHOTS = [
   "settings-hermes-opened.png",
-  "settings-hermes-picked.png",
+  "settings-hermes-removed.png",
   "settings-hermes-door-error.png",
 ];
 
@@ -36,15 +36,25 @@ type FactRow = {
   error: string | null;
 };
 
-type CardRow = {
-  label: string | null;
-  checked: string | null;
-  disabled: boolean;
-  inUse: string | null;
-  desc: string;
-  tag: string | null;
-  avatar: string | null;
+/** The shipped "Agents in this vault" card, as the rig measures it. */
+type VaultAgentsCard = {
   box: Box | null;
+  pi: { box: Box | null; active: boolean; usePi: boolean } | null;
+  hermes: {
+    box: Box | null;
+    bound: boolean;
+    profile: string | null;
+    boundCopy: string | null;
+    emptyCopy: string | null;
+    active: boolean;
+    sharedWarning: string | null;
+    useHermes: boolean;
+    change: boolean;
+    remove: boolean;
+    create: boolean;
+    reuse: boolean;
+  } | null;
+  notice: string | null;
 };
 
 type State = {
@@ -54,26 +64,27 @@ type State = {
   facts: FactRow[];
   toggle: { checked: string | null; disabled: boolean; box: Box | null; role: string | null } | null;
   checkboxCount: number;
-  cards: CardRow[];
-  create: {
-    label: string | null;
-    checked: string | null;
-    inUse: string | null;
-    desc: string;
-    box: Box | null;
-  } | null;
-  listColumns: number;
+  vaultAgents: VaultAgentsCard | null;
   content: { box: Box | null };
   sheet: { scrollWidth: number; clientWidth: number; scrollHeight: number };
-  calls: { ensure: number; useProfile: string[]; filing: boolean[]; openFolder: number };
+  calls: {
+    ensure: number;
+    useProfile: string[];
+    filing: boolean[];
+    openFolder: number;
+    addHermes: unknown[];
+    removeHermes: number;
+    switchHarness: string[];
+  };
   doorsError: string | null;
 };
 
 type Report = {
   pass: boolean;
   failures: string[];
-  states: { opened: State; picked: State; off: State; failedDoor: State };
+  states: { opened: State; removed: State; off: State; failedDoor: State };
   screenshots: string[];
+  pageErrors: string[];
 };
 
 /**
@@ -120,12 +131,13 @@ function runDriver(): Promise<number> {
  */
 describe("settings hermes e2e", () => {
   it("leads with the doors, keeps each fact on one line, and offers profile cards and a switch", async (t) => {
-    if (!(await devServerUp())) {
-      t.skip(
-        `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
-      );
-      return;
-    }
+    assert.equal(
+      await devServerUp(),
+      true,
+      `no dev server on 127.0.0.1:${DEV_PORT} — run this rig through ` +
+        "`/root/.local/bin/lifequest-e2e <checkout> tests/settings-hermes-e2e.test.ts`. " +
+        "A skipped rig is evidence of nothing.",
+    );
 
     fs.rmSync(REPORT, { force: true });
     const exitCode = await runDriver();
@@ -135,14 +147,15 @@ describe("settings hermes e2e", () => {
     assert.deepEqual(report.failures, []);
     assert.equal(report.pass, true);
     assert.equal(exitCode, 0, "driver exited non-zero");
+    assert.deepEqual(report.pageErrors ?? [], [], "the page logged errors while the rig drove it");
 
-    const { opened, picked, off, failedDoor } = report.states;
+    const { opened, removed, off, failedDoor } = report.states;
 
     // 1 — the doors lead the page. They are the two addresses another agent
     //     needs, and the thing this page exists to hand over.
     assert.deepEqual(
       opened.order.map((entry) => entry.id),
-      ["hermes-doors", "hermes-connection", "hermes-profile", "hermes-behaviour"],
+      ["hermes-doors", "hermes-connection", "vault-agents", "hermes-behaviour"],
       "the page's blocks are not in the order the cleanup set",
     );
     assert.equal(opened.firstBlock, "MCP doors", "the page does not open with the doors");
@@ -179,42 +192,39 @@ describe("settings hermes e2e", () => {
       assert.equal(fact.error, null, `"${fact.label}" carries an error it did not report`);
     }
 
-    // 3 — the profile choice is a grid of short cards, not a stack of
-    //     page-wide bars. The bars were the width complaint.
+    // 3 — "Agents in this vault": Pi always, the bound Hermes agent named,
+    //     and the shared-memory warning shown for a profile another vault uses.
     const contentWidth = opened.content.box?.width ?? opened.viewport.width;
-    assert.ok(opened.listColumns >= 2, `the profile cards are in ${opened.listColumns} column`);
-    assert.equal(opened.cards.length, 3, "the picker lost an installed profile");
-    assert.ok(opened.create, "the app's own profile is not offered for creation");
-    for (const card of opened.cards) {
-      assert.ok(
-        (card.box?.width ?? contentWidth) <= contentWidth * 0.5,
-        `"${card.label}" is ${card.box?.width}px of ${contentWidth}px wide — still a page-wide bar`,
-      );
-      assert.ok(
-        (card.box?.height ?? 999) <= 72,
-        `"${card.label}" is ${card.box?.height}px tall — not a short card`,
-      );
-      assert.ok(
-        (card.avatar ?? "").length > 0 && /\.hermes/.test(card.desc),
-        `"${card.label}" lost its avatar or its path`,
-      );
-    }
-    assert.equal(opened.cards[0].tag, "default", "the default card is not marked");
-    assert.equal(
-      opened.cards.slice(1).every((card) => card.tag === null),
-      true,
-      "a non-default card wears the default tag",
+    const agents = opened.vaultAgents;
+    assert.ok(agents, "the Agents in this vault section is not on the page");
+    assert.ok(agents.pi, "the Pi card is not on the page");
+    assert.equal(agents.pi.active, false, "Pi reads active while the vault runs Hermes");
+    assert.equal(agents.pi.usePi, true, "Pi is not offered as an action when it is not active");
+    assert.ok(agents.hermes, "the Hermes card is not on the page");
+    assert.equal(agents.hermes.bound, true, "the bound Hermes card does not read bound");
+    assert.equal(agents.hermes.profile, "brook", "the card does not name the bound profile");
+    assert.match(
+      agents.hermes.boundCopy ?? "",
+      /bound to this vault/i,
+      "the bound card does not say the agent belongs to this vault",
     );
-    assert.equal(
-      opened.create?.checked,
-      "true",
-      "the create card is not the one marked while the app is on lifequest",
+    assert.equal(agents.hermes.active, true, "the bound Hermes agent is not marked active");
+    assert.equal(agents.hermes.useHermes, false, "an active agent still offers Use Hermes");
+    assert.equal(agents.hermes.change, true, "the bound card offers no Change agent");
+    assert.equal(agents.hermes.remove, true, "the bound card offers no Remove from this vault");
+    assert.match(
+      agents.hermes.sharedWarning ?? "",
+      /other vault/i,
+      "the reused profile's shared-memory warning does not name the other vault",
     );
-    assert.equal(opened.create?.inUse, "In use", 'the create card does not read "In use"');
-    assert.equal(
-      opened.cards.every((card) => card.checked === "false" && card.inUse === null),
-      true,
-      "an installed card claims to be in use while the app is on an unlisted profile",
+    assert.match(
+      agents.hermes.sharedWarning ?? "",
+      /memory, skills and knowledge are shared/i,
+      "the shared-memory warning does not say what is shared",
+    );
+    assert.ok(
+      (agents.box?.width ?? Infinity) <= contentWidth + 1,
+      `the agent card is ${agents.box?.width}px of ${contentWidth}px — it widens the page`,
     );
 
     // 4 — the filing preference is the switch, not a checkbox.
@@ -222,23 +232,42 @@ describe("settings hermes e2e", () => {
     assert.equal(opened.toggle?.role, "switch", "the filing preference is not a switch");
     assert.equal(opened.toggle?.checked, "true", "the switch does not read its stored value");
 
-    // 5 — choosing a profile reaches the bridge and moves the mark.
-    assert.deepEqual(picked.calls.useProfile, ["brook"], "the choice did not reach the bridge");
-    const brook = picked.cards.find((card) => card.label === "Use the brook profile");
-    assert.equal(brook?.checked, "true", "the chosen card is not checked");
-    assert.equal(brook?.inUse, "In use", 'the chosen card does not read "In use"');
-    assert.notEqual(picked.create?.checked, "true", "the create card is still marked");
+    // 5 — Remove from this vault reaches the bridge and the vault falls back
+    //     to Pi, with both explicit ways to add an agent offered again.
     assert.equal(
-      picked.create?.inUse,
-      null,
-      "the create card still reads in use after a switch",
+      removed.calls.removeHermes,
+      1,
+      "the removal did not reach vaultAgentsRemoveHermes",
+    );
+    assert.equal(removed.vaultAgents?.pi?.active, true, "the vault did not fall back to Pi");
+    assert.equal(
+      removed.vaultAgents?.hermes?.bound,
+      false,
+      "the Hermes card still reads bound after removal",
+    );
+    assert.match(
+      removed.vaultAgents?.hermes?.emptyCopy ?? "",
+      /this vault has no hermes agent/i,
+      "the empty card does not say the vault has no Hermes agent",
+    );
+    assert.equal(
+      removed.vaultAgents?.hermes?.create,
+      true,
+      "the empty card offers no Create a new agent action",
+    );
+    assert.equal(
+      removed.vaultAgents?.hermes?.reuse,
+      true,
+      "the empty card offers no Use an existing agent action",
     );
 
     // 6 — the switch writes the value it shows, and shows the value it wrote.
     assert.deepEqual(off.calls.filing, [false], "the switch did not write its new value");
     assert.equal(off.toggle?.checked, "false", "the switch did not flip");
-    assert.equal(off.cards.length, 3, "the press lost the profile cards");
-    assert.equal(off.facts.length, 5, "the press lost the facts");
+    assert.ok(off.vaultAgents, "the press lost the Agents in this vault card");
+    // The vault is on Pi after the removal, so the Hermes connection facts are
+    // replaced by the built-in endpoint form; the doors' two facts remain.
+    assert.ok(off.facts.length >= 2, `the press lost the facts: ${off.facts.length}`);
 
     // 7 — a door that failed to bind keeps its own error, under its own row,
     //     while the other door keeps its address.

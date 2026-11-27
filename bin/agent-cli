@@ -1,0 +1,2284 @@
+#!/usr/bin/env node
+"use strict";
+
+/**
+ * agent-cli — one place for the LifeQuest repo facts, lookups and canonical
+ * commands an agent keeps re-deriving from transcripts.
+ *
+ * Zero dependencies: Node 22 builtins only (fs, path, child_process, node:sqlite).
+ *
+ * Safety model: read-only by default. The only actions that touch anything are
+ * explicit ones — `bench move|stop|shot` (the one bench / display), `e2e run`
+ * (locked E2E through lifequest-e2e), `check typecheck` (npm run typecheck) and
+ * `db query` (opens sqlite read-only). Every spawning action supports --dry-run,
+ * and nothing else writes: `check typecheck` keeps its last-run summary under
+ * the gitignored .scratch/agent-cli/ so `check summary` can read it.
+ *
+ * Output contract
+ *   text    terse, one fact per line, written for agents
+ *   --json  {"cmd":"<name>","ok":true,"data":{...}} on stdout (stable keys)
+ *   error   {"cmd":"<name>","ok":false,"error":"..."} + exit 1 (runtime)
+ *           stderr "agent-cli: ..." + exit 2 (usage)
+ *
+ * Repo root: dirname(dirname(realpath(argv[1]))); AGENT_CLI_ROOT overrides.
+ * Works from any cwd; when run in a worktree it reports that worktree.
+ */
+
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const CLI_VERSION = "0.1.0";
+const BENCH_DEV = "/root/.local/bin/lifequest-dev";
+const BENCH_SHOT = "/root/.local/bin/lifequest-shot";
+const BENCH_E2E = "/root/.local/bin/lifequest-e2e";
+const BENCH_STATE = "/root/.local/state/lifequest-dev/bench.env";
+const E2E_LOCK = "/run/lifequest-e2e.lock";
+const TMUX_SESSION = "lq-dev";
+const VNC_URL = "http://100.88.181.80:6080/vnc.html?autoconnect=1&resize=scale";
+
+function resolveRepoRoot() {
+  const fromEnv = process.env.AGENT_CLI_ROOT;
+  if (fromEnv && fromEnv.trim()) return path.resolve(fromEnv.trim());
+  const self = process.argv[1] || process.cwd();
+  try {
+    return path.dirname(path.dirname(fs.realpathSync(self)));
+  } catch {
+    return process.cwd();
+  }
+}
+const ROOT = resolveRepoRoot();
+
+// ---------------------------------------------------------------------------
+// Output + process plumbing
+// ---------------------------------------------------------------------------
+
+function stdout(text) {
+  process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+}
+
+function emit(ctx, lines, data) {
+  if (ctx.json) {
+    stdout(JSON.stringify({ cmd: ctx.commandName, ok: true, data }, null, 2));
+    return;
+  }
+  const text = (lines || []).filter((line) => line && String(line).length);
+  if (text.length) stdout(text.join("\n"));
+}
+
+function failRun(ctx, message, data) {
+  if (ctx && ctx.json) {
+    stdout(JSON.stringify({ cmd: ctx ? ctx.commandName : null, ok: false, error: message, data: data || null }, null, 2));
+  }
+  process.stderr.write(`agent-cli: ${message}\n`);
+  process.exit(1);
+}
+
+function usageFail(message) {
+  process.stderr.write(`agent-cli: ${message}\nrun 'agent-cli help' for usage\n`);
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------------------
+// Generic helpers
+// ---------------------------------------------------------------------------
+
+function run(cmd, args, options) {
+  const opts = options || {};
+  const result = spawnSync(cmd, args, {
+    cwd: opts.cwd || ROOT,
+    encoding: "utf8",
+    timeout: opts.timeout || 10000,
+    maxBuffer: 16 * 1024 * 1024,
+    env: process.env,
+  });
+  return {
+    ok: !result.error && result.status === 0,
+    code: typeof result.status === "number" ? result.status : 1,
+    missing: Boolean(result.error && result.error.code === "ENOENT"),
+    stdout: result.stdout || "",
+    stderr: result.stderr || "",
+  };
+}
+
+function execTool(file, args, options) {
+  if (!fs.existsSync(file)) throw new Error(`${file} not found on this host`);
+  return run(file, args, options);
+}
+
+function abs(rel) {
+  return path.isAbsolute(rel) ? rel : path.join(ROOT, rel);
+}
+
+function exists(rel) {
+  try {
+    return fs.existsSync(abs(rel));
+  } catch {
+    return false;
+  }
+}
+
+function readText(rel) {
+  try {
+    return fs.readFileSync(abs(rel), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function readJson(rel) {
+  const text = readText(rel);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function readDir(rel) {
+  try {
+    return fs.readdirSync(abs(rel)).sort();
+  } catch {
+    return null;
+  }
+}
+
+function listFiles(rel, suffix) {
+  const names = readDir(rel);
+  if (names === null) return [];
+  return names.filter((name) => name.endsWith(suffix)).map((name) => `${rel}/${name}`);
+}
+
+function capLimit(ctx, fallback, max) {
+  return capFlag(ctx, "limit", fallback, max);
+}
+
+function capFlag(ctx, name, fallback, max) {
+  const raw = ctx.flags[name];
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) usageFail(`--${name} expects a non-negative integer`);
+  return Math.min(n, max);
+}
+
+function tailText(text, bytes) {
+  const buffer = Buffer.from(text, "utf8");
+  if (buffer.length <= bytes) return { text, truncated: false };
+  return { text: buffer.subarray(buffer.length - bytes).toString("utf8"), truncated: true };
+}
+
+// ---------------------------------------------------------------------------
+// Git
+// ---------------------------------------------------------------------------
+
+function git(args, options) {
+  return run("git", ["-C", ROOT, ...args], options);
+}
+
+function gitLine(args) {
+  const result = git(args);
+  return result.ok ? result.stdout.trim() : null;
+}
+
+function worktreeInfo() {
+  const gitDir = gitLine(["rev-parse", "--absolute-git-dir"]);
+  const commonRaw = gitLine(["rev-parse", "--git-common-dir"]);
+  const commonDir = commonRaw ? path.resolve(ROOT, commonRaw) : null;
+  const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
+  return {
+    isWorktree,
+    gitDir: gitDir || null,
+    commonDir: commonDir || null,
+    primaryRoot: isWorktree && commonDir ? path.dirname(commonDir) : ROOT,
+  };
+}
+
+function headInfo() {
+  const sha = gitLine(["rev-parse", "HEAD"]);
+  if (!sha) return null;
+  return {
+    sha,
+    short: sha.slice(0, 7),
+    subject: gitLine(["log", "-1", "--format=%s"]),
+    date: gitLine(["log", "-1", "--format=%cs"]),
+  };
+}
+
+function statusInfo() {
+  const result = git(["status", "--porcelain=v1", "-b"]);
+  if (!result.ok) return null;
+  const files = [];
+  let branchLine = null;
+  for (const line of result.stdout.split("\n")) {
+    if (!line) continue;
+    if (line.startsWith("## ")) {
+      branchLine = line.slice(3);
+      continue;
+    }
+    files.push({ code: line.slice(0, 2), path: line.slice(3) });
+  }
+  let upstream = null;
+  let ahead = null;
+  let behind = null;
+  if (branchLine) {
+    const upstreamPart = branchLine.split("...")[1];
+    if (upstreamPart) upstream = upstreamPart.split(" ")[0];
+    const bracket = branchLine.match(/\[([^\]]*)\]/);
+    if (bracket) {
+      const a = bracket[1].match(/ahead (\d+)/);
+      const b = bracket[1].match(/behind (\d+)/);
+      if (a) ahead = Number(a[1]);
+      if (b) behind = Number(b[1]);
+    }
+  }
+  const counts = { staged: 0, unstaged: 0, untracked: 0, deleted: 0, renamed: 0 };
+  for (const file of files) {
+    const x = file.code[0];
+    const y = file.code[1];
+    if (x === "?" && y === "?") {
+      counts.untracked += 1;
+      continue;
+    }
+    if (x !== " " && x !== "?") counts.staged += 1;
+    if (y !== " " && y !== "?") counts.unstaged += 1;
+    if (x === "D" || y === "D") counts.deleted += 1;
+    if (x === "R" || y === "R") counts.renamed += 1;
+  }
+  return { branchLine, upstream, ahead, behind, clean: files.length === 0, counts, files };
+}
+
+function repoState() {
+  return {
+    root: ROOT,
+    branch: gitLine(["rev-parse", "--abbrev-ref", "HEAD"]),
+    head: headInfo(),
+    worktree: worktreeInfo(),
+    status: statusInfo(),
+  };
+}
+
+function commitList(limit) {
+  const result = git(["log", `-n${limit}`, "--format=%h\u001f%s\u001f%cs"]);
+  if (!result.ok) return [];
+  return result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [short, subject, date] = line.split("\u001f");
+      return { short, subject, date };
+    });
+}
+
+function worktreeList() {
+  const result = git(["worktree", "list", "--porcelain"]);
+  if (!result.ok) return [];
+  const out = [];
+  for (const block of result.stdout.split("\n\n")) {
+    const entry = { path: null, sha: null, branch: null, bare: false, detached: false, isCurrent: false };
+    for (const line of block.split("\n")) {
+      if (line.startsWith("worktree ")) entry.path = line.slice(9);
+      else if (line.startsWith("HEAD ")) entry.sha = line.slice(5);
+      else if (line.startsWith("branch ")) entry.branch = line.slice(7).replace(/^refs\/heads\//, "");
+      else if (line === "bare") entry.bare = true;
+      else if (line === "detached") entry.detached = true;
+    }
+    if (entry.path) {
+      entry.isCurrent = entry.path === ROOT;
+      out.push(entry);
+    }
+  }
+  return out;
+}
+
+function checkoutFromCwd() {
+  const result = run("git", ["rev-parse", "--show-toplevel"], { cwd: process.cwd(), timeout: 4000 });
+  return result.ok && result.stdout.trim() ? result.stdout.trim() : ROOT;
+}
+
+// ---------------------------------------------------------------------------
+// Live machine facts
+// ---------------------------------------------------------------------------
+
+function listeningPorts() {
+  const result = run("ss", ["-H", "-ltn"], { timeout: 5000 });
+  if (!result.ok) return null;
+  const ports = new Set();
+  for (const line of result.stdout.split("\n")) {
+    const match = line.trim().match(/:(\d+)\s/);
+    if (match) ports.add(Number(match[1]));
+  }
+  return ports;
+}
+
+function readBenchState() {
+  const text = readText(BENCH_STATE);
+  if (text === null) return null;
+  const state = { repo: null, branch: null, display: null, port: null };
+  for (const line of text.split("\n")) {
+    const match = line.match(/^([A-Z]+)=(.*)$/);
+    if (!match) continue;
+    const value = match[2].replace(/^'(.*)'$/, "$1").replace(/^"(.*)"$/, "$1").replace(/\\'/g, "'");
+    if (match[1] === "REPO") state.repo = value;
+    else if (match[1] === "BRANCH") state.branch = value;
+    else if (match[1] === "DISPLAY") state.display = value;
+    else if (match[1] === "PORT") state.port = Number(value) || null;
+  }
+  return state;
+}
+
+function benchLive() {
+  const ports = listeningPorts();
+  const session = run("tmux", ["has-session", "-t", TMUX_SESSION], { timeout: 3000 });
+  return {
+    stateFile: BENCH_STATE,
+    state: readBenchState(),
+    display: ":99",
+    displayUp: fs.existsSync("/tmp/.X11-unix/X99"),
+    tmuxSession: session.missing ? null : session.ok,
+    port5173: ports === null ? null : ports.has(5173),
+    listeningKnown: ports !== null,
+    vncUrl: VNC_URL,
+  };
+}
+
+function e2eLockState() {
+  const present = fs.existsSync(E2E_LOCK);
+  let busy = null;
+  if (present) {
+    const probe = run("flock", ["-n", E2E_LOCK, "true"], { timeout: 3000 });
+    if (!probe.missing) busy = !probe.ok;
+  }
+  return { path: E2E_LOCK, present, busy };
+}
+
+function nodeModulesInfo() {
+  const present = exists("node_modules");
+  let vaultCoreResolved = null;
+  try {
+    vaultCoreResolved = fs.realpathSync(abs("node_modules/@lifequest/vault-core"));
+  } catch {
+    vaultCoreResolved = null;
+  }
+  const local = vaultCoreResolved
+    ? vaultCoreResolved === ROOT || vaultCoreResolved.startsWith(`${ROOT}${path.sep}`)
+    : null;
+  return { present, path: `${ROOT}/node_modules`, vaultCoreResolved, vaultCoreLocal: local };
+}
+
+function artifactFiles() {
+  let names;
+  try {
+    names = fs.readdirSync(abs("apps/desktop/e2e/artifacts"));
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.endsWith(".json") || name.endsWith(".png"))
+    .map((name) => {
+      const full = abs(`apps/desktop/e2e/artifacts/${name}`);
+      let stat = null;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        stat = null;
+      }
+      return {
+        name,
+        path: `apps/desktop/e2e/artifacts/${name}`,
+        size: stat ? stat.size : null,
+        mtime: stat ? stat.mtime.toISOString() : null,
+      };
+    })
+    .sort((a, b) => (a.mtime < b.mtime ? 1 : a.mtime > b.mtime ? -1 : a.name.localeCompare(b.name)));
+}
+
+function reportStatus(report) {
+  if (!report || typeof report !== "object") return "unknown";
+  if (report.pass === true) return "pass";
+  if (report.pass === false) return "fail";
+  if (Array.isArray(report.failures)) return report.failures.length ? "fail" : "pass";
+  if (report.ok === true) return "pass";
+  if (report.ok === false) return "fail";
+  return "unknown";
+}
+
+function lastReport() {
+  for (const file of artifactFiles()) {
+    if (!file.name.endsWith(".json")) continue;
+    const report = readJson(file.path);
+    const scenarios = report && report.checks && Array.isArray(report.checks.scenarios) ? report.checks.scenarios : null;
+    return {
+      artifact: file.path,
+      mtime: file.mtime,
+      status: reportStatus(report),
+      pass: report && typeof report.pass === "boolean" ? report.pass : null,
+      failures: report && Array.isArray(report.failures) ? report.failures : [],
+      failureCount: report && Array.isArray(report.failures) ? report.failures.length : 0,
+      scenarioCount: scenarios ? scenarios.length : null,
+      scenarios: scenarios ? scenarios.map((s) => ({ name: s.name, pass: s.pass === true })) : null,
+    };
+  }
+  return null;
+}
+
+async function dbQuery(databasePath, sql) {
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const statement = db.prepare(sql);
+    const rows = statement.all();
+    return rows;
+  } finally {
+    db.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Static repo content (each fact points at the file it came from)
+// ---------------------------------------------------------------------------
+
+const CORE_DOCS = [
+  { target: "agents", path: "AGENTS.md", what: "bench, worktrees, E2E and handover rules" },
+  { target: "readme", path: "README.md", what: "product, commands, repo layout" },
+  { target: "design", path: "DESIGN.md", what: "token contract and UI primitives" },
+  { target: "product", path: "PRODUCT.md", what: "users, purpose, anti-references" },
+  { target: "vision", path: "VISION.md", what: "acceptance policy for future change" },
+  { target: "laws", path: "LAWS/README.md", what: "observable product invariants (index)" },
+];
+
+const MAP_AREAS = {
+  chat: {
+    purpose: "chat / hermes panel: dock, sessions, composer, the panel itself",
+    files: [
+      ["apps/desktop/src/components/hermes/ChatPanel.tsx", "the chat panel: thread, composer, pills"],
+      ["apps/desktop/src/components/hermes/ChatsSidebar.tsx", "thread list"],
+      ["apps/desktop/src/components/hermes/ComposerModelControls.tsx", "model pills + composer controls"],
+      ["apps/desktop/src/components/hermes/CompanionProfilePicker.tsx", "companion profile picker"],
+      ["apps/desktop/src/components/hermes/CompanionSetupScreen.tsx", "companion setup screen"],
+      ["apps/desktop/src/components/shell/ChatDivider.tsx", "rail/chat divider"],
+      ["apps/desktop/src/components/shell/chat-column.ts", "chat column sizing"],
+      ["apps/desktop/src/state/ChatDockProvider.tsx", "chat dock state: context card, turns"],
+      ["apps/desktop/src/state/ChatSessionsProvider.tsx", "chat session state"],
+      ["apps/desktop/electron/hermes-proxy.ts", "main-process proxy to the Hermes gateway"],
+    ],
+  },
+  shell: {
+    purpose: "the studio shell: rail, top bar, sheets, splash, global styles",
+    files: [
+      ["apps/desktop/src/components/shell/AppShell.tsx", "shell frame: rail + main + chat"],
+      ["apps/desktop/src/components/shell/NavRail.tsx", "left rail and wings"],
+      ["apps/desktop/src/components/shell/TopBar.tsx", "titlebar"],
+      ["apps/desktop/src/components/shell/SheetOverlay.tsx", "sheets"],
+      ["apps/desktop/src/components/shell/SplashGate.tsx", "splash gate"],
+      ["apps/desktop/src/components/shell/DomainSwitcher.tsx", "domain lens switcher"],
+      ["apps/desktop/src/App.tsx", "routes and providers"],
+      ["apps/desktop/src/styles/global.css", "the global stylesheet (largest CSS file)"],
+      ["apps/desktop/src/styles/tokens.css", "design tokens"],
+    ],
+  },
+  electron: {
+    purpose: "Electron main: window, IPC, companion lifecycle, MCP doors",
+    files: [
+      ["apps/desktop/electron/main.ts", "main process entry: windows, IPC wiring"],
+      ["apps/desktop/electron/preload.ts", "preload bridge"],
+      ["apps/desktop/electron/companion.ts", "companion integration and tools"],
+      ["apps/desktop/electron/companion-lifecycle.ts", "companion spawn/stop lifecycle"],
+      ["apps/desktop/electron/companion-profile.ts", "Hermes ports and profile"],
+      ["apps/desktop/electron/mcp-server.ts", "MCP server"],
+      ["apps/desktop/electron/pairing-door.ts", "pairing / MCP doors (8643, 8646)"],
+      ["apps/desktop/electron/vault-service.ts", "vault open/serve IPC"],
+    ],
+  },
+  "vault-core": {
+    purpose: "vault filesystem library: decisions, tools, ingest, paths",
+    files: [
+      ["packages/vault-core/src/decisions.ts", "decision records and approval path"],
+      ["packages/vault-core/src/decision-inbox.ts", "pending-decisions inbox"],
+      ["packages/vault-core/src/manual-decisions.ts", "hand-recorded decisions"],
+      ["packages/vault-core/src/ingest.ts", "capture/ingest pipeline"],
+      ["packages/vault-core/src/capture-tools.ts", "capture tool surface"],
+      ["packages/vault-core/src/script-tools.ts", "script blocks / tool runner"],
+      ["packages/vault-core/src/pages-tools.ts", "page tool surface"],
+      ["packages/vault-core/src/map/tools.ts", "Life-Map tools"],
+      ["packages/vault-core/src/paths.ts", "every vault path"],
+      ["packages/vault-core/src/create-vault.ts", "vault seeding"],
+    ],
+  },
+  e2e: {
+    purpose: "E2E rigs, test wrappers, harness pages, artifacts",
+    dirs: [
+      ["apps/desktop/e2e", "rig drivers (*.electron.mjs) + harness pages (*.html/*.tsx)"],
+      ["apps/desktop/tests", "node:test wrappers, one per rig"],
+      ["apps/desktop/e2e/fixtures", "JSON fixtures the deferred scripts use"],
+      ["apps/desktop/e2e/artifacts", "reports (<driver>.json) and screenshots (<driver>.png)"],
+    ],
+    files: [],
+  },
+  docs: {
+    purpose: "documentation sources: wiki, laws, specs, plans",
+    dirs: [
+      ["docs/wiki", "project wiki, MkDocs Material"],
+      ["docs/superpowers/specs", "design specs"],
+      ["docs/superpowers/plans", "implementation plans"],
+      ["LAWS", "product invariants"],
+    ],
+    files: [
+      ["README.md", "product + commands"],
+      ["AGENTS.md", "agent working rules and the bench"],
+      ["DESIGN.md", "design token contract"],
+    ],
+  },
+};
+
+const VAULT_PATHS = [
+  ["lifequest.json", "vault marker + identity card"],
+  [".lifequest/settings.json", "vault settings"],
+  [".lifequest/log.jsonl", "Life log, one JSON record per line"],
+  [".lifequest/decisions/<id>.json", "pending/decided proposals"],
+  [".lifequest/manual-decisions/<id>.json", "hand-recorded decisions"],
+  [".lifequest/map.json", "Life Map"],
+  [".lifequest/goals.json", "Goal records"],
+  ["domains/<slug>/data/domain.sqlite", "the domain's database book"],
+  ["domains/<slug>/premise.md", "doctrine: Beliefs & Premise"],
+  ["domains/<slug>/what.md", "doctrine: Vision & Desire"],
+  ["domains/<slug>/why.md", "doctrine: Purpose"],
+  ["domains/<slug>/how.md", "doctrine: Strategy (How)"],
+  ["domains/<slug>/pages/<pageId>.json", "domain pages"],
+  ["documents/<id>.md", "library documents"],
+  ["projects/<id>.md", "project documents"],
+  ["reviews/<cadence>/<period>.md", "reviews, one file per period"],
+  ["planning/<cadence>/<period>.md", "planning stubs"],
+  ["notes/daily/<YYYY-MM-DD>.md", "Daily Note, one per local date"],
+];
+
+const PRISMA_SCHEMA = "archive/web-skeleton/prisma/schema.prisma";
+
+// ---------------------------------------------------------------------------
+// Shared status text
+// ---------------------------------------------------------------------------
+
+function benchSummaryLines(bench) {
+  const state = bench.state;
+  const lines = [
+    state
+      ? `bench=${state.repo || "<unknown>"}${state.branch ? ` (${state.branch})` : ""} session=${bench.tmuxSession === null ? "unknown" : bench.tmuxSession ? "running" : "idle"} port.5173=${bench.port5173 === null ? "unknown" : bench.port5173 ? "up" : "down"}`
+      : `bench=<idle: no ${BENCH_STATE}> session=${bench.tmuxSession === null ? "unknown" : bench.tmuxSession ? "running" : "idle"}`,
+    `bench.vnc=${bench.vncUrl}`,
+    `bench.display=${bench.display} up=${bench.displayUp}`,
+  ];
+  return lines;
+}
+
+function depsSummaryLines(deps) {
+  return [
+    `deps.node_modules=${deps.present ? "present" : "absent"} at ${deps.path}`,
+    deps.vaultCoreResolved
+      ? `deps.vault-core=${deps.vaultCoreResolved} local=${deps.vaultCoreLocal ? "yes" : "NO — wrong tree; remove node_modules and npm ci here"}`
+      : "deps.vault-core=<unresolved: node_modules absent>",
+  ];
+}
+
+function e2eSummaryLines(lock, last) {
+  const lines = [
+    `e2e.lock=${lock.present ? (lock.busy === null ? "present (holder unknown)" : lock.busy ? "held" : "free") : "missing"} ${lock.path}`,
+  ];
+  if (last) {
+    lines.push(`e2e.last=${last.artifact} status=${last.status}${last.failureCount ? ` failures=${last.failureCount}` : ""}`);
+  } else {
+    lines.push("e2e.last=<no artifact — a skipped rig writes none>");
+  }
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Command registry
+// ---------------------------------------------------------------------------
+
+const COMMANDS = {};
+
+function command(definition) {
+  COMMANDS[definition.name] = definition;
+  return definition;
+}
+
+function flagLines(commandDefinition) {
+  const lines = [];
+  for (const [name, spec] of Object.entries(commandDefinition.flags || {})) {
+    const label = spec.label ? `--${name} ${spec.label}` : `--${name}`;
+    lines.push(`  ${label.padEnd(15)} ${spec.description}`);
+  }
+  return lines;
+}
+
+// ---- status ---------------------------------------------------------------
+
+command({
+  name: "status",
+  summary: "one-shot state: cwd, checkout/branch, dirty counts, last commits, bench, deps, e2e lock",
+  usage: "agent-cli status [--json]",
+  actions: [],
+  flags: {},
+  defaultAction: "run",
+  run(ctx) {
+    const state = repoState();
+    const commits = commitList(3);
+    const bench = benchLive();
+    const deps = nodeModulesInfo();
+    const lock = e2eLockState();
+    const artifacts = artifactFiles();
+    const last = lastReport();
+    const cwd = process.cwd();
+    const counts = state.status ? state.status.counts : null;
+    const data = {
+      cwd,
+      repo: {
+        root: ROOT,
+        branch: state.branch,
+        head: state.head,
+        worktree: state.worktree,
+        dirty: state.status ? !state.status.clean : null,
+        counts,
+        upstream: state.status ? state.status.upstream : null,
+        ahead: state.status ? state.status.ahead : null,
+        behind: state.status ? state.status.behind : null,
+        commits,
+      },
+      bench: {
+        checkout: bench.state ? bench.state.repo : null,
+        branch: bench.state ? bench.state.branch : null,
+        session: bench.tmuxSession,
+        port5173: bench.port5173,
+        display: bench.display,
+        displayUp: bench.displayUp,
+        vncUrl: bench.vncUrl,
+        stateFile: bench.stateFile,
+      },
+      deps,
+      e2e: {
+        lock,
+        artifactsDir: "apps/desktop/e2e/artifacts",
+        artifactCount: artifacts.length,
+        last,
+      },
+    };
+    const lines = [
+      `cwd=${cwd}`,
+      `root=${ROOT} branch=${state.branch || "<detached>"}${state.head ? ` @${state.head.short}` : ""}${state.worktree.isWorktree ? ` worktree=yes primary=${state.worktree.primaryRoot}` : " worktree=no"}`,
+      counts
+        ? `dirty=${state.status.clean ? "no" : "yes"} staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}${state.status.upstream ? ` upstream=${state.status.upstream} ahead=${state.status.ahead ?? 0} behind=${state.status.behind ?? 0}` : ""}`
+        : "dirty=unknown (git failed)",
+      ...commits.map((commit) => `commit=${commit.short} ${commit.subject}`),
+      ...benchSummaryLines(bench),
+      ...depsSummaryLines(deps),
+      ...e2eSummaryLines(lock, last),
+    ];
+    emit(ctx, lines, data);
+  },
+});
+
+// ---- git ------------------------------------------------------------------
+
+command({
+  name: "git",
+  summary: "live git: state, log, diff, branches, worktrees",
+  usage: "agent-cli git [state|log|diff|branch|worktrees] [--json] [--limit N]",
+  actions: [
+    { name: "state", summary: "branch, head, dirty counts, upstream/ahead/behind" },
+    { name: "log", summary: "recent commits, one line each" },
+    { name: "diff", summary: "working-tree or base diff, --stat / --name-only" },
+    { name: "branch", summary: "local branches with upstream + subject" },
+    { name: "worktrees", summary: "worktrees with branch and sha" },
+  ],
+  flags: {
+    limit: { type: "value", label: "N", description: "entries to list (default 10; log default 10)" },
+    stat: { type: "bool", description: "diff: show a diffstat" },
+    "name-only": { type: "bool", description: "diff: list changed files only" },
+  },
+  defaultAction: "state",
+  run(ctx, action) {
+    const state = repoState();
+    const base = {
+      branch: state.branch,
+      head: state.head,
+      worktree: state.worktree,
+      upstream: state.status ? state.status.upstream : null,
+      ahead: state.status ? state.status.ahead : null,
+      behind: state.status ? state.status.behind : null,
+    };
+
+    if (action === "state") {
+      const commits = commitList(3);
+      const counts = state.status ? state.status.counts : null;
+      const data = {
+        ...base,
+        dirty: state.status ? !state.status.clean : null,
+        counts,
+        fileCount: state.status ? state.status.files.length : null,
+        commits,
+      };
+      const lines = [
+        `root=${ROOT}`,
+        `branch=${state.branch || "<detached>"}${state.head ? ` @${state.head.short} ${state.head.subject}` : ""}`,
+        counts
+          ? `dirty=${state.status.clean ? "no" : "yes"} staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked} deleted=${counts.deleted} renamed=${counts.renamed}`
+          : "dirty=unknown (git failed)",
+      ];
+      if (base.upstream) lines.push(`upstream=${base.upstream} ahead=${base.ahead ?? 0} behind=${base.behind ?? 0}`);
+      if (state.worktree.isWorktree) lines.push(`worktree=yes primary=${state.worktree.primaryRoot}`);
+      for (const commit of commits) lines.push(`commit=${commit.short} ${commit.subject}`);
+      emit(ctx, lines, data);
+      return;
+    }
+
+    if (action === "log") {
+      const limit = capLimit(ctx, 10, 500);
+      const commits = commitList(limit);
+      emit(
+        ctx,
+        commits.map((commit) => `${commit.short} ${commit.date} ${commit.subject}`),
+        { commits, count: commits.length, limit },
+      );
+      return;
+    }
+
+    if (action === "diff") {
+      const args = ["diff"];
+      if (ctx.flags.stat) args.push("--stat");
+      if (ctx.flags["name-only"]) args.push("--name-only");
+      const baseArg = ctx.args[0];
+      if (baseArg) args.push(baseArg);
+      const result = git(args);
+      if (!result.ok) failRun(ctx, `git diff failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      const files = ctx.flags["name-only"] ? result.stdout.split("\n").filter(Boolean) : null;
+      const diffLines = result.stdout.trimEnd().split("\n").filter(Boolean);
+      emit(ctx, diffLines.length ? diffLines : ["diff=clean"], {
+        base: baseArg || null,
+        stat: Boolean(ctx.flags.stat),
+        nameOnly: Boolean(ctx.flags["name-only"]),
+        output: result.stdout,
+        files,
+        fileCount: files ? files.length : null,
+      });
+      return;
+    }
+
+    if (action === "branch") {
+      const result = git([
+        "for-each-ref",
+        "--format=%(refname:short)\u001f%(objectname:short)\u001f%(upstream:short)\u001f%(HEAD)\u001f%(subject)",
+        "refs/heads",
+      ]);
+      const branches = result.ok
+        ? result.stdout
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => {
+              const [name, short, upstream, isHead, subject] = line.split("\u001f");
+              return { name, short, upstream: upstream || null, current: isHead === "*", subject: subject || null };
+            })
+        : [];
+      emit(
+        ctx,
+        branches.map(
+          (b) => `${b.current ? "*" : " "} ${b.name} ${b.short}${b.upstream ? ` -> ${b.upstream}` : ""}${b.subject ? ` ${b.subject}` : ""}`,
+        ),
+        { branches, count: branches.length },
+      );
+      return;
+    }
+
+    // worktrees
+    const worktrees = worktreeList();
+    emit(
+      ctx,
+      worktrees.map((w) => `${w.isCurrent ? "*" : " "} ${w.path} ${w.branch || (w.detached ? "<detached>" : "")} ${w.sha || ""}`.trimEnd()),
+      { worktrees, count: worktrees.length },
+    );
+  },
+});
+
+// ---- bench ----------------------------------------------------------------
+
+command({
+  name: "bench",
+  summary: "the one VPS bench: status, url, shot, move, stop (wraps lifequest-dev/shot)",
+  usage: "agent-cli bench [status|url|shot|move|stop] [args] [--json] [--dry-run]",
+  actions: [
+    { name: "status", summary: "which checkout the bench serves, session/port/display/lock" },
+    { name: "url", summary: "the noVNC URL to open" },
+    { name: "shot", summary: "screenshot display :99 to a png" },
+    { name: "move", summary: "put a checkout on the bench (restarts the app)" },
+    { name: "stop", summary: "stop the bench app" },
+  ],
+  flags: { "dry-run": { type: "bool", description: "print the command instead of running it" } },
+  defaultAction: "status",
+  run(ctx, action) {
+    if (action === "url") {
+      emit(ctx, [`bench.vnc=${VNC_URL}`], { url: VNC_URL, source: "AGENTS.md" });
+      return;
+    }
+
+    if (action === "shot") {
+      const out = ctx.args[0] || `/tmp/lifequest-shot-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+      if (ctx.flags["dry-run"]) {
+        emit(ctx, [`dry-run would run: ${BENCH_SHOT} ${out}`], { dryRun: true, command: `${BENCH_SHOT} ${out}`, path: out });
+        return;
+      }
+      const result = execTool(BENCH_SHOT, [out], { timeout: 30000, cwd: ROOT });
+      if (!result.ok) failRun(ctx, `lifequest-shot failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      emit(ctx, [`shot=${out}`, `stdout=${result.stdout.trim()}`], { path: out, exitCode: result.code });
+      return;
+    }
+
+    if (action === "move") {
+      const checkout = ctx.args[0];
+      if (!checkout) usageFail("bench move needs a checkout path");
+      const target = path.resolve(checkout);
+      if (!fs.existsSync(target)) failRun(ctx, `checkout does not exist: ${target}`);
+      const argv = [BENCH_DEV, target];
+      if (ctx.flags["dry-run"]) {
+        emit(ctx, [`dry-run would run: ${BENCH_DEV} ${target}`], { dryRun: true, command: `${BENCH_DEV} ${target}` });
+        return;
+      }
+      const result = execTool(BENCH_DEV, [target], { timeout: 180000, cwd: ROOT });
+      emit(ctx, [`bench=${target}`, `exit=${result.code}`, ...result.stdout.trimEnd().split("\n").slice(-5)], {
+        checkout: target,
+        exitCode: result.code,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+      if (!result.ok) failRun(ctx, `lifequest-dev failed: ${result.stderr.trim() || result.stdout.slice(-400) || `exit ${result.code}`}`);
+      return;
+    }
+
+    if (action === "stop") {
+      if (ctx.flags["dry-run"]) {
+        emit(ctx, [`dry-run would run: ${BENCH_DEV} --stop`], { dryRun: true, command: `${BENCH_DEV} --stop` });
+        return;
+      }
+      const result = execTool(BENCH_DEV, ["--stop"], { timeout: 60000, cwd: ROOT });
+      emit(ctx, [...result.stdout.trimEnd().split("\n").slice(-3)], {
+        exitCode: result.code,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+      if (!result.ok) failRun(ctx, `lifequest-dev --stop failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+      return;
+    }
+
+    // status
+    const bench = benchLive();
+    const lock = e2eLockState();
+    const data = {
+      stateFile: BENCH_STATE,
+      checkout: bench.state ? bench.state.repo : null,
+      branch: bench.state ? bench.state.branch : null,
+      display: bench.display,
+      displayUp: bench.displayUp,
+      tmuxSession: bench.tmuxSession,
+      port5173: bench.port5173,
+      listeningKnown: bench.listeningKnown,
+      vncUrl: VNC_URL,
+      e2eLock: lock,
+      commands: {
+        dev: BENCH_DEV,
+        shot: BENCH_SHOT,
+        e2e: BENCH_E2E,
+        status: `${BENCH_DEV} --status`,
+        stop: `${BENCH_DEV} --stop`,
+      },
+    };
+    emit(
+      ctx,
+      [
+        `bench.checkout=${data.checkout || "<idle>"}${data.branch ? ` (${data.branch})` : ""}`,
+        `bench.session=${data.tmuxSession === null ? "unknown" : data.tmuxSession ? "running" : "idle"} port.5173=${data.port5173 === null ? "unknown" : data.port5173 ? "up" : "down"}`,
+        `bench.display=${data.display} up=${data.displayUp}`,
+        `bench.vnc=${data.vncUrl}`,
+        `bench.e2e.lock=${lock.present ? (lock.busy === null ? "present" : lock.busy ? "held" : "free") : "missing"}`,
+        `bench.stateFile=${BENCH_STATE}`,
+        `bench.rule=one bench only; lifequest-dev replaces the app, never start a second dev server or bind 5173`,
+      ],
+      data,
+    );
+  },
+});
+
+// ---- e2e ------------------------------------------------------------------
+
+command({
+  name: "e2e",
+  summary: "how to run E2E, test list, last report, locked run",
+  usage: "agent-cli e2e [how|list|last|run] [args] [--json]",
+  actions: [
+    { name: "how", summary: "canonical locked invocation for MY checkout (+ optional tests)" },
+    { name: "list", summary: "test files, --grep filter" },
+    { name: "last", summary: "last report artifact + pass/skip/fail" },
+    { name: "run", summary: "run through lifequest-e2e (--dry-run to print only)" },
+  ],
+  flags: {
+    grep: { type: "value", label: "<pat>", description: "list: filter test paths" },
+    tail: { type: "value", label: "N", description: "last: scenario/failure lines to show" },
+    "dry-run": { type: "bool", description: "run: print the command instead of running it" },
+  },
+  defaultAction: "how",
+  run(ctx, action) {
+    const checkout = checkoutFromCwd();
+    const tests = listFiles("apps/desktop/tests", ".test.ts");
+    const runners = listFiles("apps/desktop/e2e", ".electron.mjs");
+
+    if (action === "how") {
+      const extra = ctx.args.length ? ` ${ctx.args.join(" ")}` : "";
+      const commandLine = `${BENCH_E2E} ${checkout}${extra}`;
+      const data = {
+        checkout,
+        tests: ctx.args,
+        command: commandLine,
+        allTests: `${BENCH_E2E} ${checkout}`,
+        direct: "cd apps/desktop && node --experimental-strip-types --test <test>",
+        directAll: 'cd apps/desktop && node --experimental-strip-types --test "tests/**/*.test.ts"',
+        reportPattern: "apps/desktop/e2e/artifacts/<driver>.json",
+        lock: E2E_LOCK,
+        note: "a skipped rig is evidence of nothing; count only a run whose report artifact exists and whose picture shows the shipped screen",
+      };
+      emit(
+        ctx,
+        [
+          `e2e.checkout=${checkout}`,
+          `e2e.run=${commandLine}`,
+          `e2e.all=${data.allTests}`,
+          `e2e.direct=${data.direct}`,
+          `e2e.report=${data.reportPattern} (+ .png)`,
+          `e2e.lock=${E2E_LOCK}`,
+          `e2e.note=${data.note}`,
+        ],
+        data,
+      );
+      return;
+    }
+
+    if (action === "list") {
+      const grep = ctx.flags.grep ? String(ctx.flags.grep).toLowerCase() : null;
+      const matched = grep ? tests.filter((test) => test.toLowerCase().includes(grep)) : tests;
+      const limit = capLimit(ctx, 200, 500);
+      emit(
+        ctx,
+        [
+          ...matched.slice(0, limit).map((test) => `test ${test}`),
+          matched.length > limit ? `truncated=${limit} of ${matched.length} (raise --limit)` : null,
+          `e2e.rigs=${runners.length} tests=${tests.length}`,
+        ],
+        { tests: matched.slice(0, limit), count: matched.length, grep, rigs: runners.length, total: tests.length, limit },
+      );
+      return;
+    }
+
+    if (action === "last") {
+      const tail = capFlag(ctx, "tail", 5, 200);
+      const last = lastReport();
+      const artifacts = artifactFiles();
+      if (!last) {
+        emit(
+          ctx,
+          [`e2e.last=<none> (${"apps/desktop/e2e/artifacts"} missing or empty — a skipped rig writes no artifact)`],
+          { last: null, artifacts: artifacts.slice(0, tail), note: "a skipped rig writes no artifact" },
+        );
+        return;
+      }
+      const failureLines = last.failures.slice(0, tail);
+      const scenarioTail = last.scenarios ? last.scenarios.slice(-tail).map((s) => `${s.pass ? "PASS" : "FAIL"} ${s.name}`) : [];
+      emit(
+        ctx,
+        [
+          `e2e.artifact=${last.artifact}`,
+          `e2e.mtime=${last.mtime}`,
+          `e2e.status=${last.status}${last.failureCount ? ` failures=${last.failureCount}` : ""}${last.scenarioCount !== null ? ` scenarios=${last.scenarioCount}` : ""}`,
+          ...(failureLines.length ? failureLines.map((failure) => `failure=${failure}`) : []),
+          ...scenarioTail,
+          `e2e.skip=unknown (a skipped rig writes no artifact; newest artifact is not proof this run executed)`,
+        ],
+        { ...last, failureCount: last.failures.length, tail, artifacts: artifacts.slice(0, tail) },
+      );
+      return;
+    }
+
+    // run
+    const commandLine = `${BENCH_E2E} ${checkout}${ctx.args.length ? ` ${ctx.args.join(" ")}` : ""}`;
+    if (ctx.flags["dry-run"]) {
+      emit(ctx, [`dry-run would run: ${commandLine}`], { dryRun: true, command: commandLine, checkout });
+      return;
+    }
+    const started = Date.now();
+    const result = execTool(BENCH_E2E, [checkout, ...ctx.args], { timeout: 7200000, cwd: ROOT });
+    const durationMs = Date.now() - started;
+    const tail = [...result.stdout.trimEnd().split("\n"), ...result.stderr.trimEnd().split("\n")].filter(Boolean).slice(-25);
+    const data = { command: commandLine, checkout, dryRun: false, exitCode: result.code, durationMs, tail, tests: ctx.args };
+    if (!result.ok) {
+      if (ctx.json) {
+        stdout(JSON.stringify({ cmd: ctx.commandName, ok: false, error: `e2e exited ${result.code}`, data }, null, 2));
+      } else {
+        stdout(tail.join("\n"));
+      }
+      process.stderr.write(`agent-cli: e2e exited ${result.code}\n`);
+      process.exit(1);
+    }
+    emit(ctx, tail.length ? tail : [`e2e=pass in ${durationMs}ms`], data);
+  },
+});
+
+// ---- check ----------------------------------------------------------------
+
+command({
+  name: "check",
+  summary: "typecheck, dependency/worktree health, last typecheck summary",
+  usage: "agent-cli check [typecheck|deps|summary] [--json] [--tail N]",
+  actions: [
+    { name: "typecheck", summary: "run npm run typecheck in this checkout" },
+    { name: "deps", summary: "node_modules + @lifequest/vault-core resolves to THIS checkout" },
+    { name: "summary", summary: "last typecheck run (writes no repo files; state under .scratch)" },
+  ],
+  flags: {
+    tail: { type: "value", label: "N", description: "typecheck: output lines to show (default 30)" },
+    "dry-run": { type: "bool", description: "typecheck: print the command instead of running it" },
+  },
+  defaultAction: "deps",
+  run(ctx, action) {
+    if (action === "deps") {
+      const deps = nodeModulesInfo();
+      const lock = readJson("package-lock.json");
+      const data = {
+        root: ROOT,
+        checkout: checkoutFromCwd(),
+        node: { current: process.version, required: ">=20", developedOn: "22", source: "README.md" },
+        nodeModules: { present: deps.present, path: deps.path },
+        vaultCore: {
+          resolved: deps.vaultCoreResolved,
+          local: deps.vaultCoreLocal,
+          ok: deps.vaultCoreLocal === true,
+        },
+        install: {
+          command: "npm ci",
+          where: "at the root of the checkout under test",
+          rule: "a worktree must have its own node_modules; never symlink the primary checkout's — workspace links would resolve @lifequest/vault-core to the primary tree",
+          source: "AGENTS.md, docs/wiki/31-development.md",
+        },
+        lockfile: { path: "package-lock.json", present: lock !== null, lockfileVersion: lock ? lock.lockfileVersion ?? null : null },
+      };
+      emit(
+        ctx,
+        [
+          `check.out=${data.checkout}`,
+          `check.node=${data.node.current} required=${data.node.required} developedOn=${data.node.developedOn}`,
+          `check.node_modules=${deps.present ? "present" : "absent"} at ${deps.path}`,
+          deps.vaultCoreResolved
+            ? `check.vault-core=${deps.vaultCoreResolved} local=${deps.vaultCoreLocal ? "yes" : "NO — wrong tree; remove node_modules and npm ci here"}`
+            : "check.vault-core=<unresolved: node_modules absent>",
+          `check.install=${data.install.command} (${data.install.where}; never symlink the primary node_modules)`,
+          `check.lockfile=package-lock.json present=${data.lockfile.present} lockfileVersion=${data.lockfile.lockfileVersion ?? "<none>"}`,
+        ],
+        data,
+      );
+      return;
+    }
+
+    if (action === "typecheck") {
+      if (ctx.flags["dry-run"]) {
+        emit(ctx, [`dry-run would run: npm run typecheck   # cwd ${ROOT}`], {
+          dryRun: true,
+          command: "npm run typecheck",
+          cwd: ROOT,
+        });
+        return;
+      }
+      const deps = nodeModulesInfo();
+      if (!deps.present) failRun(ctx, `node_modules absent at ${ROOT}/node_modules — run: cd ${ROOT} && npm ci`);
+      const tailLimit = capFlag(ctx, "tail", 30, 500);
+      const started = Date.now();
+      const result = run("npm", ["run", "typecheck"], { cwd: ROOT, timeout: 300000 });
+      const durationMs = Date.now() - started;
+      const combined = `${result.stdout}\n${result.stderr}`.trimEnd();
+      const tail = combined.split("\n").filter((line) => line.length).slice(-tailLimit);
+      const artifact = ".scratch/agent-cli/check/last.json";
+      try {
+        fs.mkdirSync(abs(".scratch/agent-cli/check"), { recursive: true });
+        fs.writeFileSync(
+          abs(artifact),
+          JSON.stringify(
+            { at: new Date().toISOString(), root: ROOT, branch: gitLine(["rev-parse", "--abbrev-ref", "HEAD"]), exitCode: result.code, durationMs, tail },
+            null,
+            2,
+          ),
+        );
+      } catch {
+        // the summary is a convenience; a read-only checkout can still typecheck
+      }
+      const data = { command: "npm run typecheck", root: ROOT, exitCode: result.code, durationMs, tail, artifact };
+      if (!result.ok) {
+        if (ctx.json) {
+          stdout(JSON.stringify({ cmd: ctx.commandName, ok: false, error: `typecheck exited ${result.code}`, data }, null, 2));
+        } else {
+          stdout(tail.join("\n"));
+        }
+        process.stderr.write(`agent-cli: typecheck exited ${result.code}\n`);
+        process.exit(1);
+      }
+      emit(ctx, [`typecheck=pass in ${durationMs}ms`, ...tail], data);
+      return;
+    }
+
+    // summary
+    const artifact = ".scratch/agent-cli/check/last.json";
+    const last = readJson(artifact);
+    if (!last) {
+      emit(ctx, ["check.last=<none> (run: agent-cli check typecheck)"], { present: false, artifact });
+      return;
+    }
+    emit(
+      ctx,
+      [`check.at=${last.at}`, `check.root=${last.root}`, `check.branch=${last.branch}`, `check.exit=${last.exitCode}`, `check.durationMs=${last.durationMs}`],
+      { present: true, artifact, ...last },
+    );
+  },
+});
+
+// ---- flow -----------------------------------------------------------------
+
+command({
+  name: "flow",
+  summary: "canonical merge / release / cleanup / handover checklists with live preconditions (never executes)",
+  usage: "agent-cli flow [merge|release|cleanup|handover] [--json]",
+  actions: [
+    { name: "merge", summary: "sync, verify, merge --no-ff, push" },
+    { name: "release", summary: "build + packaged smoke + gh release create" },
+    { name: "cleanup", summary: "remove merged worktrees and branches" },
+    { name: "handover", summary: "READY FOR TESTING template with live branch/sha" },
+  ],
+  flags: {},
+  defaultAction: "overview",
+  run(ctx, action) {
+    const state = repoState();
+    const commits = commitList(5);
+    const worktrees = worktreeList();
+    const branch = state.branch;
+    const head = state.head;
+    const counts = state.status ? state.status.counts : null;
+    const dirty = state.status ? !state.status.clean : null;
+    const version = (readJson("package.json") || {}).version || null;
+    const lastTag = gitLine(["describe", "--tags", "--abbrev=0"]);
+    const origin = gitLine(["remote", "get-url", "origin"]);
+    const base = {
+      action,
+      branch,
+      head,
+      dirty,
+      counts,
+      upstream: state.status ? state.status.upstream : null,
+      ahead: state.status ? state.status.ahead : null,
+      behind: state.status ? state.status.behind : null,
+      worktrees,
+      version,
+      lastTag,
+      origin,
+      checkout: ROOT,
+    };
+    const live = [
+      `flow.branch=${branch || "<detached>"}${head ? ` @${head.short}` : ""}`,
+      `flow.dirty=${dirty === null ? "unknown" : dirty ? "yes" : "no"}${counts ? ` staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}` : ""}`,
+      state.status && state.status.upstream
+        ? `flow.upstream=${state.status.upstream} ahead=${state.status.ahead ?? 0} behind=${state.status.behind ?? 0}`
+        : "flow.upstream=<none — no tracking branch>",
+      `flow.origin=${origin || "<none>"}`,
+      `flow.worktrees=${worktrees.length}`,
+    ];
+
+    if (action === "overview") {
+      const data = { ...base, actions: actionLines(COMMANDS.flow) };
+      emit(
+        ctx,
+        [
+          "flow.actions=merge|release|cleanup|handover",
+          "flow.merge=sync, verify (typecheck + e2e), git merge --no-ff, push master",
+          "flow.release=npm run release, packaged smoke, gh release create",
+          "flow.cleanup=git worktree remove + git branch -d for merged branches",
+          "flow.handover=READY FOR TESTING handoff with artifact + try steps",
+          ...live,
+        ],
+        data,
+      );
+      return;
+    }
+
+    if (action === "merge") {
+      const steps = [
+        "1. git fetch origin && git status --short   # clean tree, behind=0",
+        `2. npm run typecheck            # cwd ${ROOT}`,
+        `3. ${BENCH_E2E} ${ROOT}   # locked E2E against THIS checkout`,
+        "4. git checkout master && git pull --ff-only origin master",
+        `5. git merge --no-ff ${branch || "<branch>"}`,
+        "6. git push origin master",
+      ];
+      emit(ctx, ["flow=merge", ...steps, ...live], { ...base, steps });
+      return;
+    }
+
+    if (action === "release") {
+      const steps = [
+        "1. confirm master is clean and up to date; quit any running LifeQuest.exe",
+        "2. npm run release              # installer + portable zip + manifest",
+        `3. node apps/desktop/e2e/packaged-smoke.mjs   # runs the packed .exe`,
+        `4. gh release create v${version || "<version>"} apps/desktop/release/LifeQuest-${version || "<version>"}-setup.exe apps/desktop/release/LifeQuest-${version || "<version>"}-win-x64.zip`,
+      ];
+      emit(ctx, ["flow=release", ...steps, ...live, `flow.version=${version || "<unknown>"} lastTag=${lastTag || "<none>"}`], {
+        ...base,
+        steps,
+        releaseAssets: [
+          `apps/desktop/release/LifeQuest-${version}-setup.exe`,
+          `apps/desktop/release/LifeQuest-${version}-win-x64.zip`,
+          "apps/desktop/release/release-manifest.json",
+        ],
+      });
+      return;
+    }
+
+    if (action === "cleanup") {
+      const merged = gitLine(["branch", "--merged", "master", "--format=%(refname:short)"]);
+      const mergedBranches = merged ? merged.split("\n").map((b) => b.trim()).filter((b) => b && b !== "master") : [];
+      const mergedSet = new Set(mergedBranches);
+      const primaryCheckout = state.worktree.primaryRoot;
+      const others = worktrees.filter((w) => !w.isCurrent && !w.bare && w.path !== primaryCheckout);
+      // Only merged branches are safe to remove; never suggest the primary checkout.
+      const removable = others.filter((w) => w.branch && mergedSet.has(w.branch));
+      const steps = [
+        "1. merge first: agent-cli flow merge",
+        "2. git worktree list   # remove only merged worktrees; never the primary",
+        ...removable.slice(0, 8).map((w) => `   git worktree remove ${w.path}`),
+        removable.length > 8 ? `   … and ${removable.length - 8} more (see --json)` : null,
+        ...mergedBranches.slice(0, 8).map((b) => `   git branch -d ${b}`),
+        mergedBranches.length > 8 ? `   … and ${mergedBranches.length - 8} more branches` : null,
+        "3. git worktree prune",
+      ].filter(Boolean);
+      emit(
+        ctx,
+        [
+          "flow=cleanup",
+          ...steps,
+          ...live,
+          `flow.mergedBranches=${mergedBranches.length} removableWorktrees=${removable.length} unmergedWorktrees=${others.length - removable.length}`,
+        ],
+        {
+          ...base,
+          steps,
+          mergedBranches,
+          removableWorktrees: removable,
+          unmergedWorktrees: others.length - removable.length,
+          primaryCheckout,
+        },
+      );
+      return;
+    }
+
+    // handover
+    const template = [
+      "READY FOR TESTING — <change in one line>",
+      `branch: ${branch || "<branch>"} at ${head ? head.short : "<sha>"}`,
+      "artifact: apps/desktop/e2e/artifacts/<driver>.json (+ .png) — <what it shows>",
+      "try: <the interaction that proves it>",
+    ];
+    emit(
+      ctx,
+      [
+        ...template,
+        "flow.note=do not move the bench, merge or push until the operator says the branch is good",
+        ...live,
+        `flow.e2e=${BENCH_E2E} ${ROOT}`,
+      ],
+      { ...base, template },
+    );
+  },
+});
+
+// ---- docs -----------------------------------------------------------------
+
+command({
+  name: "docs",
+  summary: "project docs: list, show a doc/section, search",
+  usage: "agent-cli docs [list|show|search] [args] [--json]",
+  actions: [
+    { name: "list", summary: "core docs + wiki page count" },
+    { name: "show", summary: "show <agents|design|readme|product|vision|laws/NAME|path> [--section heading]" },
+    { name: "search", summary: "search <term> across README, AGENTS, DESIGN, LAWS, docs/wiki" },
+  ],
+  flags: {
+    section: { type: "value", label: "<heading>", description: "show: only this heading's section" },
+    limit: { type: "value", label: "N", description: "search/page results to show (default 20)" },
+  },
+  defaultAction: "list",
+  run(ctx, action) {
+    const wiki = listFiles("docs/wiki", ".md").map((file) => {
+      const heading = (readText(file) || "").split("\n").find((line) => line.startsWith("# "));
+      return { path: file, title: heading ? heading.slice(2).trim() : path.basename(file, ".md") };
+    });
+
+    if (action === "list") {
+      const laws = listFiles("LAWS", ".md");
+      emit(
+        ctx,
+        [
+          ...CORE_DOCS.map((doc) => `doc ${doc.target} = ${doc.path} # ${doc.what}`),
+          `docs.wiki=${wiki.length} pages under docs/wiki (agent-cli docs search <term>)`,
+          `docs.laws=${laws.length} files under LAWS`,
+          "docs.show=agent-cli docs show <agents|design|readme|product|vision|laws/NAME|path> [--section heading]",
+        ],
+        { core: CORE_DOCS, wiki, wikiCount: wiki.length, laws, sources: ["README.md", "AGENTS.md", "mkdocs.yml"] },
+      );
+      return;
+    }
+
+    if (action === "show") {
+      const target = ctx.args[0];
+      if (!target) usageFail("docs show needs a target (agents|design|readme|product|vision|laws/NAME|path)");
+      const resolved = resolveDocTarget(target);
+      if (!resolved) failRun(ctx, `no doc for '${target}' — try: agent-cli docs list`);
+      const full = readText(resolved);
+      if (full === null) failRun(ctx, `cannot read ${resolved}`);
+      const section = ctx.flags.section ? String(ctx.flags.section) : null;
+      const text = section ? extractSection(full, section) : full;
+      if (section && text === null) failRun(ctx, `section '${section}' not found in ${resolved}`);
+      emit(ctx, text.trimEnd().split("\n"), {
+        target,
+        path: resolved,
+        section,
+        lines: text.split("\n").length,
+        text,
+      });
+      return;
+    }
+
+    // search
+    const terms = ctx.args.join(" ").trim();
+    if (!terms) usageFail("docs search needs a term");
+    const limit = capLimit(ctx, 20, 200);
+    const needle = terms.toLowerCase();
+    const paths = [
+      ...CORE_DOCS.map((doc) => doc.path),
+      ...listFiles("LAWS", ".md"),
+      ...listFiles("docs/wiki", ".md"),
+      ...listFiles("docs/superpowers/specs", ".md"),
+      ...listFiles("docs/superpowers/plans", ".md"),
+    ];
+    const results = [];
+    for (const file of paths) {
+      const text = readText(file);
+      if (text === null) continue;
+      const lines = text.split("\n");
+      for (let index = 0; index < lines.length; index += 1) {
+        if (!lines[index].toLowerCase().includes(needle)) continue;
+        results.push({ path: file, line: index + 1, text: lines[index].trim().slice(0, 200) });
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
+    }
+    emit(
+      ctx,
+      results.length ? results.map((r) => `${r.path}:${r.line}: ${r.text}`) : [`docs.search=none for '${terms}'`],
+      { term: terms, results, count: results.length, limit, truncated: results.length >= limit },
+    );
+  },
+});
+
+function resolveDocTarget(target) {
+  const known = { agents: "AGENTS.md", design: "DESIGN.md", readme: "README.md", product: "PRODUCT.md", vision: "VISION.md" };
+  const lower = target.toLowerCase();
+  if (known[lower] && exists(known[lower])) return known[lower];
+  if (lower === "laws" || lower === "laws/readme") return "LAWS/README.md";
+  if (lower.startsWith("laws/")) {
+    const name = lower.slice(5);
+    const match = listFiles("LAWS", ".md").find((file) => path.basename(file, ".md").toLowerCase() === name);
+    return match || null;
+  }
+  if (lower.startsWith("wiki/")) {
+    const name = lower.slice(5);
+    const match = listFiles("docs/wiki", ".md").find((file) => path.basename(file, ".md").toLowerCase() === name);
+    return match || null;
+  }
+  if (exists(target)) return target;
+  if (exists(`docs/wiki/${target}.md`)) return `docs/wiki/${target}.md`;
+  if (exists(`${target}.md`)) return `${target}.md`;
+  return null;
+}
+
+function extractSection(text, heading) {
+  const lines = text.split("\n");
+  const wanted = heading.trim().replace(/^#+\s*/, "").toLowerCase();
+  let start = -1;
+  let level = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+(.*)$/);
+    if (!match) continue;
+    if (start === -1) {
+      if (match[2].trim().toLowerCase().includes(wanted)) {
+        start = index;
+        level = match[1].length;
+      }
+    } else if (match[1].length <= level) {
+      return lines.slice(start, index).join("\n");
+    }
+  }
+  return start === -1 ? null : lines.slice(start).join("\n");
+}
+
+// ---- find -----------------------------------------------------------------
+
+command({
+  name: "find",
+  summary: "tracked-file lookup with --under/--kind/--worktrees (git ls-files, no node_modules)",
+  usage: "agent-cli find <pattern> [--under path] [--kind file|dir] [--worktrees] [--limit N] [--json]",
+  actions: [],
+  flags: {
+    under: { type: "value", label: "<path>", description: "restrict to a path prefix" },
+    kind: { type: "value", label: "file|dir", description: "match files (default) or directories" },
+    worktrees: { type: "bool", description: "include the other worktrees' tracked files" },
+    limit: { type: "value", label: "N", description: "results to list (default 50)" },
+  },
+  defaultAction: "run",
+  run(ctx) {
+    const pattern = ctx.args.join(" ").trim();
+    if (!pattern) {
+      emit(ctx, ["find.usage=agent-cli find <pattern> [--under path] [--kind file|dir] [--worktrees]"], {
+        pattern: null,
+        results: [],
+        hint: "pass a substring or glob (e.g. ChatPanel, 'apps/desktop/src/components/hermes/*')",
+      });
+      return;
+    }
+    const kind = ctx.flags.kind ? String(ctx.flags.kind) : "file";
+    if (!["file", "dir"].includes(kind)) usageFail("--kind expects file or dir");
+    const under = ctx.flags.under ? String(ctx.flags.under).replace(/^\.\//, "") : null;
+    const limit = capLimit(ctx, 50, 2000);
+    const matcher = makeMatcher(pattern);
+    let roots = [{ path: ROOT, prefix: "" }];
+    if (ctx.flags.worktrees) {
+      roots = worktreeList()
+        .filter((worktree) => worktree.path !== ROOT)
+        .map((worktree) => ({ path: worktree.path, prefix: `${relativePath(worktree.path)}/` }))
+        .concat(roots);
+    }
+    const results = [];
+    for (const root of roots) {
+      const listed = run("git", ["-C", root.path, "ls-files"], { timeout: 15000 });
+      if (!listed.ok) continue;
+      const files = listed.stdout.split("\n").filter(Boolean).map((file) => `${root.prefix}${file}`);
+      const candidates = kind === "dir" ? uniqueDirs(files) : files;
+      for (const candidate of candidates) {
+        if (under && !candidate.startsWith(under) && !candidate.startsWith(`${under}/`)) continue;
+        if (!matcher(candidate)) continue;
+        results.push(candidate);
+      }
+    }
+    const unique = [...new Set(results)].sort();
+    const shown = unique.slice(0, limit);
+    emit(
+      ctx,
+      [
+        ...shown.map((entry) => `${kind} ${entry}`),
+        unique.length > limit ? `truncated=${limit} of ${unique.length} (raise --limit)` : null,
+        `find.count=${unique.length}`,
+      ],
+      { pattern, under, kind, worktrees: Boolean(ctx.flags.worktrees), results: shown, count: unique.length, truncated: unique.length > limit },
+    );
+  },
+});
+
+function makeMatcher(pattern) {
+  if (pattern.includes("*") || pattern.includes("?")) {
+    let regex = "";
+    for (const character of pattern) {
+      if (character === "*") regex += ".*";
+      else if (character === "?") regex += ".";
+      else regex += character.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+    // A glob matches a whole path-segment run anywhere: `hermes/*` hits
+    // `apps/desktop/src/components/hermes/ChatPanel.tsx`.
+    const compiled = new RegExp(`(^|/)${regex}$`, "i");
+    return (candidate) => compiled.test(candidate);
+  }
+  const needle = pattern.toLowerCase();
+  return (candidate) => candidate.toLowerCase().includes(needle);
+}
+
+function uniqueDirs(files) {
+  const dirs = new Set();
+  for (const file of files) {
+    const parts = file.split("/");
+    let current = "";
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      current = current ? `${current}/${parts[index]}` : parts[index];
+      dirs.add(current);
+    }
+  }
+  return [...dirs].sort();
+}
+
+function relativePath(target) {
+  const rel = path.relative(ROOT, target);
+  return rel || ".";
+}
+
+// ---- where ----------------------------------------------------------------
+
+command({
+  name: "where",
+  summary: "content search across the repo with ripgrep (repo-relative hits)",
+  usage: "agent-cli where <term> [--under path] [--limit N] [--json]",
+  actions: [],
+  flags: {
+    under: { type: "value", label: "<path>", description: "restrict the search to a path" },
+    limit: { type: "value", label: "N", description: "matches to show (default 50)" },
+  },
+  defaultAction: "run",
+  run(ctx) {
+    const term = ctx.args.join(" ").trim();
+    if (!term) {
+      emit(ctx, ["where.usage=agent-cli where <term> [--under path] [--limit N]"], {
+        term: null,
+        matches: [],
+        count: 0,
+        hint: "content search via ripgrep; repo-relative results; exit 1 when nothing matches",
+      });
+      return;
+    }
+    if (!fs.existsSync("/usr/bin/rg")) failRun(ctx, "ripgrep not found at /usr/bin/rg");
+    const under = ctx.flags.under ? String(ctx.flags.under) : null;
+    if (under && !exists(under)) failRun(ctx, `--under path does not exist: ${under}`);
+    const limit = capLimit(ctx, 50, 1000);
+    // Always pass a path: with no path and a non-tty stdin, rg would search
+    // stdin instead of the repo.
+    const rgArgs = ["--line-number", "--no-heading", "--color", "never", "--smart-case", term, under || "."];
+    const result = run("/usr/bin/rg", rgArgs, { timeout: 30000, cwd: ROOT });
+    if (result.code !== 0 && result.code !== 1) {
+      failRun(ctx, `rg failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+    }
+    const matches = [];
+    for (const line of result.stdout.split("\n")) {
+      if (!line) continue;
+      const match = line.match(/^(.*?):(\d+):(.*)$/);
+      if (!match) continue;
+      const file = match[1].replace(/^\.\//, "").replace(/^\/+/, "");
+      matches.push({ path: file, line: Number(match[2]), text: match[3].trim().slice(0, 240) });
+    }
+    const data = {
+      term,
+      under,
+      matches: matches.slice(0, limit),
+      count: matches.length,
+      truncated: matches.length > limit,
+      limit,
+    };
+    if (!matches.length) {
+      if (ctx.json) stdout(JSON.stringify({ cmd: ctx.commandName, ok: true, data }, null, 2));
+      else stdout("matches=0");
+      process.exit(1);
+    }
+    emit(ctx, data.matches.map((entry) => `${entry.path}:${entry.line}: ${entry.text}`), data);
+  },
+});
+
+// ---- map ------------------------------------------------------------------
+
+command({
+  name: "map",
+  summary: "curated feature-to-paths map for the areas agents read most",
+  usage: "agent-cli map [chat|shell|electron|vault-core|e2e|docs] [--json]",
+  actions: [],
+  flags: {},
+  defaultAction: "run",
+  run(ctx) {
+    const area = ctx.args[0];
+    const areas = Object.keys(MAP_AREAS);
+    const lineCount = (file) => {
+      const text = readText(file);
+      return text === null ? null : text.split("\n").length;
+    };
+    const tracked = (prefix) => {
+      const listed = git(["ls-files", prefix], { timeout: 15000 });
+      return listed.ok ? listed.stdout.split("\n").filter(Boolean).length : null;
+    };
+    const expand = (name) => {
+      const spec = MAP_AREAS[name];
+      const files = (spec.files || []).map(([file, purpose]) => ({ path: file, kind: "file", lines: lineCount(file), purpose, exists: exists(file) }));
+      const dirs = (spec.dirs || []).map(([dir, purpose]) => ({ path: dir, kind: "dir", files: tracked(dir), purpose, exists: exists(dir) }));
+      return { area: name, purpose: spec.purpose, entries: [...files, ...dirs], files, dirs };
+    };
+    if (!area) {
+      const summaries = areas.map((name) => ({ area: name, purpose: MAP_AREAS[name].purpose }));
+      emit(ctx, areas.map((name) => `map.area=${name} # ${MAP_AREAS[name].purpose}`), { areas: summaries });
+      return;
+    }
+    if (!MAP_AREAS[area]) usageFail(`unknown map area '${area}' (${areas.join("|")})`);
+    const expanded = expand(area);
+    emit(
+      ctx,
+      expanded.entries.map((entry) =>
+        entry.kind === "dir"
+          ? `dir ${entry.path} files=${entry.files ?? "?"} # ${entry.purpose}`
+          : `file ${entry.path} lines=${entry.lines ?? "?"} # ${entry.purpose}`,
+      ),
+      expanded,
+      );
+  },
+});
+
+// ---- db -------------------------------------------------------------------
+
+command({
+  name: "db",
+  summary: "archived Prisma schema, database files and vault paths, read-only sqlite query",
+  usage: "agent-cli db [schema|files|query] [args] [--json]",
+  actions: [
+    { name: "schema", summary: "prisma schema models; optional model name" },
+    { name: "files", summary: "prisma db + migrations + vault sqlite paths + actual .db files" },
+    { name: "query", summary: 'query "<sql>" [--db path] read-only sqlite' },
+  ],
+  flags: { db: { type: "value", label: "<path>", description: "query: sqlite database file" } },
+  defaultAction: "files",
+  run(ctx, action) {
+    if (action === "schema") {
+      const text = readText(PRISMA_SCHEMA);
+      if (text === null) failRun(ctx, `${PRISMA_SCHEMA} not found`);
+      const models = parsePrismaModels(text);
+      const wanted = ctx.args[0] ? String(ctx.args[0]).toLowerCase() : null;
+      const matched = wanted ? models.filter((model) => model.name.toLowerCase() === wanted || model.name.toLowerCase().includes(wanted)) : models;
+      if (wanted && !matched.length) failRun(ctx, `model '${ctx.args[0]}' not found in ${PRISMA_SCHEMA}`);
+      emit(
+        ctx,
+        matched.map((model) => model.body),
+        { path: PRISMA_SCHEMA, archived: true, models: matched, count: matched.length, allModels: models.map((m) => m.name) },
+      );
+      return;
+    }
+
+    if (action === "files") {
+      const databaseFiles = scanDatabases();
+      const migrations = (() => {
+        const dir = "archive/web-skeleton/prisma/migrations";
+        try {
+          return fs
+            .readdirSync(abs(dir), { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => `${dir}/${entry.name}/migration.sql`)
+            .filter((file) => exists(file));
+        } catch {
+          return [];
+        }
+      })();
+      emit(
+        ctx,
+        [
+          `db.prisma=${PRISMA_SCHEMA} (archived reference; NOT product runtime)`,
+          `db.migrations=${migrations.length} under archive/web-skeleton/prisma/migrations`,
+          `db.databaseFiles=${databaseFiles.length}`,
+          ...databaseFiles.slice(0, 10).map((file) => `db.file=${file}`),
+          `db.vault.sqlite=domains/<slug>/data/domain.sqlite`,
+          `db.vault.note=domain data lives in the vault folder; not hosted, not Prisma`,
+          `db.query=agent-cli db query "select ..." --db <path>`,
+        ],
+        {
+          prismaSchema: PRISMA_SCHEMA,
+          prismaArchived: true,
+          migrations,
+          databaseFiles,
+          vaultPaths: VAULT_PATHS,
+          queryUsage: 'agent-cli db query "<sql>" --db <path>',
+        },
+      );
+      return;
+    }
+
+    // query
+    const sql = ctx.args.join(" ").trim();
+    if (!sql) usageFail('db query needs SQL: agent-cli db query "select * from t" --db path');
+    if (!/^(select|with|pragma|explain)\b/i.test(sql.replace(/^\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/)*/g, "").trim())) {
+      failRun(ctx, "read-only: only SELECT, WITH, PRAGMA or EXPLAIN queries are allowed");
+    }
+    const databasePath = ctx.flags.db ? path.resolve(String(ctx.flags.db)) : null;
+    if (!databasePath) usageFail("db query needs --db <path>");
+    if (!fs.existsSync(databasePath)) failRun(ctx, `database not found: ${databasePath}`);
+    dbQuery(databasePath, sql)
+      .then((rows) => {
+        emit(ctx, [JSON.stringify(rows)], { db: databasePath, sql, rows, rowCount: rows.length });
+      })
+      .catch((error) => {
+        failRun(ctx, `query failed: ${error && error.message ? error.message : String(error)}`, { db: databasePath, sql });
+      });
+  },
+});
+
+function parsePrismaModels(text) {
+  const lines = text.split("\n");
+  const models = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^model\s+(\w+)\s*\{/);
+    if (!match) continue;
+    const start = index;
+    let depth = 0;
+    let end = index;
+    for (; end < lines.length; end += 1) {
+      depth += (lines[end].match(/\{/g) || []).length;
+      depth -= (lines[end].match(/\}/g) || []).length;
+      if (depth === 0 && end > start) break;
+    }
+    models.push({ name: match[1], line: start + 1, body: lines.slice(start, end + 1).join("\n") });
+    index = end;
+  }
+  return models;
+}
+
+function scanDatabases() {
+  const found = [];
+  const skip = new Set(["node_modules", ".git", ".worktrees", "site", ".docs-build", "release", "dist", "dist-electron"]);
+  const walk = (dir, depth) => {
+    if (depth > 4 || found.length > 50) return;
+    let names;
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of names) {
+      if (skip.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, depth + 1);
+      else if (/\.(db|sqlite|sqlite3)$/i.test(entry.name)) found.push(path.relative(ROOT, full));
+    }
+  };
+  walk(ROOT, 0);
+  return found.sort();
+}
+
+// ---- logs -----------------------------------------------------------------
+
+command({
+  name: "logs",
+  summary: "known log/report sources and their tails",
+  usage: "agent-cli logs [list|tail] [args] [--json]",
+  actions: [
+    { name: "list", summary: "scratch logs, e2e artifacts, /tmp lifequest logs, bench tmux" },
+    { name: "tail", summary: "tail <name|path> [--bytes N]" },
+  ],
+  flags: { bytes: { type: "value", label: "N", description: "tail: bytes to read (default 8192)" } },
+  defaultAction: "list",
+  run(ctx, action) {
+    const sources = logSources();
+    if (action === "list") {
+      const limit = capLimit(ctx, 20, 200);
+      const shown = sources.slice(0, limit);
+      emit(
+        ctx,
+        shown.length
+          ? shown.map((source) => `${source.kind} ${source.name} ${source.path || source.how || ""}${source.size !== null && source.size !== undefined ? ` bytes=${source.size}` : ""}${source.mtime ? ` mtime=${source.mtime}` : ""}`)
+          : ["logs=none"],
+        { sources: shown, count: sources.length, limit },
+      );
+      return;
+    }
+
+    const name = ctx.args[0];
+    if (!name) usageFail("logs tail needs a source name or path (agent-cli logs list)");
+    const bytes = capFlag(ctx, "bytes", 8192, 1024 * 1024);
+    if (name === "dev" || name === "bench-tmux") {
+      const result = run("tmux", ["capture-pane", "-pt", TMUX_SESSION, "-S", "-200"], { timeout: 5000 });
+      if (result.missing || !result.ok) failRun(ctx, `no tmux session ${TMUX_SESSION} — the bench is idle`);
+      const sliced = tailText(result.stdout, bytes);
+      emit(ctx, sliced.text.replace(/\s+$/, "").split("\n"), {
+        name,
+        kind: "tmux",
+        session: TMUX_SESSION,
+        bytes,
+        truncated: sliced.truncated,
+        tail: sliced.text,
+      });
+      return;
+    }
+    const resolved = resolveLogPath(name);
+    if (!resolved) failRun(ctx, `no log source '${name}' — run: agent-cli logs list`);
+    const sliced = tailFile(resolved, bytes);
+    if (sliced === null) failRun(ctx, `cannot read ${resolved}`);
+    emit(ctx, sliced.text.replace(/\s+$/, "").split("\n"), {
+      name,
+      path: path.isAbsolute(resolved) ? resolved : relativePath(resolved),
+      bytes,
+      truncated: sliced.truncated,
+      tail: sliced.text,
+    });
+  },
+});
+
+function logSources() {
+  const sources = [];
+  const scan = (dir, depth) => {
+    if (depth > 3) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scan(full, depth + 1);
+        continue;
+      }
+      if (!/\.(log|txt)$/i.test(entry.name) && !/e2e\.json$/i.test(entry.name)) continue;
+      const stat = safeStat(full);
+      sources.push({
+        kind: "file",
+        name: path.relative(ROOT, full),
+        path: path.relative(ROOT, full),
+        size: stat ? stat.size : null,
+        mtime: stat ? stat.mtime.toISOString() : null,
+      });
+    }
+  };
+  scan(abs(".scratch"), 0);
+  for (const file of artifactFiles().slice(0, 5)) {
+    sources.push({ kind: "artifact", name: file.name, path: file.path, size: file.size, mtime: file.mtime });
+  }
+  let tmpEntries = [];
+  try {
+    tmpEntries = fs.readdirSync("/tmp").filter((name) => /^lifequest/i.test(name) && /\.(log|txt)$/i.test(name));
+  } catch {
+    tmpEntries = [];
+  }
+  for (const name of tmpEntries.slice(0, 10)) {
+    const full = path.join("/tmp", name);
+    const stat = safeStat(full);
+    sources.push({ kind: "tmp", name, path: full, size: stat ? stat.size : null, mtime: stat ? stat.mtime.toISOString() : null });
+  }
+  const session = run("tmux", ["has-session", "-t", TMUX_SESSION], { timeout: 3000 });
+  sources.push({
+    kind: "tmux",
+    name: "dev",
+    path: null,
+    how: `tmux capture-pane -pt ${TMUX_SESSION} -S -200`,
+    available: session.missing ? null : session.ok,
+  });
+  return sources.sort((a, b) => {
+    const left = a.mtime || "";
+    const right = b.mtime || "";
+    if (left === right) return 0;
+    return left < right ? 1 : -1;
+  });
+}
+
+function resolveLogPath(name) {
+  const candidates = [name, `.scratch/${name}`, `apps/desktop/e2e/artifacts/${name}`];
+  if (name.startsWith("/tmp/")) candidates.push(name);
+  for (const candidate of candidates) {
+    const full = abs(candidate);
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+  }
+  return null;
+}
+
+function tailFile(file, bytes) {
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return null;
+  }
+  const start = Math.max(0, stat.size - bytes);
+  const buffer = Buffer.alloc(stat.size - start);
+  let fd;
+  try {
+    fd = fs.openSync(file, "r");
+    fs.readSync(fd, buffer, 0, buffer.length, start);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  return { text: buffer.toString("utf8"), truncated: start > 0 };
+}
+
+function safeStat(file) {
+  try {
+    return fs.statSync(file);
+  } catch {
+    return null;
+  }
+}
+
+// ---- env ------------------------------------------------------------------
+
+command({
+  name: "env",
+  summary: "versions, ports 5173/6080, display :99, bench lock, disk free, worktree count",
+  usage: "agent-cli env [--json]",
+  actions: [],
+  flags: {},
+  defaultAction: "run",
+  run(ctx) {
+    const lockJson = readJson("package-lock.json") || {};
+    const packages = lockJson.packages || {};
+    const desktopPkg = readJson("apps/desktop/package.json") || {};
+    const devDependencies = desktopPkg.devDependencies || {};
+    const versionOf = (name) => {
+      const range = devDependencies[name] || null;
+      const locked = packages[`node_modules/${name}`] ? packages[`node_modules/${name}`].version : null;
+      return { range, locked: locked || null };
+    };
+    const node = { version: process.version, required: ">=20", developedOn: "22", source: "README.md" };
+    const npm = run("npm", ["--version"], { timeout: 8000 });
+    const zstd = run("zstd", ["--version"], { timeout: 4000 });
+    const electron = versionOf("electron");
+    const vite = versionOf("vite");
+    let disk = null;
+    try {
+      const stat = fs.statfsSync(ROOT);
+      const total = stat.blocks * stat.bsize;
+      const free = stat.bavail * stat.bsize;
+      disk = {
+        total,
+        free,
+        available: free,
+        freeGb: Number((free / 1024 ** 3).toFixed(1)),
+        usedPercent: total ? Number((((total - free) / total) * 100).toFixed(1)) : null,
+      };
+    } catch {
+      disk = null;
+    }
+    const ports = listeningPorts();
+    const worktrees = worktreeList();
+    const lock = e2eLockState();
+    const displayUp = fs.existsSync("/tmp/.X11-unix/X99");
+    const data = {
+      versions: {
+        node,
+        npm: npm.ok ? npm.stdout.trim() : null,
+        zstd: zstd.ok ? zstd.stdout.split("\n")[0] : null,
+        electron,
+        vite,
+      },
+      ports: [5173, 6080].map((port) => ({ port, listening: ports === null ? null : ports.has(port) })),
+      listeningKnown: ports !== null,
+      display: { display: process.env.DISPLAY || null, socket: "/tmp/.X11-unix/X99", up: displayUp },
+      e2eLock: lock,
+      disk,
+      worktrees: { count: worktrees.length, paths: worktrees.map((w) => w.path), current: ROOT },
+    };
+    emit(
+      ctx,
+      [
+        `env.node=${data.versions.node.version} required=${data.versions.node.required} developedOn=${data.versions.node.developedOn}`,
+        `env.npm=${data.versions.npm || "<unavailable>"}`,
+        `env.zstd=${data.versions.zstd || "<unavailable>"}`,
+        `env.electron=${electron.locked || electron.range || "<unknown>"} vite=${vite.locked || vite.range || "<unknown>"}`,
+        `env.port.5173=${data.ports[0].listening === null ? "unknown" : data.ports[0].listening ? "up" : "down"} port.6080=${data.ports[1].listening === null ? "unknown" : data.ports[1].listening ? "up" : "down"}`,
+        `env.display=${data.display.display || "<unset>"} socket=${displayUp ? "up" : "down"}`,
+        `env.e2eLock=${lock.present ? (lock.busy === null ? "present" : lock.busy ? "held" : "free") : "missing"}`,
+        disk ? `env.disk.free=${disk.freeGb}GB used=${disk.usedPercent}%` : "env.disk=<unknown>",
+        `env.worktrees=${worktrees.length} current=${ROOT}`,
+      ],
+      data,
+    );
+  },
+});
+
+// ---- layout ---------------------------------------------------------------
+
+command({
+  name: "layout",
+  summary: "apps/packages entrypoints, npm scripts per workspace, key files",
+  usage: "agent-cli layout [--json]",
+  actions: [],
+  flags: {},
+  defaultAction: "run",
+  run(ctx) {
+    const rootPkg = readJson("package.json") || {};
+    const workspaces = [];
+    for (const pattern of rootPkg.workspaces || []) {
+      const parent = pattern.replace(/\/\*$/, "");
+      for (const name of readDir(parent) || []) {
+        const dir = `${parent}/${name}`;
+        const pkg = readJson(`${dir}/package.json`);
+        if (!pkg) continue;
+        workspaces.push({
+          name: pkg.name,
+          path: dir,
+          kind: parent === "apps" ? "app" : "library",
+          entry: pkg.main || (pkg.exports && pkg.exports["."]) || null,
+          scripts: pkg.scripts || {},
+          devDependencyCount: Object.keys(pkg.devDependencies || {}).length,
+        });
+      }
+    }
+    const keyFiles = [
+      ["apps/desktop/vite.config.ts", "Vite: 127.0.0.1:5173, strictPort"],
+      ["apps/desktop/electron-builder.yml", "packaging contract"],
+      ["apps/desktop/scripts/dev.mjs", "dev: esbuild main/preload + Vite + relaunch Electron"],
+      ["apps/desktop/scripts/bundle-electron.mjs", "production esbuild bundle"],
+      ["apps/desktop/index.html", "renderer entry"],
+      ["apps/desktop/electron/main.ts", "Electron main entry"],
+      ["mkdocs.yml", "docs site config (docs_dir .docs-build)"],
+      ["scripts/build-docs.mjs", "stage docs/wiki for MkDocs"],
+      ["package-lock.json", `lockfileVersion ${lockVersion()}`],
+      ["AGENTS.md", "bench + E2E + handover rules"],
+    ].map(([file, purpose]) => ({ path: file, purpose, exists: exists(file) }));
+    const data = {
+      root: ROOT,
+      workspaces,
+      rootScripts: rootPkg.scripts || {},
+      keyFiles,
+      sources: ["package.json", "apps/desktop/package.json", "README.md"],
+    };
+    emit(
+      ctx,
+      [
+        `layout.root=${ROOT}`,
+        ...workspaces.map(
+          (ws) => `workspace ${ws.name} ${ws.path} (${ws.kind}) entry=${ws.entry || "<none>"} scripts=${Object.keys(ws.scripts).length}`,
+        ),
+        ...Object.entries(rootPkg.scripts || {}).map(([name, value]) => `script ${name} = ${value}`),
+        ...keyFiles.map((file) => `file ${file.path} = ${file.purpose}`),
+      ],
+      data,
+    );
+  },
+});
+
+function lockVersion() {
+  const lock = readJson("package-lock.json");
+  return lock ? lock.lockfileVersion ?? "<none>" : "<missing>";
+}
+
+// ---------------------------------------------------------------------------
+// Help
+// ---------------------------------------------------------------------------
+
+function actionLines(commandDefinition) {
+  return (commandDefinition.actions || []).map((action) => ({ name: action.name, summary: action.summary }));
+}
+
+function commandHelpText(commandDefinition) {
+  const lines = [`agent-cli ${commandDefinition.name} — ${commandDefinition.summary}`, `usage: ${commandDefinition.usage}`];
+  const actions = actionLines(commandDefinition);
+  if (actions.length) {
+    lines.push("actions:");
+    for (const action of actions) lines.push(`  ${action.name.padEnd(11)} ${action.summary}`);
+    if (commandDefinition.defaultAction) lines.push(`  default action: ${commandDefinition.defaultAction}`);
+  }
+  lines.push("flags:");
+  lines.push("  --json          machine-readable JSON on stdout");
+  for (const line of flagLines(commandDefinition)) lines.push(line);
+  lines.push("  --help, -h      this help");
+  lines.push("exit: 0 ok, 1 runtime failure, 2 usage error");
+  return lines;
+}
+
+function globalHelpJson() {
+  return {
+    cmd: "help",
+    ok: true,
+    version: CLI_VERSION,
+    usage: "agent-cli <command> [args] [--json]",
+    commands: Object.values(COMMANDS).map((commandDefinition) => ({
+      name: commandDefinition.name,
+      summary: commandDefinition.summary,
+      usage: commandDefinition.usage,
+      actions: actionLines(commandDefinition),
+      supportsJson: true,
+    })),
+    globalFlags: [
+      { flag: "--json", description: "machine-readable JSON on stdout" },
+      { flag: "--help, -h", description: "this help; `agent-cli help <cmd>` for one command" },
+      { flag: "--version", description: "print the CLI version" },
+    ],
+    exitCodes: { ok: 0, runtimeFailure: 1, usageError: 2 },
+  };
+}
+
+function printGlobalHelp(options) {
+  if (options && options.json) {
+    stdout(JSON.stringify(globalHelpJson(), null, 2));
+    return;
+  }
+  const names = Object.values(COMMANDS).map((commandDefinition) => commandDefinition.name);
+  const width = Math.max(...names.map((name) => name.length));
+  stdout(
+    [
+      `agent-cli ${CLI_VERSION} — repo facts, lookups and canonical commands for agents (read-only by default)`,
+      "usage: agent-cli <command> [action] [args] [--json]",
+      "commands:",
+      ...Object.values(COMMANDS).map((commandDefinition) => `  ${commandDefinition.name.padEnd(width)}  ${commandDefinition.summary}`),
+      "global flags: --json | --help, -h | --version",
+      "exit: 0 ok, 1 runtime failure, 2 usage error",
+    ].join("\n"),
+  );
+}
+
+function printCommandHelp(commandDefinition, options) {
+  if (options && options.json) {
+    stdout(
+      JSON.stringify(
+        {
+          cmd: "help",
+          ok: true,
+          data: {
+            name: commandDefinition.name,
+            summary: commandDefinition.summary,
+            usage: commandDefinition.usage,
+            actions: actionLines(commandDefinition),
+            defaultAction: commandDefinition.defaultAction || null,
+            flags: [
+              { flag: "--json", description: "machine-readable JSON on stdout" },
+              ...Object.entries(commandDefinition.flags || {}).map(([name, spec]) => ({
+                flag: spec.label ? `--${name} ${spec.label}` : `--${name}`,
+                description: spec.description,
+              })),
+              { flag: "--help, -h", description: "this help" },
+            ],
+            supportsJson: true,
+            exitCodes: { ok: 0, runtimeFailure: 1, usageError: 2 },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  stdout(commandHelpText(commandDefinition).join("\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Argument parsing + dispatch
+// ---------------------------------------------------------------------------
+
+function parseArgs(argv, flagSpec) {
+  const out = { flags: {}, args: [], errors: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      out.args.push(...argv.slice(index + 1));
+      break;
+    }
+    if (token.startsWith("--")) {
+      const body = token.slice(2);
+      let name = body;
+      let value;
+      const equals = body.indexOf("=");
+      if (equals >= 0) {
+        name = body.slice(0, equals);
+        value = body.slice(equals + 1);
+      }
+      const spec = flagSpec[name];
+      if (!spec) {
+        out.errors.push(`unknown option --${name}`);
+        continue;
+      }
+      if (spec.type === "bool") {
+        out.flags[name] = value === undefined ? true : !(value === "false" || value === "0");
+      } else {
+        if (value === undefined) {
+          value = argv[index + 1];
+          if (value === undefined) {
+            out.errors.push(`--${name} needs a value`);
+            continue;
+          }
+          index += 1;
+        }
+        out.flags[name] = value;
+      }
+      continue;
+    }
+    if (token.startsWith("-") && token !== "-") {
+      for (const letter of token.slice(1)) {
+        if (letter === "h") out.flags.help = true;
+        else out.errors.push(`unknown option -${letter}`);
+      }
+      continue;
+    }
+    out.args.push(token);
+  }
+  return out;
+}
+
+function specFor(commandDefinition) {
+  const spec = { json: { type: "bool" }, help: { type: "bool" } };
+  for (const [name, definition] of Object.entries(commandDefinition.flags || {})) spec[name] = definition;
+  return spec;
+}
+
+function route(commandDefinition, args) {
+  const names = (commandDefinition.actions || []).map((action) => action.name);
+  if (args.length && names.includes(args[0])) return { action: args[0], args: args.slice(1) };
+  return { action: commandDefinition.defaultAction, args };
+}
+
+function main(argv) {
+  const first = argv[0];
+  if (!first) {
+    runCommand(COMMANDS.status, { json: false, raw: false, flags: {}, args: [], action: "run" });
+    return;
+  }
+  if (first === "--version" || first === "-V") {
+    stdout(`agent-cli ${CLI_VERSION}`);
+    return;
+  }
+  if (first === "--help" || first === "-h") {
+    printGlobalHelp({ json: argv.includes("--json") });
+    return;
+  }
+  if (first === "--json") {
+    if (argv.length === 1) {
+      runCommand(COMMANDS.status, { json: true, raw: false, flags: {}, args: [], action: "run" });
+      return;
+    }
+    usageFail(`put --json after the command (agent-cli ${argv[1]} --json)`);
+  }
+  if (first === "help") {
+    const parsed = parseArgs(argv.slice(1), { json: { type: "bool" } });
+    if (parsed.errors.length) usageFail(parsed.errors[0]);
+    const target = parsed.args[0];
+    if (target !== undefined) {
+      const commandDefinition = COMMANDS[target];
+      if (!commandDefinition) usageFail(`unknown command '${target}'`);
+      printCommandHelp(commandDefinition, { json: parsed.flags.json === true });
+      return;
+    }
+    printGlobalHelp({ json: parsed.flags.json === true });
+    return;
+  }
+  if (first.startsWith("-")) usageFail(`unknown option '${first}'`);
+
+  const commandDefinition = COMMANDS[first];
+  if (!commandDefinition) usageFail(`unknown command '${first}'`);
+  const parsed = parseArgs(argv.slice(1), specFor(commandDefinition));
+  if (parsed.errors.length) usageFail(parsed.errors[0]);
+  if (parsed.flags.help) {
+    printCommandHelp(commandDefinition, { json: parsed.flags.json === true });
+    return;
+  }
+  const routed = route(commandDefinition, parsed.args);
+  runCommand(commandDefinition, {
+    json: parsed.flags.json === true,
+    raw: false,
+    flags: parsed.flags,
+    args: routed.args,
+    action: routed.action,
+  });
+}
+
+function runCommand(commandDefinition, ctx) {
+  const context = { ...ctx, commandName: commandDefinition.name };
+  try {
+    commandDefinition.run(context, ctx.action);
+  } catch (error) {
+    failRun(context, error && error.message ? error.message : String(error));
+  }
+}
+
+main(process.argv.slice(2));

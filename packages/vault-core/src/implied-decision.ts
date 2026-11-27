@@ -14,6 +14,7 @@ import {
   type ProjectCommand,
   type Result,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 import type { Command as MapCommand } from "./map/types.ts";
 
 /** The actor a companion turn files under. */
@@ -547,6 +548,16 @@ export async function fileImpliedChange(
 
   if (change.kind === "goal") {
     const slug = (change.command as { domainSlug?: unknown }).domainSlug;
+    if (typeof slug === "string" && slug.trim()) {
+      const domains = await listDomains(rootPath);
+      if (!domains.ok) return domains;
+      const live = domains.value.some(
+        (domain) => domain.slug === slug && isLiveAreaMeta(domain.meta),
+      );
+      if (!live) {
+        return { ok: false, error: `Area is locked or unavailable: ${slug}` };
+      }
+    }
     const domainSlugs = typeof slug === "string" && slug.trim() ? [slug] : undefined;
     return createDecision(rootPath, {
       target: { type: "goal" },
@@ -581,7 +592,8 @@ export async function fileImpliedChange(
       const domains = await listDomains(rootPath);
       if (!domains.ok) return domains;
       const live = domains.value.some(
-        (domain) => domain.slug === command.domainSlug && !domain.meta.archivedAt,
+        (domain) =>
+          domain.slug === command.domainSlug && isLiveAreaMeta(domain.meta),
       );
       if (!live) {
         return { ok: false, error: `Domain not found or archived: ${command.domainSlug}` };

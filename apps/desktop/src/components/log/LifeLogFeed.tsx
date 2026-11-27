@@ -4,7 +4,9 @@ import {
   actorDisplayName,
   recordVisible,
 } from "@lifequest/vault-core/pure";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
+import { displayEventType } from "@/lib/log-event-copy";
 import {
   useActiveDomain,
   useDomainLens,
@@ -58,17 +60,19 @@ export function LifeLogFeed() {
   return (
     <div className="life-log-feed">
       <header className="life-log-feed__header">
-        <h1 className="stub-page__title">Life log</h1>
+        <WingEyebrow page="Log" />
+        <h1 className="stub-page__title">Log</h1>
         <p className="stub-page__desc muted">
-          Append-only feed of domain, document, decision, and agent events.
+          Append-only feed of area, document, decision, and agent events.
         </p>
       </header>
 
+      <section className="life-log-feed__panel" aria-label="Events">
       <div className="life-log-feed__toolbar">
         <span className="muted life-log-feed__scope">
           {lens.kind === "overview"
-            ? "Overview"
-            : `Scoped to: ${activeDomain?.meta.name ?? "domain"}`}
+            ? "Life"
+            : `Scoped to: ${activeDomain?.meta.name ?? "area"}`}
         </span>
         <button
           type="button"
@@ -104,7 +108,7 @@ export function LifeLogFeed() {
               >
                 {formatWhen(e.createdAt)}
               </time>
-              <span className="life-log-event__type">{e.type}</span>
+              <span className="life-log-event__type">{displayEventType(e.type)}</span>
               <span className="life-log-event__summary">{e.summary}</span>
               {/* KAR-9: name the writer when the line has an actor. Old lines
                   with actor null render no name. */}
@@ -120,6 +124,7 @@ export function LifeLogFeed() {
           ))}
         </ul>
       )}
+      </section>
     </div>
   );
 }

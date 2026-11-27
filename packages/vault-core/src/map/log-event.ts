@@ -74,6 +74,30 @@ export function mapLogEvent(command: Command): {
         summary: "Deleted task",
         payload: { id: command.id },
       };
+    case "createRecurring":
+      return {
+        type: "map.recurring.created",
+        summary: `Created recurring task ${command.title}`,
+        payload: { title: command.title },
+      };
+    case "updateRecurring":
+      return {
+        type: "map.recurring.updated",
+        summary: "Updated recurring task",
+        payload: { id: command.id },
+      };
+    case "deleteRecurring":
+      return {
+        type: "map.recurring.deleted",
+        summary: "Deleted recurring task",
+        payload: { id: command.id },
+      };
+    case "completeRecurring":
+      return {
+        type: "map.recurring.completed",
+        summary: "Completed recurring task",
+        payload: { id: command.id },
+      };
     case "ensureLiveDay":
       return {
         type: "map.liveDay.ensured",

@@ -7,6 +7,7 @@ import {
   type MapCommand,
 } from "@lifequest/vault-core/map";
 import { Button } from "@/components/ui/Button";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
@@ -191,9 +192,19 @@ export default function DailySchedulePage() {
   return (
     <div className="schedule">
       <header className="schedule__chrome">
-        <h1>Daily Schedule</h1>
+        <div className="schedule__heading">
+          <WingEyebrow page="Daily Schedule" />
+          <h1>Daily Schedule</h1>
+          <p className="stub-page__desc muted">
+            Today's clock, and what is still waiting to be placed.
+          </p>
+        </div>
         <span className="muted">{today}</span>
-        <select value={selectedDayTypeId ?? ""} onChange={handleTypeChange}>
+        <select
+          aria-label="Day type"
+          value={selectedDayTypeId ?? ""}
+          onChange={handleTypeChange}
+        >
           <option value="">None</option>
           {dayTypes.map((dt) => (
             <option key={dt.id} value={dt.id}>{dt.name}</option>
@@ -209,7 +220,8 @@ export default function DailySchedulePage() {
 
       {error && <p className="form-error" role="alert">{error}</p>}
 
-      <section>
+      <div className="schedule__panels">
+      <section className="schedule__panel">
         <h2><Clock size={16} /><span>Clock</span></h2>
         <ul className="schedule__list">
           {sortedBlocks.map((block) => {
@@ -255,7 +267,7 @@ export default function DailySchedulePage() {
         </ul>
       </section>
 
-      <section>
+      <section className="schedule__panel">
         <h2>Leftover</h2>
         <ul className="schedule__list">
           {leftover.map((item) => (
@@ -307,6 +319,7 @@ export default function DailySchedulePage() {
           <Button onClick={handleAddAdHoc} variant="primary">Add</Button>
         </div>
       </section>
+      </div>
     </div>
   );
 }

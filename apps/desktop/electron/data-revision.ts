@@ -92,6 +92,12 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "domain:archive",
   "domain:unarchive",
   "domain:delete",
+  // the onboarding interview: starting, confirming and declining all move what
+  // the dock's first-run cards show, and confirm also unlocks areas, writes
+  // doctrine, a table and a note. An unseen card is a stale card here.
+  "onboarding:start",
+  "onboarding:confirm",
+  "onboarding:discard",
   // databases, their schema, their rows, and the adapter sync that writes rows
   "db:create",
   "db:addColumn",
@@ -117,6 +123,8 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   // the boards themselves
   "pins:set",
   "pins:setLocked",
+  // the brief's operator verb (dismiss one item)
+  "brief:dismiss",
   // saved view cards
   "view:save",
   "view:delete",
@@ -124,6 +132,11 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "document:save",
   "document:setLocked",
   "document:mediaSave",
+  // Define → Images: the picture library and the vision document
+  "images:save",
+  "images:update",
+  "images:delete",
+  "images:boardSave",
   "library:create",
   "library:update",
   "library:delete",
@@ -134,8 +147,11 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "fx:refresh",
   "fx:setSource",
   "finance:saveAssumptionSet",
-  // Decisions: creating one and resolving one both change what is pending
+  // Decisions: filing one, amending one, and resolving one all change what is
+  // pending. The amendment matters to every other reader too — another window's
+  // inbox must redraw the edited proposal rather than the version it last read.
   "decision:create",
+  "decision:amend",
   "decision:resolve",
   // A logged manual decision changes History and the manual tab's own list.
   "manualDecision:create",
@@ -154,11 +170,21 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "map:apply",
   "goals:apply",
   "review:ensure",
+  "review:pageEnsure",
+  "review:pageWrite",
   "review:write",
   "review:markDone",
   "review:unlock",
   "review:prepopulate",
   "review:skillWrite",
+  // metrics: logging an event writes a row into the area's Metrics database, and
+  // defining a metric writes a definition file and may create that database, so
+  // both move what the Analytics matrix and the review figures read. Proposing
+  // an edit/delete writes a Decision (not the definition): the inbox and the
+  // board must redraw to show the new pending card.
+  "metrics:logEvent",
+  "metrics:define",
+  "metrics:propose",
   "note:write",
   "planning:ensure",
   // settings carry the currency and the FX rate
@@ -198,6 +224,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_document",
   "list_daily_notes",
   "get_daily_note",
+  "get_companion_brief",
   "get_review",
   "list_reviews",
   "get_period_pack",
@@ -208,6 +235,12 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_page",
   "list_signals",
   "get_signal",
+  // Metric definitions and their period comparison (2026-11-26 metrics design),
+  // and the review page contract: all reads, so none of them may fire the
+  // whole-vault repaint a write does.
+  "list_metrics",
+  "get_metrics_summary",
+  "get_review_template",
   "library_list",
   "library_get",
   "list_library_notes",

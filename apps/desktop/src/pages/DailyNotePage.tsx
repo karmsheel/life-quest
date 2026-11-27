@@ -7,9 +7,20 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
-import { Sparkles } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Focus,
+  Folder,
+  FolderOpen,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
+import { DayPicker } from "@/components/notes/DayPicker";
+import { FocusModeOverlay } from "@/components/notes/FocusModeOverlay";
 import {
   automationContextFor,
   dailyNoteAutomationTestId,
@@ -157,6 +168,12 @@ function weekTitle(week: IsoWeek): string {
  * and opens the paragraph under the caret as its own markdown. There is no
  * second pane to keep in step, because there is no second surface at all — the
  * draft this page holds is the note, on every keystroke.
+ *
+ * Focus mode is the page stepping back: the day in a narrow sheet over a blurred
+ * page, the title centred above the box and nothing else on the surface. It edits
+ * the same draft through the same box, so it is a way of looking at the day
+ * rather than a second note — closing it lands back on the page with the prose
+ * wherever the operator left it.
  */
 export default function DailyNotePage() {
   const { snapshot } = useVault();
@@ -180,6 +197,8 @@ export default function DailyNotePage() {
   const [history, setHistory] = useState<DailyNoteIndexEntry[]>([]);
   /** The earlier weeks whose days are on screen; every other week is folded. */
   const [openWeeks, setOpenWeeks] = useState<string[]>([]);
+  /** Whether the day is being written in focus mode, over the page. */
+  const [focusMode, setFocusMode] = useState(false);
 
   // A load for a day the operator has already left must not land in the editor.
   const loadToken = useRef(0);
@@ -351,6 +370,19 @@ export default function DailyNotePage() {
   // the one exit that is not gated on the write.
   useEffect(() => () => void flush(), [flush]);
 
+  /**
+   * Leave focus mode.
+   *
+   * The modal's box is the page's own draft, so closing it is not a save step —
+   * but the last keystroke may still be inside the autosave debounce while the
+   * surface that holds it is leaving, so the day is written on the way out, the
+   * same way it is written when the pointer leaves the page's box.
+   */
+  const closeFocusMode = useCallback(() => {
+    setFocusMode(false);
+    void flush();
+  }, [flush]);
+
   const goToDay = useCallback(
     async (target: string) => {
       if (target === date) return;
@@ -439,11 +471,23 @@ export default function DailyNotePage() {
           setError(created.error);
           return;
         }
-        chatDock.requestSession(
-          created.value.id,
-          renderAutomationPrompt(automation.prompt, { date, dateLabel: label }),
-          automationContextFor(automation, { date, dateLabel: label, body }),
-        );
+        chatDock.requestSession({
+          id: created.value.id,
+          kickoff: renderAutomationPrompt(automation.prompt, {
+            date,
+            dateLabel: label,
+          }),
+          automationContext: automationContextFor(automation, {
+            date,
+            dateLabel: label,
+            body,
+          }),
+          // The row Hermes just made: the dock names the new chat's tab and
+          // lists it in Chats from its first paint, rather than waiting for the
+          // next session-list read and showing "Chat" until then.
+          session: created.value,
+          icon: "automation",
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -453,11 +497,61 @@ export default function DailyNotePage() {
     [chatDock, date, draft, flush, label, runningId],
   );
 
+  /**
+   * Run one of the day's acts from the focus page.
+   *
+   * Focus mode is a sheet over the whole workspace, the dock included: a chat
+   * opened from under the sheet would start behind the paper, where the
+   * operator cannot see it. So the day's act leaves focus mode first — the page
+   * and its dock are handed back — and the run proceeds on the same draft the
+   * sheet was writing, for the same day.
+   */
+  const runFocusAction = useCallback(
+    (automation: AutomationRecord) => {
+      closeFocusMode();
+      void onRunAutomation(automation);
+    },
+    [closeFocusMode, onRunAutomation],
+  );
+
   const canRunAutomation =
     !loading &&
     loadedDate === date &&
     runningId === null &&
     draft.trim().length > 0;
+
+  // Focus mode writes the day the page is showing, so it waits for that day to
+  // be in the box: opening a blank surface over a day still loading would look
+  // like an empty page and then rewrite itself under the operator's hands.
+  const canFocus = !loading && loadedDate === date;
+
+  /**
+   * The day's acts, as the focus page offers them.
+   *
+   * Focus mode is a page of paper, and a page of paper carries its own
+   * controls at its foot rather than in a bar belonging to the window behind
+   * it. So the same automations the page's title row offers are offered again
+   * here — the same runs, on the same draft, against the same day. The page
+   * keeps its own buttons: the two are two surfaces looking at one day, and
+   * closing one must not take the other's control away. Pressing one of these
+   * leaves the sheet, because the act's result is a chat in the dock behind it.
+   */
+  const focusActions = useMemo(
+    () =>
+      manualAutomations.map((automation) => ({
+        id: automation.id,
+        label: automation.name,
+        title:
+          automation.description ||
+          "Open a new chat with this note in context",
+        disabled: !canRunAutomation,
+        busy: runningId === automation.id,
+        busyLabel: "Opening chat…",
+        icon: <Sparkles size={14} aria-hidden />,
+        onPress: () => runFocusAction(automation),
+      })),
+    [canRunAutomation, manualAutomations, runFocusAction, runningId],
+  );
 
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
@@ -500,6 +594,13 @@ export default function DailyNotePage() {
     return { current, previous: [...grouped.values()], unreadable };
   }, [currentWeekStart, newestFirst]);
 
+  // The index's own total: the notes it can actually open, which is what its
+  // folder counts add up to. A file that names no usable day is reported, not
+  // counted as a note.
+  const noteCount =
+    weeks.current.length +
+    weeks.previous.reduce((total, week) => total + week.entries.length, 0);
+
   // Landing on a day outside this week opens the week that day belongs to, so
   // the day on screen is never folded away inside the list below it.
   const selectedWeekStart = useMemo(() => isoWeekOf(date)?.start ?? null, [date]);
@@ -516,7 +617,15 @@ export default function DailyNotePage() {
     );
   }, []);
 
-  /** One day of the journal, in the strip's three columns. */
+  /**
+   * One day of the journal, as one file in the journal's folder tree.
+   *
+   * The three cells are the three the column header names — the day the note is
+   * *for*, its weekday and when it was last written — and the file glyph in
+   * front of the date is what makes the row read as a note rather than as a row
+   * of a table: the folder glyphs above it name the weeks, and the two kinds of
+   * row together read as the journal's own file tree.
+   */
   const historyRow = (entry: DailyNoteIndexEntry) =>
     entry.error ? (
       <li
@@ -524,7 +633,14 @@ export default function DailyNotePage() {
         className="daily-note__history-row daily-note__history-unreadable"
         data-date={entry.date}
       >
-        <span className="daily-note__history-date">{entry.date}</span>
+        <span className="daily-note__history-date">
+          <FileText
+            size={11}
+            className="daily-note__history-file"
+            aria-hidden="true"
+          />
+          <span className="daily-note__history-date-text">{entry.date}</span>
+        </span>
         <span className="daily-note__history-weekday">—</span>
         <span className="daily-note__history-edited">unreadable</span>
       </li>
@@ -537,8 +653,15 @@ export default function DailyNotePage() {
           onClick={() => void goToDay(entry.date)}
         >
           <span className="daily-note__history-date">
-            {formatLocalIsoDate(entry.date)}
-            {entry.date === today ? " (Today)" : ""}
+            <FileText
+              size={11}
+              className="daily-note__history-file"
+              aria-hidden="true"
+            />
+            <span className="daily-note__history-date-text">
+              {formatLocalIsoDate(entry.date)}
+              {entry.date === today ? " (Today)" : ""}
+            </span>
           </span>
           <span className="daily-note__history-weekday">
             {weekdayOf(entry.date) ?? "—"}
@@ -558,71 +681,112 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          <h1>Daily Note</h1>
-          <div className="daily-note__pager">
-            <div className="daily-note__pager-start">
-              <Button
-                variant="outline"
-                data-testid="daily-note-prev"
-                onClick={() => {
-                  if (prevDate) void goToDay(prevDate);
-                }}
-                disabled={!prevDate}
-              >
-                ‹ Prev day
-              </Button>
+          {/* The title row: the page's name as a quiet label, and the day's
+              chrome on the same line. The day's date is the page's one heading
+              and rides below, centred over the prose it heads — a journal's page
+              is headed by the day, not by the word "Daily Note", so the date
+              takes the heading's size and the page's name steps down to a label.
+              The keys here are the page's own: the way back to today when off it,
+              and focus mode. The day's verb — the automation that commits the
+              note — sits at the box's foot, under the prose it commits. */}
+          <div className="daily-note__title-row">
+            {/* The page's name, in the shell's one grey eyebrow: the day below
+                it is the page's heading, so the name is a label rather than a
+                second title, and it wears the same rule and colour every other
+                page's name wears. */}
+            <WingEyebrow page="Daily Journal" />
+            <div className="daily-note__actions">
+              {/* The day's way back to today. It only exists on a day that is
+                  not today, and it lives with the day's other acts rather than
+                  down in the pager: the pager walks the journal a day at a time,
+                  and this is a jump rather than a step. It is the leading end of
+                  the cluster, so the acts read left to right as "back to today,
+                  then on to the day". */}
               {date !== today ? (
                 <Button
-                  variant="ghost"
+                  variant="outline"
+                  className="daily-note__today"
                   data-testid="daily-note-today"
+                  title="Go to today"
                   onClick={() => void goToDay(today)}
                 >
                   Today
                 </Button>
               ) : null}
+              {/* Focus mode is the page's own key: it takes the day as it is and
+                  writes it on its own. It is the trailing end of the day's
+                  chrome; the act that commits the note lives at the box's foot. */}
+              <Button
+                variant="outline"
+                className="daily-note__focus-mode"
+                data-testid="daily-note-focus"
+                aria-label="Focus mode"
+                aria-haspopup="dialog"
+                title="Focus mode — write the day on its own"
+                onClick={() => setFocusMode(true)}
+                disabled={!canFocus}
+              >
+                <Focus size={16} aria-hidden />
+              </Button>
             </div>
-            <span
-              className="daily-note__date"
-              data-testid="daily-note-day"
-              data-date={date}
-            >
-              {weekday ? `${weekday}, ` : ""}
-              {label}
-              {date === today ? " (Today)" : ""}
-            </span>
-            <Button
-              variant="outline"
-              className="daily-note__pager-next"
-              data-testid="daily-note-next"
-              onClick={() => {
-                if (nextDate) void goToDay(nextDate);
-              }}
-              disabled={!nextDate || atToday}
-            >
-              Next day ›
-            </Button>
           </div>
-          {manualAutomations.length > 0 ? (
-            <div className="daily-note__automations">
-              {manualAutomations.map((automation) => (
-                <Button
-                  key={automation.id}
-                  variant="outline"
-                  className="daily-note__analyze"
-                  data-testid={dailyNoteAutomationTestId(automation.id)}
-                  onClick={() => void onRunAutomation(automation)}
-                  disabled={!canRunAutomation}
-                  title={
-                    automation.description ||
-                    "Open a new chat with this note in context"
-                  }
-                >
-                  <Sparkles size={14} aria-hidden />
-                  {runningId === automation.id ? "Opening chat…" : automation.name}
-                </Button>
-              ))}
+          {/* The day row: the journal's two steps, the day itself, and the
+              calendar that jumps to another one. The arrows are keys rather
+              than labelled buttons — the page has no words to spare in its
+              chrome, and a day back or forward is the one thing the shapes say
+              — and they carry no frame at all, so they read as the edge of the
+              prose rather than as two more controls on it.
+
+              Next day is drawn only when there is a day to go to: the future is
+              closed, so on today its key would be a control with nothing behind
+              it. It is not disabled and greyed — it is not there, and the row
+              keeps its shape because the three tracks are declared. */}
+          <div className="daily-note__pager">
+            <Button
+              variant="ghost"
+              className="daily-note__pager-prev"
+              data-testid="daily-note-prev"
+              aria-label="Previous day"
+              title="Previous day"
+              onClick={() => {
+                if (prevDate) void goToDay(prevDate);
+              }}
+              disabled={!prevDate}
+            >
+              <ChevronLeft size={20} aria-hidden />
+            </Button>
+            {/* The day is the page's heading — the one `h1` on the page — and the
+                calendar beside it chooses another. The pair is centred over the
+                prose as one block, so the key does not pull the date off the
+                middle of the box. */}
+            <div className="daily-note__day">
+              <h1
+                className="daily-note__date"
+                data-testid="daily-note-day"
+                data-date={date}
+              >
+                {weekday ? `${weekday}, ` : ""}
+                {label}
+                {date === today ? " (Today)" : ""}
+              </h1>
+              <DayPicker date={date} today={today} onSelect={(day) => void goToDay(day)} />
             </div>
-          ) : null}
+            {atToday ? null : (
+              <Button
+                variant="ghost"
+                className="daily-note__pager-next"
+                data-testid="daily-note-next"
+                aria-label="Next day"
+                title="Next day"
+                onClick={() => {
+                  if (nextDate) void goToDay(nextDate);
+                }}
+                disabled={!nextDate}
+              >
+                <ChevronRight size={20} aria-hidden />
+              </Button>
+            )}
+          </div>
         </header>
 
         {error ? (
@@ -656,29 +820,75 @@ export default function DailyNotePage() {
                 />
               </div>
 
-              <p
-                className="daily-note__status muted"
-                data-testid="daily-note-status"
-                role="status"
-              >
-                {status}
-              </p>
+              {/* The box's foot: the autosave line on the leading edge, and the
+                  day's own act on the trailing one. The act is the one control
+                  that acts on the day, so it belongs under the prose it commits
+                  rather than up among the page's chrome — level with the line
+                  that says whether the prose has reached the vault. Today and
+                  focus mode are the page's own keys and keep the title row. */}
+              <div className="daily-note__footer">
+                <p
+                  className="daily-note__status muted"
+                  data-testid="daily-note-status"
+                  role="status"
+                >
+                  {status}
+                </p>
+                {manualAutomations.length > 0 ? (
+                  <div className="daily-note__automations">
+                    {manualAutomations.map((automation) => (
+                      <Button
+                        key={automation.id}
+                        variant="raised"
+                        className="daily-note__analyze"
+                        data-testid={dailyNoteAutomationTestId(automation.id)}
+                        onClick={() => void onRunAutomation(automation)}
+                        disabled={!canRunAutomation}
+                        title={
+                          automation.description ||
+                          "Open a new chat with this note in context"
+                        }
+                      >
+                        <Sparkles size={14} aria-hidden />
+                        {runningId === automation.id ? "Opening chat…" : automation.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
 
-          <section className="daily-note__history">
-            <h2>Earlier notes</h2>
+          {/* The journal index is one panel, not a loose table: a framed block
+              on the page's edge whose header names it and whose rows are the
+              journal's own file tree — a folder for every week, a file for every
+              day. Encapsulating it is what makes it read as a navigation surface
+              beside the day, rather than as a second paragraph of the page
+              floating in the margin, and a folder tree is the one shape every
+              operator already knows for "the days that came before this one". */}
+          <section
+            className="daily-note__history"
+            aria-labelledby="daily-note-history-title"
+          >
+            <div className="daily-note__history-bar">
+              <h2 id="daily-note-history-title">Earlier notes</h2>
+              {noteCount > 0 ? (
+                <span className="daily-note__history-total">
+                  {noteCount} {noteCount === 1 ? "note" : "notes"}
+                </span>
+              ) : null}
+            </div>
             {newestFirst.length === 0 ? (
-              <p className="muted">
+              <p className="daily-note__history-empty muted">
                 {todayHasNote
                   ? "Nothing yet."
                   : "No notes yet. Today's page is the first one."}
               </p>
             ) : (
               <>
-                {/* The strip is one small table: the day written *about*, its weekday,
-                    and when it was last written. The header is decoration — every row
-                    is a button whose own cells say the same thing — so it is hidden
+                {/* The panel's one table header: the day written *about*, its
+                    weekday, and when it was last written. It is decoration —
+                    every row's own cells say the same thing — so it is hidden
                     from the reading order rather than announced twice. */}
                 <div className="daily-note__history-head" aria-hidden="true">
                   <span>Date</span>
@@ -686,18 +896,39 @@ export default function DailyNotePage() {
                   <span>Last edited</span>
                 </div>
 
-                {/* This week stays open: the days after today are what "Earlier
+                {/* This week is the open folder: its days are what "Earlier
                     notes" means right now, and folding them under a click would
-                    hide the one week the operator is living in. */}
+                    hide the one week the operator is living in. It is drawn as a
+                    folder with no toggle, so the tree still names the week. */}
                 {weeks.current.length > 0 ? (
-                  <ul className="daily-note__history-list" data-week="current">
-                    {weeks.current.map(historyRow)}
-                  </ul>
+                  <div className="daily-note__history-group" data-group="current">
+                    <div className="daily-note__history-folder">
+                      <span
+                        className="daily-note__week-caret"
+                        aria-hidden="true"
+                      />
+                      <FolderOpen
+                        size={12}
+                        className="daily-note__history-folder-icon"
+                        aria-hidden="true"
+                      />
+                      <span className="daily-note__history-folder-label">
+                        This week
+                      </span>
+                      <span className="daily-note__history-folder-count">
+                        {weeks.current.length}{" "}
+                        {weeks.current.length === 1 ? "note" : "notes"}
+                      </span>
+                    </div>
+                    <ul className="daily-note__history-list" data-week="current">
+                      {weeks.current.map(historyRow)}
+                    </ul>
+                  </div>
                 ) : null}
 
-                {/* Every week before this one folds under its own toggle. The list
-                    is mounted only while the week is open, so a year of folded
-                    weeks is a year of labels rather than a year of rows. */}
+                {/* Every week before this one folds under its own folder. The
+                    list is mounted only while the week is open, so a year of
+                    folded weeks is a year of labels rather than a year of rows. */}
                 {weeks.previous.map((week) => {
                   const open = openWeeks.includes(week.start);
                   const daysId = `daily-note-week-${week.start}-days`;
@@ -719,10 +950,23 @@ export default function DailyNotePage() {
                         <span className="daily-note__week-caret" aria-hidden="true">
                           ›
                         </span>
+                        {open ? (
+                          <FolderOpen
+                            size={12}
+                            className="daily-note__history-folder-icon"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Folder
+                            size={12}
+                            className="daily-note__history-folder-icon"
+                            aria-hidden="true"
+                          />
+                        )}
                         <span className="daily-note__week-label">
                           {weekLabel(week, currentYear)}
                         </span>
-                        <span className="daily-note__week-count muted">
+                        <span className="daily-note__week-count">
                           {week.entries.length}{" "}
                           {week.entries.length === 1 ? "note" : "notes"}
                         </span>
@@ -739,15 +983,51 @@ export default function DailyNotePage() {
                 {/* A file that names no usable day belongs to no week, so it is
                     reported where it sits rather than silently dropped. */}
                 {weeks.unreadable.length > 0 ? (
-                  <ul className="daily-note__history-list">
-                    {weeks.unreadable.map(historyRow)}
-                  </ul>
+                  <div className="daily-note__history-group" data-group="unreadable">
+                    <div className="daily-note__history-folder">
+                      <span
+                        className="daily-note__week-caret"
+                        aria-hidden="true"
+                      />
+                      <Folder
+                        size={12}
+                        className="daily-note__history-folder-icon"
+                        aria-hidden="true"
+                      />
+                      <span className="daily-note__history-folder-label">
+                        Unreadable files
+                      </span>
+                      <span className="daily-note__history-folder-count">
+                        {weeks.unreadable.length}{" "}
+                        {weeks.unreadable.length === 1 ? "file" : "files"}
+                      </span>
+                    </div>
+                    <ul className="daily-note__history-list">
+                      {weeks.unreadable.map(historyRow)}
+                    </ul>
+                  </div>
                 ) : null}
               </>
             )}
           </section>
         </div>
       </div>
+      {/* Focus mode is the same day in the same draft, without the page around
+          it: a sheet over this one, so the page stays where it was behind the
+          blurred scrim and closing hands it back untouched. */}
+      {focusMode ? (
+        <FocusModeOverlay
+          date={date}
+          dateLabel={label}
+          weekday={weekday}
+          value={draft}
+          onChange={onDraftChange}
+          status={status}
+          error={error}
+          actions={focusActions}
+          onClose={closeFocusMode}
+        />
+      ) : null}
     </div>
   );
 }

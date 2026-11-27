@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   filterByLens,
   lensSlug,
+  unlockedAreas,
   type DomainLens,
   type DomainRecord,
   type Goal,
@@ -22,18 +23,12 @@ type Props = {
   onConsumedSeed: () => void;
 };
 
-function liveDomains(domains: DomainRecord[]): DomainRecord[] {
-  return domains
-    .filter((d) => !d.meta.archivedAt)
-    .slice()
-    .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
-}
-
+/** An event is assigned to an area: unlocked areas only, the base hidden. */
 function domainPickerOptions(
   domains: DomainRecord[],
   current: string | null,
 ): { slug: string; name: string }[] {
-  const live = liveDomains(domains).map((d) => ({
+  const live = unlockedAreas(domains).map((d) => ({
     slug: d.slug,
     name: d.meta.name,
   }));
@@ -188,7 +183,7 @@ export function EventPanel({
             />
           </label>
           <label>
-            Domain
+            Area
             <select
               value={domainValue}
               onChange={(e) => setDomainValue(e.target.value)}
@@ -365,7 +360,7 @@ function EventEditor({
         />
       </label>
       <label>
-        Domain
+        Area
         <select
           value={domainValue}
           disabled={readOnly}

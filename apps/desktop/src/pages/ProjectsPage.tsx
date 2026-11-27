@@ -13,6 +13,7 @@ import {
   PROJECT_PRIORITIES,
   PROJECT_STATUSES,
   recordVisible,
+  unlockedAreas,
   type Project,
   type ProjectPriority,
   type ProjectStatus,
@@ -20,11 +21,13 @@ import {
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { Button, buttonClassName } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 import {
   formatProjectDay,
   PROJECT_PRIORITY_LABELS,
   PROJECT_STATUS_LABELS,
+  PROJECT_TYPE_SUGGESTIONS,
 } from "@/lib/projects";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -45,6 +48,9 @@ type StatusFilter = "all" | ProjectStatus;
 type Composer = {
   title: string;
   summary: string;
+  projectType: string;
+  source: string;
+  sourceUrl: string;
   goalId: string;
   domainSlug: string;
   status: ProjectStatus;
@@ -60,6 +66,9 @@ function emptyComposer(domainSlug: string): Composer {
   return {
     title: "",
     summary: "",
+    projectType: "",
+    source: "",
+    sourceUrl: "",
     goalId: "",
     domainSlug,
     status: "open",
@@ -96,12 +105,9 @@ export default function ProjectsPage() {
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // The composer assigns a project to an area: unlocked areas only, base hidden.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -125,8 +131,8 @@ export default function ProjectsPage() {
     void load();
   }, [load, reloadGeneration, liveRevision]);
 
-  // The domain lens is the app's, not a second filter on the page: Overview shows
-  // every project, a domain lens shows that domain's own.
+  // The area lens is the app's, not a second filter on the page: Life shows
+  // every project, an area lens shows that area's own.
   const visible = useMemo(
     () => projects.filter((p) => recordVisible(lens, p.domainSlug)),
     [projects, lens],
@@ -214,6 +220,9 @@ export default function ProjectsPage() {
       const result = await api().projectsCreate({
         title: composer.title.trim(),
         summary: composer.summary.trim(),
+        projectType: composer.projectType.trim() || null,
+        source: composer.source.trim() || null,
+        sourceUrl: composer.sourceUrl.trim() || null,
         bodyMarkdown: composer.context,
         stateNote: composer.stateNote.trim(),
         goalId: composer.goalId || null,
@@ -244,13 +253,10 @@ export default function ProjectsPage() {
     <div className="projects-page" data-testid="projects-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Execute</p>
+          <WingEyebrow page="Projects" />
           <h1 className="act-page__title">Projects</h1>
         </div>
         <div className="projects-page__header-actions">
-          <span className="muted projects-page__count">
-            {visible.length === 1 ? "1 project" : `${visible.length} projects`}
-          </span>
           <button
             ref={newButtonRef}
             type="button"
@@ -276,6 +282,13 @@ export default function ProjectsPage() {
         </p>
       ) : null}
 
+      <section className="projects-page__register">
+        <div className="projects-page__register-head">
+          <h2>Register</h2>
+          <span className="muted projects-page__count">
+            {visible.length === 1 ? "1 project" : `${visible.length} projects`}
+          </span>
+        </div>
       <div className="projects-page__toolbar">
         <div
           className="ui-segmented projects-page__filters"
@@ -298,7 +311,7 @@ export default function ProjectsPage() {
         </div>
         <p className="muted projects-page__scope">
           {lens.kind === "overview"
-            ? "Overview — every domain"
+            ? "Life — every area"
             : `Scoped to ${domainName(lens.slug)}`}
         </p>
       </div>
@@ -330,6 +343,14 @@ export default function ProjectsPage() {
                 <span className="projects-row__main">
                   <span className="projects-row__head">
                     <span className="projects-row__title">{project.title}</span>
+                    {project.projectType ? (
+                      <span
+                        className="projects-row__type muted"
+                        data-testid="project-row-type"
+                      >
+                        {project.projectType}
+                      </span>
+                    ) : null}
                     <span
                       className={`projects-chip projects-chip--${project.status}`}
                     >
@@ -380,6 +401,7 @@ export default function ProjectsPage() {
           ))}
         </ul>
       )}
+      </section>
 
       {creating ? (
         <div
@@ -446,6 +468,44 @@ export default function ProjectsPage() {
                   />
                 </label>
                 <label className="field">
+                  <span>Type</span>
+                  <input
+                    value={composer.projectType}
+                    onChange={(e) => setField("projectType", e.target.value)}
+                    aria-label="Project type"
+                    data-testid="project-create-type"
+                    list="project-type-suggestions"
+                    placeholder="e.g. Mobile App"
+                  />
+                  <datalist id="project-type-suggestions">
+                    {PROJECT_TYPE_SUGGESTIONS.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="field">
+                  <span>Source</span>
+                  <input
+                    value={composer.source}
+                    onChange={(e) => setField("source", e.target.value)}
+                    aria-label="Project source"
+                    data-testid="project-create-source"
+                    placeholder="The person or place the idea came from"
+                  />
+                </label>
+                <label className="field projects-page__span2">
+                  <span>Source link</span>
+                  <input
+                    type="text"
+                    inputMode="url"
+                    value={composer.sourceUrl}
+                    onChange={(e) => setField("sourceUrl", e.target.value)}
+                    aria-label="Project source URL"
+                    data-testid="project-create-source-url"
+                    placeholder="https://…"
+                  />
+                </label>
+                <label className="field">
                   <span>Goal</span>
                   <select
                     value={composer.goalId}
@@ -462,7 +522,7 @@ export default function ProjectsPage() {
                   </select>
                 </label>
                 <label className="field">
-                  <span>Domain</span>
+                  <span>Area</span>
                   <select
                     value={composer.domainSlug}
                     onChange={(e) => {

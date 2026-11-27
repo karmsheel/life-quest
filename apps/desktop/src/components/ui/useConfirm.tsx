@@ -27,7 +27,9 @@ export type ConfirmRequest = {
  * it — nothing in the app's CSS can move it, and no rig can click it. Every
  * surface that used to call it asks through here instead: `ask` poses the
  * question, and `dialog` is the element to render (once, anywhere in the
- * component's tree).
+ * component's tree). It is drawn in a portal on the window, so the pane that
+ * asked — a z-indexed column of the shell, a sheet — cannot clip it or paint
+ * over the half of it that hangs into its neighbour.
  *
  * `when` gates the dialog on something only the caller knows — a dock that draws
  * a collapsed state of its own — so a question asked from a surface that is no

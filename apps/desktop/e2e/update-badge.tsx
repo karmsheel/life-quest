@@ -30,21 +30,31 @@
  *     is still working.
  * 13. An update-check answer the bridge does not recognise (`{ ok: true,
  *     value: null }`, from a stub that never heard of this channel) is treated as
- *     an available update, or throws and takes the whole rail down with it.
+ *     an available update, or throws and takes the whole dock down with it.
  * 14. An `onUpdateProgress` handle that is not a function — the cleanup must not
  *     call it.
- * 15. The glow makes the rail taller than its own column, so the build number
- *     scrolls the rail's topband away.
- * 16. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
- *     else leaves the operator to guess. The words must sit above it, stay a
- *     paragraph rather than a second focus stop, leave the Log row above
- *     themselves, and be gone again when there is nothing to install.
- * 17. The up-to-date and failed answers offer the install control, or open a
+ * 15. The glow makes the dock's action bar taller than its own row, or the pill
+ *     spills past the bar's padding: a chip that resizes the chrome it lives in
+ *     is a reflow, not a state.
+ * 16. The pill is not the bar's trailing control — it is not the last control in
+ *     `.chat-panel__actions`, or it sits left of the collapse button instead of
+ *     holding the card's own trailing end. The bar is a rounded card floating in
+ *     the dock's bottom-right, not a band on the window's corner.
+ * 17. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
+ *     else leaves the operator to guess. The words must sit inline in the same
+ *     bar row, immediately left of the pill, stay a paragraph rather than a
+ *     second focus stop, and be gone again when there is nothing to install.
+ * 18. The up-to-date and failed answers offer the install control, or open a
  *     popup the operator cannot dismiss.
  *
  * The bridge is stubbed (there is no Electron preload on the dev-server page);
- * everything else — the real `UpdateProvider`, the real `NavRail`, the real
- * `UpdateBadge`, the real `UpdateDialog`, the real CSS — is shipping code.
+ * everything else — the real `UpdateProvider`, the real `AppShell` (and with it
+ * the real `NavRail` and the dock's real action bar), the real `UpdateBadge`,
+ * the real `UpdateDialog`, the real CSS — is shipping code.
+ *
+ * The badge moved out of the rail and into the dock's action bar: the rail is
+ * still checked as the column it is, but the placement claims below are about
+ * `.chat-panel__actions`, its collapse control, and the bar's own padding.
  *
  * Which answer the stub gives is read from `localStorage`, the same way the
  * sidebar rig reads the theme: the driver flips a preference and reloads, so one
@@ -173,6 +183,13 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. They are real bridge calls this shell makes; without stubs
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the harness.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   // The dock is part of the real shell this harness mounts, so the channels its
   // own mount reaches for are answered here. The rest fall through to the proxy
   // below; a channel that returns `ok(null)` where a list was expected takes the
@@ -319,12 +336,13 @@ let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
-requestAnimationFrame(function waitForRail() {
+requestAnimationFrame(function waitForBadge() {
   const found =
     document.querySelector(".nav-rail") &&
-    document.querySelector(".nav-rail__version");
+    document.querySelector(".chat-panel__actions") &&
+    document.querySelector(".update-badge");
   if (!found) {
-    requestAnimationFrame(waitForRail);
+    requestAnimationFrame(waitForBadge);
     return;
   }
   requestAnimationFrame(() => requestAnimationFrame(() => settle()));

@@ -4,8 +4,8 @@
  *
  * The page under test is the real page, not a copy: `ProjectsPage` and
  * `ProjectPage` are mounted on their real routes under the real `AppShell` —
- * real `NavRail` with its wing switcher, real `TopBar`, real
- * `WingProvider`/`wingForPath`,
+ * real `NavRail` with its wing switcher, real `WindowTitleBar` with its domain
+ * tab, real `WingProvider`/`wingForPath`,
  * real CSS and real layout engine. The rail claim ("Projects is under Execute,
  * not Plan") is only meaningful in the shipped shell, so the harness renders the
  * shell the app renders.
@@ -148,6 +148,13 @@ const PROJECTS: Project[] = [
     id: "p-exec",
     title: "Ship the Execute wing",
     summary: "Move Projects to Execute and make it agent-readable",
+    projectType: "Desktop/web",
+    source: "Hermes",
+    sourceUrl: "https://example.com/execute-wing",
+    repoUrls: [
+      "https://github.com/karmsheel/life-quest",
+      "https://gitlab.com/karmsheel/vault-core",
+    ],
     stateNote: "Tools landed; the wing is in progress.",
     bodyMarkdown:
       "## Context\n\nThe project's own document. The companion reads it with `get_project`.",
@@ -170,6 +177,10 @@ const PROJECTS: Project[] = [
     id: "p-paused",
     title: "Renew the studio lease",
     summary: "",
+    projectType: "Service",
+    source: null,
+    sourceUrl: null,
+    repoUrls: [],
     stateNote: "Waiting on the landlord's counter-offer.",
     bodyMarkdown: "",
     goalId: null,
@@ -188,6 +199,10 @@ const PROJECTS: Project[] = [
     id: "p-closed",
     title: "Retire the old CRM",
     summary: "",
+    projectType: "Mobile App",
+    source: "An old CRM export",
+    sourceUrl: null,
+    repoUrls: [],
     stateNote: "",
     bodyMarkdown: "",
     goalId: "g-money",
@@ -206,6 +221,10 @@ const PROJECTS: Project[] = [
     id: "p-trip",
     title: "Plan the winter trip",
     summary: "",
+    projectType: "Physical product",
+    source: "A travel blog",
+    sourceUrl: "https://example.com/winter-trip",
+    repoUrls: [],
     stateNote: "Shortlist three places by the end of the month.",
     bodyMarkdown: "",
     goalId: null,
@@ -441,6 +460,10 @@ function applyPatch(id: string, patch: Record<string, unknown>): Project | null 
   const fields = [
     "title",
     "summary",
+    "projectType",
+    "source",
+    "sourceUrl",
+    "repoUrls",
     "stateNote",
     "bodyMarkdown",
     "goalId",
@@ -491,6 +514,12 @@ const bridge: Record<string, unknown> = {
       id: `p-new-${projectsState.length + 1}`,
       title: String(typed.title ?? ""),
       summary: String(typed.summary ?? ""),
+      projectType: (typed.projectType as string | null) ?? null,
+      source: (typed.source as string | null) ?? null,
+      sourceUrl: (typed.sourceUrl as string | null) ?? null,
+      repoUrls: Array.isArray(typed.repoUrls)
+        ? (typed.repoUrls as string[]).filter((url) => typeof url === "string")
+        : [],
       stateNote: String(typed.stateNote ?? ""),
       bodyMarkdown: String(typed.bodyMarkdown ?? ""),
       goalId: (typed.goalId as string | null) ?? null,
@@ -529,6 +558,13 @@ const bridge: Record<string, unknown> = {
   companionSessionMessages: () => ok([]),
   onCompanionStream: () => () => undefined,
   onCompanionStatusChanged: () => () => undefined,
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic fallback below is wrong for all
+  // three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => undefined,
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),

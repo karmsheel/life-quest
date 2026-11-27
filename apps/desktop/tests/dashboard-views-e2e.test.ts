@@ -15,6 +15,7 @@ import {
   runSavedView,
   runViewBlocks,
   setPins,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 import { ensureEagerToolSearch } from "../electron/companion-profile.ts";
@@ -171,6 +172,12 @@ describe("dashboard views e2e", () => {
 
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const db = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
     assert.equal(db.ok, true, `createDatabase failed: ${db.ok ? "" : db.error}`);

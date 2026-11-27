@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
+  amendDecision,
   applyScriptBlock,
   appendLog,
   assertPhysicalContainment,
@@ -15,25 +17,34 @@ import {
   createPage,
   createSignal,
   createVault,
+  confirmOnboarding,
   dailyNotesInWindow,
   deleteDomain,
   deleteIdealState,
+  deleteImage,
   deletePage,
   deleteRow,
   deleteSignal,
+  discardOnboardingProposal,
   dismissAgent,
+  dismissBriefItem,
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
+  ensureReviewPage,
   fileImpliedChanges,
   getDailyNote,
+  readCompanionBrief,
   getDatabase,
   getDocument,
   getIdealState,
   getPage,
   getPeriodPack,
   getReview,
+  getReviewNotebook,
+  getReviewPageBody,
   getRow,
+  getVisionBoard,
   hireAgent,
   libraryCreate,
   libraryDelete,
@@ -46,6 +57,7 @@ import {
   listDailyNotes,
   listDecisions,
   listIdealStates,
+  listImages,
   listManualDecisions,
   listPages,
   listPinBoard,
@@ -54,26 +66,37 @@ import {
   markConnectedAgent,
   markReviewDone,
   openVault,
+  normaliseFinancePayeeHistory,
   projectCreate,
   projectGet,
   projectList,
   projectUpdate,
   readDocumentMedia,
+  readImage,
+  readSignalFile,
+  readSignalImage,
+  readOnboardingRecord,
   readLog,
   runScriptBlock,
   resolveDecision,
   saveDatabaseFile,
   saveDocument,
   saveDocumentMedia,
+  saveImage,
+  saveVisionBoard,
   setDocumentLocked,
   setLibraryLocked,
   setPins,
   setPinBoardLocked,
+  isAreaLive,
+  startOnboarding,
   unarchiveDomain,
+  unlockDomain,
   unlockReview,
   updateConnectedAgent,
   updateDomain,
   updateIdealState,
+  updateImage,
   updatePage,
   writeDailyNote,
   // Agent-built dashboard views (plan.md design)
@@ -89,11 +112,24 @@ import {
   USER_ACTOR,
   vaultPaths,
   writeReview,
+  writeReviewPage,
   // The cadence's standing review rules, and the snapshot pass that fills the
   // review from them before an interview starts.
   getReviewSkill,
   writeReviewSkill,
   prepopulateReview,
+  // Phase 6: the Analytics matrix, and the metric events/log/define door the
+  // page uses to log and create definitions. The writes apply immediately (the
+  // add-vs-change split): editing an existing definition stays on the Decision
+  // path.
+  getAnalyticsMatrix,
+  listMetricEvents,
+  logMetric,
+  defineMetric,
+  getMetric,
+  draftToDefineMetricInput,
+  proposeMetricDefinitionChange,
+  isReviewCadence,
   addDatabaseColumn,
   withDecisionDisplayLabels,
   exportDomainBooks,
@@ -110,6 +146,7 @@ import {
   setFxRateSource,
   fxSourceOf,
   listInstalledKits,
+  isReceiptStoreReady,
   getFinanceKitSettings,
   setFinanceCaptureAccount,
   budgetVsActual,
@@ -142,6 +179,10 @@ import {
   type IdealStateDocument,
   type IdealStateIndexEntry,
   type IdealStateUpdatePatch,
+  type ImageSaveInput,
+  type ImageUpdatePatch,
+  type VisionBoard,
+  type VaultImage,
   type ImpliedChange,
   type ImpliedFilingOutcome,
   type IngestBatch,
@@ -152,6 +193,7 @@ import {
   type MapActor,
   type MapCommand,
   type MapStoreState,
+  type DecisionAmendment,
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
@@ -170,13 +212,25 @@ import {
   type ProjectUpdatePatch,
   type LifeEvent,
   type MappingWriteResult,
+  type OnboardingConfirmOptions,
+  type OnboardingConfirmResult,
+  type OnboardingRecord,
   type PeriodPack,
   type PlanningStub,
   type Result,
   type ReviewCadence,
   type ReviewPrepopulateResult,
+  type ReviewNotebook,
+  type ReviewPageBody,
+  type ReviewPageWriteOutcome,
   type ReviewRecord,
+  type ReviewWriteOutcome,
   type ReviewSkill,
+  type AnalyticsMatrix,
+  type MetricDefinition,
+  type MetricDefinitionDraft,
+  type MetricEventRow,
+  type MetricEvents,
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalRecord,
@@ -190,8 +244,15 @@ import {
   type SyncConflict,
 } from "@lifequest/vault-core";
 import { getFileUnsolicited } from "./companion-filing.js";
+import { readChatImage } from "./chat-image.js";
 import { prepareReceipt } from "./receipt-image.js";
 import { pendingReceipt } from "./pending-receipt.js";
+import {
+  attachmentAbsolutePath,
+  storeAttachment,
+  type AttachmentKind,
+} from "./attachment-store.js";
+import { pendingAttachments } from "./pending-attachment.js";
 import {
   getActiveDomain,
   listRecentVaults,
@@ -199,6 +260,12 @@ import {
   setActiveDomain,
   type RecentEntry,
 } from "./recent-vaults.js";
+import { setVaultScope } from "./vault-scope.js";
+import {
+  adoptLegacyVaultDataOnce,
+  applyVaultAgentBinding,
+  detectLegacyInstall,
+} from "./vault-agents.js";
 import {
   clearHermesKey,
   getHermesKey,
@@ -223,6 +290,13 @@ import {
 import { runPlannerLoop } from "./map-tools.js";
 import { noteDataChanged } from "./data-revision.js";
 import {
+  cachedDecisionList,
+  decisionListGeneration,
+  invalidateDecisionList,
+  patchCachedDecision,
+  storeDecisionList,
+} from "./decision-list-cache.js";
+import {
   startMcp,
   stopMcp,
   getMcpDoors,
@@ -230,12 +304,16 @@ import {
   type McpDoors,
 } from "./mcp-server.js";
 import * as companion from "./companion.js";
+import * as harness from "./harness/facade.js";
 import type {
   ChatStreamEvent,
+  ChatStreamOutcome,
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
   TurnAttachment,
+  TurnAttachmentRequest,
 } from "./companion-client.js";
+import { onboardingContextOf, sanitizeStreamEvent } from "./companion-client.js";
 import {
   buildBoundReviewContext,
   startOrResumePlanSession as startOrResumePlanSessionCore,
@@ -281,6 +359,86 @@ function withVault<T>(fn: (root: string) => Promise<Result<T>>): Promise<Result<
     if (!currentRoot) return noVaultError<T>();
     return fn(currentRoot);
   });
+}
+
+/**
+ * The cold decision-list read currently in flight, if any.
+ *
+ * Several surfaces ask for the list in the same breath — the rail's badge, the
+ * auto-open watcher, the inbox, the dashboard behind the sheet — and each one
+ * used to start its own read, which the vault's write queue then serialized:
+ * five readers meant five full scans of the Decisions directory before the next
+ * write could run. One read is enough for all of them, so a caller that arrives
+ * while a read for the same vault and the same generation is open joins it.
+ *
+ * The generation is part of the identity on purpose: a read that started before
+ * a write landed is not the answer a caller who asked after that write should
+ * get, so it is joined only while no write has superseded it.
+ */
+let decisionReadInFlight: {
+  root: string;
+  generation: number;
+  promise: Promise<Result<DecisionRecord[]>>;
+} | null = null;
+
+/**
+ * Read the decisions and resolve their display labels — the cold path.
+ *
+ * The labels are resolved here, at the display boundary, rather than in the
+ * renderer: a database row's relation cells hold row ids and the card has to
+ * draw names. Both halves are what made this expensive, which is why the answer
+ * is kept in `decision-list-cache.ts` and only this cache-miss path pays for it.
+ */
+function readDecisionList(root: string): Promise<Result<DecisionRecord[]>> {
+  const promise = withVault(async (openRoot) => {
+    // Captured where the read actually runs, not where it was asked for: the
+    // vault queue may have run writes (and their patches) in between, and the
+    // generation this read has to survive is the one of the state it is
+    // reading. Any write that lands after this point moves it again.
+    const generation = decisionListGeneration();
+    const listed = await listDecisions(openRoot);
+    if (!listed.ok) return listed;
+    const labeled = await withDecisionDisplayLabels(openRoot, listed.value);
+    storeDecisionList(openRoot, labeled, generation);
+    return { ok: true, value: labeled };
+  });
+  decisionReadInFlight = { root, generation: decisionListGeneration(), promise };
+  // Settle the bookkeeping without ever deriving an unhandled rejection from
+  // the promise the callers already own.
+  promise.then(
+    () => {
+      if (decisionReadInFlight?.promise === promise) decisionReadInFlight = null;
+    },
+    () => {
+      if (decisionReadInFlight?.promise === promise) decisionReadInFlight = null;
+    },
+  );
+  return promise;
+}
+
+/**
+ * Keep the cached list true after one Decision write landed.
+ *
+ * The write returns the record it wrote, so the cached list is patched with it
+ * instead of being thrown away and re-read. Approving a queue of cards is then a
+ * run of writes with no list reads in between, which is the difference between
+ * the operator waiting on the vault and the operator answering cards.
+ *
+ * The one record is labeled on its own: patching a bare record into a list of
+ * labeled ones would leave that card drawing row ids where every other card
+ * draws names. A labeling failure is not worth failing the write over — the
+ * cache is invalidated instead, and the next read resolves the labels again.
+ */
+async function patchDecisionCache(
+  root: string,
+  record: DecisionRecord,
+): Promise<void> {
+  try {
+    const [labeled] = await withDecisionDisplayLabels(root, [record]);
+    patchCachedDecision(root, labeled ?? record);
+  } catch {
+    invalidateDecisionList();
+  }
 }
 
 /**
@@ -370,17 +528,74 @@ export async function detectExternalDoctrineChanges(): Promise<
 }
 
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
+  // Opening a vault (or switching to another one) makes the cached decision
+  // list somebody else's list. A root check would already refuse to serve it,
+  // but a vault close followed by a re-open of the same folder must not carry
+  // the previous open's answer either.
+  invalidateDecisionList();
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
+  // The vault is now current, and that includes everything keyed by it: the
+  // chat stores read this before they answer a single list. Published before
+  // the lens and the MCP doors so no read can land on the previous vault.
+  setVaultScope({ id: snapshot.lifequest.id, rootPath: snapshot.rootPath });
   // Restore the persisted lens for this vault (KAR-6).
   const persisted = await getActiveDomain(snapshot.lifequest.id);
-  currentLens = persisted;
+  // A persisted lens that is locked or archived no longer names a lens: the
+  // area the studio reopens on is Life, not a hidden one.
+  const persistedDomain =
+    persisted === null
+      ? undefined
+      : snapshot.domains.find((d) => d.slug === persisted);
+  currentLens =
+    persistedDomain && isAreaLive(persistedDomain) ? persisted : null;
+  if (persisted !== null && currentLens === null) {
+    await setActiveDomain(snapshot.lifequest.id, null);
+  }
   await captureDoctrineMtimes(snapshot.rootPath);
+  // Whether this install has a pre-vault world must be read BEFORE this open is
+  // recorded as recent: afterwards every install looks like it had a previous
+  // vault, and a fresh install whose machine happens to have Hermes on PATH
+  // would bind the shared `lifequest` agent on its first open. Reading the
+  // history is best-effort, and an unreadable one is treated as legacy — losing
+  // an operator's old chats is worse than a fresh vault that starts clean.
+  let legacyInstall: boolean;
+  try {
+    legacyInstall = await detectLegacyInstall();
+  } catch {
+    legacyInstall = true;
+  }
   await recordRecentVault({
     id: snapshot.lifequest.id,
     name: snapshot.lifequest.name,
     path: snapshot.rootPath,
   });
+  // The vault's chats and agents follow it, so its agent binding is settled
+  // before anything reads either store. The one-time adoption runs first: it is
+  // what gives the vault that was open at the upgrade the chats and agent the
+  // app used to keep, and every other vault — and every fresh install — starts
+  // clean.
+  //
+  // Neither step may fail the open. An unreadable binding, a profile that is
+  // gone, or an adoption that cannot move a file is a companion status (or a
+  // chat that stays where it was) the operator can act on — not a reason to keep
+  // the previous vault's chats on screen.
+  try {
+    await adoptLegacyVaultDataOnce(snapshot.lifequest.id, {
+      legacyInstall,
+      effectiveHarness: harness.activeHarnessId(),
+    });
+  } catch {
+    // The old chats stay where they are; the vault is still open.
+  }
+  try {
+    await applyVaultAgentBinding({
+      id: snapshot.lifequest.id,
+      rootPath: snapshot.rootPath,
+    });
+  } catch {
+    // The companion reports its own failure on the status bus.
+  }
   // Open the loopback MCP doors for this vault. A failed start keeps the
   // vault open; we record the error for Settings instead of throwing.
   // startMcp rebinds when a listener already exists, so switching vaults
@@ -626,6 +841,17 @@ export async function vaultOpen(
     const res = await openVault(abs);
     if (!res.ok) return res;
     await rememberOpen(res.value);
+    // The payee repair the old capture and import paths made necessary: one
+    // pass over finance history, once per vault. It is a normalisation the app
+    // can define, so it must not sit in the approval queue — and it must run
+    // before linked adapters sync, so a repair is never read as a local edit
+    // and pushed over a remote row.
+    try {
+      await normaliseFinancePayeeHistory(res.value.rootPath);
+    } catch {
+      // A repair that cannot run is not a reason to refuse the vault; the next
+      // open tries again because the marker was never written.
+    }
     // KAR-59: sync linked adapters on open (try/catch — sync failure must not block open)
     try {
       const secretStore = adapterSecretStore();
@@ -684,6 +910,58 @@ export async function domainUnarchive(
   slug: string,
 ): Promise<Result<DomainRecord>> {
   return withVault((root) => unarchiveDomain(root, slug));
+}
+
+/** Unlock a seeded area. A flag flip: nothing is created or moved. */
+export async function domainUnlock(slug: string): Promise<Result<DomainRecord>> {
+  return withVault((root) => unlockDomain(root, slug));
+}
+
+/**
+ * Begin the onboarding interview. Idempotent: `in_progress` and `completed`
+ * come back unchanged, and `onboarding.started` is logged exactly once.
+ *
+ * The actor is the operator: *Begin* is their click, and a chat that types
+ * first starts the interview before it sends their words. Nothing the engine
+ * writes here is new vault data — the record file is the interview's own memory
+ * — so the only refresh the renderer needs is the data revision the IPC
+ * registrar emits for every mutating channel.
+ */
+export async function onboardingStart(): Promise<Result<OnboardingRecord>> {
+  return withVault((root) => startOnboarding(root));
+}
+
+/**
+ * Apply the pending confirmation as one operator-confirmed batch: unlock the
+ * heard areas, write their doctrine with the companion as author, create the
+ * one table and the one note, then complete the record.
+ *
+ * Doctrine files are rewritten, so the mtime snapshot is re-captured: without
+ * it the next focus check would read the interview's own writes as an external
+ * edit and prompt the operator to reload a vault that is already current.
+ */
+export async function onboardingConfirm(
+  options?: OnboardingConfirmOptions,
+): Promise<Result<OnboardingConfirmResult>> {
+  return withVault(async (root) => {
+    const res = await confirmOnboarding(root, options);
+    if (res.ok) await captureDoctrineMtimes(root);
+    return res;
+  });
+}
+
+/**
+ * Decline the pending proposal. The record stays `in_progress`, so the dock
+ * returns to *Continue the interview* rather than the welcome card; the
+ * returned record is read after the delete so the caller never has to guess
+ * which status it is looking at.
+ */
+export async function onboardingDiscard(): Promise<Result<OnboardingRecord>> {
+  return withVault(async (root) => {
+    const discarded = await discardOnboardingProposal(root);
+    if (!discarded.ok) return discarded;
+    return readOnboardingRecord(root);
+  });
 }
 
 export async function domainDelete(
@@ -781,6 +1059,9 @@ export async function domainSetActive(slug: string | null): Promise<Result<strin
     if (domain.meta.archivedAt) {
       return { ok: false, error: `Domain is archived: ${slug}` };
     }
+    if (domain.meta.unlockedAt === null) {
+      return { ok: false, error: `Area is locked: ${slug}` };
+    }
     currentLens = slug;
     await setActiveDomain(currentVaultId, slug);
     return { ok: true, value: slug };
@@ -841,27 +1122,132 @@ export async function dbFileSave(
 }
 
 /**
- * Take one receipt from the composer: store the original, re-encode the copy
- * Hermes will see, and leave that copy waiting for the next turn. The copy
- * never leaves this process — the renderer gets the display fields, and the
- * turn names the path.
+ * Turn one waiting attachment into the receipt the next turn carries.
+ *
+ * The composer has one file control: the plus takes anything, and a picture's
+ * chip offers "use as receipt". That press is the receipt's explicit intent —
+ * a receipt is a picture with a meaning, because the ledger cites it as a
+ * transaction's source and the model gets a re-encoded copy instead of the
+ * whole original. So this reads the bytes main already stored, prepares the
+ * finance-store original and the model copy the way the receipt path always
+ * has, and moves the picture from the attachment slot to the receipt slot.
+ *
+ * The stores are changed only after the preparation succeeds: a refusal leaves
+ * the attachment exactly where it was, with nothing stored and nothing held.
  */
-export async function receiptAttach(input: {
-  bytes: Uint8Array;
-  mime: string;
-  name: string;
+export async function receiptPromoteAttachment(input: {
+  id: string;
 }): Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>> {
   return withVault(async (root) => {
-    const prepared = await prepareReceipt(root, input);
+    const pending = pendingAttachments.find(input.id);
+    if (!pending) {
+      return { ok: false, error: "That attachment is no longer waiting." };
+    }
+    if (pending.kind !== "image") {
+      return { ok: false, error: "Only a picture can become a receipt." };
+    }
+
+    // The bytes are read out of the vault rather than handed back through the
+    // bridge: the path in the pending store is the only source of the file, so
+    // the receipt the ledger cites and the picture the operator picked cannot
+    // come from two different places.
+    let target: string;
+    let bytes: Uint8Array;
+    try {
+      target = await assertPhysicalContainment(
+        root,
+        path.resolve(root, ...pending.relPath.split("/")),
+      );
+      const stat = await fs.stat(target);
+      if (!stat.isFile()) {
+        return { ok: false, error: "Only a picture can become a receipt." };
+      }
+      bytes = new Uint8Array(await fs.readFile(target));
+    } catch (err) {
+      // A missing file is the stale-chip case — the pending store outlived the
+      // bytes. Anything else (a symlinked component, a permission that changed
+      // under the chip, a read that failed) is not the operator's pick being
+      // gone, and saying it is would send them to pick the file again with the
+      // chip still on screen failing the same way.
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      return {
+        ok: false,
+        error:
+          code === "ENOENT"
+            ? "That attachment is no longer waiting."
+            : "That attachment could not be read back.",
+      };
+    }
+
+    const prepared = await prepareReceipt(root, {
+      bytes,
+      mime: pending.mime,
+      name: pending.name,
+    });
     if (!prepared.ok) return prepared;
     const { relPath, fileId, name, size, modelCopy } = prepared.value;
+    pendingAttachments.remove(pending.id);
     pendingReceipt.set({
       relPath,
       name,
       dataUrl: `data:image/jpeg;base64,${Buffer.from(modelCopy).toString("base64")}`,
       bytes: modelCopy.byteLength,
     });
+    // The picture moved, not copied: the finance store holds the same original
+    // bytes now, so leaving the general-attachment copy behind would be the
+    // vault paying twice for one photo. This is last and best-effort — a file
+    // that cannot be removed leaves a harmless duplicate, never a receipt
+    // without its original.
+    await fs.unlink(target).catch(() => undefined);
     return { ok: true, value: { relPath, fileId, name, size } };
+  });
+}
+
+/**
+ * Attach any file to the chat.
+ *
+ * This is the composer's one file control: it accepts anything - a video, a
+ * recording, a PDF, a photo - and stores the ORIGINAL bytes in the vault so
+ * the agent can reach the file with its own tools. A picture attached here is
+ * a general attachment; the chip's "use as receipt" promotes it through the
+ * finance path when the operator means it as evidence for a transaction.
+ *
+ * The id minted here is the join key. The renderer sends it back with the
+ * turn, and main resolves the stored path from the pending store, so the path
+ * the agent is told about and the file on disk cannot come from two different
+ * places. The pending store is updated with the attachment that was just
+ * added, so several attachments may be waiting at once and each turn takes
+ * exactly the ones it names.
+ */
+export async function attachmentAttach(input: {
+  bytes: Uint8Array;
+  mime: string;
+  name: string;
+}): Promise<
+  Result<{
+    id: string;
+    kind: AttachmentKind;
+    name: string;
+    size: number;
+    mime: string;
+    relPath: string;
+  }>
+> {
+  return withVault(async (root) => {
+    const stored = await storeAttachment(root, input);
+    if (!stored.ok) return stored;
+    const { fileId, relPath, name, size, mime, kind, dataUrl } = stored.value;
+    const id = randomUUID();
+    pendingAttachments.add({
+      id,
+      kind,
+      name,
+      size,
+      mime,
+      relPath,
+      dataUrl,
+    });
+    return { ok: true, value: { id, kind, name, size, mime, relPath } };
   });
 }
 
@@ -1048,6 +1434,19 @@ export async function kitList(slug: string): Promise<Result<string[]>> {
   return withVault((root) => listInstalledKits(root, slug));
 }
 
+/**
+ * Whether the receipt path can store and cite a picture right now.
+ *
+ * The composer asks this before offering "Use as receipt" on an attached
+ * picture. The answer has to be main's own (`isReceiptStoreReady`), not the
+ * kit registry's: the registry still lists a kit whose Financial area was
+ * archived, and that vault has no store the ledger may cite. One predicate in
+ * one place is what keeps the offer and the press from disagreeing.
+ */
+export async function receiptReady(): Promise<Result<boolean>> {
+  return withVault(async (root) => ({ ok: true, value: await isReceiptStoreReady(root) }));
+}
+
 export async function kitFinanceSettings(): Promise<Result<unknown>> {
   return withVault(async (root) => {
     const res = await getFinanceKitSettings(root);
@@ -1110,16 +1509,35 @@ export async function financeSaveAssumptionSet(input: {
   return withVault((root) => saveAssumptionSet(root, { ...input, actor: USER_ACTOR }));
 }
 
+/**
+ * The inbox's list.
+ *
+ * A person reads this inbox, so a database row's relation cells are resolved to
+ * row labels here, at the display boundary: the stored Decision keeps the raw
+ * payload the approve path applies, and the agent's own read path
+ * (`list_decisions`) still sees exactly what was filed.
+ *
+ * The answer is cached per open vault (`decision-list-cache.ts`) and patched by
+ * every Decision write, so the many readers of one change — and an operator
+ * answering a queue of cards — do not each pay for a full scan of the Decisions
+ * directory. The cache is invalidated by the app's own change signal, which is
+ * what keeps it a live reader rather than a second source of truth.
+ */
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {
-  return withVault(async (root) => {
-    const listed = await listDecisions(root);
-    if (!listed.ok) return listed;
-    // A person reads this inbox. A database row's relation cells hold row ids,
-    // so they are resolved to row labels here, at the display boundary: the
-    // stored Decision keeps the raw payload the approve path applies, and the
-    // agent's own read path (list_decisions) still sees exactly what was filed.
-    return { ok: true, value: await withDecisionDisplayLabels(root, listed.value) };
-  });
+  const root = currentRoot;
+  if (root === null) return noVaultError<DecisionRecord[]>();
+  const cached = cachedDecisionList(root);
+  // A copy per caller: the array is handed over IPC (which clones it) but a
+  // same-process caller must not be able to edit what the next caller sees.
+  if (cached !== null) return { ok: true, value: cached.slice() };
+  if (
+    decisionReadInFlight !== null &&
+    decisionReadInFlight.root === root &&
+    decisionReadInFlight.generation === decisionListGeneration()
+  ) {
+    return decisionReadInFlight.promise;
+  }
+  return readDecisionList(root);
 }
 
 export async function decisionCreate(input: {
@@ -1130,12 +1548,33 @@ export async function decisionCreate(input: {
   proposedBodyMarkdown: string;
   previousBodyMarkdown?: string | null;
 }): Promise<Result<DecisionRecord>> {
-  return withVault((root) =>
-    createDecision(root, {
+  return withVault(async (root) => {
+    const res = await createDecision(root, {
       ...input,
       actor: USER_ACTOR,
-    }),
-  );
+    });
+    if (res.ok) await patchDecisionCache(root, res.value);
+    return res;
+  });
+}
+
+/**
+ * The operator's correction to a pending proposal.
+ *
+ * A separate call from `decisionCreate` rather than a flag on it: creating a
+ * Decision files a proposal, amending one edits a proposal someone else filed,
+ * and the record has to remember both — the agent's original and the version
+ * the operator is about to approve.
+ */
+export async function decisionAmend(
+  id: string,
+  input: DecisionAmendment,
+): Promise<Result<DecisionRecord>> {
+  return withVault(async (root) => {
+    const res = await amendDecision(root, id, input, USER_ACTOR);
+    if (res.ok) await patchDecisionCache(root, res.value);
+    return res;
+  });
 }
 
 export async function decisionResolve(
@@ -1145,7 +1584,13 @@ export async function decisionResolve(
   return withVault(async (root) => {
     const res = await resolveDecision(root, id, resolution);
     // Approval rewrites a doctrine file — refresh mtimes to avoid false stale.
-    if (res.ok) await captureDoctrineMtimes(root);
+    if (res.ok) {
+      await captureDoctrineMtimes(root);
+      // The card the operator just answered must be answered on the next read,
+      // without a re-read to learn it: patching is what keeps an approve burst
+      // free of list scans.
+      await patchDecisionCache(root, res.value);
+    }
     return res;
   });
 }
@@ -1192,6 +1637,19 @@ export async function signalChainDelete(
   id: string,
 ): Promise<Result<SignalRecord>> {
   return withVault((root) => deleteSignal(root, id));
+}
+
+export async function signalChainReadImage(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: import("@lifequest/vault-core").ImageMimeType }>> {
+  return withVault((root) => readSignalImage(root, relPath));
+}
+
+/** A capture's non-image file, read back so the renderer can save a copy. */
+export async function signalChainReadFile(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  return withVault((root) => readSignalFile(root, relPath));
 }
 
 export async function libraryListCall(): Promise<Result<LibraryListResult>> {
@@ -1376,7 +1834,7 @@ export async function hermesChatToolsCall(
   const map = snap.ok ? snap.value.map : null;
   const aboutMe = map?.aboutMe ?? "";
   const extraSystem = [
-    `Active domain: ${activeSlug ?? "overview"}`,
+    `Active area: ${activeSlug ?? "life"}`,
     `About me: ${aboutMe}`,
   ].join("\n");
 
@@ -1490,15 +1948,82 @@ export async function reviewWrite(
   cadence: ReviewCadence,
   period: string,
   body: string,
-): Promise<Result<ReviewRecord>> {
-  return withVault((root) =>
-    writeReview(root, {
+  baseRev?: number,
+): Promise<ReviewWriteOutcome> {
+  // The whole-body editor path: it carries the rev it loaded so a write that
+  // raced another writer comes back as CONFLICT instead of overwriting prose.
+  return enqueue(async () => {
+    if (!currentRoot) return { ok: false, error: "No vault is open", code: "MALFORMED" };
+    return writeReview(currentRoot, {
       cadence,
       period,
       bodyMarkdown: body,
       actor: USER_ACTOR,
-    }),
-  );
+      baseRev,
+    });
+  });
+}
+
+/**
+ * The period's notebook summary: identity, lock and one row per page.
+ *
+ * Phase 2's page UI reads this for its tabs, so it is the one door onto a
+ * notebook that has no body in it. `reviewPageGet` is the body beside it.
+ */
+export async function reviewNotebookGet(
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => getReviewNotebook(root, cadence, period));
+}
+
+/** One page's body and rev, for the page the operator is reading. */
+export async function reviewPageGet(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewPageBody>> {
+  return withVault((root) => getReviewPageBody(root, cadence, period, scope));
+}
+
+/**
+ * Create one page (and the notebook, when the period has none) without starting
+ * an interview: the page's "Write it myself" and the first half of Start.
+ */
+export async function reviewPageEnsure(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => ensureReviewPage(root, { cadence, period, scope }));
+}
+
+/** Write one page against the rev it was read at. */
+export async function reviewPageWrite(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+  body: string,
+  baseRev: number,
+): Promise<ReviewPageWriteOutcome> {
+  return enqueue(async () => {
+    if (!currentRoot) {
+      return {
+        ok: false as const,
+        code: "MALFORMED" as const,
+        error: "No vault is open",
+        message: "No vault is open",
+      };
+    }
+    return writeReviewPage(currentRoot, {
+      cadence,
+      period,
+      scope,
+      bodyMarkdown: body,
+      baseRev,
+      actor: USER_ACTOR,
+    });
+  });
 }
 
 export async function reviewMarkDone(
@@ -1527,6 +2052,29 @@ export async function reviewPeriodPack(
 /** The day's note, or `Daily note not found` for a day never written. */
 export async function dailyNoteGet(date: string): Promise<Result<DailyNote>> {
   return withVault((root) => getDailyNote(root, date));
+}
+
+/**
+ * The companion's brief, as the card reads it.
+ *
+ * Reading is not writing here: the card only asks. The writer is the companion's
+ * `set_companion_brief` tool; the operator's own verb is `companionBriefDismiss`.
+ */
+export async function companionBriefGet(): Promise<
+  Result<import("@lifequest/vault-core").CompanionBriefRead>
+> {
+  return withVault((root) => readCompanionBrief(root));
+}
+
+/**
+ * The operator dismissing one brief item, carried as the user actor so the vault
+ * refuses any agent that tries to settle its own item.
+ */
+export async function companionBriefDismiss(
+  itemId: string,
+  reason: import("@lifequest/vault-core").BriefDismissalReason,
+): Promise<Result<import("@lifequest/vault-core").CompanionBriefRead>> {
+  return withVault((root) => dismissBriefItem(root, USER_ACTOR, itemId, reason));
 }
 
 /** Write the one note that day has. The operator is the author, always. */
@@ -1584,6 +2132,50 @@ export async function idealStateDelete(
   return withVault((root) => deleteIdealState(root, id));
 }
 
+/** Define → Images: every picture in the vault-level library, in upload order. */
+export async function imagesList(): Promise<Result<VaultImage[]>> {
+  return withVault((root) => listImages(root));
+}
+
+/** Store one uploaded picture; the bytes decide the kind, not the name. */
+export async function imagesSave(
+  input: ImageSaveInput,
+): Promise<Result<VaultImage>> {
+  return withVault((root) => saveImage(root, input));
+}
+
+/** The bytes of one stored picture, drawn from a blob URL by the renderer. */
+export async function imagesRead(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: import("@lifequest/vault-core").ImageMimeType }>> {
+  return withVault((root) => readImage(root, relPath));
+}
+
+/** Rename or caption a picture. The stored file never moves. */
+export async function imagesUpdate(
+  id: string,
+  patch: ImageUpdatePatch,
+): Promise<Result<VaultImage>> {
+  return withVault((root) => updateImage(root, id, patch));
+}
+
+/** Remove a picture and its bytes from the vault. */
+export async function imagesDelete(id: string): Promise<Result<{ id: string }>> {
+  return withVault((root) => deleteImage(root, id));
+}
+
+/** The one vision document beside the library. Missing reads as empty. */
+export async function imagesBoardGet(): Promise<Result<VisionBoard>> {
+  return withVault((root) => getVisionBoard(root));
+}
+
+/** Replace the vision document's blocks. */
+export async function imagesBoardSave(input: {
+  blocks: unknown;
+}): Promise<Result<VisionBoard>> {
+  return withVault((root) => saveVisionBoard(root, input));
+}
+
 /** A cadence's standing review rules, defaulted when the file is not there. */
 export async function reviewSkillGet(
   cadence: ReviewCadence,
@@ -1615,20 +2207,161 @@ export async function reviewPrepopulate(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6: the Analytics matrix, and logging / defining metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * The Analytics matrix: every definition's value over the last N periods of a
+ * cadence, scoped by the lens (null = Life, every live area). A read; it never
+ * creates the events table and never writes.
+ */
+export async function analyticsMatrix(input: {
+  cadence: string;
+  lens: string | null;
+  count?: number;
+}): Promise<Result<AnalyticsMatrix>> {
+  if (!isReviewCadence(input.cadence)) {
+    return { ok: false, error: `Unknown review cadence: ${String(input.cadence)}` };
+  }
+  return withVault((root) =>
+    getAnalyticsMatrix(root, {
+      cadence: input.cadence as ReviewCadence,
+      lens: typeof input.lens === "string" && input.lens ? input.lens : null,
+      count: input.count,
+    }),
+  );
+}
+
+/**
+ * One events metric's logged rows for a period, with the metrics database's
+ * minted column ids so the page can edit a row through the standard row path.
+ * A derived metric answers an error: it has no rows to list.
+ */
+export async function metricEvents(input: {
+  area: string;
+  metricId: string;
+  start: string;
+  end: string;
+}): Promise<Result<MetricEvents>> {
+  return withVault((root) =>
+    listMetricEvents(root, {
+      area: input.area,
+      metricId: input.metricId,
+      start: input.start,
+      end: input.end,
+    }),
+  );
+}
+
+/**
+ * Log one dated event. Applies immediately — logging a row is the add-vs-change
+ * line (editing an existing row goes through the standard Decision path) — and
+ * the engine logs `metric.logged` itself, so no second line is written here.
+ */
+export async function metricLogEvent(input: {
+  area: string;
+  metricId: string;
+  date?: string;
+  value?: number;
+  note?: string;
+}): Promise<Result<MetricEventRow>> {
+  return withVault(async (root) => {
+    const logged = await logMetric(
+      root,
+      input.area,
+      input.metricId,
+      { date: input.date, value: input.value, note: input.note },
+      USER_ACTOR,
+    );
+    if (!logged.ok) return { ok: false, error: logged.error };
+    return {
+      ok: true,
+      value: {
+        rowId: logged.value.rowId,
+        date: logged.value.date,
+        value: logged.value.value,
+        note: logged.value.note ?? "",
+      },
+    };
+  });
+}
+
+export type MetricDefineInput = {
+  area: string;
+  definition: MetricDefinitionDraft;
+};
+
+/**
+ * Create one metric definition from the bridge's draft. Creation applies
+ * immediately (the companion's own add rule) and is attributed to the operator;
+ * the engine writes the `metric.created` line and creates the area's Metrics
+ * database if needed. A derived draft names its database and two columns and the
+ * engine builds the one-number spec; the renderer never holds a ViewSpec.
+ * Editing an existing definition is `metricPropose`, not this door: a duplicate
+ * id is refused here.
+ */
+export async function metricDefine(
+  input: MetricDefineInput,
+): Promise<Result<MetricDefinition>> {
+  return withVault((root) =>
+    defineMetric(root, input.area, draftToDefineMetricInput(input.definition), USER_ACTOR),
+  );
+}
+
+/** Read one definition, for the Analytics page's edit form to prefill. */
+export async function metricGet(input: {
+  area: string;
+  metricId: string;
+}): Promise<Result<MetricDefinition>> {
+  return withVault(async (root) => {
+    const read = await getMetric(root, input.area, input.metricId);
+    if (!read.ok) return { ok: false, error: read.error };
+    return { ok: true, value: read.value };
+  });
+}
+
+/**
+ * File the Decision that proposes editing or deleting one definition. Writes no
+ * definition: the change applies only when the operator approves it. The engine
+ * validates the proposed payload and names any identical pending proposal
+ * instead of filing a duplicate card.
+ */
+export async function metricPropose(input: {
+  area: string;
+  metricId: string;
+  action: "update" | "delete";
+  definition?: MetricDefinitionDraft;
+}): Promise<Result<{ decisionId: string }>> {
+  return withVault((root) =>
+    proposeMetricDefinitionChange(
+      root,
+      {
+        area: input.area,
+        metricId: input.metricId,
+        action: input.action,
+        ...(input.definition !== undefined
+          ? { definition: draftToDefineMetricInput(input.definition) }
+          : {}),
+      },
+      USER_ACTOR,
+    ),
+  );
+}
+
 export async function planningEnsure(
   cadence: ReviewCadence,
   period: string,
   scope: "overall" | string,
-): Promise<Result<PlanningStub>> {
-  return withVault((root) =>
+): Promise<Result<PlanningStub>> {  return withVault((root) =>
     ensurePlanningStub(root, { cadence, period, scope }),
   );
 }
 
 const companionSessionFns = {
-  open: () => companion.companionSessionsOpen(),
-  list: () => companion.companionSessionsList(),
-  create: (title: string) => companion.companionSessionCreate(title),
+  open: () => harness.harnessSessionsOpen(),
+  list: () => harness.harnessSessionsList(),
+  create: (title: string) => harness.harnessSessionCreate(title),
 };
 
 export async function reviewStartOrResume(
@@ -1659,6 +2392,68 @@ export async function planningStartOrResume(
   );
 }
 
+/**
+ * One picture a chat bubble wants to draw: its bytes, and the mime to label
+ * them.
+ *
+ * The vault supplies the containment root; the active companion profile
+ * supplies the one other place a picture may legitimately live — the gateway's
+ * retained copy of something the operator sent. A closed vault answers the
+ * ordinary no-vault Result rather than throwing, so a bubble that asks before a
+ * vault is open gets its quiet missing chip and nothing else.
+ */
+export async function chatImageRead(
+  ref: string,
+  profileHome: string | null,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  return withVault((root) => readChatImage({ vaultRoot: root, profileHome, ref }));
+}
+
+/**
+ * The general attachments a turn named, as the chat call needs them.
+ *
+ * The renderer sends the ids it attached; main resolves them here, against
+ * the pending store. The absolute path is computed HERE, from the vault that
+ * is open right now, because the agent's file tools resolve a relative path
+ * against the gateway process's working directory - which is neither the
+ * vault nor stable - and a relative path in the instruction would be a path
+ * the agent cannot open.
+ *
+ * An id the pending store does not know is refused rather than skipped: a
+ * turn that silently drops one of the operator's files is a turn that reads
+ * as though the attachment was ignored.
+ */
+function resolveTurnAttachments(
+  root: string,
+  requested: TurnAttachmentRequest[],
+): Result<TurnAttachment[]> {
+  const ids = requested.map((value) => value.id);
+  const found = pendingAttachments.take(ids);
+  const missing = ids.filter((id) => !found.some((value) => value.id === id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: "Attach that file again.",
+    };
+  }
+  return {
+    ok: true,
+    value: found.map((value) => ({
+      id: value.id,
+      kind: value.kind,
+      relPath: value.relPath,
+      name: value.name,
+      size: value.size,
+      mime: value.mime,
+      dataUrl: value.dataUrl,
+      absolutePath: attachmentAbsolutePath(root, value.relPath),
+    })),
+  };
+}
+
+/** How long assistant deltas are batched before one IPC frame. */
+const DELTA_FLUSH_MS = 50;
+
 export async function companionChatStreamWithPack(
   sessionId: string,
   input: string,
@@ -1666,16 +2461,41 @@ export async function companionChatStreamWithPack(
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
   receiptRelPath?: string | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  attachmentRequests?: TurnAttachmentRequest[] | null,
+): Promise<ChatStreamOutcome> {
   // The slot is the only source of the image, so a turn that names a receipt
   // main is not holding is refused rather than sent as a text-only turn the
   // operator would read as "the agent ignored my photo".
   let attachment: TurnAttachment | null = null;
   if (receiptRelPath) {
-    attachment = pendingReceipt.take(receiptRelPath);
-    if (!attachment) {
+    const taken = pendingReceipt.take(receiptRelPath);
+    if (!taken) {
       return { ok: false, error: "Attach that receipt again." };
     }
+    attachment = {
+      id: taken.relPath,
+      kind: "image",
+      relPath: taken.relPath,
+      name: taken.name,
+      size: taken.bytes,
+      mime: "image/jpeg",
+      dataUrl: taken.dataUrl,
+      absolutePath: currentRoot
+        ? attachmentAbsolutePath(currentRoot, taken.relPath)
+        : taken.relPath,
+    };
+  }
+  // The general attachments ride the same turn. They are resolved before the
+  // turn is posted, so a file the app no longer holds is reported rather than
+  // sent as a turn that quietly lacks it.
+  let attachments: TurnAttachment[] | null = null;
+  if (attachmentRequests && attachmentRequests.length > 0) {
+    if (!currentRoot) {
+      return { ok: false, error: "No vault is open" };
+    }
+    const resolved = resolveTurnAttachments(currentRoot, attachmentRequests);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    attachments = resolved.value;
   }
 
   const fileUnsolicited = await getFileUnsolicited().catch(() => true);
@@ -1689,6 +2509,16 @@ export async function companionChatStreamWithPack(
         sessionId,
       );
       if (reviewContext) ctx.reviewContext = reviewContext;
+      // The onboarding rubric is vault truth, so main resolves it from the
+      // snapshot it just read rather than trusting the renderer's copy: a
+      // renderer that confirmed the card a moment ago would otherwise send the
+      // pre-confirm status back and re-offer an interview the vault considers
+      // done. Null once complete, which is what keeps the rubric out of every
+      // later turn.
+      ctx.onboarding = onboardingContextOf(
+        snap.value.onboarding,
+        snap.value.onboardingProposal !== null,
+      );
     }
   }
 
@@ -1696,20 +2526,44 @@ export async function companionChatStreamWithPack(
   // Decision after the stream returns. Collecting is not approving.
   let assistantText = "";
   const completedToolNames: string[] = [];
+  // Pi emits a delta per token; one IPC frame per token is pure overhead on the
+  // channel the panel renders from. Deltas are batched here and flushed before
+  // any frame that changes what the panel is doing (a tool, a terminal, an
+  // error), so the UI never shows a tool row before the text that preceded it.
+  let pendingDelta = "";
+  let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+  const flushDelta = () => {
+    if (deltaTimer) {
+      clearTimeout(deltaTimer);
+      deltaTimer = null;
+    }
+    if (!pendingDelta) return;
+    const text = pendingDelta;
+    pendingDelta = "";
+    onEvent({ type: "assistant.delta", text });
+  };
   const forward = (evt: ChatStreamEvent) => {
-    if (evt.type === "assistant.delta") assistantText += evt.text;
-    else if (evt.type === "tool.completed") completedToolNames.push(evt.name);
-    onEvent(evt);
+    if (evt.type === "assistant.delta") {
+      assistantText += evt.text;
+      pendingDelta += evt.text;
+      if (!deltaTimer) deltaTimer = setTimeout(flushDelta, DELTA_FLUSH_MS);
+      return;
+    }
+    flushDelta();
+    if (evt.type === "tool.completed") completedToolNames.push(evt.name);
+    onEvent(sanitizeStreamEvent(evt));
   };
 
-  const result = await companion.companionChatStream(
+  const result = await harness.harnessChatStream(
     sessionId,
     input,
     ctx,
     forward,
     runtime,
     attachment,
+    attachments,
   );
+  flushDelta();
   if (result.ok && currentRoot) {
     const root = currentRoot;
     try {
@@ -1746,8 +2600,14 @@ export async function companionChatStreamWithPack(
         // log: a log that fails returns not-ok with the Decision already on disk.
         // Announcing a filing that wrote nothing costs one repaint; not
         // announcing one that wrote is the operator watching an inbox that never
-        // hears about the proposal the companion just said it filed.
-        if (verdict.changes.length > 0) noteDataChanged();
+        // hears about the proposal the companion just said it filed. The cached
+        // list is part of what has to hear it: these filings bypass
+        // `decision:create` and the MCP door, so neither of their invalidations
+        // runs for this one.
+        if (verdict.changes.length > 0) {
+          invalidateDecisionList();
+          noteDataChanged();
+        }
 
         // And the operator is told in the chat itself what became of the
         // proposals. The inbox is live, but "it said it filed three and I see

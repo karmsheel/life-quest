@@ -15,6 +15,7 @@ import {
   DATABASE_SOT_MODES,
   FINANCE_DB_IDS,
   FINANCE_DOMAIN_SLUG,
+  type Actor,
   type DatabaseColumn,
   type DatabaseColumnType,
   type DatabaseMeta,
@@ -23,6 +24,8 @@ import {
   type DomainDatabaseRegistry,
   type Result,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
+import { sanitisePayee, type PayeeLintIssue } from "./payee.ts";
 
 function isColumnType(v: unknown): v is DatabaseColumnType {
   return (
@@ -141,7 +144,7 @@ export async function isDomainLive(root: string, slug: string): Promise<boolean>
     await assertNoSymlinkLeaf(metaPath);
     const raw = await fs.readFile(metaPath, "utf8");
     const meta = JSON.parse(raw);
-    return meta.archivedAt == null;
+    return isLiveAreaMeta(meta);
   } catch {
     return false;
   }
@@ -291,7 +294,7 @@ export async function listDatabases(
           try {
             const raw = await fs.readFile(metaPath, "utf8");
             const meta = JSON.parse(raw);
-            if (meta.archivedAt == null) slugs.push(entry.name);
+            if (isLiveAreaMeta(meta)) slugs.push(entry.name);
           } catch {}
         }
       } catch {}
@@ -388,6 +391,50 @@ export async function addDatabaseColumn(
       db.columns.push(col);
       db.updatedAt = new Date().toISOString();
 
+      await assertPhysicalContainment(root, registryPath, "write");
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+      return { ok: true as const, value: db };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Rewrite one column's `select` options in the registry.
+ *
+ * Used by an approved merge, which unions a source column's choices into the
+ * target's before moving rows whose cells may rely on them. Logs nothing of its
+ * own: the merge writes one `database.merged` line, and a schema tweak that is
+ * one half of that operation must not read to the operator as a second change.
+ */
+export async function updateDatabaseColumnOptions(
+  root: string,
+  slug: string,
+  dbId: string,
+  columnId: string,
+  options: string[],
+): Promise<Result<DatabaseMeta>> {
+  try {
+    if (!Array.isArray(options)) return { ok: false, error: "options must be an array" };
+    const paths = vaultPaths(root);
+    const registryPath = paths.domainRegistry(slug);
+    // Same read-modify-write cycle as addDatabaseColumn: re-read *inside* the
+    // lock so a concurrent writer's column cannot be lost.
+    return await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      const db = registry.databases.find((d) => d.id === dbId);
+      if (!db) return { ok: false as const, error: `Database not found: ${dbId}` };
+      const col = db.columns.find((c) => c.id === columnId);
+      if (!col) return { ok: false as const, error: `Column not found: ${columnId}` };
+      if (col.type !== "select") {
+        return { ok: false as const, error: `Column ${col.name} is not a select` };
+      }
+      // The caller computed the union; this only stores it. Duplicates are
+      // dropped because two sources offering the same choice is still one row
+      // in the operator's options list.
+      col.options = [...new Set(options.map(String))];
+      db.updatedAt = new Date().toISOString();
       await assertPhysicalContainment(root, registryPath, "write");
       await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
       return { ok: true as const, value: db };
@@ -776,6 +823,221 @@ async function relationRowLabel(
   return rowDisplayLabel(target.value, row.value.cells);
 }
 
+/**
+ * The write-time payee rule for the finance ledger.
+ *
+ * Every finance:transactions write funnels through here (chat capture,
+ * statement import, adapter sync, manual add, correction, an approved
+ * Decision), so the rule lives at the funnel instead of being restated by each
+ * caller. The raw field is never stored when it is polluted: the payee becomes
+ * the merchant or item, and the operator's own words move into `notes` when
+ * nothing is there yet.
+ */
+export type FinancePayeeNormalisation = {
+  cells: Record<string, unknown>;
+  rawPayee: string | null;
+  payee: string | null;
+  issues: PayeeLintIssue[];
+  notesPreserved: boolean;
+  changed: boolean;
+};
+
+const PAYEE_ISSUE_TEXT: Record<PayeeLintIssue, string> = {
+  date: "payee contained a date",
+  "account-name": "payee contained an account name",
+  "category-name": "payee contained a category name",
+  filler: "payee contained filler text",
+};
+
+/** Human warnings for a write result, in the order the sanitiser found them. */
+export function describePayeeIssues(issues: PayeeLintIssue[]): string[] {
+  return issues.map((issue) => PAYEE_ISSUE_TEXT[issue]);
+}
+
+function unchangedPayee(cells: Record<string, unknown>): FinancePayeeNormalisation {
+  return {
+    cells,
+    rawPayee: null,
+    payee: null,
+    issues: [],
+    notesPreserved: false,
+    changed: false,
+  };
+}
+
+/** Resolve the names the rule needs from the vault's own account/category rows. */
+async function payeeContext(
+  root: string,
+  slug: string,
+  cells: Record<string, unknown>,
+  db: DatabaseMeta,
+): Promise<{
+  accountNames: string[];
+  categoryNames: string[];
+  assignedCategoryName: string | null;
+  payeeColId: string;
+  notesColId: string | null;
+}> {
+  const colId = (name: string) =>
+    db.columns.find((c) => c.name.toLowerCase() === name)?.id;
+  const payeeColId = colId("payee")!;
+  const accounts = await listRows(root, slug, FINANCE_DB_IDS.accounts);
+  const categories = await listRows(root, slug, FINANCE_DB_IDS.categories);
+  const accountNames = accounts.ok
+    ? accounts.value.map((r) => (r.cells.name as string) ?? "").filter(Boolean)
+    : [];
+  const categoryRows = categories.ok ? categories.value : [];
+  const categoryColId = colId("category");
+  const assignedCategoryId = categoryColId ? cells[categoryColId] : undefined;
+  const assignedCategoryName =
+    typeof assignedCategoryId === "string"
+      ? ((categoryRows.find((r) => r.id === assignedCategoryId)?.cells.name as string) ?? null)
+      : null;
+  return {
+    accountNames,
+    categoryNames: categoryRows.map((r) => (r.cells.name as string) ?? "").filter(Boolean),
+    assignedCategoryName,
+    payeeColId,
+    notesColId: colId("notes") ?? null,
+  };
+}
+
+export async function normaliseFinancePayeeCells(
+  root: string,
+  slug: string,
+  dbId: string,
+  cells: Record<string, unknown>,
+): Promise<FinancePayeeNormalisation> {
+  // Only the ledger has this meaning. A generic database's payee-shaped column
+  // is not ours to rewrite.
+  if (slug !== FINANCE_DOMAIN_SLUG || dbId !== FINANCE_DB_IDS.transactions) {
+    return unchangedPayee(cells);
+  }
+  try {
+    const dbRes = await getDatabase(root, slug, dbId);
+    if (!dbRes.ok) return unchangedPayee(cells);
+    const db = dbRes.value;
+    const colId = (name: string) =>
+      db.columns.find((c) => c.name.toLowerCase() === name)?.id;
+    const payeeColId = colId("payee");
+    if (!payeeColId) return unchangedPayee(cells);
+    const raw = cells[payeeColId];
+    if (typeof raw !== "string" || !raw.trim()) return unchangedPayee(cells);
+
+    const context = await payeeContext(root, slug, cells, db);
+    const result = sanitisePayee({
+      raw,
+      accountNames: context.accountNames,
+      categoryNames: context.categoryNames,
+      assignedCategoryName: context.assignedCategoryName,
+    });
+    const rawTrimmed = raw.trim();
+    const changed = (result.payee ?? "") !== rawTrimmed;
+    if (!changed) {
+      return {
+        cells,
+        rawPayee: rawTrimmed,
+        payee: result.payee,
+        issues: result.issues,
+        notesPreserved: false,
+        changed: false,
+      };
+    }
+
+    const next: Record<string, unknown> = { ...cells, [context.payeeColId]: result.payee };
+    let notesPreserved = false;
+    // The payee was the only copy of the operator's words. Before it is
+    // replaced, those words go to notes — an empty notes field, never an
+    // occupied one.
+    if (context.notesColId) {
+      const notes = next[context.notesColId];
+      const empty = notes === undefined || notes === null || (typeof notes === "string" && !notes.trim());
+      if (empty) {
+        next[context.notesColId] = rawTrimmed;
+        notesPreserved = true;
+      }
+    }
+    return {
+      cells: next,
+      rawPayee: rawTrimmed,
+      payee: result.payee,
+      issues: result.issues,
+      notesPreserved,
+      changed: true,
+    };
+  } catch {
+    // A repair must never fail the write it repairs.
+    return unchangedPayee(cells);
+  }
+}
+
+/** One life-log line per normalised row: the lint signal, not a silent store. */
+async function logPayeeNormalisation(
+  root: string,
+  slug: string,
+  rowId: string,
+  normalised: FinancePayeeNormalisation,
+): Promise<void> {
+  // Log every normalised row, not only the ones that carried a named lint
+  // class: the operator's ", ," filler and a casing-only repair are still the
+  // write changing what they typed, and they must see that.
+  if (!normalised.changed) return;
+  const result = await appendLog(root, {
+    domainSlug: slug,
+    type: "finance.payee.normalised",
+    summary: `Normalised payee for ${rowId}: ${normalised.rawPayee ?? "(none)"} → ${normalised.payee ?? "(none)"}`,
+    payload: {
+      rowId,
+      rawPayee: normalised.rawPayee,
+      payee: normalised.payee,
+      issues: normalised.issues,
+      notesPreserved: normalised.notesPreserved,
+    },
+  });
+  // The row is already being written; a missing log line must not fail it.
+  void result;
+}
+
+/** Bulk row repair used by the one-time history migration (no Decisions). */
+export async function updateRowCellsBulk(
+  root: string,
+  slug: string,
+  dbId: string,
+  updates: Array<{ id: string; cells: Record<string, unknown> }>,
+): Promise<Result<{ updated: number }>> {
+  try {
+    if (updates.length === 0) return { ok: true, value: { updated: 0 } };
+    const paths = vaultPaths(root);
+    await assertPhysicalContainment(root, paths.domainSqlite(slug), "write");
+    const sqlite = await openSqlite(root, slug);
+    try {
+      sqlite.exec("BEGIN");
+      const stmt = sqlite.prepare(
+        "UPDATE rows SET cells = ?, updated_at = ? WHERE database_id = ? AND id = ?",
+      );
+      const now = new Date().toISOString();
+      let updated = 0;
+      for (const update of updates) {
+        const info = stmt.run(JSON.stringify(update.cells), now, dbId, update.id);
+        updated += Number(info.changes ?? 0);
+      }
+      sqlite.exec("COMMIT");
+      return { ok: true, value: { updated } };
+    } catch (e) {
+      try {
+        sqlite.exec("ROLLBACK");
+      } catch {
+        // The transaction is already closed.
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      sqlite.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function upsertRow(
   root: string,
   slug: string,
@@ -788,8 +1050,13 @@ export async function upsertRow(
 
     const registry = await readRegistry(registryPath);
 
+    // One rule on the write funnel: the stored payee is the merchant/item, and
+    // the operator's own wording is kept in notes rather than discarded.
+    const normalised = await normaliseFinancePayeeCells(root, slug, dbId, input.cells);
+    const cells = normalised.cells;
+
     // Validate cells against registry
-    const validation = validateCells(registry, dbId, slug, input.cells);
+    const validation = validateCells(registry, dbId, slug, cells);
     if (!validation.ok) return validation;
 
     const id = input.id ?? randomUUID();
@@ -807,7 +1074,8 @@ export async function upsertRow(
       const stmt = sqlite.prepare(
         "INSERT OR REPLACE INTO rows (database_id, id, created_at, updated_at, cells) VALUES (?, ?, ?, ?, ?)",
       );
-      stmt.run(dbId, id, created, now, JSON.stringify(input.cells));
+      stmt.run(dbId, id, created, now, JSON.stringify(cells));
+      await logPayeeNormalisation(root, slug, id, normalised);
 
       return {
         ok: true,
@@ -817,7 +1085,10 @@ export async function upsertRow(
           domainSlug: slug,
           createdAt: created,
           updatedAt: now,
-          cells: input.cells,
+          cells,
+          ...(normalised.issues.length > 0
+            ? { warnings: describePayeeIssues(normalised.issues) }
+            : {}),
         },
       };
     } finally {
@@ -833,15 +1104,20 @@ export async function insertRows(
   slug: string,
   dbId: string,
   rows: Array<{ id: string; cells: Record<string, unknown> }>,
-): Promise<Result<{ ids: string[] }>> {
+): Promise<Result<{ ids: string[]; warnings?: string[] }>> {
   try {
     if (rows.length < 1) return { ok: false, error: "rows must not be empty" };
     const paths = vaultPaths(root);
     const registry = await readRegistry(paths.domainRegistry(slug));
+    const normalisedRows: Array<{ id: string; cells: Record<string, unknown>; normalised: FinancePayeeNormalisation }> = [];
+    const warnings = new Set<string>();
     for (const row of rows) {
       if (!row.id.trim()) return { ok: false, error: "Row id is required" };
-      const validation = validateCells(registry, dbId, slug, row.cells);
+      const normalised = await normaliseFinancePayeeCells(root, slug, dbId, row.cells);
+      const validation = validateCells(registry, dbId, slug, normalised.cells);
       if (!validation.ok) return validation;
+      for (const issue of normalised.issues) warnings.add(PAYEE_ISSUE_TEXT[issue]);
+      normalisedRows.push({ id: row.id, cells: normalised.cells, normalised });
     }
 
     const now = new Date().toISOString();
@@ -854,7 +1130,7 @@ export async function insertRows(
       const insert = sqlite.prepare(
         "INSERT INTO rows (database_id, id, created_at, updated_at, cells) VALUES (?, ?, ?, ?, ?)",
       );
-      for (const row of rows) {
+      for (const row of normalisedRows) {
         const found = existing.get(dbId, row.id) as { id: string } | undefined;
         if (found) {
           sqlite.exec("ROLLBACK");
@@ -863,7 +1139,129 @@ export async function insertRows(
         insert.run(dbId, row.id, now, now, JSON.stringify(row.cells));
       }
       sqlite.exec("COMMIT");
-      return { ok: true, value: { ids: rows.map((row) => row.id) } };
+      for (const row of normalisedRows) {
+        await logPayeeNormalisation(root, slug, row.id, row.normalised);
+      }
+      return {
+        ok: true,
+        value: {
+          ids: rows.map((row) => row.id),
+          ...(warnings.size > 0 ? { warnings: [...warnings] } : {}),
+        },
+      };
+    } catch (e) {
+      try {
+        sqlite.exec("ROLLBACK");
+      } catch {
+        // The transaction is already closed.
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      sqlite.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Move a merge's rows into the surviving database in ONE sqlite transaction.
+ *
+ * The approved merge already mapped every source cell onto a target column id;
+ * this primitive is the write, and it refuses to write half a move:
+ *
+ *  - first it re-counts each source's stored rows and requires exactly the rows
+ *    it was given. The merge checked fingerprints a moment ago, but the vault is
+ *    live: a row added between the check and this transaction would otherwise be
+ *    deleted with the source without ever reaching the target. A mismatch rolls
+ *    the whole move back.
+ *  - then it inserts each moved row under a fresh UUID, keeping the source's own
+ *    `created_at` and `updated_at`. A merged time-ordered table must keep its
+ *    order; re-stamping the rows would file everything as "added today".
+ *  - finally it deletes each listed source row, including the duplicates the
+ *    merge chose not to insert (`skip`): a skipped row is redundant in the
+ *    target, not preserved in a database that is about to disappear.
+ *
+ * The per-source row counts are verified against the full row list, skipped
+ * rows included — `skip` changes what is inserted, never what must be present.
+ */
+export async function insertMovedRows(
+  root: string,
+  slug: string,
+  targetDbId: string,
+  sources: Array<{
+    sourceDatabaseId: string;
+    rows: Array<{
+      sourceRowId: string;
+      cells: Record<string, unknown>;
+      createdAt: string;
+      updatedAt: string;
+      /** A duplicate the merge is not inserting but is removing with its source. */
+      skip?: boolean;
+    }>;
+  }>,
+): Promise<Result<{ inserted: number }>> {
+  try {
+    if (sources.length === 0) return { ok: false, error: "sources must not be empty" };
+    if (sources.some((source) => source.sourceDatabaseId === targetDbId)) {
+      return { ok: false, error: "A database cannot be merged into itself" };
+    }
+    const paths = vaultPaths(root);
+    // Validate against the registry as it stands *after* the merge added its new
+    // columns: a mapped cell that still does not fit the target is a schema the
+    // operator never approved, so it is refused rather than stored.
+    const registry = await readRegistry(paths.domainRegistry(slug));
+    for (const source of sources) {
+      for (const row of source.rows) {
+        if (typeof row.sourceRowId !== "string" || !row.sourceRowId.trim()) {
+          return { ok: false, error: "Row id is required" };
+        }
+        const validation = validateCells(registry, targetDbId, slug, row.cells);
+        if (!validation.ok) return validation;
+      }
+    }
+
+    await assertPhysicalContainment(root, paths.domainSqlite(slug), "write");
+    const sqlite = await openSqlite(root, slug);
+    try {
+      sqlite.exec("BEGIN");
+      const countStmt = sqlite.prepare("SELECT COUNT(*) AS n FROM rows WHERE database_id = ?");
+      for (const source of sources) {
+        const stored = countStmt.get(source.sourceDatabaseId) as { n: number } | undefined;
+        const now = stored?.n ?? 0;
+        if (now !== source.rows.length) {
+          sqlite.exec("ROLLBACK");
+          return {
+            ok: false,
+            error:
+              `Database ${source.sourceDatabaseId} changed since this was proposed ` +
+              `(it now has ${now} rows). Re-read it and propose again.`,
+          };
+        }
+      }
+
+      const insert = sqlite.prepare(
+        "INSERT INTO rows (database_id, id, created_at, updated_at, cells) VALUES (?, ?, ?, ?, ?)",
+      );
+      const remove = sqlite.prepare("DELETE FROM rows WHERE database_id = ? AND id = ?");
+      let inserted = 0;
+      for (const source of sources) {
+        for (const row of source.rows) {
+          if (!row.skip) {
+            insert.run(
+              targetDbId,
+              randomUUID(),
+              row.createdAt,
+              row.updatedAt,
+              JSON.stringify(row.cells),
+            );
+            inserted += 1;
+          }
+          remove.run(source.sourceDatabaseId, row.sourceRowId);
+        }
+      }
+      sqlite.exec("COMMIT");
+      return { ok: true, value: { inserted } };
     } catch (e) {
       try {
         sqlite.exec("ROLLBACK");
@@ -900,6 +1298,93 @@ export async function deleteRow(
     } finally {
       sqlite.close();
     }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Delete a whole database: its rows, then its registry entry.
+ *
+ * Operator-only until 2026-11-15, when the Decision-gated `delete_database` tool
+ * gave the approval queue a way to reach it. The rows go first and the registry
+ * entry second on purpose: a crash between the two leaves an EMPTY database the
+ * operator can see and delete again, never rows with no registry entry to reach
+ * them. A row-count mismatch after such a crash is what the Decision's
+ * fingerprint guard reports, instead of deleting a database the operator never
+ * reviewed.
+ *
+ * `actor` is optional because the engine has no propose/approve context of its
+ * own; an approved Decision passes the proposing actor so the Life log names who
+ * asked for the deletion rather than nobody.
+ */
+export async function deleteDatabase(
+  root: string,
+  slug: string,
+  dbId: string,
+  actor?: Actor,
+): Promise<Result<{ id: string; name: string; rowCount: number; columnCount: number }>> {
+  try {
+    const paths = vaultPaths(root);
+    const registryPath = paths.domainRegistry(slug);
+    const removed = await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      const index = registry.databases.findIndex((d) => d.id === dbId);
+      if (index < 0) {
+        return { ok: false as const, error: `Database not found: ${dbId}` };
+      }
+      const db = registry.databases[index]!;
+
+      // Rows before registry: a database whose sqlite file never existed has no
+      // rows to delete, and this guard keeps the call from opening (and so
+      // creating) a file for a database that was only ever a registry entry.
+      let rowCount = 0;
+      const sqlitePath = paths.domainSqlite(slug);
+      await assertPhysicalContainment(root, sqlitePath, "write");
+      let hasSqlite = true;
+      try {
+        await fs.access(sqlitePath);
+      } catch {
+        hasSqlite = false;
+      }
+      if (hasSqlite) {
+        const sqlite = await openSqlite(root, slug);
+        try {
+          const info = sqlite
+            .prepare("DELETE FROM rows WHERE database_id = ?")
+            .run(dbId);
+          rowCount = Number(info.changes ?? 0);
+        } finally {
+          sqlite.close();
+        }
+      }
+
+      registry.databases.splice(index, 1);
+      await assertPhysicalContainment(root, registryPath, "write");
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+      return {
+        ok: true as const,
+        value: { id: db.id, name: db.name, rowCount, columnCount: db.columns.length },
+      };
+    });
+    if (!removed.ok) return removed;
+
+    // A log line that cannot be appended must not fail a deletion that already
+    // happened: the next approval would find nothing and call the operator's own
+    // yes a stale proposal.
+    await appendLog(root, {
+      domainSlug: slug,
+      type: "database.deleted",
+      summary: `Deleted database "${removed.value.name}" in ${slug}`,
+      payload: {
+        databaseId: removed.value.id,
+        name: removed.value.name,
+        rowCount: removed.value.rowCount,
+        columnCount: removed.value.columnCount,
+      },
+      actor: actor ?? null,
+    });
+    return removed;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
