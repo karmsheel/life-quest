@@ -367,6 +367,33 @@ describe("review page tailoring e2e", () => {
       assert.match(refusals.archived!, /not live/i, "an archived area accepted a template");
       assert.match(refusals.unknownArea!, /not live/i, "an unknown area accepted a template");
 
+      // A template edited by hand is reported, never thrown: the headings that
+      // did parse stay usable, and the operator is told which lines to fix.
+      fs.writeFileSync(
+        templateFile,
+        "## Training\n\n### Details\n\n## Sleep\n\n## Keep\n\n## Training\n",
+      );
+      const tolerant = await getReviewPageTemplate(vaultRoot, "health");
+      assert.equal(tolerant.ok, true, "a malformed template threw on read");
+      checks.handEditedTemplate = {
+        extras: tolerant.ok ? tolerant.value.extras : [],
+        problems: tolerant.ok ? tolerant.value.problems.length : -1,
+      };
+      assert.deepEqual(
+        tolerant.ok ? tolerant.value.extras : [],
+        ["Training", "Sleep"],
+        "a malformed template did not keep the headings that did parse",
+      );
+      assert.ok(
+        (tolerant.ok ? tolerant.value.problems.length : 0) >= 2,
+        "a malformed template was not reported",
+      );
+      const restored = await executeReviewTool(vaultRoot, ACTOR, "write_review_template", {
+        scope: "health",
+        markdown: templateMarkdown,
+      });
+      assert.equal((restored as { error?: unknown }).error, undefined, "the template could not be restored");
+
       // A locked notebook's page is read-only; the lock is the finished report.
       // Mind is archived, so Health is the only live area in the gate.
       const healthDone = await executeReviewTool(vaultRoot, ACTOR, "mark_review_done", {
