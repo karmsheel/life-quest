@@ -126,6 +126,9 @@ import {
   listMetricEvents,
   logMetric,
   defineMetric,
+  getMetric,
+  draftToDefineMetricInput,
+  proposeMetricDefinitionChange,
   isReviewCadence,
   addDatabaseColumn,
   withDecisionDisplayLabels,
@@ -225,6 +228,7 @@ import {
   type ReviewSkill,
   type AnalyticsMatrix,
   type MetricDefinition,
+  type MetricDefinitionDraft,
   type MetricEventRow,
   type MetricEvents,
   type SignalChainListResult,
@@ -2285,44 +2289,59 @@ export async function metricLogEvent(input: {
 
 export type MetricDefineInput = {
   area: string;
-  definition: {
-    id: string;
-    label: string;
-    unit: string;
-    source: "events";
-    aggregation: "sum" | "count" | "last" | "avg";
-    eventKey: string;
-    target?: number | null;
-    direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
-  };
+  definition: MetricDefinitionDraft;
 };
 
 /**
- * Create one events metric definition. Applies immediately (creation is the
- * companion's own add rule) and is attributed to the operator; the engine writes
- * the `metric.created` line and creates the area's Metrics database if needed.
- * A duplicate id is refused: editing a definition still waits on a Decision.
+ * Create one metric definition from the bridge's draft. Creation applies
+ * immediately (the companion's own add rule) and is attributed to the operator;
+ * the engine writes the `metric.created` line and creates the area's Metrics
+ * database if needed. A derived draft names its database and two columns and the
+ * engine builds the one-number spec; the renderer never holds a ViewSpec.
+ * Editing an existing definition is `metricPropose`, not this door: a duplicate
+ * id is refused here.
  */
 export async function metricDefine(
   input: MetricDefineInput,
 ): Promise<Result<MetricDefinition>> {
-  const definition = input.definition;
   return withVault((root) =>
-    defineMetric(
+    defineMetric(root, input.area, draftToDefineMetricInput(input.definition), USER_ACTOR),
+  );
+}
+
+/** Read one definition, for the Analytics page's edit form to prefill. */
+export async function metricGet(input: {
+  area: string;
+  metricId: string;
+}): Promise<Result<MetricDefinition>> {
+  return withVault(async (root) => {
+    const read = await getMetric(root, input.area, input.metricId);
+    if (!read.ok) return { ok: false, error: read.error };
+    return { ok: true, value: read.value };
+  });
+}
+
+/**
+ * File the Decision that proposes editing or deleting one definition. Writes no
+ * definition: the change applies only when the operator approves it. The engine
+ * validates the proposed payload and names any identical pending proposal
+ * instead of filing a duplicate card.
+ */
+export async function metricPropose(input: {
+  area: string;
+  metricId: string;
+  action: "update" | "delete";
+  definition?: MetricDefinitionDraft;
+}): Promise<Result<{ decisionId: string }>> {
+  return withVault((root) =>
+    proposeMetricDefinitionChange(
       root,
-      input.area,
       {
-        id: definition.id,
-        label: definition.label,
-        unit: definition.unit,
-        source: definition.source,
-        aggregation: definition.aggregation,
-        eventKey: definition.eventKey,
-        ...(definition.target !== undefined ? { target: definition.target } : {}),
-        // `direction: null` from the form means "no direction"; the stored
-        // definition simply omits the field.
-        ...(definition.direction !== undefined && definition.direction !== null
-          ? { direction: definition.direction }
+        area: input.area,
+        metricId: input.metricId,
+        action: input.action,
+        ...(input.definition !== undefined
+          ? { definition: draftToDefineMetricInput(input.definition) }
           : {}),
       },
       USER_ACTOR,

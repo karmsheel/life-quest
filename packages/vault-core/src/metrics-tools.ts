@@ -3,9 +3,11 @@ import { listDomains } from "./domains.ts";
 import { isLiveAreaMeta } from "./domain-lens.ts";
 import {
   defineMetric,
+  getMetric,
   getMetricsSummary,
   listMetricDefinitions,
   logMetric,
+  proposeMetricDefinitionChange,
   type DefineMetricInput,
 } from "./metrics.ts";
 import { isReviewCadence } from "./period.ts";
@@ -28,8 +30,9 @@ export const METRICS_TOOL_DEFS: MapToolDef[] = [
       'source "derived" runs ONE view spec over any database in the area — pass spec {databaseId, title, presentation:"metric", ' +
       'groupBy:null, timeColumnId, filters, measure, measureColumnId} (one number per period; no blocks, grouping, series or ' +
       'limit). source "events" logs dated rows with log_metric: pass eventKey (the metric cell value those rows carry) and no ' +
-      'spec. aggregation is sum, count, last or avg. Creating applies immediately and is logged; redefining an existing id is ' +
-      "REFUSED (EXISTS) because editing a definition goes through a Decision — use a new id.",
+      'spec. aggregation is sum, count, last or avg. A NEW id applies immediately and is logged. An EXISTING id files a pending ' +
+      "UPDATE Decision (the result names its decisionId) and changes nothing until the operator approves it — call the tool " +
+      "again with the same payload only if you want the same pending card back.",
     parameters: {
       type: "object",
       properties: {
@@ -209,7 +212,36 @@ export async function executeMetricsTool(
           : {}),
       };
       const defined = await defineMetric(root, slug, input, actor);
-      if (!defined.ok) return mapError(defined.code, defined.error);
+      if (!defined.ok) {
+        if (defined.code === "EXISTS") {
+          // An existing id is an EDIT, and an edit changes what a review
+          // measures: file the update Decision (or return the identical one
+          // already pending) and change nothing.
+          const proposed = await proposeMetricDefinitionChange(
+            root,
+            {
+              area: slug,
+              metricId: input.id.trim(),
+              action: "update",
+              definition: input,
+            },
+            actor,
+          );
+          if (!proposed.ok) return mapError("FAILED", proposed.error);
+          const current = await getMetric(root, slug, input.id.trim());
+          return {
+            metric: current.ok ? definitionView(current.value) : null,
+            pending: true,
+            status: "pending",
+            decisionId: proposed.value.decisionId,
+            message:
+              `The metric "${input.label}" already exists, so editing it goes through Decisions. ` +
+              `Proposal ${proposed.value.decisionId} is pending and nothing has changed yet; ` +
+              "it applies when the operator approves it.",
+          };
+        }
+        return mapError(defined.code, defined.error);
+      }
       return { metric: definitionView(defined.value) };
     }
 

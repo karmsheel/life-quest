@@ -87,6 +87,21 @@ export type DocumentTarget =
   // the operator never saw. Legacy `{type:"review"}` Decisions read as the
   // overall page (one release).
   | { type: "review-page"; cadence: ReviewCadence; period: string; scope: string; rev?: number }
+  // A metric definition CHANGE. Creating a definition applies immediately, but
+  // editing or deleting one changes what a review measures, so it is filed as a
+  // Decision (spec §10.6) and applied only on approval. `definition` is the
+  // proposed update payload; `baseUpdatedAt` is the definition's `updatedAt`
+  // when the proposal was filed (`null` when the record carries none), so an
+  // apply that finds a newer file refuses STALE instead of overwriting a change
+  // the operator never saw.
+  | {
+      type: "metric-definition";
+      domainSlug: string;
+      metricId: string;
+      action: "update" | "delete";
+      definition?: DefineMetricInput;
+      baseUpdatedAt: string | null;
+    }
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
@@ -795,6 +810,63 @@ export type MetricDefinition = {
   createdAt: string;
   updatedAt: string;
 };
+
+/**
+ * A definition write's payload: the definition minus the fields the store owns.
+ *
+ * A `derived` definition normally carries its validated one-number `spec`. The
+ * bridge forms — the Analytics "New metric" form and a Decision's edit draft —
+ * cannot build a full ViewSpec, so they may instead name the parts a one-number
+ * query is made of: `databaseId`, `measureColumnId` and `timeColumnId`. The
+ * engine synthesizes the same spec it validates for a hand-written one, so
+ * there is never a second query vocabulary and the renderer never holds a spec.
+ */
+export type DefineMetricInput = Omit<
+  MetricDefinition,
+  "schemaVersion" | "domainSlug" | "createdBy" | "createdAt" | "updatedAt"
+> & {
+  /** derived convenience form: the database the one-number query reads. */
+  databaseId?: string;
+  /** derived convenience form: the number column folded (null/absent for count). */
+  measureColumnId?: string | null;
+  /** derived convenience form: the date column the period window acts on. */
+  timeColumnId?: string;
+};
+
+/**
+ * What the bridge accepts where a full definition would be sent: a create, or
+ * the proposed payload of an update Decision.
+ *
+ * The two arms are the two sources, and neither carries a `spec` — the engine
+ * builds and validates the one-number query a derived metric runs. An `events`
+ * draft names the `eventKey` its logged rows carry; a `derived` draft names the
+ * database and the two columns the engine should query.
+ */
+export type MetricDefinitionDraft =
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: MetricAggregation;
+      eventKey: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    }
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "derived";
+      aggregation: MetricAggregation;
+      databaseId: string;
+      measureColumnId?: string | null;
+      timeColumnId: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    };
 
 /**
  * One metric's answered value for a review period and the one before it.

@@ -36,6 +36,7 @@ import type {
   AutomationRunPatch,
   AnalyticsMatrix,
   MetricDefinition,
+  MetricDefinitionDraft,
   MetricEventRow,
   MetricEvents,
   PageBlock,
@@ -881,21 +882,26 @@ type LifequestApi = {
     value?: number;
     note?: string;
   }) => Promise<Result<MetricEventRow>>;
-  /** Create one events metric definition. Applies immediately; duplicate ids
-   *  are refused (editing a definition waits on a Decision). */
+  /** Create one metric definition from the bridge draft (events or derived).
+   *  Creation applies immediately; an existing id is refused here — propose the
+   *  edit through metricPropose. */
   metricDefine: (input: {
     area: string;
-    definition: {
-      id: string;
-      label: string;
-      unit: string;
-      source: "events";
-      aggregation: "sum" | "count" | "last" | "avg";
-      eventKey: string;
-      target?: number | null;
-      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
-    };
+    definition: MetricDefinitionDraft;
   }) => Promise<Result<MetricDefinition>>;
+  /** Read one definition, e.g. to prefill the Analytics edit form. */
+  metricGet: (input: {
+    area: string;
+    metricId: string;
+  }) => Promise<Result<MetricDefinition>>;
+  /** File a Decision proposing an edit or delete of an existing definition.
+   *  Nothing changes until the operator approves it. */
+  metricPropose: (input: {
+    area: string;
+    metricId: string;
+    action: "update" | "delete";
+    definition?: MetricDefinitionDraft;
+  }) => Promise<Result<{ decisionId: string }>>;
   planningEnsure: (
     cadence: ReviewCadence,
     period: string,

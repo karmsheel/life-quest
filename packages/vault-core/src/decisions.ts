@@ -22,6 +22,7 @@ import {
   type DatabaseDecisionBody,
   type DecisionAmendment,
   type DecisionRecord,
+  type DefineMetricInput,
   type DocumentKind,
   type DocumentTarget,
   type GoalsCommand,
@@ -69,6 +70,7 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isMetricDefinitionExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
@@ -102,6 +104,20 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         period: String(t.period),
         scope: String(t.scope),
         ...(typeof t.rev === "number" ? { rev: t.rev } : {}),
+      };
+    } else if (t.type === "metric-definition") {
+      // The proposed definition travels in the target, and `baseUpdatedAt` is
+      // the definition version it was filed against (null on a legacy record:
+      // then the apply reads the current file and does no staleness check).
+      target = {
+        type: "metric-definition",
+        domainSlug: String(t.domainSlug),
+        metricId: String(t.metricId),
+        action: t.action === "delete" ? "delete" : "update",
+        ...(isRecordValue(t.definition)
+          ? { definition: t.definition as unknown as DefineMetricInput }
+          : {}),
+        baseUpdatedAt: typeof t.baseUpdatedAt === "string" ? t.baseUpdatedAt : null,
       };
     } else if (t.type === "doctrine") {
       target = {
@@ -217,6 +233,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     // A page Decision reads under the area lens its page belongs to; the overall
     // page is the whole life, so it carries no domain.
     domainSlugs = target.scope === "overall" ? [] : [target.scope];
+  } else if (target.type === "metric-definition") {
+    // A definition belongs to its area, so its Decision is shown under that lens.
+    domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
   }
@@ -339,6 +358,23 @@ function isReviewPageExplicitTarget(raw: Record<string, unknown>): boolean {
     raw.period.length > 0 &&
     typeof raw.scope === "string" &&
     raw.scope.length > 0
+  );
+}
+
+/**
+ * A metric-definition target names a live area (or a saved database, for a
+ * derived metric), a metric id, and either an update payload or a delete. It is
+ * never a lockable document: creating applies at once, and the Decision itself
+ * is the governed change.
+ */
+function isMetricDefinitionExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "metric-definition" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.metricId === "string" &&
+    raw.metricId.length > 0 &&
+    (raw.action === "update" || raw.action === "delete")
   );
 }
 
@@ -644,6 +680,23 @@ export async function createDecision(
       if (!input.target.scope.trim()) {
         return { ok: false, error: "scope is required" };
       }
+    } else if (input.target.type === "metric-definition") {
+      // A metric definition is not a lockable document; the store write is what
+      // the approval performs, so the shape is all this door checks. The area's
+      // liveness and the definition that the proposal is against are read on
+      // the propose path (metrics.ts), where they can still be reported.
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
+      }
+      if (!input.target.metricId.trim()) {
+        return { ok: false, error: "metricId is required" };
+      }
+      if (input.target.action !== "update" && input.target.action !== "delete") {
+        return { ok: false, error: `Invalid metric action: ${String(input.target.action)}` };
+      }
+      if (input.target.action === "update" && !input.target.definition) {
+        return { ok: false, error: "A metric update needs the proposed definition" };
+      }
     } else if (input.target.type === "page") {
       if (!input.target.domainSlug.trim()) {
         return { ok: false, error: "domainSlug is required" };
@@ -795,6 +848,18 @@ export async function createDecision(
           error: "Review must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "metric-definition") {
+      // A definition is not lockable — changing it is already the governed act.
+      // The area must be live (an archived area must not gain a pending card);
+      // the propose path has already read the definition itself.
+      if (!(await isDomainLive(rootPath, input.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Domain not found or archived: ${input.target.domainSlug}`,
+        };
+      }
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else if (input.target.type === "page") {
       // Pages are not lockable. Verify the page exists.
       const { getPage } = await import("./pages.ts");
@@ -920,6 +985,8 @@ export async function createDecision(
                       ? input.target.scope === "overall"
                         ? []
                         : [input.target.scope]
+                      : input.target.type === "metric-definition"
+                        ? [input.target.domainSlug]
                       : input.target.type === "goal"
                       ? input.domainSlugs ?? []
                       : input.target.type === "day-template"
@@ -942,9 +1009,13 @@ export async function createDecision(
 
     // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
     // "Proposed change to" would make the inbox read "Proposed change to
-    // Finance bot".
+    // Finance bot". A metric-definition title is the same shape ("Edit the
+    // Training minutes metric"): the proposer names the verb and the metric,
+    // and the generic "Proposed change to" wrapper would bury both.
     const title =
-      input.target.type === "agent-pairing" && input.proposedTitle
+      (input.target.type === "agent-pairing" ||
+        input.target.type === "metric-definition") &&
+      input.proposedTitle
         ? input.proposedTitle
         : `Proposed change to ${documentTargetLabel(input.target, input.proposedTitle ?? "")}`;
 
@@ -1422,6 +1493,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     if (typeof target.mappingId === "string") {
       assertSafeSegment(target.mappingId, "mapping id");
     }
+    if (typeof target.metricId === "string" && target.metricId) {
+      assertSafeSegment(target.metricId, "metric id");
+    }
     if (typeof target.id === "string" && target.id) {
       assertSafeSegment(target.id, "document id");
     }
@@ -1518,6 +1592,33 @@ async function applyApprovedBody(
           return {
             ok: false,
             error: "The page changed after this proposal was approved; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "metric-definition") {
+      // The store write lives in metrics.ts, exactly as a page write lives in
+      // reviews.ts; this path only decides what a refusal means. A stale
+      // definition leaves the Decision pending with the notice (the operator
+      // asked for a change that is still wanted, against an older version),
+      // and an invalid payload leaves it pending so it can be amended.
+      const { applyMetricDefinitionChange } = await import("./metrics.ts");
+      const applied = await applyMetricDefinitionChange(
+        rootPath,
+        decision.target,
+        decision.actor,
+        decision.proposedBodyMarkdown,
+      );
+      if (!applied.ok) {
+        if (applied.stale) {
+          return {
+            ok: false,
+            error:
+              "The metric definition changed after this proposal was approved, so the proposal is " +
+              "stale; it is still pending.",
             terminal: false,
           };
         }

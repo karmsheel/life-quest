@@ -15,19 +15,26 @@ import {
 import { todayLocalIso } from "./map/dates.ts";
 import { isValidLocalIsoDate, periodBounds, previousPeriod } from "./period.ts";
 import { applyViewDefaults, runView, validateViewSpecForVault } from "./views.ts";
+import { createDecision, listDecisions } from "./decisions.ts";
 import {
   USER_ACTOR,
   type Actor,
   type DatabaseMeta,
+  type DefineMetricInput,
+  type DocumentTarget,
   type MetricDefinition,
+  type MetricDefinitionDraft,
   type MetricDefinitionProblem,
   type MetricFormatting,
   type MetricMagnitude,
   type MetricSummary,
+  type Result,
   type ReviewCadence,
   type ViewSpec,
   type WeekStartDay,
 } from "./types.ts";
+
+export type { DefineMetricInput } from "./types.ts";
 
 /**
  * Metric definitions (2026-11-26 metrics design, §10).
@@ -62,8 +69,8 @@ const MAX_FORMAT_CHARS = 12;
  *
  * `EXISTS` is its own code rather than a string a caller has to match: creating
  * a definition applies immediately (spec §10.6), but CHANGING one goes through a
- * Decision and that governance is still open (spec §17.1), so the store refuses
- * an overwrite outright instead of inventing a path the product has not decided.
+ * Decision (spec §17.1). The store refuses to overwrite; the tool door turns an
+ * `EXISTS` into the update Decision rather than inventing a second write path.
  */
 export type MetricErrorCode = "MALFORMED" | "EXISTS" | "NOT_FOUND" | "FAILED";
 
@@ -71,10 +78,102 @@ export type MetricResult<T> =
   | { ok: true; value: T }
   | { ok: false; code: MetricErrorCode; error: string };
 
-export type DefineMetricInput = Omit<
-  MetricDefinition,
-  "schemaVersion" | "domainSlug" | "createdBy" | "createdAt" | "updatedAt"
->;
+/**
+ * The one-number ViewSpec the engine builds for a bridge draft's derived form.
+ *
+ * The Analytics form and an edit draft can name what to measure but cannot build
+ * a ViewSpec, so the engine assembles exactly the shape a valid `metric` spec
+ * has: one database, no grouping/series/blocks, an empty filter list, the `all`
+ * window (rewritten to the review period at read time), the definition's
+ * aggregation as the measure, and `convertToZar: false`. The `limit` is the
+ * engine's own default for an ungrouped aggregate, not a ranked-list limit.
+ * `validateDerivedSpec` then validates it exactly as a hand-written spec.
+ */
+export function synthesizeDerivedMetricSpec(input: {
+  databaseId: string;
+  measureColumnId?: string | null;
+  timeColumnId: string;
+  measure: DefineMetricInput["aggregation"];
+  title: string;
+}): Omit<ViewSpec, "schemaVersion"> {
+  const measureColumnId =
+    input.measure === "count"
+      ? null
+      : typeof input.measureColumnId === "string" && input.measureColumnId.trim()
+        ? input.measureColumnId.trim()
+        : null;
+  return {
+    databaseId: input.databaseId.trim(),
+    title: input.title.trim(),
+    presentation: "metric",
+    groupBy: null,
+    timeBucket: null,
+    timeColumnId: input.timeColumnId.trim(),
+    timeWindow: "all",
+    filters: [],
+    measure: input.measure,
+    measureColumnId,
+    per: null,
+    sort: { by: "value", dir: "desc" },
+    limit: 12,
+    convertToZar: false,
+    columns: [],
+  };
+}
+
+/**
+ * Turn the bridge's draft into the engine's write payload.
+ *
+ * A derived draft's `spec` is synthesized here, before validation, so the create
+ * path and the update-Decision path see one shape. An events draft carries its
+ * `eventKey`; a `direction: null` from a form means "no direction", so it is
+ * dropped rather than stored as an invalid value.
+ */
+export function draftToDefineMetricInput(draft: MetricDefinitionDraft): DefineMetricInput {
+  const common: DefineMetricInput = {
+    id: draft.id,
+    label: draft.label,
+    unit: draft.unit,
+    source: draft.source,
+    aggregation: draft.aggregation,
+    ...(draft.target !== undefined ? { target: draft.target } : {}),
+    ...(draft.direction !== undefined && draft.direction !== null
+      ? { direction: draft.direction }
+      : {}),
+    ...(draft.formatting !== undefined && draft.formatting !== null
+      ? { formatting: draft.formatting }
+      : {}),
+  };
+  if (draft.source === "events") {
+    return { ...common, eventKey: draft.eventKey };
+  }
+  return {
+    ...common,
+    databaseId: draft.databaseId,
+    ...(draft.measureColumnId !== undefined
+      ? { measureColumnId: draft.measureColumnId }
+      : {}),
+    timeColumnId: draft.timeColumnId,
+  };
+}
+
+/** The engine payload for a stored definition, for a Decision target. */
+function definitionInputFrom(definition: MetricDefinition): DefineMetricInput {
+  const {
+    schemaVersion: _schemaVersion,
+    domainSlug: _domainSlug,
+    createdBy: _createdBy,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
+    ...input
+  } = definition;
+  void _schemaVersion;
+  void _domainSlug;
+  void _createdBy;
+  void _createdAt;
+  void _updatedAt;
+  return input;
+}
 
 /** The display sign rule a metric's number is printed with; never affects a query. */
 export function metricMagnitude(
@@ -524,17 +623,50 @@ async function validateDefinitionInput(
 
   let spec: Omit<ViewSpec, "schemaVersion"> | undefined;
   if (source === "derived") {
-    if (input.spec === undefined || input.spec === null) {
-      return {
-        ok: false,
-        code: "MALFORMED",
-        error: "A derived metric needs a spec — the query that answers it.",
-      };
-    }
     if (input.eventKey !== undefined) {
       return { ok: false, code: "MALFORMED", error: "A derived metric takes no eventKey" };
     }
-    const checked = await validateDerivedSpec(root, slug, input.spec);
+    const hasSpec = input.spec !== undefined && input.spec !== null;
+    const hasConvenienceFields =
+      input.databaseId !== undefined ||
+      input.measureColumnId !== undefined ||
+      input.timeColumnId !== undefined;
+    if (hasSpec && hasConvenienceFields) {
+      return {
+        ok: false,
+        code: "MALFORMED",
+        error:
+          "A derived metric takes a spec OR the database/measure/time columns the form collects, not both.",
+      };
+    }
+    let rawSpec: unknown;
+    if (hasSpec) {
+      rawSpec = input.spec;
+    } else if (
+      typeof input.databaseId === "string" &&
+      input.databaseId.trim() &&
+      typeof input.timeColumnId === "string" &&
+      input.timeColumnId.trim()
+    ) {
+      // The bridge form cannot build a ViewSpec: synthesize the one-number query
+      // and validate it through the same path as a hand-written spec below.
+      rawSpec = synthesizeDerivedMetricSpec({
+        databaseId: input.databaseId,
+        measureColumnId: input.measureColumnId,
+        timeColumnId: input.timeColumnId,
+        measure: aggregation,
+        title: label,
+      });
+    } else {
+      return {
+        ok: false,
+        code: "MALFORMED",
+        error:
+          "A derived metric needs a spec (the query that answers it), or the source database, " +
+          "measure column and date column the form collects.",
+      };
+    }
+    const checked = await validateDerivedSpec(root, slug, rawSpec);
     if (!checked.ok) return checked;
     spec = checked.value;
   } else {
@@ -607,9 +739,9 @@ async function withMetricLock<T>(key: string, fn: () => Promise<T>): Promise<T> 
 /**
  * Create one definition. Applies immediately — creating is the "define it now"
  * act (spec §10.6) — but an existing id is REFUSED with `EXISTS`: editing or
- * deleting a definition changes what a review measures, and that goes through a
- * Decision the product has not settled yet (spec §17.1). Refusing is the only
- * honest answer until it has.
+ * deleting a definition changes what a review measures, so it goes through a
+ * Decision (`proposeMetricDefinitionChange` below). The tool door turns this
+ * refusal into that pending Decision; the store itself never overwrites.
  */
 export async function defineMetric(
   root: string,
@@ -632,7 +764,7 @@ export async function defineMetric(
         return {
           ok: false,
           code: "EXISTS",
-          error: `A metric with id "${validated.value.id}" already exists in ${slug}. Editing or deleting a definition waits on a Decision, so this was not changed.`,
+          error: `A metric with id "${validated.value.id}" already exists in ${slug}. Editing or deleting a definition goes through Decisions, so this create wrote nothing — propose the change instead.`,
         };
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
@@ -669,6 +801,276 @@ export async function defineMetric(
       return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Editing / deleting a definition: a Decision, applied only on approval
+// ---------------------------------------------------------------------------
+
+export type ProposeMetricDefinitionChangeInput = {
+  /** The live area the definition belongs to. */
+  area: string;
+  metricId: string;
+  action: "update" | "delete";
+  /** The proposed definition; required for `update`, ignored for `delete`. */
+  definition?: DefineMetricInput;
+};
+
+/**
+ * File a Decision proposing an edit or a delete of one existing definition.
+ *
+ * Creating a definition applies immediately, but changing one changes what a
+ * review measures (spec §10.6), so this writes nothing to the definition: it
+ * reads the current file, validates the proposed payload, and files a Decision
+ * carrying both the proposal and the `updatedAt` it was filed against. The apply
+ * path re-reads the file and refuses STALE if it moved in between.
+ *
+ * An identical pending proposal is returned instead of filed twice — the same
+ * card already asks the operator the same question. The returned id names the
+ * Decision in both cases.
+ */
+export async function proposeMetricDefinitionChange(
+  root: string,
+  input: ProposeMetricDefinitionChangeInput,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<{ decisionId: string }>> {
+  try {
+    const slug = input.area;
+    const id = input.metricId;
+    if (!METRIC_ID_PATTERN.test(id)) {
+      return { ok: false, error: `Metric not found: ${id}` };
+    }
+    if (!(await isDomainLive(root, slug))) {
+      return { ok: false, error: `Domain not found or archived: ${slug}` };
+    }
+    const current = await getMetric(root, slug, id);
+    if (!current.ok) return { ok: false, error: current.error };
+
+    let proposed: DefineMetricInput | undefined;
+    if (input.action === "update") {
+      if (!input.definition) {
+        return { ok: false, error: "A metric update needs the proposed definition" };
+      }
+      const validated = await validateDefinitionInput(root, slug, input.definition);
+      if (!validated.ok) return { ok: false, error: validated.error };
+      if (validated.value.id !== id) {
+        return {
+          ok: false,
+          error: `The proposed definition names "${validated.value.id}", not "${id}"`,
+        };
+      }
+      proposed = definitionInputFrom(validated.value);
+    } else if (input.action !== "delete") {
+      return { ok: false, error: `Unknown metric action: ${String(input.action)}` };
+    }
+
+    const baseUpdatedAt = current.value.updatedAt;
+    // One pending card per identical question: an agent that retries the same
+    // edit must not fill the inbox with duplicates.
+    const listed = await listDecisions(root);
+    if (listed.ok) {
+      for (const decision of listed.value) {
+        if (decision.status !== "pending") continue;
+        const target = decision.target;
+        if (target.type !== "metric-definition") continue;
+        if (target.domainSlug !== slug || target.metricId !== id) continue;
+        if (target.action !== input.action) continue;
+        if (target.baseUpdatedAt !== baseUpdatedAt) continue;
+        if (
+          input.action === "update" &&
+          JSON.stringify(target.definition ?? null) !== JSON.stringify(proposed ?? null)
+        ) {
+          continue;
+        }
+        return { ok: true, value: { decisionId: decision.id } };
+      }
+    }
+
+    const title = `${input.action === "update" ? "Edit" : "Delete"} the ${current.value.label} metric`;
+    const decision = await createDecision(root, {
+      target: {
+        type: "metric-definition",
+        domainSlug: slug,
+        metricId: id,
+        action: input.action,
+        ...(proposed ? { definition: proposed } : {}),
+        baseUpdatedAt,
+      },
+      proposedTitle: title,
+      // The proposed payload is the body so the inbox can show (and "approve
+      // with changes" can right) the exact definition that will be written.
+      proposedBodyMarkdown: proposed ? `${JSON.stringify(proposed, null, 2)}\n` : "{}\n",
+      actor,
+    });
+    if (!decision.ok) return { ok: false, error: decision.error };
+    return { ok: true, value: { decisionId: decision.value.id } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** One approved metric-definition Decision, as the apply path reads it. */
+export type MetricDefinitionApplyTarget = Extract<
+  DocumentTarget,
+  { type: "metric-definition" }
+>;
+
+/**
+ * The apply outcome. `stale` means the definition moved (or vanished) between
+ * the proposal and the approval, which the Decision surface reports as STALE and
+ * leaves the card pending — never a silent overwrite.
+ */
+export type ApplyMetricDefinitionChangeResult =
+  | { ok: true; value: { action: "update" | "delete"; metricId: string } }
+  | { ok: false; error: string; stale: boolean };
+
+/** The definition the approval should write: an amended body first, then the target. */
+function proposedDefinitionFromDecision(
+  target: MetricDefinitionApplyTarget,
+  proposedBodyMarkdown?: string,
+): DefineMetricInput | null {
+  if (proposedBodyMarkdown) {
+    try {
+      const parsed: unknown = JSON.parse(proposedBodyMarkdown);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        typeof (parsed as Record<string, unknown>).id === "string" &&
+        (parsed as Record<string, unknown>).source !== undefined
+      ) {
+        // The body is what the operator approved (and may have amended); the
+        // target's copy is the fallback for a record whose body is empty.
+        return parsed as DefineMetricInput;
+      }
+    } catch {
+      // Fall through to the target's copy.
+    }
+  }
+  return target.definition ?? null;
+}
+
+/**
+ * Apply an approved metric-definition Decision: revalidate against the vault as
+ * it is now, check the definition has not moved since the proposal, then write
+ * the file (update) or remove it (delete). Creation is NOT here — it applies
+ * immediately through `defineMetric`.
+ *
+ * The update preserves the definition's `createdBy`/`createdAt` (the store owns
+ * attribution) and moves `updatedAt`; the delete does not sweep review figures,
+ * because the next unlocked Start removes the stale block by marker.
+ */
+export async function applyMetricDefinitionChange(
+  root: string,
+  target: MetricDefinitionApplyTarget,
+  actor: Actor = USER_ACTOR,
+  proposedBodyMarkdown?: string,
+): Promise<ApplyMetricDefinitionChangeResult> {
+  try {
+    const slug = target.domainSlug;
+    const id = target.metricId;
+    if (!METRIC_ID_PATTERN.test(id)) {
+      return { ok: false, stale: false, error: `Invalid metric id: ${id}` };
+    }
+    const current = await getMetric(root, slug, id);
+    if (!current.ok) {
+      // Missing (or unreadable) at apply time is exactly "the definition is not
+      // the one this proposal was filed against".
+      return { ok: false, stale: true, error: current.error };
+    }
+    if (!(await isDomainLive(root, slug))) {
+      return { ok: false, stale: false, error: `Domain not found or archived: ${slug}` };
+    }
+    if (
+      target.baseUpdatedAt !== null &&
+      current.value.updatedAt !== target.baseUpdatedAt
+    ) {
+      return {
+        ok: false,
+        stale: true,
+        error:
+          `The definition changed since this proposal was filed ` +
+          `(was ${target.baseUpdatedAt}, now ${current.value.updatedAt}).`,
+      };
+    }
+
+    const file = vaultPaths(root).domainMetric(slug, id);
+    if (target.action === "delete") {
+      try {
+        await fs.rm(file);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      }
+      await appendLog(root, {
+        domainSlug: slug,
+        type: "metric.deleted",
+        summary: `Deleted metric "${current.value.label}" from ${slug}`,
+        payload: {
+          metricId: id,
+          source: current.value.source,
+          aggregation: current.value.aggregation,
+        },
+        actor,
+      });
+      return { ok: true, value: { action: "delete", metricId: id } };
+    }
+
+    const proposed = proposedDefinitionFromDecision(target, proposedBodyMarkdown);
+    if (!proposed) {
+      return {
+        ok: false,
+        stale: false,
+        error: "The proposed metric definition is missing; nothing was written.",
+      };
+    }
+    const validated = await validateDefinitionInput(root, slug, proposed);
+    if (!validated.ok) {
+      // A revalidation the operator can still amend or reject: the Decision
+      // stays pending with the sentence rather than rejecting a wanted change.
+      return { ok: false, stale: false, error: validated.error };
+    }
+    if (validated.value.id !== id) {
+      return {
+        ok: false,
+        stale: false,
+        error: `The proposed definition names "${validated.value.id}", not "${id}"`,
+      };
+    }
+    // Switching (or editing) an events definition needs its table to exist; the
+    // same idempotent ensure a create does.
+    if (validated.value.source === "events") {
+      const ensured = await ensureMetricsDatabase(root, slug);
+      if (!ensured.ok) {
+        return { ok: false, stale: false, error: ensured.error };
+      }
+    }
+    const now = new Date().toISOString();
+    const definition: MetricDefinition = {
+      ...validated.value,
+      // Attribution is the definition's, not the approving actor's: an edit
+      // moves updatedAt, never who created it or when.
+      createdBy: current.value.createdBy,
+      createdAt: current.value.createdAt,
+      updatedAt: now,
+    };
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await atomicWriteFile(file, `${JSON.stringify(definition, null, 2)}\n`);
+    await appendLog(root, {
+      domainSlug: slug,
+      type: "metric.updated",
+      summary: `Edited metric "${definition.label}" in ${slug}`,
+      payload: {
+        metricId: id,
+        source: definition.source,
+        aggregation: definition.aggregation,
+        label: definition.label,
+      },
+      actor,
+    });
+    return { ok: true, value: { action: "update", metricId: id } };
+  } catch (e) {
+    return { ok: false, stale: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -320,12 +320,11 @@ with one query path:
 
 The `metrics` database is created with the first events metric definition (or the
 first logged event, whichever comes first), only in a live area, and it is
-reused with its columns intact afterwards. Metric definitions are
-created immediately (a new definition is the "define it now" act); changing or
-deleting an existing definition is not exposed yet because it changes what a
-review measures, and that governance is still an open product question. The
-companion's tools are `define_metric`, `log_metric`, `list_metrics` and
-`get_metrics_summary`.
+reused with its columns intact afterwards. Creating a definition and logging an
+event apply immediately; editing or deleting an existing definition is proposed
+in Decisions and applies only when you approve it, with a stale check that
+refuses the change if the definition moved in between. The companion's tools are
+`define_metric`, `log_metric`, `list_metrics` and `get_metrics_summary`.
 
 ### JSON restore is deliberate
 

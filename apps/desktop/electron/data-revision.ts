@@ -179,9 +179,12 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "review:skillWrite",
   // metrics: logging an event writes a row into the area's Metrics database, and
   // defining a metric writes a definition file and may create that database, so
-  // both move what the Analytics matrix and the review figures read.
+  // both move what the Analytics matrix and the review figures read. Proposing
+  // an edit/delete writes a Decision (not the definition): the inbox and the
+  // board must redraw to show the new pending card.
   "metrics:logEvent",
   "metrics:define",
+  "metrics:propose",
   "note:write",
   "planning:ensure",
   // settings carry the currency and the FX rate

@@ -54,7 +54,8 @@ import type { MetricDefinition, ViewSpec } from "@lifequest/vault-core";
  * ── How this can fail (written before the assertions) ────────────────────────
  *
  *  1. A definition that is only in the request: no JSON on disk, or a second
- *     create silently overwriting the first (it must refuse with EXISTS).
+ *     create silently overwriting the first (it must file a pending edit
+ *     Decision and write nothing).
  *  2. An events metric whose rows are not dated rows: three sessions must be
  *     three rows with the definition's eventKey, so `count` says 3 and `sum`
  *     says the 120 minutes — from the same rows.
@@ -69,7 +70,8 @@ import type { MetricDefinition, ViewSpec } from "@lifequest/vault-core";
  *  7. A period window ignored: a previous-period row leaking into this
  *     period's value, or a delta computed from the wrong window.
  *  8. Refusals that succeed: a bad derived spec, events without an eventKey, an
- *     unknown aggregation, a non-live area, a redefine, a log to nothing.
+ *     unknown aggregation, a non-live area, a redefine that writes immediately,
+ *     a log to nothing.
  *  9. Presence tests that miss empty cells: `is-not-set` must match a NULL cell,
  *     which a `neq ""` filter cannot.
  * 10. A default-skill rewrite that clobbers an operator's edit: only the
@@ -531,6 +533,8 @@ describe("metrics e2e", () => {
         aggregation: "count",
         eventKey: "x",
       })) as ToolErr;
+      // A redefine is no longer a refusal: it files the update Decision and
+      // changes nothing until the operator approves it (task-14 governance).
       const redefined = (await executeMetricsTool(vaultRoot, ACTOR, "define_metric", {
         domainSlug: "health",
         id: "training-sessions",
@@ -539,7 +543,13 @@ describe("metrics e2e", () => {
         source: "events",
         aggregation: "count",
         eventKey: "training",
-      })) as ToolErr;
+      })) as {
+        error?: { code?: string; message?: string };
+        pending?: boolean;
+        status?: string;
+        decisionId?: string;
+        message?: string;
+      };
       const unknownLog = (await executeMetricsTool(vaultRoot, ACTOR, "log_metric", {
         domainSlug: "health",
         metricId: "does-not-exist",
@@ -578,7 +588,12 @@ describe("metrics e2e", () => {
         eventsNoKey: eventsNoKey.error,
         badAggregation: badAggregation.error,
         nonLive: nonLive.error,
-        redefined: redefined.error,
+        redefined: {
+          pending: redefined.pending,
+          status: redefined.status,
+          decisionId: redefined.decisionId,
+          message: redefined.message,
+        },
         unknownLog: unknownLog.error,
         derivedLog: derivedLog.error,
         avgPerDerived: avgPerDerived.error,
@@ -589,7 +604,13 @@ describe("metrics e2e", () => {
       assert.match(eventsNoKey.error?.message ?? "", /eventKey/i, "the eventKey refusal does not name the field");
       assert.equal(badAggregation.error?.code, "MALFORMED", "an unknown aggregation was accepted");
       assert.equal(nonLive.error?.code, "NOT_FOUND", "a definition was created in a locked area");
-      assert.equal(redefined.error?.code, "EXISTS", "redefining an existing id overwrote it");
+      assert.equal(redefined.error, undefined, "redefining an existing id was refused instead of proposed");
+      assert.equal(redefined.pending, true, "redefining an existing id did not file a pending update Decision");
+      assert.match(
+        redefined.decisionId ?? "",
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        "the pending proposal does not name its Decision",
+      );
       assert.equal(unknownLog.error?.code, "NOT_FOUND", "logging to an unknown metric succeeded");
       assert.equal(derivedLog.error?.code, "MALFORMED", "a derived metric was logged as an event");
       assert.equal(avgPerDerived.error?.code, "MALFORMED", "an avg-per derived metric was accepted");
@@ -597,7 +618,7 @@ describe("metrics e2e", () => {
       assert.equal(
         readJson(sessionsFile).label,
         "Training sessions",
-        "a refused redefine changed the definition on disk",
+        "a proposed redefine changed the definition on disk",
       );
 
       // ── (g) is-set / is-not-set, against a hand-built filter ───────────────
