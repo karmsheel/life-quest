@@ -340,6 +340,25 @@ connected-agent grant sets in `pairing-grant.ts` (new signal/write classificatio
 not re-granted the new arguments fails closed with the tool description's error, not a silent
 fallback.
 
+**Phase 3 note (shipped).** Area pages are per-domain contracts. The four common H2s
+(`Look-back`, `Keep`, `Change`, `Next-period intent`) remain required on every page and are
+emitted first in that fixed order — they are the Life-review synthesis contract — while an
+area's own sections are named in `.lifequest/reviews/pages/<area-slug>.md` (optional H1 plus
+H2s, at most 12, no H3s, none colliding with the common four). A template is therefore the
+allowed extras: it seeds a new page and orders those headings after the common four on every
+accepted write, but it stores no prose and never rejects an unknown heading — extras outside
+the contract stay first-class and are preserved after the template's headings, in page order.
+A template change never rewrites an existing page; it takes effect on that page's next accepted
+write. `write_review` seeds a page it creates exactly like `ensure` does. Two companion tools,
+`get_review_template` and `write_review_template`, read and write the contract; they are
+unclassified in `pairing-grant.ts` exactly like `get_review_skill` / `write_review_skill`, so
+connected agents fail closed and the companion uses them. The review kickoff and
+`formatReviewContext` state the contract, quote the bound area's own sections, and tell the
+overall session to read every page (listed by scope/name/status) and synthesise under the four
+common headings without rewriting an area page. Conservative calls: an empty template is
+refused rather than read as a delete, and no backfill happens. The `review-tailoring` engine
+rig is the phase artifact.
+
 ---
 
 ## 8. Decisions
@@ -554,6 +573,32 @@ operator's edits are never silently replaced); otherwise the release note says t
 - Definition writes are attributed (`createdBy`/actor in the log); event rows keep the
   database path's `provenance` convention (`metric:<id>`).
 
+**Phase 4 note (shipped).** The substrate lives in `metrics.ts` and `metrics-tools.ts`.
+Definitions are one JSON per metric at `domains/<slug>/metrics/<id>.json`, validated on write
+(one ungrouped, single-value query for `derived`; `eventKey` required for `events`; formatting
+and target validated as display metadata). Creation applies immediately and is logged
+`metric.created`; `define_metric` refuses an existing id with `EXISTS` because edit/delete
+governance is still the open question in §17. A live area's `metrics` database
+(`date` / `metric` / `value` / `note`) is created idempotently with the first events definition
+or event, and `log_metric` inserts one dated row through the ordinary row path (default date
+today, value 1), logged `metric.logged`. Events definitions compile through `compileMetricSpec`
+(pure) or `compileMetricSpecForVault` (resolves the database's minted column ids), the window is
+rewritten to the review's own bounds exactly as a snapshot directive's is, and
+`getMetricsSummary(cadence, period)` answers value / previousValue / delta / window / asOf /
+provenance, with `null` — never a fabricated 0 — for a window with no rows. `views.ts` gained
+`is-set` / `is-not-set` (set = non-null and not the empty string; they take no value argument),
+and snapshot directives gained a display-only `magnitude` (`abs` / `negate`) so Cash out prints
+the size spent while the query and stored rows keep the sign; the agent-facing `view-schema.ts`
+advertises the new ops. The shipped default skill now carries `finance-in` / `finance-out` /
+`finance-net` (gross cash in and out with `transfer_id is-not-set`; net includes transfers and
+says so in its title), and the single "Spending this period" fence is gone. A skill file
+byte-identical to the previous shipped default is replaced once (`review-skill.migrated`); an
+operator-edited file never matches by bytes and is left alone. The three finance definitions
+ship with the kit (`ensureFinanceMetrics`, absent files only, never overwriting an operator's
+file) and a pre-metrics vault with the kit catches up on Start. Figure as-of lines are left to
+Phase 5's figure renderer so that Start stays idempotent; the summary API already carries the
+as-of. The `metrics` engine rig is the phase artifact.
+
 ---
 
 ## 11. Migration
@@ -697,10 +742,12 @@ test is the one served.
 3. **Phase 2 — tabbed reviewer.** Tab row + lens binding, per-page editor/autosave/conflict,
    progress line, locked reading state; checklist rail retired; daily unchanged.
 4. **Phase 3 — page contracts / tailoring.** Per-domain templates (required four + allowed
-   extras), the Life review's cross-page synthesis contract, per-page prompts.
+   extras), the Life review's cross-page synthesis contract, per-page prompts. Shipped
+   2026-11-27; see the Phase 3 note in §7 and the `review-tailoring` rig.
 5. **Phase 4 — metrics substrate** (parallel with 1–3): definitions, events database,
    `define_metric`/`log_metric`/`list_metrics`, is-set filter + magnitude, finance gross
-   definitions, default-skill replacement.
+   definitions, default-skill replacement. Shipped 2026-11-27; see the Phase 4 note in §10 and
+   the `metrics` rig.
 6. **Phase 5 — review figures:** per-page figure blocks + overall cross-domain table, window
    and as-of, frozen at lock.
 7. **Phase 6 — Analytics page:** route, rail row, matrix, logging, wiki/docs-check.
@@ -714,7 +761,9 @@ migration branch is tested against a copy before it is put there.
 ## 17. Open questions
 
 1. **Definition edit governance** — recommendation above: create + log immediately, edit/delete
-   through a Decision. Confirm.
+   through a Decision. Confirm. Shipped interim (Phase 4): creation applies immediately, and
+   `define_metric` refuses an existing id with `EXISTS`; updating or deleting a definition
+   remains Decision-governed and unbuilt.
 2. **Analytics cadence** — own selector on the page (recommended) vs follows the last review
    cadence opened.
 
