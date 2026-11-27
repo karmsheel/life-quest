@@ -179,7 +179,8 @@ Full detail: [Daily Journal](./16-daily-journal.md),
    default transactional account) and set the **Exchange rate** source if you use
    USD amounts.
 4. In the chat dock, type the purchase — for example "Bought food for R85 today"
-   — or use the composer's attach control for one receipt image, then send.
+   — or attach one receipt photo with the composer's plus (**Attach a file**),
+   press **Use as receipt** on its chip, then send.
 5. The companion posts the row and names what it logged, for example
    `-85 ZAR on 2026-10-29 • Cheque • Food • Woolies`. The row appears in the
    **Transactions** database with `provenance` set to the chat thread.

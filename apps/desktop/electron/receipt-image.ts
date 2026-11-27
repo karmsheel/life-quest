@@ -42,6 +42,8 @@ export type { ReceiptKind } from "./image-headers.js";
 
 export const RECEIPT_TYPE_MESSAGE = "Receipts must be JPEG or PNG images.";
 export const RECEIPT_SIZE_MESSAGE = "That receipt is larger than 25 MB.";
+export const RECEIPT_DIMENSIONS_MESSAGE =
+  "That picture has more pixels than a receipt can hold.";
 export const RECEIPT_KIT_MESSAGE = "Install the Finance kit first";
 export const RECEIPT_COPY_MESSAGE = "This receipt could not be prepared for the agent.";
 
@@ -98,7 +100,13 @@ export async function prepareReceipt(
   }
   const dimensions = sniffImageDimensions(input.bytes);
   if (!dimensions || dimensionsTooLarge(dimensions)) {
-    return { ok: false, error: RECEIPT_TYPE_MESSAGE };
+    // A canvas over the ceiling is refused before `nativeImage` sees the bytes;
+    // it is a real picture the operator picked, so it gets its own reason rather
+    // than the format message a text file would get.
+    return {
+      ok: false,
+      error: dimensions ? RECEIPT_DIMENSIONS_MESSAGE : RECEIPT_TYPE_MESSAGE,
+    };
   }
   if (!(await isReceiptStoreReady(root))) {
     return { ok: false, error: RECEIPT_KIT_MESSAGE };

@@ -23,6 +23,13 @@
  *     the zoom stepper, and proves the preview is drawn with the transcript's
  *     own measures.
  *
+ * The dock also carries the same page itself: its bottom action bar's Chat
+ * display settings control is a button now, not a route, and it opens Settings
+ * → Chat display's controls as a surface of the dock — beside the transcript
+ * whose type they change. The rig proves the click does not navigate, that the
+ * page shows the window's stored pair, that its controls write the same storage
+ * the settings page reads, and that a second press hands the thread back.
+ *
  * The shared contract is proved last: after the settings page picks 1.75 line
  * spacing and the dock's keys zoom it to 120%, reloading the chat page must wear
  * exactly that pair — the two surfaces cannot disagree because they read one
@@ -46,8 +53,8 @@
  * (Alt 1, Ctrl 2, Meta 4, Shift 8).
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
- * artifact; the two pictures are the shipped dock and the shipped settings sheet,
- * not mocks.
+ * artifact; the three pictures are the shipped dock, the dock's display page and
+ * the shipped settings sheet, not mocks.
  *
  * ── every way this could fail, written down before the code ───────────────────
  *
@@ -83,43 +90,67 @@
  *   D12. The mount does not read it back (`readChatDisplaySettings` or the key
  *        name drifts): the reload wears 100% while storage says 110.
  *
- *  The dock's entrance to the settings page
- *   D13. The bottom action bar's link is missing, is a button without an href, or
- *        its href/route is not `/settings?tab=reading`; the operator has no way
- *        to the page from the surface it changes.
- *   D14. Its accessible name is not "Chat display settings" (aria-label dropped
- *        or replaced by a bare glyph's title).
+ *  The dock's display page (the bar's button, not a route)
+ *   D13. The bottom action bar's control is missing, is still an `<a>` with an
+ *        href, or carries a `/settings?tab=reading` route: the operator is taken
+ *        off the page the type belongs to instead of editing it in the pane.
+ *   D14. Its accessible name or title is not "Chat display settings", or it
+ *        carries no `aria-pressed`: the bar cannot say whether its page is in
+ *        front, and a screen reader hears a bare glyph.
+ *   D15. The click does not move the dock: `data-chat-surface` stays "thread".
+ *   D16. The click navigates: `window.location.href` changes (or lands on
+ *        `/settings`), so the dock's page is a disguised route.
+ *   D17. The feature is a sheet, not the dock's page: no
+ *        `.chat-panel__header--display`, no heading "Chat display", no Back
+ *        control labelled "Back to chat".
+ *   D18. The body is not the dock's own: no `.chat-panel__body--display` or no
+ *        `[data-chat-display]` root inside it.
+ *   D19. The composer, the footer or the tab strip stay drawn on the display
+ *        page: it looks like a thread with settings painted over it.
+ *   D20. The dock's page reads a fresh default instead of the window's pair: the
+ *        zoom read-back is not "110%" or the preview's data-zoom is not "110".
+ *   D21. The line-spacing options on the dock page do not write: pressing
+ *        Relaxed leaves localStorage at 1.5, or the preview stays at 1.5.
+ *   D22. The dock's zoom-in does not reach 120% in the read-back, the preview
+ *        and storage.
+ *   D23. Reset on the dock page leaves it at the old pair instead of 100% / 1.5.
+ *   D24. The same control does not close the page: a second press leaves
+ *        `data-chat-surface` at "display", keeps the composer hidden, or the
+ *        control keeps reporting pressed "true".
+ *   D25. The pair the dock's page leaves behind is not the 110% / 1.5 the
+ *        Settings leg below asserts: the two legs would be measuring different
+ *        windows.
  *
  *  Settings → Chat display
- *   D15. The page throws or the sheet blanks: the harness mounts `SettingsPage`
+ *   D26. The page throws or the sheet blanks: the harness mounts `SettingsPage`
  *        without `ChatDisplayProvider`, so `useChatDisplay()` rejects and the
  *        whole sheet unmounts.
- *   D16. The 13th section is not in the nav, the label is not "Chat display", or
+ *   D27. The 13th section is not in the nav, the label is not "Chat display", or
  *        the view id is not `reading`: `/settings?tab=reading` falls back to
  *        Appearance.
- *   D17. The page's row labels are missing ("Text size", "Line spacing"): the
+ *   D28. The page's row labels are missing ("Text size", "Line spacing"): the
  *        section renders but says nothing about its two axes.
- *   D18. The zoom read-back is not the stored 110%: the page reads its own
+ *   D29. The zoom read-back is not the stored 110%: the page reads its own
  *        state instead of the window's settings.
- *   D19. The preview does not follow the chosen size/spacing: it is a static
+ *   D30. The preview does not follow the chosen size/spacing: it is a static
  *        sample, not the transcript's measures (its data-zoom /
  *        data-line-spacing and computed ratio do not move).
- *   D20. Picking Relaxed writes no line spacing, or writes one the dock cannot
+ *   D31. Picking Relaxed writes no line spacing, or writes one the dock cannot
  *        read (2 vs 1.75, number vs string): storage stays 1.5.
- *   D21. Zoom-in does not grow the preview or update the read-back percent.
- *   D22. Reset leaves the page at the old pair instead of 100% / 1.5.
+ *   D32. Zoom-in does not grow the preview or update the read-back percent.
+ *   D33. Reset leaves the page at the old pair instead of 100% / 1.5.
  *
  *  The shared contract
- *   D23. The settings page's choice is not worn by the dock on the next load:
+ *   D34. The settings page's choice is not worn by the dock on the next load:
  *        the two surfaces disagree (different key, different normalization), so
  *        the settings page is decoration rather than the dock's settings.
  *
  *  Report / harness
- *   D24. The driver throws or hangs: the failure lands in the report with the
+ *   D35. The driver throws or hangs: the failure lands in the report with the
  *        marks it reached, and the process exits non-zero.
- *   D25. A screenshot is missing or empty: both PNGs are written through
+ *   D36. A screenshot is missing or empty: all three PNGs are written through
  *        `capturePage` and checked to exist with bytes.
- *   D26. `report.pass` and the exit code disagree: both are derived from
+ *   D37. `report.pass` and the exit code disagree: both are derived from
  *        `failures`, and the wrapper re-reads them.
  *
  * Every check is named, and every failure lands in `report.failures` with its
@@ -177,6 +208,7 @@ const RATIO_TOLERANCE = 0.05;
 const STORAGE_KEY = "lifequest-chat-display";
 
 const DOCK_PNG = "chat-display-dock.png";
+const DISPLAY_PNG = "chat-display-page.png";
 const SETTINGS_PNG = "chat-display-settings.png";
 
 /** The font a zoom of `percent` should draw the transcript at. */
@@ -186,7 +218,8 @@ const expectedFontPx = (percent) =>
 /**
  * The chat page's snapshot: the custom properties the dock publishes, the
  * assistant answer's computed type (the prose the operator reads), the dock's
- * settings link and the window's stored pair — one read from one layout pass.
+ * own chrome for the display surface (the bar's button and the page it opens),
+ * and the window's stored pair — one read from one layout pass.
  */
 const CHAT_SAMPLE = `(() => {
   const round = (n) => (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
@@ -194,17 +227,61 @@ const CHAT_SAMPLE = `(() => {
     const n = parseFloat(value);
     return Number.isFinite(n) ? n : null;
   };
+  const text = (el) => ((el && el.textContent) || "").trim();
+  /** On screen now — not merely in the DOM: the dock keeps every surface
+   *  mounted and hides the ones it is not showing. */
+  const isVisible = (el) => {
+    if (!el) return false;
+    if (el.hasAttribute("hidden")) return false;
+    const style = getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    return el.getClientRects().length > 0;
+  };
+  const iconClass = (el) => {
+    const svg = el ? el.querySelector("svg") : null;
+    if (!svg) return null;
+    return Array.from(svg.classList).find((name) => name.startsWith("lucide-")) ?? null;
+  };
   const panel = document.querySelector(".chat-panel");
   if (!panel) return null;
   const answer = document.querySelector(
     ".chat-panel__message--assistant .chat-panel__message-content"
   );
-  const link = document.querySelector('[data-testid="chat-display-settings"]');
+  const displayButton = document.querySelector('[data-testid="chat-display-settings"]');
+  const displayHeader = document.querySelector(".chat-panel__header--display");
+  const displayBody = document.querySelector(".chat-panel__body--display");
+  const displayRoot = document.querySelector("[data-chat-display]");
+  const displayBack = displayHeader
+    ? displayHeader.querySelector('button[aria-label="Back to chat"]')
+    : null;
   const panelStyle = getComputedStyle(panel);
   const answerStyle = answer ? getComputedStyle(answer) : null;
   const fontPx = answerStyle ? px(answerStyle.fontSize) : null;
   const linePx = answerStyle ? px(answerStyle.lineHeight) : null;
   const panelRect = panel.getBoundingClientRect();
+  const footer = document.querySelector(".chat-panel__footer");
+  const composer = document.querySelector(".chat-panel__composer");
+  const tabs = document.querySelector(".chat-panel__tabs");
+  const preview = document.querySelector('[data-testid="chat-display-preview"]');
+  const prose = preview
+    ? preview.querySelector(".chat-display-preview__prose")
+    : null;
+  const proseStyle = prose ? getComputedStyle(prose) : null;
+  const proseFontPx = proseStyle ? px(proseStyle.fontSize) : null;
+  const proseLinePx = proseStyle ? px(proseStyle.lineHeight) : null;
+  const zoomValueEl = document.querySelector('[data-testid="chat-display-zoom-value"]');
+  const zoomInEl = document.querySelector('[data-testid="chat-display-zoom-in"]');
+  const zoomOutEl = document.querySelector('[data-testid="chat-display-zoom-out"]');
+  const resetEl = document.querySelector('[data-testid="chat-display-reset"]');
+  const lineButtons = Array.from(
+    document.querySelectorAll('[data-testid^="chat-display-line-"]')
+  ).map((el) => ({
+    testid: el.getAttribute("data-testid"),
+    value: el.getAttribute("data-value"),
+    pressed: el.getAttribute("aria-pressed"),
+    active: el.classList.contains("is-active"),
+    label: text(el)
+  }));
   let stored = null;
   try {
     const raw = window.localStorage.getItem(${JSON.stringify(STORAGE_KEY)});
@@ -215,6 +292,11 @@ const CHAT_SAMPLE = `(() => {
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     chatSurface: panel.getAttribute("data-chat-surface"),
+    location: {
+      href: window.location.href,
+      pathname: window.location.pathname,
+      search: window.location.search
+    },
     panel: {
       left: round(panelRect.left),
       top: round(panelRect.top),
@@ -236,16 +318,84 @@ const CHAT_SAMPLE = `(() => {
         : null,
     answerRows: document.querySelectorAll(".chat-panel__message--assistant").length,
     stored,
-    link: link
+    // The dock's own chrome, per surface. The display page must be a page of
+    // the dock: no composer, no footer, no tab strip, and a header with its name
+    // and one way back.
+    footer: {
+      present: Boolean(footer),
+      hidden: footer ? footer.hasAttribute("hidden") : null,
+      visible: isVisible(footer)
+    },
+    composerVisible: isVisible(composer),
+    tabs: {
+      present: Boolean(tabs),
+      visible: isVisible(tabs)
+    },
+    displayPage: {
+      present: Boolean(displayRoot),
+      headerPresent: Boolean(displayHeader),
+      heading: displayHeader
+        ? text(displayHeader.querySelector(".chat-panel__heading"))
+        : "",
+      back: displayBack
+        ? { present: true, label: displayBack.getAttribute("aria-label") }
+        : { present: false, label: null },
+      bodyPresent: Boolean(displayBody),
+      bodyVisible: isVisible(displayBody),
+      root: Boolean(displayRoot)
+    },
+    zoom: {
+      value: zoomValueEl ? text(zoomValueEl) : null,
+      inPresent: Boolean(zoomInEl),
+      outPresent: Boolean(zoomOutEl),
+      resetPresent: Boolean(resetEl),
+      inDisabled: zoomInEl ? zoomInEl.disabled : null,
+      outDisabled: zoomOutEl ? zoomOutEl.disabled : null
+    },
+    preview: preview
       ? {
           present: true,
-          tag: link.tagName,
-          ariaLabel: link.getAttribute("aria-label"),
-          title: link.getAttribute("title"),
-          href: link.getAttribute("href"),
-          insideActionBar: Boolean(link.closest(".chat-panel__actions"))
+          dataZoom: preview.getAttribute("data-zoom"),
+          dataLineSpacing: preview.getAttribute("data-line-spacing"),
+          readingScale: (
+            getComputedStyle(preview).getPropertyValue("--chat-reading-scale") || ""
+          ).trim(),
+          readingLine: (
+            getComputedStyle(preview).getPropertyValue("--chat-reading-line") || ""
+          ).trim(),
+          proseFontPx,
+          proseLinePx,
+          proseRatio:
+            proseFontPx !== null && proseLinePx !== null
+              ? round(proseLinePx / proseFontPx)
+              : null
         }
       : null,
+    lineButtons,
+    // The bottom action bar's display control: a real button now, not a route.
+    displayButton: displayButton
+      ? {
+          present: true,
+          tag: displayButton.tagName,
+          type: displayButton.getAttribute("type"),
+          ariaLabel: displayButton.getAttribute("aria-label"),
+          title: displayButton.getAttribute("title"),
+          pressed: displayButton.getAttribute("aria-pressed"),
+          href: displayButton.getAttribute("href"),
+          icon: iconClass(displayButton),
+          insideActionBar: Boolean(displayButton.closest(".chat-panel__actions"))
+        }
+      : {
+          present: false,
+          tag: "",
+          type: null,
+          ariaLabel: null,
+          title: null,
+          pressed: null,
+          href: null,
+          icon: null,
+          insideActionBar: false
+        },
     keyLog: (window.__lqChatDisplayKeys || []).slice(-8),
     wheelLog: (window.__lqChatDisplayWheels || []).slice(-8)
   };
@@ -589,7 +739,12 @@ async function main() {
   let keyZero = null;
   let persistenceBefore = null;
   let persistenceAfter = null;
-  let dockLink = null;
+  let dockDisplay = null;
+  let dockDisplayRelaxed = null;
+  let dockDisplayZoomed = null;
+  let dockDisplayReset = null;
+  let dockDisplayRestored = null;
+  let dockDisplayClosed = null;
   let settingsSheet = null;
   let settingsOpened = null;
   let settingsRelaxed = null;
@@ -888,34 +1043,425 @@ async function main() {
       }px, expected ${expectedFontPx(110)}px`,
     );
 
-    // ── the dock's door to Settings → Chat display ──────────────────────────
-    dockLink = persistenceAfter.link;
+    // ── the dock's own display page ─────────────────────────────────────────
+    // The bar's control is a page of the dock now, not a route: pressing it
+    // puts Settings → Chat display's controls in the dock body, beside the
+    // transcript they change, and leaves the window where it was.
+    const displayControl = persistenceAfter.displayButton;
     check(
-      "dock-link:present",
-      dockLink !== null && dockLink.present === true,
-      "the dock's bottom action bar has no [data-testid=\"chat-display-settings\"] link",
+      "dock-display:control-present",
+      displayControl !== null && displayControl.present === true,
+      'the dock\'s bottom action bar has no [data-testid="chat-display-settings"] control',
     );
     check(
-      "dock-link:accessible-name",
-      dockLink !== null && dockLink.ariaLabel === "Chat display settings",
-      `the link's accessible name is ${JSON.stringify(
-        dockLink ? dockLink.ariaLabel : null,
-      )}, expected "Chat display settings"`,
+      "dock-display:control-is-a-button",
+      displayControl !== null && displayControl.tag === "BUTTON",
+      `the control is a <${String(
+        displayControl ? displayControl.tag : "none",
+      ).toLowerCase()}>, expected a <button>`,
     );
     check(
-      "dock-link:href",
-      dockLink !== null &&
-        typeof dockLink.href === "string" &&
-        dockLink.href.startsWith("/settings") &&
-        dockLink.href.includes("tab=reading"),
-      `the link's href is ${JSON.stringify(
-        dockLink ? dockLink.href : null,
-      )}, expected a route to /settings?tab=reading`,
+      "dock-display:control-type",
+      displayControl !== null && displayControl.type === "button",
+      `the control's type is ${JSON.stringify(
+        displayControl ? displayControl.type : null,
+      )}, expected "button"`,
     );
     check(
-      "dock-link:in-action-bar",
-      dockLink !== null && dockLink.insideActionBar === true,
-      "the link is not in the dock's bottom action bar, where its siblings are",
+      "dock-display:control-is-not-a-link",
+      displayControl !== null && displayControl.href === null,
+      `the control carries href ${JSON.stringify(
+        displayControl ? displayControl.href : null,
+      )}; it must be a button, not a route`,
+    );
+    check(
+      "dock-display:control-accessible-name",
+      displayControl !== null &&
+        displayControl.ariaLabel === "Chat display settings" &&
+        displayControl.title === "Chat display settings",
+      `the control is labelled ${JSON.stringify(
+        displayControl ? displayControl.ariaLabel : null,
+      )} and titled ${JSON.stringify(
+        displayControl ? displayControl.title : null,
+      )}`,
+    );
+    check(
+      "dock-display:control-pressed-off",
+      displayControl !== null && displayControl.pressed === "false",
+      `the control reports pressed ${JSON.stringify(
+        displayControl ? displayControl.pressed : null,
+      )} while the dock is on a thread`,
+    );
+    check(
+      "dock-display:control-icon",
+      displayControl !== null && displayControl.icon === "lucide-type",
+      `the control is not wearing the Type icon (${JSON.stringify(
+        displayControl ? displayControl.icon : null,
+      )})`,
+    );
+    check(
+      "dock-display:control-in-action-bar",
+      displayControl !== null && displayControl.insideActionBar === true,
+      "the control is not in the dock's bottom action bar, where its siblings are",
+    );
+
+    const hrefBeforeDisplay = persistenceAfter.location.href;
+    const displayPressed = await run(CLICK('[data-testid="chat-display-settings"]'));
+    const displayArrived = await waitFor(
+      `(() => {
+        const panel = document.querySelector(".chat-panel");
+        return Boolean(panel) &&
+          panel.getAttribute("data-chat-surface") === "display" &&
+          Boolean(document.querySelector("[data-chat-display]"));
+      })()`,
+      5_000,
+    );
+    dockDisplay = await readChat("dock-display");
+    mark("dock-display");
+    check(
+      "dock-display:control-clicked",
+      displayPressed === true,
+      "the Chat display settings control could not be pressed",
+    );
+    check(
+      "dock-display:surface",
+      displayArrived && dockDisplay.chatSurface === "display",
+      `the dock is on ${JSON.stringify(
+        dockDisplay.chatSurface,
+      )}, expected "display"`,
+    );
+    // The old door was a <Link> to /settings?tab=reading. The page must open on
+    // the dock, and the window must not go anywhere.
+    check(
+      "dock-display:does-not-navigate",
+      dockDisplay.location.href === hrefBeforeDisplay &&
+        !dockDisplay.location.href.includes("/settings"),
+      `the window moved from ${JSON.stringify(
+        hrefBeforeDisplay,
+      )} to ${JSON.stringify(dockDisplay.location.href)}`,
+    );
+    check(
+      "dock-display:header-and-heading",
+      dockDisplay.displayPage.headerPresent === true &&
+        dockDisplay.displayPage.heading === "Chat display",
+      `the display header is ${JSON.stringify(
+        dockDisplay.displayPage.heading,
+      )}, expected "Chat display"`,
+    );
+    check(
+      "dock-display:back-control",
+      dockDisplay.displayPage.back.present === true &&
+        dockDisplay.displayPage.back.label === "Back to chat",
+      `the display page's way back is ${JSON.stringify(
+        dockDisplay.displayPage.back,
+      )}`,
+    );
+    check(
+      "dock-display:body-and-root",
+      dockDisplay.displayPage.bodyPresent === true &&
+        dockDisplay.displayPage.bodyVisible === true &&
+        dockDisplay.displayPage.root === true,
+      `the display body is ${JSON.stringify(dockDisplay.displayPage)}`,
+    );
+    check(
+      "dock-display:hides-chat-chrome",
+      dockDisplay.footer.hidden === true &&
+        dockDisplay.footer.visible === false &&
+        dockDisplay.composerVisible === false &&
+        dockDisplay.tabs.present === false,
+      `footer ${JSON.stringify(dockDisplay.footer)}, composer ${
+        dockDisplay.composerVisible
+      }, tabs ${JSON.stringify(dockDisplay.tabs)}`,
+    );
+    check(
+      "dock-display:zoom-read-back",
+      dockDisplay.zoom.value === "110%",
+      `the dock page reads ${JSON.stringify(
+        dockDisplay.zoom.value,
+      )}, expected the stored "110%"`,
+    );
+    check(
+      "dock-display:zoom-controls",
+      dockDisplay.zoom.inPresent &&
+        dockDisplay.zoom.outPresent &&
+        dockDisplay.zoom.resetPresent,
+      `the dock page's zoom controls are ${JSON.stringify(dockDisplay.zoom)}`,
+    );
+    const displayNormalLine = dockDisplay.lineButtons.find(
+      (button) => button.testid === "chat-display-line-normal",
+    );
+    const displayRelaxedLineBefore = dockDisplay.lineButtons.find(
+      (button) => button.testid === "chat-display-line-relaxed",
+    );
+    check(
+      "dock-display:default-line-spacing",
+      dockDisplay.lineButtons.length === 4 &&
+        Boolean(displayNormalLine) &&
+        displayNormalLine.value === String(DEFAULT_RATIO) &&
+        displayNormalLine.pressed === "true" &&
+        displayNormalLine.active === true &&
+        Boolean(displayRelaxedLineBefore) &&
+        displayRelaxedLineBefore.pressed === "false",
+      `the dock page's line options are ${JSON.stringify(
+        dockDisplay.lineButtons,
+      )}`,
+    );
+    check(
+      "dock-display:preview",
+      dockDisplay.preview !== null &&
+        dockDisplay.preview.dataZoom === "110" &&
+        dockDisplay.preview.dataLineSpacing === String(DEFAULT_RATIO) &&
+        dockDisplay.preview.readingScale === "1.1" &&
+        dockDisplay.preview.readingLine === String(DEFAULT_RATIO) &&
+        near(dockDisplay.preview.proseFontPx, expectedFontPx(110), FONT_TOLERANCE_PX) &&
+        near(dockDisplay.preview.proseRatio, DEFAULT_RATIO, RATIO_TOLERANCE),
+      `the dock page's preview is ${JSON.stringify(dockDisplay.preview)}, expected ${expectedFontPx(
+        110,
+      )}px / ${DEFAULT_RATIO}`,
+    );
+    check(
+      "dock-display:control-pressed-on",
+      dockDisplay.displayButton.pressed === "true",
+      `the control reports pressed ${JSON.stringify(
+        dockDisplay.displayButton.pressed,
+      )} on its page`,
+    );
+
+    const displayShot = await capture(path.join(artifactsDir, DISPLAY_PNG));
+    mark("capture-dock-display");
+    check(
+      "screenshot:dock-display",
+      fs.existsSync(displayShot.path) && displayShot.bytes > 0,
+      `${DISPLAY_PNG} missing or empty (${displayShot.bytes} bytes)`,
+    );
+
+    // ── the same controls, writing the same provider storage ───────────────
+    const displayRelaxedPressed = await run(
+      CLICK('[data-testid="chat-display-line-relaxed"]'),
+    );
+    const displayRelaxedArrived = await waitFor(
+      previewLineIs(String(RELAXED_RATIO)),
+      5_000,
+    );
+    dockDisplayRelaxed = await readChat("dock-display-relaxed");
+    mark("dock-display-relaxed");
+    const displayRelaxedLine = dockDisplayRelaxed.lineButtons.find(
+      (button) => button.testid === "chat-display-line-relaxed",
+    );
+    check(
+      "dock-display:relaxed-clicked",
+      displayRelaxedPressed === true && displayRelaxedArrived === true,
+      "the dock page's Relaxed line-spacing button could not be pressed",
+    );
+    check(
+      "dock-display:relaxed-preview-line",
+      dockDisplayRelaxed.preview !== null &&
+        dockDisplayRelaxed.preview.dataLineSpacing === String(RELAXED_RATIO),
+      `pressing Relaxed left the dock preview at line spacing ${JSON.stringify(
+        dockDisplayRelaxed.preview ? dockDisplayRelaxed.preview.dataLineSpacing : null,
+      )}, expected ${RELAXED_RATIO}`,
+    );
+    check(
+      "dock-display:relaxed-preview-ratio",
+      dockDisplayRelaxed.preview !== null &&
+        near(
+          dockDisplayRelaxed.preview.proseRatio,
+          RELAXED_RATIO,
+          RATIO_TOLERANCE,
+        ),
+      `the dock preview's line ratio is ${
+        dockDisplayRelaxed.preview ? dockDisplayRelaxed.preview.proseRatio : "?"
+      }, expected ${RELAXED_RATIO}`,
+    );
+    check(
+      "dock-display:relaxed-stored",
+      dockDisplayRelaxed.stored !== null &&
+        typeof dockDisplayRelaxed.stored === "object" &&
+        dockDisplayRelaxed.stored.lineSpacing === RELAXED_RATIO &&
+        dockDisplayRelaxed.stored.zoom === 110,
+      `localStorage ${STORAGE_KEY} is ${JSON.stringify(
+        dockDisplayRelaxed.stored,
+      )} after pressing Relaxed on the dock page`,
+    );
+    check(
+      "dock-display:relaxed-button-state",
+      Boolean(displayRelaxedLine) &&
+        displayRelaxedLine.pressed === "true" &&
+        displayRelaxedLine.active === true,
+      `the dock page's Relaxed button is ${JSON.stringify(displayRelaxedLine)}`,
+    );
+    check(
+      "dock-display:relaxed-keeps-zoom",
+      dockDisplayRelaxed.zoom.value === "110%" &&
+        dockDisplayRelaxed.preview !== null &&
+        dockDisplayRelaxed.preview.dataZoom === "110",
+      `changing line spacing moved the zoom: ${JSON.stringify(
+        dockDisplayRelaxed.zoom,
+      )}`,
+    );
+
+    const displayZoomInPressed = await run(
+      CLICK('[data-testid="chat-display-zoom-in"]'),
+    );
+    const displayZoomInArrived = await waitFor(zoomValueIs("120%"), 5_000);
+    const displayZoomInPreviewArrived = await waitFor(previewZoomIs("120"), 5_000);
+    dockDisplayZoomed = await readChat("dock-display-zoomed");
+    mark("dock-display-zoomed");
+    check(
+      "dock-display:zoom-in-clicked",
+      displayZoomInPressed === true,
+      "the dock page's zoom-in control could not be pressed",
+    );
+    check(
+      "dock-display:zoom-in-read-back",
+      displayZoomInArrived && dockDisplayZoomed.zoom.value === "120%",
+      `the dock page reads ${JSON.stringify(
+        dockDisplayZoomed.zoom.value,
+      )} after +, expected "120%"`,
+    );
+    check(
+      "dock-display:zoom-in-preview",
+      displayZoomInPreviewArrived &&
+        dockDisplayZoomed.preview !== null &&
+        near(
+          dockDisplayZoomed.preview.proseFontPx,
+          expectedFontPx(120),
+          FONT_TOLERANCE_PX,
+        ) &&
+        near(dockDisplayZoomed.preview.proseRatio, RELAXED_RATIO, RATIO_TOLERANCE),
+      `the dock page's preview is ${JSON.stringify(
+        dockDisplayZoomed.preview,
+      )}, expected ${expectedFontPx(120)}px / ${RELAXED_RATIO}`,
+    );
+    check(
+      "dock-display:zoom-in-stored",
+      dockDisplayZoomed.stored !== null &&
+        typeof dockDisplayZoomed.stored === "object" &&
+        dockDisplayZoomed.stored.zoom === 120 &&
+        dockDisplayZoomed.stored.lineSpacing === RELAXED_RATIO,
+      `localStorage ${STORAGE_KEY} is ${JSON.stringify(
+        dockDisplayZoomed.stored,
+      )} after + on the dock page`,
+    );
+
+    const displayResetPressed = await run(
+      CLICK('[data-testid="chat-display-reset"]'),
+    );
+    const displayResetArrived = await waitFor(
+      `(() => {
+        const zoom = document.querySelector('[data-testid="chat-display-zoom-value"]');
+        const preview = document.querySelector('[data-testid="chat-display-preview"]');
+        return Boolean(zoom) && Boolean(preview) &&
+          ((zoom.textContent || "").trim()) === "100%" &&
+          preview.getAttribute("data-line-spacing") === "1.5";
+      })()`,
+      5_000,
+    );
+    dockDisplayReset = await readChat("dock-display-reset");
+    mark("dock-display-reset");
+    check(
+      "dock-display:reset-clicked",
+      displayResetPressed === true,
+      "the dock page's reset control could not be pressed",
+    );
+    check(
+      "dock-display:reset-read-back",
+      displayResetArrived && dockDisplayReset.zoom.value === "100%",
+      `the dock page reads ${JSON.stringify(
+        dockDisplayReset.zoom.value,
+      )} after reset, expected "100%"`,
+    );
+    check(
+      "dock-display:reset-preview",
+      dockDisplayReset.preview !== null &&
+        dockDisplayReset.preview.dataZoom === "100" &&
+        dockDisplayReset.preview.dataLineSpacing === String(DEFAULT_RATIO) &&
+        near(
+          dockDisplayReset.preview.proseFontPx,
+          BASE_FONT_PX,
+          FONT_TOLERANCE_PX,
+        ) &&
+        near(dockDisplayReset.preview.proseRatio, DEFAULT_RATIO, RATIO_TOLERANCE),
+      `reset left the dock preview at ${JSON.stringify(
+        dockDisplayReset.preview,
+      )}, expected ${BASE_FONT_PX}px / ${DEFAULT_RATIO}`,
+    );
+    check(
+      "dock-display:reset-stored",
+      dockDisplayReset.stored !== null &&
+        typeof dockDisplayReset.stored === "object" &&
+        dockDisplayReset.stored.zoom === 100 &&
+        dockDisplayReset.stored.lineSpacing === DEFAULT_RATIO,
+      `localStorage ${STORAGE_KEY} is ${JSON.stringify(
+        dockDisplayReset.stored,
+      )} after reset on the dock page`,
+    );
+
+    // Leave the pair the Settings leg below is written against: the persistence
+    // leg left the window at 110% / 1.5, reset returned 100% / 1.5, so one notch
+    // puts the size back before the page closes.
+    const displayRestorePressed = await run(
+      CLICK('[data-testid="chat-display-zoom-in"]'),
+    );
+    const displayRestoreArrived = await waitFor(zoomValueIs("110%"), 5_000);
+    dockDisplayRestored = await readChat("dock-display-restored");
+    mark("dock-display-restored");
+    check(
+      "dock-display:restored-pair",
+      displayRestorePressed === true &&
+        displayRestoreArrived === true &&
+        dockDisplayRestored.zoom.value === "110%" &&
+        dockDisplayRestored.preview !== null &&
+        dockDisplayRestored.preview.dataZoom === "110" &&
+        dockDisplayRestored.preview.dataLineSpacing === String(DEFAULT_RATIO) &&
+        dockDisplayRestored.stored !== null &&
+        typeof dockDisplayRestored.stored === "object" &&
+        dockDisplayRestored.stored.zoom === 110 &&
+        dockDisplayRestored.stored.lineSpacing === DEFAULT_RATIO,
+      `the pair left for the Settings leg is ${JSON.stringify(
+        dockDisplayRestored.stored,
+      )} / ${JSON.stringify(dockDisplayRestored.zoom)}`,
+    );
+
+    const displayClosePressed = await run(
+      CLICK('[data-testid="chat-display-settings"]'),
+    );
+    const displayClosedArrived = await waitFor(
+      `(() => {
+        const panel = document.querySelector(".chat-panel");
+        return Boolean(panel) &&
+          panel.getAttribute("data-chat-surface") === "thread";
+      })()`,
+      5_000,
+    );
+    dockDisplayClosed = await readChat("dock-display-closed");
+    mark("dock-display-closed");
+    check(
+      "dock-display:closes",
+      displayClosePressed === true &&
+        displayClosedArrived === true &&
+        dockDisplayClosed.chatSurface === "thread",
+      `a second press left the dock on ${JSON.stringify(
+        dockDisplayClosed.chatSurface,
+      )}, expected "thread"`,
+    );
+    check(
+      "dock-display:composer-back",
+      dockDisplayClosed.composerVisible === true &&
+        dockDisplayClosed.footer.visible === true &&
+        dockDisplayClosed.location.href === hrefBeforeDisplay,
+      `the thread did not get its composer back (composer ${
+        dockDisplayClosed.composerVisible
+      }, footer ${JSON.stringify(dockDisplayClosed.footer)}) or the window moved to ${JSON.stringify(
+        dockDisplayClosed.location.href,
+      )}`,
+    );
+    check(
+      "dock-display:control-released",
+      dockDisplayClosed.displayButton.pressed === "false",
+      `the control reports pressed ${JSON.stringify(
+        dockDisplayClosed.displayButton.pressed,
+      )} after closing its page`,
     );
 
     // ── Settings → Chat display ─────────────────────────────────────────────
@@ -1184,7 +1730,8 @@ async function main() {
       }, expected the settings page's ${RELAXED_RATIO}`,
     );
 
-    // ── the two pictures of the shipped surfaces ────────────────────────────
+    // ── the dock and settings pictures of the shipped surfaces ──────────────
+    // (The display page's own picture was taken in its leg above.)
     // The dock at a non-default size AND spacing: two Ctrl+= steps on top of the
     // 1.75 the settings page chose.
     await focusWindow();
@@ -1282,7 +1829,17 @@ async function main() {
         before: persistenceBefore,
         after: persistenceAfter,
       },
-      dockLink,
+      dockDisplay: {
+        // The bar's control, as it read before its page was opened.
+        control: persistenceAfter.displayButton,
+        locationBefore: persistenceAfter.location,
+        page: dockDisplay,
+        relaxed: dockDisplayRelaxed,
+        zoomed: dockDisplayZoomed,
+        reset: dockDisplayReset,
+        restored: dockDisplayRestored,
+        closed: dockDisplayClosed,
+      },
       settings: {
         sheet: settingsSheet,
         opened: settingsOpened,
@@ -1294,6 +1851,10 @@ async function main() {
       sharedContract: contract,
       artifacts: {
         dock: { path: path.join(artifactsDir, DOCK_PNG), bytes: dockShot.bytes },
+        display: {
+          path: path.join(artifactsDir, DISPLAY_PNG),
+          bytes: displayShot.bytes,
+        },
         settings: {
           path: path.join(artifactsDir, SETTINGS_PNG),
           bytes: settingsShot.bytes,
@@ -1321,7 +1882,16 @@ async function main() {
       wheel: { outsideDock: wheelOutside, up: wheelUp, down: wheelDown },
       keys: { plus: keyPlus, minus: keyMinus, zero: keyZero },
       persistence: { before: persistenceBefore, after: persistenceAfter },
-      dockLink,
+      dockDisplay: {
+        control: persistenceAfter ? persistenceAfter.displayButton : null,
+        locationBefore: persistenceAfter ? persistenceAfter.location : null,
+        page: dockDisplay,
+        relaxed: dockDisplayRelaxed,
+        zoomed: dockDisplayZoomed,
+        reset: dockDisplayReset,
+        restored: dockDisplayRestored,
+        closed: dockDisplayClosed,
+      },
       settings: {
         sheet: settingsSheet,
         opened: settingsOpened,
@@ -1364,6 +1934,15 @@ async function main() {
         `${sample.preview ? sample.preview.proseRatio : "?"}, stored ` +
         `${JSON.stringify(sample.stored)}`
       : "—";
+  const describeDisplay = (sample) =>
+    sample
+      ? `${sample.chatSurface} ${sample.zoom.value} — preview ` +
+        `${sample.preview ? sample.preview.dataZoom : "?"} / ` +
+        `${sample.preview ? sample.preview.dataLineSpacing : "?"} — ` +
+        `${sample.preview ? sample.preview.proseFontPx : "?"}px, ratio ` +
+        `${sample.preview ? sample.preview.proseRatio : "?"}, stored ` +
+        `${JSON.stringify(sample.stored)}`
+      : "—";
   console.log(`defaults:    ${describeDock(report.defaults)}`);
   console.log(`wheel up:    ${describeDock(report.wheel?.up)}`);
   console.log(`wheel down:  ${describeDock(report.wheel?.down)}`);
@@ -1372,15 +1951,26 @@ async function main() {
   console.log(`Ctrl+0:      ${describeDock(report.keys?.zero)}`);
   console.log(`reload:      ${describeDock(report.persistence?.after)}`);
   console.log(
-    `dock link:   ${report.dockLink ? JSON.stringify(report.dockLink.href) : "—"} / ` +
-      `${report.dockLink ? JSON.stringify(report.dockLink.ariaLabel) : "—"}`,
+    `dock control: ${report.dockDisplay?.control ? report.dockDisplay.control.tag : "—"} / ` +
+      `${report.dockDisplay?.control ? JSON.stringify(report.dockDisplay.control.ariaLabel) : "—"} / ` +
+      `pressed ${report.dockDisplay?.control ? JSON.stringify(report.dockDisplay.control.pressed) : "—"} / ` +
+      `href ${report.dockDisplay?.control ? JSON.stringify(report.dockDisplay.control.href) : "—"}`,
   );
+  console.log(`  display:   ${describeDisplay(report.dockDisplay?.page)}`);
+  console.log(`  relaxed:   ${describeDisplay(report.dockDisplay?.relaxed)}`);
+  console.log(`  zoom in:   ${describeDisplay(report.dockDisplay?.zoomed)}`);
+  console.log(`  reset:     ${describeDisplay(report.dockDisplay?.reset)}`);
+  console.log(`  restored:  ${describeDisplay(report.dockDisplay?.restored)}`);
+  console.log(`  closed:    ${describeDisplay(report.dockDisplay?.closed)}`);
   console.log(`settings:    ${describeSettings(report.settings?.opened)}`);
   console.log(`  relaxed:   ${describeSettings(report.settings?.relaxed)}`);
   console.log(`  zoom in:   ${describeSettings(report.settings?.zoomed)}`);
   console.log(`  reset:     ${describeSettings(report.settings?.reset)}`);
   console.log(`contract:    ${describeDock(report.sharedContract)}`);
   console.log(`dock shot:   ${report.artifacts?.dock.path} (${report.artifacts?.dock.bytes} bytes)`);
+  console.log(
+    `page shot:   ${report.artifacts?.display?.path} (${report.artifacts?.display?.bytes} bytes)`,
+  );
   console.log(
     `sheet shot:  ${report.artifacts?.settings.path} (${report.artifacts?.settings.bytes} bytes)`,
   );

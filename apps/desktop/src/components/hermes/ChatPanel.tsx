@@ -20,7 +20,6 @@ import {
   ArrowUp,
   Eye,
   EyeOff,
-  ImagePlus,
   Inbox,
   Keyboard,
   Link2,
@@ -65,6 +64,7 @@ import {
 } from "@/components/hermes/ComposerModelControls";
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
+import { ChatDisplayPage } from "@/components/hermes/ChatDisplayPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { useConfirm } from "@/components/ui/useConfirm";
@@ -76,12 +76,14 @@ import {
   ChatSessionsProvider,
   useChatSessions,
   useChatSessionsOptional,
+  type ChatAttachment,
   type ChatReceipt,
 } from "@/state/ChatSessionsProvider";
 import { normalizeCapabilities } from "@/lib/turn-timeline";
 import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { SESSION_ICON } from "@/lib/session-icon";
 import { platformMarkFor } from "@/lib/platform-mark";
 import type {
@@ -181,6 +183,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Life";
   const { snapshot, reloadGeneration, lens, refresh } = useVault();
+  /**
+   * The live-data revision: every write the partner surfaces can make the chip
+   * offer appear (installing the Finance kit writes its store) arrives as one
+   * bump, so the kit read below is re-run without a relaunch.
+   */
+  const liveData = useLiveData();
   const {
     requestedSessionId,
     requestedKickoff,
@@ -269,18 +277,41 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const chatRef = useRef(chat);
   chatRef.current = chat;
   /**
-   * The receipt waiting to ride one chat's next turn. Main keeps the original
-   * and the copy it built for the model, so what lives in the store is a name to
-   * show and the path to name on the turn — the bytes never come back.
-   */
-  const receiptInputRef = useRef<HTMLInputElement | null>(null);
-  /**
    * The general attachment picker: the plus at the composer's bottom left. It
    * takes any media or file the operator picks — a picture, a clip, a
    * recording, a document — because a prompt is not only words and the
    * composer used to be able to carry nothing else.
+   *
+   * It is the composer's ONE file control. A picture's chip offers "use as
+   * receipt" when the Finance kit is installed, so the receipt does not need a
+   * second picker beside this one: the gesture is the same attach, and the
+   * meaning is chosen afterwards, on the chip, where the operator can see the
+   * picture they mean.
    */
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Whether the receipt store can take a picture right now: the Finance kit
+   * installed and the Financial area live.
+   *
+   * The predicate is main's own (`receipt:ready`, backed by
+   * `isReceiptStoreReady`), not the kit registry the composer could read
+   * itself: the registry still lists a kit whose Financial area was archived,
+   * and that vault has no store the ledger may cite. Asking main keeps the
+   * chip's offer and the press on the same answer.
+   *
+   * Read once per vault open, after every live-data write (installing the kit,
+   * archiving or opening the area all announce one) and on a reload, so the
+   * offer changes without a relaunch.
+   */
+  const [receiptReady, setReceiptReady] = useState(false);
+  /**
+   * The attachment whose promotion into the receipt slot is in flight, or null.
+   * The receipt slot is one picture deep and the promotion stores a file before
+   * it holds it, so a second press must wait rather than race the first.
+   */
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  /** The same guard as a ref: two presses in one tick must not both start. */
+  const promotingRef = useRef(false);
   /**
    * The bubble whose text was last copied, and whether the clipboard took it.
    * `ok: false` is shown for a moment too: a copy control that silently does
@@ -317,6 +348,35 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }, []);
 
   /**
+   * Whether the receipt store can take a picture right now.
+   *
+   * Read through main, which owns the predicate (kit installed AND Financial
+   * area live). A vault where either half is missing has no finance file store
+   * to cite, so the chip's offer is absent rather than a dead-end press that
+   * only answers "Install the Finance kit first".
+   *
+   * The store can appear while the dock stays open: the kit is installed from
+   * the Dashboard, the Data rail or a starter page, and the area can be opened
+   * or archived from Settings. Every such write announces itself on the live
+   * revision, so the offer follows without a relaunch.
+   */
+  useEffect(() => {
+    let live = true;
+    void api()
+      .receiptReady()
+      .then((result) => {
+        if (!live) return;
+        setReceiptReady(result.ok && result.value === true);
+      })
+      .catch(() => {
+        if (live) setReceiptReady(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [snapshot?.lifequest.id, reloadGeneration, liveData]);
+
+  /**
    * Copy one bubble's text as the operator sees it. A receipt-only turn has no
    * typed text, so the attached file's name is the content there.
    */
@@ -328,51 +388,73 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * Take one image from the composer. Main stores the original and answers with
-   * the path the turn has to cite — the bytes are never handed back, so the
-   * thumbnail is made here from the operator's own file.
+   * Whether one attachment's chip may offer to become this turn's receipt.
    *
-   * One receipt at a time: a second attach replaces the first, and a refusal
-   * from main leaves the previous one exactly where it was.
+   * A receipt is one JPEG or PNG — the two formats the receipts store sniffs
+   * and the model providers decode — and it needs a picture for its chip, so
+   * the preview URL is part of the test. Readiness is main's answer to
+   * `receipt:ready` — the Finance kit installed AND the Financial area live —
+   * because that is exactly what the press will find: an archived area keeps
+   * its installed-kit record but has no store the ledger may cite. Without
+   * readiness there is nothing to cite, so no offer is drawn.
+   *
+   * What this cannot see is the picture's pixel canvas: main refuses a canvas
+   * over 12,000 px a side or 40 MP before decoding. Such a picture is one of a
+   * kind the operator rarely attaches, and the refusal carries its own reason,
+   * so the chip does not guess at dimensions it was never sent.
    */
-  async function attachReceipt(file: File) {
-    // The receipt control is disabled on a continued chat, but a paste or a
-    // drop is not a control: it takes the same line rather than attaching a
-    // file the WebSocket door would silently drop.
-    if (continuable) {
-      chat.reportError(continuedFileReason ?? null);
-      return;
-    }
+  function receiptCandidate(attachment: ChatAttachment): boolean {
+    return (
+      receiptReady &&
+      attachment.kind === "image" &&
+      Boolean(attachment.previewUrl) &&
+      (attachment.mime === "image/jpeg" || attachment.mime === "image/png")
+    );
+  }
+
+  /**
+   * Move one waiting picture into the receipt the next turn carries.
+   *
+   * The plus already stored the bytes and main holds them by id, so this press
+   * only names the attachment: main reads the original, stores the finance copy
+   * the ledger will cite, builds the model copy, and moves the picture from the
+   * attachment slot to the receipt slot. The chip follows it — out of the
+   * attachments row and into the receipt's own chip — because a turn carries
+   * one receipt and it is no longer a general file.
+   *
+   * A refusal leaves both where they were: the attachment keeps its chip, and
+   * the previous receipt (if any) keeps its slot.
+   */
+  async function useAsReceipt(attachment: ChatAttachment) {
+    const previewUrl = attachment.previewUrl;
+    // A turn that is already sending resolves the attachment store in main: a
+    // promotion racing it would either take the id the turn is about to name or
+    // be refused after the turn cleared the chip. The press waits for the turn
+    // to settle (and the chip is drawn disabled while it runs).
+    if (!sessionId || continuable || sending || promotingRef.current || !previewUrl) return;
     chat.reportError(null);
+    promotingRef.current = true;
+    setPromotingId(attachment.id);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const result = await api().receiptAttach({
-        bytes,
-        mime: file.type,
-        name: file.name,
-      });
+      const result = await api().receiptPromote({ id: attachment.id });
       if (!result.ok) {
         chat.reportError(result.error);
         return;
       }
-      putReceipt({
+      chat.promoteAttachmentFor(sessionId, attachment.id, {
         relPath: result.value.relPath,
         name: result.value.name,
         size: result.value.size,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
       });
     } catch (err) {
-      chat.reportError(err instanceof Error ? err.message : "Could not attach that receipt");
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not use that picture as a receipt",
+      );
+    } finally {
+      promotingRef.current = false;
+      setPromotingId(null);
     }
-  }
-
-  /** The first image in a drop or a paste, if the gesture carried one. */
-  function imageFrom(files: FileList | null): File | null {
-    if (!files) return null;
-    for (const file of Array.from(files)) {
-      if (file.type === "image/png" || file.type === "image/jpeg") return file;
-    }
-    return null;
   }
 
   /**
@@ -387,8 +469,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   async function attachFile(file: File) {
     if (!sessionId) return;
-    // Same rule as the receipt's: a dropped file on a continued chat is refused
-    // here, because the WebSocket door carries the prompt only.
+    // A dropped or pasted file on a continued chat is refused here, because the
+    // WebSocket door carries the prompt only.
     if (continuable) {
       chat.reportError(continuedFileReason ?? null);
       return;
@@ -768,16 +850,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * so a run's deltas re-rendering this panel cannot resume it a second time.
    *
    * A surface the operator asked for by name — the dock bar's shortcuts
-   * reference — is not a landing: opening the dock onto it must not have a chat
-   * resume over the top of it. The check reads a ref rather than a dependency:
-   * landing is "the dock opened", not "the surface changed", and re-running
-   * when the surface changes would make closing the last tab resume a chat
-   * again off a list that has not been re-read yet.
+   * reference or its chat display page — is not a landing: opening the dock onto
+   * one must not have a chat resume over the top of it. The check reads a ref
+   * rather than a dependency: landing is "the dock opened", not "the surface
+   * changed", and re-running when the surface changes would make closing the
+   * last tab resume a chat again off a list that has not been re-read yet.
    */
   const viewRef = useRef(view);
   viewRef.current = view;
   useEffect(() => {
-    if (!open || requestedSessionId || viewRef.current === "shortcuts") return;
+    if (
+      !open ||
+      requestedSessionId ||
+      viewRef.current === "shortcuts" ||
+      viewRef.current === "display"
+    ) {
+      return;
+    }
     void chatRef.current.resumeLast();
   }, [open, requestedSessionId]);
 
@@ -972,7 +1061,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * between to see.
    */
   useEffect(() => {
-    if (!open || view === "shortcuts") return;
+    if (!open || view === "shortcuts" || view === "display") return;
     // Both bodies stay mounted — only the one in front is visible; the other is
     // `hidden` (`display: none`), so it has no height and nothing to keep. The
     // watch follows the visible one.
@@ -1029,7 +1118,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * it for a caret the operator has already given to the answer.
    */
   useEffect(() => {
-    if (!open || view === "shortcuts" || asking) return;
+    if (!open || view === "shortcuts" || view === "display" || asking) return;
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
@@ -1131,6 +1220,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * this is the gesture's thin end.
    */
   async function sendMessage(text: string, overrideSessionId?: string) {
+    // A promotion is mid-flight: main is moving the picture between stores, so
+    // a turn sent now could name an attachment the promotion is about to take
+    // (or the promotion would be refused after the turn took the store). The
+    // press is short — the next keystroke sends.
+    if (promotingRef.current) return;
     // A first turn typed before the interview was opened starts the record
     // silently: the welcome card is an offer, and it must not fight the message
     // the operator was already writing.
@@ -1408,6 +1502,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (sending || (!draft.trim() && !receipt && attachments.length === 0)) return;
+    // A promotion is mid-flight: keep the words in the field rather than clear
+    // them for a send that would be refused (see `sendMessage`).
+    if (promotingRef.current) return;
     const text = draft.trim();
     setDraft("");
     await sendMessage(text);
@@ -1446,6 +1543,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       return;
     }
     if (!draft.trim() && !receipt && attachments.length === 0) return;
+    // A promotion is mid-flight: the press waits, and the words stay in the
+    // field rather than being cleared for a send that would be refused.
+    if (promotingRef.current) return;
     const text = draft.trim();
     setDraft("");
     void sendMessage(text);
@@ -2231,6 +2331,28 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 </Link>
               </div>
             </div>
+          ) : view === "display" ? (
+            /*
+              The chat display page wears the shortcuts page's header shape: a
+              way back, the page's name, and no composer or tab strip under it.
+              It keeps no door into Settings: every control the page owns is
+              here, and the button that opened it must not become a second way
+              out of the dock.
+            */
+            <div className="chat-panel__header chat-panel__header--display">
+              <button
+                type="button"
+                className="chat-panel__icon-btn"
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView("thread")}
+              >
+                <ArrowLeft size={16} aria-hidden />
+              </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Chat display
+              </p>
+            </div>
           ) : (
             <div
               className="chat-panel__header chat-panel__header--thread"
@@ -2601,16 +2723,34 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             {view === "shortcuts" ? <ChatShortcutsPage /> : null}
           </div>
 
+          {/*
+            The chat display settings, as the dock's fifth surface: the size and
+            line spacing the transcript is read at, edited on the pane that wears
+            them. It reads the same window-local pair Settings → Chat display
+            edits, so the two surfaces cannot disagree; the page has no composer
+            because there is nothing to send from a display setting.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--display"
+            hidden={view !== "display"}
+          >
+            {/* Mounted only while it is the surface, like the shortcuts page:
+                it reads the display provider, and a shell without one should
+                not pay for a page it cannot show. */}
+            {view === "display" ? <ChatDisplayPage /> : null}
+          </div>
+
           <div
             className="chat-panel__footer"
-            hidden={view === "shortcuts"}
+            hidden={view === "shortcuts" || view === "display"}
           >
             {/*
               The interview, above the composer rather than in the transcript:
               it is the app speaking, it must not scroll away with the
               conversation, and the thread's `aria-live` must not announce it as
-              if the companion had said it. Thread surface only — the chain and
-              the shortcuts reference have no interview to open.
+              if the companion had said it. Thread surface only — the chain, the
+              shortcuts reference and the chat display page have no interview to
+              open.
             */}
             {view === "thread" ? (
               <OnboardingCards
@@ -2729,18 +2869,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   if (e.dataTransfer.types.includes("Files")) e.preventDefault();
                 }}
                 onDrop={(e) => {
-                  // A dropped picture is a receipt, the way a pasted one is:
-                  // the finance flow reads that chip. Anything else is a
-                  // general attachment, so a clip or a document dropped on the
-                  // composer is not silently ignored.
+                  // Anything dropped on the composer is an attachment, the way
+                  // the plus takes it. A picture can then become the receipt
+                  // from its chip, which is where the operator says what the
+                  // picture MEANS; a clip or a document is simply carried.
                   const files = Array.from(e.dataTransfer?.files ?? []);
                   if (files.length === 0) return;
                   e.preventDefault();
-                  const picture = imageFrom(e.dataTransfer.files);
-                  if (picture) {
-                    void attachReceipt(picture);
-                    return;
-                  }
                   for (const file of files) void attachFile(file);
                 }}
               >
@@ -2800,41 +2935,66 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     className="chat-panel__attachments"
                     data-testid="chat-attachments"
                   >
-                    {attachments.map((attachment) => (
-                      <div
-                        key={attachment.id}
-                        className="chat-panel__attachment"
-                        data-testid="chat-attachment"
-                        data-attachment-kind={attachment.kind}
-                      >
-                        {attachment.kind === "image" && attachment.previewUrl ? (
-                          <img
-                            className="chat-panel__attachment-thumb"
-                            src={attachment.previewUrl}
-                            alt=""
-                          />
-                        ) : (
-                          <span className="chat-panel__attachment-icon" aria-hidden>
-                            <Paperclip size={12} />
-                          </span>
-                        )}
-                        <span className="chat-panel__attachment-name">
-                          {attachment.name}
-                        </span>
-                        <span className="chat-panel__receipt-size">
-                          {formatReceiptSize(attachment.size)}
-                        </span>
-                        <button
-                          type="button"
-                          className="chat-panel__attachment-remove"
-                          aria-label={`Remove ${attachment.name}`}
-                          title={`Remove ${attachment.name}`}
-                          onClick={() => removeAttachment(attachment.id)}
+                    {attachments.map((attachment) => {
+                      const canBeReceipt = receiptCandidate(attachment);
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="chat-panel__attachment"
+                          data-testid="chat-attachment"
+                          data-attachment-kind={attachment.kind}
+                          data-receipt-offer={canBeReceipt ? "true" : undefined}
                         >
-                          <X size={12} aria-hidden />
-                        </button>
-                      </div>
-                    ))}
+                          {attachment.kind === "image" && attachment.previewUrl ? (
+                            <img
+                              className="chat-panel__attachment-thumb"
+                              src={attachment.previewUrl}
+                              alt=""
+                            />
+                          ) : (
+                            <span className="chat-panel__attachment-icon" aria-hidden>
+                              <Paperclip size={12} />
+                            </span>
+                          )}
+                          <span className="chat-panel__attachment-name">
+                            {attachment.name}
+                          </span>
+                          <span className="chat-panel__receipt-size">
+                            {formatReceiptSize(attachment.size)}
+                          </span>
+                          {/* The picture's meaning is chosen here, after the
+                              picker: one press moves it into the receipt slot
+                              the ledger cites. Offered only for a JPEG/PNG in a
+                              vault whose receipt store exists (kit installed,
+                              Financial area live), and held while a turn or
+                              another promotion is in flight; a picture the
+                              store cannot prepare still says why. */}
+                          {canBeReceipt ? (
+                            <button
+                              type="button"
+                              className="chat-panel__attachment-receipt"
+                              data-testid="chat-attachment-receipt"
+                              aria-label={`Use ${attachment.name} as a receipt`}
+                              title="Use this picture as a receipt — the ledger cites it as the transaction's source"
+                              disabled={promotingId !== null || sending}
+                              onClick={() => void useAsReceipt(attachment)}
+                            >
+                              Use as receipt
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="chat-panel__attachment-remove"
+                            aria-label={`Remove ${attachment.name}`}
+                            title={`Remove ${attachment.name}`}
+                            disabled={promotingId === attachment.id}
+                            onClick={() => removeAttachment(attachment.id)}
+                          >
+                            <X size={12} aria-hidden />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
                 {/*
@@ -2861,7 +3021,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   operator writes in and the control row that belongs to it.
                   The field rests on top; the row sits inside the box's bottom
                   edge. That is what makes the model and thinking picks, the
-                  send control, the add/receipt controls and the page pill part
+                  send control, the add control and the page pill part
                   of the composer rather than a footer line under it — and it is
                   why the accent ring is on this box instead of on the field.
                 */}
@@ -2880,16 +3040,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={onKeyDown}
                     onPaste={(e) => {
-                      // A pasted screenshot is a receipt too: take the image and
-                      // leave any pasted text to the field's own handling. The
-                      // paste is a receipt and not a general attachment
-                      // because a receipt is what the finance flow reads: the
-                      // file is cited as a transaction's source, and that is a
-                      // different promise from "the agent may look at this".
-                      const file = imageFrom(e.clipboardData?.files ?? null);
-                      if (!file) return;
+                      // Any file pasted into the field becomes a general
+                      // attachment, the same way the plus takes one. A squeezed
+                      // screenshot is then one press from being a receipt (the
+                      // chip's "use as receipt"), and the paste itself never
+                      // decides what the picture means. Pasted text is left to
+                      // the field's own handling.
+                      const files = Array.from(e.clipboardData?.files ?? []);
+                      if (files.length === 0) return;
                       e.preventDefault();
-                      void attachReceipt(file);
+                      for (const file of files) void attachFile(file);
                     }}
                     disabled={!sessionId}
                     rows={2}
@@ -2899,25 +3059,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   {/*
                     The row inside the box's bottom edge: the composer's own
                     controls, split by the work they do. The leading cluster is
-                    what a turn can carry — the add control, the receipt
-                    control, the page pill and the waiting receipt — so they sit
-                    at the bottom left where the field starts. The trailing
-                    cluster is what the turn runs on and how it goes — the
-                    model and thinking picks, then the send/stop control — at
-                    the bottom right.
+                    what a turn can carry — the add control, the page pill and
+                    the waiting receipt — so they sit at the bottom left where
+                    the field starts. The trailing cluster is what the turn runs
+                    on and how it goes — the model and thinking picks, then the
+                    send/stop control — at the bottom right.
                   */}
                   <div className="chat-panel__composer-dock">
                     <div className="chat-panel__composer-lead">
                       {/*
-                        The two file pickers stay mounted here, hidden, so the
-                        controls beside them can open one and the change still
-                        lands on the composer's own handlers. They are the two
-                        flows, not one: this field takes any media or file as a
-                        general attachment, the image-plus beside it takes one
-                        picture as a finance receipt. A receipt is what the
-                        ledger cites as a transaction's source; an attachment is
-                        only something the agent may look at. They share a
-                        corner, not a job.
+                        The composer's one file picker stays mounted here, hidden,
+                        so the add control can open it and the change still lands
+                        on the composer's own handler. It takes any media or file;
+                        a picture's chip then offers to make it the turn's receipt,
+                        because a receipt is a promise about the picture's meaning
+                        and the operator makes that promise on the chip rather than
+                        by choosing a second button before picking.
                       */}
                       <input
                         ref={attachmentInputRef}
@@ -2929,20 +3086,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         onChange={(e) => {
                           const files = Array.from(e.target.files ?? []);
                           for (const file of files) void attachFile(file);
-                          // Clear the picker so choosing the same file twice
-                          // still fires a change event.
-                          e.target.value = "";
-                        }}
-                      />
-                      <input
-                        ref={receiptInputRef}
-                        className="chat-panel__receipt-input"
-                        type="file"
-                        accept="image/png,image/jpeg"
-                        aria-label="Receipt image"
-                        onChange={(e) => {
-                          const file = imageFrom(e.target.files);
-                          if (file) void attachReceipt(file);
                           // Clear the picker so choosing the same file twice
                           // still fires a change event.
                           e.target.value = "";
@@ -2968,23 +3111,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         <Plus size={15} aria-hidden />
                       </button>
                       <div className="chat-panel__receipts">
-                        <button
-                          type="button"
-                          className="chat-panel__attach"
-                          disabled={sending || !sessionId || continuable}
-                          data-continued-disabled={continuable ? "true" : undefined}
-                          aria-label={
-                            continuable ? continuedFileReason : "Attach a receipt"
-                          }
-                          title={continuable ? continuedFileReason : "Attach a receipt"}
-                          onClick={() => receiptInputRef.current?.click()}
-                        >
-                          <ImagePlus size={15} aria-hidden />
-                        </button>
-
                         {/*
-                          The page, beside the receipt control and wearing its shape:
-                          one pill that says which screen rides the next turn.
+                          The page, beside the add control and wearing the
+                          receipt's shape: one pill that says which screen rides
+                          the next turn.
 
                           It defaults to on and re-arms on every navigation, because
                           the failure it answers is an agent that offered to build a
@@ -3081,8 +3211,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         and reasoning pills. Every control in it is
                         `type="button"` - nothing here can submit the field above
                         it. Absent entirely when the gateway served no catalog,
-                        which leaves the add and receipt controls carrying the left
-                        end of the row alone.
+                        which leaves the add control and the receipt chip
+                        carrying the left end of the row alone.
                       */}
                       <ComposerModelControls
                         catalog={modelCatalog}
@@ -3255,7 +3385,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               group and beside the switch it now shares the corner with: it is a
               surface selector like the chain, and the dock is the only place it
               belongs now that the titlebar no longer carries it. Pressed while
-              the reference is the surface in front of the operator.
+              the reference is the surface in front of the operator, and a second
+              press puts it away again — a door that opens a surface should be
+              the same door that closes it.
             */}
             <button
               type="button"
@@ -3264,7 +3396,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               aria-label="Keyboard shortcuts"
               title="Keyboard shortcuts"
               aria-pressed={view === "shortcuts"}
-              onClick={() => setView("shortcuts")}
+              onClick={() =>
+                setView(view === "shortcuts" ? "thread" : "shortcuts")
+              }
             >
               <Keyboard size={20} aria-hidden />
             </button>
@@ -3272,17 +3406,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               The reading settings, beside the key reference they share a
               subject with: the dock's text size and line spacing have their own
               page, and the operator's hand is already in this bar when the
-              transcript's type is what they want to change.
+              transcript's type is what they want to change. It renders that page
+              on the pane rather than opening Settings over the work: the size
+              it changes is the size of the transcript behind it. A second press
+              closes it, exactly as the shortcut reference's does.
             */}
-            <Link
-              to="/settings?tab=reading"
+            <button
+              type="button"
               className="chat-panel__icon-btn chat-panel__action"
               data-testid="chat-display-settings"
               aria-label="Chat display settings"
               title="Chat display settings"
+              aria-pressed={view === "display"}
+              onClick={() => setView(view === "display" ? "thread" : "display")}
             >
               <Type size={20} aria-hidden />
-            </Link>
+            </button>
             {/*
               The switch-position control, beside the collapse it belongs with:
               one click trades the dock's column for the sheet's, so the chat

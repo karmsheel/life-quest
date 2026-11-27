@@ -148,7 +148,8 @@ pin, and a **+** for a new tab; a vertical agent switcher
 names which companion answers; the bottom bar is a card centred on the composer
 at its own fixed width — a wider field does not stretch it — and leads with
 **New chat**, **Notebox**, **Full screen chat**, the **Keyboard shortcuts**
-reference, the side switch and **Collapse chat**. See
+reference, the **Chat display settings** button (the **Chat display** page),
+the side switch and **Collapse chat**. See
 [Companion](./24-companion.md).
 
 ## Rules and behaviour

@@ -196,8 +196,8 @@ expected until an area is opened.
   conversation another surface owns is continued over the Hermes gateway's own
   connection, so the reply lands in that same transcript and the dock names the
   surface beside the chat's name. Its composer is narrower by design: the model
-  and thinking pills, both attachment controls, the page pill and **Steer** are
-  disabled with the reason, because that connection carries the prompt, the
+  and thinking pills, the **Attach a file** control, the page pill and **Steer**
+  are disabled with the reason, because that connection carries the prompt, the
   answer, tools, approvals and **Stop** but none of those. Sending in such a chat
   used to fail with **Chat stream failed (500)**; if you see that on this build,
   update Hermes.
@@ -206,9 +206,9 @@ expected until an area is opened.
   then try again." The installed Hermes is older than the connection that
   continues a chat; update Hermes, then send the message again.
 - **A continued chat refuses an attachment.** "A chat started on another surface
-  can't carry an attachment yet. Send it in a new chat." The two attach controls,
-  a drop and a paste all refuse; the connection that continues the chat carries
-  text only.
+  can't carry an attachment yet. Send it in a new chat." The **Attach a file**
+  control, a drop and a paste all refuse; the connection that continues the chat
+  carries text only.
 - **A continued turn ends with a dropped connection.** "The connection to the
   Hermes gateway closed before the turn finished. The chat is unchanged; try
   again." The transcript is re-read and the conversation is untouched, so send the
