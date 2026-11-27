@@ -54,7 +54,7 @@ No Prisma, no Next.js, no hosted database at runtime. The Next.js + Prisma tree 
 | `archive/` | Frozen web skeleton, not a runtime |
 | `.github/workflows/` | `docs.yml` (publish), `docs-check.yml` (drift gate) |
 
-## Three flows
+## Four flows
 
 ### 1. A click becomes a file
 
@@ -103,6 +103,21 @@ electron/main.ts
 The splash does not wait on the companion's first token (cold start is its own decision), and
 `__LIFEQUEST_E2E_SEAM__` is compiled out of packaged builds, so a shipped app cannot be
 redirected by environment variables.
+
+### 4. The review vertical
+
+A reviewed period is a **notebook**, not one file: `reviews/<cadence>/<period>/review.json` owns
+identity, page order, week-start and the lock, and one markdown page per scope (`overall.md`,
+`<area-slug>.md`) owns its prose, status and `rev`. A page write is a compare-and-swap on that
+page's `rev`, so two area interviews and the page can write at once without losing each other.
+The four common H2s are the Life review's synthesis contract; an area's own sections are declared
+in `.lifequest/reviews/pages/<area-slug>.md` and ordered after them. On Start the app writes each
+area's **figures** from that area's **metric definitions** (`domains/<slug>/metrics/<id>.json`)
+into `<!-- lifequest:metric:<id> -->` blocks, plus one cross-domain table into
+`<!-- lifequest:metrics:overall -->`; both refresh while the notebook is unlocked and freeze when
+it is locked. Dated metric events live in the area's `metrics` database. `/review/analytics` reads
+the period × metric matrix through the `analytics:matrix` door and logs or edits events through
+`metrics:logEvent` / `metrics:define` and the ordinary `db:*` row path.
 
 ## Where contracts live
 

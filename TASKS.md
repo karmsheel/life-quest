@@ -12,10 +12,13 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Now
 
-- [ ] **Reviews: the review notebook.**
-      branch: `feat/reviews-notebook` (ahead of master and still moving — rebase first) · scope: review
-      page, `packages/vault-core/src/views.ts`, `view-schema.ts`, review rig · proof:
-      `lifequest-e2e` review rig, report + picture · plan: branch commits and the Review spec.
+- [ ] **Reviews: the review notebook, per-domain metrics and Analytics.**
+      branch: `feat/reviews-notebook` (merged up to master `c7b3310`, verified, awaiting the
+      operator's word) · scope: the review vertical — notebook storage and pages, metric
+      definitions and dated events, figures, Analytics page, their IPC doors, rigs, law and wiki ·
+      proof: `lifequest-e2e` review + analytics rigs, reports and pictures
+      (`e2e/artifacts/analytics.json` + `analytics.png`, `review.json`) · plan: the Review spec
+      [`docs/superpowers/specs/2026-11-26-reviews-notebook-and-metrics-design.md`](docs/superpowers/specs/2026-11-26-reviews-notebook-and-metrics-design.md).
 
 ## Next
 
