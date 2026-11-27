@@ -11,7 +11,7 @@
  * cadence+period with a body, per-scope state (`draft` / `done`), and a lock, and
  * the methods mutate those files exactly as the engine does. So "the rail says
  * Done" is a claim about the file the page loaded, not about a call that
- * happened, and "Start filled the snapshot" is checked by reading the body the
+ * happened, and "Start filled the figures" is checked by reading the body the
  * page wrote through the bridge.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
@@ -37,7 +37,7 @@
  *     measure, sits under it at a window with room, or overlaps it when the
  *     window is narrow.
  *  9. An existing claim regresses while the new surface is added: the document
- *     box, blank-line fidelity, the formatting keys, the snapshot pass (filled
+ *     box, blank-line fidelity, the formatting keys, the figure pass (filled
  *     once, inside its markers, under its heading), the one full-width-enough box
  *     (no Document/Preview second view), or the cadence's rules read/written from
  *     the page.
@@ -76,7 +76,6 @@ import type {
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
-  ViewFilter,
   VaultSnapshot,
 } from "@lifequest/vault-core";
 import {
@@ -550,162 +549,290 @@ function pageOf(stored: StoredReview, scope: string): ReviewPageBody {
 }
 
 /**
- * The three figures the shipped default skill asks for, as the app's snapshot
- * pass writes them into Finance's Look-back. The values are fixtures, but the
- * titles, the window line and the "Cash out printed positive" shape are the
- * shipped ones — a stub that drew the old single "Spending this period" block
- * would let a page that never learned the new vocabulary pass.
+ * The three figures the app writes into Finance's Look-back at Start, from the
+ * shipped finance metric definitions. The values are fixtures, but the marker
+ * ids, labels, units, window, as-of instant and provenance line are the shipped
+ * shapes: a stub that still drew the skill's old `lifequest-snapshot` block would
+ * let a page that never learned metric figures pass.
  */
-type StubSnapshot = {
+type StubFigure = {
+  /** The metric definition's id; the marker wraps `metric:<id>`. */
   id: string;
-  title: string;
+  label: string;
+  /** The printed value with its unit. */
   value: string;
-  filters: ViewFilter[];
+  /** The previous window's printed value, for the overall page's comparison table. */
+  previous: string;
+  /** The signed difference of the printed values, as the engine prints it. */
+  delta: string;
 };
 
-const SNAPSHOT_FIGURES: StubSnapshot[] = [
+const METRIC_FIGURES: StubFigure[] = [
   {
-    id: "finance-in",
-    title: "Cash in this period",
-    value: "5,000",
-    filters: [
-      { columnId: "amount", op: "gt", value: 0 },
-      { columnId: "transfer_id", op: "is-not-set" },
-    ],
+    id: "cash-in",
+    label: "Cash in",
+    value: "5,000 (ZAR)",
+    previous: "4,000 (ZAR)",
+    delta: "+1,000",
   },
   {
-    id: "finance-out",
-    title: "Cash out this period",
-    value: "1,234.56",
-    filters: [
-      { columnId: "amount", op: "lt", value: 0 },
-      { columnId: "transfer_id", op: "is-not-set" },
-    ],
+    id: "cash-out",
+    label: "Cash out",
+    value: "1,234.56 (ZAR)",
+    previous: "980.10 (ZAR)",
+    delta: "+254.46",
   },
   {
-    id: "finance-net",
-    title: "Net cash flow this period (transfers included)",
-    value: "3,765.44",
-    filters: [],
+    id: "net-cash-flow",
+    label: "Net cash flow (transfers included)",
+    value: "3,765.44 (ZAR)",
+    previous: "3,019.90 (ZAR)",
+    delta: "+745.54",
   },
 ];
 
-const SNAPSHOT_WINDOW = "2026-10-12 → 2026-10-18";
+/**
+ * The windows and as-of instant are fixed, not read from the clock: a second
+ * Start then produces a byte-identical block, so "the file holds one block per
+ * definition" is a claim about replacement, not about two timestamps differing.
+ */
+const FIGURE_WINDOW = "2026-10-12 → 2026-10-18";
+const PREVIOUS_WINDOW = "2026-10-05 → 2026-10-11";
+const FIGURE_AS_OF = "2026-10-18 08:00";
+const FIGURE_SOURCE = "the finance:transactions database";
 
-function snapshotMarkerOpen(id: string): string {
-  return `<!-- lifequest:snapshot:${id} -->`;
+const OVERALL_OPEN = "<!-- lifequest:metrics:overall -->";
+const OVERALL_CLOSE = "<!-- /lifequest:metrics:overall -->";
+
+/**
+ * One row of the overall page's cross-domain table: the area and metric the
+ * number came from, and the three cells the table prints. The Health row is the
+ * fixture's event-backed metric; the Finance rows are the three shipped
+ * definitions above.
+ */
+type StubOverallRow = {
+  area: string;
+  label: string;
+  current: string;
+  previous: string;
+  delta: string;
+};
+
+const OVERALL_ROWS: StubOverallRow[] = [
+  {
+    area: "Health",
+    label: "Training sessions",
+    current: "3 sessions",
+    previous: "2 sessions",
+    delta: "+1",
+  },
+  ...METRIC_FIGURES.map((figure) => ({
+    area: "Finance",
+    label: figure.label,
+    current: figure.value,
+    previous: figure.previous,
+    delta: figure.delta,
+  })),
+];
+
+function figureMarkerOpen(id: string): string {
+  return `<!-- lifequest:metric:${id} -->`;
 }
 
-function snapshotMarkerClose(id: string): string {
-  return `<!-- /lifequest:snapshot:${id} -->`;
+function figureMarkerClose(id: string): string {
+  return `<!-- /lifequest:metric:${id} -->`;
 }
 
-/** One figure's markdown: bold title with its window, then its number. */
-function snapshotBlockText(figure: StubSnapshot): string {
+/**
+ * One figure's markdown — the block's inside, between its markers: bold label
+ * with its window, then its number, as-of and source.
+ */
+function figureBlockText(figure: StubFigure): string {
   return [
-    snapshotMarkerOpen(figure.id),
+    `**${figure.label}** · ${FIGURE_WINDOW}`,
     ``,
-    `**${figure.title}** · ${SNAPSHOT_WINDOW}`,
+    figure.value,
     ``,
-    `${figure.value} (ZAR)`,
-    ``,
-    snapshotMarkerClose(figure.id),
+    `_As of ${FIGURE_AS_OF} · Source: ${FIGURE_SOURCE}_`,
   ].join("\n");
 }
 
 /**
- * Write the three figures into the Finance area's Look-back, or rewrite each one
- * where it already is.
- *
- * The directives name the financial domain, so the blocks belong under
- * `## Finance` / `### Look-back` — not under the overall `## Look-back`. They are
- * placed in their declared order (Cash in, Cash out, Net); writing them in the
- * right section and the right order is the claim, and a stub that dropped them
- * anywhere would let a page that never scoped the pass pass.
+ * The overall block's inside, between its markers: one row per measured metric,
+ * then the as-of instant and the previous window.
  */
-function writeSnapshot(body: string): { body: string; applied: boolean } {
-  let next = body;
-  let touched = false;
-  for (const figure of SNAPSHOT_FIGURES) {
-    const open = snapshotMarkerOpen(figure.id);
-    if (!next.includes(open)) continue;
-    const lines = next.split("\n");
-    const openAt = lines.indexOf(open);
-    const closeAt = lines.indexOf(snapshotMarkerClose(figure.id), openAt + 1);
-    if (openAt === -1 || closeAt === -1) continue;
-    next = [
-      ...lines.slice(0, openAt),
-      ...snapshotBlockText(figure).split("\n"),
-      ...lines.slice(closeAt + 1),
-    ].join("\n");
-    touched = true;
-  }
-
-  const missing = SNAPSHOT_FIGURES.filter(
-    (figure) => !next.includes(snapshotMarkerOpen(figure.id)),
-  );
-  if (missing.length === 0) return { body: next, applied: touched };
-
-  const lines = next.split("\n");
-  const financeAt = lines.indexOf("## Finance");
-  if (financeAt === -1) return { body, applied: false };
-  let lookbackAt = -1;
-  for (let i = financeAt + 1; i < lines.length; i += 1) {
-    if (/^##\s/.test(lines[i]!)) break;
-    if (lines[i]!.trim() === "### Look-back") {
-      lookbackAt = i;
-      break;
-    }
-  }
-  if (lookbackAt === -1) return { body, applied: false };
-  let spanEnd = lines.length;
-  for (let i = lookbackAt + 1; i < lines.length; i += 1) {
-    if (/^#{2,3}\s/.test(lines[i]!)) {
-      spanEnd = i;
-      break;
-    }
-  }
-  let at = lookbackAt + 1;
-  while (at < lines.length && lines[at]!.trim() === "") at += 1;
-  for (let i = lookbackAt + 1; i < spanEnd; i += 1) {
-    if (/^<!-- \/lifequest:snapshot:.+ -->$/.test(lines[i]!)) {
-      at = i + 1;
-      while (at < lines.length && lines[at]!.trim() === "") at += 1;
-    }
-  }
-  const inserted = missing.flatMap((figure) => [...snapshotBlockText(figure).split("\n"), ""]);
-  return {
-    body: [...lines.slice(0, at), ...inserted, ...lines.slice(at)].join("\n"),
-    applied: true,
-  };
+function overallBlockText(): string {
+  return [
+    `**Metrics this period** · ${FIGURE_WINDOW}`,
+    ``,
+    `| Area | Metric | This period | Previous period | Δ |`,
+    `| --- | --- | --- | --- | --- |`,
+    ...OVERALL_ROWS.map(
+      (row) =>
+        `| ${row.area} | ${row.label} | ${row.current} | ${row.previous} | ${row.delta} |`,
+    ),
+    ``,
+    `_As of ${FIGURE_AS_OF} · Previous period: ${PREVIOUS_WINDOW}_`,
+  ].join("\n");
 }
 
+/** The span of one heading's section: where it starts and where the next heading begins. */
+type SectionSpan = { headingAt: number; endAt: number };
+
+/** Find one heading at or after `from`, and the next heading that ends its section. */
+function findSectionSpan(
+  lines: string[],
+  from: number,
+  heading: string,
+  next: RegExp,
+): SectionSpan | null {
+  for (let i = from; i < lines.length; i += 1) {
+    if (lines[i]!.trim() !== heading) continue;
+    let endAt = lines.length;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (next.test(lines[j]!)) {
+        endAt = j;
+        break;
+      }
+    }
+    return { headingAt: i, endAt };
+  }
+  return null;
+}
+
+/** Any app-written block's closing marker: where the next block goes after. */
+const APP_BLOCK_CLOSE =
+  /^<!-- \/(?:lifequest:snapshot:.+|lifequest:metric:.+|lifequest:metrics:overall) -->$/;
+
+/**
+ * Put one app-written block where it belongs: replace it by its own markers, or
+ * open the section ahead of the operator's prose and after any block a previous
+ * pass wrote — the engine's own placement, so a second Start rewrites one block
+ * per figure instead of appending another.
+ */
+function upsertAppBlock(
+  body: string,
+  span: SectionSpan,
+  open: string,
+  close: string,
+  markdown: string,
+): { body: string; applied: boolean } {
+  const lines = body.split("\n");
+  const openAt = lines.indexOf(open);
+  if (openAt !== -1) {
+    const closeAt = lines.indexOf(close, openAt + 1);
+    const end = closeAt === -1 ? openAt + 1 : closeAt + 1;
+    const next = [
+      ...lines.slice(0, openAt),
+      open,
+      ...markdown.split("\n"),
+      close,
+      ...lines.slice(end),
+    ].join("\n");
+    return { body: next, applied: next !== body };
+  }
+  let at = span.headingAt + 1;
+  while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  for (let i = span.headingAt + 1; i < span.endAt && i < lines.length; i += 1) {
+    if (!APP_BLOCK_CLOSE.test(lines[i]!)) continue;
+    at = i + 1;
+    while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  }
+  const before = lines.slice(0, at);
+  if (before.length > 0 && before[before.length - 1]!.trim() !== "") before.push("");
+  const after = lines.slice(at);
+  const next = [...before, open, ...markdown.split("\n"), close];
+  if (after.length > 0 && after[0]!.trim() !== "") next.push("");
+  next.push(...after);
+  return { body: next.join("\n"), applied: true };
+}
+
+/**
+ * Write the three figures into the Finance area's Look-back, in definition
+ * order, each one upserted by its own marker.
+ *
+ * The definitions name the financial domain, so the blocks belong under
+ * `## Finance` / `### Look-back` — not under the overall `## Look-back` — and,
+ * like the engine, they open the section ahead of the operator's own prose.
+ */
+function writeAreaFigures(body: string): { body: string; applied: boolean } {
+  let next = body;
+  for (const figure of METRIC_FIGURES) {
+    const lines = next.split("\n");
+    const financeAt = lines.indexOf("## Finance");
+    if (financeAt === -1) break;
+    const span = findSectionSpan(lines, financeAt + 1, "### Look-back", /^#{2,3}\s/);
+    if (!span) break;
+    next = upsertAppBlock(
+      next,
+      span,
+      figureMarkerOpen(figure.id),
+      figureMarkerClose(figure.id),
+      figureBlockText(figure),
+    ).body;
+  }
+  return { body: next, applied: next !== body };
+}
+
+/**
+ * Write the overall page's cross-domain table under its `## Look-back`, or
+ * refresh it in place. The operator's prose below the block is kept, and the
+ * marker is the anchor: a second Start rewrites the same block.
+ */
+function writeOverallMetrics(body: string): { body: string; applied: boolean } {
+  const lines = body.split("\n");
+  const span = findSectionSpan(lines, 0, "## Look-back", /^##\s/);
+  if (!span) return { body, applied: false };
+  return upsertAppBlock(body, span, OVERALL_OPEN, OVERALL_CLOSE, overallBlockText());
+}
+
+/**
+ * The shipped Phase 5 default skill (weekly), verbatim: prose only.
+ *
+ * Figures come from the vault's metric definitions and are written by the app at
+ * Start, so the default carries no `lifequest-snapshot` fences; the prose keeps
+ * the one door that is still the operator's — a hand-written fence for a custom
+ * figure no definition covers. The rules panel in the rig is this file, so a
+ * stub whose rules disagreed with the shipped default would show a different
+ * page than the operator gets.
+ */
 const SKILL_MARKDOWN = [
   `---`,
   `cadence: weekly`,
   `---`,
   `# Weekly review skill`,
   ``,
-  `- Keep it to a page.`,
+  `Standing rules for this cadence's review sessions. Edit freely, or ask the`,
+  `companion to add a rule — the whole file is handed to the review session.`,
   ``,
-  `## Snapshots`,
+  `## How to run this review`,
   ``,
-  ...SNAPSHOT_FIGURES.flatMap((figure) => [
-    '```lifequest-snapshot',
-    JSON.stringify(
-      {
-        id: figure.id,
-        domain: "financial",
-        section: "Look-back",
-        title: figure.title,
-        window: "period",
-      },
-      null,
-      2,
-    ),
-    "```",
-    ``,
-  ]),
+  `- Work from the review page the app has open. Read it with \`get_review\` and the scope you were given before you change anything; a page is written with \`write_review(scope, body, baseRev)\`.`,
+  `- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.`,
+  `- Prefer the operator's own words over your summary of them. \`get_period_pack\` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.`,
+  `- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.`,
+  `- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.`,
+  `- When the report is ready, propose \`mark_review_done\` rather than marking it done yourself.`,
+  ``,
+  `- A week is where patterns start to show. Name the one pattern worth changing, not five.`,
+  `- Compare against the previous week's review when there is one.`,
+  ``,
+  `## Figures`,
+  ``,
+  `The app writes this review's figures itself when Start is pressed. Each one is`,
+  `read from the area's own metric definitions, so the numbers are there whether`,
+  `or not the agent is running, and a figure prints its label, its value and unit,`,
+  `the window it covers, the as-of minute it was read, and the database or event`,
+  `it came from. A review window opens before its period ends, so a figure read`,
+  `early says "period to date" — the as-of line is what makes the number honest.`,
+  ``,
+  `Figures refresh on Start while the review is open and freeze once it is`,
+  `locked: a finished review is history, not a live dashboard. To change what a`,
+  `figure measures, change that area's metric definitions rather than this file.`,
+  ``,
+  `A hand-written \`lifequest-snapshot\` fence in this file is still honoured for a`,
+  `custom figure the metric definitions do not cover; the app writes and refreshes`,
+  `that block on Start exactly as before.`,
 ].join("\n");
 
 /**
@@ -718,7 +845,7 @@ const SKILL_MARKDOWN = [
 function kickoffFor(cadence: ReviewCadence, period: string, scope: string): string {
   const title = titleFor(cadence, period);
   const figures =
-    "Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers. Use get_period_pack for the period's own days.";
+    "Read your page with get_review (pass this scope) — the app has already filled in the figures from your metric definitions, inside `<!-- lifequest:metric:<id> -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
   if (cadence === "daily") {
     return `Let's assemble the ${title}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
@@ -742,7 +869,7 @@ function overallRefusal(stored: StoredReview): string | null {
 }
 
 type ReviewWrite = { cadence: string; period: string; body: string };
-type SnapshotCall = { cadence: string; period: string; scope: string };
+type FigurePassCall = { cadence: string; period: string; scope: string };
 type StartCall = {
   cadence: string;
   period: string;
@@ -758,7 +885,8 @@ type HarnessWindow = Window & {
   reviewRigCalls?: string[];
   reviewRigUnexpectedCalls?: string[];
   reviewRigWrites?: ReviewWrite[];
-  reviewRigSnapshotCalls?: SnapshotCall[];
+  /** Every figure pass the page asked the vault to run, with the scope it named. */
+  reviewRigFigureCalls?: FigurePassCall[];
   /** Every session the page asked Start to open, with the scope it named. */
   reviewRigStarts?: StartCall[];
   /** The turn text the dock sent when a start opened the interview. */
@@ -801,7 +929,7 @@ const harness = window as HarnessWindow;
 harness.reviewRigCalls = [];
 harness.reviewRigUnexpectedCalls = [];
 harness.reviewRigWrites = [];
-harness.reviewRigSnapshotCalls = [];
+harness.reviewRigFigureCalls = [];
 harness.reviewRigStarts = [];
 harness.reviewRigKickoffs = [];
 harness.reviewRigSkillWrites = [];
@@ -1199,7 +1327,7 @@ const bridge: Record<string, unknown> = {
   },
   reviewPrepopulate: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewPrepopulate:${cadence}:${period}:${scope}`);
-    harness.reviewRigSnapshotCalls?.push({ cadence, period, scope });
+    harness.reviewRigFigureCalls?.push({ cadence, period, scope });
     const stored = getOrSeed(cadence as ReviewCadence, period);
     const value = (patch: Partial<ReviewPrepopulateResult>): Result<ReviewPrepopulateResult> =>
       ok({
@@ -1213,59 +1341,49 @@ const bridge: Record<string, unknown> = {
         bodyMarkdown: stored.body,
         ...patch,
       });
+    // A locked review is frozen: the engine touches nothing, so a rig that
+    // rewrote it would let a page claim a fill the vault refuses.
     if (stored.locked) return Promise.resolve(value({}));
-    // This stub answer stands for a review whose directives the pass cannot
-    // place — a section the review does not carry — not for the shipped daily
-    // review: there the figures resolve to the overall `## Look-back`, so a real
-    // daily Start writes. It is kept here because this is the only harness path
-    // that exercises the page's skip line, and the page must report a skip
-    // rather than a clean start.
-    if (cadence === "daily") {
+    // The overall page — the daily review included — gets the cross-domain table
+    // and nothing else. A daily review has no area pages, so it never grows an
+    // area figure block; the table is found by its own marker. The engine reports
+    // one `overall` outcome for the block, not one per row.
+    if (scope === "overall") {
+      const written = writeOverallMetrics(stored.body);
+      if (written.applied) stored.body = written.body;
       return Promise.resolve(
         value({
+          applied: written.applied ? 1 : 0,
           outcomes: [
             {
-              id: SNAPSHOT_FIGURES[0]!.id,
-              domain: "financial",
+              kind: "overall",
+              id: "metrics:overall",
+              domain: "",
               section: "Look-back",
-              title: SNAPSHOT_FIGURES[0]!.title,
-              status: "skipped",
-              reason: 'this review has no "Look-back" section under Finance',
+              title: "Metrics this period",
+              status: written.applied ? ("written" as const) : ("unchanged" as const),
             },
           ],
         }),
       );
     }
-    // The directives name the financial domain, so an area scope only runs for
-    // that area; the overall scope runs every directive in the skill.
-    if (scope !== "overall" && scope !== "financial") {
-      return Promise.resolve(value({}));
-    }
-    const written = writeSnapshot(stored.body);
+    // Only the Finance area has definitions in this vault; the other areas'
+    // passes find nothing to write and leave their pages alone.
+    if (scope !== "financial") return Promise.resolve(value({}));
+    const written = writeAreaFigures(stored.body);
     if (written.applied) stored.body = written.body;
-    const outcomes = SNAPSHOT_FIGURES.map((figure) =>
-      written.applied
-        ? {
-            id: figure.id,
-            domain: "financial",
-            section: "Look-back",
-            title: figure.title,
-            status: "written" as const,
-            groups: 1,
-          }
-        : {
-            id: figure.id,
-            domain: "financial",
-            section: "Look-back",
-            title: figure.title,
-            status: "skipped" as const,
-            reason: 'this review has no "Look-back" section under Finance',
-          },
-    );
     return Promise.resolve(
       value({
-        applied: written.applied ? SNAPSHOT_FIGURES.length : 0,
-        outcomes,
+        applied: written.applied ? METRIC_FIGURES.length : 0,
+        outcomes: METRIC_FIGURES.map((figure) => ({
+          kind: "metric",
+          id: `metric:${figure.id}`,
+          definitionId: figure.id,
+          domain: "financial",
+          section: "Look-back",
+          title: figure.label,
+          status: written.applied ? ("written" as const) : ("unchanged" as const),
+        })),
       }),
     );
   },
@@ -1331,33 +1449,12 @@ const bridge: Record<string, unknown> = {
   },
   reviewSkillGet: (cadence: string) => {
     harness.reviewRigCalls?.push(`reviewSkillGet:${cadence}`);
+    // The Phase 5 default carries no directives: the figures come from metric
+    // definitions, so a `snapshots` list here would model the retired skill pass.
     const value: ReviewSkill = {
       cadence: cadence as ReviewCadence,
       markdown: skillMarkdown ?? SKILL_MARKDOWN,
-      snapshots: SNAPSHOT_FIGURES.map((figure) => ({
-        id: figure.id,
-        domain: "financial",
-        section: "Look-back",
-        title: figure.title,
-        window: "period",
-        spec: {
-          databaseId: "finance:transactions",
-          title: figure.title,
-          presentation: "metric",
-          groupBy: null,
-          timeBucket: null,
-          timeColumnId: "date",
-          timeWindow: "all",
-          filters: figure.filters,
-          measure: "sum",
-          measureColumnId: "amount",
-          per: null,
-          sort: { by: "value", dir: "desc" },
-          limit: 12,
-          convertToZar: true,
-          columns: [],
-        },
-      })),
+      snapshots: [],
       problems: [],
       exists: skillMarkdown !== null,
     };
@@ -1367,16 +1464,14 @@ const bridge: Record<string, unknown> = {
     harness.reviewRigCalls?.push(`reviewSkillWrite:${cadence}`);
     harness.reviewRigSkillWrites?.push(markdown);
     skillMarkdown = markdown;
-    // A rule the page cannot read is reported rather than thrown, exactly as the
-    // vault reports it.
-    const problems = markdown.includes("lifequest-snapshot")
-      ? []
-      : ["snapshot 1: not valid JSON (Unexpected end of JSON input)"];
+    // A prose-only rules file is normal since Phase 5 — figures are not read off
+    // the skill — so a write without fences parses clean. A fence that fails to
+    // yield a directive is what `problems` names, and this fixture writes none.
     const value: ReviewSkill = {
       cadence: cadence as ReviewCadence,
       markdown,
       snapshots: [],
-      problems,
+      problems: [],
       exists: true,
     };
     return Promise.resolve(ok(value));

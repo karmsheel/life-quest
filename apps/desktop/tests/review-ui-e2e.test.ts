@@ -66,12 +66,24 @@ const RAIL_ROWS = [
   "review-tab-overall",
   ...AREAS.map((area) => `review-tab-${area.slug}`),
 ];
-/** The three figures the shipped default skill writes into Finance's Look-back. */
-const SNAPSHOT_MARKERS = [
-  "<!-- lifequest:snapshot:finance-in -->",
-  "<!-- lifequest:snapshot:finance-out -->",
-  "<!-- lifequest:snapshot:finance-net -->",
+/**
+ * The three figure blocks the app writes into Finance's Look-back at Start, one
+ * per shipped finance metric definition. The marker id is the definition's id;
+ * the default skill no longer carries `lifequest-snapshot` fences.
+ */
+const FIGURE_MARKERS = [
+  "<!-- lifequest:metric:cash-in -->",
+  "<!-- lifequest:metric:cash-out -->",
+  "<!-- lifequest:metric:net-cash-flow -->",
 ];
+const FIGURE_TITLES = ["Cash in", "Cash out", "Net cash flow (transfers included)"];
+const FIGURE_VALUES = ["5,000 (ZAR)", "1,234.56 (ZAR)", "3,765.44 (ZAR)"];
+/** The overall page's cross-domain block and the table under it. */
+const OVERALL_OPEN = "<!-- lifequest:metrics:overall -->";
+const OVERALL_CLOSE = "<!-- /lifequest:metrics:overall -->";
+const OVERALL_HEADERS = ["Area", "Metric", "This period", "Previous period", "Δ"];
+/** Any old skill-fence marker: the Phase 5 default carries none. */
+const STALE_SNAPSHOT_MARKER = "lifequest:snapshot:";
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -302,7 +314,7 @@ type Report = {
     formatted: Page;
     agentDown: Page;
     agentDownRail: RailState;
-    agentDownSnapshotCalls: { cadence: string; period: string; scope: string }[];
+    agentDownFigureCalls: { cadence: string; period: string; scope: string }[];
     filledBody: string;
     started: Page;
     starts: StartCall[];
@@ -365,6 +377,8 @@ type Report = {
     lockedScopes: Record<string, ScopeState>;
     refusedWrite: boolean;
     lockedBody: string;
+    /** The locked Finance page after its tab was switched to: the figures survive. */
+    lockedFinance: Page;
     /** The open page before the agent marked anything: the week it is on. */
     liveBefore: Page;
     livePeriod: string;
@@ -846,7 +860,7 @@ describe("review ui e2e", () => {
     );
     assert.equal(agentDown.boxes, 1, "an unreachable agent took the review document away");
     assert.equal(
-      agentDown.boxText.includes("Cash in this period"),
+      agentDown.boxText.includes("Cash in"),
       true,
       "the filled figures are not visible in the review with the agent down",
     );
@@ -859,53 +873,88 @@ describe("review ui e2e", () => {
       "the pressed row is not the selected row",
     );
     assert.equal(
-      report.checks.agentDownSnapshotCalls.length,
+      report.checks.agentDownFigureCalls.length,
       1,
-      "the failed start did not run the snapshot pass exactly once",
+      "the failed start did not run the figure pass exactly once",
     );
     assert.equal(
-      report.checks.agentDownSnapshotCalls[0]!.scope,
+      report.checks.agentDownFigureCalls[0]!.scope,
       "financial",
-      "the Finance row ran the snapshot pass for another scope",
+      "the Finance row ran the figure pass for another scope",
     );
-    for (const marker of SNAPSHOT_MARKERS) {
+    for (const marker of FIGURE_MARKERS) {
       assert.equal(
         report.checks.filledBody.split(marker).length - 1,
         1,
         `${marker} is not in the file exactly once`,
       );
     }
-    assert.match(report.checks.filledBody, /1,234\.56 \(ZAR\)/, "the figures did not carry their numbers");
-    // The rules name the financial domain's Look-back, so the blocks belong in
-    // the Finance area section, not under the overall `## Look-back`.
+    assert.equal(
+      report.checks.filledBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "an old lifequest:snapshot marker is still in the filled review",
+    );
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.filledBody.includes(value),
+        true,
+        `the figure pass did not write ${value}`,
+      );
+    }
+    // The definitions belong to the Finance area, so the blocks belong in the
+    // Finance area section, not under the overall `## Look-back`.
     const filled = report.checks.filledBody;
     const financeAt = filled.indexOf("## Finance");
     const financeLookback = filled.indexOf("### Look-back", Math.max(financeAt, 0));
-    const snapshotAt = filled.indexOf(SNAPSHOT_MARKERS[0]);
+    const firstFigureAt = filled.indexOf(FIGURE_MARKERS[0]);
     const financeKeep = filled.indexOf("### Keep", Math.max(financeLookback, 0));
     assert.ok(
       financeAt !== -1 &&
         financeLookback !== -1 &&
-        snapshotAt > financeLookback &&
-        snapshotAt < financeKeep,
+        firstFigureAt > financeLookback &&
+        firstFigureAt < financeKeep,
       "the figures did not land in Finance's Look-back section",
     );
+    // The window, the as-of instant and the source are what make a figure honest
+    // while a period is still open; the box must print all three.
     assert.equal(
-      agentDown.boxText.includes("lifequest:snapshot"),
-      false,
-      "the snapshot marker is printed in the review",
+      agentDown.boxText.includes("2026-10-12 → 2026-10-18"),
+      true,
+      "the filled figures do not print their window",
     );
-    for (const title of [
-      "Cash in this period",
-      "Cash out this period",
-      "Net cash flow this period (transfers included)",
-    ]) {
+    assert.equal(
+      agentDown.boxText.includes(
+        "As of 2026-10-18 08:00 · Source: the finance:transactions database",
+      ),
+      true,
+      "the filled figures do not print the as-of instant and their source",
+    );
+    assert.equal(
+      agentDown.boxText.includes("lifequest:metric:"),
+      false,
+      "the metric marker is printed in the review",
+    );
+    for (const title of FIGURE_TITLES) {
       assert.equal(
         agentDown.boxText.includes(title),
         true,
         `the filled figure ${JSON.stringify(title)} is not drawn in the review`,
       );
     }
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        agentDown.boxText.includes(value),
+        true,
+        `the filled figure's value ${JSON.stringify(value)} is not drawn in the review`,
+      );
+    }
+    // The document was filled before the agent failed: the notice must say what
+    // the app wrote rather than read as a clean start.
+    assert.match(
+      String(agentDown.notice),
+      /filled 3 snapshot/,
+      "the agent-down start did not report the figures it filled",
+    );
     assert.equal(agentDown.tables, 0, "the figures are prose, not a table");
     assert.equal(
       agentDown.boxText.includes("| --- |"),
@@ -994,25 +1043,39 @@ describe("review ui e2e", () => {
       "the arrow steps did not walk back to the open week",
     );
     assert.equal(picker.back?.nextDisabled, true, "Next is not disabled on the open week");
-    assert.match(String(started.notice), /snapshot/i, "the page did not say what it filled");
+    // This is the second Finance Start, and the first wrote the figures already:
+    // with the window and as-of fixed, the pass has nothing to change, so the
+    // notice names the chat it opened and does not claim a fill it did not do.
     assert.match(String(started.notice), /chat/i, "the page did not say the interview opened");
+    assert.doesNotMatch(
+      String(started.notice),
+      /filled \d+ snapshot/i,
+      "the second start claimed to fill the figures again",
+    );
     assert.equal(
       started.markDoneLabel,
       "Mark Finance review complete",
       "the mark-done button is not the Finance form",
     );
-    for (const marker of SNAPSHOT_MARKERS) {
+    assert.equal(
+      report.checks.startedTwiceBody,
+      report.checks.filledBody,
+      "a second start rewrote the figure blocks it had already written",
+    );
+    for (const marker of FIGURE_MARKERS) {
       assert.equal(
         report.checks.startedTwiceBody.split(marker).length - 1,
         1,
         `a second start appended a second ${marker}`,
       );
     }
-    assert.equal(
-      report.checks.startedTwiceBody.split("1,234.56 (ZAR)").length - 1,
-      1,
-      "a second start appended the figures again",
-    );
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.startedTwiceBody.split(value).length - 1,
+        1,
+        `a second start appended the figure value ${value} again`,
+      );
+    }
     assert.equal(
       railText(report.checks.financeDone, "financial"),
       "Done",
@@ -1168,6 +1231,54 @@ describe("review ui e2e", () => {
         `the daily review file grew a ${area.name} section`,
       );
     }
+    // The one general page carries the cross-domain table and no area figure
+    // block: a daily review has no areas for a figure to land on.
+    assert.equal(
+      report.checks.dailyBody.split(OVERALL_OPEN).length - 1,
+      1,
+      "the daily review file does not hold the overall metrics block exactly once",
+    );
+    assert.equal(
+      report.checks.dailyBody.split(OVERALL_CLOSE).length - 1,
+      1,
+      "the daily review file's overall metrics block is not closed once",
+    );
+    assert.equal(
+      report.checks.dailyBody.includes("lifequest:metric:"),
+      false,
+      "the daily review file grew an area figure block",
+    );
+    assert.equal(
+      report.checks.dailyBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "the daily review file holds an old lifequest:snapshot marker",
+    );
+    assert.ok(
+      report.checks.dailyBody.includes(
+        "| Health | Training sessions | 3 sessions | 2 sessions | +1 |",
+      ),
+      "the daily review's overall block does not hold the Health training row",
+    );
+    assert.equal(
+      report.checks.dailyStarted.tables,
+      1,
+      "the daily review did not print the overall metrics table",
+    );
+    assert.deepEqual(
+      report.checks.dailyStarted.headers,
+      OVERALL_HEADERS,
+      "the daily review's metrics table headers are wrong",
+    );
+    assert.match(
+      String(report.checks.dailyStarted.boxText),
+      /Metrics this period/,
+      "the daily review did not print the overall metrics block",
+    );
+    assert.match(
+      String(report.checks.dailyStarted.boxText),
+      /5,000 \(ZAR\)/,
+      "the daily review's overall table did not print the finance rows",
+    );
     assert.equal(
       report.checks.dailyStarted.markDoneLabel,
       "Mark review complete",
@@ -1178,14 +1289,12 @@ describe("review ui e2e", () => {
       false,
       "the daily review grew a checklist after its interview started",
     );
-    // The prepopulate stub answers this daily review with a skipped snapshot (a
-    // directive the pass cannot place). A Start that filled nothing must not
-    // read as a clean start: the notice has to name the rule and where it
-    // looked, which is also the only page surface that reports a genuine skip.
+    // The daily Start writes the overall block, so its notice reports what the app
+    // wrote rather than reading as a clean start.
     assert.match(
       String(report.checks.dailyStarted.notice),
-      /Skipped: Cash in this period — this review has no "Look-back" section under Finance/,
-      "the daily Start notice did not report the skipped snapshot",
+      /filled \d+ snapshot/,
+      "the daily Start notice did not report the figures it filled",
     );
 
     // ── the agent fills and completes the daily review ON THE OPEN PAGE ─────
@@ -1284,7 +1393,7 @@ describe("review ui e2e", () => {
     // ── the cadence's rules, read and written from the page ────────────────
     assert.match(
       String(report.checks.rules.skillValue),
-      /Keep it to a page\./,
+      /Standing rules for this cadence's review sessions/,
       "the rules panel did not show the cadence's rules",
     );
     assert.equal(report.checks.skillWrites.length, 1, "the rules were not written exactly once");
@@ -1332,6 +1441,56 @@ describe("review ui e2e", () => {
       "Mark life review complete",
       "the life review's mark-done button is not its form",
     );
+    // The overall page shows the cross-domain table the Start wrote: the Health
+    // event metric and the three Finance definitions, with the as-of instant and
+    // the previous window under it. It is a table, not pipes printed as prose.
+    const lifeStarted = report.checks.lifeStarted;
+    assert.equal(lifeStarted.tables, 1, "the overall page did not draw the metrics table");
+    assert.deepEqual(
+      lifeStarted.headers,
+      OVERALL_HEADERS,
+      "the overall metrics table's headers are wrong",
+    );
+    for (const cell of [
+      "Health",
+      "Training sessions",
+      "3 sessions",
+      "2 sessions",
+      "Finance",
+      "Cash in",
+      "5,000 (ZAR)",
+      "4,000 (ZAR)",
+      "Cash out",
+      "1,234.56 (ZAR)",
+      "Net cash flow (transfers included)",
+      "3,765.44 (ZAR)",
+    ]) {
+      assert.equal(
+        String(lifeStarted.boxText).includes(cell),
+        true,
+        `the overall metrics table is missing ${cell}`,
+      );
+    }
+    assert.match(
+      String(lifeStarted.boxText),
+      /Metrics this period/,
+      "the overall page did not print the metrics block's heading",
+    );
+    assert.match(
+      String(lifeStarted.boxText),
+      /As of 2026-10-18 08:00 · Previous period: 2026-10-05 → 2026-10-11/,
+      "the overall metrics block does not print the as-of instant and previous window",
+    );
+    assert.equal(
+      String(lifeStarted.boxText).includes("| --- |"),
+      false,
+      "the overall metrics table is painted as markdown pipes",
+    );
+    assert.equal(
+      String(lifeStarted.boxText).includes("lifequest:metrics"),
+      false,
+      "the overall metrics marker is printed in the review",
+    );
     const locked = report.checks.locked;
     assert.equal(locked.lockedBadge, "Locked", "the locked review does not show its Locked badge");
     assert.equal(locked.status, "Locked", "the page's status line is not Locked");
@@ -1349,6 +1508,21 @@ describe("review ui e2e", () => {
       "the locked review still offers Start interview",
     );
     assert.equal(locked.unlockPresent, true, "the locked review offers no way to unlock it");
+    // Reading survives the lock: the Finance tab still switches and shows the
+    // figures the app wrote before the lock.
+    const lockedFinance = report.checks.lockedFinance;
+    for (const title of FIGURE_TITLES) {
+      assert.equal(
+        String(lockedFinance.boxText).includes(title),
+        true,
+        `the locked Finance page lost the figure ${title}`,
+      );
+    }
+    assert.equal(
+      lockedFinance.tables,
+      0,
+      "the locked Finance page drew the overall metrics table",
+    );
     assert.equal(
       locked.markDoneLabel,
       null,
@@ -1374,13 +1548,35 @@ describe("review ui e2e", () => {
         `the locked review holds a duplicate ${area.name} section`,
       );
     }
-    for (const marker of SNAPSHOT_MARKERS) {
+    for (const marker of FIGURE_MARKERS) {
       assert.equal(
         report.checks.lockedBody.split(marker).length - 1,
         1,
         `the lock changed the figure block ${marker}`,
       );
     }
+    assert.equal(
+      report.checks.lockedBody.split(OVERALL_OPEN).length - 1,
+      1,
+      "the locked review does not hold the overall metrics block exactly once",
+    );
+    assert.equal(
+      report.checks.lockedBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "the locked review holds an old lifequest:snapshot marker",
+    );
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.lockedBody.includes(value),
+        true,
+        `the locked review lost the figure value ${value}`,
+      );
+    }
+    assert.match(
+      report.checks.lockedBody,
+      /As of 2026-10-18 08:00 · Source: the finance:transactions database/,
+      "the locked review's figures lost their as-of instant and source",
+    );
 
     // ── an agent's mark updates the checklist of the page already open ──────
     // The reported bug, restated: the companion marks a scope done in the main

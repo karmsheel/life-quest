@@ -14,7 +14,7 @@
  *   review-tabs.png       the same moment, framed on the tab row: Overall first,
  *                         then the live areas, mixed statuses, the progress line
  *   review-started.png    after the Finance page started its interview: the
- *                         snapshot figures are in that page's file
+ *                         metric figures the app wrote are in that page's file
  *   review-chat-sidebar.png  the moment the Finance interview starts: the new
  *                         chat is already a row in **Chats**, marked as the open
  *                         chat and as a live turn, while the agent is working
@@ -75,9 +75,12 @@
  *     selected page, including the paragraph the operator wrote outside the
  *     skeleton and the area sections the tabs map. The old claims survive the
  *     surface: the page's blocks and the blank line the operator typed, Ctrl+B/U/2/3
- *     on the selection, the snapshot filled once inside its markers in the right
+ *     on the selection, the figure pass filled once inside its markers in the right
  *     section with the agent down, and the cadence's rules read and written from
- *     the page.
+ *     the page. The figures are the shipped metric ones: one block per Finance
+ *     definition inside `lifequest:metric:*` markers with its window, as-of and
+ *     source, the overall page's cross-domain table under `look-back`, and a
+ *     second Start replacing the block rather than appending one.
  * 11. No bridge call this rig does not model, and no console error.
  * 12. A started review's chat is in the LEFT SIDEBAR from its first paint, while
  *     the agent is still working. The chat list was read before that session
@@ -174,12 +177,28 @@ const AREA_ROWS = [
   { slug: "relationships", name: "Relationships" },
 ];
 const RAIL_ROWS = ["review-tab-overall", ...AREA_ROWS.map((a) => `review-tab-${a.slug}`)];
-/** The three figures the shipped default skill writes into Finance's Look-back. */
-const SNAPSHOT_MARKERS = [
-  "<!-- lifequest:snapshot:finance-in -->",
-  "<!-- lifequest:snapshot:finance-out -->",
-  "<!-- lifequest:snapshot:finance-net -->",
+/**
+ * The three figures the app writes into Finance's Look-back at Start, one block
+ * per shipped finance metric definition. The marker id is the definition's id.
+ */
+const FIGURE_MARKERS = [
+  "<!-- lifequest:metric:cash-in -->",
+  "<!-- lifequest:metric:cash-out -->",
+  "<!-- lifequest:metric:net-cash-flow -->",
 ];
+/** The definition labels and printed values the blocks must show. */
+const FIGURE_TITLES = [
+  "Cash in",
+  "Cash out",
+  "Net cash flow (transfers included)",
+];
+const FIGURE_VALUES = ["5,000 (ZAR)", "1,234.56 (ZAR)", "3,765.44 (ZAR)"];
+/** The overall page's cross-domain block and its table. */
+const OVERALL_OPEN = "<!-- lifequest:metrics:overall -->";
+const OVERALL_CLOSE = "<!-- /lifequest:metrics:overall -->";
+const OVERALL_HEADERS = ["Area", "Metric", "This period", "Previous period", "Δ"];
+/** Any old skill-fence marker: the default no longer carries one. */
+const STALE_SNAPSHOT_MARKER = "lifequest:snapshot:";
 const LOCKED_ROW = "review-tab-spirit";
 const TOTAL_AREAS = AREA_ROWS.length;
 
@@ -1575,7 +1594,7 @@ async function main() {
   }
 
   // ── 6. the Finance row starts Finance — even with the agent down ─────────
-  // A rail row is a start request, so the snapshot pass must run for the scope
+  // A rail row is a start request, so the figure pass must run for the scope
   // the row names before the agent is asked for anything: the document is the
   // operator's and must be open and filled whether or not a gateway is up.
   await setHarness(win, "window.reviewRigAgentDown = true");
@@ -1593,8 +1612,8 @@ async function main() {
   );
   await waitFor(
     win,
-    "(window.reviewRigSnapshotCalls ?? []).length > 0",
-    "the snapshot pass to run",
+    "(window.reviewRigFigureCalls ?? []).length > 0",
+    "the figure pass to run",
   );
   await frames(win);
   const agentDown = await sample(win);
@@ -1617,46 +1636,73 @@ async function main() {
   if (!agentDown.financeItem || !String(agentDown.financeItem.className).includes("is-active")) {
     failure("the Finance row is not the selected row after it was pressed");
   }
-  const snapshotCalls = await setHarness(win, "window.reviewRigSnapshotCalls");
-  checks.agentDownSnapshotCalls = snapshotCalls;
-  if (snapshotCalls.length !== 1) {
-    failure(`the failed start ran the snapshot pass ${snapshotCalls.length} time(s), expected 1`);
-  } else if (snapshotCalls[0]?.scope !== "financial") {
+  const figureCalls = await setHarness(win, "window.reviewRigFigureCalls");
+  checks.agentDownFigureCalls = figureCalls;
+  if (figureCalls.length !== 1) {
+    failure(`the failed start ran the figure pass ${figureCalls.length} time(s), expected 1`);
+  } else if (figureCalls[0]?.scope !== "financial") {
     failure(
-      `the Finance row ran the snapshot pass for scope ${JSON.stringify(snapshotCalls[0]?.scope)}`,
+      `the Finance row ran the figure pass for scope ${JSON.stringify(figureCalls[0]?.scope)}`,
     );
   }
   const filledBody = await fileBody(win);
   checks.filledBody = filledBody;
-  for (const marker of SNAPSHOT_MARKERS) {
+  for (const marker of FIGURE_MARKERS) {
     if (occurrences(filledBody, marker) !== 1) {
       failure(`${marker} is not in the file exactly once`);
     }
   }
-  if (!filledBody.includes("1,234.56 (ZAR)")) {
-    failure("the snapshots did not carry the figures the rules asked for");
+  if (filledBody.includes(STALE_SNAPSHOT_MARKER)) {
+    failure("an old lifequest:snapshot marker is still in the filled review");
   }
-  // The blocks belong under `## Finance` / `### Look-back`, not under the overall
-  // `## Look-back`: the rules name the financial domain's section.
+  for (const value of FIGURE_VALUES) {
+    if (!filledBody.includes(value)) {
+      failure(`the figure pass did not write ${JSON.stringify(value)}`);
+    }
+  }
+  // The figures belong under `## Finance` / `### Look-back`, not under the overall
+  // `## Look-back`: the shipped definitions belong to the Finance area's page.
   const financeAt = filledBody.indexOf("## Finance");
   const financeLookback = filledBody.indexOf("### Look-back", Math.max(financeAt, 0));
-  const snapshotAt = filledBody.indexOf(SNAPSHOT_MARKERS[0]);
+  const firstFigureAt = filledBody.indexOf(FIGURE_MARKERS[0]);
   const financeKeep = filledBody.indexOf("### Keep", Math.max(financeLookback, 0));
-  if (!(financeAt !== -1 && financeLookback !== -1 && snapshotAt > financeLookback && snapshotAt < financeKeep)) {
+  if (!(financeAt !== -1 && financeLookback !== -1 && firstFigureAt > financeLookback && firstFigureAt < financeKeep)) {
     failure(
-      `the figures did not land in Finance's Look-back section (finance ${financeAt}, lookback ${financeLookback}, snapshot ${snapshotAt}, keep ${financeKeep})`,
+      `the figures did not land in Finance's Look-back section (finance ${financeAt}, lookback ${financeLookback}, figure ${firstFigureAt}, keep ${financeKeep})`,
     );
   }
+  // The window, the as-of instant and the source are what make a figure honest
+  // while a period is still open; the box must print all three.
+  if (!agentDown.boxText.includes("2026-10-12 → 2026-10-18")) {
+    failure("the figures do not print their window");
+  }
+  if (
+    !agentDown.boxText.includes(
+      "As of 2026-10-18 08:00 · Source: the finance:transactions database",
+    )
+  ) {
+    failure("the figures do not print the as-of instant and their source");
+  }
   // The markers are comments: the box prints the figures and hides the machinery.
-  for (const title of ["Cash in this period", "Cash out this period", "Net cash flow this period (transfers included)"]) {
+  for (const title of FIGURE_TITLES) {
     if (!agentDown.boxText.includes(title)) {
       failure(`the filled figure ${JSON.stringify(title)} is not visible in the review`);
     }
   }
-  if (agentDown.boxText.includes("lifequest:snapshot")) {
-    failure("the snapshot marker is printed in the review");
+  for (const value of FIGURE_VALUES) {
+    if (!agentDown.boxText.includes(value)) {
+      failure(`the filled figure's value ${JSON.stringify(value)} is not visible in the review`);
+    }
   }
-  // The figures are prose (title, window, number), not pipes: markdown that
+  if (agentDown.boxText.includes("lifequest:metric:")) {
+    failure("the metric marker is printed in the review");
+  }
+  // The document was filled before the agent failed, which is the point of this
+  // leg: the notice must say what the app wrote, not read as a clean start.
+  if (!/filled 3 snapshot/.test(String(agentDown.notice))) {
+    failure(`the agent-down start did not report the figures it filled: ${JSON.stringify(agentDown.notice)}`);
+  }
+  // The figures are prose (label, window, value, as-of), not pipes: markdown that
   // reached the box as `| ... | --- |` is worse than no figure at all.
   if (agentDown.tables !== 0) {
     failure(`the figures drew ${agentDown.tables} table(s), expected prose`);
@@ -1858,8 +1904,11 @@ async function main() {
     }
   }
 
-  if (!started.notice || !/snapshot/i.test(started.notice)) {
-    failure(`the page did not say what it filled: ${JSON.stringify(started.notice)}`);
+  // This is the second Finance Start, and the first wrote the figures already:
+  // with the window and as-of fixed, the pass has nothing to change, so the notice
+  // must not claim a fill it did not do.
+  if (started.notice && /filled \d+ snapshot/i.test(started.notice)) {
+    failure(`the second start claimed to fill the figures again: ${JSON.stringify(started.notice)}`);
   }
   if (!started.notice || !/chat/i.test(started.notice)) {
     failure(`the page did not say the interview opened: ${JSON.stringify(started.notice)}`);
@@ -1869,13 +1918,18 @@ async function main() {
   }
   const twice = await fileBody(win);
   checks.startedTwiceBody = twice;
-  for (const marker of SNAPSHOT_MARKERS) {
+  if (twice !== filledBody) {
+    failure("a second start rewrote the figure blocks it had already written");
+  }
+  for (const marker of FIGURE_MARKERS) {
     if (occurrences(twice, marker) !== 1) {
       failure(`a second start appended a second ${marker}`);
     }
   }
-  if (occurrences(twice, "1,234.56 (ZAR)") !== 1) {
-    failure("a second start appended the figures again");
+  for (const value of FIGURE_VALUES) {
+    if (occurrences(twice, value) !== 1) {
+      failure(`a second start appended the figure value ${JSON.stringify(value)} again`);
+    }
   }
   // Completing the area completes ONLY that area: the rail says so, and the file
   // it is reading says so — one scope `done`, not the file locked.
@@ -2023,22 +2077,21 @@ async function main() {
     `(window.reviewRigStarts ?? []).length === ${beforeDaily + 1}`,
     "the daily review session to be requested",
   );
-  // The prepopulate stub answers this daily review with a skipped snapshot — a
-  // directive the pass cannot place. The page must report that skip in its
-  // notice rather than let a Start that filled nothing read as a clean start.
-  const dailySkipLine =
-    'Skipped: Cash in this period — this review has no "Look-back" section under Finance';
+  // The daily review is one general page, so its Start writes the overall
+  // cross-domain block — there are no area pages for an area figure to land on —
+  // and the notice must report what the app wrote rather than read as a clean
+  // start.
   await waitFor(
     win,
-    `(document.querySelector(".review-page__notice")?.textContent ?? "").includes(${JSON.stringify(dailySkipLine)})`,
-    "the daily Start notice to report the skipped snapshot",
+    `/filled \\d+ snapshot/.test(document.querySelector(".review-page__notice")?.textContent ?? "")`,
+    "the daily Start notice to report the figures it filled",
   );
   await frames(win);
   const dailyStarted = await sample(win);
   checks.dailyStarted = dailyStarted;
-  if (!String(dailyStarted.notice ?? "").includes(dailySkipLine)) {
+  if (!/filled \d+ snapshot/.test(String(dailyStarted.notice ?? ""))) {
     failure(
-      `the daily Start notice did not report the skipped snapshot (expected ${JSON.stringify(dailySkipLine)}, got ${JSON.stringify(dailyStarted.notice)})`,
+      `the daily Start notice did not report the figures it filled: ${JSON.stringify(dailyStarted.notice)}`,
     );
   }
   const dailyStarts = await setHarness(win, "window.reviewRigStarts");
@@ -2075,6 +2128,31 @@ async function main() {
     if (dailyBody.includes(`## ${area.name}`)) {
       failure(`the daily review file grew a ${area.name} section`);
     }
+  }
+  // The one general page carries the cross-domain table and no area figure block.
+  if (occurrences(dailyBody, OVERALL_OPEN) !== 1 || occurrences(dailyBody, OVERALL_CLOSE) !== 1) {
+    failure("the daily review file does not hold the overall metrics block exactly once");
+  }
+  if (dailyBody.includes("lifequest:metric:")) {
+    failure("the daily review file grew an area figure block");
+  }
+  if (dailyBody.includes(STALE_SNAPSHOT_MARKER)) {
+    failure("the daily review file holds an old lifequest:snapshot marker");
+  }
+  if (!dailyBody.includes("| Health | Training sessions | 3 sessions | 2 sessions | +1 |")) {
+    failure("the daily review's overall block does not hold the Health training row");
+  }
+  if (dailyStarted.tables !== 1) {
+    failure(`the daily review drew ${dailyStarted.tables} metrics table(s), expected 1`);
+  }
+  if (JSON.stringify(dailyStarted.headers) !== JSON.stringify(OVERALL_HEADERS)) {
+    failure(`the daily review's metrics table headers are ${JSON.stringify(dailyStarted.headers)}`);
+  }
+  if (!dailyStarted.boxText.includes("Metrics this period")) {
+    failure("the daily review did not print the overall metrics block");
+  }
+  if (!dailyStarted.boxText.includes("5,000 (ZAR)")) {
+    failure("the daily review's overall table did not print the finance rows");
   }
   if (dailyStarted.railPresent || dailyStarted.railButtons.length > 0) {
     failure("the daily review grew a checklist after its interview started");
@@ -2280,12 +2358,12 @@ async function main() {
   );
   await waitFor(
     win,
-    `(document.querySelector('[data-testid="review-skill-editor"]')?.textContent ?? "").includes("Keep it to a page.")`,
+    `(document.querySelector('[data-testid="review-skill-editor"]')?.textContent ?? "").includes("Standing rules for this cadence's review sessions")`,
     "the cadence's rules to arrive",
   );
   const rules = await sample(win);
   checks.rules = rules;
-  if (!(rules.skillValue ?? "").includes("Keep it to a page.")) {
+  if (!(rules.skillValue ?? "").includes("Standing rules for this cadence's review sessions")) {
     failure(`the rules panel did not show the cadence's rules: ${JSON.stringify(rules.skillValue)}`);
   }
   await foldDock(win);
@@ -2373,6 +2451,50 @@ async function main() {
   if (lifeStarted.markDoneLabel !== "Mark life review complete") {
     failure(`the life review's mark-done button reads ${JSON.stringify(lifeStarted.markDoneLabel)}`);
   }
+  // The overall page shows the cross-domain table the Start wrote: the Health
+  // event metric and the three Finance definitions, with the as-of instant and
+  // the previous window under it. It is a table, not pipes printed as prose.
+  if (lifeStarted.tables !== 1) {
+    failure(`the overall page drew ${lifeStarted.tables} metrics table(s), expected 1`);
+  }
+  if (JSON.stringify(lifeStarted.headers) !== JSON.stringify(OVERALL_HEADERS)) {
+    failure(`the overall page's metrics table headers are ${JSON.stringify(lifeStarted.headers)}`);
+  }
+  const overallText = String(lifeStarted.boxText);
+  for (const cell of [
+    "Health",
+    "Training sessions",
+    "3 sessions",
+    "2 sessions",
+    "Finance",
+    "Cash in",
+    "5,000 (ZAR)",
+    "4,000 (ZAR)",
+    "Cash out",
+    "1,234.56 (ZAR)",
+    "Net cash flow (transfers included)",
+    "3,765.44 (ZAR)",
+  ]) {
+    if (!overallText.includes(cell)) {
+      failure(`the overall page's metrics table is missing ${JSON.stringify(cell)}`);
+    }
+  }
+  if (!overallText.includes("Metrics this period")) {
+    failure("the overall page did not print the metrics block's heading");
+  }
+  if (
+    !overallText.includes(
+      "As of 2026-10-18 08:00 · Previous period: 2026-10-05 → 2026-10-11",
+    )
+  ) {
+    failure("the overall metrics block does not print the as-of instant and previous window");
+  }
+  if (overallText.includes("| --- |")) {
+    failure("the overall metrics table is painted as markdown pipes");
+  }
+  if (overallText.includes("lifequest:metrics")) {
+    failure("the overall metrics marker is printed in the review");
+  }
   // Marking it complete is the only thing that locks the file. Every rail row
   // must be dead afterwards, and a write through the bridge must be refused.
   await click(win, '[data-testid="review-mark-done"]');
@@ -2406,6 +2528,31 @@ async function main() {
     failure(`the locked review still offers a mark-done button: ${JSON.stringify(locked.markDoneLabel)}`);
   }
   if (locked.status !== "Locked") failure(`the page's status line reads ${JSON.stringify(locked.status)}`);
+  // Reading is still the point on a locked review: every tab keeps switching, and
+  // the Finance page still shows the figures the app wrote before the lock.
+  await click(win, '[data-testid="review-tab-financial"]');
+  await waitFor(
+    win,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes("5,000 (ZAR)")`,
+    "the locked Finance page's figures",
+  );
+  await frames(win);
+  const lockedFinance = await sample(win);
+  checks.lockedFinance = lockedFinance;
+  for (const title of FIGURE_TITLES) {
+    if (!String(lockedFinance.boxText).includes(title)) {
+      failure(`the locked Finance page lost the figure ${JSON.stringify(title)}`);
+    }
+  }
+  if (lockedFinance.tables !== 0) {
+    failure("the locked Finance page drew the overall metrics table");
+  }
+  await click(win, '[data-testid="review-tab-overall"]');
+  await waitFor(
+    win,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes("Two walks")`,
+    "the locked Overall page",
+  );
   if (!(await fileLocked(win))) failure("the file is not locked after the life review was marked complete");
   const lockedScopes = await fileScopes(win);
   checks.lockedScopes = lockedScopes;
@@ -2428,10 +2575,28 @@ async function main() {
       failure(`the locked review holds ${occurrences(lockedBody, `\n## ${area.name}\n`)} ${area.name} sections, expected 1`);
     }
   }
-  for (const marker of SNAPSHOT_MARKERS) {
+  for (const marker of FIGURE_MARKERS) {
     if (occurrences(lockedBody, marker) !== 1) {
       failure(`the lock changed the figure block ${marker}`);
     }
+  }
+  if (occurrences(lockedBody, OVERALL_OPEN) !== 1 || occurrences(lockedBody, OVERALL_CLOSE) !== 1) {
+    failure("the locked review does not hold the overall metrics block exactly once");
+  }
+  if (lockedBody.includes(STALE_SNAPSHOT_MARKER)) {
+    failure("the locked review holds an old lifequest:snapshot marker");
+  }
+  for (const value of FIGURE_VALUES) {
+    if (!lockedBody.includes(value)) {
+      failure(`the locked review lost the figure value ${JSON.stringify(value)}`);
+    }
+  }
+  if (
+    !lockedBody.includes(
+      "As of 2026-10-18 08:00 · Source: the finance:transactions database",
+    )
+  ) {
+    failure("the locked review's figures lost their as-of instant and source");
   }
 
   // ── 12. an agent's mark reaches the checklist of the OPEN page ────────────
