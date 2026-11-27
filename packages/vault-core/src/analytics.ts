@@ -111,6 +111,11 @@ export type AnalyticsMetricRow = {
    * click; null for an events definition, whose rows live in `metrics`.
    */
   databaseId: string | null;
+  /**
+   * The derived spec's time column id, so a cell link can ask the Data page to
+   * filter the source rows to the cell's period; null for events definitions.
+   */
+  timeColumnId: string | null;
 };
 
 /** The Analytics response: periods oldest → newest, rows grouped by area. */
@@ -326,6 +331,11 @@ async function answerDefinition(
         ? typeof definition.spec?.databaseId === "string"
           ? definition.spec.databaseId
           : null
+        : null,
+    timeColumnId:
+      definition.source === "derived" &&
+      typeof definition.spec?.timeColumnId === "string"
+        ? definition.spec.timeColumnId
         : null,
   };
 }
