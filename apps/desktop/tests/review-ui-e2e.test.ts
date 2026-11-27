@@ -952,7 +952,7 @@ describe("review ui e2e", () => {
     // the app wrote rather than read as a clean start.
     assert.match(
       String(agentDown.notice),
-      /filled 3 snapshot/,
+      /filled 3 figure/,
       "the agent-down start did not report the figures it filled",
     );
     assert.equal(agentDown.tables, 0, "the figures are prose, not a table");
@@ -1049,7 +1049,7 @@ describe("review ui e2e", () => {
     assert.match(String(started.notice), /chat/i, "the page did not say the interview opened");
     assert.doesNotMatch(
       String(started.notice),
-      /filled \d+ snapshot/i,
+      /filled \d+ figure/i,
       "the second start claimed to fill the figures again",
     );
     assert.equal(
@@ -1293,7 +1293,7 @@ describe("review ui e2e", () => {
     // wrote rather than reading as a clean start.
     assert.match(
       String(report.checks.dailyStarted.notice),
-      /filled \d+ snapshot/,
+      /filled \d+ figure/,
       "the daily Start notice did not report the figures it filled",
     );
 

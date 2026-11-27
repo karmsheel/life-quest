@@ -684,13 +684,13 @@ function ReviewPageFor() {
     }
   }, [cadence, skillDraft]);
 
-  /** The snapshot pass, said as one line the operator can check. */
+  /** The figure pass, said as one line the operator can check. */
   const describeSnapshots = useCallback(
     (result: ReviewPrepopulateResult): string | null => {
       const parts: string[] = [];
       if (result.applied > 0) {
         parts.push(
-          `filled ${result.applied} snapshot${result.applied === 1 ? "" : "s"}`,
+          `filled ${result.applied} figure${result.applied === 1 ? "" : "s"}`,
         );
       }
       if (result.planted.length > 0) {
@@ -768,7 +768,7 @@ function ReviewPageFor() {
   }, [activeScope, ensurePage, snapshot]);
 
   /**
-   * Start one page's interview: create the page, run its snapshots, then ask for
+   * Start one page's interview: create the page, run its figures, then ask for
    * the session. The document is open and filled whatever the agent is doing.
    */
   const runStart = useCallback(
@@ -779,7 +779,7 @@ function ReviewPageFor() {
       setNotice(null);
       try {
         // 0. Whatever the operator has already typed reaches the vault first: the
-        //    snapshot pass rewrites the page, and a draft it never saw would go
+        //    figure pass rewrites the page, and a draft it never saw would go
         //    under it.
         if ((await flush()) === "failed") return;
 
@@ -797,7 +797,7 @@ function ReviewPageFor() {
           await reloadNotebook(period);
           filledLine = describeSnapshots(filled.value);
         } else {
-          filledLine = `Snapshots could not run: ${filled.error}`;
+          filledLine = `Figures could not run: ${filled.error}`;
         }
         setNotice(filledLine);
 
@@ -1449,7 +1449,8 @@ function ReviewPageFor() {
                 </div>
 
                 {/* The cadence's standing rules: what every review of this
-                    cadence is told, and the snapshot rules the app runs. */}
+                    cadence is told, and the custom figure rules the app still
+                    honours in it. */}
                 <section className="review-page__skill">
                   <button
                     type="button"
@@ -1465,7 +1466,7 @@ function ReviewPageFor() {
                     <span>Review rules</span>
                     <span className="muted">
                       {skill
-                        ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
+                        ? `${skill.snapshots.length} custom figure${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
                         : "what this review session is told"}
                     </span>
                   </button>

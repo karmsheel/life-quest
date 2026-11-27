@@ -1699,7 +1699,7 @@ async function main() {
   }
   // The document was filled before the agent failed, which is the point of this
   // leg: the notice must say what the app wrote, not read as a clean start.
-  if (!/filled 3 snapshot/.test(String(agentDown.notice))) {
+  if (!/filled 3 figure/.test(String(agentDown.notice))) {
     failure(`the agent-down start did not report the figures it filled: ${JSON.stringify(agentDown.notice)}`);
   }
   // The figures are prose (label, window, value, as-of), not pipes: markdown that
@@ -1907,7 +1907,7 @@ async function main() {
   // This is the second Finance Start, and the first wrote the figures already:
   // with the window and as-of fixed, the pass has nothing to change, so the notice
   // must not claim a fill it did not do.
-  if (started.notice && /filled \d+ snapshot/i.test(started.notice)) {
+  if (started.notice && /filled \d+ figure/i.test(started.notice)) {
     failure(`the second start claimed to fill the figures again: ${JSON.stringify(started.notice)}`);
   }
   if (!started.notice || !/chat/i.test(started.notice)) {
@@ -2083,13 +2083,13 @@ async function main() {
   // start.
   await waitFor(
     win,
-    `/filled \\d+ snapshot/.test(document.querySelector(".review-page__notice")?.textContent ?? "")`,
+    `/filled \\d+ figure/.test(document.querySelector(".review-page__notice")?.textContent ?? "")`,
     "the daily Start notice to report the figures it filled",
   );
   await frames(win);
   const dailyStarted = await sample(win);
   checks.dailyStarted = dailyStarted;
-  if (!/filled \d+ snapshot/.test(String(dailyStarted.notice ?? ""))) {
+  if (!/filled \d+ figure/.test(String(dailyStarted.notice ?? ""))) {
     failure(
       `the daily Start notice did not report the figures it filled: ${JSON.stringify(dailyStarted.notice)}`,
     );
