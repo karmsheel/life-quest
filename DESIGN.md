@@ -2,7 +2,7 @@
 
 This is the normative design contract for the shipped studio. It says which names to use, what ships, and what not to do; the values themselves live in `apps/desktop/src/styles/tokens.css`. Every feature file, skin, theme file and agent adding UI follows it.
 
-Last verified: 2026-11-27 · LifeQuest 0.3.4 · screenshots captured 2026-11-21 to 2026-11-27 from rigs run on `master`.
+Last verified: 2026-11-27 · LifeQuest 0.3.5 · screenshots captured 2026-11-21 to 2026-11-27 from rigs run on `master`.
 
 **Scope and sources:** `apps/desktop/src/styles/tokens.css` (all token values and the day/night blocks), `apps/desktop/src/styles/global.css` (the component CSS the values dress), the operator wiki pages [The studio](docs/wiki/03-the-studio.md) and [Customizations](docs/wiki/37-customizations.md), [PRD.md](PRD.md) for product context and [VISION.md](VISION.md) for brand personality. The contract started as [BERD systems phase 1](docs/superpowers/specs/2026-09-02-berd-systems-phase-1-design.md) and [BERD visuals phase 2](docs/superpowers/specs/2026-09-03-berd-visuals-phase-2-design.md); **BERD** is block/berd's published design contract, used here as a systems reference (layered tokens, a closed primitive menu, enforcement) plus a selected subset of its visuals (canvas/sheet ladder, concentric radii, pill buttons) — never its gray workbench, glass chrome or dot-grid.
 
