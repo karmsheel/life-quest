@@ -22,7 +22,7 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "get_review",
     description:
-      "Read a review by cadence and period. With scope (\"overall\" or an area slug) returns that page only — your page, its four headings, its status and the page rev to quote back when you write. Without scope returns the notebook summary and the whole review as the compatibility read.",
+      "Read a review by cadence and period. With scope (\"overall\" or an area slug) returns that page only — your page as it stands: its # title, the four common ## headings, and every extra section it holds (its area's template sections and any operator headings, with their prose), plus its status and the page rev to quote back when you write. Without scope returns the notebook summary and the whole review as the compatibility read.",
     parameters: {
       type: "object",
       properties: {
@@ -41,7 +41,7 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "write_review",
     description:
-      "Write one page of a review. Call get_review with the same scope first, then pass the body of that page (one # title and the four ## headings) and its baseRev. Only that page's headings are replaced, so another area's review is never touched. A CONFLICT means the page changed under you: read it again and re-apply your section. A locked review files the page as a pending Decision instead of writing it.",
+      "Write one page of a review. Call get_review with the same scope first, then pass the page body exactly as read — one # title, the four common ## headings, and every extra section the page holds (its area's template sections and any operator headings, with their prose), kept in place — plus its baseRev. The body replaces the whole page, so a section you drop is deleted; a template never backfills an existing page. Only that page is replaced, so another area's review is never touched. A CONFLICT means the page changed under you: read it again and re-apply only your section to the body it returns. A locked review files the page as a pending Decision instead of writing it.",
     parameters: {
       type: "object",
       properties: {
@@ -317,7 +317,7 @@ export async function executeReviewTool(
           error: {
             code: "CONFLICT",
             message:
-              "The page changed on disk since you read it. Call get_review with the same scope, then re-apply your four sections to the rev it returns.",
+              "The page changed on disk since you read it. Call get_review with the same scope, then re-apply only your section to the body it returns; keep every other section and its prose exactly as read.",
           },
           current: written.current ?? null,
         };
