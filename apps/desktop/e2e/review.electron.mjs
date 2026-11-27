@@ -436,6 +436,18 @@ const SAMPLE = `(() => {
     })(),
     unlockPresent: Boolean(document.querySelector('[data-testid="review-unlock"]')),
     emptyPresent: Boolean(document.querySelector('[data-testid="review-empty"]')),
+    placeholder: text(document.querySelector('[data-testid="review-placeholder"]')),
+    // How far the tab row sits from the sheet under it. 0 means the row's
+    // bottom edge and the sheet's top edge are the same line; a page with no
+    // tabs (Daily) has nothing to seat.
+    tabSeat: (() => {
+      const tabs = document.querySelector('[data-testid="review-tabs"]');
+      const sheet = document.querySelector('[data-testid="review-placeholder"]');
+      if (!tabs || !sheet) return null;
+      const tabBox = tabs.getBoundingClientRect();
+      const sheetBox = sheet.getBoundingClientRect();
+      return { gap: Math.round((sheetBox.top - (tabBox.top + tabBox.height)) * 1000) / 1000 };
+    })(),
     // How the page is standing, read off the boxes rather than computed styles:
     // the sheet's own content box, the reading column, the checklist beside it,
     // and the parts of the page that must ride the column. The centre is solved
@@ -1985,9 +1997,42 @@ async function main() {
     await click(win, `[data-testid="review-tab-${area.slug}"]`);
     await waitFor(
       win,
-      `Boolean(document.querySelector('[data-testid="review-start"]'))`,
-      `the ${area.name} page's Start button`,
+      `(() => {
+        const sheet = document.querySelector('[data-testid="review-placeholder"]');
+        const start = document.querySelector('[data-testid="review-start"]');
+        return Boolean(sheet) && (start?.textContent ?? "").includes(${JSON.stringify(area.name)});
+      })()`,
+      `the unwritten ${area.name} page`,
     );
+    const unstarted = await sample(win);
+    checks[`unstarted${area.name}`] = unstarted;
+    if (unstarted.emptyPresent !== true) {
+      failure(`the ${area.name} page that nobody started drew no sheet`);
+    }
+    for (const heading of ["Look-back", "Keep", "Change", "Next-period intent"]) {
+      if (!String(unstarted.placeholder ?? "").includes(heading)) {
+        failure(`the unwritten ${area.name} page is missing ${heading}`);
+      }
+    }
+    for (const prompt of ["What happened.", "What to keep.", "What to change.", "What the next period is for."]) {
+      if (!String(unstarted.placeholder ?? "").includes(prompt)) {
+        failure(`the unwritten ${area.name} page is missing the prompt ${JSON.stringify(prompt)}`);
+      }
+    }
+    if (unstarted.status !== "Not started") {
+      failure(`the unwritten ${area.name} page reads ${JSON.stringify(unstarted.status)}`);
+    }
+    if (unstarted.startLabel !== `Start the ${area.name} review`) {
+      failure(`the unwritten ${area.name} page offers ${JSON.stringify(unstarted.startLabel)}`);
+    }
+    if (unstarted.layout?.editor) {
+      failure(`the unwritten ${area.name} page drew an editor`);
+    }
+    if (unstarted.tabSeat == null || unstarted.tabSeat.gap < 0 || unstarted.tabSeat.gap > 1) {
+      failure(
+        `the ${area.name} tab sits ${JSON.stringify(unstarted.tabSeat?.gap)}px off its page`,
+      );
+    }
     await click(win, '[data-testid="review-start"]');
     await waitFor(
       win,
@@ -2086,6 +2131,20 @@ async function main() {
   }
   if (dailyOpen.emptyPresent !== true) {
     failure("the daily review did not draw its empty state for a day with no file");
+  }
+  for (const heading of ["Look-back", "Keep", "Change", "Next-period intent"]) {
+    if (!String(dailyOpen.placeholder ?? "").includes(heading)) {
+      failure(`the unwritten daily review is missing ${heading}`);
+    }
+  }
+  if (dailyOpen.status !== "Not started") {
+    failure(`the unwritten daily review reads ${JSON.stringify(dailyOpen.status)}`);
+  }
+  if (dailyOpen.layout?.editor) {
+    failure("the unwritten daily review drew an editor");
+  }
+  if (dailyOpen.tabSeat !== null) {
+    failure("the daily review seated a tab on a page that has none");
   }
   const dailyStartCount = async () => (await setHarness(win, "window.reviewRigStarts")).length;
   const beforeDaily = await dailyStartCount();

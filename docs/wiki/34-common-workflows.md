@@ -106,7 +106,8 @@ Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
 
 1. Choose **Review → Weekly**. The page opens on the current, still-in-progress
    period in one centred reading column. Move with **‹ Prev** and **Next ›**.
-2. With no file for the period, choose **Start the interview** (companion
+2. With no file for the period, the page shows the unwritten sheet (the four
+   headings, status **Not started**). Choose **Start the life review** (companion
    session) or **Write it myself** (editor only).
 3. Write in **Document** mode; it saves itself, and Ctrl/Cmd+S saves now. Switch
    to **Preview** to read the rendered file. **Areas** shows each area as
