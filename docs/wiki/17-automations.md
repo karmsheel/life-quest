@@ -60,7 +60,7 @@ front of the agent."
 
 | Part | What it does |
 |---|---|
-| **Automations** heading | The page title, the line "One-click and scheduled jobs that read a page and open a chat with the agent.", and **New automation**. |
+| **Automations** eyebrow + heading | The page title, the line "One-click and scheduled jobs that read a page and open a chat with the agent.", and **New automation**. **Manual** and **Scheduled** are two panels that sit side by side when there is room and stack when the window is narrow. |
 | **Manual** group | Jobs whose trigger is manual, with the description "Runs when you press its button, or Run now." |
 | **Scheduled** group | Jobs whose trigger is a schedule, with the description "Runs on its schedule while LifeQuest is open; a run missed while it was closed fires once when it returns." |
 | Automation row | Icon (click for manual, calendar for scheduled), name, **Paused** badge when disabled, description, meta line, and the row actions. |

@@ -89,13 +89,13 @@ base area, is a group like any other in the indexes.
 
 ## The screen
 
-**Dream index.** One section per unlocked area, headed by the area name. Inside
+**Dream index.** The page opens with the wing eyebrow, the title, and one line: *Beliefs, purpose, and strategy for each area.* One section per unlocked area, headed by the area name. Inside
 it, three cards in the order Premise, Purpose, Strategy (How), each with a lock
 badge and a body that is either rendered markdown or the coaching copy for that
 kind. Empty is decided on trimmed whitespace, so a body of blank lines still
 reads as empty.
 
-**Vision index.** One card per unlocked area, labelled **Vision & Desire**, same
+**Vision index.** The page opens with the wing eyebrow, the title, and one line: *What each area is reaching for, and the board those pictures sit on.* One card per unlocked area, labelled **Vision & Desire**, same
 badge and body rules. The **Vision board** panel follows it on the page.
 
 **Blueprints index.** A list, not cards: one row per unlocked area with a

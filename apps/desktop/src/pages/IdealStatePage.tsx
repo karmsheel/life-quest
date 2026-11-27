@@ -588,6 +588,9 @@ export default function IdealStatePage() {
         <header className="ideal-state__header">
           <WingEyebrow page="Ideal State" />
           <h1>Ideal State</h1>
+          <p className="stub-page__desc muted">
+            The future you are writing toward. One document open, the rest beside it.
+          </p>
         </header>
 
         {error ? (

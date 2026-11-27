@@ -70,11 +70,11 @@ in the editor.**
 
 | Part | What it does |
 |---|---|
-| **Ideal State** heading | The page name |
+| **Ideal State** heading | The page name, with the line *The future you are writing toward. One document open, the rest beside it.* |
 | Title input | The document's title, editable at any time; aria label **Document title** |
 | Body box | The live-preview markdown editor for this document |
 | Status line | **Saved**, **Saving…**, **New document**, **Give this document a title**, **Add a title to save**, or **Not saved** |
-| **Documents** strip | The library: **+ New document**, column headings **Title** and **Last edited**, and one row per document |
+| **Documents** panel | The library, in a side panel: **+ New document**, column headings **Title** and **Last edited**, and one row per document |
 | Row menu | The three-dot **Document actions** menu, whose only item is **Delete** |
 | Error line | The vault's reason when a write is refused, above the workspace |
 

@@ -34,6 +34,9 @@ function BlueprintsContent() {
         <div className="life-map__title">
           <WingEyebrow page="Blueprints" />
           <h1>Blueprints</h1>
+          <p className="stub-page__desc muted">
+            Strategy, day types, and the week this year actually runs.
+          </p>
         </div>
         <label>
           Year

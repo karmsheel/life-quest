@@ -16,6 +16,9 @@
     "typecheck": "npm run typecheck -w @lifequest/desktop",
     "docs:check": "node scripts/docs-check.mjs",
     "docs:build": "node scripts/build-docs.mjs && mkdocs build --strict",
-    "docs:serve": "node scripts/build-docs.mjs && mkdocs serve"
+    "docs:serve": "node scripts/build-docs.mjs && mkdocs serve",
+    "dev:landing": "node apps/landing/scripts/serve.mjs",
+    "test:landing": "node apps/landing/scripts/e2e.mjs",
+    "shot:landing": "node apps/landing/scripts/shot.mjs"
   }
 }

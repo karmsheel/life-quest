@@ -16,13 +16,15 @@
 .life-map__chrome {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem 0.75rem;
 }
 
-.life-map__chrome h1 {
-  font-size: 1.4rem;
+.life-map__chrome h1,
+.blueprints .life-map__chrome h1 {
+  font-size: 1.5rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
   margin: 0;
   margin-right: auto;
 }
@@ -57,7 +59,7 @@
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
 }
 
 .life-map__chrome button:hover:not(:disabled),
@@ -74,7 +76,7 @@
 /* —— North Star / How strip —— */
 .doctrine-strip {
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 2px;
   padding: 0.6rem 0.8rem;
   background: var(--bg-panel);
 }
@@ -137,7 +139,7 @@
   gap: 0.9rem;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.65rem;
 }
 
@@ -158,7 +160,7 @@
   background: var(--bg-muted);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 0.15rem 0.35rem;
   cursor: pointer;
   text-align: left;
@@ -225,7 +227,7 @@
   flex-shrink: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.7rem;
 }
 
@@ -310,7 +312,7 @@
 .life-map .month-calendar {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.5rem;
 }
 
@@ -380,7 +382,7 @@
 .life-map .month-field {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.65rem;
 }
 
@@ -450,10 +452,17 @@
   gap: var(--space-board-gap);
 }
 
+.blueprints button,
+.blueprints input,
+.blueprints select,
+.blueprints textarea {
+  border-radius: 2px;
+}
+
 .arch-panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.75rem;
 }
 
@@ -490,7 +499,7 @@
   flex-direction: column;
   gap: 0.4rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 0.55rem;
 }
 
@@ -544,7 +553,7 @@
 
 .arch-day-col {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 0.4rem;
 }
 
@@ -626,7 +635,7 @@
 .arch-grid {
   min-width: 48rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
 .arch-grid-head,
@@ -757,7 +766,7 @@
   height: 2.15rem;
   padding: 0 0.7rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   background: var(--card);
   color: var(--fg);
   font-size: 0.875rem;
@@ -812,6 +821,7 @@
 
 .task-column {
   --task-column-dot: var(--muted);
+  border-radius: 2px;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -819,7 +829,6 @@
   min-height: 9rem;
   padding: 0.55rem;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   transition:
     border-color var(--dur-quick) ease,

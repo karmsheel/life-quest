@@ -58,6 +58,9 @@ function ChartContent() {
         <div className="life-map__title">
           <WingEyebrow page="Life Map" />
           <h1>Life Map</h1>
+          <p className="stub-page__desc muted">
+            The year, its months, and the events that mark them.
+          </p>
         </div>
         <label>
           Year

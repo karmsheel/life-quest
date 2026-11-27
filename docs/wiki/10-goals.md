@@ -79,7 +79,7 @@ but the lens has goals.
 | Plan cadence switch | **Weekly**, **Monthly**, **Quarterly**, **Yearly** |
 | **Plan this period** | Creates or resumes a planning session for the current period in the current scope |
 | **Open** / **Done** / **All** | The status filter; **Open** is the default |
-| Composer | **Name**, **Notes**, **Area**, **Deadline**, measure switch, measure fields, and **Add** (or **Save** / **Cancel** / **Delete** while editing) |
+| Composer | A side panel: **Name**, **Notes**, **Area**, **Deadline**, measure switch, measure fields, and **Add** (or **Save** / **Cancel** / **Delete** while editing). The goal list is the main panel. |
 | Goal row | Name, **Open** or **Done**, area or **Unassigned**, deadline, `current/target metric`, the definition of done, the number of linked events, and a truncated notes line |
 | Error line | The vault's reason when a write is refused |
 

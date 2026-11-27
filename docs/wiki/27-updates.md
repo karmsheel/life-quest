@@ -4,7 +4,7 @@ LifeQuest tells you when a newer release exists, without installing anything you
 did not ask for. The build number lives at the top of the rail, under the
 **LifeQuest lockup**: quiet text while you are current, a glowing chip when
 GitHub names something newer — including a release that lands while you are
-working — with **Update available** beside it while the rail is wide enough for
+working — with **Update available** centred under it while the rail is wide enough for
 the words. Clicking the chip opens the one dialog that offers to download the
 installer, hand it to Windows, and step aside so it can replace the app. See
 also [Wiki home](./index.md).
@@ -16,7 +16,7 @@ also [Wiki home](./index.md).
   sidebar's collapse toggle, which keeps the trailing corner immediately right of
   the chip.
 - When an update is available, the number gains the accent glow and a small
-  **Update available** line appears beside it while the rail is wide enough for
+  **Update available** line appears centred under it while the rail is wide enough for
   the words. The thin rail retires the number with the words: expand the sidebar
   to read it and check.
 - There is no in-window notice, card or toast: the glowing chip is the app's own
@@ -39,7 +39,7 @@ A release can be published and then sit unnoticed for weeks, because a
 local-first desktop app has no notification channel. The old behaviour read the
 feed once at launch and glowed the build number — which you had no reason to
 look at, because nothing said there was news. The app now reads the feed on an
-hourly clock as well, so the chip glows (with **Update available** beside it)
+hourly clock as well, so the chip glows (with **Update available** centred under it)
 while you work, and raises a native notification when the window is not focused.
 That closes the gap without turning the studio into something that installs on
 its own, and without a pop-up over the page you are reading.
@@ -57,7 +57,7 @@ byte moves.
 1. Main reads the feed on its hourly clock. A release it has not seen before
    turns the rail's build number into the glowing chip: the number gains the
    accent glow and, when the rail is wide enough, an **Update available** caption
-   appears beside it — "LifeQuest 0.3.6 is available" lives in the chip's own
+   appears centred under it — "LifeQuest 0.3.6 is available" lives in the chip's own
    tooltip and dialog. Nothing covers the page and nothing takes the focus.
 2. Click the glowing number to open the dialog on the offer already in hand.
 3. If the window is not focused, main also raises a native notification —
@@ -124,7 +124,7 @@ makes when a release carries no Windows installer.
 
 | Part | What it does |
 |---|---|
-| **Update available** | Quiet label beside the build number under the rail's lockup, shown while an offer (or the preview) is up and the rail has room for the words. |
+| **Update available** | Quiet label centred under the build number, under the rail's lockup, shown while an offer (or the preview) is up and the rail has room for the words. |
 | Version number | `v0.3.5`. Always a button, with a title of "Check for updates" or "LifeQuest 0.3.6 is available". Glows only when there is something to install. |
 | Native notification | Title **LifeQuest 0.3.6 is available**, body "Open LifeQuest to download and install it."; only when the window is unfocused. |
 | Dialog kicker | **Upgrade available**, **Preview — not a real release**, **Checking for updates**, **Up to date**, or **Update check failed**. |

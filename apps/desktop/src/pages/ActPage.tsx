@@ -259,6 +259,9 @@ function ActContent() {
         <div>
           <WingEyebrow page="Task Manager" />
           <h1 className="act-page__title">{title}</h1>
+          <p className="stub-page__desc muted">
+            Six horizons. Drag a task to move it, or open its menu to edit it.
+          </p>
         </div>
       </header>
 

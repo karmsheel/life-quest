@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { formatLocalIsoDate, periodTodayLocalIso } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import {
   automationContextFor,
@@ -368,6 +369,7 @@ export default function AutomationsPage() {
     <div className="automations-page">
       <header className="automations-page__header">
         <div>
+          <WingEyebrow page="Automations" />
           <h1 className="stub-page__title">Automations</h1>
           <p className="stub-page__desc muted">
             One-click and scheduled jobs that read a page and open a chat with the
@@ -629,7 +631,7 @@ export default function AutomationsPage() {
           <p>No automations yet. Create one to put a page in front of the agent.</p>
         </div>
       ) : (
-        <>
+        <div className="automations-page__groups">
           <section
             className="automations-page__group"
             aria-labelledby="automations-manual"
@@ -674,7 +676,7 @@ export default function AutomationsPage() {
               <p className="muted">None yet.</p>
             )}
           </section>
-        </>
+        </div>
       )}
 
       {dialog}
