@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-27 · master `e124a34`
+Last updated: 2026-11-27 · master `3e93429`
 
 What shipped, what broke, and what is next. This is the in-clone record: the detailed release
 notes are assembled in `.scratch/` (gitignored) into GitHub Releases, and the published
@@ -11,13 +11,27 @@ does. It is short on purpose: one section per release, plus the current state at
 
 | | |
 |---|---|
-| Current release | **0.3.4**, tagged 2026-11-25 |
-| Released since | 0.3.0 (11-16), 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22) |
-| Master | unreleased, commits past `v0.3.4` (`git log --oneline v0.3.4..HEAD`) — the agent picker, the composer's one attach control, the dock's shortcut/display doors, `Ctrl+Tab` over dock tabs, the six-file plan pack, and the Plan page renamed **Blueprints** (now at `/blueprints`, with `/track` redirecting) |
-| Next | **0.3.5** now that the pack and the notebook have landed |
+| Current release | **0.3.5**, tagged 2026-11-27 |
+| Released since | 0.3.1 (11-19), 0.3.2 (11-20), 0.3.3 (11-22), 0.3.4 (11-25) |
+| Master | nothing past `v0.3.5`; the next queue is [`TASKS.md`](TASKS.md) |
+| Next | decide the two stale docs branches (phone client, encrypted context layer) — keep or park |
 | Open gates | `npm run typecheck` and `npm run docs:check` green on master; the packaged smoke and live update feed run at release, not in CI |
 
 ## Release history
+
+### 0.3.5 — 2026-11-27
+
+A review becomes a notebook: one period is stored as a page per scope — the overall review and
+each area — with the period as a tab row, each area tailoring its own page contract, and the
+old single-file `## <Area>` review migrated once and kept as evidence. Metrics become the
+vault's data: each area defines what it measures, dated events are logged into an events
+database, and every area's review is seeded with its period's figures (including cash in, out
+and net). The **Review** wing gains **Analytics**, a cross-area matrix whose cells pin the
+period they measured and whose definition edits arrive as Decisions. Plan is renamed
+**Blueprints** (`/blueprints`, with `/track` redirecting); Extensions becomes
+**Customizations**; the chat's agent picker becomes data (three shipped modes, a custom
+recipe, a Customizations page); the composer keeps one attach control; the dock bar opens the
+shortcut reference and the chat display page, and `Ctrl+Tab` walks its tabs.
 
 ### 0.3.4 — 2026-11-25
 
@@ -61,34 +75,33 @@ lists, previews, edits and creates them. The shell is rebuilt around the convers
 
 ## Broke
 
-Nothing user-facing has been recorded for 0.3.4. The rig evidence at tag time was mixed, and it
+Nothing user-facing has been recorded for 0.3.5. The rig evidence at tag time was mixed, and it
 is recorded here because the reports themselves are gitignored:
 
 | Report | State at tag | Reading |
 |---|---|---|
-| `shell-sidebar.json` | `pass: false`, 23 failures (rail topband mat, chat panel surface, dark-ladder repeats) | Ran 11-24, before its rig's last change; not a judgement of the shipped revision |
-| `chat-side.json` | `pass: false`, 5 dock-surface failures | Same — ran 11-24, predates the rig change |
-| `automation.json` | driver stopped: timed out waiting for `automationReady` | Rig unchanged from 0.3.3; no feature attribution recorded |
-| `review.json` | `pass: false`, old (11-21) | Predates the release; the rig last changed 11-24 |
-| `layouts`, `foreign-chat` | no report | Written by design; the two new rigs had not produced one in that checkout |
+| `shell-sidebar.json` | `pass: false`, 23 failures (rail topband mat, chat panel surface, dark-ladder repeats) | Ran 11-27, after the rig's last change — it judges this revision, and it is the same disagreement as at 0.3.4: the dock and rail surface rules (`--scene-panel-*` veils, `.chat-panel`'s own fill) were not touched in this window |
+| `chat-side.json` | `pass: false`, 5 dock-surface failures | Same five dock-surface expectations as at 0.3.4, same untouched rules; either the rigs or the shipped look is wrong, and neither changed here — a standing red to settle, not a regression from this window |
+| `update-live-feed.json` | `pass: true` after publishing | Was red before `gh release create` (feed newest 0.3.4, build 0.3.5), green once v0.3.5 was the newest release: `0.3.5 -> 0.3.5` |
+| `packaged-smoke.json` | `pass: false` | The native `.exe` cannot run on this box (no binfmt; wine 9.0 cannot render); release proof is `release-0.3.5-packaged-smoke-linux.json` instead |
+| `release-0.3.5-packaged-smoke-linux.json` | `pass: true`, 17 checks | Loads the shipped `app.asar` from `release/win-unpacked` in a packaged layout; it only passes with the bench stopped, because the probe's door check (`:8643`) would otherwise be satisfied by the bench app's own door |
 
 Lesson that is now a rule: a skipped or stale rig is evidence of nothing
 ([`RULES.md`](RULES.md)), and a red report must name the change that supersedes it.
 
-**Unreleased, rig only (2026-11-27):** two harnesses under `apps/desktop/e2e/` were missing the
+**Landed with 0.3.5, rig only:** two harnesses under `apps/desktop/e2e/` were missing the
 ThemeProvider stubs (`themesList`, `themeGetState`, `onThemesChanged`), so the shell unmounted
 before any page rendered, and `wing-eyebrow.electron.mjs` still read the wing tabs as
-`aria-selected` when the segmented control had moved to `aria-checked`. Both fixed; the
-`wing-eyebrow` rig now passes against `master`. The `projects` rig got the same harness fix but
-its driver died in the GPU process on this host before writing a report — rerun it before
-leaning on it.
+`aria-selected` when the segmented control had moved to `aria-checked`. Both fixed
+(`30bb24c`, `1b512ca`, `ff0866a`), and the `wing-eyebrow` rig passes against `master` (186
+checks). The `projects` rig got the same harness fix but its driver died in the GPU process on
+this host before writing a report — rerun it before leaning on it.
 
 ## Next
 
-1. Land [`TASKS.md`](TASKS.md) item 1 (the review notebook) on top of `master`.
-2. Cut 0.3.5: version bump, wiki "Version covered", release notes, `npm run release`,
-   `packaged-smoke.mjs`, `update-live-feed.mjs`, `gh release create`.
-3. Decide the two stale docs branches (phone client, encrypted context layer) — keep or park.
+1. Settle the dock/rail surface red: either repaint the dock and the rail topband to what
+   `chat-side` and `shell-sidebar` expect, or change the two rigs to the shipped look.
+2. Decide the two stale docs branches (phone client, encrypted context layer) — keep or park.
 
 ## Open limitations
 

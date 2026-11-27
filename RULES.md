@@ -1,6 +1,6 @@
 # Rules: how to work in this repo
 
-Last verified: 2026-11-27 · LifeQuest 0.3.4
+Last verified: 2026-11-27 · LifeQuest 0.3.5
 
 **MUST** / **MUST NOT** are RFC 2119 when capitalized. These rules bind humans and agents
 writing code, docs or tests here. Three other documents hold adjacent rules, and this one does

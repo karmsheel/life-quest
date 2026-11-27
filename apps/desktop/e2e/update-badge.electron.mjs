@@ -85,8 +85,8 @@ const SAMPLE = `(() => {
   const label = document.querySelector(".update-badge__label");
   // The chip's home: the rail's version slot at the TOP of the column — the div
   // inside the header, directly under the centred lockup. The slot holds the
-  // optional words and the build number as one centred row; the header's box is
-  // the band that line lives in, and the header's own slack is the room the halo
+  // build number with the optional words centred under it; the header's box is
+  // the band that stack lives in, and the header's own slack is the room the halo
   // has to fit. The old caption row (.nav-rail__meta) is retired, so the foot
   // below is measured as one row: the Log, the vault chip and the collapse
   // toggle.
@@ -230,6 +230,7 @@ const SAMPLE = `(() => {
           box: box(versionSlot),
           padding: versionPadding,
           display: versionStyle.display,
+          flexDirection: versionStyle.flexDirection,
           alignItems: versionStyle.alignItems,
           justifyContent: versionStyle.justifyContent,
           gap: versionStyle.gap,
@@ -239,7 +240,8 @@ const SAMPLE = `(() => {
           containsChip: Boolean(chip && versionSlot.contains(chip)),
           containsLabel: Boolean(label && versionSlot.contains(label)),
           childCount: versionSlot.children.length,
-          lastChildIsChip: versionSlot.lastElementChild === chip,
+          firstChildIsChip: versionSlot.firstElementChild === chip,
+          lastChildIsLabel: Boolean(label) && versionSlot.lastElementChild === label,
           lastControlIsChip: lastVersionControl === chip,
           lastControlAriaLabel: lastVersionControl
             ? lastVersionControl.getAttribute("aria-label")
@@ -302,7 +304,7 @@ const SAMPLE = `(() => {
           text: (label.textContent || "").trim(),
           dataLabel: label.getAttribute("data-update-label"),
           inVersion: Boolean(versionSlot && versionSlot.contains(label)),
-          nextToChip: label.nextElementSibling === chip,
+          underChip: label.previousElementSibling === chip,
           display: getComputedStyle(label).display,
           visibility: getComputedStyle(label).visibility,
           focusables: label.querySelectorAll(
@@ -835,7 +837,8 @@ async function main() {
         resting.version?.containsLabel === true &&
         resting.version?.controls.length === 1 &&
         resting.version?.lastControlIsChip === true &&
-        resting.version?.lastChildIsChip === true &&
+        resting.version?.firstChildIsChip === true &&
+        resting.version?.lastChildIsLabel === true &&
         resting.version?.lastControlAriaLabel !== "Collapse sidebar" &&
         resting.version?.toggleInFootRow === true &&
         resting.toggle?.ariaLabel === "Collapse sidebar" &&
@@ -914,14 +917,13 @@ async function main() {
       `radius ${resting.chip.borderRadius}`,
     );
 
-    // ── the words beside the pill ───────────────────────────────────────────
+    // ── the words under the pill ────────────────────────────────────────────
     // A glowing `v0.1.4` is a state without a sentence. The words have to say
     // what it means, and stay a paragraph — a second focus stop in a bar of
     // action controls with nothing to do would be worse than the glow alone.
     //
-    // The words and the number are one centred inline row in the version slot,
-    // so their shared line is the slot's own flex line; the container query that
-    // retires the words under a narrow header is measured below.
+    // The words are the version slot's second line, centred on the number. The
+    // container query that retires them under a narrow header is measured below.
     const labelInk = resting.chip.tokens.resolved.accent;
     check(
       "the glow is explained in words",
@@ -929,25 +931,28 @@ async function main() {
       `caption ${JSON.stringify(resting.label?.text)} as <${resting.label?.tag}>`,
     );
     check(
-      "the caption rides inline beside the build number in the version slot",
+      "the caption sits centred under the build number in the version slot",
       resting.label?.inVersion === true &&
-        resting.label?.nextToChip === true &&
+        resting.label?.underChip === true &&
         resting.label?.display !== "none" &&
         resting.version?.display === "flex" &&
+        resting.version?.flexDirection === "column" &&
         resting.version?.alignItems === "center",
-      `caption display ${JSON.stringify(resting.label?.display)}, in version slot ${resting.label?.inVersion}, next to chip ${resting.label?.nextToChip}, slot ${JSON.stringify(resting.version?.display)}/${JSON.stringify(resting.version?.alignItems)}`,
+      `caption display ${JSON.stringify(resting.label?.display)}, in version slot ${resting.label?.inVersion}, under chip ${resting.label?.underChip}, slot ${JSON.stringify(resting.version?.display)}/${JSON.stringify(resting.version?.flexDirection)}/${JSON.stringify(resting.version?.alignItems)}`,
     );
-    // The words sit on the number's shoulder, inside the version line: same row,
-    // to its left, and never a second column of their own.
+    // The words are the number's own second line: directly under it, sharing its
+    // centre, and still inside the version slot.
     check(
-      "the caption sits on the number's shoulder",
+      "the caption is centred under the number",
       Boolean(resting.label?.box && resting.chip.box && versionBox) &&
-        resting.label.box.right <= resting.chip.box.left &&
-        resting.chip.box.left - resting.label.box.right <= 12 &&
+        resting.label.box.top >= resting.chip.box.bottom - 1 &&
+        resting.label.box.top - resting.chip.box.bottom <= 12 &&
         Math.abs(
-          (resting.label.box.top + resting.label.box.bottom) / 2 -
-            (resting.chip.box.top + resting.chip.box.bottom) / 2,
+          (resting.label.box.left + resting.label.box.right) / 2 -
+            (resting.chip.box.left + resting.chip.box.right) / 2,
         ) <= 2 &&
+        resting.label.box.left >= versionBox.left - 1 &&
+        resting.label.box.right <= versionBox.right + 1 &&
         (resting.label.overflow.scrollWidth ?? Infinity) <=
           (resting.label.overflow.clientWidth ?? 0),
       `caption ${JSON.stringify(resting.label?.box)} vs chip ${JSON.stringify(resting.chip?.box)} in version line ${JSON.stringify(versionBox)}, overflow ${JSON.stringify(resting.label?.overflow)}`,
@@ -1393,18 +1398,28 @@ async function main() {
       upToDate.label === null,
       `caption ${JSON.stringify(upToDate.label)}, chip ${JSON.stringify(upToDate.chip?.text)}`,
     );
-    // The chip is a quiet line in the header's band, not something that changes
-    // the rail's size: the available state adds ink and the words, never a taller
-    // line or a taller header. The slot's own width follows its content — the
-    // words make it wider — so the claim is the header's box and the line's
-    // height, which is what the retired caption row's fixed box used to carry.
+    // The caption is a second line under the number, so the version line and
+    // the header band grow while an offer is up. The rail's column does not:
+    // the band keeps its place and its width, and it never grows by more than
+    // the extra line (the quiet header's floor absorbs the rest).
+    const offerHeader = resting.railHeader?.box;
+    const quietHeader = upToDate.railHeader?.box;
+    const offerLine = resting.version?.box;
+    const quietLine = upToDate.version?.box;
+    const headerGrowth =
+      offerHeader && quietHeader ? offerHeader.height - quietHeader.height : 0;
+    const lineGrowth = offerLine && quietLine ? offerLine.height - quietLine.height : 0;
     check(
-      "the available state did not change the header's band or the line's height",
-      sameBox(resting.railHeader?.box, upToDate.railHeader?.box) &&
-        Boolean(resting.version?.box && upToDate.version?.box) &&
-        resting.version.box.height === upToDate.version.box.height &&
+      "the caption grows the version line and the header, and the rail's column stays put",
+      Boolean(offerHeader && quietHeader && offerLine && quietLine) &&
+        Math.abs(offerHeader.left - quietHeader.left) <= 1 &&
+        Math.abs(offerHeader.width - quietHeader.width) <= 1 &&
+        Math.abs(offerHeader.top - quietHeader.top) <= 1 &&
+        headerGrowth > 0 &&
+        lineGrowth > 0 &&
+        headerGrowth <= lineGrowth + 1 &&
         sameBox(resting.rail?.box, upToDate.rail?.box),
-      `header available ${JSON.stringify(resting.railHeader?.box)} vs up-to-date ${JSON.stringify(upToDate.railHeader?.box)}, line height ${resting.version?.box?.height} vs ${upToDate.version?.box?.height}`,
+      `header available ${JSON.stringify(offerHeader)} vs up-to-date ${JSON.stringify(quietHeader)}, line height ${offerLine?.height} vs ${quietLine?.height}`,
     );
     check(
       "an up-to-date build still asks the feed once",
@@ -1698,8 +1713,8 @@ async function main() {
       previewBar.label?.text === "Update available" &&
         previewBar.label?.dataLabel === "preview" &&
         previewBar.label?.inVersion === true &&
-        previewBar.label?.nextToChip === true,
-      `caption ${JSON.stringify(previewBar.label?.text)} (${previewBar.label?.dataLabel}), in version slot ${previewBar.label?.inVersion}, next to chip ${previewBar.label?.nextToChip}`,
+        previewBar.label?.underChip === true,
+      `caption ${JSON.stringify(previewBar.label?.text)} (${previewBar.label?.dataLabel}), in version slot ${previewBar.label?.inVersion}, under chip ${previewBar.label?.underChip}`,
     );
     check(
       "the preview glow keeps the feed's answer quiet",
