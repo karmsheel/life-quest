@@ -172,6 +172,7 @@ export {
   getReviewSkill,
   parseSnapshotDirectives,
   prepopulateReview,
+  previousShippedDefaultReviewSkill,
   renderSnapshotMarkdown,
   snapshotCloseMarker,
   snapshotOpenMarker,
@@ -183,6 +184,7 @@ export {
   METRICS_DATABASE_ID,
   METRICS_DATABASE_NAME,
   compileMetricSpec,
+  compileMetricSpecForVault,
   defineMetric,
   ensureMetricsDatabase,
   getMetric,
@@ -199,6 +201,7 @@ export type {
   LoggedMetricEvent,
   MetricBounds,
   MetricErrorCode,
+  MetricEventColumns,
   MetricResult,
   MetricsSummaryResult,
 } from "./metrics.ts";

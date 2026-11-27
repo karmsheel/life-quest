@@ -118,10 +118,10 @@ describe("review snapshot e2e", () => {
           },
         },
         {
-          id: "t-in-2",
+          id: "t-out-2",
           cells: {
             date: "2026-10-17",
-            amount: 79.5,
+            amount: -79.5,
             payee: "Uber",
             account: "acc-1",
             category: "cat-transport",
@@ -193,11 +193,17 @@ describe("review snapshot e2e", () => {
         "reading a skill wrote a file: the default must stay replaceable by a release",
       );
       assert.deepEqual(shipped.problems, [], "the shipped weekly skill does not parse");
-      assert.equal(shipped.snapshots.length, 1, "the shipped weekly skill declares no snapshot");
-      assert.equal(shipped.snapshots[0]!.id, "finance-spend");
-      assert.equal(shipped.snapshots[0]!.domain, "financial");
-      assert.equal(shipped.snapshots[0]!.section, "Look-back");
-      assert.equal(shipped.snapshots[0]!.window, "period");
+      assert.deepEqual(
+        shipped.snapshots.map((directive) => directive.id),
+        ["finance-in", "finance-out", "finance-net"],
+        "the shipped weekly skill no longer declares cash in / cash out / net",
+      );
+      for (const directive of shipped.snapshots) {
+        assert.equal(directive.domain, "financial");
+        assert.equal(directive.section, "Look-back");
+        assert.equal(directive.window, "period");
+      }
+      assert.equal(shipped.snapshots[1]!.magnitude, "abs", "cash out lost its display-only magnitude");
       assert.match(
         shipped.markdown,
         /lifequest-snapshot/,
@@ -219,7 +225,7 @@ describe("review snapshot e2e", () => {
         planted: pass.planted,
         outcomes: pass.outcomes,
       };
-      assert.equal(pass.applied, 1, "the snapshot pass wrote nothing");
+      assert.equal(pass.applied, 3, "the snapshot pass wrote fewer than three figures");
       assert.deepEqual(
         pass.planted,
         [],
@@ -229,22 +235,27 @@ describe("review snapshot e2e", () => {
       checks.body = body;
 
       const lookback = body.indexOf("### Look-back");
-      const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+      const markers = [
+        "<!-- lifequest:snapshot:finance-in -->",
+        "<!-- lifequest:snapshot:finance-out -->",
+        "<!-- lifequest:snapshot:finance-net -->",
+      ];
       const keep = body.indexOf("### Keep");
-      assert.ok(lookback !== -1 && marker > lookback, "the snapshot is not under Financial's Look-back");
-      assert.ok(marker < keep, "the snapshot landed outside its own section");
-      assert.match(body, /\| Groceries \| /, "the snapshot drew no category rows");
-      assert.match(body, /\| Transport \| /, "the snapshot dropped a category the week held");
-      assert.match(body, /2026-10-12 → 2026-10-18/, "the snapshot does not name the window it covers");
+      for (const marker of markers) {
+        const at = body.indexOf(marker);
+        assert.ok(lookback !== -1 && at > lookback, `${marker} is not under Financial's Look-back`);
+        assert.ok(at < keep, `${marker} landed outside its own section`);
+      }
+      assert.match(body, /2026-10-12 → 2026-10-18/, "the figures do not name the window they cover");
 
-      // 200 = 120.5 + 79.5. The September row is outside the week and must not be
-      // in the figure: a snapshot that reads all time says 1,199.
-      assert.match(
-        body,
-        /(^|\n)200 \(ZAR\)(\n|$)/,
-        "the period total is not the week's own total",
-      );
-      assert.doesNotMatch(body, /1,199/, "the snapshot read outside its period");
+      // Gross cash in 120.5, gross cash out 79.5 (the ledger row is -79.5 and the
+      // figure prints its size), net 41. The September row is outside the week and
+      // must not be in any figure: a snapshot that read all time would show 1,199.
+      assert.match(body, /(^|\n)120\.50 \(ZAR\)(\n|$)/, "cash in is not 120.50");
+      assert.match(body, /(^|\n)79\.50 \(ZAR\)(\n|$)/, "cash out is not the gross 79.50");
+      assert.match(body, /(^|\n)41 \(ZAR\)(\n|$)/, "net is not 120.5 - 79.5");
+      assert.doesNotMatch(body, /1,199/, "a figure read outside its period");
+      assert.doesNotMatch(body, /-79\.50?/, "cash out printed the ledger's sign instead of its size");
 
       // The operator's own writing, in the same section and in every other one,
       // is still exactly where they left it.
@@ -255,11 +266,11 @@ describe("review snapshot e2e", () => {
         "the pass took the operator's prose from the section it filled",
       );
       assert.match(body, /A heading outside the skeleton\./, "the pass dropped an extra section");
-      const snapshotAt = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+      const snapshotAt = body.indexOf("<!-- lifequest:snapshot:finance-in -->");
       const proseAt = body.indexOf("Kept the grocery run to one trip.");
       assert.ok(
         snapshotAt < proseAt,
-        "the snapshot did not open the section, so the operator's prose reads under it",
+        "the figures did not open the section, so the operator's prose does not read under them",
       );
 
       // ── 3. the pass is a fixed point ──────────────────────────────────────
@@ -275,11 +286,13 @@ describe("review snapshot e2e", () => {
       checks.secondPass = { applied: twice.applied, identical: twice.bodyMarkdown === body };
       assert.equal(twice.applied, 0, "a second Start wrote the snapshot again");
       assert.equal(twice.bodyMarkdown, body, "a second Start changed the review's body");
-      assert.equal(
-        body.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-        1,
-        "the marker is in the file more than once",
-      );
+      for (const marker of markers) {
+        assert.equal(
+          body.split(marker).length - 1,
+          1,
+          `${marker} is in the file more than once`,
+        );
+      }
 
       // ── 4. writing the same body does not grow the file ───────────────────
       const written = await writeReview(vaultRoot, {
@@ -314,8 +327,8 @@ describe("review snapshot e2e", () => {
       );
       assert.match(
         writtenBody,
-        /<!-- lifequest:snapshot:finance-spend -->/,
-        "the writer dropped the snapshot's own markers",
+        /<!-- lifequest:snapshot:finance-in -->/,
+        "the writer dropped a figure's own markers",
       );
 
       // ── 5. a broken directive is reported, not thrown ─────────────────────
@@ -394,7 +407,11 @@ describe("review snapshot e2e", () => {
       })) as { skill?: { markdown: string; snapshots: unknown[] }; error?: unknown };
       checks.toolRead = Boolean(toolRead.skill);
       assert.ok(toolRead.skill, "get_review_skill returned nothing");
-      assert.equal(toolRead.skill!.snapshots.length, 1, "get_review_skill listed no snapshot");
+      assert.equal(
+        toolRead.skill!.snapshots.length,
+        3,
+        "get_review_skill did not list the three finance figures",
+      );
 
       const nextRules = `${shipped.markdown}\n- Always ask about sleep.\n`;
       const toolWrite = (await executeReviewTool(vaultRoot, ACTOR, "write_review_skill", {
@@ -513,26 +530,36 @@ describe("review snapshot e2e", () => {
       assert.ok(outside, "the rig could not name the day before");
       checks.period = period;
 
-      // 42.50 is the day's spend; the 999 is two days earlier, so a pass that
-      // ignored its window would show 1,041.50 and a Transport row instead of
-      // merely a different number.
+      // The day's own figures: 100 in, 42.50 out, 57.50 net. The 999 spend is a
+      // day earlier, so a pass that ignored its window would report it and net
+      // would be negative — a visibly wrong number, not merely a different one.
       const inserted = await insertRows(vaultRoot, "financial", "finance:transactions", [
         {
           id: "t-day-in",
           cells: {
             date: period,
-            amount: 42.5,
-            payee: "Checkers",
+            amount: 100,
+            payee: "Employer",
             account: "acc-1",
             category: "cat-groceries",
+          },
+        },
+        {
+          id: "t-day-spend",
+          cells: {
+            date: period,
+            amount: -42.5,
+            payee: "Checkers",
+            account: "acc-1",
+            category: "cat-transport",
           },
         },
         {
           id: "t-day-out",
           cells: {
             date: outside,
-            amount: 999,
-            payee: "Last week",
+            amount: -999,
+            payee: "Yesterday's rent",
             account: "acc-1",
             category: "cat-transport",
           },
@@ -589,64 +616,57 @@ describe("review snapshot e2e", () => {
         planted: pass.planted,
         outcomes: pass.outcomes,
       };
-      assert.equal(pass.applied, 1, "the daily snapshot pass wrote nothing");
+      assert.equal(pass.applied, 3, "the daily snapshot pass wrote fewer than three figures");
       assert.deepEqual(
         pass.planted,
         [],
         "the pass planted an area section the daily review cannot have",
       );
-      assert.equal(pass.outcomes.length, 1, "the pass reported more than the one shipped rule");
-      const outcome = pass.outcomes[0]!;
-      assert.equal(outcome.id, "finance-spend", "the shipped rule was not the one that ran");
-      assert.equal(
-        outcome.status,
-        "written",
-        "the shipped rule was skipped on a daily review: the overall Look-back was not resolved",
+      assert.deepEqual(
+        pass.outcomes.map((entry) => [entry.id, entry.status]),
+        [
+          ["finance-in", "written"],
+          ["finance-out", "written"],
+          ["finance-net", "written"],
+        ],
+        "a shipped figure was skipped on a daily review: the overall Look-back was not resolved",
       );
       const body = pass.bodyMarkdown;
       checks.body = body;
 
-      // One block, opening the section above the operator's prose.
+      // The three figures open the section above the operator's prose, in the
+      // order they are declared.
       const lookback = body.indexOf("## Look-back");
-      const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+      const markers = [
+        "<!-- lifequest:snapshot:finance-in -->",
+        "<!-- lifequest:snapshot:finance-out -->",
+        "<!-- lifequest:snapshot:finance-net -->",
+      ];
       const prose = body.indexOf("Walked in the morning, twice.");
-      assert.ok(
-        lookback !== -1 && marker > lookback,
-        "the snapshot is not under the overall Look-back",
-      );
-      assert.ok(
-        marker < prose,
-        "the snapshot landed under the operator's prose, not above it",
-      );
-      assert.equal(
-        body.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-        1,
-        "the marker is in the file more than once",
-      );
-      // Both halves of the pair, once each: the block is delimited, not merely
-      // opened, which is what lets a second Start find and replace it in place.
-      assert.equal(
-        body.split("<!-- /lifequest:snapshot:finance-spend -->").length - 1,
-        1,
-        "the closing marker is missing or duplicated",
-      );
-      assert.ok(
-        body.indexOf("<!-- /lifequest:snapshot:finance-spend -->") > marker,
-        "the closing marker precedes the opening one",
-      );
+      let previousAt = -1;
+      for (const marker of markers) {
+        const at = body.indexOf(marker);
+        assert.ok(lookback !== -1 && at > lookback, `${marker} is not under the overall Look-back`);
+        assert.ok(at < prose, `${marker} landed under the operator's prose, not above it`);
+        assert.ok(at > previousAt, "the figures are not in their declared reading order");
+        previousAt = at;
+        // Both halves of the pair, once each: the block is delimited, not merely
+        // opened, which is what lets a second Start find and replace it in place.
+        const close = marker.replace("<!-- lifequest:snapshot:", "<!-- /lifequest:snapshot:");
+        assert.equal(body.split(marker).length - 1, 1, `${marker} is in the file more than once`);
+        assert.equal(body.split(close).length - 1, 1, `${close} is missing or duplicated`);
+        assert.ok(body.indexOf(close) > at, `${close} precedes its opening marker`);
+      }
 
-      assert.match(body, /(^|\n)42\.50 \(ZAR\)(\n|$)/, "the daily total is not the day's own total");
-      assert.doesNotMatch(body, /1,041/, "the snapshot read outside the daily period");
-      assert.match(body, /\| Groceries \| /, "the snapshot drew no category rows");
-      assert.doesNotMatch(
-        body,
-        /\| Transport \| /,
-        "the snapshot drew a category from outside the day",
-      );
+      assert.match(body, /(^|\n)100 \(ZAR\)(\n|$)/, "cash in is not the day's own income");
+      assert.match(body, /(^|\n)42\.50 \(ZAR\)(\n|$)/, "cash out is not the day's own gross spend");
+      assert.doesNotMatch(body, /-42\.5/, "cash out printed the ledger's sign instead of its size");
+      assert.match(body, /(^|\n)57\.50 \(ZAR\)(\n|$)/, "net is not 100 - 42.50");
+      assert.doesNotMatch(body, /999/, "a figure read outside the daily period");
       assert.match(
         body,
         new RegExp(`${period} → ${period}`),
-        "the snapshot does not name the window it covers",
+        "the figures do not name the window they cover",
       );
 
       // A daily review has no area sections, and the pass must not invent one:
@@ -672,7 +692,7 @@ describe("review snapshot e2e", () => {
       const line = snapshotLines[0]!;
       assert.deepEqual(
         line.payload,
-        { cadence: "daily", period, scope: "overall", written: 1, skipped: 0, failed: 0 },
+        { cadence: "daily", period, scope: "overall", written: 3, skipped: 0, failed: 0 },
         "the audit line does not carry the pass's own counts",
       );
       assert.deepEqual(
@@ -694,11 +714,13 @@ describe("review snapshot e2e", () => {
       checks.secondPass = { applied: twice.applied, identical: twice.bodyMarkdown === body };
       assert.equal(twice.applied, 0, "a second Start wrote the daily snapshot again");
       assert.equal(twice.bodyMarkdown, body, "a second Start changed the daily review's body");
-      assert.equal(
-        twice.bodyMarkdown.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-        1,
-        "the second pass duplicated the marker",
-      );
+      for (const marker of markers) {
+        assert.equal(
+          twice.bodyMarkdown.split(marker).length - 1,
+          1,
+          `the second pass duplicated ${marker}`,
+        );
+      }
       assert.match(
         twice.bodyMarkdown,
         /Walked in the morning, twice\./,
@@ -813,22 +835,27 @@ describe("review snapshot e2e", () => {
       assert.ok(value, "no pass");
       checks.planted = value.planted;
       checks.outcomes = value.outcomes;
-      assert.equal(value.applied, 1, "the pass wrote no figure to the financial page");
+      assert.equal(value.applied, 3, "the pass wrote fewer than three figures to the financial page");
       assert.deepEqual(value.planted, [], "the pass reported a plant: the page is the unit now");
 
       const body = value.bodyMarkdown;
       checks.body = body;
       const financeAt = body.indexOf("## Finance");
-      const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
       const keepAt = body.indexOf("### Keep");
       assert.ok(financeAt !== -1, "the financial page exists but is not in the compatibility body");
-      assert.ok(
-        marker > financeAt && marker > body.indexOf("### Look-back"),
-        "the snapshot did not land under the financial page's Look-back",
-      );
-      assert.ok(marker < keepAt, "the snapshot landed outside the financial page's Look-back");
-      // The overall Look-back took the operator's prose and NOT the figure, even
-      // though it could have resolved the rule.
+      for (const marker of [
+        "<!-- lifequest:snapshot:finance-in -->",
+        "<!-- lifequest:snapshot:finance-out -->",
+        "<!-- lifequest:snapshot:finance-net -->",
+      ]) {
+        assert.ok(
+          body.indexOf(marker) > financeAt && body.indexOf(marker) > body.indexOf("### Look-back"),
+          `${marker} did not land under the financial page's Look-back`,
+        );
+        assert.ok(body.indexOf(marker) < keepAt, `${marker} landed outside the Look-back`);
+      }
+      // The overall Look-back took the operator's prose and NOT the figures, even
+      // though it could have resolved the rules.
       const overallLookback = body.slice(
         body.indexOf("## Look-back"),
         body.indexOf("## Keep"),
@@ -836,8 +863,8 @@ describe("review snapshot e2e", () => {
       assert.match(overallLookback, /The week in one line\./, "the overall Look-back lost its prose");
       assert.doesNotMatch(
         overallLookback,
-        /lifequest:snapshot:finance-spend/,
-        "the figure drifted from the area section into the overall one",
+        /lifequest:snapshot:finance-/,
+        "the figures drifted from the area section into the overall one",
       );
 
       // The pass created a real page, with the area's page status.

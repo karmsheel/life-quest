@@ -747,16 +747,17 @@ export async function ensureMetricsDatabase(
   });
 }
 
-/** The event table's column ids, resolved by NAME so a minted id never matters. */
-function eventColumnIds(db: DatabaseMeta): Record<string, string> | null {
+/** The four event-table column ids, resolved by NAME: their ids are minted. */
+export type MetricEventColumns = { date: string; metric: string; value: string; note: string };
+
+function eventColumnIds(db: DatabaseMeta): MetricEventColumns | null {
   const byName = new Map(db.columns.map((c) => [c.name, c.id]));
-  const out: Record<string, string> = {};
-  for (const column of METRIC_EVENT_COLUMNS) {
-    const id = byName.get(column.name);
-    if (!id) return null;
-    out[column.name] = id;
-  }
-  return out;
+  const date = byName.get("date");
+  const metric = byName.get("metric");
+  const value = byName.get("value");
+  const note = byName.get("note");
+  if (!date || !metric || !value || !note) return null;
+  return { date, metric, value, note };
 }
 
 export type LogMetricInput = {
@@ -883,8 +884,13 @@ export type MetricBounds = { start: string; end: string };
  * definition's aggregation, and the period rewritten as a custom window —
  * exactly the rewrite `prepopulateReview` already does to a directive's window,
  * so there is no second window vocabulary. A derived definition's spec is its
- * query; only the window is rewritten, so the same saved spec answers the
- * review period, the previous one, or an Analytics column.
+ * query; only the window is rewritten, so the same saved spec answers the review
+ * period, the previous one, or an Analytics column.
+ *
+ * The events table's column ids are minted when the database is created (the
+ * engine addresses columns by id, never by name), so `eventColumns` is required
+ * for an events definition and must come from the area's own `metrics` database.
+ * `compileMetricSpecForVault` below is the async form that resolves them.
  *
  * The presentation is `table`, not `metric`, for one reason: the engine's
  * `metric` presentation answers 0 for an empty sum/count window (a card must
@@ -896,9 +902,15 @@ export type MetricBounds = { start: string; end: string };
 export function compileMetricSpec(
   definition: MetricDefinition,
   bounds: MetricBounds,
+  eventColumns?: MetricEventColumns,
 ): ViewSpec {
   const window = { kind: "custom", start: bounds.start, end: bounds.end } as const;
   if (definition.source === "events") {
+    if (!eventColumns) {
+      throw new Error(
+        `Metric ${definition.id} reads the events table, whose column ids must be resolved first`,
+      );
+    }
     return {
       schemaVersion: 1,
       databaseId: METRICS_DATABASE_ID,
@@ -906,11 +918,14 @@ export function compileMetricSpec(
       presentation: "table",
       groupBy: null,
       timeBucket: null,
-      timeColumnId: "date",
+      timeColumnId: eventColumns.date,
       timeWindow: window,
-      filters: [{ columnId: "metric", op: "eq", value: definition.eventKey ?? "" }],
+      filters: [
+        { columnId: eventColumns.metric, op: "eq", value: definition.eventKey ?? "" },
+      ],
       measure: definition.aggregation,
-      measureColumnId: definition.aggregation === "count" ? null : "value",
+      measureColumnId:
+        definition.aggregation === "count" ? null : eventColumns.value,
       per: null,
       sort: { by: "value", dir: "desc" },
       limit: 12,
@@ -930,6 +945,36 @@ export function compileMetricSpec(
 }
 
 /**
+ * `compileMetricSpec` for a caller that only knows the vault and area: an
+ * events definition's column ids are read (and, for a first write path, the
+ * database ensured) before compiling. A READ path should not create tables, so
+ * `getMetricsSummary` uses the non-creating read below instead.
+ */
+export async function compileMetricSpecForVault(
+  root: string,
+  slug: string,
+  definition: MetricDefinition,
+  bounds: MetricBounds,
+): Promise<MetricResult<ViewSpec>> {
+  if (definition.source !== "events") {
+    return { ok: true, value: compileMetricSpec(definition, bounds) };
+  }
+  const ensured = await ensureMetricsDatabase(root, slug);
+  if (!ensured.ok) return ensured;
+  const columns = eventColumnIds(ensured.value);
+  if (!columns) {
+    return {
+      ok: false,
+      code: "FAILED",
+      error:
+        "The metrics database is missing one of its columns (date, metric, value, note); " +
+        "restore the database before reading a metric.",
+    };
+  }
+  return { ok: true, value: compileMetricSpec(definition, bounds, columns) };
+}
+
+/**
  * The week start the review windows are measured from.
  *
  * Read tolerantly, like the period pack: a settings file mid-repair still
@@ -946,7 +991,7 @@ async function readWeekStartDay(root: string): Promise<WeekStartDay> {
 }
 
 /**
- * One definition's value over one window, as the view engine computes it.
+ * One spec's value over one window, as the view engine computes it.
  *
  * `presentation: "table"` keeps an empty window distinguishable from a real
  * zero; every number here is the engine's own aggregate, never a fold computed
@@ -954,19 +999,12 @@ async function readWeekStartDay(root: string): Promise<WeekStartDay> {
  * period average of nothing is 0 per period by the engine's own rule — so it is
  * the one measure whose empty answer is 0 rather than null.
  */
-async function runMetricOverWindow(
+async function runSpecOverWindow(
   root: string,
   slug: string,
-  definition: MetricDefinition,
-  bounds: MetricBounds,
+  spec: ViewSpec,
   now: Date,
 ): Promise<MetricResult<number | null>> {
-  let spec: ViewSpec;
-  try {
-    spec = compileMetricSpec(definition, bounds);
-  } catch (e) {
-    return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
-  }
   const runSpec: ViewSpec =
     spec.measure === "avg-per"
       ? spec
@@ -1042,21 +1080,43 @@ export async function getMetricsSummary(
       ? listed.value.metrics.filter((metric) => wanted.has(metric.id))
       : listed.value.metrics;
 
+    // A read must not create the events table: if there is none, every events
+    // metric in this area simply has no rows yet.
+    const metricsDb = await getDatabase(root, slug, METRICS_DATABASE_ID);
+    const eventColumns = metricsDb.ok ? eventColumnIds(metricsDb.value) : null;
+
     const now = new Date();
     const asOf = now.toISOString();
     const summaries: MetricSummary[] = [];
     for (const definition of defs) {
-      const current = await runMetricOverWindow(root, slug, definition, bounds.value, now);
-      if (!current.ok) return current;
-      const previous = await runMetricOverWindow(
-        root,
-        slug,
-        definition,
-        previousBounds.value,
-        now,
-      );
-      if (!previous.ok) return previous;
       const formatting = definition.formatting ?? null;
+      let spec: ViewSpec;
+      try {
+        spec = compileMetricSpec(definition, bounds.value, eventColumns ?? undefined);
+      } catch (e) {
+        return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+      }
+      let current: MetricResult<number | null>;
+      let previous: MetricResult<number | null>;
+      if (definition.source === "events" && !eventColumns) {
+        current = { ok: true, value: null };
+        previous = { ok: true, value: null };
+      } else {
+        current = await runSpecOverWindow(root, slug, spec, now);
+        if (!current.ok) return current;
+        let previousSpec: ViewSpec;
+        try {
+          previousSpec = compileMetricSpec(
+            definition,
+            previousBounds.value,
+            eventColumns ?? undefined,
+          );
+        } catch (e) {
+          return { ok: false, code: "FAILED", error: e instanceof Error ? e.message : String(e) };
+        }
+        previous = await runSpecOverWindow(root, slug, previousSpec, now);
+        if (!previous.ok) return previous;
+      }
       const shownCurrent = metricDisplayValue(current.value, formatting);
       const shownPrevious = metricDisplayValue(previous.value, formatting);
       summaries.push({

@@ -383,6 +383,16 @@ export function defaultReviewSkill(cadence: ReviewCadence): string {
 }
 
 /**
+ * The default this release replaced, exposed for exactly two readers: the
+ * one-time rewrite above (which must compare bytes against it) and a test that
+ * seeds a pre-upgrade vault. It is NOT an alternative default — nothing should
+ * answer a read with it.
+ */
+export function previousShippedDefaultReviewSkill(cadence: ReviewCadence): string {
+  return previousDefaultSkillMarkdown(cadence);
+}
+
+/**
  * The directives in a skill file.
  *
  * A fence that is not a JSON object, or that is missing an id, a domain or a
@@ -917,9 +927,18 @@ function upsertSnapshotAt(
     };
   }
   // Straight after the heading and whatever blank lines follow it, so the block
-  // opens the section and the operator's prose reads under it.
+  // opens the section and the operator's prose reads under it. When the section
+  // already holds figures, the new one goes after the LAST of them: directives
+  // are declared in reading order (Cash in, Cash out, Net), and inserting each
+  // at the top would reverse them on the first pass.
   let at = found.headingIndex + 1;
   while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  const closeMarker = /^<!-- \/lifequest:snapshot:.+ -->$/;
+  for (let i = found.headingIndex + 1; i < found.endIndex && i < lines.length; i += 1) {
+    if (!closeMarker.test(lines[i]!)) continue;
+    at = i + 1;
+    while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  }
   const next = [...lines.slice(0, at), ...block, "", ...lines.slice(at)];
   return { body: next.join("\n"), status: "written" };
 }
