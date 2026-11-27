@@ -715,6 +715,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const themePreviewTimer = useRef<number | null>(null);
   /** Last mtime seen per file, so a hot reload can name what actually changed. */
   const themeMtimes = useRef<Map<string, number>>(new Map());
+  /**
+   * Whether a read of the directory has come back yet. The first one is the
+   * session's baseline: it records what was on disk when the window opened, and
+   * it never previews — see `loadThemeFiles`.
+   */
+  const themeBaseline = useRef(false);
   /** The theme this window reverts to; the rendered `themeFile` moves on preview. */
   const keptTheme = useRef<ThemeFile | null>(null);
   /** The kept file name, readable from callbacks that must not go stale. */
@@ -1106,8 +1112,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   /**
    * Read the directory, paint what the operator kept, and preview anything the
-   * companion just wrote. `preview: false` is the first read of the session: a
-   * kept theme is worn without the ten-second countdown.
+   * companion just wrote. `preview: false` is Settings' and the studio's own
+   * read: a kept theme is worn without the ten-second countdown.
+   *
+   * The session's *first* read is its baseline, whatever asked for it. Until
+   * one read has come back there is nothing to compare a file against — the
+   * mtime map starts empty, so every file on disk looks new — and a
+   * `theme:changed` can arrive before that read finishes: the watcher is armed
+   * when the window is created, and an OS that reports on a fresh watch (or a
+   * cold start whose first read is slow) delivers the change while the window
+   * is still opening. Such a change is folded into the baseline instead of
+   * previewed, because a theme that was already on disk when the window opened
+   * is not a write the operator just made. Only a change seen *after* the
+   * baseline previews.
    *
    * What is kept lives in main (`theme-state.json`), not in this window: the
    * companion's `get_theme` runs in main and must see the same answer the
@@ -1201,6 +1218,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       setThemeFiles(valid.sort((a, b) => a.file.localeCompare(b.file)));
 
+      /*
+       * The first read of the session establishes the baseline: from here on a
+       * file's mtime can be compared with what was on disk when the window
+       * opened. The read that does it never previews — everything it sees is
+       * the launch, not a write — so an event that beat it here costs one
+       * listing instead of ten seconds of somebody else's theme.
+       */
+      const baseline = !themeBaseline.current;
+      themeBaseline.current = true;
+
       if (kept) keptTheme.current = kept.theme;
       /*
        * A draft owns the shell while the studio is open. If the directory moved
@@ -1215,7 +1242,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         paintTheme(kept?.theme ?? null);
         setDraftDiscarded((count) => count + 1);
       }
-      if (options?.preview === false) {
+      if (options?.preview === false || baseline) {
         // A live preview owns the window: Settings opening (or any other
         // preview-disabled read) must not repaint the kept theme under it while
         // the preview bar is still counting down.
