@@ -399,6 +399,14 @@ export function vaultPaths(root: string) {
     },
     reviewSkillMd: (cadence: string) =>
       build(".lifequest", "reviews", assertSafeSegment(cadence, "review cadence") + ".md"),
+    // A live area's page contract: the headings a new page of that area is
+    // seeded with, and the order the page keeps them in. One file per area,
+    // beside the cadence skills, so `reviews/<cadence>/` holds periods only.
+    get reviewPageTemplatesDir(): string {
+      return build(".lifequest", "reviews", "pages");
+    },
+    reviewPageTemplateMd: (slug: string) =>
+      build(".lifequest", "reviews", "pages", assertDomainSlug(slug) + ".md"),
     get planningDir(): string {
       return build("planning");
     },
@@ -502,6 +510,17 @@ export function vaultPaths(root: string) {
         assertDomainSlug(slug),
         "views",
         assertSafeSegment(viewId, "view id") + ".json",
+      ),
+    // Metric definitions (2026-11-26 metrics design): one operator-owned JSON
+    // per metric, exactly like a saved view, so a definition is a git-portable
+    // object with no wholesale file to clobber.
+    domainMetricsDir: (slug: string) => build("domains", assertDomainSlug(slug), "metrics"),
+    domainMetric: (slug: string, metricId: string) =>
+      build(
+        "domains",
+        assertDomainSlug(slug),
+        "metrics",
+        assertSafeSegment(metricId, "metric id") + ".json",
       ),
     get overviewPins(): string {
       return build(".lifequest", "overview-pins.json");

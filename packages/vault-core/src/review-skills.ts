@@ -162,10 +162,11 @@ function defaultSkillMarkdown(cadence: ReviewCadence): string {
   const shared = [
     "## How to run this review",
     "",
-    "- Work from the review file the app has open. Read it with `get_review` before you change anything.",
+    "- Work from the review page the app has open. Read it with `get_review` and the scope you were given before you change anything; a page is written with `write_review(scope, body, baseRev)`.",
     "- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.",
     "- Prefer the operator's own words over your summary of them. `get_period_pack` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.",
-    "- Write into the section you were asked about, and leave the other sections as they are.",
+    "- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.",
+    "- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.",
     "- When the report is ready, propose `mark_review_done` rather than marking it done yourself.",
     "",
   ];
