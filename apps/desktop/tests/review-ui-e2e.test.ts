@@ -1048,10 +1048,18 @@ describe("review ui e2e", () => {
         area.slug,
         `the ${area.name} row started another scope`,
       );
+      // The shipped kickoff names the page by its scope and tells the session to
+      // leave every other page alone; it no longer quotes a "## <Area>" heading
+      // (an area page has no area section — the page IS the area).
       assert.match(
         startedArea.start.kickoff,
-        new RegExp(`## ${area.name}`),
-        `the ${area.name} kickoff does not name its own section`,
+        new RegExp(`scope "${area.slug}"`),
+        `the ${area.name} kickoff does not name its own page`,
+      );
+      assert.match(
+        startedArea.start.kickoff,
+        /Leave every other page alone/,
+        `the ${area.name} kickoff does not scope the companion to one page`,
       );
       assert.equal(
         activeScope(startedArea.page),
