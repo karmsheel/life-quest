@@ -2270,7 +2270,26 @@ export type ViewPresentation = (typeof VIEW_PRESENTATIONS)[number];
 
 export const VIEW_MEASURES = ["sum", "count", "last"] as const;
 
-export type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in";
+export type ViewFilterOp =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  /**
+   * Presence tests, not comparisons: `is-set` matches a cell that holds
+   * something (non-null and not the empty string), `is-not-set` matches a cell
+   * that holds nothing (null, absent or empty). They take no value.
+   *
+   * They exist because SQL NULL comparisons are false, so `neq ""` silently
+   * drops rows whose cell was never filled — which is exactly the finance
+   * ledger's transfer legs (`transfer_id` is empty) and the one filter gross
+   * spend needs. Their meaning is stated once, here and in the SQL builder.
+   */
+  | "is-set"
+  | "is-not-set";
 
 export type ViewFilter = {
   columnId: string;
