@@ -9,14 +9,16 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same geometry, no eyeballing the app required. It
  * carries both arrangements — dock right and dock left — plus the compositions
- * the swap has to survive (a collapsed dock on either side, a collapsed rail, and
- * both at once) and the round trip back to where it started.
+ * the swap has to survive (a collapsed dock on either side, the rail shrunk to
+ * its thin icon column, and both at once) and the round trip back to where it
+ * started. The rail never leaves the layout, so a collapsed rail is measured as
+ * a 56px track the dock follows, not as a window edge the dock inherits.
  *
- * NOT covered here: whether Windows lets the click through the titlebar's drag
- * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
- * no-drag` carve-out on the switch can only be confirmed by clicking it in the
- * real window. It is the same carve-out every other titlebar control relies on:
- * the strip is a drag handle and the trailing cluster opts out.
+ * NOT covered here: whether Windows lets a click through the titlebar's drag
+ * band. The switch is no longer in that band — it moved into the dock's bottom
+ * action bar, which is ordinary content — so the `-webkit-app-region` carve-out
+ * is not in its path. The titlebar controls the rig clicks (the theme toggle)
+ * are the ones that still rely on that carve-out.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -69,6 +71,11 @@ const SAMPLE = `(() => {
   probe.style.cssText = "position:absolute;left:-9999px;top:0;height:0;width:var(--shell-nav-width)";
   document.body.appendChild(probe);
   const track = probe.offsetWidth;
+  // The rail's collapsed track, read the same way: a collapsed rail keeps a
+  // column of its own, so the rig compares the dock's start against a number
+  // rather than assuming the first track is zero.
+  probe.style.width = "var(--shell-nav-width-collapsed)";
+  const collapsedTrack = probe.offsetWidth;
   probe.style.width = "var(--chatbar-width)";
   const chatTrack = probe.offsetWidth;
   probe.remove();
@@ -87,18 +94,53 @@ const SAMPLE = `(() => {
   const paperBackground = getComputedStyle(paperProbe).backgroundColor;
   paperProbe.remove();
 
+  // The muted ink the bottom bar's actions rest in, resolved the same way as the
+  // fills above so the side switch is compared against the token the CSS uses
+  // rather than a hard-coded colour.
+  const mutedProbe = document.createElement("div");
+  mutedProbe.style.background = "var(--muted)";
+  document.body.appendChild(mutedProbe);
+  const mutedBackground = getComputedStyle(mutedProbe).backgroundColor;
+  mutedProbe.remove();
+
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const launcher = document.querySelector(".chat-launcher");
   const actions = document.querySelector(".chat-panel__actions");
   const collapseAction = document.querySelector(".chat-panel__action--collapse");
+  // The build number lives at the top of the rail, in the header under the
+  // lockup — not in the dock's bottom bar and not in the retired caption row.
+  const versionBadge = document.querySelector(".update-badge");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
-  const vault = document.querySelector(".window-titlebar__vault");
+  // The vault chip lives in the rail's foot now, one half of the footer row
+  // beside Log. Its name is read from the chip's own name span, not the button's
+  // text: the collapsed initials are in the DOM in both states, so the button's
+  // textContent would join the two words together.
+  const vault = document.querySelector(".nav-rail__vault");
   const trailing = document.querySelector(".window-titlebar__trailing");
-  const sideSwitch = document.querySelector(".window-titlebar__side-switch");
-  const chatToggle = document.querySelector(".window-titlebar__chat-toggle");
+  // The switch moved into the dock's bottom action bar; the titlebar no longer
+  // carries it or the old collapse toggle, and the SAMPLE keeps both facts so
+  // the assertions can say "here" and "not there" rather than only one.
+  const sideSwitch = document.querySelector('[data-testid="chat-side-switch"]');
+  // The shortcuts reference moved into this same bar, beside the switch: the
+  // titlebar carries it no more, so both facts are sampled.
+  const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
+  // The titlebar carries no chat control at all now: the side switch and the
+  // collapse left for the dock's bottom bar, and the full-screen door it once
+  // kept as its one exception is in that bar too, beside the Notebox. The SAMPLE
+  // keeps every one of those facts so the assertions can say "here" and "not
+  // there" rather than only one.
+  const staleTitlebar = {
+    side: Boolean(document.querySelector(".window-titlebar__side-switch")),
+    collapse: Boolean(document.querySelector(".window-titlebar__chat-toggle")),
+    shortcuts: Boolean(document.querySelector(".window-titlebar__shortcuts")),
+    fullScreen: Boolean(
+      document.querySelector(".window-titlebar__trailing .chat-focus-toggle"),
+    ),
+    mainPage: Boolean(document.querySelector('[data-testid="titlebar-main-page"]')),
+  };
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
   const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -129,6 +171,7 @@ const SAMPLE = `(() => {
     viewport: { width: vw, height: vh },
     tokens: {
       track,
+      collapsedTrack,
       chatTrack,
       frame,
       rootFontSize,
@@ -139,9 +182,10 @@ const SAMPLE = `(() => {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin")
     },
-    vaultText: (vault?.textContent || "").trim(),
+    vaultText: (vault?.querySelector(".nav-rail__vault-name")?.textContent || "").trim(),
     accentBackground,
     paperBackground,
+    mutedBackground,
     shell: shell
       ? {
           className: shell.className,
@@ -203,11 +247,32 @@ const SAMPLE = `(() => {
     actions: actions
       ? {
           box: box(actions),
-          controls: Array.from(actions.querySelectorAll("button")).map((el) => ({
+          // The bar's own action buttons; the version badge is a control in the
+          // same row but not one of the dock's surface actions, so it is measured
+          // separately below. The boxes are kept so the trailing run's adjacency
+          // can be read off the same sample as its order.
+          controls: Array.from(actions.querySelectorAll(".chat-panel__action")).map((el) => ({
             label: el.getAttribute("aria-label"),
             icon: iconClass(el),
-            disabled: el.disabled
-          }))
+            disabled: el.disabled,
+            box: box(el)
+          })),
+          badge: versionBadge
+            ? {
+                label: versionBadge.getAttribute("aria-label"),
+                text: (versionBadge.textContent || "").trim(),
+                box: box(versionBadge),
+                inBar: Boolean(actions && actions.contains(versionBadge)),
+                inRail: Boolean(
+                  document.querySelector(".nav-rail")?.contains(versionBadge)
+                ),
+                inHeader: Boolean(
+                  document
+                    .querySelector(".nav-rail__header")
+                    ?.contains(versionBadge)
+                )
+              }
+            : null
         }
       : null,
     collapseAction: collapseAction
@@ -242,17 +307,23 @@ const SAMPLE = `(() => {
           label: sideSwitch.getAttribute("aria-label"),
           title: sideSwitch.getAttribute("title"),
           pressed: sideSwitch.getAttribute("aria-pressed"),
+          background: getComputedStyle(sideSwitch).backgroundColor,
+          color: getComputedStyle(sideSwitch).color,
           icon: iconClass(sideSwitch),
           box: box(sideSwitch)
         }
       : { found: false },
-    chatToggle: chatToggle
+    shortcutsAction: shortcutsAction
       ? {
-          label: chatToggle.getAttribute("aria-label"),
-          icon: iconClass(chatToggle),
-          box: box(chatToggle)
+          found: true,
+          label: shortcutsAction.getAttribute("aria-label"),
+          title: shortcutsAction.getAttribute("title"),
+          pressed: shortcutsAction.getAttribute("aria-pressed"),
+          icon: iconClass(shortcutsAction),
+          box: box(shortcutsAction)
         }
-      : null,
+      : { found: false },
+    staleTitlebar,
     owners: {
       topLeft: owner(Math.round(track / 2), Math.round(titlebarHeight / 2)),
       bottomLeft: owner(2, vh - 4),
@@ -322,7 +393,7 @@ function checkArrangement(label, state, side) {
   check(`${label}: the sheet exists`, Boolean(main), "no .shell__main in the shell");
   check(`${label}: the dock exists`, Boolean(chat), "no .chat-panel in the shell");
   check(
-    `${label}: the titlebar chip wears the vault's name`,
+    `${label}: the rail's vault chip wears the vault's name`,
     state.vaultText === state.vaultName,
     `chip "${state.vaultText}" vs vault "${state.vaultName}"`,
   );
@@ -373,15 +444,15 @@ function checkArrangement(label, state, side) {
     `${side === "left" ? "sheet" : "dock"} right ${last?.box.right}px vs window ${viewportWidth}px`,
   );
 
-  // One pane gap under the strip, and both panes reach the window's bottom edge.
+  // Both panes meet the strip directly and reach the window's bottom edge.
   for (const [name, pane] of [
     ["sheet", main],
     ["dock", chat],
   ]) {
     check(
-      `${label}: the ${name} keeps one pane gap under the strip`,
-      pane?.box.top === titlebarHeight + frame,
-      `${name} top ${pane?.box.top}px vs strip ${titlebarHeight}px + gap ${frame}px`,
+      `${label}: the ${name} meets the strip with no gap`,
+      pane?.box.top === titlebarHeight,
+      `${name} top ${pane?.box.top}px vs strip bottom ${titlebarHeight}px`,
     );
     check(
       `${label}: the ${name} reaches the window's bottom edge`,
@@ -413,15 +484,10 @@ function checkArrangement(label, state, side) {
     `dock borders t/r/b/l ${chat?.border?.top}/${chat?.border?.right}/${chat?.border?.bottom}/${chat?.border?.left}`,
   );
 
-  // The sheet's one rounded corner stays on its leading top; the corner that sits
-  // on the window's own edge stays square, because a curve there notches the pane
-  // gap open against the window.
-  check(
-    `${label}: the sheet keeps its leading top corner`,
-    main?.radius?.topLeft === state.tokens.radiusSm,
-    `top-left radius ${main?.radius?.topLeft} vs --radius-sm ${state.tokens.radiusSm}`,
-  );
+  // The sheet is square on every corner: it is a pane, not a card, and no corner
+  // of it is notched out of the mat — in either arrangement.
   for (const [corner, radius] of [
+    ["leading top", main?.radius?.topLeft],
     ["trailing top (on the window's edge)", main?.radius?.topRight],
     ["bottom right", main?.radius?.bottomRight],
     ["bottom left", main?.radius?.bottomLeft],
@@ -481,17 +547,70 @@ function checkArrangement(label, state, side) {
 }
 
 /**
- * The titlebar's trailing cluster: the switch is there, next to the settings, and
- * the two chat controls' arrows follow the side the dock is standing on.
+ * Where the controls live. The titlebar's trailing cluster is the day/night
+ * control and the settings menu, and nothing else: no chat side switch,
+ * collapse or full-screen door rides the drag band any more — the door is in the
+ * dock's bottom action bar now — and that bar carries the side switch
+ * immediately before the collapse it belongs with, in the order the bar ships.
  */
 function checkControls(label, state, side) {
   const controls = state.trailing?.controls ?? [];
   const classes = controls.map((control) => control.className);
+  const expectedSwitchLabel =
+    side === "left"
+      ? "Move chat to the right of the page"
+      : "Move chat to the left of the page";
 
+  // The titlebar's trailing cluster is the layouts control, the day/night
+  // control and the settings menu. The keyboard-shortcuts control, like the chat
+  // controls that left before it — the side switch, the collapse and the
+  // full-screen door — now lives in the dock's own bottom action bar; a stale
+  // copy anywhere in the strip is the regression this guards, because a
+  // "contained" control is not a correctly placed one.
+  const expectedTrailing = [
+    "layouts-menu__trigger",
+    "theme-mode-toggle",
+    "settings-menu",
+  ];
   check(
-    `${label}: the switch is in the titlebar's trailing cluster`,
+    `${label}: the titlebar's trailing cluster is layouts, theme and settings`,
+    controls.length === expectedTrailing.length &&
+      expectedTrailing.every((needle, index) =>
+        String(classes[index] ?? "").includes(needle),
+      ),
+    `cluster ${JSON.stringify(classes)}`,
+  );
+  check(
+    `${label}: the titlebar carries no full-screen chat door`,
+    state.staleTitlebar?.fullScreen === false,
+    "a .window-titlebar__trailing .chat-focus-toggle is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no main-page toggle`,
+    state.staleTitlebar?.mainPage === false,
+    "a [data-testid=titlebar-main-page] is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no chat side switch`,
+    state.staleTitlebar?.side === false,
+    "a .window-titlebar__side-switch is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no chat collapse toggle`,
+    state.staleTitlebar?.collapse === false,
+    "a .window-titlebar__chat-toggle is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no keyboard-shortcuts control`,
+    state.staleTitlebar?.shortcuts === false,
+    "a .window-titlebar__shortcuts is still in the strip",
+  );
+
+  // The switch itself, inside the open dock's bottom bar.
+  check(
+    `${label}: the switch is in the dock's bottom action bar`,
     state.sideSwitch?.found === true,
-    "no .window-titlebar__side-switch in the titlebar",
+    "no [data-testid=chat-side-switch] while the dock is open",
   );
   check(
     `${label}: the switch carries an icon of its own`,
@@ -500,48 +619,84 @@ function checkControls(label, state, side) {
   );
   check(
     `${label}: the switch names the move it makes`,
-    state.sideSwitch?.label ===
-      (side === "left"
-        ? "Move chat to the right of the page"
-        : "Move chat to the left of the page"),
+    state.sideSwitch?.label === expectedSwitchLabel,
     `switch label ${JSON.stringify(state.sideSwitch?.label)}`,
   );
+  // The switch is a move, not a toggle: it names the direction the next click
+  // takes the dock and must rest as bar chrome on either side. A highlighted
+  // switch would read as "active" for an operator whose dock simply lives on
+  // the leading edge, so no side may carry a pressed fill.
   check(
-    `${label}: the switch reads its own state`,
-    state.sideSwitch?.pressed === String(side === "left"),
+    `${label}: the switch carries no pressed state`,
+    state.sideSwitch?.pressed === null,
     `aria-pressed ${JSON.stringify(state.sideSwitch?.pressed)} with the dock on the ${side}`,
   );
-
-  // Order, read off the DOM rather than off the pixels: settings, then the
-  // switch, then the collapse control. A cluster with the switch on the far side
-  // of the window controls would still "contain" it.
-  const settingsAt = classes.findIndex((name) => name.includes("settings-menu"));
-  const switchAt = classes.findIndex((name) => name.includes("side-switch"));
-  const collapseAt = classes.findIndex((name) => name.includes("chat-toggle"));
   check(
-    `${label}: the switch sits beside the settings`,
-    settingsAt >= 0 && switchAt === settingsAt + 1,
-    `cluster order ${JSON.stringify(classes)}`,
-  );
-  check(
-    `${label}: the collapse control follows the switch`,
-    collapseAt === switchAt + 1,
-    `cluster order ${JSON.stringify(classes)}`,
-  );
-  check(
-    `${label}: the switch is a full-height titlebar control`,
-    state.sideSwitch?.box?.height === state.tokens.titlebarHeight &&
-      state.sideSwitch?.box?.top === state.trailing?.box.top &&
-      state.sideSwitch?.box?.right === state.chatToggle?.box?.left,
-    `switch ${JSON.stringify(state.sideSwitch?.box)} in a strip of ${state.tokens.titlebarHeight}px, collapse at ${JSON.stringify(state.chatToggle?.box)}`,
+    `${label}: the switch rests neutral`,
+    state.sideSwitch?.background === "rgba(0, 0, 0, 0)" &&
+      state.sideSwitch?.color === state.mutedBackground,
+    `background ${JSON.stringify(state.sideSwitch?.background)} (want transparent), ink ${JSON.stringify(state.sideSwitch?.color)} vs muted ${JSON.stringify(state.mutedBackground)}`,
   );
 
-  // The arrows point into the pane they open, on whichever side it stands.
+  // The bar's order, read off the DOM rather than off the pixels: the new-chat
+  // slot, the chain and the full-screen door in the leading group, then the
+  // trailing run — the shortcuts reference, the chat display settings it leads
+  // into, the side switch and the way out. "Chat history" left the bar with the
+  // list surface, so its return is a stale slot rather than a shipped one.
+  const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
+  check(
+    `${label}: the bar carries its seven actions in order`,
+    same(barLabels, [
+      "New chat",
+      "Notebox",
+      "Full screen chat",
+      "Keyboard shortcuts",
+      "Chat display settings",
+      expectedSwitchLabel,
+      "Collapse chat",
+    ]),
+    `bar ${JSON.stringify(barLabels)}`,
+  );
+  const displaySettings = (state.actions?.controls ?? []).find(
+    (control) => control.label === "Chat display settings",
+  );
+  check(
+    `${label}: the shortcuts and display-settings controls sit immediately before the switch`,
+    state.shortcutsAction?.found === true &&
+      state.shortcutsAction?.label === "Keyboard shortcuts" &&
+      state.shortcutsAction?.icon === "lucide-keyboard" &&
+      Boolean(
+        state.shortcutsAction?.box &&
+          displaySettings?.box &&
+          state.sideSwitch?.box,
+      ) &&
+      state.shortcutsAction.box.right < displaySettings.box.left &&
+      displaySettings.box.left - state.shortcutsAction.box.right <= 8 &&
+      displaySettings.box.right < state.sideSwitch.box.left &&
+      state.sideSwitch.box.left - displaySettings.box.right <= 8 &&
+      Boolean(state.actions?.box) &&
+      state.shortcutsAction.box.top >= state.actions.box.top &&
+      state.shortcutsAction.box.bottom <= state.actions.box.bottom,
+    `shortcuts ${JSON.stringify(state.shortcutsAction)} vs display ${JSON.stringify(displaySettings?.box)} vs switch ${JSON.stringify(state.sideSwitch?.box)}`,
+  );
+  check(
+    `${label}: the switch sits immediately before the collapse control`,
+    Boolean(state.actions?.box && state.sideSwitch?.box && state.collapseAction?.box) &&
+      state.sideSwitch.box.right < state.collapseAction.box.left &&
+      state.collapseAction.box.left - state.sideSwitch.box.right <= 8 &&
+      state.sideSwitch.box.top >= state.actions.box.top &&
+      state.sideSwitch.box.bottom <= state.actions.box.bottom &&
+      state.sideSwitch.box.right <= state.actions.box.right,
+    `switch ${JSON.stringify(state.sideSwitch?.box)} vs collapse ${JSON.stringify(state.collapseAction?.box)} in bar ${JSON.stringify(state.actions?.box)}`,
+  );
+
+  // The collapse arrow points out of the pane it closes, on whichever side the
+  // dock stands.
   check(
     `${label}: the collapse control's arrow follows the dock`,
-    state.chatToggle?.icon ===
+    state.collapseAction?.icon ===
       `lucide-panel-${side === "left" ? "left" : "right"}-close`,
-    `collapse icon ${JSON.stringify(state.chatToggle?.icon)} with the dock on the ${side}`,
+    `collapse icon ${JSON.stringify(state.collapseAction?.icon)} with the dock on the ${side}`,
   );
 }
 
@@ -574,6 +729,21 @@ async function main() {
     const file = path.join(artifactsDir, name);
     fs.writeFileSync(file, image.toPNG());
     return file;
+  };
+
+  // The dock's bottom action bar, 1:1: the side switch lives here and nowhere
+  // else, so this crop is the picture the neutral-rest claim is about.
+  const barCrop = (state) => {
+    const bar = state.actions?.box;
+    if (!bar) return undefined;
+    const x = Math.max(0, bar.left);
+    const y = Math.max(0, bar.top);
+    return {
+      x,
+      y,
+      width: Math.min(bar.width, state.viewport.width - x),
+      height: Math.min(bar.height, state.viewport.height - y),
+    };
   };
 
   // Vite re-optimises dependencies the first time a new import appears and
@@ -668,12 +838,16 @@ async function main() {
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
+    // The switch is checked for its resting look, not a hover: park the pointer
+    // in the window's leading corner before the first sample.
+    await parkPointer();
 
     at("shipped arrangement");
     const right = await settled();
     right.vaultName = vaultName;
     const { height: viewportHeight, width: viewportWidth } = right.viewport;
     const rightShot = await shot("chat-side-right.png");
+    const rightBarShot = await shot("chat-side-right-bar.png", barCrop(right));
     // A 1:1 crop of the shipped seam: the sheet's leading top corner, beside the
     // rail, on the arrangement every operator starts from.
     const rightSeamShot = await shot("chat-side-right-seam.png", {
@@ -691,15 +865,16 @@ async function main() {
       `shell classes ${JSON.stringify(right.shell?.className)}`,
     );
 
-    // 2 — one click, and the two panes trade places.
+    // 2 — one click on the dock's own switch, and the two panes trade places.
     at("swapped arrangement");
-    await click(".window-titlebar__side-switch");
+    await click('[data-testid="chat-side-switch"]');
     const left = await settled();
     left.vaultName = vaultName;
     const leftShot = await shot("chat-side-left.png");
+    const leftBarShot = await shot("chat-side-left-bar.png", barCrop(left));
     // The same seam, one column to the right and now between the dock and the
-    // sheet: the arrangement's two visual claims — the one hairline and the one
-    // rounded corner — in a single crop.
+    // sheet: the arrangement's two visual claims — the one hairline and the
+    // square corner above it — in a single crop.
     const leftSeamShot = await shot("chat-side-left-seam.png", {
       x: Math.max(0, left.tokens.track + left.tokens.chatTrack - 90),
       y: Math.max(0, left.tokens.titlebarHeight - 10),
@@ -746,9 +921,10 @@ async function main() {
     // the column and the seam back. With the dock on the leading side the mark is
     // at the window's bottom left, on the page beside the rail — the rail keeps
     // the corner itself, so the inset is measured from its trailing edge. The
-    // launcher is the way in; the titlebar control is still the second one.
+    // launcher is the only way in: the dock's own bar, and with it the side
+    // switch and the collapse control, is not rendered while the pane is gone.
     at("collapsed dock");
-    await click(".window-titlebar__chat-toggle");
+    await click('[data-testid="chat-collapse"]');
     const dockCollapsed = await settled();
     const collapsedShot = await shot("chat-side-left-collapsed.png");
     check(
@@ -788,8 +964,8 @@ async function main() {
       `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
     );
     check(
-      "left/collapsed dock: the night mark is black on the orange button",
-      dockCollapsed.launcher?.color === "rgb(0, 0, 0)",
+      "left/collapsed dock: the night mark is the white version on the orange button",
+      dockCollapsed.launcher?.color === "rgb(255, 255, 255)",
       `night ink ${JSON.stringify(dockCollapsed.launcher?.color)}`,
     );
     check(
@@ -807,9 +983,11 @@ async function main() {
       `label ${JSON.stringify(dockCollapsed.launcher?.label)}, title ${JSON.stringify(dockCollapsed.launcher?.title)}`,
     );
     check(
-      "left/collapsed dock: the titlebar control still names the way in",
-      dockCollapsed.chatToggle?.label === "Expand chat",
-      `titlebar control ${JSON.stringify(dockCollapsed.chatToggle?.label)}`,
+      "left/collapsed dock: the dock's own controls are not on screen",
+      dockCollapsed.sideSwitch?.found === false &&
+        dockCollapsed.collapseAction === null &&
+        dockCollapsed.actions === null,
+      `switch ${JSON.stringify(dockCollapsed.sideSwitch)}, collapse ${JSON.stringify(dockCollapsed.collapseAction)}, bar ${JSON.stringify(dockCollapsed.actions)}`,
     );
 
     // 3b — the resting and hover fills, read in night mode: the dark theme's
@@ -833,7 +1011,7 @@ async function main() {
     await settled();
 
     // 3c — the same mark in day mode: it keeps the dark gray the paper field
-    // needs rather than night's black, and the day button keeps the accent at rest.
+    // needs rather than night's white, and the day button keeps the accent at rest.
     at("collapsed launcher light theme");
     await click(".theme-mode-toggle");
     const dockCollapsedLight = await settled();
@@ -855,7 +1033,7 @@ async function main() {
     await click(".theme-mode-toggle");
     const dockCollapsedDarkAgain = await settled();
     check(
-      "left/collapsed dock: returning to night restores the lowered fill and black mark",
+      "left/collapsed dock: returning to night restores the lowered fill and white mark",
       dockCollapsedDarkAgain.launcher.background === dockCollapsed.launcher.background &&
         dockCollapsedDarkAgain.launcher.color === dockCollapsed.launcher.color,
       `night ${dockCollapsedDarkAgain.launcher.background}/${dockCollapsedDarkAgain.launcher.color} vs ${dockCollapsed.launcher.background}/${dockCollapsed.launcher.color}`,
@@ -872,20 +1050,40 @@ async function main() {
       `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}, launcher ${JSON.stringify(dockReopened.launcher)}`,
     );
 
-    // 4 — and with the rail gone the dock inherits the window's leading edge, so
-    // the two swaps do not fight over the first track.
+    // 4 — the rail collapses to its icon column; it does not leave the grid. The
+    // dock therefore does not inherit the window's leading edge: it keeps starting
+    // at the rail's trailing edge, which is now the collapsed track rather than
+    // 256px. Only the first track moves, so the panes must still abut and the sheet
+    // must still own the window's trailing edge. Measuring the dock against the
+    // window instead of the rail is exactly the old doctrine this protects.
     at("collapsed rail");
     await click(".nav-rail .nav-toggle");
     const railCollapsed = await settled();
+    // The composition that says what the thin rail is: the dock still open, the
+    // rail still painting its icons beside it. A rail that had left the grid would
+    // put the dock on the window's own edge, and this shot would show the page's
+    // icons crowding the window frame instead.
+    const railCollapsedShot = await shot("chat-side-left-rail-collapsed.png");
     check(
-      "left/collapsed rail: the rail leaves the grid",
-      railCollapsed.rail === null || railCollapsed.rail.display === "none",
+      "left/collapsed rail: the rail is still on screen",
+      Boolean(railCollapsed.rail) && railCollapsed.rail.display !== "none",
       `rail ${JSON.stringify(railCollapsed.rail)}`,
     );
     check(
-      "left/collapsed rail: the dock takes the window's leading edge",
-      railCollapsed.chat.box.left === 0,
-      `dock left ${railCollapsed.chat.box.left}px`,
+      "left/collapsed rail: the rail wears the collapsed track the token asks for",
+      railCollapsed.rail?.box.width === railCollapsed.tokens.collapsedTrack,
+      `rail width ${railCollapsed.rail?.box.width}px vs --shell-nav-width-collapsed ${railCollapsed.tokens.collapsedTrack}px`,
+    );
+    check(
+      "left/collapsed rail: the shell reports the collapsed rail",
+      railCollapsed.shell?.className?.includes("shell--nav-collapsed") === true,
+      `shell classes ${JSON.stringify(railCollapsed.shell?.className)}`,
+    );
+    check(
+      "left/collapsed rail: the dock starts at the rail's trailing edge",
+      railCollapsed.chat.box.left === railCollapsed.rail?.box.right &&
+        railCollapsed.chat.box.left === railCollapsed.tokens.collapsedTrack,
+      `dock left ${railCollapsed.chat.box.left}px vs rail right ${railCollapsed.rail?.box.right}px, collapsed track ${railCollapsed.tokens.collapsedTrack}px`,
     );
     check(
       "left/collapsed rail: the panes still abut",
@@ -903,18 +1101,23 @@ async function main() {
       `dock width ${railCollapsed.chat.box.width}px vs ${railCollapsed.tokens.chatTrack}px`,
     );
 
-    // 4b — both gone: the mark still follows the dock's column, and that column
-    // now starts at the window's own leading edge. This is the case a constant
-    // inset would get wrong: the rail's width has left the sum.
+    // 4b — both collapsed: the mark still follows the dock's column, and that
+    // column now starts at the collapsed rail's trailing edge — 56px — rather than
+    // at the window's own edge. The rail's width is still in the sum, only smaller;
+    // a constant inset would be wrong in both states.
     at("collapsed rail and dock");
-    await click(".window-titlebar__chat-toggle");
+    await click('[data-testid="chat-collapse"]');
     const railAndDockCollapsed = await settled();
     const bothCollapsedShot = await shot("chat-side-collapsed-both.png");
     check(
-      "left/collapsed rail + dock: the mark takes the window's leading edge",
+      "left/collapsed rail + dock: the mark sits one rem inside the collapsed rail",
       Boolean(railAndDockCollapsed.launcher) &&
         railAndDockCollapsed.launcher.box.left ===
-          railAndDockCollapsed.tokens.rootFontSize &&
+          railAndDockCollapsed.tokens.collapsedTrack +
+            railAndDockCollapsed.tokens.rootFontSize &&
+        railAndDockCollapsed.launcher.box.left ===
+          railAndDockCollapsed.rail?.box.right +
+            railAndDockCollapsed.tokens.rootFontSize &&
         railAndDockCollapsed.launcher.box.top >
           railAndDockCollapsed.viewport.height / 2 &&
         railAndDockCollapsed.viewport.height -
@@ -927,16 +1130,32 @@ async function main() {
     await click(".chat-launcher");
     const dockBackUnderCollapsedRail = await settled();
     check(
-      "reopening under a collapsed rail lands back on the leading geometry",
+      "reopening under a collapsed rail lands back on the rail-adjacent geometry",
       same(dockBackUnderCollapsedRail.chat.box, railCollapsed.chat.box) &&
         same(dockBackUnderCollapsedRail.main.box, railCollapsed.main.box) &&
         dockBackUnderCollapsedRail.launcher === null,
       `dock ${JSON.stringify(dockBackUnderCollapsedRail.chat.box)} vs ${JSON.stringify(railCollapsed.chat.box)}, sheet ${JSON.stringify(dockBackUnderCollapsedRail.main.box)} vs ${JSON.stringify(railCollapsed.main.box)}`,
     );
 
+    // 4c — restoring the rail is the same control that collapsed it, because the
+    // toggle stayed in the rail: the way back out is where the way in was. The
+    // expanded arrangement comes back — rail 256, dock at the rail's trailing
+    // edge, sheet on the window's trailing edge — with the rail's own box stated
+    // rather than only the panes it moved.
     at("restored rail");
-    await click(".window-titlebar__nav-toggle");
+    await click(".nav-rail .nav-toggle");
     const railRestored = await settled();
+    check(
+      "restoring the rail drops the collapsed class",
+      railRestored.shell?.className?.includes("shell--nav-collapsed") === false,
+      `shell classes ${JSON.stringify(railRestored.shell?.className)}`,
+    );
+    check(
+      "restoring the rail gives the dock back the expanded track",
+      railRestored.rail?.box.width === railRestored.tokens.track &&
+        railRestored.chat.box.left === railRestored.rail?.box.right,
+      `rail width ${railRestored.rail?.box.width}px vs ${railRestored.tokens.track}px, dock left ${railRestored.chat.box.left}px`,
+    );
     check(
       "restoring the rail lands back on the swapped geometry",
       same(railRestored.rail?.box, left.rail?.box) &&
@@ -945,10 +1164,11 @@ async function main() {
       `rail ${JSON.stringify(railRestored.rail?.box)}, sheet ${JSON.stringify(railRestored.main.box)}, dock ${JSON.stringify(railRestored.chat.box)}`,
     );
 
-    // 5 — the round trip: the same click again, and the shell is exactly where it
-    // started. Not "close enough": every box, the track list and the controls.
+    // 5 — the round trip: the same click on the dock's switch again, and the
+    // shell is exactly where it started. Not "close enough": every box, the
+    // track list and the controls.
     at("round trip");
-    await click(".window-titlebar__side-switch");
+    await click('[data-testid="chat-side-switch"]');
     const restored = await settled();
     restored.vaultName = vaultName;
     checkArrangement("restored", restored, "right");
@@ -974,8 +1194,8 @@ async function main() {
       "round trip: the switch points the other way again",
       restored.sideSwitch?.icon === right.sideSwitch?.icon &&
         restored.sideSwitch?.label === right.sideSwitch?.label &&
-        restored.chatToggle?.icon === right.chatToggle?.icon,
-      `switch ${restored.sideSwitch?.icon}/${restored.sideSwitch?.label}, collapse ${restored.chatToggle?.icon}`,
+        restored.collapseAction?.icon === right.collapseAction?.icon,
+      `switch ${restored.sideSwitch?.icon}/${restored.sideSwitch?.label}, collapse ${restored.collapseAction?.icon}`,
     );
     check(
       "round trip: the panes are painted where they started",
@@ -984,19 +1204,21 @@ async function main() {
     );
     const restoredShot = await shot("chat-side-restored.png");
 
-    // 6 — the dock's own way out: the trailing action of the bottom bar. It has
-    // to be in the bottom-right corner, wear the arrow that points out of the
-    // side the dock is on, and do exactly what the titlebar control does.
+    // 6 — the dock's own way out: the second-to-trailing action of the bottom bar,
+    // with the build number beyond it at the window's own bottom-right end. It is
+    // the only way out now that the titlebar carries no collapse control, and it
+    // wears the arrow that points out of the side the dock is on.
     at("bottom bar collapse");
     const barBox = restored.actions?.box;
     const collapseBox = restored.collapseAction?.box;
+    const badgeBox = restored.actions?.badge?.box;
     check(
       "restored: the bottom bar carries a collapse control",
       Boolean(restored.collapseAction),
       `collapse action ${JSON.stringify(restored.collapseAction)}`,
     );
     check(
-      "restored: the collapse control is the bar's trailing action",
+      "restored: the collapse control holds the dock bar's trailing end",
       Boolean(barBox && collapseBox) &&
         collapseBox.left > barBox.left + barBox.width / 2 &&
         collapseBox.right <= barBox.right &&
@@ -1004,6 +1226,14 @@ async function main() {
         collapseBox.top >= barBox.top &&
         collapseBox.bottom <= barBox.bottom,
       `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+    );
+    check(
+      "restored: the version badge lives in the rail's header, not the bar",
+      Boolean(restored.actions?.badge && badgeBox) &&
+        restored.actions.badge.inRail === true &&
+        restored.actions.badge.inHeader === true &&
+        restored.actions.badge.inBar === false,
+      `badge ${JSON.stringify(restored.actions?.badge)}`,
     );
     check(
       "restored: the bottom-bar collapse names its move and its side",
@@ -1041,12 +1271,28 @@ async function main() {
       `launcher ${JSON.stringify(barCollapsed.launcher)} in ${JSON.stringify(barCollapsed.viewport)}`,
     );
 
-    // 6b — the reported gesture: the side is swapped while the dock is already
-    // collapsed. There is no dock to watch, so the mark is the only thing on
-    // screen that can say which side the chat is on; it has to move with it, and
-    // move back, without the dock being reopened in between.
-    at("swapped side while collapsed");
-    await click(".window-titlebar__side-switch");
+    // 6b — the swap is only reachable from the open dock: collapsed, the pane's
+    // bar is not rendered and the launcher is the only control on screen. So the
+    // reported gesture becomes "open, swap, collapse": the mark has to follow the
+    // side the dock was swapped to, and the same three clicks have to carry it
+    // back. A swap attempted while collapsed would find no control at all, which
+    // is exactly what the reopened state asserts before it clicks.
+    at("swapped side, then collapsed");
+    await click(".chat-launcher");
+    const swappedOpenFromBar = await settled();
+    check(
+      "collapsed swap: reopening returns the bar's switch",
+      swappedOpenFromBar.launcher === null &&
+        swappedOpenFromBar.sideSwitch?.found === true &&
+        swappedOpenFromBar.sideSwitch?.pressed === null,
+      `launcher ${JSON.stringify(swappedOpenFromBar.launcher)}, switch ${JSON.stringify(swappedOpenFromBar.sideSwitch)}`,
+    );
+    await click('[data-testid="chat-side-switch"]');
+    const collapsedSwapOpen = await settled();
+    collapsedSwapOpen.vaultName = vaultName;
+    checkArrangement("collapsed swap/open", collapsedSwapOpen, "left");
+    checkControls("collapsed swap/open", collapsedSwapOpen, "left");
+    await click('[data-testid="chat-collapse"]');
     const collapsedSwapped = await settled();
     const collapsedSwappedShot = await shot("chat-side-collapsed-swapped.png");
     check(
@@ -1062,11 +1308,30 @@ async function main() {
     check(
       "collapsed swap: the dock is on the leading side and still collapsed",
       collapsedSwapped.chat === null &&
+        collapsedSwapped.sideSwitch?.found === false &&
         collapsedSwapped.shell?.className?.includes("shell--chat-left") === true,
-      `dock ${JSON.stringify(collapsedSwapped.chat)}, shell ${JSON.stringify(collapsedSwapped.shell?.className)}`,
+      `dock ${JSON.stringify(collapsedSwapped.chat)}, switch ${JSON.stringify(collapsedSwapped.sideSwitch)}, shell ${JSON.stringify(collapsedSwapped.shell?.className)}`,
     );
-    at("swapped back while collapsed");
-    await click(".window-titlebar__side-switch");
+    at("swapped back, then collapsed");
+    await click(".chat-launcher");
+    const collapsedSwapReopened = await settled();
+    check(
+      "collapsed swap back: the mark opened the dock back onto its switch",
+      collapsedSwapReopened.launcher === null &&
+        collapsedSwapReopened.sideSwitch?.found === true,
+      `launcher ${JSON.stringify(collapsedSwapReopened.launcher)}, switch ${JSON.stringify(collapsedSwapReopened.sideSwitch)}`,
+    );
+    await click('[data-testid="chat-side-switch"]');
+    const collapsedSwapBackOpen = await settled();
+    collapsedSwapBackOpen.vaultName = vaultName;
+    checkArrangement("collapsed swap back/open", collapsedSwapBackOpen, "right");
+    check(
+      "collapsed swap back: the open dock swapped to the trailing side",
+      collapsedSwapBackOpen.shell?.className?.includes("shell--chat-right") === true &&
+        collapsedSwapBackOpen.sideSwitch?.label === "Move chat to the left of the page",
+      `shell ${JSON.stringify(collapsedSwapBackOpen.shell?.className)}, switch ${JSON.stringify(collapsedSwapBackOpen.sideSwitch?.label)}`,
+    );
+    await click('[data-testid="chat-collapse"]');
     const collapsedSwappedBack = await settled();
     check(
       "collapsed swap back: the mark returns to the trailing corner",
@@ -1107,17 +1372,22 @@ async function main() {
       railRestored,
       restored,
       barCollapsed,
+      collapsedSwapOpen,
       collapsedSwapped,
+      collapsedSwapBackOpen,
       collapsedSwappedBack,
       barReopened,
       screenshots: [
         rightShot,
+        rightBarShot,
         rightSeamShot,
         leftShot,
+        leftBarShot,
         leftSeamShot,
         collapsedShot,
         hoverShot,
         lightShot,
+        railCollapsedShot,
         bothCollapsedShot,
         restoredShot,
         barCollapsedShot,

@@ -5,11 +5,15 @@ import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
 import { loadMapState } from "./map/persist.ts";
 import {
-  isCurrentPeriod,
   periodBounds,
   previousPeriod,
 } from "./period.ts";
-import { getReview } from "./reviews.ts";
+import {
+  defaultReviewAvailability,
+  openReviewPeriod,
+  reviewAvailabilityFromUnknown,
+} from "./review-availability.ts";
+import { getReview, getReviewNotebook } from "./reviews.ts";
 import { vaultPaths } from "./paths.ts";
 import type {
   DailyNote,
@@ -19,20 +23,42 @@ import type {
   MapEvent,
   PeriodPack,
   Result,
+  ReviewAvailability,
   ReviewCadence,
   ReviewRecord,
   Task,
   WeekStartDay,
 } from "./types.ts";
 
-async function readSettings(rootPath: string): Promise<WeekStartDay> {
+type PeriodPackSettings = {
+  weekStartDay: WeekStartDay;
+  availability: ReviewAvailability;
+};
+
+/**
+ * The pack needs both settings the review windows depend on: the week start
+ * (which fixes a weekly period's bounds) and the windows themselves (which
+ * decide whether this period is the "current" one for task-scope rules).
+ * Reading is tolerant, like `reviews.ts`: a settings file mid-repair still
+ * answers with the shipped defaults rather than failing the pack.
+ */
+async function readSettings(rootPath: string): Promise<PeriodPackSettings> {
   const paths = vaultPaths(rootPath);
   try {
     const raw = await fs.readFile(paths.settingsJson, "utf8");
-    const parsed = JSON.parse(raw) as { weekStartDay?: string };
-    return parsed.weekStartDay === "sunday" ? "sunday" : "monday";
+    const parsed = JSON.parse(raw) as {
+      weekStartDay?: string;
+      reviewAvailability?: unknown;
+    };
+    return {
+      weekStartDay: parsed.weekStartDay === "sunday" ? "sunday" : "monday",
+      availability: reviewAvailabilityFromUnknown(parsed.reviewAvailability),
+    };
   } catch {
-    return "monday";
+    return {
+      weekStartDay: "monday",
+      availability: defaultReviewAvailability(),
+    };
   }
 }
 
@@ -78,13 +104,21 @@ export async function getPeriodPack(
   rootPath: string,
   input: { cadence: ReviewCadence; period: string; scope: "overall" | string },
 ): Promise<Result<PeriodPack>> {
-  const weekStartDay = await readSettings(rootPath);
+  const settings = await readSettings(rootPath);
+  const weekStartDay = settings.weekStartDay;
   const bounds = periodBounds(input.cadence, input.period, weekStartDay);
   if (!bounds.ok) return { ok: false, error: bounds.error };
 
   const { start, end } = bounds.value;
   const isOverall = input.scope === "overall";
-  const isCurrent = isCurrentPeriod(input.cadence, input.period, weekStartDay);
+  // "Current" is the OPEN review period, not the calendar's: before a weekly
+  // review's Sunday-morning window the current review is still last week's, so
+  // the pack's current-period task rules follow the review the operator is
+  // actually writing. Reads stay ungated — a period whose window has not opened
+  // still packs, it just is not the current one.
+  const isCurrent =
+    input.period ===
+    openReviewPeriod(input.cadence, weekStartDay, settings.availability);
 
   const missingSources: string[] = [];
 
@@ -220,6 +254,13 @@ export async function getPeriodPack(
     }
   }
 
+  // --- notebook pages (summary) ---
+  let reviewPages: import("./types.ts").ReviewPageSummary[] | undefined;
+  {
+    const notebookRes = await getReviewNotebook(rootPath, input.cadence, input.period);
+    if (notebookRes.ok) reviewPages = notebookRes.value.pages;
+  }
+
   // --- domainSections (overall only) ---
   let domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }> = [];
   if (isOverall) {
@@ -292,6 +333,7 @@ export async function getPeriodPack(
       liveDays,
       events,
       previousReview,
+      reviewPages,
       dailyNotes,
       domainSections,
       missingSources,

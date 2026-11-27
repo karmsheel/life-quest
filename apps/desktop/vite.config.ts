@@ -1,12 +1,55 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * The splash's four lockups, injected into `index.html` at build time.
+ *
+ * The splash paints before the app bundle, so it cannot import React or the
+ * logo components — and a baked-in colour cannot follow the theme. The four
+ * SVGs therefore go in as markup (hidden by `splash.css` until `data-logo`
+ * names one), and the files are read from the same `src/assets/brand/logo/`
+ * directory the rail draws (`LifeQuestLogo` imports them as raw text). One
+ * source of truth for the art; no hand-copied paths in `index.html`.
+ */
+const SPLASH_LOGOS = [
+  ["modern", "01-modern"],
+  ["athletic", "02-athletic"],
+  ["classic", "03-classic"],
+  ["minimal", "04-minimal"],
+] as const;
+
+function splashLogos(): Plugin {
+  const logoDir = path.resolve(__dirname, "src/assets/brand/logo");
+  return {
+    name: "lifequest-splash-logo",
+    transformIndexHtml(html) {
+      if (!html.includes("<!-- splash-logo -->")) return html;
+      const variants = SPLASH_LOGOS.map(([id, file]) => {
+        const svg = fs
+          .readFileSync(path.join(logoDir, `${file}.svg`), "utf8")
+          .trim()
+          // The splash owns the accessible name; the inline copy is the art.
+          .replace(
+            "<svg ",
+            '<svg class="splash__logo-svg" aria-hidden="true" focusable="false" ',
+          );
+        return `<span class="splash__logo-variant" data-splash-logo="${id}">${svg}</span>`;
+      }).join("\n        ");
+      return html.replace(
+        "<!-- splash-logo -->",
+        `<div class="splash__logo" role="img" aria-label="LifeQuest">\n        ${variants}\n      </div>`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), splashLogos()],
   root: ".",
   base: "./",
   server: {

@@ -5,103 +5,107 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
 } from "react";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import {
   Archive,
   ArrowLeft,
+  ArrowLeftRight,
   ArrowUp,
-  Check,
-  ChevronRight,
-  Copy,
   Eye,
   EyeOff,
-  History,
-  ImagePlus,
+  Inbox,
+  Keyboard,
+  Link2,
   MessageCircleQuestion,
   MessageSquare,
+  MessageSquareShare,
   MoreVertical,
   PanelLeftClose,
   PanelRightClose,
+  Paperclip,
   Pencil,
   Pin,
   PinOff,
-  Radio,
+  Plus,
   SquarePen,
+  Type,
   X,
 } from "lucide-react";
 import {
   matchingChatQuestions,
+  unlockedAreas,
   type ChatQuestion,
   type DomainRecord,
   type SignalRecord,
 } from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
-import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
+import { useComposerSendKey } from "@/lib/composer-send";
 import { api } from "@/lib/ipc";
-import { pageLabelFor, readPageContext } from "@/lib/page-context";
+import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
-import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
-import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
+import {
+  linkHost,
+  parseLink,
+  signalStampWhen,
+  signalVisible,
+} from "@/lib/signal-chain";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
-import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
+import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
+import {
+  ComposerModelControls,
+  shortModelLabel,
+} from "@/components/hermes/ComposerModelControls";
+import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { PhoneDraftStrip } from "@/components/hermes/PhoneDraftStrip";
-import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
+import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
+import { ChatDisplayPage } from "@/components/hermes/ChatDisplayPage";
+import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { ChatFocusToggle } from "@/components/shell/ChatFocusToggle";
 import { useConfirm } from "@/components/ui/useConfirm";
-import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
+import { useChatDock } from "@/state/ChatDockProvider";
+import { useOptionalChatDisplay } from "@/state/ChatDisplayProvider";
+import { useOptionalCompanion } from "@/state/CompanionProvider";
+import { AgentSwitcher, useAgentPicker } from "@/components/hermes/AgentSwitcher";
+import {
+  ChatSessionsProvider,
+  useChatSessions,
+  useChatSessionsOptional,
+  type ChatAttachment,
+  type ChatReceipt,
+} from "@/state/ChatSessionsProvider";
+import { normalizeCapabilities } from "@/lib/turn-timeline";
+import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
+import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
+import {
+  onPhoneQueueChanged,
+  readPhoneQueue,
+} from "@/lib/phone-queue";
+import { SESSION_ICON } from "@/lib/session-icon";
+import { platformMarkFor } from "@/lib/platform-mark";
 import type {
-  ChatStreamEvent,
   CompanionModelCatalog,
   CompanionRuntimeOverride,
-  HermesSession,
   PhoneDraftView,
 } from "@/vite-env";
 import {
   formatMessageWhen,
-  formatSessionWhen,
+  isContinuableSession,
   sessionLabel,
-  type FocusedCardContext,
+  sessionSourceLabel,
 } from "../../../electron/companion-client.ts";
 
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** When the message was sent or received, as epoch milliseconds. */
-  at?: number;
-  /** The receipt this turn carried, as the thread remembers it after sending. */
-  receipt?: { name: string; size: number };
-};
-
 /**
- * The dock's card, flattened for the turn.
- *
- * The pin travels whole through the dock because the companion's tools address a
- * card by the pin's own ids; this is the same fact in the shape the instructions
- * are built from. A field the pin does not have is left off rather than filled
- * in: a system card has no `viewId`, and saying it did would invite a `save_view`
- * that cannot work.
+ * Bytes as the chip says them: 287 B, 41 KB, 1.2 MB.
  */
-function focusedCardOf(card: ChatCardContext): FocusedCardContext {
-  const pin = card.pin;
-  const shared = {
-    label: card.label,
-    pinId: pin.id,
-    boardSlug: card.boardSlug,
-  };
-  if (pin.kind === "view") {
-    return { ...shared, kind: "view", domainSlug: pin.domainSlug, viewId: pin.viewId };
-  }
-  if (pin.kind === "page") {
-    return { ...shared, kind: "page", domainSlug: pin.domainSlug, pageId: pin.pageId };
-  }
-  return { ...shared, kind: "system", domainSlug: null, system: pin.system };
-}
-
-/** Bytes as the chip says them: 287 B, 41 KB, 1.2 MB. */
 function formatReceiptSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -125,7 +129,7 @@ function starterScopeLabel(
   }
   if (question.scope === "domain") {
     const domain = domains.find((row) => row.slug === question.value);
-    return domain ? domain.meta.name : (question.value ?? "Domain");
+    return domain ? domain.meta.name : (question.value ?? "Area");
   }
   return `${pageLabelFor(question.value ?? "/")} page`;
 }
@@ -135,57 +139,6 @@ type ChatPanelProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
-/**
- * The composer's model / thinking pick, **per chat**. Hermes Desktop keeps the
- * choice on the chat's own view state (`view.$model`, `view.$reasoningEffort`)
- * rather than on the client, so the pins are keyed by session id here too: a
- * chat comes back on the model it was left on, and a new chat opens unpinned.
- *
- * The turn still carries the pin — that is the transport's only path. The
- * gateway's own `POST /api/sessions/{id}/model` lock is write-only (no unpin
- * route, and `model_config` never crosses the client API), and Desktop does not
- * call it either.
- */
-const RUNTIME_PINS_KEY = "lifequest.companion.runtimePins";
-
-/** A pin with anything that is not a usable string dropped. */
-function cleanRuntimePick(value: unknown): CompanionRuntimeOverride {
-  const source = (value ?? {}) as Record<string, unknown>;
-  const pick: CompanionRuntimeOverride = {};
-  for (const key of ["model", "provider", "reasoningEffort"] as const) {
-    const entry = source[key];
-    if (typeof entry === "string" && entry.trim()) pick[key] = entry.trim();
-  }
-  return pick;
-}
-
-/** Every chat's pin, keyed by session id; an empty pin is not remembered. */
-function readStoredRuntimePins(): Record<string, CompanionRuntimeOverride> {
-  try {
-    const raw = window.localStorage.getItem(RUNTIME_PINS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const pins: Record<string, CompanionRuntimeOverride> = {};
-    for (const [sessionId, value] of Object.entries(parsed ?? {})) {
-      if (!sessionId) continue;
-      const pick = cleanRuntimePick(value);
-      if (Object.keys(pick).length > 0) pins[sessionId] = pick;
-    }
-    return pins;
-  } catch {
-    return {};
-  }
-}
-
-function writeStoredRuntimePins(pins: Record<string, CompanionRuntimeOverride>): void {
-  try {
-    window.localStorage.setItem(RUNTIME_PINS_KEY, JSON.stringify(pins));
-  } catch {
-    // A storage refusal costs the pins their memory, not the current chat.
-  }
-}
-
 /** One shared empty pin, so an unpinned chat keeps a stable identity. */
 const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 
@@ -193,10 +146,12 @@ const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 const COMPOSER_MAX_PANEL_RATIO = 0.5;
 /** Floor for that cap so a very short panel still shows a usable field. */
 const COMPOSER_MIN_VISIBLE_PX = 72;
-
-function nextId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
+/**
+ * How near the transcript's end still counts as reading the end. A wheel tick or
+ * a dragged scrollbar can leave a pixel or two; growth inside that slack is not
+ * the operator having scrolled away.
+ */
+const TRANSCRIPT_END_SLACK_PX = 8;
 
 /**
  * Whether the caret sits in a field somebody is typing in — ours or another
@@ -211,178 +166,394 @@ function isTypingTarget(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
-function sessionTimeValue(lastActive: number | null): string | undefined {
-  if (lastActive == null || !Number.isFinite(lastActive)) return undefined;
-  const date = new Date(lastActive * 1000);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toISOString();
-}
-
-type PhoneBridge = {
-  queue: () => Promise<{ drafts: PhoneDraftView[]; count: number }>;
-  onChanged: (cb: () => void) => () => void;
-};
-
 /**
- * The phone bridge, only when it is the real one.
+ * The dock, with the chats it shares with the sidebar and the tabs.
  *
- * Harness pages stub `window.lifequest` with a Proxy whose fallback answers any
- * unknown name with a function returning a Promise. Calling `api().phone.queue`
- * there is a TypeError, and calling the "unsubscribe" a Promise in a cleanup is
- * the same crash on unmount. The panel must treat a missing bridge as "no phone
- * drafts", not as a broken app — the same rule the rest of the harness relies
- * on. In the product the bridge is always present.
+ * The state lives in `ChatSessionsProvider` because a chat outlives this panel:
+ * the left sidebar lists it, the tab strip names it, and a parallel turn keeps
+ * streaming while the operator is somewhere else. A harness that mounts the
+ * panel on its own gets a provider of its own, so the component still works
+ * without the shell around it.
  */
-function phoneBridge(): PhoneBridge | null {
-  const bridge = (api() as unknown as { phone?: Partial<PhoneBridge> }).phone;
-  if (
-    !bridge ||
-    typeof bridge.queue !== "function" ||
-    typeof bridge.onChanged !== "function"
-  ) {
-    return null;
-  }
-  return bridge as PhoneBridge;
+export function ChatPanel(props: ChatPanelProps) {
+  const mounted = useChatSessionsOptional();
+  if (mounted) return <ChatPanelView {...props} />;
+  return (
+    <ChatSessionsProvider>
+      <ChatPanelView {...props} />
+    </ChatSessionsProvider>
+  );
 }
 
-/** Register a listener only when the bridge returns a real unsubscribe. */
-function subscribe(register: () => unknown): (() => void) | null {
-  try {
-    const off = register();
-    return typeof off === "function" ? (off as () => void) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
+function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
-  const domainName = activeDomain?.meta.name ?? "Overview";
-  const { snapshot, refresh, reloadGeneration, lens } = useVault();
-  // The board the operator is on, and its page lock. The turn carries both so
-  // the companion knows whether a dashboard change lands or files a Decision —
-  // and it is the same board/file HomePage reads, not a second guess at it.
-  const { slug: boardSlug, locked: boardLocked } = useDashboardBoard();
+  const domainName = activeDomain?.meta.name ?? "Life";
+  const { snapshot, reloadGeneration, lens, refresh } = useVault();
+  /**
+   * The live-data revision: every write the partner surfaces can make the chip
+   * offer appear (installing the Finance kit writes its store) arrives as one
+   * bump, so the kit read below is re-run without a relaunch.
+   */
+  const liveData = useLiveData();
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedSession,
     requestedAutomationContext,
+    requestedSessionIcon,
     clearRequestedSession,
-    contextCard,
-    setContextCard,
-    setLivePinId,
+    contextCards,
+    removeCardContext,
     pageContext,
     setPageContextOn,
     // The dock's side is the shell's business — it is the shell that swaps the
     // two panes — but the bottom bar's collapse arrow points out of the side it
     // collapses toward, so it reads the side too.
     side: dockSide,
+    // The two-pane move, in the bottom bar beside the collapse control: the
+    // titlebar no longer carries a copy of it.
+    swapSide,
+    // What the pane is showing. The dock's own bottom bar switches it, so the
+    // store sits above the panel whose bar reads it.
+    surface: view,
+    setSurface: setView,
   } = useChatDock();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessions, setSessions] = useState<HermesSession[]>([]);
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
+  const chat = useChatSessions();
+  // Which key sends: the operator's choice on Settings → Composer, read here so
+  // the field's own key handler answers to the same preference the page shows.
+  const { sendKey } = useComposerSendKey();
+  // What this dock calls the agent that answers. The setup screen and Settings
+  // choose it; here it is only a name.
+  const companionContext = useOptionalCompanion();
+  const knownHarnesses = Array.isArray(companionContext?.harnesses)
+    ? companionContext.harnesses
+    : null;
+  const companionName =
+    knownHarnesses?.find((entry) => entry.active)?.name ?? "Hermes";
   /**
-   * The phone's queue, refreshed by the two signals that can change it: a vault
-   * write (the companion posting or dismissing one) and the door's own
-   * `phone:changed` (a draft arriving while the dock is open).
+   * What the active companion can show in a work log. Absent on an old stub or
+   * before the list arrives, and absent means "the full experience": the dock
+   * must not hide evidence it was given just because a descriptor is missing.
    */
-  const [phoneDrafts, setPhoneDrafts] = useState<PhoneDraftView[]>([]);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const capabilities = normalizeCapabilities(
+    knownHarnesses?.find((entry) => entry.active)?.capabilities,
+  );
+  /*
+    Which picker recipe the dock wears, read again here because the roster axis
+    decides *where* the switcher mounts, not only how it looks: `menu` keeps it
+    as the composer's own child (the stylesheet floats it in the gutter), and
+    `inline` puts it in the leading cluster of the dock's control row, where
+    switching is one click. The swim lane is the panel's because the panel owns
+    the composer's markup; the switcher keeps its own copy of the same hook for
+    the pixels it draws. A harness page with no ThemeProvider gets the shipped
+    default from both reads, so the two can never disagree.
+  */
+  const agentPicker = useAgentPicker();
+  const inlineAgentPicker = agentPicker.recipe.roster === "inline";
+  const sessions = chat.sessions;
+  const sessionId = chat.activeId;
+  /*
+    The strip's tabs, as the store draws them: the pinned band first, then the
+    open unpinned tabs. `tabIds` already comes in that order — a pinned chat is a
+    tab even on a launch where it was never opened — but the two bands are put
+    back together here so the strip never depends on the provider's ordering
+    being the only thing keeping a square in front.
+  */
+  const tabIds = chat.tabIds;
+  const pinnedTabIds = chat.pinnedTabIds;
+  const orderedTabIds = useMemo(() => {
+    const pinned = new Set(pinnedTabIds);
+    return [...pinnedTabIds, ...tabIds.filter((id) => !pinned.has(id))];
+  }, [tabIds, pinnedTabIds]);
+  const run = chat.runOf(sessionId);
+  const turns = run.turns;
+  const sending = run.sending;
+  const runId = run.runId;
+  const approval = run.approval;
+  const error = run.error ?? chat.listError;
+  const draft = sessionId ? chat.draftOf(sessionId) : "";
+  const receipt = chat.receiptOf(sessionId);
+  /** The files waiting to ride this chat's next turn. */
+  const attachments = sessionId ? chat.attachmentsOf(sessionId) : [];
+  /** The messages lined up behind the turn that is running now. */
+  const queued = sessionId ? chat.queuedMessages(sessionId) : [];
+  const requestIdRef = useRef(requestedSessionId);
+  requestIdRef.current = requestedSessionId;
+  /** The store as of this render, for effects that must not re-bind per delta. */
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
   /**
-   * The receipt waiting to ride the next turn. Main keeps the original and the
-   * copy it built for the model, so what lives here is a name to show and the
-   * path to name on the turn — the bytes never come back through the bridge.
+   * The general attachment picker: the plus at the composer's bottom left. It
+   * takes any media or file the operator picks — a picture, a clip, a
+   * recording, a document — because a prompt is not only words and the
+   * composer used to be able to carry nothing else.
+   *
+   * It is the composer's ONE file control. A picture's chip offers "use as
+   * receipt" when the Finance kit is installed, so the receipt does not need a
+   * second picker beside this one: the gesture is the same attach, and the
+   * meaning is chosen afterwards, on the chip, where the operator can see the
+   * picture they mean.
    */
-  const [receipt, setReceipt] = useState<{
-    relPath: string;
-    name: string;
-    size: number;
-    previewUrl: string;
-  } | null>(null);
-  const receiptInputRef = useRef<HTMLInputElement | null>(null);
-  /** The live thumbnail URL, held in a ref so it can always be released. */
-  const receiptPreviewRef = useRef<string | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Whether the receipt store can take a picture right now: the Finance kit
+   * installed and the Financial area live.
+   *
+   * The predicate is main's own (`receipt:ready`, backed by
+   * `isReceiptStoreReady`), not the kit registry the composer could read
+   * itself: the registry still lists a kit whose Financial area was archived,
+   * and that vault has no store the ledger may cite. Asking main keeps the
+   * chip's offer and the press on the same answer.
+   *
+   * Read once per vault open, after every live-data write (installing the kit,
+   * archiving or opening the area all announce one) and on a reload, so the
+   * offer changes without a relaunch.
+   */
+  const [receiptReady, setReceiptReady] = useState(false);
+  /**
+   * The attachment whose promotion into the receipt slot is in flight, or null.
+   * The receipt slot is one picture deep and the promotion stores a file before
+   * it holds it, so a second press must wait rather than race the first.
+   */
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  /** The same guard as a ref: two presses in one tick must not both start. */
+  const promotingRef = useRef(false);
   /**
    * The bubble whose text was last copied, and whether the clipboard took it.
    * `ok: false` is shown for a moment too: a copy control that silently does
    * nothing is worse than one that admits it failed.
    */
   const [copied, setCopied] = useState<{ id: string; ok: boolean } | null>(null);
+  /**
+   * One of the onboarding card's writes is in flight. It disables the card's
+   * buttons so a double click cannot start the interview twice or confirm a
+   * batch that is already being applied.
+   */
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Replace (or drop) the pending receipt, releasing the old thumbnail. */
-  const putReceipt = useCallback(
-    (next: { relPath: string; name: string; size: number; previewUrl: string } | null) => {
-      if (receiptPreviewRef.current) {
-        URL.revokeObjectURL(receiptPreviewRef.current);
-        receiptPreviewRef.current = null;
-      }
-      if (next) receiptPreviewRef.current = next.previewUrl;
-      setReceipt(next);
+  const setDraft = useCallback(
+    (text: string) => {
+      if (sessionId) chat.setDraftFor(sessionId, text);
     },
-    [],
+    [chat, sessionId],
+  );
+
+  /**
+   * The phone's queue, refreshed by the two signals that can change it: a vault
+   * write (the companion posting or dismissing one) and the door's own
+   * `phone:changed` (a draft arriving while the dock is open).
+   */
+  const [phoneDrafts, setPhoneDrafts] = useState<PhoneDraftView[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    const refresh = () => {
+      void readPhoneQueue().then((drafts) => {
+        if (live) setPhoneDrafts(drafts);
+      });
+    };
+    refresh();
+    const offData = api().onVaultDataChanged(() => refresh());
+    const offPhone = onPhoneQueueChanged(refresh);
+    return () => {
+      live = false;
+      offData();
+      offPhone();
+    };
+  }, []);
+
+  /**
+   * Put a draft in front of the companion without posting anything. The
+   * operator sends (or edits) the confirmation; the companion's tool is still
+   * the only thing that writes a transaction.
+   */
+  const askPhoneDraft = useCallback(
+    (phoneDraft: PhoneDraftView) => {
+      setDraft(
+        `Post the phone draft: “${phoneDraft.text}” (${phoneDraft.captureDate})?`,
+      );
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [setDraft],
+  );
+
+  /** Replace (or drop) the receipt waiting on the open chat. */
+  const putReceipt = useCallback(
+    (next: ChatReceipt | null) => {
+      if (sessionId) chat.setReceiptFor(sessionId, next);
+    },
+    [chat, sessionId],
   );
 
   useEffect(() => {
     return () => {
-      if (receiptPreviewRef.current) URL.revokeObjectURL(receiptPreviewRef.current);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
 
   /**
+   * Whether the receipt store can take a picture right now.
+   *
+   * Read through main, which owns the predicate (kit installed AND Financial
+   * area live). A vault where either half is missing has no finance file store
+   * to cite, so the chip's offer is absent rather than a dead-end press that
+   * only answers "Install the Finance kit first".
+   *
+   * The store can appear while the dock stays open: the kit is installed from
+   * the Dashboard, the Data rail or a starter page, and the area can be opened
+   * or archived from Settings. Every such write announces itself on the live
+   * revision, so the offer follows without a relaunch.
+   */
+  useEffect(() => {
+    let live = true;
+    void api()
+      .receiptReady()
+      .then((result) => {
+        if (!live) return;
+        setReceiptReady(result.ok && result.value === true);
+      })
+      .catch(() => {
+        if (live) setReceiptReady(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [snapshot?.lifequest.id, reloadGeneration, liveData]);
+
+  /**
    * Copy one bubble's text as the operator sees it. A receipt-only turn has no
    * typed text, so the attached file's name is the content there.
    */
-  async function copyMessage(m: ChatMessage) {
-    const ok = await copyText(m.content || m.receipt?.name || "");
+  async function copyMessage(id: string, content: string) {
+    const ok = await copyText(content);
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    setCopied({ id: m.id, ok });
+    setCopied({ id, ok });
     copyTimerRef.current = setTimeout(() => setCopied(null), 1600);
   }
 
   /**
-   * Take one image from the composer. Main stores the original and answers with
-   * the path the turn has to cite — the bytes are never handed back, so the
-   * thumbnail is made here from the operator's own file.
+   * Whether one attachment's chip may offer to become this turn's receipt.
    *
-   * One receipt at a time: a second attach replaces the first, and a refusal
-   * from main leaves the previous one exactly where it was.
+   * A receipt is one JPEG or PNG — the two formats the receipts store sniffs
+   * and the model providers decode — and it needs a picture for its chip, so
+   * the preview URL is part of the test. Readiness is main's answer to
+   * `receipt:ready` — the Finance kit installed AND the Financial area live —
+   * because that is exactly what the press will find: an archived area keeps
+   * its installed-kit record but has no store the ledger may cite. Without
+   * readiness there is nothing to cite, so no offer is drawn.
+   *
+   * What this cannot see is the picture's pixel canvas: main refuses a canvas
+   * over 12,000 px a side or 40 MP before decoding. Such a picture is one of a
+   * kind the operator rarely attaches, and the refusal carries its own reason,
+   * so the chip does not guess at dimensions it was never sent.
    */
-  async function attachReceipt(file: File) {
-    setError(null);
+  function receiptCandidate(attachment: ChatAttachment): boolean {
+    return (
+      receiptReady &&
+      attachment.kind === "image" &&
+      Boolean(attachment.previewUrl) &&
+      (attachment.mime === "image/jpeg" || attachment.mime === "image/png")
+    );
+  }
+
+  /**
+   * Move one waiting picture into the receipt the next turn carries.
+   *
+   * The plus already stored the bytes and main holds them by id, so this press
+   * only names the attachment: main reads the original, stores the finance copy
+   * the ledger will cite, builds the model copy, and moves the picture from the
+   * attachment slot to the receipt slot. The chip follows it — out of the
+   * attachments row and into the receipt's own chip — because a turn carries
+   * one receipt and it is no longer a general file.
+   *
+   * A refusal leaves both where they were: the attachment keeps its chip, and
+   * the previous receipt (if any) keeps its slot.
+   */
+  async function useAsReceipt(attachment: ChatAttachment) {
+    const previewUrl = attachment.previewUrl;
+    // A turn that is already sending resolves the attachment store in main: a
+    // promotion racing it would either take the id the turn is about to name or
+    // be refused after the turn cleared the chip. The press waits for the turn
+    // to settle (and the chip is drawn disabled while it runs).
+    if (!sessionId || continuable || sending || promotingRef.current || !previewUrl) return;
+    chat.reportError(null);
+    promotingRef.current = true;
+    setPromotingId(attachment.id);
+    try {
+      const result = await api().receiptPromote({ id: attachment.id });
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      chat.promoteAttachmentFor(sessionId, attachment.id, {
+        relPath: result.value.relPath,
+        name: result.value.name,
+        size: result.value.size,
+        previewUrl,
+      });
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not use that picture as a receipt",
+      );
+    } finally {
+      promotingRef.current = false;
+      setPromotingId(null);
+    }
+  }
+
+  /**
+   * Take one file into the composer as an attachment.
+   *
+   * Main stores the original and answers with what the turn has to name; the
+   * bytes never come back to the renderer, so the chip's picture is made here
+   * from the operator's own file.
+   *
+   * A refusal leaves the attachments exactly as they were: an attach that
+   * failed must not take the files that worked with it.
+   */
+  async function attachFile(file: File) {
+    if (!sessionId) return;
+    // A dropped or pasted file on a continued chat is refused here, because the
+    // WebSocket door carries the prompt only.
+    if (continuable) {
+      chat.reportError(continuedFileReason ?? null);
+      return;
+    }
+    chat.reportError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const result = await api().receiptAttach({
+      const result = await api().attachmentAttach({
         bytes,
         mime: file.type,
         name: file.name,
       });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
-      putReceipt({
-        relPath: result.value.relPath,
+      chat.addAttachmentFor(sessionId, {
+        id: result.value.id,
+        kind: result.value.kind,
         name: result.value.name,
         size: result.value.size,
-        previewUrl: URL.createObjectURL(file),
+        mime: result.value.mime,
+        relPath: result.value.relPath,
+        ...(result.value.kind === "image"
+          ? { previewUrl: URL.createObjectURL(file) }
+          : {}),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not attach that receipt");
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not attach that file",
+      );
     }
   }
 
-  /** The first image in a drop or a paste, if the gesture carried one. */
-  function imageFrom(files: FileList | null): File | null {
-    if (!files) return null;
-    for (const file of Array.from(files)) {
-      if (file.type === "image/png" || file.type === "image/jpeg") return file;
-    }
-    return null;
+  /** Take one attachment off the composer. */
+  function removeAttachment(id: string) {
+    if (!sessionId) return;
+    chat.removeAttachmentFor(sessionId, id);
   }
   /**
    * The composer's model and thinking pills. The catalog is the gateway's own
@@ -391,67 +562,90 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * thread comes back on the model it was left on.
    */
   const [modelCatalog, setModelCatalog] = useState<CompanionModelCatalog | null>(null);
-  const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(() =>
-    readStoredRuntimePins(),
+  const runtimePick = (sessionId && chat.runtimePins[sessionId]) || NO_RUNTIME_PICK;
+  /*
+    WHICH MODEL THE NEXT TURN WILL ACTUALLY RUN ON.
+
+    Not the showcase answer: Hermes serves an existing chat on the model its
+    gateway session was created with and ignores the model a turn names. So the
+    pill, this notice and the repair all read the chat's own model first; the
+    profile default is only what a brand-new chat starts on.
+  */
+  const activeChatSession = sessionId
+    ? (chat.sessions.find((session) => session.id === sessionId) ?? null)
+    : null;
+  const activeChatModel =
+    (runtimePick.model ?? "").trim() || (activeChatSession?.model ?? "").trim();
+  const catalogOffersModel = Boolean(
+    modelCatalog &&
+      activeChatModel &&
+      modelCatalog.providers.some((provider) =>
+        provider.models.some((model) => model.id === activeChatModel),
+      ),
   );
-  const runtimePick = (sessionId && runtimePins[sessionId]) || NO_RUNTIME_PICK;
+  /** The reported fault: an old chat locked to a model this profile retired. */
+  const chatModelRetired = Boolean(
+    modelCatalog && sessionId && activeChatModel && !catalogOffersModel,
+  );
   /**
-   * Which of the dock's three surfaces is up. The list is a real page now — with
-   * twenty chats an 11rem strip was not navigable — and a thread replaces it
-   * once a chat is opened. The chain is the third, swapped in from the bottom
-   * bar: the same vault records the Life-Chain page reads, so the two surfaces
-   * are one chain seen twice, not two chains.
+   * The thread header's rename field. The list is not this dock's surface any
+   * more, so this is the only rename field it carries.
    */
-  const [view, setView] = useState<"list" | "thread" | "chain">("thread");
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   /**
-   * The list's own row UI: the row the 3-dot menu is open on, and the row being
-   * renamed in place. One row at a time, the same rule the chain's rows follow.
-   * `renameDraft` is shared with the thread header's rename because the two
-   * fields never coexist — one lives in the list, the other in the thread.
+   * A rename asked for from a tab's context menu. The tab may not be the one in
+   * front, so the field cannot open until that chat has been activated; this
+   * says which chat the field is owed to. It is consumed (or dropped) by the
+   * session-change effect below, which is also what stops the field following
+   * the header onto a chat nobody asked to rename.
    */
-  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const pendingRenameRef = useRef<string | null>(null);
+  /**
+   * A rename thrown away rather than saved. The field saves on blur — clicking
+   * anywhere outside it is the save gesture — so Escape has to tell the blur
+   * that follows it that this one was a cancel.
+   */
+  const renameCancelledRef = useRef(false);
+  /**
+   * The tab strip's context menu: the tab it was opened on, whether that tab is
+   * pinned, and the pointer point it anchors to. The strip scrolls sideways, so
+   * the menu is drawn fixed at the cursor rather than inside the strip — a menu
+   * inside a scroll port is clipped by it. One tab's menu at a time.
+   */
+  const [tabMenu, setTabMenu] = useState<{
+    id: string;
+    pinned: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
+  /** Where the menu lands once the window's own edges have clamped it. */
+  const [tabMenuPos, setTabMenuPos] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const tabMenuRef = useRef<HTMLDivElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
   /**
    * The dock's questions — a chat delete, a signal delete — are asked in the
    * app's own dialog, and gated on the dock being open: a question asked from
-   * the list cannot float over the window once the panel is collapsed.
+   * the dock cannot float over the window once the panel is collapsed.
    */
   const { ask, dialog, asking } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
-  const sendable = draft.trim().length > 0 || receipt !== null;
+  const sendable =
+    draft.trim().length > 0 || receipt !== null || attachments.length > 0;
   const controlVisible = sending || sendable;
-  const [approval, setApproval] = useState<{
-    runId: string;
-    requestId: string;
-    summary: string;
-  } | null>(null);
-  /** Run id of the live turn, learned from `run.started`; the stop needs it. */
-  const [runId, setRunId] = useState<string | null>(null);
-  /**
-   * How the last turn ended, when it did not end cleanly. `Thinking…` and the
-   * synthetic `tool:` rows are already live-only turn evidence; this sits in the
-   * same family — LifeQuest stores no chat history, so it is not persisted and
-   * does not claim to be.
-   */
-  const [turnNote, setTurnNote] = useState<string | null>(null);
-  /**
-   * This turn's tool calls, in the order the wire reported them. They are a
-   * live turn's in-flight evidence and deliberately NOT messages: a reloaded
-   * transcript has no tool rows (the store's own are never read back), so
-   * pushing them into `messages` made Hermes look like it had said "tool:
-   * read_file" and buried the conversation under one bubble per event.
-   *
-   * They collapse to a single grey line — see `lib/tool-run.ts`.
-   */
-  const [tools, setTools] = useState<ToolCall[]>([]);
-  /** Whether that line is opened to show the calls it stands for. */
-  const [toolsOpen, setToolsOpen] = useState(false);
   /** The chain's records, as the vault returned them: newest first. */
   const [signals, setSignals] = useState<SignalRecord[]>([]);
   const [signalsLoaded, setSignalsLoaded] = useState(false);
   const [chainDraft, setChainDraft] = useState("");
+  /**
+   * A link pasted into the chain composer, waiting for the next capture. The
+   * dock takes the page's gesture: a URL on its own becomes the attachment,
+   * never the body's text, and one capture carries one attachment.
+   */
+  const [chainLink, setChainLink] = useState<string | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
   const chainBusyRef = useRef(false);
   /**
@@ -463,73 +657,29 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [editingSignalId, setEditingSignalId] = useState<string | null>(null);
   const [signalDraft, setSignalDraft] = useState("");
   const [signalBusyId, setSignalBusyId] = useState<string | null>(null);
-  /** The same two-state rule as the chat field: the arrow needs some text. */
-  const chainSendable = chainDraft.trim().length > 0;
+  /** The same rule as the page's box: words or an attachment make a capture. */
+  const chainSendable = chainDraft.trim().length > 0 || chainLink !== null;
   const chainControlVisible = chainBusy || chainSendable;
+  /**
+   * A capture may be a picture; the dock draws the same records the page does,
+   * so it reads their bytes through the same blob-URL path.
+   */
+  const signalImagePaths = useMemo(
+    () =>
+      signals
+        .map((s) =>
+          s.attachment?.kind === "image" ? s.attachment.relPath : null,
+        )
+        .filter((path): path is string => path !== null),
+    [signals],
+  );
+  const { urls: signalImageUrls, missing: missingSignalImages } =
+    useSignalImageUrls(signalImagePaths);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
   const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const refreshPhoneDrafts = useCallback(() => {
-    const bridge = phoneBridge();
-    if (!bridge) return;
-    void bridge
-      .queue()
-      .then((queue) => setPhoneDrafts(queue.drafts))
-      .catch(() => setPhoneDrafts([]));
-  }, []);
-
-  useEffect(() => {
-    // No phone bridge means this page never had a phone surface (a harness that
-    // models only what it tests). Do not add bridge traffic to it.
-    const bridge = phoneBridge();
-    if (!bridge) return;
-    refreshPhoneDrafts();
-    const offData = subscribe(() =>
-      api().onVaultDataChanged(() => refreshPhoneDrafts()),
-    );
-    const offPhone = subscribe(() => bridge.onChanged(() => refreshPhoneDrafts()));
-    return () => {
-      offData?.();
-      offPhone?.();
-    };
-  }, [refreshPhoneDrafts]);
-
-  /**
-   * Put a draft in front of the companion without posting anything. The
-   * operator sends (or edits) the confirmation; the companion's tool is still
-   * the only thing that writes a transaction.
-   */
-  const askPhoneDraft = useCallback((phoneDraft: PhoneDraftView) => {
-    setDraft(
-      `Post the phone draft: “${phoneDraft.text}” (${phoneDraft.captureDate})?`,
-    );
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, []);
-  const assistantId = useRef<string | null>(null);
-  /**
-   * The card in context, readable from a listener that outlives a render.
-   *
-   * The turn stream's listener is installed once, so a closure over `contextCard`
-   * would name whichever card was in context when the listener was built — and the
-   * card being worked on is read at the moment a turn STARTS, which can be many
-   * renders later. The ref is the same fact without the staleness.
-   */
-  const contextCardRef = useRef<ChatCardContext | null>(null);
-  contextCardRef.current = contextCard;
-  /**
-   * The page material automation chats carry, by session id.
-   *
-   * It lives here rather than in the composer because it belongs to the chat,
-   * not to the field: an automation opens a new chat with the page already
-   * quoted, and every turn taken in that chat should still be able to read it.
-   * The map is session state — a relaunched app still has the chat's transcript,
-   * but not this context, which is the same trade the live tool rows make.
-   */
-  const automationContextBySession = useRef(new Map<string, string>());
   /** Bottom for the composer: the box height it rests at with an empty draft. */
   const restingHeightRef = useRef(0);
 
@@ -552,16 +702,67 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     field.focus();
   }, []);
 
-  /** The open chat's row, when it is still listed (an archived one is not). */
+  /**
+   * The chat in front. It is read from the store's list rather than held here:
+   * the sidebar is where the history is picked, so this panel only needs the
+   * row for the open chat's header (its name, pin and archive state).
+   */
   const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
-  const pinnedSessions = sessions.filter((s) => s.pinned);
-  const recentSessions = sessions.filter((s) => !s.pinned);
+  /*
+    WHOSE CONVERSATION THIS IS.
+
+    A chat the API transport owns (`api_server`, `bot_room`, or an old row with
+    no source at all) is entirely ours. Every other source — Telegram, Discord,
+    Hermes Desktop, the CLI, an automation — is a chat another surface is still
+    writing. The dock can now continue one of those over the gateway WebSocket,
+    but that door carries a prompt and nothing else: no per-turn model or
+    thinking pick, no files, no page or vault context cards, and no steering a
+    live turn. So the header names the surface and the composer is honest about
+    what this door cannot carry, rather than letting a control look available
+    and then fail at the transport.
+  */
+  const continuable = isContinuableSession(activeSession);
+  const sourceLabel = sessionSourceLabel(activeSession?.source);
+  /*
+    The platform's own mark, when it has one. A chat from Telegram or Discord
+    leads with the logo instead of the word: the word is repeated in every list,
+    the mark is read at a glance and survives a narrow tab. A surface without a
+    mark (Hermes Desktop, the CLI, a plugin's platform) keeps its name beside the
+    generic share icon, because an unnamed glyph would say "something" rather
+    than which something.
+  */
+  const SourceMark = platformMarkFor(activeSession?.source);
+  /** The composer's one quiet line, naming the surface and what is not carried. */
+  const composerNote = continuable
+    ? `Shared with ${sourceLabel} — replies land in the same transcript; page and vault context cards are not attached.`
+    : "";
+  /** Why the model and thinking pills cannot be used on a continued chat. */
+  const continuedPillReason = continuable
+    ? `The model and thinking level are fixed for this chat — continuing a chat from ${sourceLabel} keeps running on the model it was started with.`
+    : undefined;
+  /**
+   * Why no file can ride a continued turn. Main refuses an attachment on these
+   * turns in exactly these words, so the disabled control and the refusal say
+   * the same sentence rather than two versions of it.
+   */
+  const continuedFileReason = continuable
+    ? "A chat started on another surface can't carry an attachment yet. Send it in a new chat."
+    : undefined;
+  /** Why page context does not ride a continued turn. */
+  const continuedPageReason = continuable
+    ? `Page context isn't attached when continuing a chat from ${sourceLabel}.`
+    : undefined;
+  /** Why the live-turn steer gesture is not offered here. */
+  const continuedSteerReason = continuable
+    ? `Steering isn't carried when continuing a chat from ${sourceLabel} — queue the message instead.`
+    : undefined;
+  const reading = useOptionalChatDisplay();
 
   /**
-   * The chain, lensed the way the Life-Chain page lenses it: everything in
-   * Overview, and unassigned plus the open domain in a domain tab. Logging here
-   * files a signal unassigned, so what the panel writes is never hidden from it.
+   * The chain, lensed the way the Notebox page lenses it: everything in Life,
+   * and Life (general) plus the open area in an area tab. Logging here files a
+   * signal in Life (general), so what the panel writes is never hidden from it.
    */
   const visibleSignals = useMemo(
     () => signals.filter((s) => signalVisible(lens, s.domainSlug)),
@@ -574,20 +775,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * hands records back newest first, hence the flip.
    */
   const chainItems = useMemo(() => visibleSignals.slice().reverse(), [visibleSignals]);
-  /** What a signal can be assigned to: live domains, as the picker offers them. */
-  const domainNames = (snapshot?.domains ?? [])
-    .filter((d) => !d.meta.archivedAt)
-    .map((d) => ({
-      slug: d.slug,
-      name: d.meta.name,
-    }));
+  /** What a signal can be assigned to: unlocked areas, as the picker offers them. */
+  const domainNames = unlockedAreas(snapshot?.domains ?? []).map((d) => ({
+    slug: d.slug,
+    name: d.meta.name,
+  }));
   /**
    * The saved questions that belong on the screen in front of the operator.
    *
    * Read live from the vault snapshot, so a question added in Settings is in
    * the dock the moment the sheet closes — no reload, no second list to keep in
    * step. The scope is matched here rather than filtered by the page: the dock
-   * is the one place that knows the wing, the domain lens and the route at once.
+   * is the one place that knows the wing, the area lens and the route at once.
    */
   const starters = useMemo(
     () =>
@@ -647,77 +846,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     return () => observer.disconnect();
   }, [open, syncComposerHeight]);
 
-  const loadSession = useCallback(async (id: string) => {
-    const result = await api().companionSessionMessages(id);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setSessionId(id);
-    window.localStorage.setItem(LAST_SESSION_KEY, id);
-    // Everything below describes the turn running in the chat being left
-    // behind, so it goes with it. The pending receipt is part of that: it was
-    // attached to the chat being left, and its original stays in the vault.
-    putReceipt(null);
-    setTools([]);
-    setToolsOpen(false);
-    setTurnNote(null);
-    setApproval(null);
-    setRunId(null);
-    setCopied(null);
-    setMessages(
-      result.value.map((m) => ({
-        id: nextId(),
-        role: m.role,
-        content: m.content,
-        at: m.at,
-      })),
-    );
-    const firstUser = result.value.find((m) => m.role === "user" && m.content.trim());
-    if (firstUser) {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === id && !s.preview?.trim() ? { ...s, preview: firstUser.content } : s,
-        ),
-      );
-    }
-  }, [putReceipt]);
-
-  /** Refresh the list and hand it back, so a caller can pick a row off it. */
-  const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
-    const listed = await api().companionSessionsList();
-    if (!listed.ok) {
-      setError(listed.error);
-      return null;
-    }
-    setSessionsLoaded(true);
-    setSessions(listed.value);
-    return listed.value;
-  }, []);
-
-  // A scheduled automation opens its chat outside the dock. The run writes the
-  // automation store and fires the shelf's change event; the list then picks up
-  // the thread the run started, so it is waiting there next time the operator
-  // opens the dock rather than invisible until a restart.
-  useEffect(() => {
-    const refresh = () => void loadSessions();
-    window.addEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
-  }, [loadSessions]);
-
-  /** Open one chat: the thread takes the panel over from the list. */
+  /** Open one chat, and hand the composer the caret the gesture implies. */
   const openSession = useCallback(
     async (id: string) => {
-      setView("thread");
-      await loadSession(id);
-      // Opening a chat is the gesture that asks for the caret. It is handed over
-      // here as well as in the effect below because the New chat slot has a case
-      // no state change can signal: the blank chat it lands on is already the
-      // open one, so neither the view nor the session moves and the effect never
-      // fires.
+      await chat.openChat(id);
       focusComposer();
     },
-    [loadSession, focusComposer],
+    [chat, focusComposer],
   );
 
   /** Read the chain — the same call the Life-Chain page makes. */
@@ -725,14 +860,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     try {
       const result = await api().signalChainList();
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         setSignals([]);
         return;
       }
       setSignals(result.value.records);
       setSignalsLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reach the chain");
+      chat.reportError(err instanceof Error ? err.message : "Failed to reach the chain");
       setSignals([]);
     }
   }, []);
@@ -756,40 +891,163 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * Landing behaviour: resume the chat this dock opened last, else the most
-   * recent one, else show the list. Never mints a session — an empty chat made
-   * on every open is how the list filled up with "New chat" rows.
+   * recent one, else show the list. The store guards the "already landed" case,
+   * so a run's deltas re-rendering this panel cannot resume it a second time.
+   *
+   * A surface the operator asked for by name — the dock bar's shortcuts
+   * reference or its chat display page — is not a landing: opening the dock onto
+   * one must not have a chat resume over the top of it. The check reads a ref
+   * rather than a dependency: landing is "the dock opened", not "the surface
+   * changed", and re-running when the surface changes would make closing the
+   * last tab resume a chat again off a list that has not been re-read yet.
    */
+  const viewRef = useRef(view);
+  viewRef.current = view;
   useEffect(() => {
-    if (!open) return;
-    if (requestedSessionId) return;
-    let cancelled = false;
-    void (async () => {
-      const listed = await loadSessions();
-      if (cancelled || !listed) return;
-      const stored = window.localStorage.getItem(LAST_SESSION_KEY);
-      const resume = listed.find((s) => s.id === stored) ?? listed[0] ?? null;
-      if (resume) {
-        await openSession(resume.id);
-        return;
-      }
-      setView("list");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, loadSessions, openSession, requestedSessionId]);
+    if (
+      !open ||
+      requestedSessionId ||
+      viewRef.current === "shortcuts" ||
+      viewRef.current === "display"
+    ) {
+      return;
+    }
+    void chatRef.current.resumeLast();
+  }, [open, requestedSessionId]);
 
   /**
-   * Leaving the list drops its row UI: a menu, or a rename field, left open on a
-   * row that has since moved is worse than making the user open it again — the
-   * same rule the chain's landing reset follows.
+   * A rename field belongs to the chat it was opened on. When the chat in front
+   * changes — another chat is opened, a tab closes, or an archive hands the
+   * header to its neighbour — the field must not follow the header onto the new
+   * chat: saving it would write one chat's name onto another.
+   *
+   * The exception is a rename asked for from a tab's menu: that gesture named
+   * its chat first, so the field opens on the chat the gesture has just
+   * activated, prefilled from it — the same field the header's pencil opens.
    */
   useEffect(() => {
-    if (view === "list") return;
-    setSessionMenuId(null);
-    setRenamingSessionId(null);
+    const pending = pendingRenameRef.current;
+    pendingRenameRef.current = null;
+    if (pending && pending === sessionId) {
+      const row = chatRef.current.sessions.find((s) => s.id === sessionId) ?? null;
+      setRenameDraft(row ? sessionLabel(row) : "");
+      setRenaming(true);
+      return;
+    }
+    setRenaming(false);
     setRenameDraft("");
-  }, [view]);
+  }, [sessionId]);
+
+  /**
+   * The tab menu is fixed at the pointer, then pulled back inside the window:
+   * a right-click on the last tab must not open a menu that hangs off the right
+   * or bottom edge with its commands unreachable. It is measured after it mounts
+   * — a layout effect, so no frame paints in the wrong place — and only the
+   * first pass needs the anchor, after which the clamped position stands.
+   */
+  useLayoutEffect(() => {
+    if (!tabMenu) {
+      setTabMenuPos(null);
+      return;
+    }
+    const menu = tabMenuRef.current;
+    if (!menu) return;
+    const gap = 8;
+    const rect = menu.getBoundingClientRect();
+    setTabMenuPos({
+      left: Math.max(gap, Math.min(tabMenu.x, window.innerWidth - rect.width - gap)),
+      top: Math.max(gap, Math.min(tabMenu.y, window.innerHeight - rect.height - gap)),
+    });
+  }, [tabMenu]);
+
+  /**
+   * Every way a signal menu closes, the tab menu closes too: a press anywhere
+   * outside it (a tab, a transcript, another menu), Escape, a window resize, or
+   * a scroll of the strip it points at — the anchor would be stale after any of
+   * them. Choosing an item closes it in the item's own handler.
+   */
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(null);
+    const onPointerDown = (event: PointerEvent) => {
+      const menu = tabMenuRef.current;
+      if (menu && event.target instanceof Node && menu.contains(event.target)) return;
+      close();
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      close();
+    };
+    const strip = tabsRef.current;
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", close);
+    strip?.addEventListener("scroll", close, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", close);
+      strip?.removeEventListener("scroll", close);
+    };
+  }, [tabMenu]);
+
+  /** The strip is gone off the thread; a menu anchored to it has nothing to point at. */
+  useEffect(() => {
+    if (!open || view !== "thread") setTabMenu(null);
+  }, [open, view]);
+
+  /**
+   * The strip's browser habit: the tab in front is always scrolled into view.
+   *
+   * Tabs keep a floor of about three characters, so a strip with many chats is
+   * wider than the dock and scrolls instead of squeezing them (see
+   * `.chat-panel__tabs`). A tab that opened off the right edge would be in front
+   * but invisible — the operator would have a chat on screen and no tab to find
+   * it by — so every change of the front tab or the strip walks it back into the
+   * visible band, and no further. Nothing rides the band's trailing edge any
+   * more: the plus travels with the tabs, so the whole band is tabs.
+   */
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip || !sessionId) return;
+    if (strip.scrollWidth <= strip.clientWidth + 1) return;
+    const tab = strip.querySelector<HTMLElement>(
+      `[data-tab-id="${CSS.escape(sessionId)}"]`,
+    );
+    if (!tab) return;
+    const port = strip.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    const gap = 8;
+    if (box.left < port.left) {
+      strip.scrollLeft -= port.left - box.left + gap;
+    } else if (box.right > port.right) {
+      strip.scrollLeft += box.right - port.right + gap;
+    }
+  }, [sessionId, orderedTabIds, view, open]);
+
+  /**
+   * A vertical wheel over the strip walks it sideways, the way a browser walks
+   * a crowded tab band: the strip is the only thing under the pointer that can
+   * move horizontally, and the page has nothing to scroll there. A horizontal
+   * gesture (a trackpad's two-finger swipe) is left to the platform's own
+   * scrolling, and a strip with room to spare keeps the wheel for its ancestors.
+   *
+   * Registered natively rather than as an `onWheel` prop: React's delegated
+   * wheel listener is passive, so `preventDefault` there would warn and do
+   * nothing.
+   */
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent) => {
+      if (strip.scrollWidth <= strip.clientWidth + 1) return;
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      strip.scrollLeft += event.deltaY;
+      event.preventDefault();
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, [view, open, orderedTabIds]);
 
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
@@ -798,8 +1056,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // the block is capped, and a capped block left at its first row would hide
     // the calls the operator opened it to watch arrive. `toolsOpen` is in the
     // deps because opening it mounts a fresh list at scrollTop 0.
-    if (activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight;
-  }, [open, view, messages, sending, error, turnNote, tools, toolsOpen]);
+  }, [open, view, turns, sending, error]);
 
   /**
    * The chain's own stick-to-the-bottom pass, in a layout effect so a freshly
@@ -814,6 +1071,90 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }, [open, view, chainItems, chainBusy]);
 
   /**
+   * Keep the transcript's end where the operator put it while the dock's column
+   * changes shape under it.
+   *
+   * The dock is a flex column — header, tab strip, transcript, composer, action
+   * bar — so anything that grows below the transcript takes its height from the
+   * transcript's scroll port. That part is right: the border between them moves
+   * up, the transcript gives the height up, and the composer's half-panel cap
+   * bounds the whole thing. What is not right is the port's `scrollTop`. The
+   * browser has no reason to touch it — the content did not change, only the
+   * port's height — so a transcript being read at its end suddenly ends *below*
+   * the new bottom edge: the last thing the operator was reading disappears
+   * under the composer, and the composer reads as having grown over the chat
+   * instead of having pushed the border up. The browser's own scroll anchoring
+   * repairs content that moves inside the port; a port that *shrinks* is the
+   * case it does not touch, so the dock does.
+   *
+   * The composer is the loudest source of that growth — it grows with the draft,
+   * up to half the panel — which is why the report is "typing a long paragraph
+   * eats the bottom of the chat". It is not the only source: the context cards,
+   * the attachment chips, the queued rows and the interview card all sit above
+   * the field in the same column and push the same border. Watching the
+   * transcript's port covers all of them at once, because the port's height is
+   * what each of them moves.
+   *
+   * Only an operator who was already at the end is followed. Someone reading
+   * scrollback may type without being pulled back down to the live turn: the
+   * reading position is theirs, and a correction that took it would be a worse
+   * bug than the one this repairs. "Was at the end" is kept from the operator's
+   * own scroll events and from the moment the watch starts, so it describes
+   * where they were *before* the resize. The observation itself runs after
+   * layout and before paint, so the frame that paints the grown composer is the
+   * frame that already has the transcript at its end — there is no frame in
+   * between to see.
+   */
+  useEffect(() => {
+    if (!open || view === "shortcuts" || view === "display") return;
+    // Both bodies stay mounted — only the one in front is visible; the other is
+    // `hidden` (`display: none`), so it has no height and nothing to keep. The
+    // watch follows the visible one.
+    const scroller = view === "chain" ? chainRef.current : listRef.current;
+    if (!scroller) return;
+    const atEnd = () =>
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <=
+      TRANSCRIPT_END_SLACK_PX;
+    let wasAtEnd = atEnd();
+    const onScroll = () => {
+      wasAtEnd = atEnd();
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    if (typeof ResizeObserver === "undefined") {
+      return () => scroller.removeEventListener("scroll", onScroll);
+    }
+    const observer = new ResizeObserver(() => {
+      // A body that is not on screen has no end to keep: a cleanup can land
+      // after this delivery, so the hidden twin may still be observed for a
+      // beat. Zero height means "not in front", and writing scrollTop there
+      // would be a write to nobody.
+      if (scroller.clientHeight === 0) return;
+      // The resize that fired this observation has already happened, so
+      // `wasAtEnd` is the reading from before it. Following the end here is not
+      // a jump: the transcript is being put back where it was already sitting.
+      if (!wasAtEnd) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+    observer.observe(scroller);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", onScroll);
+    };
+    // `sessionId` is here because the flag belongs to the transcript in front:
+    // opening another chat re-arms the watch, so a switch to a transcript that
+    // happens to sit at the same offset cannot leave it reading "scrolled away".
+  }, [open, view, sessionId]);
+
+  /**
+   * How many cards are in front of this conversation, and whether the latest
+   * render brought one in. The effects below react to a card *arriving* — the
+   * operator pressed a card and expects the chat to come to them — and not to a
+   * card leaving, which must not reopen or re-surface anything.
+   */
+  const contextCount = contextCards.length;
+  const lastContextCount = useRef(0);
+
+  /**
    * When the composer is handed the caret: the panel opens, a surface swaps in,
    * a chat finishes loading, or a write that disabled the field settles. Those
    * are exactly the moments the field goes from unusable to usable, which is why
@@ -822,133 +1163,41 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * it for a caret the operator has already given to the answer.
    */
   useEffect(() => {
-    if (!open || view === "list" || asking) return;
+    if (!open || view === "shortcuts" || view === "display" || asking) return;
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
-    // `contextCard` is in the list because a card handed over from the Dashboard
-    // is that same moment: the field goes from "not what I am writing in" to
-    // "where I describe this card", and the operator should not have to click
-    // twice to start.
-  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer, contextCard]);
+    // The number of cards is in the list because a card handed over from the
+    // Dashboard is that same moment: the field goes from "not what I am writing
+    // in" to "where I describe these cards", and the operator should not have to
+    // click twice to start.
+  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer, contextCount]);
 
   /**
-   * A card handed over from the Dashboard brings the chat with it.
+   * Cards handed over from the Dashboard bring the chat with them.
    *
-   * The pill lives above the composer, so a dock sitting on the chat list would
-   * take the card and show the operator nothing — the click would look like it
-   * did nothing at all. The thread takes over, and a vault with no chats gets
-   * the empty one "New chat" would have made, because a composer with no session
-   * cannot be typed in.
+   * The pills live above the thread's composer, so a dock sitting on the chain
+   * or the shortcuts reference would take the cards and show the operator
+   * nothing — the click would look like it did nothing at all. The thread takes
+   * over, and a vault with no chats gets the empty one "New chat" would have
+   * made, because a composer with no session cannot be typed in.
    *
-   * Only the arrival is reacted to. Taking the card off, or leaving it there,
-   * changes no surface: the operator is already where they need to be.
+   * Only the arrival is reacted to. Taking a card off, or leaving the rest
+   * there, changes no surface: the operator is already where they need to be.
    */
   useEffect(() => {
-    if (!contextCard) return;
+    const arrived = contextCount > lastContextCount.current;
+    lastContextCount.current = contextCount;
+    if (!arrived) return;
     onOpenChange(true);
-    if (view !== "list") return;
+    if (view === "thread") return;
     if (sessionId) setView("thread");
     else void newSession();
-    // Deliberately keyed on the card alone: this is "a card arrived", not "the
+    // Deliberately keyed on the count alone: this is "a card arrived", not "the
     // view or the session changed" — reacting to those would fight the
     // operator's own navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextCard]);
-
-  useEffect(() => {
-    const off = api().onCompanionStream((evt: ChatStreamEvent) => {
-      if (evt.type === "run.started") {
-        // First frame of every turn: this is the id `stop` has to name.
-        setRunId(evt.runId || null);
-        // ...and the card the turn is about, which the board draws a ring around
-        // for as long as this is set. The turn is the window the operator waits
-        // through: it opens before the first write and closes after the last, so
-        // a card being re-read is already wearing it.
-        setLivePinId(contextCardRef.current?.pin.id ?? null);
-        return;
-      }
-      if (evt.type === "assistant.delta") {
-        const id = assistantId.current ?? nextId();
-        assistantId.current = id;
-        // Stamped before the updater: the first delta is when the reply began,
-        // and an updater that reads the clock is not pure under StrictMode.
-        const startedAt = Date.now();
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === id);
-          if (idx === -1) {
-            return [...prev, { id, role: "assistant", content: evt.text, at: startedAt }];
-          }
-          const copy = prev.slice();
-          const cur = copy[idx]!;
-          copy[idx] = { ...cur, content: cur.content + evt.text };
-          return copy;
-        });
-        return;
-      }
-      if (evt.type === "tool.started") {
-        setTools((prev) => [
-          ...prev,
-          { id: nextId(), name: evt.name, target: evt.target, done: false },
-        ]);
-        return;
-      }
-      if (evt.type === "tool.completed") {
-        // Oldest first, by name: the frame names the call it ends and carries
-        // nothing else, so a run that called the same tool twice resolves in
-        // the order it started.
-        setTools((prev) => {
-          const idx = prev.findIndex((call) => !call.done && call.name === evt.name);
-          if (idx === -1) return prev;
-          const copy = prev.slice();
-          copy[idx] = { ...copy[idx]!, done: true };
-          return copy;
-        });
-        return;
-      }
-      if (evt.type === "approval.request") {
-        setApproval({
-          runId: evt.runId,
-          requestId: evt.requestId,
-          summary: evt.summary,
-        });
-        return;
-      }
-      if (evt.type === "run.stopped") {
-        setTurnNote(
-          "Stopped — the reply above is only what arrived before the interrupt",
-        );
-        setLivePinId(null);
-        return;
-      }
-      if (evt.type === "run.incomplete") {
-        setTurnNote(
-          evt.reason
-            ? `Ended before finishing — ${evt.reason}`
-            : "Ended before finishing",
-        );
-        setLivePinId(null);
-        return;
-      }
-      if (evt.type === "error") {
-        setError(evt.message);
-        return;
-      }
-      if (evt.type === "run.completed") {
-        setRunId(null);
-        // The turn is over, so the card is nobody's work in progress. What it drew
-        // stays exactly as it is: this clears a ring, it does not undo an edit.
-        setLivePinId(null);
-        void refresh();
-      }
-    });
-    return () => {
-      off();
-      // A dock that goes away mid-turn must not leave a ring on a board it can no
-      // longer explain.
-      setLivePinId(null);
-    };
-  }, [refresh, setLivePinId]);
+  }, [contextCount]);
 
   /**
    * Read the model inventory once, when the dock is first opened.
@@ -975,162 +1224,143 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     };
   }, [open, modelCatalog]);
 
-  /** Pin this chat — or, with every field cleared, un-pin it back to the default. */
+  /**
+   * Pick this chat's model and thinking level.
+   *
+   * The pick has to reach the chat's own gateway session: Hermes runs an
+   * existing chat on the model that session was created with and ignores the
+   * `model` a turn names, so a pick that only rode the turn would look applied
+   * and change nothing. Clearing the pick means "the profile's current default",
+   * which is applied the same way.
+   */
   function updateRuntimePick(next: CompanionRuntimeOverride) {
-    const activeId = sessionId;
-    if (!activeId) return;
-    const pick = cleanRuntimePick(next);
-    setRuntimePins((prev) => {
-      const pins = { ...prev };
-      if (Object.keys(pick).length > 0) pins[activeId] = pick;
-      else delete pins[activeId];
-      writeStoredRuntimePins(pins);
-      return pins;
-    });
+    if (!sessionId) return;
+    const nextModel = (next.model ?? "").trim();
+    const pickedBefore = (runtimePick.model ?? "").trim();
+    chat.updateRuntimePick(sessionId, next);
+    if (nextModel === pickedBefore) return;
+    const target = nextModel || (modelCatalog?.current.model ?? "").trim();
+    if (!target) return;
+    const provider =
+      (next.provider ?? "").trim() || (modelCatalog?.current.provider ?? "").trim();
+    void chat.setSessionModel(sessionId, target, provider);
   }
 
+  /**
+   * Move the open chat onto the profile's current model.
+   *
+   * The one gesture that ends the reported "every old chat is silent" state:
+   * the gateway's session lock is moved to a model the profile still serves.
+   */
+  async function repairChatModel() {
+    if (!sessionId || !modelCatalog) return;
+    const target = modelCatalog.current;
+    if (!target.model.trim()) return;
+    chat.updateRuntimePick(sessionId, { model: target.model, provider: target.provider });
+    await chat.setSessionModel(sessionId, target.model, target.provider);
+  }
+
+  /**
+   * Send one turn in a chat. The store owns the bubble, the receipt and the run;
+   * this is the gesture's thin end.
+   */
   async function sendMessage(text: string, overrideSessionId?: string) {
-    const content = text.trim();
-    const activeId = overrideSessionId ?? sessionId;
-    // A receipt can carry the turn on its own: the operator photographs a
-    // receipt and sends it without typing anything.
-    const attached = receipt;
-    if ((!content && !attached) || sending || !activeId) return;
-
-    // The screen, read at the moment of sending rather than at the moment the
-    // panel opened: the operator may have scrolled, filtered or navigated since,
-    // and what rides the turn has to be what they were looking at when they
-    // pressed send. Off — or unreadable — sends no `pageContext` key at all, so
-    // the turn is exactly the turn it was before the pill existed.
-    const page = pageContext.on
-      ? readPageContext(pageContext.route)
-      : null;
-    // The page material this chat was opened with, if it was opened by an
-    // automation. It rides every turn of that chat, not only the first, so a
-    // follow-up about "the note" still has the note in front of the agent.
-    const automationContext = automationContextBySession.current.get(activeId);
-
-    const sentAt = Date.now();
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: nextId(),
-        role: "user",
-        content,
-        at: sentAt,
-        ...(attached ? { receipt: { name: attached.name, size: attached.size } } : {}),
-      },
-    ]);
-    // The path goes with the turn and the chip goes away. Main took the copy out
-    // of its slot, so the receipt now lives on the row the agent writes.
-    putReceipt(null);
-    setSessions((prev) =>
-      prev
-        .map((s) => {
-          if (s.id !== activeId) return s;
-          const preview = content || attached?.name || "";
-          return {
-            ...s,
-            preview: s.preview?.trim() ? s.preview : preview,
-            lastActive: Date.now() / 1000,
-          };
-        })
-        .sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0)),
-    );
-    setSending(true);
-    setError(null);
-    assistantId.current = null;
-    // A new turn's run id arrives with its own `run.started`; never carry the
-    // previous turn's id — or its outcome note — into this one.
-    setRunId(null);
-    setTurnNote(null);
-    setTools([]);
-    setToolsOpen(false);
-
-    try {
-      const result = await api().companionChatStream({
-        sessionId: activeId,
-        input: content,
-        instructionsContext: {
-          domainName: activeDomain?.meta.name ?? null,
-          domainSlug: activeDomain?.slug ?? null,
-          // What the operator is looking at: the home board's domain, null on
-          // Overview. This anchors "the Dashboard" in the agent's instructions.
-          viewingBoard: boardSlug,
-          // And whether that board is read-only right now, which is what decides
-          // between an applied change and a pending Decision.
-          viewingBoardLocked: boardLocked,
-          // The card the operator put in front of this chat, if they did: the
-          // turn is then about that card and they never have to name it. Absent
-          // when nothing is in context, which is the turn it always was.
-          ...(contextCard ? { focusedCard: focusedCardOf(contextCard) } : {}),
-          // The screen the operator is looking at, when the pill beside the
-          // attach control says it is in context. Absent when it is off, which
-          // is the turn the composer sent before this existed.
-          ...(page ? { pageContext: page } : {}),
-          // The phone's queue, when one is waiting: the companion is told what
-          // the operator queued and that a draft is not a transaction. Absent
-          // when the queue is empty, which is the turn it always was.
-          ...(phoneDrafts.length > 0
-            ? {
-                phoneDrafts: phoneDrafts.slice(0, 10).map((phoneDraft) => ({
-                  clientId: phoneDraft.clientId,
-                  text: phoneDraft.text,
-                  captureDate: phoneDraft.captureDate,
-                })),
-              }
-            : {}),
-          // What an automation read for this chat: the note itself, fenced and
-          // named as the operator's own data, plus what to do with it. Absent on
-          // every ordinary chat, which is the turn it always was.
-          ...(automationContext ? { automationContext } : {}),
-          aboutMe: snapshot?.map?.aboutMe ?? "",
-          locked: false,
-          vaultOpen: Boolean(snapshot),
-        },
-        // The composer's pills, if the operator has picked anything: absent
-        // fields leave the turn on the gateway's own defaults.
-        runtime: runtimePick,
-        // The receipt waiting in main for this turn. Absent means a text turn.
-        receiptRelPath: attached?.relPath ?? null,
-      });
-      if ("ok" in result && result.ok === false) {
-        setError(result.error);
+    // A promotion is mid-flight: main is moving the picture between stores, so
+    // a turn sent now could name an attachment the promotion is about to take
+    // (or the promotion would be refused after the turn took the store). The
+    // press is short — the next keystroke sends.
+    if (promotingRef.current) return;
+    // A first turn typed before the interview was opened starts the record
+    // silently: the welcome card is an offer, and it must not fight the message
+    // the operator was already writing.
+    const target =
+      overrideSessionId ?? sessionId ?? (await chat.newChat());
+    if (!target) return;
+    if (snapshot?.onboarding?.status === "not_started") {
+      try {
+        await api().onboardingStart();
+      } catch {
+        // The turn still sends; the card waits for the next visit.
       }
-      void refresh();
-      const listed = await api().companionSessionsList();
-      if (listed.ok) setSessions(listed.value);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reach Hermes");
-    } finally {
-      setSending(false);
     }
+    await chat.sendMessage(target, text);
   }
 
+  /**
+   * Steer the live turn: the operator's words go into the run that is already
+   * working, so a thought that arrives halfway through a long answer is not
+   * lost waiting for the next turn.
+   *
+   * A continued chat has no steer field: the gateway WebSocket that carries the
+   * turn carries a prompt and an interrupt, nothing in between. The send key's
+   * follow-up is queued behind the running turn instead, which is the one way
+   * to follow it there — so a keystroke an operator was used to steering with
+   * still does the useful thing rather than nothing.
+   *
+   * The draft is cleared only when the steer lands. A refusal (the run ended
+   * between the keypress and the call) must leave the words in the field, or
+   * the operator loses them.
+   */
+  async function steerMessage(text: string) {
+    if (!sessionId || !text) return;
+    if (continuable) {
+      queueMessage(text);
+      return;
+    }
+    const ok = await chat.steerMessage(sessionId, text);
+    if (ok) setDraft("");
+  }
+
+  /**
+   * Line the message up behind the turn that is running. The queue lives in the
+   * store, so it survives a chat switch: the operator can write the next
+   * question now and find it waiting when the answer lands.
+   */
+  function queueMessage(text: string) {
+    if (!sessionId || !text) return;
+    chat.queueMessage(sessionId, text);
+    setDraft("");
+  }
+
+  /** Take one queued message off the queue. */
+  function removeQueued(queuedId: string) {
+    if (!sessionId) return;
+    chat.removeQueued(sessionId, queuedId);
+  }
+
+  /**
+   * An automation, a review or a saved question hands the dock a chat outside
+   * the panel's own navigation.
+   *
+   * The chat gets a tab of its own, beside the conversation on screen, rather
+   * than taking that tab over: the page asked the dock to start a conversation,
+   * and the one the operator was reading is not the price of it. A chat the page
+   * has just created also hands its own row along, so the tab and the sidebar
+   * carry its name from the first paint instead of showing a bare "Chat".
+   *
+   * The request is cleared only after the kickoff, so the landing pass cannot
+   * replace the prompt bubble with a transcript the gateway has not written yet.
+   */
   useEffect(() => {
     if (!requestedSessionId) return;
     let cancelled = false;
     const targetId = requestedSessionId;
     const kickoff = requestedKickoff;
-    const automationContext = requestedAutomationContext;
     (async () => {
       onOpenChange(true);
-      const listed = await loadSessions();
+      await chatRef.current.openChatInNewTab(
+        targetId,
+        requestedSession ?? undefined,
+        requestedSessionIcon ?? undefined,
+      );
       if (cancelled) return;
-      if (listed) setSessionsLoaded(true);
-      await openSession(targetId);
-      if (cancelled) return;
-      // Bind the automation's context before the kickoff is sent, so the first
-      // turn carries the same material every later turn in this chat will.
-      if (automationContext?.trim()) {
-        automationContextBySession.current.set(targetId, automationContext);
+      // Bind the automation's page material before the first turn is sent, so
+      // that turn carries the same context every later turn in the chat will.
+      if (requestedAutomationContext?.trim()) {
+        chatRef.current.setAutomationContext(targetId, requestedAutomationContext);
       }
-      // The kickoff goes first and the request is cleared after it: clearing
-      // re-arms the landing effect, and a landing pass that reloads the session
-      // while its first turn is still in the air can replace the prompt bubble
-      // with a transcript the gateway has not written yet.
       if (kickoff?.trim()) {
-        await sendMessage(kickoff, targetId);
+        await chatRef.current.sendMessage(targetId, kickoff);
       }
       if (cancelled) return;
       clearRequestedSession();
@@ -1143,33 +1373,57 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }, [requestedSessionId]);
 
   /**
+   * A pasted URL is a link capture, exactly as it is on the page: the paste
+   * itself is the gesture, so the URL becomes the chip and never the body's
+   * text. A URL inside a sentence is just text, and pastes a normal way.
+   */
+  function onChainPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    const parsed = parseLink(text);
+    if ("url" in parsed) {
+      e.preventDefault();
+      setChainLink(parsed.url);
+    }
+  }
+
+  /**
    * Log one signal through the same call the page makes. It files `thought` with
-   * no title and no domain — the chain is for capture, and the type/title/domain
-   * calls belong on the page, where there is room to make them. Unassigned also
-   * means the record stays visible in every lens, including this one.
+   * no title and in Life (general) — the chain is for capture, and the
+   * type/title/domain calls belong on the page, where there is room to make
+   * them. Life (general) also means the record stays visible in every lens,
+   * including this one.
    */
   async function onChainSubmit(e: FormEvent) {
     e.preventDefault();
     const body = chainDraft.trim();
-    if (!body || chainBusyRef.current) return;
+    // A link is a capture on its own: the page lets an attachment carry an
+    // empty description, and the dock is the same store, so it does too.
+    if ((!body && !chainLink) || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setChainBusy(true);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainCreate({
         type: "thought",
         title: null,
         body,
         domainSlug: null,
+        // Omitted, not null, for a text capture: the page always sends the key,
+        // but the dock's text write has always been these four fields and the
+        // rigs read that shape. A link is the only attachment the dock takes.
+        ...(chainLink
+          ? { attachment: { kind: "link" as const, url: chainLink } }
+          : {}),
       });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       setChainDraft("");
+      setChainLink(null);
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to log the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to log the signal");
     } finally {
       chainBusyRef.current = false;
       setChainBusy(false);
@@ -1204,16 +1458,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (current === nextDomain || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainUpdate(id, { domainSlug: nextDomain });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to assign the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to assign the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1225,17 +1479,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (!body || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainUpdate(id, { body });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       cancelEditSignal();
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to save the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1258,18 +1512,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainDelete(id);
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       if (editingSignalId === id) cancelEditSignal();
       setSignalMenuId(null);
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to delete the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1277,8 +1531,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * The domains a signal can be assigned to: the live ones, plus the one it
-   * already names when that domain has since been archived — the page makes the
+   * The areas a signal can be assigned to: the unlocked ones, plus the one it
+   * already names when that area has since been archived — the page makes the
    * same exception, so an archived assignment is shown rather than silently
    * dropped the moment this panel renders it.
    */
@@ -1292,69 +1546,77 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (sending || (!draft.trim() && !receipt)) return;
+    if (sending || (!draft.trim() && !receipt && attachments.length === 0)) return;
+    // A promotion is mid-flight: keep the words in the field rather than clear
+    // them for a send that would be refused (see `sendMessage`).
+    if (promotingRef.current) return;
     const text = draft.trim();
     setDraft("");
     await sendMessage(text);
   }
 
+  /**
+   * The keyboard: the send key is the operator's choice, and the other key writes.
+   *
+   * The default is Enter as a newline and Ctrl/Cmd+Enter as the send: a prompt is
+   * a paragraph, not a telegram, so the key the operator reaches for while writing
+   * breaks the line rather than throwing the thought away half-written. Settings →
+   * Composer can put the send back on plain Enter for a keyboard used to that;
+   * Ctrl/Cmd+Enter sends in both modes, because the modified key is unambiguous.
+   *
+   * While a turn is running, the send key steers: the words go into the live turn
+   * instead of starting a second one, which is the answer to "the user is unable
+   * to steer the prompt once it's already sent".
+   *
+   * Two presses are not sends at all. A held Enter repeats, and a repeated send
+   * would fire a turn per repeat; and Enter during IME composition belongs to the
+   * candidate list, not to the message box — committing a candidate deselects the
+   * text and leaves the keydown on the field, so the press must be left alone.
+   */
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (sending || (!draft.trim() && !receipt)) return;
-      const text = draft.trim();
-      setDraft("");
-      void sendMessage(text);
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if (e.repeat) return;
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    const modified = e.ctrlKey || e.metaKey;
+    if (!modified && sendKey !== "enter") return;
+    e.preventDefault();
+    if (sending) {
+      // `steerMessage` queues the follow-up instead when this chat is
+      // continued from another surface: that transport cannot steer, and the
+      // queue is the only way to follow a live turn there.
+      void steerMessage(draft.trim());
+      return;
     }
+    if (!draft.trim() && !receipt && attachments.length === 0) return;
+    // A promotion is mid-flight: the press waits, and the words stay in the
+    // field rather than being cleared for a send that would be refused.
+    if (promotingRef.current) return;
+    const text = draft.trim();
+    setDraft("");
+    void sendMessage(text);
   }
 
   /**
-   * Interrupt the live turn. The gateway stops the run cooperatively and the
-   * stream closes on its own, which is what clears `sending` — nothing here
-   * pretends the turn ended locally.
+   * Interrupt the open chat's live turn. The gateway stops the run cooperatively
+   * and the stream closes on its own, which is what clears `sending` — nothing
+   * here pretends the turn ended locally.
    */
   async function stopRun() {
-    if (!runId) return;
-    const result = await api().companionRunStop(runId);
-    if (!result.ok) setError(result.error);
+    if (!sessionId) return;
+    await chat.stopRun(sessionId);
   }
 
   /**
-   * Rename, pin or archive one chat. All three are durable Hermes-side flags:
-   * the write goes back to the gateway, so Hermes Desktop and every other
-   * channel on this profile see the same state.
-   *
-   * The row is patched from the patch itself, never from the reply. The reply
-   * carries the raw session row, which has no `preview` and no `last_active`
-   * (the list query computes those), so merging it would blank the row's name
-   * fallback and its timestamp.
+   * Rename, pin or archive one chat. All three are durable Hermes-side flags, so
+   * the store writes them back to the gateway and Hermes Desktop sees the same
+   * state. The row is patched from the patch itself, never from the reply: the
+   * reply carries no `preview` and no `last_active`.
    */
   async function patchSession(
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
   ): Promise<boolean> {
-    const result = await api().companionSessionPatch(id, patch);
-    if (!result.ok) {
-      setError(result.error);
-      return false;
-    }
-    setSessions((prev) =>
-      prev
-        .map((s) =>
-          s.id === id
-            ? {
-                ...s,
-                title: typeof patch.title === "string" ? patch.title : s.title,
-                pinned: typeof patch.pinned === "boolean" ? patch.pinned : s.pinned,
-              }
-            : s,
-        )
-        // An archived chat leaves this list. Hermes keeps every message, and
-        // Hermes Desktop is where it can be unarchived.
-        .filter((s) => !(patch.archived === true && s.id === id)),
-    );
-    if (patch.archived === true && id === sessionId) setView("list");
-    return true;
+    return chat.patchSession(id, patch);
   }
 
   async function togglePin() {
@@ -1369,96 +1631,125 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   function startRename() {
     if (!activeSession) return;
+    renameCancelledRef.current = false;
     setRenameDraft(sessionLabel(activeSession));
     setRenaming(true);
   }
 
   function cancelRename() {
+    renameCancelledRef.current = true;
     setRenaming(false);
     setRenameDraft("");
   }
 
-  async function commitRename(e: FormEvent) {
-    e.preventDefault();
+  /**
+   * Save the name the field holds. Clicking anywhere outside the field is the
+   * save — there is no Save button to press — and Enter blurs the field so it
+   * takes the same path. A blur that follows Escape is the cancel, not a save;
+   * an unchanged or empty name writes nothing.
+   */
+  async function commitRename() {
+    if (renameCancelledRef.current) {
+      renameCancelledRef.current = false;
+      return;
+    }
     const id = sessionId;
     if (!id) return;
     const title = renameDraft.trim();
     setRenaming(false);
     setRenameDraft("");
-    await patchSession(id, { title });
-  }
-
-  /** Open the 3-dot menu on a chat row, or close the one already open. */
-  function toggleSessionMenu(id: string) {
-    setSessionMenuId((current) => (current === id ? null : id));
-  }
-
-  /**
-   * Rename starts on the row, not in the thread header: the list is where chats
-   * are managed, and the name it edits is the name the row shows.
-   */
-  function startSessionRename(s: HermesSession) {
-    setSessionMenuId(null);
-    setRenamingSessionId(s.id);
-    setRenameDraft(sessionLabel(s));
-  }
-
-  function cancelSessionRename() {
-    setRenamingSessionId(null);
-    setRenameDraft("");
-  }
-
-  async function commitSessionRename(e: FormEvent, id: string) {
-    e.preventDefault();
-    const title = renameDraft.trim();
-    cancelSessionRename();
+    if (!title || title === activeLabel) return;
     await patchSession(id, { title });
   }
 
   /**
-   * Delete one chat outright. Unlike archive — a flag Hermes Desktop can bring
-   * the chat back from — this drops the row and every message under it, so it
-   * asks first, through the dock's own dialog. The row menu closes on the way in:
-   * the question is the surface now, and it names the chat it will take.
+   * Right-clicking a tab opens its verbs where the pointer is. The browser's own
+   * menu never draws over the app: these are the same commands the sidebar's row
+   * menu names, scoped to the tab — a pinned tab offers only the way out of the
+   * band, because pinning, renaming, archiving and deleting are the unpinned
+   * tab's business here.
    */
-  function deleteSession(id: string) {
-    const row = sessions.find((s) => s.id === id);
-    const label = row ? sessionLabel(row) : "this chat";
-    setSessionMenuId(null);
+  function openTabMenu(
+    event: MouseEvent<HTMLDivElement>,
+    id: string,
+    pinned: boolean,
+  ): void {
+    event.preventDefault();
+    setTabMenu({ id, pinned, x: event.clientX, y: event.clientY });
+  }
+
+  /**
+   * The browser's other tab gesture: the middle button closes the tab under the
+   * pointer. A pinned tab is not a closable tab — Unpin is the way out of the
+   * band, exactly as the close control's absence says — so that press is
+   * swallowed but closes nothing. Swallowing matters on Linux, where a middle
+   * press otherwise starts X11's primary-selection paste or autoscroll.
+   */
+  function closeTabOnMiddlePress(
+    event: MouseEvent<HTMLDivElement>,
+    id: string,
+    pinned: boolean,
+  ): void {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    if (!pinned) chat.closeTab(id);
+  }
+
+  /** Close the tab menu, whether or not it was up. */
+  function closeTabMenu(): void {
+    setTabMenu(null);
+  }
+
+  /** Drop one chat out of the pinned band: the pin leaves its leading slot. */
+  function unpinTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { pinned: false });
+  }
+
+  /** Raise one chat into the pinned band: its leading slot becomes the pin. */
+  function pinTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { pinned: true });
+  }
+
+  /**
+   * Rename from a tab's menu. The field lives in the thread header, so the chat
+   * is brought to the front first and the pending id tells the session-change
+   * effect above to open the field on it — the same field, and the same write,
+   * the header's pencil uses.
+   */
+  function renameTab(id: string): void {
+    closeTabMenu();
+    if (id === sessionId) {
+      startRename();
+      return;
+    }
+    pendingRenameRef.current = id;
+    void openSession(id);
+  }
+
+  /** Archive one chat from its tab, as the sidebar's menu does. */
+  function archiveTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { archived: true });
+  }
+
+  /**
+   * Delete one chat from its tab. The question is the app's own dialog and says
+   * exactly what the sidebar's delete says: the chat leaves Hermes everywhere,
+   * and there is no undo.
+   */
+  function deleteTab(id: string): void {
+    closeTabMenu();
+    const row = sessions.find((s) => s.id === id) ?? null;
+    const label = row ? sessionLabel(row) : "Chat";
     ask({
       title: "Delete chat",
       message: `Delete "${label}"? Its messages leave Hermes everywhere, and this cannot be undone.`,
       confirmLabel: "Delete chat",
       destructive: true,
-      run: () => void runDeleteSession(id),
+      run: () => void chat.deleteChat(id),
     });
-  }
-
-  async function runDeleteSession(id: string) {
-    const result = await api().companionSessionDelete(id);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    // The page material belonged to the chat: a deleted chat takes it with it.
-    automationContextBySession.current.delete(id);
-    // The pin belonged to the chat: a deleted chat takes its pin with it.
-    setRuntimePins((prev) => {
-      if (!(id in prev)) return prev;
-      const pins = { ...prev };
-      delete pins[id];
-      writeStoredRuntimePins(pins);
-      return pins;
-    });
-    // The open chat cannot outlive its own row: fall back to the list rather
-    // than showing a thread for a chat that no longer exists.
-    if (id === sessionId) {
-      setSessionId(null);
-      setMessages([]);
-      window.localStorage.removeItem(LAST_SESSION_KEY);
-      setView("list");
-    }
   }
 
   /**
@@ -1468,25 +1759,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * caller until the next render.
    */
   async function newSession(): Promise<string | null> {
-    // A chat that was created and never written in is already a "New chat"
-    // row: an empty transcript, no preview. Clicking the slot again is
-    // navigation to it, not a second empty chat — that is what kept the
-    // list filling with identical "New chat" rows.
-    const listed = await loadSessions();
-    const blank = listed?.find((s) => !s.preview?.trim());
-    if (blank) {
-      await openSession(blank.id);
-      return blank.id;
-    }
-
-    const created = await api().companionSessionCreate("");
-    if (!created.ok) {
-      setError(created.error);
-      return null;
-    }
-    setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
-    await openSession(created.value.id);
-    return created.value.id;
+    const id = await chat.newChat();
+    // The slot has one case no state change can signal: the blank chat it lands
+    // on may already be the open one, so neither the surface nor the session
+    // moves and the caret effect never fires. The gesture still asked for the
+    // field, so hand it over here.
+    focusComposer();
+    return id;
   }
 
   /**
@@ -1497,13 +1776,121 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    */
   async function askStarter(question: ChatQuestion): Promise<void> {
     if (sending) return;
-    let target = sessionId;
-    if (!target) {
-      target = await newSession();
-      if (!target) return;
-    }
+    const target = sessionId ?? (await chat.newChat());
+    if (!target) return;
     await sendMessage(question.text, target);
   }
+
+  /**
+   * The onboarding cards' three writes, and the two interview kickoffs.
+   *
+   * The dock's own turns are the operator speaking: *Begin* starts the record
+   * and then sends "I'm ready to begin the interview." through the composer's
+   * send path, so the transcript shows the operator's own bubble and the
+   * companion answers it like any other turn. Nothing here fabricates a reply.
+   */
+  async function beginOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      const result = await api().onboardingStart();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+      await sendMessage("I'm ready to begin the interview.");
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not begin the interview",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  async function continueOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      // Idempotent on the engine side: an open record is left exactly as it is.
+      const result = await api().onboardingStart();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+      await sendMessage("Let's continue the interview.");
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not continue the interview",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  /**
+   * Acknowledge the announcement: the companion has already opened the areas
+   * and written the receipt, so this only clears the receipt. The record stays
+   * completed and the card never returns.
+   */
+  async function acknowledgeOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      const result = await api().onboardingDiscard();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not close the announcement",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  /**
+   * The companion opens the areas through its own tool, in the main process,
+   * not through an IPC call the dock made, so the vault's data revision is the
+   * only announcement that the receipt (and with it the opened card) exists.
+   *
+   * Listen while the record is unfinished or a receipt is still on screen.
+   * A re-read is cheap, and the announcement keeps no local state to lose: the
+   * old confirmation card's ticked lines were the only thing a refresh could
+   * have reset. Once the receipt is acknowledged and the record is completed the
+   * watcher detaches for good.
+   */
+  useEffect(() => {
+    if (!open || view !== "thread") return;
+    const record = snapshot?.onboarding;
+    if (!record) return;
+    if (record.status === "completed" && snapshot.onboardingProposal === null) {
+      return;
+    }
+    let stopped = false;
+    let stop: (() => void) | undefined;
+    try {
+      stop = api().onVaultDataChanged(() => {
+        if (!stopped) void refresh();
+      });
+    } catch {
+      // No bridge (a harness page): the card still appears on the next turn or
+      // the next launch, which is the old behaviour.
+      stop = undefined;
+    }
+    return () => {
+      stopped = true;
+      stop?.();
+    };
+  }, [open, view, snapshot?.onboarding?.status, snapshot?.onboardingProposal, refresh]);
 
   /**
    * One signal: its stamp on the rail, the message beside it, and the
@@ -1570,7 +1957,41 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             </form>
           ) : (
             <>
-              <p className="chat-panel__chain-body">{s.body}</p>
+              {s.attachment?.kind === "image" ? (
+                <span className="chat-panel__chain-image-wrap">
+                  {signalImageUrls[s.attachment.relPath] ? (
+                    <img
+                      className="chat-panel__chain-image"
+                      src={signalImageUrls[s.attachment.relPath]}
+                      alt={s.body.trim() || s.attachment.name}
+                      loading="lazy"
+                      width={s.attachment.width ?? undefined}
+                      height={s.attachment.height ?? undefined}
+                    />
+                  ) : (
+                    <span className="chat-panel__chain-image-missing muted">
+                      {missingSignalImages[s.attachment.relPath]
+                        ? "Picture missing from the vault."
+                        : "Loading picture…"}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              {s.attachment?.kind === "link" ? (
+                <a
+                  className="chat-panel__chain-link"
+                  href={s.attachment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={s.attachment.url}
+                >
+                  <Link2 size={13} aria-hidden />
+                  <span>{linkHost(s.attachment.url) || s.attachment.url}</span>
+                </a>
+              ) : null}
+              {s.body ? (
+                <p className="chat-panel__chain-body">{s.body}</p>
+              ) : null}
               <button
                 type="button"
                 className="chat-panel__chain-menu-btn"
@@ -1606,151 +2027,67 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               ) : null}
             </>
           )}
+          {/*
+            The area picker belongs to the capture, not to the panel under it:
+            it sits inside the card, after what the card says, at half the
+            card's width. The page's row keeps its picks on the row for the
+            same reason — what it is filed under is part of the row, not a
+            second bar beneath it.
+          */}
+          <select
+            className="chat-panel__chain-assign"
+            aria-label="Assign to area"
+            value={s.domainSlug ?? ""}
+            disabled={busy || editing}
+            onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
+          >
+            <option value="">Life (general)</option>
+            {assignOptions(s).map((d) => (
+              <option key={d.slug} value={d.slug}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          className="chat-panel__chain-assign"
-          aria-label="Assign to domain"
-          value={s.domainSlug ?? ""}
-          disabled={busy || editing}
-          onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
-        >
-          <option value="">- unassigned -</option>
-          {assignOptions(s).map((d) => (
-            <option key={d.slug} value={d.slug}>
-              {d.name}
-            </option>
-          ))}
-        </select>
       </li>
     );
   }
 
-  /**
-   * One chat row: the chat itself, its 3-dot menu, and — while the menu's Edit
-   * is up — the field the name is edited in. Clicking the open chat comes back
-   * to its thread; the row's own management lives behind the 3-dot control,
-   * because the list is the surface that can see every chat at once.
-   */
-  function sessionRow(s: HermesSession) {
-    const label = sessionLabel(s);
-    const when = formatSessionWhen(s.lastActive);
-    const active = s.id === sessionId;
-    const menuOpen = sessionMenuId === s.id;
-    const renamingRow = renamingSessionId === s.id;
-    return (
-      <li key={s.id} className="chat-panel__session-item">
-        {renamingRow ? (
-          <form
-            className="chat-panel__session-rename"
-            onSubmit={(e) => void commitSessionRename(e, s.id)}
+  const defaultModelLabel = modelCatalog?.current.model
+    ? shortModelLabel(modelCatalog.current.model)
+    : "";
+  /*
+    A chat the provider has retired the model of. Its turns fail on the gateway
+    before any model call — which is why the operator sees their message go up and
+    no answer arrive — so the dock says what happened and offers the one click
+    that moves the chat onto the profile's current model.
+
+    A continued chat is never offered that repair: it keeps running on the model
+    its gateway session was started with, and the WebSocket door carries no
+    per-turn model pick, so a "use the default model" button would promise a
+    control this transport does not have. Its model is read off the disabled
+    pill instead, read-only.
+  */
+  const modelRepairBanner =
+    chatModelRetired && defaultModelLabel && !continuable ? (
+      <div className="chat-panel__error chat-panel__model-repair" role="status" data-testid="chat-model-repair">
+        <p>
+          This chat's model (<strong>{activeChatModel}</strong>) is no longer offered by
+          this profile, so it cannot answer. Move it to the model this profile uses now.
+        </p>
+        <div className="chat-panel__error-actions">
+          <button
+            type="button"
+            className="chat-panel__text-btn"
+            data-testid="chat-model-repair-use-default"
+            disabled={sending}
+            onClick={() => void repairChatModel()}
           >
-            <input
-              className="chat-panel__rename-input"
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelSessionRename();
-                }
-              }}
-              aria-label="Chat name"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="chat-panel__text-btn"
-              aria-label="Save chat name"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className="chat-panel__text-btn"
-              aria-label="Cancel rename"
-              onClick={cancelSessionRename}
-            >
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={
-                active
-                  ? "chat-panel__session chat-panel__session--active"
-                  : "chat-panel__session"
-              }
-              aria-current={active ? "true" : undefined}
-              disabled={sending}
-              title={label}
-              onClick={() => {
-                if (s.id === sessionId) setView("thread");
-                else void openSession(s.id);
-              }}
-            >
-              {s.pinned ? (
-                <span className="chat-panel__session-pin" title="Pinned">
-                  <Pin size={12} aria-hidden />
-                </span>
-              ) : null}
-              <span className="chat-panel__session-label">{label}</span>
-              {when ? (
-                <time className="chat-panel__session-when" dateTime={sessionTimeValue(s.lastActive)}>
-                  {when}
-                </time>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className="chat-panel__session-menu-btn"
-              aria-label="Chat actions"
-              title="Chat actions"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              disabled={sending}
-              onClick={() => toggleSessionMenu(s.id)}
-            >
-              <MoreVertical size={14} aria-hidden />
-            </button>
-            {menuOpen ? (
-              <div className="chat-panel__session-menu" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Edit chat"
-                  onClick={() => startSessionRename(s)}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Archive chat"
-                  onClick={() => {
-                    setSessionMenuId(null);
-                    void patchSession(s.id, { archived: true });
-                  }}
-                >
-                  Archive
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Delete chat"
-                  className="chat-panel__session-menu-danger"
-                  onClick={() => void deleteSession(s.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            ) : null}
-          </>
-        )}
-      </li>
-    );
-  }
+            Use {modelCatalog?.current.model ?? defaultModelLabel}
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   const errorBanner = error ? (
     <div className="chat-panel__error" role="alert">
@@ -1762,7 +2099,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         <button
           type="button"
           className="chat-panel__text-btn"
-          onClick={() => setError(null)}
+          onClick={() => chat.dismissError(sessionId)}
         >
           Dismiss
         </button>
@@ -1798,142 +2135,445 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     );
   }
 
+  /*
+    The reading settings the transcript wears: the size and line spacing the
+    operator picked in Settings → Chat display or with the dock's zoom keys.
+    Published as the two custom properties the stylesheet multiplies the
+    transcript's type by, so every prose surface moves together.
+  */
+  const readingVariables = {
+    "--chat-reading-scale": String(
+      (reading?.zoom ?? DEFAULT_CHAT_DISPLAY_SETTINGS.zoom) / 100,
+    ),
+    "--chat-reading-line": String(
+      reading?.lineSpacing ?? DEFAULT_CHAT_DISPLAY_SETTINGS.lineSpacing,
+    ),
+  } as CSSProperties;
+
   return (
     <aside
       ref={panelRef}
       className="chat-panel"
       role="complementary"
-      aria-label="Hermes chat"
+      aria-label={`${companionName} chat`}
+      data-chat-surface={view}
+      style={readingVariables}
     >
         <div className="chat-panel__open">
-          {view === "list" ? (
-            <>
-              <div className="chat-panel__header">
-                <p className="chat-panel__heading">Chats</p>
-              </div>
-              <div className="chat-panel__list">
-                {errorBanner}
-                {sessionsLoaded && sessions.length === 0 ? (
-                  <p className="chat-panel__sessions-empty">No chats yet</p>
-                ) : (
-                  <ul
-                    className="chat-panel__sessions chat-panel__sessions--full"
-                    aria-label="Previous chats"
+          {/*
+            The open chats, as tabs, in the dock's top band. The strip leads the
+            dock — above the thread's header — so the chats in the air are the
+            first thing the operator sees, and the name row below belongs to the
+            tab in front, the way a browser draws its tabs above the page. The
+            browser's tab gestures come with it: a middle click on a tab closes
+            it, and Ctrl/Cmd+W closes the one in front (that key lives in the
+            shortcut runner, because only it can see the strip and stand down
+            under a modal or a recording row).
+
+            It is drawn whenever the thread has a tab, even a single one: the
+            plus at its trailing edge is the second tab's door, and a strip that
+            only appeared once a second tab existed would hide that door behind
+            the very gesture it exists for.
+
+            A live tab's dot pulses, a tab waiting on an approval keeps a ring,
+            and the close control stops a turn before it drops the tab. The
+            pinned band leads the strip: a pinned tab leads with the pin in the
+            slot a plain tab spends on its status mark, then wears the chat's
+            name like any other tab, and keeps no close control — the way out of
+            the band is the menu's Unpin, so a pin is never dropped by a stray
+            press. A pin is a durable Hermes flag rather than a strip-local
+            decoration, so a pinned chat has a tab even on a launch where it was
+            never opened — which is why the strip shows with a single pinned
+            chat and nothing else open. Right-click opens that menu on any tab.
+          */}
+          {view === "thread" && tabIds.length > 0 ? (
+            <div
+              className="chat-panel__tabs"
+              role="tablist"
+              aria-label="Open chats"
+              ref={tabsRef}
+            >
+              {orderedTabIds.map((id) => {
+                const row = sessions.find((s) => s.id === id) ?? null;
+                const tabRun = chat.runOf(id);
+                const label = row ? sessionLabel(row) : "Chat";
+                const pinned = row?.pinned === true;
+                const live = tabRun.sending;
+                const waiting = tabRun.approval !== null;
+                // A kickoff chat wears the mark of the work that started it
+                // instead of the plain status dot.
+                const iconKind = chat.sessionIcons[id] ?? null;
+                const Icon = iconKind ? SESSION_ICON[iconKind] : null;
+                // A chat from another surface leads with that platform's mark,
+                // the same one the Chats row wears (see lib/platform-mark.tsx).
+                const PlatformMark = row ? platformMarkFor(row.source) : null;
+                return (
+                  <div
+                    key={id}
+                    role="presentation"
+                    data-tab-id={id}
+                    data-icon={iconKind ?? undefined}
+                    data-source={
+                      row && isContinuableSession(row) ? row.source : undefined
+                    }
+                    className={[
+                      "chat-panel__tab",
+                      pinned ? "chat-panel__tab--pinned" : "",
+                      id === sessionId ? "chat-panel__tab--active" : "",
+                      live ? "chat-panel__tab--live" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    data-pinned={pinned || undefined}
+                    data-live={live || undefined}
+                    data-approval={waiting || undefined}
+                    onContextMenu={(e) => openTabMenu(e, id, pinned)}
+                    onAuxClick={(e) => closeTabOnMiddlePress(e, id, pinned)}
+                    onMouseDown={(e) => {
+                      // The press half of the middle-click close: without this
+                      // the browser's autoscroll quest starts under the strip.
+                      if (e.button === 1) e.preventDefault();
+                    }}
                   >
-                    {pinnedSessions.length > 0 ? (
-                      <>
-                        <li className="chat-panel__sessions-group">Pinned</li>
-                        {pinnedSessions.map(sessionRow)}
-                      </>
-                    ) : null}
-                    {recentSessions.length > 0 ? (
-                      <>
-                        {pinnedSessions.length > 0 ? (
-                          <li className="chat-panel__sessions-group">Recent</li>
-                        ) : null}
-                        {recentSessions.map(sessionRow)}
-                      </>
-                    ) : null}
-                  </ul>
-                )}
-              </div>
-            </>
-          ) : view === "chain" ? (
-            <div className="chat-panel__header">
-              <p className="chat-panel__heading">Life-Chain</p>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={id === sessionId}
+                      className="chat-panel__tab-main"
+                      aria-label={pinned ? `${label} — pinned tab` : undefined}
+                      title={
+                        pinned
+                          ? `${label} — pinned tab`
+                          : `${label} — middle-click to close`
+                      }
+                      onClick={() => {
+                        if (id === sessionId) {
+                          setView("thread");
+                          return;
+                        }
+                        void openSession(id);
+                      }}
+                    >
+                      {pinned ? (
+                        /*
+                          A pinned tab leads with the pin itself, in the slot a
+                          plain tab spends on its status mark, and then wears the
+                          chat's name like any other tab. The pin is what makes a
+                          tab pinned, not a square that hides the name; the live
+                          and approval states paint the pin the way they paint a
+                          status dot. It keeps no close control: a pin is never
+                          dropped by a stray press, only by the menu's Unpin.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
+                          <Pin
+                            className="chat-panel__tab-pin"
+                            size={11}
+                            fill="currentColor"
+                          />
+                        </span>
+                      ) : (
+                        /*
+                          The tab's leading mark: the status dot at rest, the
+                          kickoff chat's own icon, or the platform's mark for a
+                          chat continued from another surface. The state (a live
+                          pulse, an approval ring) paints this one slot whichever
+                          mark it holds, so a chat with an icon loses nothing a
+                          plain tab shows.
+                        */
+                        <span className="chat-panel__tab-mark" aria-hidden>
+                          {Icon ? (
+                            <Icon className="chat-panel__tab-icon" size={11} />
+                          ) : PlatformMark ? (
+                            <PlatformMark
+                              className="chat-panel__tab-icon"
+                              size={11}
+                            />
+                          ) : (
+                            <span className="chat-panel__tab-dot" />
+                          )}
+                        </span>
+                      )}
+                      <span className="chat-panel__tab-label">{label}</span>
+                    </button>
+                    {pinned ? null : (
+                      <button
+                        type="button"
+                        className="chat-panel__tab-close"
+                        aria-label={`Close ${label}`}
+                        title={`Close ${label}`}
+                        onClick={() => chat.closeTab(id)}
+                      >
+                        <X size={11} aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {/*
+                The strip's own door: a new blank conversation in a tab of its
+                own, beside the chat in front. It is the sidebar's New chat slot
+                in miniature — the same store action, the same one-blank-at-a-
+                time rule — and it sits in the tab flow directly after the last
+                tab, where the next tab will appear, rather than parked on the
+                band's trailing edge. The strip's slack falls after the plus: the
+                strip is the chats, and the full-screen door lives in the bottom
+                action bar, where the dock keeps its other chrome.
+              */}
+              <button
+                type="button"
+                className="chat-panel__tab-new"
+                aria-label="New chat tab"
+                title="New chat tab"
+                onClick={() => void newSession()}
+              >
+                <Plus size={13} aria-hidden />
+              </button>
             </div>
-          ) : (
-            <div className="chat-panel__header chat-panel__header--thread">
+          ) : null}
+          {view === "chain" ? (
+            <div className="chat-panel__header chat-panel__header--chain">
+              {/*
+                The surface's name, marked by the rail's own Notebox glyph and
+                centred on the band: this is the dock's one page, so the heading
+                is a label for the column rather than a title pinned left of a
+                control. The full-screen door lives in the bottom action bar
+                now, so the band carries nothing but its name.
+              */}
+              <div className="chat-panel__chain-heading">
+                <Inbox size={15} aria-hidden />
+                <p className="chat-panel__heading">Notebox</p>
+              </div>
+            </div>
+          ) : view === "shortcuts" ? (
+            /*
+              The dock's bottom bar opens this page onto the panel. It
+              shares the thread's header shape — a way back, the page's name, and
+              the one control the page needs — but its body is a reference, not a
+              conversation, so there is no composer under it and the tab strip
+              is not drawn with it.
+            */
+            <div className="chat-panel__header chat-panel__header--shortcuts">
               <button
                 type="button"
                 className="chat-panel__icon-btn"
-                aria-label="All chats"
-                title="All chats"
-                onClick={() => setView("list")}
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView("thread")}
               >
                 <ArrowLeft size={16} aria-hidden />
               </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Keyboard shortcuts
+              </p>
+              <div className="chat-panel__header-actions">
+                <Link
+                  to="/settings?tab=shortcuts"
+                  className="chat-panel__icon-btn"
+                  aria-label="Change keyboard shortcuts in Settings"
+                  title="Change in Settings"
+                >
+                  <Pencil size={16} aria-hidden />
+                </Link>
+              </div>
+            </div>
+          ) : view === "display" ? (
+            /*
+              The chat display page wears the shortcuts page's header shape: a
+              way back, the page's name, and no composer or tab strip under it.
+              It keeps no door into Settings: every control the page owns is
+              here, and the button that opened it must not become a second way
+              out of the dock.
+            */
+            <div className="chat-panel__header chat-panel__header--display">
+              <button
+                type="button"
+                className="chat-panel__icon-btn"
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView("thread")}
+              >
+                <ArrowLeft size={16} aria-hidden />
+              </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Chat display
+              </p>
+            </div>
+          ) : (
+            <div
+              className="chat-panel__header chat-panel__header--thread"
+              data-continuable={continuable ? "true" : undefined}
+              data-source={continuable ? activeSession?.source : undefined}
+            >
               {renaming ? (
                 <form
                   className="chat-panel__rename"
-                  onSubmit={(e) => void commitRename(e)}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void commitRename();
+                  }}
                 >
                   <input
                     className="chat-panel__rename-input"
+                    data-testid="chat-name-input"
                     value={renameDraft}
                     onChange={(e) => setRenameDraft(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onBlur={() => void commitRename()}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === "Escape") {
                         e.preventDefault();
                         cancelRename();
+                        return;
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.currentTarget.blur();
                       }
                     }}
                     aria-label="Chat name"
                     autoFocus
                   />
-                  <button
-                    type="submit"
-                    className="chat-panel__icon-btn"
-                    aria-label="Save name"
-                    title="Save name"
-                  >
-                    <Check size={16} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-panel__icon-btn"
-                    aria-label="Cancel rename"
-                    title="Cancel rename"
-                    onClick={cancelRename}
-                  >
-                    <X size={16} aria-hidden />
-                  </button>
                 </form>
               ) : (
-                <>
-                  <p
+                /*
+                  The name row is the name itself, not a band and not a box: the
+                  tab above already names the chat, so this row is the caption
+                  hung flush off the strip's bottom edge. Resting state is plain
+                  neutral-gray text with no outline and no pencil — the whole
+                  name is the control. Clicking it opens the field in place; the
+                  field's blur (clicking anywhere else) is the save, and Escape
+                  is the cancel. The tab's right-click Rename opens the same
+                  field.
+                */
+                <button
+                  type="button"
+                  className="chat-panel__name"
+                  data-testid="chat-name-chip"
+                  aria-label={`Rename ${activeLabel}`}
+                  title="Rename chat"
+                  onClick={startRename}
+                >
+                  <span
                     className="chat-panel__heading chat-panel__heading--thread"
                     title={activeLabel}
                   >
                     {activeLabel}
-                  </p>
-                  <div className="chat-panel__header-actions">
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label={activeSession?.pinned ? "Unpin chat" : "Pin chat"}
-                      title={activeSession?.pinned ? "Unpin chat" : "Pin chat"}
-                      onClick={() => void togglePin()}
-                    >
-                      {activeSession?.pinned ? (
-                        <PinOff size={16} aria-hidden />
-                      ) : (
-                        <Pin size={16} aria-hidden />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label="Rename chat"
-                      title="Rename chat"
-                      onClick={startRename}
-                    >
-                      <Pencil size={16} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label="Archive chat"
-                      title="Archive chat"
-                      onClick={() => void archiveActive()}
-                    >
-                      <Archive size={16} aria-hidden />
-                    </button>
-                  </div>
-                </>
+                  </span>
+                </button>
               )}
+              {/*
+                The surface this conversation came from, worn beside the name.
+                It is a label, not a control: it answers "why does this chat
+                already have history I did not write here?" without a banner or
+                a second transcript. The tooltip says the one thing the label
+                cannot: this is the same conversation continued from there, not
+                a copy of it. Only a chat another surface owns wears it — an
+                api_server chat is this app's own and has no surface to name.
+              */}
+              {continuable ? (
+                <span
+                  className={
+                    SourceMark
+                      ? "chat-panel__source chat-panel__source--mark"
+                      : "chat-panel__source"
+                  }
+                  data-source={activeSession?.source}
+                  role="img"
+                  aria-label={`Continued from ${sourceLabel}: the same conversation, continued here, not copied`}
+                  title={`Started on ${sourceLabel} — this is the same conversation, continued here, not copied.`}
+                >
+                  {SourceMark ? (
+                    <>
+                      <SourceMark className="chat-panel__source-mark" size={12} />
+                      {/* The chip's accessible name is the aria-label above; the
+                          word stays in the DOM for tests and for a screen reader
+                          that reads the chip's text, but never paints. */}
+                      <span className="visually-hidden">{sourceLabel}</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquareShare size={11} aria-hidden />
+                      <span className="chat-panel__source-label">{sourceLabel}</span>
+                    </>
+                  )}
+                </span>
+              ) : null}
             </div>
           )}
+          {/*
+            The tab's menu, drawn at the pointer in the window's own coordinates.
+            It is portalled to the document because the strip is a horizontal
+            scroll port and the dock is a z-indexed column: a menu laid out
+            inside either is clipped by the strip's edge or ordered under the
+            shell's own paint. The layout effect above clamps it inside the
+            window, and the stylesheet keeps it under the app's dialogs.
+          */}
+          {tabMenu
+            ? createPortal(
+                <div
+                  className="chat-panel__tab-menu"
+                  role="menu"
+                  aria-label="Tab actions"
+                  ref={tabMenuRef}
+                  data-menu-for={tabMenu.pinned ? "pinned" : "unpinned"}
+                  data-tab-id={tabMenu.id}
+                  style={{
+                    left: tabMenuPos?.left ?? tabMenu.x,
+                    top: tabMenuPos?.top ?? tabMenu.y,
+                    visibility: tabMenuPos ? "visible" : "hidden",
+                  }}
+                >
+                  {tabMenu.pinned ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label="Unpin chat"
+                      onClick={() => unpinTab(tabMenu.id)}
+                    >
+                      <Pin size={12} fill="currentColor" aria-hidden /> Unpin
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Pin chat"
+                        onClick={() => pinTab(tabMenu.id)}
+                      >
+                        <Pin size={12} aria-hidden /> Pin
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Rename chat"
+                        onClick={() => renameTab(tabMenu.id)}
+                      >
+                        <Pencil size={12} aria-hidden /> Rename
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Archive chat"
+                        onClick={() => archiveTab(tabMenu.id)}
+                      >
+                        <Archive size={12} aria-hidden /> Archive
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Delete chat"
+                        className="chat-panel__tab-menu-danger"
+                        onClick={() => deleteTab(tabMenu.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>,
+                document.body,
+              )
+            : null}
 
           <div className="chat-panel__body" ref={listRef} hidden={view !== "thread"}>
             {errorBanner}
@@ -1946,12 +2586,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     type="button"
                     className="chat-panel__text-btn"
                     onClick={() => {
-                      void api().companionApproval({
-                        runId: approval.runId,
-                        requestId: approval.requestId,
-                        allow: true,
-                      });
-                      setApproval(null);
+                      if (!sessionId) return;
+                      chat.approve(
+                        sessionId,
+                        approval.runId,
+                        approval.requestId,
+                        true,
+                      );
                     }}
                   >
                     Allow once
@@ -1960,12 +2601,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     type="button"
                     className="chat-panel__text-btn"
                     onClick={() => {
-                      void api().companionApproval({
-                        runId: approval.runId,
-                        requestId: approval.requestId,
-                        allow: false,
-                      });
-                      setApproval(null);
+                      if (!sessionId) return;
+                      chat.approve(
+                        sessionId,
+                        approval.runId,
+                        approval.requestId,
+                        false,
+                      );
                     }}
                   >
                     Deny
@@ -1974,13 +2616,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : null}
 
-            {messages.length === 0 && !sending ? (
+            {turns.length === 0 && !sending ? (
               <div className="chat-panel__empty">
                 <div className="chat-panel__empty-orb" aria-hidden />
-                <p className="chat-panel__empty-title">Ask Hermes</p>
+                <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
                 <p className="chat-panel__empty-copy">
-                  This is your LifeQuest companion on the lifequest Hermes
-                  profile. Active domain: {domainName}.
+                  {companionContext?.harness === "pi"
+                    ? `This is the built-in LifeQuest companion. Active area: ${domainName}.`
+                    : `This is your LifeQuest companion on the ${
+                        companionContext?.profile ?? "lifequest"
+                      } Hermes profile. Active area: ${domainName}.`}
                 </p>
                 {/*
                   The saved questions that fit this screen. One click sends the
@@ -2014,6 +2659,22 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                         </li>
                       ))}
                     </ul>
+                    {/*
+                      The way back to the page that writes these prompts. The
+                      operator is looking at saved questions, so editing one —
+                      or adding another — should not mean hunting through the
+                      settings root for them. The link stays under the list,
+                      where the choice was just made.
+                    */}
+                    <Link
+                      to="/settings?tab=questions"
+                      className="chat-panel__link chat-panel__starters-edit"
+                      data-testid="chat-questions-settings-link"
+                      aria-label="Edit the saved questions in Settings"
+                    >
+                      <Pencil size={12} aria-hidden />
+                      Edit questions
+                    </Link>
                   </div>
                 ) : null}
                 {/*
@@ -2035,7 +2696,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                       <Link
                         to="/settings?tab=questions"
                         className="chat-panel__link"
-                        data-testid="chat-empty-questions-link"
+                        data-testid="chat-questions-settings-link"
                         aria-label="Set your custom questions in Settings"
                       >
                         here
@@ -2047,114 +2708,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : (
               <div className="chat-panel__messages" aria-live="polite">
-                {messages.map((m) => {
-                  const copyOk = copied?.id === m.id && copied.ok;
-                  const copyFailed = copied?.id === m.id && !copied.ok;
-                  const copyLabel = copyOk
-                    ? "Copied"
-                    : copyFailed
-                      ? "Copy failed"
-                      : "Copy message";
-                  const atDate = m.at ? new Date(m.at) : null;
-                  const validAt =
-                    atDate && !Number.isNaN(atDate.getTime()) ? atDate : null;
-                  return (
-                    <div
-                      key={m.id}
-                      className={`chat-panel__message chat-panel__message--${m.role}`}
-                    >
-                      <span className="chat-panel__message-role">
-                        {m.role === "user" ? "You" : "Hermes"}
-                      </span>
-                      <div className="chat-panel__message-content">
-                        {m.receipt ? (
-                          <span className="chat-panel__message-receipt">
-                            <ImagePlus size={12} aria-hidden />
-                            {m.receipt.name}
-                            <span className="chat-panel__receipt-size">
-                              {formatReceiptSize(m.receipt.size)}
-                            </span>
-                          </span>
-                        ) : null}
-                        {m.content}
-                      </div>
-                      <div className="chat-panel__message-meta">
-                        {validAt ? (
-                          <time
-                            className="chat-panel__message-time"
-                            dateTime={validAt.toISOString()}
-                            title={validAt.toLocaleString()}
-                          >
-                            {formatMessageWhen(m.at)}
-                          </time>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="chat-panel__message-copy"
-                          data-copy-state={copyOk ? "copied" : copyFailed ? "failed" : "idle"}
-                          aria-label={
-                            m.role === "user" ? `${copyLabel} (your message)` : `${copyLabel} (Hermes)`
-                          }
-                          title={copyLabel}
-                          onClick={() => void copyMessage(m)}
-                        >
-                          {copyOk ? (
-                            <Check size={11} aria-hidden />
-                          ) : (
-                            <Copy size={11} aria-hidden />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {sending && tools.length === 0 ? (
-                  <div className="chat-panel__message chat-panel__message--assistant">
-                    <span className="chat-panel__message-role">Hermes</span>
-                    <div className="chat-panel__message-content">
-                      <span className="chat-panel__thinking muted">
-                        Thinking…
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                {tools.length > 0 ? (
-                  <div className="chat-panel__activity">
-                    {tools.length > 1 ? (
-                      <button
-                        type="button"
-                        className="chat-panel__activity-line"
-                        aria-expanded={toolsOpen}
-                        onClick={() => setToolsOpen((wasOpen) => !wasOpen)}
-                      >
-                        <ChevronRight
-                          size={12}
-                          aria-hidden
-                          className={toolsOpen ? "chat-panel__activity-caret chat-panel__activity-caret--open" : "chat-panel__activity-caret"}
-                        />
-                        <span>{summarizeToolRun(tools, sending)}</span>
-                      </button>
-                    ) : (
-                      <p className="chat-panel__activity-line">
-                        {summarizeToolRun(tools, sending)}
-                      </p>
-                    )}
-                    {tools.length > 1 && toolsOpen ? (
-                      <ul className="chat-panel__activity-list" ref={activityRef}>
-                        {tools.map((call) => (
-                          <li key={call.id} className="chat-panel__activity-row">
-                            {toolRowLabel(call)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ) : null}
-                {turnNote ? (
-                  <p className="chat-panel__turn-note" role="status">
-                    {turnNote}
-                  </p>
-                ) : null}
+                <TurnTimeline
+                  turns={turns}
+                  capabilities={capabilities}
+                  companionName={companionName}
+                  latestTurnId={turns[turns.length - 1]?.turnId ?? null}
+                  copied={copied}
+                  onCopy={(id, content) => void copyMessage(id, content)}
+                  onToggleFold={(turnId, open) => {
+                    if (sessionId) chat.setTurnFoldOpen(sessionId, turnId, open);
+                  }}
+                />
               </div>
             )}
           </div>
@@ -2175,19 +2739,80 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               <p className="chat-panel__chain-empty muted">
                 {signals.length === 0
                   ? "Nothing on the chain yet. Write something below."
-                  : "No unassigned or matching signals in this domain."}
+                  : "No Life (general) or matching signals in this area."}
               </p>
             ) : (
               <ul
                 className="chat-panel__chain-list"
-                aria-label="Life-Chain signals"
+                aria-label="Notebox signals"
               >
                 {chainItems.map(signalRow)}
               </ul>
             )}
           </div>
 
-          <div className="chat-panel__footer" hidden={view === "list"}>
+          {/*
+            The shortcuts reference, as the dock's fourth surface: every movement
+            and the keys it currently answers to, read from the same table the
+            Settings page edits. It has no composer — there is nothing to send
+            from a reference — and its one write path is the pencil in the header,
+            which opens the editable page over the app.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--shortcuts"
+            hidden={view !== "shortcuts"}
+          >
+            {/* Mounted only while it is the surface: the page reads the
+                shortcuts provider, and a shell mounted without one should not
+                pay for a page it cannot show. */}
+            {view === "shortcuts" ? <ChatShortcutsPage /> : null}
+          </div>
+
+          {/*
+            The chat display settings, as the dock's fifth surface: the size and
+            line spacing the transcript is read at, edited on the pane that wears
+            them. It reads the same window-local pair Settings → Chat display
+            edits, so the two surfaces cannot disagree; the page has no composer
+            because there is nothing to send from a display setting.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--display"
+            hidden={view !== "display"}
+          >
+            {/* Mounted only while it is the surface, like the shortcuts page:
+                it reads the display provider, and a shell without one should
+                not pay for a page it cannot show. */}
+            {view === "display" ? <ChatDisplayPage /> : null}
+          </div>
+
+          <div
+            className="chat-panel__footer"
+            hidden={view === "shortcuts" || view === "display"}
+          >
+            {/*
+              The interview, above the composer rather than in the transcript:
+              it is the app speaking, it must not scroll away with the
+              conversation, and the thread's `aria-live` must not announce it as
+              if the companion had said it. Thread surface only — the chain, the
+              shortcuts reference and the chat display page have no interview to
+              open.
+            */}
+            {view === "thread" ? (
+              <OnboardingCards
+                status={snapshot?.onboarding?.status ?? "completed"}
+                proposal={snapshot?.onboardingProposal ?? null}
+                busy={onboardingBusy}
+                onBegin={() => void beginOnboarding()}
+                onContinue={() => void continueOnboarding()}
+                onAcknowledge={() => void acknowledgeOnboarding()}
+              />
+            ) : null}
+            {/*
+              The retired-model notice is dock chrome, not transcript: it sits
+              above the composer under the scroll port so a long conversation
+              cannot scroll the one explanation and its fix out of sight.
+            */}
+            {view === "thread" ? modelRepairBanner : null}
             {view === "chain" ? (
               /*
                 The chain's composer: the same field, the same inline arrow, the
@@ -2199,6 +2824,37 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 className="chat-panel__composer"
                 onSubmit={(e) => void onChainSubmit(e)}
               >
+                {/*
+                  The link waiting to be logged, above the field: a pasted URL
+                  becomes the capture's attachment, the same gesture the page's
+                  own box takes, so it rides the composer rather than sitting in
+                  the description as text. One attachment per capture, so a new
+                  paste replaces this one.
+                */}
+                {chainLink ? (
+                  <div
+                    className="chat-panel__chain-link-chip"
+                    data-testid="dock-chain-link-chip"
+                  >
+                    <Link2 size={13} aria-hidden />
+                    <span className="chat-panel__chain-link-host">
+                      {linkHost(chainLink) || chainLink}
+                    </span>
+                    <span className="chat-panel__chain-link-url">
+                      {chainLink}
+                    </span>
+                    <button
+                      type="button"
+                      className="chat-panel__chain-link-remove"
+                      aria-label="Remove the attached link"
+                      title="Remove the attached link"
+                      onClick={() => setChainLink(null)}
+                      disabled={chainBusy}
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
                 <div
                   className={
                     chainControlVisible
@@ -2213,6 +2869,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     value={chainDraft}
                     onChange={(e) => setChainDraft(e.target.value)}
                     onKeyDown={onComposerKeyDown}
+                    onPaste={onChainPaste}
                     disabled={chainBusy}
                     rows={2}
                     aria-label="Log a signal"
@@ -2231,6 +2888,21 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
+                {/*
+                  The chain composer's picker, on the same rule as the thread's:
+                  the menu trigger floats in the gutter the form leaves, the
+                  inline roster is a row under the field's own row. The chain has
+                  no dock row to lead, so the under-row is the only place a
+                  roster in the open can sit here — and it is the same place as
+                  the thread's, which is the point.
+                */}
+                {inlineAgentPicker ? (
+                  <div className="chat-panel__composer-under">
+                    <AgentSwitcher />
+                  </div>
+                ) : (
+                  <AgentSwitcher />
+                )}
               </form>
             ) : (
               <form
@@ -2242,232 +2914,489 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   if (e.dataTransfer.types.includes("Files")) e.preventDefault();
                 }}
                 onDrop={(e) => {
-                  const file = imageFrom(e.dataTransfer.files);
-                  if (!file) return;
+                  // Anything dropped on the composer is an attachment, the way
+                  // the plus takes it. A picture can then become the receipt
+                  // from its chip, which is where the operator says what the
+                  // picture MEANS; a clip or a document is simply carried.
+                  const files = Array.from(e.dataTransfer?.files ?? []);
+                  if (files.length === 0) return;
                   e.preventDefault();
-                  void attachReceipt(file);
+                  for (const file of files) void attachFile(file);
                 }}
               >
-                <PhoneDraftStrip drafts={phoneDrafts} onPrefill={askPhoneDraft} />
                 {/*
-                  The card this chat is about, above the field.
+                  The cards this chat is about, above the field.
 
-                  It sits here rather than in the transcript because it is not
-                  something either side said: it is what the next turn will be
-                  about, and it stays until the operator takes it off. The field
-                  below keeps the placeholder it always had — a card in context
-                  does not change what the composer is for, only what "this card"
-                  means inside it.
+                  They sit here rather than in the transcript because they are
+                  not something either side said: they are what the next turn
+                  will be about, and they stay until the operator takes each off.
+                  The field below keeps the placeholder it always had — cards in
+                  context do not change what the composer is for, only what
+                  "this card" means inside it.
+
+                  A continued chat does not show them at all: the WebSocket door
+                  carries the prompt only, so a card that looked "in context"
+                  there would be a promise the turn cannot keep. The composer's
+                  one-line note says so instead.
                 */}
-                {contextCard ? (
-                  <div className="chat-panel__context" data-testid="chat-context-pill">
-                    <MessageSquare size={12} aria-hidden />
-                    <span className="chat-panel__context-label" title={contextCard.label}>
-                      {contextCard.label}
-                    </span>
-                    <span className="chat-panel__context-kind">in context</span>
-                    <button
-                      type="button"
-                      className="chat-panel__context-remove"
-                      data-testid="chat-context-remove"
-                      aria-label="Remove card from context"
-                      title="Remove card from context"
-                      onClick={() => setContextCard(null)}
-                    >
-                      <X size={12} aria-hidden />
-                    </button>
-                  </div>
-                ) : null}
-                <div
-                  className={
-                    controlVisible
-                      ? "chat-panel__composer-row chat-panel__composer-row--control"
-                      : "chat-panel__composer-row"
-                  }
-                >
-                  <textarea
-                    ref={inputRef}
-                    className="chat-panel__composer-input"
-                    placeholder="Message Hermes…"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    onPaste={(e) => {
-                      // A pasted screenshot is a receipt too: take the image and
-                      // leave any pasted text to the field's own handling.
-                      const file = imageFrom(e.clipboardData?.files ?? null);
-                      if (!file) return;
-                      e.preventDefault();
-                      void attachReceipt(file);
-                    }}
-                    disabled={sending || !sessionId}
-                    rows={2}
-                    aria-label="Message Hermes"
-                    autoComplete="off"
-                  />
-                  {controlVisible ? (
-                    <button
-                      type={sending ? "button" : "submit"}
-                      className="chat-panel__send"
-                      data-state={sending ? "stop" : "send"}
-                      disabled={sending ? !runId : !sessionId}
-                      aria-label={sending ? "Stop this run" : "Send message"}
-                      title={sending ? "Stop this run" : "Send message"}
-                      onClick={sending ? () => void stopRun() : undefined}
-                    >
-                      {sending ? (
-                        <span className="chat-panel__send-stop" aria-hidden />
-                      ) : (
-                        <ArrowUp size={15} aria-hidden />
-                      )}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="chat-panel__composer-runtime">
-                  {/*
-                    The composer's footer line, under the field: the attach control
-                    on the left, the turn's runtime pick on the right. The attach
-                    control stays outside the field so it costs the textarea no
-                    width - the field keeps the panel's full width, and the send
-                    control already spends a gutter of it - with the waiting chip
-                    riding beside it.
-                  */}
-                  <div className="chat-panel__receipts">
-                    <input
-                      ref={receiptInputRef}
-                      className="chat-panel__receipt-input"
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      aria-label="Receipt image"
-                      onChange={(e) => {
-                        const file = imageFrom(e.target.files);
-                        if (file) void attachReceipt(file);
-                        // Clear the picker so choosing the same file twice still
-                        // fires a change event.
-                        e.target.value = "";
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="chat-panel__attach"
-                      disabled={sending || !sessionId}
-                      aria-label="Attach a receipt"
-                      title="Attach a receipt"
-                      onClick={() => receiptInputRef.current?.click()}
-                    >
-                      <ImagePlus size={15} aria-hidden />
-                    </button>
-                    {/*
-                      The page, beside the receipt control and wearing its shape:
-                      one pill that says which screen rides the next turn.
-
-                      It defaults to on and re-arms on every navigation, because
-                      the failure it answers is an agent that offered to build a
-                      card the screen was already showing. The operator can turn
-                      it off — sometimes the question is about something else —
-                      and the pill stays on the line in its off state, because a
-                      control that vanished when used could not be turned back
-                      on.
-                    */}
-                    <button
-                      type="button"
-                      className="chat-panel__page"
-                      data-state={pageContext.on ? "on" : "off"}
-                      data-testid="chat-page-context"
-                      aria-pressed={pageContext.on}
-                      aria-label={
-                        pageContext.on
-                          ? `Page context on: the ${pageContext.label} screen rides your next message`
-                          : `Page context off: the ${pageContext.label} screen will not be sent`
-                      }
-                      title={
-                        pageContext.on
-                          ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
-                          : `The ${pageContext.label} screen is not sent — click to send it again`
-                      }
-                      onClick={() => setPageContextOn(!pageContext.on)}
-                    >
-                      {pageContext.on ? (
-                        <Eye size={12} aria-hidden />
-                      ) : (
-                        <EyeOff size={12} aria-hidden />
-                      )}
-                      <span
-                        className="chat-panel__page-label"
-                        data-testid="chat-page-context-label"
+                {contextCards.length > 0 && !continuable ? (
+                  <div className="chat-panel__contexts" data-testid="chat-context-pills">
+                    {contextCards.map((card) => (
+                      <div
+                        key={card.pin.id}
+                        className="chat-panel__context"
+                        data-testid="chat-context-pill"
+                        data-context-pin-id={card.pin.id}
                       >
-                        {pageContext.label}
-                      </span>
-                      <span className="chat-panel__page-kind">
-                        {pageContext.on ? "in context" : "off"}
-                      </span>
-                    </button>
-                    {receipt ? (
-                      <div className="chat-panel__receipt">
-                        <img
-                          className="chat-panel__receipt-thumb"
-                          src={receipt.previewUrl}
-                          alt=""
-                        />
-                        <span className="chat-panel__receipt-name">{receipt.name}</span>
-                        <span className="chat-panel__receipt-size">
-                          {formatReceiptSize(receipt.size)}
+                        <MessageSquare size={12} aria-hidden />
+                        <span className="chat-panel__context-label" title={card.label}>
+                          {card.label}
                         </span>
+                        <span className="chat-panel__context-kind">in context</span>
                         <button
                           type="button"
-                          className="chat-panel__receipt-remove"
-                          aria-label="Remove receipt"
-                          title="Remove receipt"
-                          onClick={() => putReceipt(null)}
+                          className="chat-panel__context-remove"
+                          data-testid="chat-context-remove"
+                          data-context-pin-id={card.pin.id}
+                          aria-label={`Remove "${card.label}" from context`}
+                          title="Remove card from context"
+                          onClick={() => removeCardContext(card.pin.id)}
                         >
                           <X size={12} aria-hidden />
                         </button>
                       </div>
-                    ) : null}
+                    ))}
                   </div>
-                  {/*
-                    The turn's runtime pick, at the right end of the footer line
-                    under the field: the dock's version of the Hermes Desktop
-                    composer's model and reasoning pills. Every control in it
-                    is `type="button"` - nothing here can submit the field
-                    above it. Absent entirely when the gateway served no
-                    catalog, which leaves the attach control alone on the line.
-                  */}
-                  <ComposerModelControls
-                    catalog={modelCatalog}
-                    disabled={sending || !sessionId}
-                    pick={runtimePick}
-                    onChange={updateRuntimePick}
+                ) : null}
+                {/*
+                  The attachments waiting to ride this chat's next turn, above the
+                  field: one chip per file, each with its own remove. They ride
+                  the field rather than a panel of their own, because they belong
+                  to the message being written — removing one is a small edit to
+                  that message, not a change to the chat.
+                */}
+                {attachments.length > 0 ? (
+                  <div
+                    className="chat-panel__attachments"
+                    data-testid="chat-attachments"
+                  >
+                    {attachments.map((attachment) => {
+                      const canBeReceipt = receiptCandidate(attachment);
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="chat-panel__attachment"
+                          data-testid="chat-attachment"
+                          data-attachment-kind={attachment.kind}
+                          data-receipt-offer={canBeReceipt ? "true" : undefined}
+                        >
+                          {attachment.kind === "image" && attachment.previewUrl ? (
+                            <img
+                              className="chat-panel__attachment-thumb"
+                              src={attachment.previewUrl}
+                              alt=""
+                            />
+                          ) : (
+                            <span className="chat-panel__attachment-icon" aria-hidden>
+                              <Paperclip size={12} />
+                            </span>
+                          )}
+                          <span className="chat-panel__attachment-name">
+                            {attachment.name}
+                          </span>
+                          <span className="chat-panel__receipt-size">
+                            {formatReceiptSize(attachment.size)}
+                          </span>
+                          {/* The picture's meaning is chosen here, after the
+                              picker: one press moves it into the receipt slot
+                              the ledger cites. Offered only for a JPEG/PNG in a
+                              vault whose receipt store exists (kit installed,
+                              Financial area live), and held while a turn or
+                              another promotion is in flight; a picture the
+                              store cannot prepare still says why. */}
+                          {canBeReceipt ? (
+                            <button
+                              type="button"
+                              className="chat-panel__attachment-receipt"
+                              data-testid="chat-attachment-receipt"
+                              aria-label={`Use ${attachment.name} as a receipt`}
+                              title="Use this picture as a receipt — the ledger cites it as the transaction's source"
+                              disabled={promotingId !== null || sending}
+                              onClick={() => void useAsReceipt(attachment)}
+                            >
+                              Use as receipt
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="chat-panel__attachment-remove"
+                            aria-label={`Remove ${attachment.name}`}
+                            title={`Remove ${attachment.name}`}
+                            disabled={promotingId === attachment.id}
+                            onClick={() => removeAttachment(attachment.id)}
+                          >
+                            <X size={12} aria-hidden />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {/*
+                  A chat that lives on another surface keeps its voice, but the
+                  door it is continued through is narrower than the API's. This
+                  is the one quiet line that says so — the conversation is the
+                  same one, replies land where the surface's replies land, and
+                  the two kinds of context card this composer usually carries
+                  do not ride a continued turn. It is a sentence, not a warning
+                  band: nothing here is broken, the chat is simply shared.
+                */}
+                {continuable ? (
+                  <p
+                    className="chat-panel__composer-note"
+                    data-testid="chat-continued-note"
+                    data-source={activeSession?.source}
+                  >
+                    <MessageSquareShare size={11} aria-hidden />
+                    <span>{composerNote}</span>
+                  </p>
+                ) : null}
+                {/*
+                  The composer's own surface: one box around the field the
+                  operator writes in and the control row that belongs to it.
+                  The field rests on top; the row sits inside the box's bottom
+                  edge. That is what makes the model and thinking picks, the
+                  send control, the add control and the page pill part
+                  of the composer rather than a footer line under it — and it is
+                  why the accent ring is on this box instead of on the field.
+                */}
+                <PhoneDraftStrip drafts={phoneDrafts} onPrefill={askPhoneDraft} />
+                <div className="chat-panel__composer-box">
+                  <textarea
+                    ref={inputRef}
+                    className="chat-panel__composer-input chat-panel__composer-input--frameless"
+                    placeholder={
+                      sending
+                        ? continuable
+                          ? "Queue a message for the next turn…"
+                          : "Steer the turn that is running…"
+                        : `Message ${companionName}…`
+                    }
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    onPaste={(e) => {
+                      // Any file pasted into the field becomes a general
+                      // attachment, the same way the plus takes one. A squeezed
+                      // screenshot is then one press from being a receipt (the
+                      // chip's "use as receipt"), and the paste itself never
+                      // decides what the picture means. Pasted text is left to
+                      // the field's own handling.
+                      const files = Array.from(e.clipboardData?.files ?? []);
+                      if (files.length === 0) return;
+                      e.preventDefault();
+                      for (const file of files) void attachFile(file);
+                    }}
+                    disabled={!sessionId}
+                    rows={2}
+                    aria-label={`Message ${companionName}`}
+                    autoComplete="off"
                   />
+                  {/*
+                    The row inside the box's bottom edge: the composer's own
+                    controls, split by the work they do. The leading cluster is
+                    what a turn can carry — the add control, the page pill and
+                    the waiting receipt — so they sit at the bottom left where
+                    the field starts. The trailing cluster is what the turn runs
+                    on and how it goes — the model and thinking picks, then the
+                    send/stop control — at the bottom right.
+                  */}
+                  <div className="chat-panel__composer-dock">
+                    <div className="chat-panel__composer-lead">
+                      {/*
+                        The composer's one file picker stays mounted here, hidden,
+                        so the add control can open it and the change still lands
+                        on the composer's own handler. It takes any media or file;
+                        a picture's chip then offers to make it the turn's receipt,
+                        because a receipt is a promise about the picture's meaning
+                        and the operator makes that promise on the chip rather than
+                        by choosing a second button before picking.
+                      */}
+                      <input
+                        ref={attachmentInputRef}
+                        className="chat-panel__attachment-input"
+                        type="file"
+                        multiple
+                        aria-label="Attach a file"
+                        data-testid="chat-attachment-input"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files ?? []);
+                          for (const file of files) void attachFile(file);
+                          // Clear the picker so choosing the same file twice
+                          // still fires a change event.
+                          e.target.value = "";
+                        }}
+                      />
+                      {/*
+                        The add control, at the bottom left of the composer: it
+                        is the first gesture of the row, so it wears a circular
+                        background — the one control-shaped spot the eye lands
+                        on in a mostly type-only row — and takes any media or
+                        file the operator picks.
+                      */}
+                      <button
+                        type="button"
+                        className="chat-panel__composer-plus"
+                        data-testid="chat-attachment-button"
+                        data-continued-disabled={continuable ? "true" : undefined}
+                        disabled={!sessionId || continuable}
+                        aria-label={continuable ? continuedFileReason : "Attach a file"}
+                        title={continuable ? continuedFileReason : "Attach a file"}
+                        onClick={() => attachmentInputRef.current?.click()}
+                      >
+                        <Plus size={15} aria-hidden />
+                      </button>
+                      <div className="chat-panel__receipts">
+                        {/*
+                          The page, beside the add control and wearing the
+                          receipt's shape: one pill that says which screen rides
+                          the next turn.
+
+                          It defaults to on and re-arms on every navigation, because
+                          the failure it answers is an agent that offered to build a
+                          card the screen was already showing. The operator can turn
+                          it off — sometimes the question is about something else —
+                          and the pill stays on the line in its off state, because a
+                          control that vanished when used could not be turned back
+                          on.
+
+                          A continued chat never carries the screen: the WebSocket
+                          door has no such field, so the pill is disabled and reads
+                          "not sent" rather than showing an "in context" state the
+                          turn would not honour.
+                        */}
+                        <button
+                          type="button"
+                          className="chat-panel__page"
+                          data-state={pageContext.on && !continuable ? "on" : "off"}
+                          data-testid="chat-page-context"
+                          data-continued-disabled={continuable ? "true" : undefined}
+                          disabled={continuable}
+                          aria-pressed={pageContext.on && !continuable}
+                          aria-label={
+                            continuable
+                              ? continuedPageReason
+                              : pageContext.on
+                                ? `Page context on: the ${pageContext.label} screen rides your next message`
+                                : `Page context off: the ${pageContext.label} screen will not be sent`
+                          }
+                          title={
+                            continuable
+                              ? continuedPageReason
+                              : pageContext.on
+                                ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
+                                : `The ${pageContext.label} screen is not sent — click to send it again`
+                          }
+                          onClick={() => setPageContextOn(!pageContext.on)}
+                        >
+                          {pageContext.on && !continuable ? (
+                            <Eye size={12} aria-hidden />
+                          ) : (
+                            <EyeOff size={12} aria-hidden />
+                          )}
+                          <span
+                            className="chat-panel__page-label"
+                            data-testid="chat-page-context-label"
+                          >
+                            {pageContext.label}
+                          </span>
+                          <span className="chat-panel__page-kind">
+                            {continuable
+                              ? "not sent"
+                              : pageContext.on
+                                ? "in context"
+                                : "off"}
+                          </span>
+                        </button>
+                        {receipt ? (
+                          <div className="chat-panel__receipt">
+                            <img
+                              className="chat-panel__receipt-thumb"
+                              src={receipt.previewUrl}
+                              alt=""
+                            />
+                            <span className="chat-panel__receipt-name">{receipt.name}</span>
+                            <span className="chat-panel__receipt-size">
+                              {formatReceiptSize(receipt.size)}
+                            </span>
+                            <button
+                              type="button"
+                              className="chat-panel__receipt-remove"
+                              aria-label="Remove receipt"
+                              title="Remove receipt"
+                              onClick={() => putReceipt(null)}
+                            >
+                              <X size={12} aria-hidden />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    {/*
+                      The turn's runtime pick and the send control: the trailing
+                      end of the composer's control row. The model and thinking
+                      pills are what the next turn runs on; the send/stop control is
+                      how it goes. They sit at the bottom right, where the operator
+                      finishes a thought, and the send only appears once there is
+                      something to send — an empty composer is a writing surface
+                      first.
+                    */}
+                    <div className="chat-panel__composer-trail">
+                      {/*
+                        The dock's version of the Hermes Desktop composer's model
+                        and reasoning pills. Every control in it is
+                        `type="button"` - nothing here can submit the field above
+                        it. Absent entirely when the gateway served no catalog,
+                        which leaves the add control and the receipt chip
+                        carrying the left end of the row alone.
+                      */}
+                      <ComposerModelControls
+                        catalog={modelCatalog}
+                        disabled={sending || !sessionId}
+                        sessionModel={activeChatSession?.model ?? null}
+                        pick={runtimePick}
+                        onChange={updateRuntimePick}
+                        continuedReason={continuedPillReason}
+                      />
+                      {controlVisible ? (
+                        <button
+                          type={sending ? "button" : "submit"}
+                          className="chat-panel__send"
+                          data-state={sending ? "stop" : "send"}
+                          disabled={sending ? !runId : !sessionId}
+                          aria-label={sending ? "Stop this run" : "Send message"}
+                          title={sending ? "Stop this run" : "Send message"}
+                          onClick={sending ? () => void stopRun() : undefined}
+                        >
+                          {sending ? (
+                            <span className="chat-panel__send-stop" aria-hidden />
+                          ) : (
+                            <ArrowUp size={15} aria-hidden />
+                          )}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
+                {/*
+                  While a turn is running, the composer stays open and gains the
+                  two ways a thought can follow the one that is already working:
+                  steer it into the live turn, or line it up to run next. The
+                  line only appears while there is something to say — an idle
+                  composer under a live turn is just the field.
+
+                  A continued chat keeps only the Queue gesture: the gateway
+                  WebSocket has no steer field, so the Steer control is drawn
+                  disabled with the reason rather than looking available.
+                */}
+                {sending && draft.trim() ? (
+                  <div className="chat-panel__composer-live">
+                    <button
+                      type="button"
+                      className="chat-panel__composer-live-action"
+                      data-testid="chat-steer-button"
+                      data-continued-disabled={continuable ? "true" : undefined}
+                      disabled={!runId || continuable}
+                      aria-label={continuable ? continuedSteerReason : "Steer this turn"}
+                      title={
+                        continuable
+                          ? continuedSteerReason
+                          : "Send this to the turn that is running now"
+                      }
+                      onClick={() => void steerMessage(draft.trim())}
+                    >
+                      Steer
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-panel__composer-live-action"
+                      data-testid="chat-queue-button"
+                      aria-label="Queue this message"
+                      title="Run this message after the turn that is running now"
+                      onClick={() => queueMessage(draft.trim())}
+                    >
+                      Queue
+                    </button>
+                  </div>
+                ) : null}
+                {queued.length > 0 ? (
+                  <ul
+                    className="chat-panel__queued"
+                    data-testid="chat-queued"
+                    aria-label="Queued messages"
+                  >
+                    {queued.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="chat-panel__queued-row"
+                        data-testid="chat-queued-row"
+                      >
+                        <span className="chat-panel__queued-label">Queued</span>
+                        <span className="chat-panel__queued-text">{entry.text}</span>
+                        <button
+                          type="button"
+                          className="chat-panel__queued-remove"
+                          aria-label="Remove queued message"
+                          title="Remove queued message"
+                          onClick={() => removeQueued(entry.id)}
+                        >
+                          <X size={12} aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {/*
+                  The picker's one mount, under the composer box. Both rosters
+                  end the form: the menu roster's trigger floats in the gutter
+                  the composer's own padding leaves (or just above the field on a
+                  narrow dock), because for a quiet mode "who answers" should not
+                  take a line of the composer's own; the inline roster is a real
+                  row under the box, right-aligned to the edge the send control
+                  sits on, because a roster in the open is a control the operator
+                  reads across, not a floating token. The form is the anchor
+                  either way: every control here is `type="button"`, so nothing
+                  in the picker can submit the field above it. The shortcuts
+                  reference, which has no composer, has none.
+                */}
+                {inlineAgentPicker ? (
+                  <div className="chat-panel__composer-under">
+                    <AgentSwitcher />
+                  </div>
+                ) : (
+                  <AgentSwitcher />
+                )}
               </form>
             )}
           </div>
 
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
-            all three surfaces: the list is where most navigation happens, so its
-            entry point cannot live inside the thread it replaces. The chain is
-            the dock's second way into the Life-Chain, alongside the rail's, and
-            the collapse control trails the group at the bar's far right.
+            every surface. The bar leads with the new-chat slot: the whole
+            history lives in the sidebar, so this bar does not carry a second
+            entry point to it. The full-screen door follows it, beside the chain
+            (the Notebox): the mode is a way of reading the chat, and the bar is
+            the dock's one piece of chrome every surface shares, so this is where
+            the control can always be found — whichever surface is in front. The
+            side-switch and collapse controls trail the group at the bar's far
+            right.
           */}
-          <nav className="chat-panel__actions" aria-label="Chat and chain actions">
-            <button
-              type="button"
-              className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Chat history"
-              title="Chat history"
-              aria-pressed={view === "list"}
-              onClick={() => setView(view === "list" ? "thread" : "list")}
-            >
-              <History size={20} aria-hidden />
-            </button>
+          <nav className="chat-panel__actions" aria-label="Dock actions">
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
               aria-label="New chat"
               title="New chat"
-              disabled={sending}
               onClick={() => void newSession()}
             >
               <SquarePen size={20} aria-hidden />
@@ -2475,17 +3404,102 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Life-Chain"
-              title="Life-Chain"
+              aria-label="Notebox"
+              title="Notebox"
               aria-pressed={view === "chain"}
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >
-              <Radio size={20} aria-hidden />
+              <Inbox size={20} aria-hidden />
             </button>
             {/*
-              The way out, at the trailing end of the bar. It is the same move as
-              the titlebar's collapse control, put where the operator's hand
-              already is when they are done with the dock: the bottom-right
+              The full-screen door sits with the chain in the bar's leading
+              group: both are ways of changing what the dock shows, and the bar
+              is shared by every surface — so a thread with no tab, the chain and
+              the shortcuts reference all keep the same door in the same place.
+              The component carries its own words and its own arrow-pair, and it
+              is the window's one door to the mode (Mod+Shift+F is the shortcut).
+            */}
+            <ChatFocusToggle
+              className="chat-panel__icon-btn chat-panel__action"
+              testId="chat-fullscreen"
+              offLabel="Full screen chat"
+              onLabel="Exit full screen chat"
+              iconSize={20}
+            />
+            {/*
+              The keyboard-shortcuts reference, at the head of the trailing
+              group and beside the switch it now shares the corner with: it is a
+              surface selector like the chain, and the dock is the only place it
+              belongs now that the titlebar no longer carries it. Pressed while
+              the reference is the surface in front of the operator, and a second
+              press puts it away again — a door that opens a surface should be
+              the same door that closes it.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--shortcuts"
+              data-testid="chat-shortcuts-action"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts"
+              aria-pressed={view === "shortcuts"}
+              onClick={() =>
+                setView(view === "shortcuts" ? "thread" : "shortcuts")
+              }
+            >
+              <Keyboard size={20} aria-hidden />
+            </button>
+            {/*
+              The reading settings, beside the key reference they share a
+              subject with: the dock's text size and line spacing have their own
+              page, and the operator's hand is already in this bar when the
+              transcript's type is what they want to change. It renders that page
+              on the pane rather than opening Settings over the work: the size
+              it changes is the size of the transcript behind it. A second press
+              closes it, exactly as the shortcut reference's does.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action"
+              data-testid="chat-display-settings"
+              aria-label="Chat display settings"
+              title="Chat display settings"
+              aria-pressed={view === "display"}
+              onClick={() => setView(view === "display" ? "thread" : "display")}
+            >
+              <Type size={20} aria-hidden />
+            </button>
+            {/*
+              The switch-position control, beside the collapse it belongs with:
+              one click trades the dock's column for the sheet's, so the chat
+              panel sits just past the rail and the page takes the window's
+              trailing edge. The icon is the two panes swapping sides rather
+              than the side they are on — the state it is in is read off the
+              layout in front of the operator. It is a move, not a toggle, so
+              it carries no pressed state: a dock living on the leading edge is
+              an arrangement to work in, not a mode left switched on, and the
+              bar must rest as plain chrome on either side.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--side"
+              data-testid="chat-side-switch"
+              aria-label={
+                dockSide === "left"
+                  ? "Move chat to the right of the page"
+                  : "Move chat to the left of the page"
+              }
+              title={
+                dockSide === "left"
+                  ? "Move chat to the right of the page"
+                  : "Move chat to the left of the page"
+              }
+              onClick={swapSide}
+            >
+              <ArrowLeftRight size={20} aria-hidden />
+            </button>
+            {/*
+              The way out, at the trailing end of the bar: where the operator's
+              hand already is when they are done with the dock, the bottom-right
               corner, one click from the icon that brings it back.
             */}
             <button

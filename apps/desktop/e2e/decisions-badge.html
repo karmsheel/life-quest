@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest decisions badge harness</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+    <script>
+      /*
+       * Captures what a rig can never read out of a `console` it does not own: the
+       * harness's own module-load and render failures. A React tree that throws
+       * unmounts to an empty `#root`, which otherwise reports as "no rail" and
+       * says nothing about why.
+       */
+      window.__harnessErrors = [];
+      window.addEventListener("error", (event) => {
+        window.__harnessErrors.push(
+          event.error && event.error.stack
+            ? String(event.error.stack)
+            : `${event.message} @ ${event.filename}:${event.lineno}`,
+        );
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason;
+        window.__harnessErrors.push(
+          reason && reason.stack ? String(reason.stack) : String(reason),
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./decisions-badge.tsx"></script>
+  </body>
+</html>

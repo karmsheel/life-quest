@@ -84,6 +84,52 @@ function formatDay(date: string): string {
   return `${day} ${month} ${dt.getUTCFullYear()}`;
 }
 
+/** A year as the operator abbreviates it in a heading: `'26`. */
+function shortYear(year: number): string {
+  return `'${String(year).slice(-2)}`;
+}
+
+/**
+ * A week's span in the operator's words, short enough for one line at the
+ * reading measure: `9-15 Nov '26`, or `30 Nov-6 Dec '26` across a month, or
+ * `28 Dec '26-3 Jan '27` across a year. Both months are named whenever the
+ * span crosses one, so the ends cannot be mistaken for the same month.
+ */
+function formatWeekSpan(start: Date, end: Date): string {
+  const startDate = `${start.getUTCDate()} ${MONTH_SHORT[start.getUTCMonth()]}`;
+  const endDate = `${end.getUTCDate()} ${MONTH_SHORT[end.getUTCMonth()]}`;
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  if (startYear !== endYear) {
+    return `${startDate} ${shortYear(startYear)}-${endDate} ${shortYear(endYear)}`;
+  }
+  if (start.getUTCMonth() === end.getUTCMonth()) {
+    return `${start.getUTCDate()}-${endDate} ${shortYear(endYear)}`;
+  }
+  return `${startDate}-${endDate} ${shortYear(endYear)}`;
+}
+
+/**
+ * A weekly period's span and ISO week number, or null when the period is not a
+ * real week start.
+ *
+ * The week number is the ISO week of the span's last day. A Monday-start week
+ * ends on Sunday, the ISO week's own last day; a Sunday-start week ends on
+ * Saturday, whose ISO week is the Monday-first one the Sunday mostly opened.
+ * Both starts number 1–53 the same way.
+ */
+function weekParts(
+  period: string,
+  weekStartDay: WeekStartDay,
+): { span: string; week: number | null } | null {
+  const bounds = periodBounds("weekly", period, weekStartDay);
+  if (!bounds.ok) return null;
+  const start = utc(bounds.value.start);
+  const end = utc(bounds.value.end);
+  if (!start || !end) return null;
+  return { span: formatWeekSpan(start, end), week: isoWeekOf(bounds.value.end)?.week ?? null };
+}
+
 /**
  * True when `value` is a real local calendar date in `YYYY-MM-DD` form. The
  * round-trip check is what rejects `2026-02-31`: a daily note's date is also its
@@ -315,25 +361,86 @@ export function isFuturePeriod(
   return period > currentPeriod(cadence, weekStartDay, now);
 }
 
+/**
+ * The period's own name, without the cadence's: `14 Nov 2026` for a day,
+ * `9-15 Nov '26 (W46)` for a week, `Nov 2026` for a month, `2026 Q4` for a
+ * quarter, `2026` for a year.
+ *
+ * This is the review page's heading. The cadence is the page's eyebrow, so
+ * repeating it in the title would say the same thing twice; the period alone
+ * is what the operator is looking at.
+ *
+ * A week is named by its two ends and its calendar-week number, not by its
+ * first day alone: `Week of 9 Nov 2026` leaves the reader counting days to know
+ * which span they are reflecting on. The heading is one line at the reading
+ * measure, so the span is written short — three-letter months, no ordinals, a
+ * two-digit year, `W` for the week.
+ */
+export function periodLabel(
+  cadence: ReviewCadence,
+  period: string,
+  weekStartDay: WeekStartDay,
+): string {
+  if (cadence === "daily") return formatDay(period);
+  if (cadence === "weekly") {
+    const parts = weekParts(period, weekStartDay);
+    if (!parts) return `Week of ${formatDay(period)}`;
+    return parts.week === null ? parts.span : `${parts.span} (W${parts.week})`;
+  }
+  if (cadence === "monthly") {
+    const m = MONTH.exec(period);
+    if (!m) return period;
+    return `${MONTH_SHORT[Number(m[2]) - 1]} ${m[1]}`;
+  }
+  if (cadence === "quarterly") {
+    const q = QUARTER.exec(period);
+    if (!q) return period;
+    return `${q[1]} Q${q[2]}`;
+  }
+  return period;
+}
+
+/**
+ * The review's full title: the review file's own heading.
+ *
+ * A week leads with its number — `W46 Review: 9-15 Nov '26` — because that is
+ * how the operator talks about a week; the other cadences keep the cadence's
+ * name before the period (`Monthly review · Nov 2026`).
+ */
 export function periodTitle(
   cadence: ReviewCadence,
   period: string,
   weekStartDay: WeekStartDay,
 ): string {
-  if (cadence === "daily") return `Daily review · ${formatDay(period)}`;
   if (cadence === "weekly") {
-    void weekStartDay;
-    return `Weekly review · Week of ${formatDay(period)}`;
+    const parts = weekParts(period, weekStartDay);
+    if (parts) {
+      return parts.week === null
+        ? `${parts.span} review`
+        : `W${parts.week} Review: ${parts.span}`;
+    }
   }
-  if (cadence === "monthly") {
-    const m = MONTH.exec(period);
-    if (!m) return `Monthly review · ${period}`;
-    return `Monthly review · ${MONTH_SHORT[Number(m[2]) - 1]} ${m[1]}`;
-  }
+  const cadenceName = `${cadence.charAt(0).toUpperCase()}${cadence.slice(1)} review`;
+  return `${cadenceName} · ${periodLabel(cadence, period, weekStartDay)}`;
+}
+
+/**
+ * The period that contains a local calendar date.
+ *
+ * The review page's calendar picks a day; a review is a week, month, quarter or
+ * year, so the day is folded into the cadence's own period here — the same fold
+ * the engine's `currentPeriod` makes for "now", applied to a chosen day.
+ */
+export function periodForDate(
+  cadence: ReviewCadence,
+  date: string,
+  weekStartDay: WeekStartDay,
+): string {
+  if (cadence === "daily") return date;
+  if (cadence === "weekly") return weekStartOnOrBefore(date, weekStartDay);
+  if (cadence === "monthly") return date.slice(0, 7);
   if (cadence === "quarterly") {
-    const q = QUARTER.exec(period);
-    if (!q) return `Quarterly review · ${period}`;
-    return `Quarterly review · ${q[1]} Q${q[2]}`;
+    return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
   }
-  return `Yearly review · ${period}`;
+  return date.slice(0, 4);
 }

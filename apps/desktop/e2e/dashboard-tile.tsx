@@ -27,7 +27,7 @@
  *                              their own four columns, their own view file's
  *                              `span: 2`, and a pin that says `span: 1`
  *
- * Eight pins and the Active-agents card the page draws for itself. A board of
+ * Eight pins, every card on the board. A board of
  * every card the same size proves nothing about a board that sizes its cards, so
  * the fixture is deliberately mixed — and the driver's claims are about the mix.
  *

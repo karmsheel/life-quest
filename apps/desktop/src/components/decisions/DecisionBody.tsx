@@ -17,6 +17,20 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const FIELD_LABELS: Record<string, string> = {
   domainSlug: "Domain",
   bodyMarkdown: "Notes",
+  summary: "Summary",
+  projectType: "Type",
+  source: "Source",
+  sourceUrl: "Source link",
+  repoUrls: "Repositories",
+  stateNote: "State note",
+  title: "Title",
+  status: "Status",
+  priority: "Priority",
+  startDate: "Start date",
+  targetDate: "Target date",
+  progress: "Progress",
+  nextAction: "Next action",
+  addUpdate: "Progress update",
   definitionOfDone: "Definition of done",
   horizonMonths: "Horizon",
   databaseName: "Database",
@@ -60,22 +74,45 @@ export function DecisionBody({
   previous,
   goalName,
   domainName,
+  proposedDomainSlugs = null,
+  previousDomainSlugs = null,
 }: {
   target: DocumentTarget;
   proposed: string;
   previous: string | null;
   goalName: (id: string) => string | null;
   domainName: (slug: string) => string;
+  /**
+   * A library note's tags as the proposal leaves them, or null when the proposal
+   * does not touch them. [] means "untag", which still has to be on the card.
+   */
+  proposedDomainSlugs?: string[] | null;
+  previousDomainSlugs?: string[] | null;
 }) {
   const lookups: Lookups = { goalName, domainName };
   const parsed = parseJson(proposed);
+  const domainChange =
+    proposedDomainSlugs !== null ? (
+      <p className="decision-card__domain-change" data-testid="decision-domain-change">
+        <span className="muted">Domains</span>
+        <span className="decision-value--was">{domainList(previousDomainSlugs, domainName)}</span>
+        <span aria-hidden="true">→</span>
+        <span>{domainList(proposedDomainSlugs, domainName)}</span>
+      </p>
+    ) : null;
 
   if (!isRecord(parsed)) {
-    return <ProseCompare proposed={proposed} previous={previous} />;
+    return (
+      <>
+        {domainChange}
+        <ProseCompare proposed={proposed} previous={previous} />
+      </>
+    );
   }
 
   return (
     <div className="decision-proposal">
+      {domainChange}
       {renderStructured(target, parsed, previous, lookups)}
       <details className="decision-source">
         <summary>Exact proposal</summary>
@@ -83,6 +120,19 @@ export function DecisionBody({
       </details>
     </div>
   );
+}
+
+/**
+ * A note tagged with no domain appears only in Overview; "None" is the operator's
+ * word for that on the Documents page too. Slugs with no live area fall back to
+ * the slug rather than disappearing from a card the operator is approving.
+ */
+function domainList(
+  slugs: string[] | null,
+  domainName: (slug: string) => string,
+): string {
+  if (!slugs || slugs.length === 0) return "None";
+  return slugs.map((slug) => domainName(slug)).join(", ");
 }
 
 function renderStructured(
@@ -177,7 +227,7 @@ function PairingBody({ body }: { body: Record<string, unknown> }) {
     <div className="decision-proposal">
       <p className="decision-lead">
         Connect this agent. It starts read-only, with no domain assigned and
-        Schedule off — you grant what it may reach from Personnel.
+        Schedule off — you grant what it may reach from Agents.
       </p>
       <dl className="settings-hermes">
         <div className="settings-field">
@@ -218,7 +268,7 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
   const pinned = typeof body.boardSlug === "string" || body.boardSlug === null;
   const boardName =
     body.boardSlug === null
-      ? "the Overview dashboard"
+      ? "the Life dashboard"
       : typeof body.boardSlug === "string"
         ? `the ${body.boardSlug} dashboard`
         : "";
@@ -338,6 +388,89 @@ function DatabaseBody({
     );
   }
 
+  if (op === "delete-database") {
+    // The operator is removing a whole table, its rows with it. The count is on
+    // the card because it is the difference between deleting an empty shell and
+    // losing a ledger, and there is no undo.
+    const rowCount = typeof body.rowCount === "number" ? body.rowCount : null;
+    const rows: ChangeRow[] = [
+      { key: "name", before: databaseName, after: undefined, changed: true },
+    ];
+    if (rowCount !== null) {
+      rows.push({ key: "rows", before: rowCount, after: undefined, changed: true });
+    }
+    return (
+      <>
+        <ChangeTable
+          lead={`Delete the database "${databaseName}"`}
+          rows={rows}
+          mode="before"
+          lookups={lookups}
+        />
+        <p className="decision-lead">
+          {rowCount === null
+            ? "Its rows are deleted with it."
+            : rowCount === 0
+              ? "It has no rows yet."
+              : `Its ${rowCount} ${rowCount === 1 ? "row is" : "rows are"} deleted with it.`}{" "}
+          This cannot be undone.
+        </p>
+      </>
+    );
+  }
+
+  if (op === "merge-databases") {
+    // A merge is one approval for two effects: the sources' rows move into the
+    // target, then the sources themselves go. The lead says both, because
+    // approving "merge" must not hide a deletion.
+    const sources = Array.isArray(body.sources) ? body.sources.filter(isRecord) : [];
+    const count = sources.length;
+    const databaseWord = count === 1 ? "database" : "databases";
+    const doomedWord = count === 1 ? "source" : `${count} sources`;
+    const sourcesLead =
+      count === 0
+        ? `Merge databases into "${databaseName}".`
+        : `Merge ${count} ${databaseWord} into "${databaseName}", then delete the ${doomedWord}.`;
+    const sourceRows: ChangeRow[] = sources.map((source, index) => {
+      const name =
+        typeof source.name === "string" && source.name ? source.name : `Source ${index + 1}`;
+      const rowCount = typeof source.rowCount === "number" ? source.rowCount : null;
+      const id = typeof source.databaseId === "string" && source.databaseId ? source.databaseId : "";
+      return {
+        // The id is the only unique key — several sources may share a name,
+        // which is the drift this op exists to collapse — and it stays the
+        // tooltip while the source's own name is the field label.
+        key: id || `source-${index}`,
+        keyLabel: name,
+        // ChangeTable drops an empty "before" cell, so an unknown count keeps a
+        // placeholder rather than losing the source from the card entirely.
+        before: rowCount === null ? "—" : `${rowCount} ${rowCount === 1 ? "row" : "rows"}`,
+        after: undefined,
+        changed: true,
+      };
+    });
+    const addedColumns = Array.isArray(body.newColumns)
+      ? body.newColumns
+          .filter(isRecord)
+          .map((column) => (typeof column.name === "string" ? column.name.trim() : ""))
+          .filter(Boolean)
+      : [];
+    const columnsSentence = `${addedColumns.length === 1 ? "Add the column" : "Add the columns"} ${addedColumns
+      .map((name) => `"${name}"`)
+      .join(", ")} to "${databaseName}".`;
+    return (
+      <>
+        <ChangeTable lead={sourcesLead} rows={sourceRows} mode="before" lookups={lookups} />
+        {addedColumns.length > 0 ? <p className="decision-lead">{columnsSentence}</p> : null}
+        <p className="decision-lead muted">
+          {body.dedupe === false
+            ? "Duplicate rows are kept, including exact ones."
+            : "Exact duplicate rows are skipped."}
+        </p>
+      </>
+    );
+  }
+
   if (op && op !== "upsert" && op !== "delete") {
     return <GenericBody body={body} previous={previous} lookups={lookups} />;
   }
@@ -440,7 +573,9 @@ function ProjectBody({
   previous: string | null;
   lookups: Lookups;
 }) {
-  if (body.type === "closeProject") {
+  const command = typeof body.type === "string" ? body.type : "";
+
+  if (command === "closeProject") {
     const prior = parseJson(previous ?? "");
     const notes =
       isRecord(prior) && typeof prior.bodyMarkdown === "string" ? prior.bodyMarkdown.trim() : "";
@@ -451,10 +586,28 @@ function ProjectBody({
       </section>
     );
   }
-  if (body.type === "createProject") {
-    const keys = ["title", "goalId", "domainSlug", "bodyMarkdown"].filter(
-      (key) => key in body && !isEmpty(body[key]),
-    );
+
+  if (command === "createProject") {
+    // A project ships rich: the operator should see every attribute the agent
+    // chose, not only the id fields and the body.
+    const keys = [
+      "title",
+      "summary",
+      "projectType",
+      "source",
+      "sourceUrl",
+      "repoUrls",
+      "stateNote",
+      "goalId",
+      "domainSlug",
+      "status",
+      "priority",
+      "startDate",
+      "targetDate",
+      "progress",
+      "nextAction",
+      "bodyMarkdown",
+    ].filter((key) => key in body && !isEmpty(body[key]));
     return (
       <ChangeTable
         lead="Open this project."
@@ -464,7 +617,31 @@ function ProjectBody({
       />
     );
   }
-  return <GenericBody body={body} previous={null} lookups={lookups} />;
+
+  if (command === "updateProject") {
+    // An agent project update is Decision-gated. The proposal carries the patch
+    // and `previous` is the project as it stands, so the operator reads a diff —
+    // and `addUpdate` is one of the changed fields, not a separate message.
+    const patch = isRecord(body.patch) ? body.patch : {};
+    const prior = parseJson(previous ?? "");
+    const priorRec = isRecord(prior) ? prior : null;
+    const rows: ChangeRow[] = Object.keys(patch).map((key) => ({
+      key,
+      before: priorRec && key in priorRec ? priorRec[key] : undefined,
+      after: patch[key],
+      changed: !(priorRec && key in priorRec && sameValue(priorRec[key], patch[key])),
+    }));
+    return (
+      <ChangeTable
+        lead="Update this project."
+        rows={rows}
+        mode={priorRec ? "diff" : "after"}
+        lookups={lookups}
+      />
+    );
+  }
+
+  return <GenericBody body={body} previous={previous} lookups={lookups} />;
 }
 
 function DayTemplateBody({ body, lookups }: { body: Record<string, unknown>; lookups: Lookups }) {
@@ -808,6 +985,7 @@ function ValueView({
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (field === "horizonMonths") return `${value.toLocaleString()} months`;
+    if (field === "progress") return `${value.toLocaleString()}%`;
     return Number.isInteger(value)
       ? value.toLocaleString()
       : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -827,6 +1005,20 @@ function ValueView({
     return `${value.length} ${value.length === 1 ? "item" : "items"}`;
   }
   if (isRecord(value)) {
+    // The progress-timeline entry is the one nested patch value an operator
+    // reads as a sentence rather than as a field map.
+    if (field === "addUpdate") {
+      const note = typeof value.note === "string" ? value.note.trim() : "";
+      const progress = typeof value.progress === "number" ? value.progress : null;
+      return (
+        <>
+          {note ? note : <span className="decision-empty">No note</span>}
+          {progress !== null ? (
+            <span className="muted"> · {progress}%</span>
+          ) : null}
+        </>
+      );
+    }
     const entries = Object.entries(value).filter(([, entry]) => !isEmpty(entry));
     if (entries.length === 0) return <span className="decision-empty">—</span>;
     return entries
@@ -981,6 +1173,7 @@ function rowsFrom(
 function textOf(value: string, field: string, lookups: Lookups): string {
   if (field === "goalId") return lookups.goalName(value) ?? shortId(value);
   if (field === "domainSlug" || field === "domain") return lookups.domainName(value);
+  if (field === "status" || field === "priority") return labelize(value);
   if (MAP_COLORS.has(value) && (field === "color" || field === "")) return value;
   if (isIsoDate(value)) return formatIso(value);
   if (isUuid(value)) return shortId(value);

@@ -1,0 +1,3801 @@
+/**
+ * Drives the chat-tabs harness in a real Electron window and turns the
+ * measurements into `e2e/artifacts/chat-tabs.{json,png}`.
+ *
+ * Run with the dev server up (`npm run dev`):
+ *
+ *   node e2e/chat-tabs.electron.mjs
+ *
+ * Exit code 0 = every invariant held. The JSON report is the repeatable
+ * artifact: same command, same numbers, no eyeballing the app required.
+ *
+ * NOT covered here: the HTTP hop. The rig answers from a fixture, so that a
+ * frame really carries `sessionId` over IPC is asserted at the bridge boundary
+ * only — the main-process stamping is covered by the type + the shipping
+ * envelope, not by a live gateway.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, nativeTheme, screen } from "electron";
+
+// An occluded window stops painting, and a window that stops painting stops
+// firing requestAnimationFrame: a rig that waits on a frame then hangs until its
+// watchdog instead of failing. A rig runs hidden beside every other rig in the
+// suite, so it has to keep painting.
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const artifactsDir = path.join(here, "artifacts");
+const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-tabs.html";
+const DEFAULT_SIZE = { width: 1280, height: 900 };
+
+const SAMPLE = `(() => {
+  const box = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      width: Math.round(r.width),
+      height: Math.round(r.height)
+    };
+  };
+  const text = (el) => ((el && el.textContent) || "").trim();
+  // Computed display, not presence: the hover-only controls stay in the DOM and
+  // are hidden by CSS, and the resting time/pin marks are hidden the same way.
+  const shown = (el) => Boolean(el) && window.getComputedStyle(el).display !== "none";
+  const shownBox = (el) =>
+    Boolean(el) && window.getComputedStyle(el).display !== "none" && el.offsetParent !== null;
+  const rail = document.querySelector(".chats-rail");
+  const panel = document.querySelector(".chat-panel");
+  const composer = document.querySelector(".chat-panel__composer-input");
+  const threadHeader = document.querySelector(".chat-panel__header--thread");
+  const chatsHeader = document.querySelector(".chats-rail__header");
+  const chatsTitle = chatsHeader?.querySelector(".chats-rail__title");
+  const chatsControls = chatsHeader
+    ? Array.from(chatsHeader.querySelectorAll(".chats-rail__header-actions button"))
+    : [];
+  const searchInput = document.querySelector(".chats-rail__search-input");
+  const viewMenu = document.querySelector(".chats-rail__view-menu");
+
+  // One flat list: the pinned rows first (in pin order), the rest after them,
+  // then the archived band when the view asks for it. A row's pin mark is a
+  // resting decoration and its pin/archive buttons live in a hover-only span, so
+  // both are reported by computed display rather than by presence in the DOM.
+  //
+  // The row's leading slot is the same kickoff mark the tab strip draws: a chat
+  // the app started as a task/review/plan/automation carries data-icon and an
+  // svg in the row's chats-rail__mark slot; a chat the operator opened plainly
+  // keeps the transparent status dot in that slot. Status still paints the slot —
+  // a live row pulses it, an approval ring sits on it — so the mark's own
+  // animation, colour and ring are read alongside the dot's.
+  const rows = [];
+  let group = "";
+  for (const li of Array.from(document.querySelectorAll(".chats-rail__rows > li"))) {
+    if (li.classList.contains("chats-rail__group")) {
+      group = text(li);
+      continue;
+    }
+    // The "nothing matched" line is a row of the list, not a chat.
+    if (li.classList.contains("chats-rail__empty")) continue;
+    const when = li.querySelector(".chats-rail__when");
+    const pinState = li.querySelector(".chats-rail__pin-state");
+    const actions = li.querySelector(".chats-rail__actions");
+    const pin = li.querySelector(".chats-rail__pin-btn");
+    const archive = li.querySelector(".chats-rail__archive-btn");
+    const rowMain = li.querySelector(".chats-rail__row-main");
+    const labelEl = li.querySelector(".chats-rail__label");
+    const markEl = li.querySelector(".chats-rail__mark");
+    const markSvg = markEl ? markEl.querySelector("svg") : null;
+    const dotEl = li.querySelector(".chats-rail__dot");
+    // The glyph the slot actually holds: the kickoff icon, else the status dot.
+    const glyphEl = markSvg ?? dotEl ?? markEl;
+    const markStyle = markEl ? window.getComputedStyle(markEl) : null;
+    const glyphStyle = glyphEl ? window.getComputedStyle(glyphEl) : null;
+    const svg = pin ? pin.querySelector("svg") : null;
+    rows.push({
+      group,
+      label: text(labelEl),
+      when: text(when),
+      whenVisible: shown(when),
+      active: li.hasAttribute("data-active"),
+      archived: li.hasAttribute("data-archived"),
+      archivedTag: text(li.querySelector(".chats-rail__archived-tag")),
+      disabled: Boolean(rowMain && rowMain.disabled),
+      live: li.hasAttribute("data-live"),
+      approval: li.hasAttribute("data-approval"),
+      menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
+      /** The kickoff mark's kind (the row's data-icon), or null on a plain chat. */
+      icon: li.getAttribute("data-icon"),
+      /** The row's one leading slot: the kickoff icon's svg, or the status dot. */
+      mark: {
+        exists: Boolean(markEl),
+        svg: Boolean(markSvg),
+        visible: shown(markEl),
+        box: box(markEl),
+        /** Animation on the slot itself (a live row pulses it). */
+        animation: markStyle ? markStyle.animationName : null,
+        /** Animation on the glyph inside it, whichever the slot holds. */
+        glyphAnimation: glyphStyle ? glyphStyle.animationName : null,
+        glyphColor: glyphStyle ? glyphStyle.color : null,
+        /** An approval ring, if the state paints one, on slot or glyph. */
+        ring: markStyle ? markStyle.boxShadow : null,
+        glyphRing: glyphStyle ? glyphStyle.boxShadow : null
+      },
+      /** The plain chat's status dot, still drawn in the same slot. */
+      dot: {
+        exists: Boolean(dotEl),
+        visible: shown(dotEl),
+        box: box(dotEl),
+        animation: dotEl ? window.getComputedStyle(dotEl).animationName : null
+      },
+      /** The label's box, and the button's: the mark must sit between them. */
+      labelBox: box(labelEl),
+      mainBox: box(rowMain),
+      pinned: li.getAttribute("data-pinned") === "true",
+      pinState: shown(pinState),
+      actionsVisible: shown(actions),
+      pin: {
+        exists: Boolean(pin),
+        visible: shownBox(pin),
+        label: pin ? (pin.getAttribute("aria-label") ?? pin.getAttribute("title")) : null,
+        dataPinned: pin ? pin.getAttribute("data-pinned") : null,
+        filled: Boolean(svg) && svg.getAttribute("fill") === "currentColor"
+      },
+      archive: {
+        exists: Boolean(archive),
+        visible: shownBox(archive),
+        label: archive
+          ? (archive.getAttribute("aria-label") ?? archive.getAttribute("title"))
+          : null,
+        beforePin: Boolean(archive && pin && archive.nextElementSibling === pin)
+      },
+      box: box(li)
+    });
+  }
+
+  // The tab's own box, not its label's: a tab is content-sized up to its cap, so
+  // the box is where "the name's width" and "the cap" are measured, while the
+  // label's own clientWidth is where the truncation floor is read.
+  //
+  // A pinned chat is a tab like any other: the pin leads its leading slot and
+  // the chat's name follows, with no close control. Those are reported so a
+  // pinned tab is read as "pinned", not as a tab that lost its name.
+  //
+  // Every tab's leading slot is one mark — the status dot, a kickoff chat's
+  // icon, or a pinned chat's pin — so the label only ever has what is left after
+  // that slot (and the close control, when there is one). The floor claim is
+  // measured on the label itself: its clientWidth against the canvas width, in
+  // the label's own font, of the label's first three characters PLUS the
+  // ellipsis glyph. The ellipsis costs about a character's width, so a tab wide
+  // enough for three characters alone still renders two and "…" — the floor has
+  // to budget for both. A tab squeezed to one glyph fails it. The cap claim
+  // measures the full label's canvas width against the label's room: a capped
+  // tab must be visibly truncated, not merely capped at a number.
+  const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
+    const main = tab.matches("[role=tab]") ? tab : tab.querySelector("[role=tab]");
+    const labelEl = tab.querySelector(".chat-panel__tab-label");
+    const letterEl = tab.querySelector(".chat-panel__tab-letter");
+    const pinEl = tab.querySelector(".chat-panel__tab-pin");
+    const closeEl = tab.querySelector(".chat-panel__tab-close");
+    const markEl = tab.querySelector(".chat-panel__tab-mark");
+    const markSvg = markEl ? markEl.querySelector("svg") : null;
+    const labelStyle = labelEl ? window.getComputedStyle(labelEl) : null;
+    const tabStyle = window.getComputedStyle(tab);
+    const threeChars = labelEl ? Array.from(text(labelEl)).slice(0, 3).join("") : "";
+    let threeCharWidth = null;
+    let floorWidth = null;
+    let textWidth = null;
+    if (labelStyle && threeChars) {
+      const canvas = document.createElement("canvas");
+      const measure = canvas.getContext("2d");
+      if (measure) {
+        measure.font =
+          labelStyle.fontStyle +
+          " " +
+          labelStyle.fontWeight +
+          " " +
+          labelStyle.fontSize +
+          " " +
+          labelStyle.fontFamily;
+        threeCharWidth = Math.round(measure.measureText(threeChars).width * 100) / 100;
+        floorWidth = Math.round(measure.measureText(threeChars + "…").width * 100) / 100;
+        textWidth = Math.round(measure.measureText(text(labelEl)).width * 100) / 100;
+      }
+    }
+    return {
+      label: text(labelEl),
+      letter: letterEl ? text(letterEl) : null,
+      name: main
+        ? (main.getAttribute("aria-label") ?? main.getAttribute("title") ?? "").trim()
+        : "",
+      /** The kickoff mark's kind (the tab's data-icon), or null on a plain tab. */
+      icon: tab.getAttribute("data-icon"),
+      /** The one leading slot: the status dot, or the kickoff icon's svg. */
+      mark: {
+        exists: Boolean(markEl),
+        svg: Boolean(markSvg),
+        visible: shown(markEl),
+        box: box(markEl)
+      },
+      /** The label's own room, which is what the label floor is measured in. */
+      labelWidth: labelEl ? labelEl.clientWidth : null,
+      /** Canvas width of the label's first three characters in its own font. */
+      threeCharWidth,
+      /** Canvas width of those three characters plus the ellipsis glyph: the floor. */
+      floorWidth,
+      /** Canvas width of the whole label in its own font; the cap truncates it. */
+      textWidth,
+      /** The tab's own max-width in px — the content-sized cap. */
+      maxWidth: Math.round(parseFloat(tabStyle.maxWidth) * 100) / 100,
+      pinned: tab.getAttribute("data-pinned") === "true",
+      pin: Boolean(pinEl),
+      pinVisible: shown(pinEl),
+      close: closeEl ? (closeEl.getAttribute("aria-label") ?? "") : null,
+      hasClose: Boolean(closeEl),
+      closeVisible: shownBox(closeEl),
+      active: main ? main.getAttribute("aria-selected") === "true" : null,
+      live: tab.hasAttribute("data-live"),
+      approval: tab.hasAttribute("data-approval"),
+      box: box(tab)
+    };
+  });
+
+  // The strip's own box, and the tab context menu when one is open: the menu is
+  // a fixed popover (not a strip child), so its on-screen box is read here
+  // instead of assumed. The strip's scroll geometry is reported with it: a
+  // browser-like band keeps a tab floor and overflows sideways, so whether the
+  // tabs fit, how far the band travels and where it is currently scrolled are
+  // the facts the claims are about. Nothing rides the band's trailing edge now
+  // that the full-screen door moved to the bottom action bar: the whole band is
+  // tabs, and the plus travels with them.
+  const tabStrip = document.querySelector(".chat-panel__tabs");
+  const tabNew = document.querySelector(".chat-panel__tab-new");
+  const tabMenu = document.querySelector(".chat-panel__tab-menu");
+
+  // The dock's resize handle: the drawn column, the range it is held to, and
+  // where the divider currently sits. A narrow-strip claim is only worth
+  // something if the dock was really moved, so the walk to the floor is read
+  // from these attributes rather than assumed from the number of presses.
+  const divider = document.querySelector(".chat-divider");
+
+  const messages = Array.from(document.querySelectorAll(".chat-panel__message")).map((m) => ({
+    role: text(m.querySelector(".chat-panel__message-role")),
+    content: text(m.querySelector(".chat-panel__message-content"))
+  }));
+
+  const dialog = document.querySelector(".confirm-dialog");
+
+  return {
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    shell: box(document.querySelector(".shell")),
+    rail: rail
+      ? {
+          box: box(rail),
+          label: rail.getAttribute("aria-label"),
+          title: text(rail.querySelector(".chats-rail__title")),
+          liveCount: text(rail.querySelector(".chats-rail__live-count")),
+          newChat: Boolean(rail.querySelector(".chats-rail__new")),
+          newChatBox: box(rail.querySelector(".chats-rail__new")),
+          groups: Array.from(document.querySelectorAll(".chats-rail__group")).map(text),
+          empty: text(rail.querySelector(".chats-rail__empty")),
+          // The New chat button is a button, not a menu row: its icon and label
+          // sit as one centred pair. Measure the pair's gaps to the button's
+          // own edges instead of trusting the CSS rule.
+          newChatCentered: (() => {
+            const button = rail.querySelector(".chats-rail__new");
+            if (!button) return null;
+            const buttonBox = button.getBoundingClientRect();
+            const parts = Array.from(button.children).map((child) =>
+              child.getBoundingClientRect()
+            );
+            if (parts.length === 0) return null;
+            const left = Math.min(...parts.map((part) => part.left));
+            const right = Math.max(...parts.map((part) => part.right));
+            return (
+              Math.abs(
+                Math.round(left - buttonBox.left) -
+                  Math.round(buttonBox.right - right)
+              ) <= 1
+            );
+          })(),
+          // The dead space above and below the rows is part of the design: the
+          // rail breathes instead of starting flush against its title/edge.
+          paddingTop: Number.parseFloat(window.getComputedStyle(rail).paddingTop) || 0,
+          paddingBottom: Number.parseFloat(window.getComputedStyle(rail).paddingBottom) || 0,
+          header: chatsHeader
+            ? {
+                box: box(chatsHeader),
+                titleBox: box(chatsTitle),
+                controls: chatsControls.map((control) => ({
+                  label: control.getAttribute("aria-label"),
+                  box: box(control)
+                }))
+              }
+            : null,
+          search: searchInput
+            ? {
+                box: box(searchInput),
+                panelBox: box(document.querySelector(".chats-rail__search")),
+                value: searchInput.value,
+                placeholder: searchInput.getAttribute("placeholder"),
+                focused: document.activeElement === searchInput
+              }
+            : null,
+          viewMenu: viewMenu
+            ? {
+                box: box(viewMenu),
+                title: text(viewMenu.querySelector(".chats-rail__menu-title")),
+                items: Array.from(
+                  viewMenu.querySelectorAll('[role="menuitemradio"]')
+                ).map((el) => ({
+                  label: el.getAttribute("aria-label"),
+                  checked: el.getAttribute("aria-checked") === "true"
+                }))
+              }
+            : null,
+          listOptions: window.__lqListOptions ?? [],
+          // The scroll port the rows (and their menus) live in: its box, where
+          // it is scrolled to, and whether the rows are longer than it. A menu
+          // claim is about this port, so the driver reads it rather than
+          // assuming the list is long enough to clip anything.
+          list: (() => {
+            const el = rail.querySelector(".chats-rail__list");
+            if (!el) return null;
+            return {
+              box: box(el),
+              scrollTop: Math.round(el.scrollTop),
+              scrollHeight: Math.round(el.scrollHeight),
+              clientHeight: Math.round(el.clientHeight)
+            };
+          })(),
+          // The one open row menu, with the row it hangs off and the side it was
+          // measured onto (the sidebar writes data-menu-placement).
+          menu: (() => {
+            const el = document.querySelector(
+              ".chats-rail__row[data-menu-open] .chats-rail__menu"
+            );
+            if (!el) return null;
+            const row = el.closest(".chats-rail__row");
+            return {
+              box: box(el),
+              placement: el.getAttribute("data-menu-placement"),
+              items: el.querySelectorAll("button").length,
+              rowLabel: text(row && row.querySelector(".chats-rail__label")),
+              rowBox: box(row)
+            };
+          })()
+        }
+      : null,
+    rows,
+    rowCount: rows.length,
+    tabs,
+    tabCount: tabs.length,
+    strip: tabStrip
+      ? {
+          box: box(tabStrip),
+          scrollLeft: Math.round(tabStrip.scrollLeft),
+          scrollWidth: Math.round(tabStrip.scrollWidth),
+          clientWidth: Math.round(tabStrip.clientWidth),
+          overflow: tabStrip.scrollWidth > tabStrip.clientWidth + 1
+        }
+      : null,
+    // The thread's name row: the strip leads the dock, so its bottom edge is
+    // where this row begins. Reported as a box so "tabs above the name" is a
+    // measured claim rather than a reading of the JSX order.
+    header: threadHeader ? { box: box(threadHeader) } : null,
+    // The strip's own door, after the last tab: the browser's plus, in the
+    // dock's own words.
+    newTab: tabNew
+      ? {
+          label: tabNew.getAttribute("aria-label"),
+          // The plus must stay a plain button beside the tablist's tabs: a
+          // tab role here would fold it into the tab band every count and
+          // keyboard walk reads.
+          role: tabNew.getAttribute("role"),
+          tag: tabNew.tagName.toLowerCase(),
+          visible: shownBox(tabNew),
+          box: box(tabNew)
+        }
+      : null,
+    tabMenu: tabMenu
+      ? {
+          box: box(tabMenu),
+          menuFor: tabMenu.getAttribute("data-menu-for"),
+          tabId: tabMenu.getAttribute("data-tab-id"),
+          itemLabels: Array.from(
+            tabMenu.querySelectorAll('[role="menuitem"]'),
+          ).map((item) => item.getAttribute("aria-label")),
+        }
+      : null,
+    chatDivider: divider
+      ? {
+          label: divider.getAttribute("aria-label"),
+          now: Number(divider.getAttribute("aria-valuenow")),
+          min: Number(divider.getAttribute("aria-valuemin")),
+          max: Number(divider.getAttribute("aria-valuemax")),
+          box: box(divider)
+        }
+      : null,
+    heading: text(
+      document.querySelector(".chat-panel__heading--thread") ??
+        document.querySelector(".chat-panel__heading")
+    ),
+    // Which surface the dock is on, read off the shipped attribute. There is no
+    // history list among them: the dock shows a thread, the chain or the
+    // shortcuts reference, and the chats themselves live in the sidebar.
+    surface: panel ? panel.getAttribute("data-chat-surface") : null,
+    thread: Boolean(threadHeader),
+    panel: box(panel),
+    composer: composer
+      ? {
+          box: box(composer),
+          value: composer.value,
+          disabled: composer.disabled,
+          focused: document.activeElement === composer
+        }
+      : null,
+    active: (() => {
+      const el = document.activeElement;
+      if (!el) return null;
+      return {
+        tag: el.tagName.toLowerCase(),
+        label: el.getAttribute("aria-label"),
+        composer: el === composer
+      };
+    })(),
+    messages,
+    renaming: Boolean(document.querySelector(".chat-panel__rename-input")),
+    rowRenaming: Boolean(document.querySelector(".chats-rail__rename")),
+    rowRenameValue: (() => {
+      const field = document.querySelector(".chats-rail__rename-input");
+      return field ? field.value : null;
+    })(),
+    renameValue: document.querySelector(".chat-panel__rename-input")?.value ?? null,
+    dialog: dialog
+      ? {
+          title: text(dialog.querySelector(".confirm-dialog__title")),
+          message: text(dialog.querySelector(".confirm-dialog__message")),
+          confirm: Boolean(dialog.querySelector(".confirm-dialog__confirm"))
+        }
+      : null,
+    calls: window.__lqCalls ?? [],
+    patchCalls: window.__lqPatchCalls ?? [],
+    deleteCalls: window.__lqDeleteCalls ?? [],
+    messageCalls: window.__lqMessageCalls ?? [],
+    createCalls: window.__lqCreateCalls ?? [],
+    stopCalls: window.__lqStopCalls ?? [],
+    // The profile's remembered kickoff marks, read from the legacy slot the
+    // harness page uses (no vault, no agent): session id -> icon kind. This is
+    // both the fixture's seeded mark and the store's write-through, so a claim
+    // about an icon surviving a restart is a claim about this map.
+    sessionIcons: (() => {
+      try {
+        const raw = window.localStorage.getItem("lifequest.companion.sessionIcons");
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return "unparsable";
+      }
+    })()
+  };
+})()`;
+
+/**
+ * Slide the window so the ambient pointer cannot sit over the chats rail.
+ *
+ * This rig is the first in the suite whose assertions read `:hover`, and it
+ * reads them on a SHOWN window (a hidden window takes no pointer at all). The
+ * bench shares one X display with the operator's app, so the cursor may already
+ * be resting over a chat row when the rig starts: the window would inherit that
+ * hover on show and the "at rest" landing sample would measure a hover the rig
+ * never produced.
+ *
+ * The window nearly fills the display, so there is no corner clear of the
+ * cursor; what the sample needs is narrower — the cursor not over the chat
+ * rows. Moving the window horizontally by its one free strip (the difference
+ * between the display and the window) either pushes the rail under a different
+ * screen x or pushes the cursor outside the window. One of the two extremes
+ * always maps the ambient pointer off the rail, for any cursor position.
+ */
+function placeWindowOffTheRail(win, rail) {
+  const display = screen.getPrimaryDisplay().workArea;
+  const bounds = win.getBounds();
+  const cursor = screen.getCursorScreenPoint();
+  const maxX = Math.max(display.x, display.x + display.width - bounds.width);
+  const contentY = cursor.y - bounds.y;
+  // Above or below the window is already clear of every row.
+  if (contentY < 0 || contentY > bounds.height) return;
+  // A few pixels of slack: the row's own padding is not part of its hover box,
+  // but landing the pointer on the rail's edge is too close to be a fact.
+  const railLeft = rail.left - 8;
+  const railRight = rail.right + 8;
+  const clear = (x) => {
+    const contentX = cursor.x - x;
+    return contentX < railLeft || contentX > railRight;
+  };
+  const x = [display.x, maxX].find(clear) ?? display.x;
+  win.setPosition(x, bounds.y);
+}
+
+async function main() {
+  fs.mkdirSync(artifactsDir, { recursive: true });
+
+  nativeTheme.themeSource = "dark";
+
+  const win = new BrowserWindow({
+    ...DEFAULT_SIZE,
+    show: false,
+    backgroundColor: "#1a1917",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  const run = (expression) => win.webContents.executeJavaScript(expression, true);
+
+  const sample = async () => {
+    const value = await run(SAMPLE);
+    if (!value) throw new Error("harness returned no sample");
+    return value;
+  };
+
+  const settle = async (ms = 240) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return sample();
+  };
+
+  const failures = [];
+  const check = (name, ok, detail = "") => {
+    if (!ok) failures.push(detail ? `${name}: ${detail}` : name);
+  };
+
+  const clickSidebarRow = (label) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+        (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = row?.querySelector(".chats-rail__row-main");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** The same row, pressed with the middle button: "open a new tab". */
+  const middleClickSidebarRow = (label) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+        (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = row?.querySelector(".chats-rail__row-main");
+      if (!button) return false;
+      button.dispatchEvent(new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true }));
+      button.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  const openSidebarMenu = (label) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+        (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = row?.querySelector(".chats-rail__menu-btn");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /**
+   * A tab pressed with the middle button: the browser's "close this tab". The
+   * three events are the real sequence a middle press produces, and the booleans
+   * say whether the app swallowed each — a press left unswallowed would start
+   * X11's primary-selection paste under the strip.
+   */
+  const middleClickTab = (label) =>
+    run(`(async () => {
+      const tab = Array.from(document.querySelectorAll(".chat-panel__tab")).find(
+        (el) => (el.querySelector(".chat-panel__tab-label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      if (!tab) return { ok: false };
+      const down = new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(down);
+      tab.dispatchEvent(new MouseEvent("mouseup", { button: 1, bubbles: true, cancelable: true }));
+      const aux = new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(aux);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return {
+        ok: true,
+        // dispatchEvent answers false when a listener cancelled it; the flag is
+        // the same fact after the dispatch.
+        downPrevented: down.defaultPrevented,
+        auxPrevented: aux.defaultPrevented,
+        pinned: tab.getAttribute("data-pinned") === "true",
+      };
+    })()`);
+
+  /** The pinned tab, which leads with its pin and keeps its name, pressed with
+   * the middle button: the store refuses to close a pin, so this must close
+   * nothing and drop nothing. */
+  const middleClickPinnedTab = () =>
+    run(`(async () => {
+      const tab = document.querySelector(".chat-panel__tab[data-pinned]");
+      if (!tab) return { ok: false };
+      const down = new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(down);
+      tab.dispatchEvent(new MouseEvent("mouseup", { button: 1, bubbles: true, cancelable: true }));
+      const aux = new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true });
+      tab.dispatchEvent(aux);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return { ok: true, downPrevented: down.defaultPrevented, auxPrevented: aux.defaultPrevented };
+    })()`);
+
+  /**
+   * A cancelable keydown delivered straight at the window, so the rig can read
+   * `defaultPrevented` as well as what the dock did with the key. The no-strip
+   * case needs exactly that fact: the key must be left to the platform.
+   */
+  const dispatchKeyDown = (options) =>
+    run(`(() => {
+      const event = new KeyboardEvent("keydown", {
+        ...${JSON.stringify(options)},
+        bubbles: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    })()`);
+
+  /**
+   * A real key press through the window's input pipeline, the way the
+   * keyboard-shortcuts rig presses its bindings: keyDown, keyUp, modifiers in
+   * Electron's spelling. No `char` — a shortcut is a keydown.
+   */
+  const pressKey = async (keyCode, modifiers = []) => {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+    await wait(25);
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+    await wait(110);
+    await run(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))",
+    );
+  };
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const findRowScript = (label) =>
+    `Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).find(
+      (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+    )`;
+
+  /**
+   * Put the tab strip back at its leading edge and answer where it landed. The
+   * wheel and reveal claims are about a gesture's own movement, so the band is
+   * parked before each one rather than measured from wherever the tab in front
+   * happened to leave it.
+   */
+  const scrollStripTo = (left) =>
+    run(`(async () => {
+      const strip = document.querySelector(".chat-panel__tabs");
+      if (!strip) return null;
+      strip.scrollLeft = ${left};
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return Math.round(strip.scrollLeft);
+    })()`);
+
+  /**
+   * A vertical wheel over the tab strip, dispatched the way a real wheel lands on
+   * it: cancelable and bubbling, with only a deltaY. The answer carries the facts
+   * the browser habit turns on — how far the band travels at all, where it was,
+   * where the gesture left it, and whether the event was swallowed so the page
+   * behind the strip did not scroll instead.
+   */
+  const wheelStrip = (deltaY) =>
+    run(`(async () => {
+      const strip = document.querySelector(".chat-panel__tabs");
+      if (!strip) return { ok: false, reason: "no strip" };
+      const maxScroll = strip.scrollWidth - strip.clientWidth;
+      if (maxScroll <= 0) {
+        return { ok: false, reason: "the strip does not overflow", maxScroll: 0 };
+      }
+      const before = strip.scrollLeft;
+      const event = new WheelEvent("wheel", {
+        deltaY: ${deltaY},
+        bubbles: true,
+        cancelable: true
+      });
+      const dispatched = strip.dispatchEvent(event);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        ok: true,
+        before: Math.round(before),
+        after: Math.round(strip.scrollLeft),
+        prevented: event.defaultPrevented,
+        dispatched,
+        maxScroll: Math.round(maxScroll)
+      };
+    })()`);
+
+  /**
+   * Create a chat through the shipping bridge stub, the way a page does before it
+   * asks the dock to show the chat. Answers with the row the stub minted, which
+   * is the row the request carries so the tab is named from its first paint.
+   */
+  const createChat = (title) =>
+    run(`window.lifequest.companionSessionCreate(${JSON.stringify(title)})`);
+
+  /**
+   * Hand the dock a chat through its own request door — the fixture exposes it
+   * from inside `ChatDockProvider` — with the kickoff mark of the work that
+   * started it, exactly as the Act board asks for a task chat.
+   */
+  const requestSession = (session, icon) =>
+    run(`(async () => {
+      if (typeof window.__lqRequestSession !== "function") return false;
+      window.__lqRequestSession(${JSON.stringify(session)}, ${JSON.stringify(icon)});
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      return true;
+    })()`);
+
+  /**
+   * Open the menu of the row at `index` in the rendered list, in document order.
+   * The row-menu checks walk rows by position (the foot of a long list) rather
+   * than by label, and seeded chats share a label shape.
+   */
+  const openSidebarMenuAt = (index) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row"))[${index}];
+      const button = row?.querySelector(".chats-rail__menu-btn");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Scroll the chats list to its top or its foot, and answer where it landed. */
+  const scrollRailList = (where) =>
+    run(`(async () => {
+      const list = document.querySelector(".chats-rail__list");
+      if (!list) return null;
+      list.scrollTop = ${where === "top" ? "0" : "list.scrollHeight"};
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return Math.round(list.scrollTop);
+    })()`);
+
+  /**
+   * Grow the profile's chat table by `count` rows and have the shipping store
+   * re-read it: the sidebar's list only clips a menu once the history is longer
+   * than its scroll port, which the fixture's five chats are not.
+   */
+  const seedRailHistory = (count) =>
+    run(`(async () => {
+      if (!window.__lqSeedChats || !window.__lqChat) return -1;
+      const total = window.__lqSeedChats(${count});
+      await window.__lqChat.loadSessions();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return total;
+    })()`);
+
+  /** The row's centre in window content coordinates, from a live layout read. */
+  const rowCenter = (label) =>
+    run(`(() => {
+      const row = ${findRowScript(label)};
+      if (!row) return null;
+      const r = row.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+
+  const rowActionsVisible = (label) =>
+    run(`(() => {
+      const row = ${findRowScript(label)};
+      const actions = row ? row.querySelector(".chats-rail__actions") : null;
+      return Boolean(actions) && window.getComputedStyle(actions).display !== "none";
+    })()`);
+
+  /*
+   * CSS :hover only follows a real pointer — a synthetic `mouseover` DOM event
+   * does not move the browser's hover state. So hover goes through the window's
+   * input pipeline. `showInactive` leaves the window unfocused; if that pipeline
+   * ignores the move, the same event goes over the devtools protocol instead,
+   * and stays there for the rest of the run (both are then sent together).
+   */
+  let pointerViaCdp = false;
+  const cdpMove = async (x, y) => {
+    const wc = win.webContents;
+    if (!wc.debugger.isAttached()) wc.debugger.attach("1.3");
+    await wc.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x,
+      y,
+      button: "none",
+      buttons: 0,
+      clickCount: 0,
+    });
+  };
+  const movePointer = async (x, y) => {
+    win.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    if (pointerViaCdp) {
+      try {
+        await cdpMove(x, y);
+      } catch {
+        pointerViaCdp = false;
+      }
+    }
+    await wait(120);
+  };
+
+  const hoverSidebarRow = async (label) => {
+    const center = await rowCenter(label);
+    if (!center) return false;
+    // Coordinates are window content DIPs: keep them inside the content box.
+    const x = clamp(Math.round(center.x), 1, DEFAULT_SIZE.width - 2);
+    const y = clamp(Math.round(center.y), 1, DEFAULT_SIZE.height - 2);
+    await movePointer(x, y);
+    if (!(await rowActionsVisible(label))) {
+      try {
+        await cdpMove(x, y);
+        pointerViaCdp = true;
+        await wait(120);
+      } catch {
+        pointerViaCdp = false;
+      }
+    }
+    await wait(60);
+    return true;
+  };
+
+  /** Park the pointer outside every sidebar row so :hover clears. */
+  const unhover = async () => {
+    await movePointer(8, 8);
+    await wait(120);
+    return true;
+  };
+
+  /** Press a control inside one row, the way a pointer would land on it. */
+  const clickRowControl = (label, selector) =>
+    run(`(async () => {
+      const row = ${findRowScript(label)};
+      const target = row ? row.querySelector(${JSON.stringify(selector)}) : null;
+      if (!target) return false;
+      target.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  const clickSidebarMenuItem = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chats-rail__menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** A header control of the chats section, by its accessible name. */
+  const clickRailControl = (label) =>
+    run(`(async () => {
+      const el = Array.from(document.querySelectorAll(".chats-rail__header-actions button")).find(
+        (button) => button.getAttribute("aria-label") === ${JSON.stringify(label)}
+      );
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Type into the chats search field, through React's own input handling. */
+  const typeSearch = (next) =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(next)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Close the search with the cross in its own field. */
+  const closeSearchBox = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-clear");
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** A press anywhere outside the field: the sidebar's list is the nearest one. */
+  const pressOutsideSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__list");
+      if (!el) return false;
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Escape in the field. */
+  const pressEscapeSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-input");
+      if (!el) return false;
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** One option of the chats section's view menu. */
+  const clickViewOption = (label) =>
+    run(`(async () => {
+      const el = Array.from(document.querySelectorAll(".chats-rail__view-menu [role=menuitemradio]")).find(
+        (item) => item.getAttribute("aria-label") === ${JSON.stringify(label)}
+      );
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  const clickTab = (label) =>
+    run(`(async () => {
+      const tab = Array.from(document.querySelectorAll(".chat-panel__tab")).find(
+        (el) => (el.querySelector(".chat-panel__tab-label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = tab?.querySelector("[role=tab]");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  const closeTab = (label) =>
+    run(`(async () => {
+      const tab = Array.from(document.querySelectorAll(".chat-panel__tab")).find(
+        (el) => (el.querySelector(".chat-panel__tab-label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = tab?.querySelector(".chat-panel__tab-close");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** The plus after the last tab: a new chat in a tab of its own. */
+  const clickNewTab = () =>
+    run(`(async () => {
+      const button = document.querySelector(".chat-panel__tab-new");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /**
+   * The dock's own New chat control, in the action bar at the bottom of the
+   * panel. It shares the store's `newChat` action with the sidebar's slot; the
+   * dock's is the one the operator's hand is on while a chat is open.
+   */
+  const clickNewChat = () =>
+    run(`(async () => {
+      const button = document.querySelector('.chat-panel__actions [aria-label="New chat"]');
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Type into the thread header's rename field, through React's own input. */
+  const typeThreadRename = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Type into the sidebar row's rename field, through React's own input. */
+  const typeRowRename = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Open one tab's menu with a right-click, the way the operator does. */
+  const openTabMenu = (label) =>
+    run(`(async () => {
+      // A pinned tab leads with its pin but carries its name like any tab, so fall back
+      // to the active tab when the name does not match one.
+      const tab =
+        Array.from(document.querySelectorAll(".chat-panel__tab")).find((el) =>
+          (el.textContent ?? "").includes(${JSON.stringify(label)})
+        ) ?? document.querySelector(".chat-panel__tab--active");
+      if (!tab) return { ok: false, tabs: Array.from(document.querySelectorAll(".chat-panel__tab")).length, menu: false };
+      tab.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      );
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return {
+        ok: Boolean(document.querySelector(".chat-panel__tab-menu")),
+        tabs: Array.from(document.querySelectorAll(".chat-panel__tab")).length,
+        menu: Boolean(document.querySelector(".chat-panel__tab-menu")),
+      };
+    })()`);
+
+  /** One item of the open tab menu, by the aria-label it wears. */
+  const clickTabMenuItem = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel__tab-menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Any control in the dock, by its accessible name. */
+  const clickDockControl = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /**
+   * Walk the dock's divider down to its floor with ArrowRight presses, the way a
+   * keyboard resizes the column: the trailing dock narrows one 16px step per
+   * press and the clamp stops at the 300px floor. The readings are returned so
+   * the caller can assert the walk LANDED, not merely that it was attempted.
+   */
+  const narrowDockToFloor = (maxPresses = 40) =>
+    run(`(async () => {
+      const divider = document.querySelector(".chat-divider");
+      if (!divider) return { reached: false, presses: 0, reason: "no divider" };
+      const read = () => ({
+        now: Number(divider.getAttribute("aria-valuenow")),
+        min: Number(divider.getAttribute("aria-valuemin")),
+        max: Number(divider.getAttribute("aria-valuemax"))
+      });
+      divider.focus();
+      const start = read();
+      let presses = 0;
+      while (presses < ${maxPresses}) {
+        const before = read();
+        if (before.now <= before.min) break;
+        divider.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })
+        );
+        presses += 1;
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() =>
+          requestAnimationFrame(r)
+        )));
+        const after = read();
+        if (after.now === before.now) break;
+      }
+      const end = read();
+      return { reached: end.now === end.min, presses, start, end };
+    })()`);
+
+  /**
+   * Walk the dock's divider wider with ArrowLeft presses, the way a keyboard
+   * resizes the column. The content-sized tab claim needs a strip with room for
+   * full names, and the shipped dock is too narrow for three of them.
+   */
+  const widenDock = (presses = 24) =>
+    run(`(async () => {
+      const divider = document.querySelector(".chat-divider");
+      if (!divider) return { moved: false, presses: 0, reason: "no divider" };
+      const read = () => Number(divider.getAttribute("aria-valuenow"));
+      divider.focus();
+      const start = read();
+      for (let i = 0; i < ${presses}; i += 1) {
+        divider.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
+        );
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() =>
+          requestAnimationFrame(r)
+        )));
+      }
+      return { moved: read() > start, start, end: read() };
+    })()`);
+
+  /** Commit the sidebar row's open rename form, the way its Save button does. */
+  const commitRowRename = () =>
+    run(`(async () => {
+      const save = document.querySelector(
+        '.chats-rail__rename [aria-label="Save chat name"]'
+      );
+      if (!save) return false;
+      save.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  const typeAndSend = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__composer-input");
+      if (!el) return "missing";
+      if (el.disabled) return "disabled";
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const send = document.querySelector('[aria-label="Send message"]');
+      if (!send) return "no-send";
+      send.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return "sent";
+    })()`);
+
+  /**
+   * Put the caret in the chat composer, the way clicking the field does. The
+   * cycle keys are the chatbar's own gesture, so the press after this one is
+   * made from the field the operator is working in.
+   */
+  const focusComposer = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__composer-input");
+      if (!el || el.disabled) return false;
+      el.focus();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return document.activeElement === el;
+    })()`);
+
+  const emit = (sessionId, event) =>
+    run(`window.__lqEmit(${JSON.stringify(sessionId)}, ${JSON.stringify(event)})`);
+
+  const clickDialog = (which) =>
+    run(`(async () => {
+      const el = document.querySelector(".confirm-dialog__${which}");
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  const shot = async (name) => {
+    const image = await win.webContents.capturePage();
+    const file = path.join(artifactsDir, `chat-tabs-${name}.png`);
+    fs.writeFileSync(file, image.toPNG());
+    return file;
+  };
+
+  let report;
+  const screenshots = [];
+  /**
+   * Gesture readings that are not a full sample of the page: the wheel's own
+   * before/after/prevented facts, and the id of the chat the write-path probe
+   * created. The wrapper asserts them beside the states, so a silent wheel or a
+   * request that never reached the dock cannot pass on a plausible-looking
+   * page sample alone.
+   */
+  const probes = { wheel: null, task: null, tabKeys: null };
+  /**
+   * Where the run had got to, in order, for the report a watchdog has to write
+   * when it kills a driver that never reaches the end: a timeout with no artifact
+   * tells the next person nothing about which step hung.
+   */
+  const startedAt = Date.now();
+  const marks = [];
+  const mark = (label) => {
+    marks.push({ ms: Date.now() - startedAt, label });
+  };
+  const timeout = setTimeout(() => {
+    fs.writeFileSync(
+      path.join(artifactsDir, "chat-tabs.json"),
+      `${JSON.stringify(
+        {
+          url,
+          ranAt: new Date().toISOString(),
+          window: DEFAULT_SIZE,
+          screenshots,
+          states: {},
+          marks,
+          failures: [...failures, "timed out after 90s"],
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    app.exit(1);
+  }, 90_000);
+
+  // A page that never finishes loading must say so rather than sit until the
+  // watchdog: the renderer's own events are the only account of why it did not.
+  win.webContents.on("did-finish-load", () => mark("did-finish-load"));
+  win.webContents.on("did-fail-load", (_event, code, description, failedUrl) =>
+    mark(`did-fail-load ${code} ${description} ${failedUrl}`),
+  );
+  win.webContents.on("render-process-gone", (_event, details) =>
+    mark(`render-process-gone ${details.reason}`),
+  );
+  win.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 3) mark(`console ${level}: ${String(message).slice(0, 240)}`);
+  });
+
+  try {
+    mark("load:start");
+    await win.loadURL(url);
+    mark("load:done");
+    await run("window.chatTabsHarnessReady.then(() => true)");
+    mark("harness:ready");
+    win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    // The window is shown so a REAL pointer can drive `:hover`; slide it so the
+    // operator's parked cursor cannot decide the landing state for us.
+    const railRect = await run(`(() => {
+      const r = document.querySelector(".chats-rail")?.getBoundingClientRect();
+      return r ? { left: r.left, right: r.right } : null;
+    })()`);
+    placeWindowOffTheRail(win, railRect ?? { left: 0, right: 260 });
+    win.showInactive();
+    // Park the pointer away from the rows before the first sample: a cursor an
+    // operator left over the window must not decide whether landing is "at rest".
+    await unhover();
+
+    // 1 — the sidebar lists every live chat in one flat list, pinned first, and
+    // the dock lands on a thread whose strip is drawn (the fixture's pinned
+    // chat is a permanent pin-led tab, beside the open chat's tab).
+    mark("landing");
+    const landing = await settle(300);
+    check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
+    check(
+      "the New chat button centres its icon and label",
+      landing.rail?.newChatCentered === true,
+      JSON.stringify({ centered: landing.rail?.newChatCentered }),
+    );
+    check(
+      "the pinned chat is the first row of the flat list",
+      landing.rows[0]?.label === "Pinned note" && landing.rows[0]?.pinned === true,
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinned])),
+    );
+    check(
+      "every other row is unpinned",
+      landing.rows.slice(1).every((row) => row.pinned === false),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinned])),
+    );
+    check(
+      "only the pinned row wears a resting pin mark",
+      landing.rows[0]?.pinState === true &&
+        landing.rows.slice(1).every((row) => row.pinState === false),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinState])),
+    );
+    check(
+      "the resting rows show their time",
+      landing.rows.every((row) => row.whenVisible),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.whenVisible])),
+    );
+    check(
+      "pin and archive are hover-only",
+      landing.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    // The rail breathes above and below its rows instead of starting flush
+    // against its frame.
+    check(
+      "the rail keeps dead space above and below its rows",
+      (landing.rail?.paddingTop ?? 0) >= 10 && (landing.rail?.paddingBottom ?? 0) >= 10,
+      JSON.stringify({
+        paddingTop: landing.rail?.paddingTop,
+        paddingBottom: landing.rail?.paddingBottom,
+      }),
+    );
+    check(
+      "the dock lands on the newest chat",
+      landing.heading === "Alpha planning" &&
+        landing.thread &&
+        landing.surface === "thread",
+      `heading "${landing.heading}", surface ${landing.surface}`,
+    );
+    // The pinned chat is a tab of its own before anything is opened: the pin is
+    // durable Hermes state, so a pinned chat is always in the strip. It leads with
+    // its pin, wears its full name like any other tab, keeps no close control,
+    // and sits first, ahead of the open chat's normal tab.
+    check(
+      "landing draws the pinned chat as a named, pin-led tab ahead of the open chat",
+      landing.tabCount === 2 &&
+        landing.tabs[0]?.pinned === true &&
+        landing.tabs[0]?.pin === true &&
+        landing.tabs[0]?.label === "Pinned note" &&
+        landing.tabs[0]?.hasClose === false &&
+        landing.tabs[1]?.pinned === false &&
+        landing.tabs[1]?.label === "Alpha planning" &&
+        landing.tabs[1]?.hasClose === true &&
+        landing.tabs[1]?.active === true,
+      JSON.stringify(landing.tabs),
+    );
+    check(
+      "the strip is drawn because of the pinned tab, with the open chat beside it",
+      landing.strip !== null,
+      JSON.stringify(landing.strip),
+    );
+    // The swap: the strip leads the dock and the name row sits directly under
+    // it. Geometry, not JSX order — a strip painted over the header would pass
+    // a DOM-order reading and fail this one.
+    check(
+      "the tab strip is the dock's top band, above the chat's name row",
+      landing.strip !== null &&
+        landing.header !== null &&
+        landing.strip.box.bottom === landing.header.box.top &&
+        landing.strip.box.top < landing.header.box.top,
+      JSON.stringify({ strip: landing.strip?.box, header: landing.header?.box }),
+    );
+    check(
+      "the strip ends with a plus that opens a new chat tab",
+      landing.newTab !== null &&
+        landing.newTab.visible === true &&
+        landing.newTab.label === "New chat tab" &&
+        landing.tabs.length > 0 &&
+        landing.newTab.box.left >= (landing.tabs.at(-1)?.box?.right ?? Infinity) &&
+        landing.newTab.box.right <= landing.strip.box.right,
+      JSON.stringify({
+        plus: landing.newTab,
+        lastTab: landing.tabs.at(-1)?.box,
+        strip: landing.strip?.box
+      }),
+    );
+    check(
+      "the composer is ready on landing",
+      landing.composer !== null && !landing.composer.disabled,
+      JSON.stringify(landing.composer),
+    );
+    screenshots.push(await shot("landing"));
+
+    // 1a — the browser's middle click closes the tab under the pointer, but a
+    // pinned tab is not a closable tab: the close control is absent because
+    // Unpin is the only way out of the band, and the middle button must honour
+    // the same rule. The press is swallowed first, so X11's paste never starts.
+    const pinnedPress = await middleClickPinnedTab();
+    const afterPinnedPress = await settle();
+    check(
+      "a middle click on the pinned tab closes nothing and keeps it pinned",
+      pinnedPress.ok === true &&
+        pinnedPress.downPrevented === true &&
+        pinnedPress.auxPrevented === true &&
+        afterPinnedPress.tabCount === 2 &&
+        afterPinnedPress.tabs[0]?.pinned === true &&
+        afterPinnedPress.tabs[0]?.label === "Pinned note" &&
+        afterPinnedPress.tabs[1]?.label === "Alpha planning" &&
+        afterPinnedPress.heading === "Alpha planning",
+      JSON.stringify({ press: pinnedPress, tabs: afterPinnedPress.tabs }),
+    );
+
+    // 1b — pin and archive are hover-only: a real pointer over a row reveals
+    // them and the resting time/pin mark step aside, on that row only.
+    check("hovered the pinned row", await hoverSidebarRow("Pinned note"), "no row to hover");
+    const hovered = await settle();
+    const hoveredPinnedRow = hovered.rows.find((row) => row.label === "Pinned note");
+    check(
+      "hovering a row reveals its actions, and only that row's",
+      hoveredPinnedRow?.actionsVisible === true &&
+        hovered.rows.filter((row) => row.actionsVisible).length === 1,
+      JSON.stringify(hovered.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    check(
+      "the resting time and pin mark step aside under the pointer",
+      hoveredPinnedRow?.whenVisible === false && hoveredPinnedRow?.pinState === false,
+      JSON.stringify({ when: hoveredPinnedRow?.whenVisible, pinState: hoveredPinnedRow?.pinState }),
+    );
+    // A pinned chat cannot be archived from the sidebar: Archive would take a
+    // pinned chat out from under its permanent tab, so the hover control is the
+    // pin only, and Unpin is the way out.
+    check(
+      "the pinned row's hover control is Unpin, filled, and it hides Archive",
+      hoveredPinnedRow?.pin.exists === true &&
+        hoveredPinnedRow?.pin.visible === true &&
+        hoveredPinnedRow?.pin.label === "Unpin chat" &&
+        hoveredPinnedRow?.pin.dataPinned === "true" &&
+        hoveredPinnedRow?.pin.filled === true &&
+        hoveredPinnedRow?.archive.visible === false,
+      JSON.stringify({ pin: hoveredPinnedRow?.pin, archive: hoveredPinnedRow?.archive }),
+    );
+
+    check("hovered an unpinned row", await hoverSidebarRow("Alpha planning"), "no row to hover");
+    const hoveredUnpinned = await settle();
+    const alphaHover = hoveredUnpinned.rows.find((row) => row.label === "Alpha planning");
+    check(
+      "the unpinned row's hover control is Pin, outline, and visible",
+      hoveredUnpinned.rows.filter((row) => row.actionsVisible).length === 1 &&
+        alphaHover?.actionsVisible === true &&
+        alphaHover?.pin.visible === true &&
+        alphaHover?.pin.label === "Pin chat" &&
+        alphaHover?.pin.dataPinned === null &&
+        alphaHover?.pin.filled === false,
+      JSON.stringify({ pin: alphaHover?.pin, actions: alphaHover?.actionsVisible }),
+    );
+    check(
+      "the unpinned row's archive control sits right before the pin",
+      alphaHover?.archive.visible === true &&
+        alphaHover?.archive.label === "Archive chat" &&
+        alphaHover?.archive.beforePin === true,
+      JSON.stringify(alphaHover?.archive),
+    );
+    // The artifact: one row lit up with its pin and archive icons.
+    screenshots.push(await shot("hover"));
+
+    check("moved the pointer off the rows", await unhover(), "no neutral point");
+    const unhovered = await settle();
+    check(
+      "the hover controls go away with the pointer",
+      unhovered.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(unhovered.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    check(
+      "the resting time and pin mark come back",
+      unhovered.rows.every((row) => row.whenVisible) &&
+        unhovered.rows.find((row) => row.label === "Pinned note")?.pinState === true,
+      JSON.stringify(unhovered.rows.map((r) => [r.label, r.whenVisible, r.pinState])),
+    );
+
+    // 1c — unpin the fixture's pinned chat from the sidebar, then close the tab
+    // the pin left behind. The pin is what forced a second tab onto the landing,
+    // so this is how the rest of the suite gets back to the one-chat baseline it
+    // was written against. The pinned tab has already become a normal tab with a
+    // close control by the time the unpin lands.
+    check("hovered the pinned row to unpin it", await hoverSidebarRow("Pinned note"), "no row to hover");
+    check(
+      "clicked the pinned row's Unpin control",
+      await clickRowControl("Pinned note", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the unpin", await unhover(), "no neutral point");
+    const unpinnedPinnedNote = await settle();
+    check(
+      "Unpin reached the bridge for the pinned chat",
+      unpinnedPinnedNote.patchCalls.at(-1)?.id === "chat-pinned" &&
+        unpinnedPinnedNote.patchCalls.at(-1)?.patch.pinned === false,
+      JSON.stringify(unpinnedPinnedNote.patchCalls.at(-1)),
+    );
+    check(
+      "the unpinned chat's tab keeps its name and gains a close control",
+      unpinnedPinnedNote.tabCount === 2 &&
+        unpinnedPinnedNote.tabs.every((tab) => tab.pinned === false) &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.pin === false &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose === true &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.active)?.label === "Alpha planning",
+      JSON.stringify(unpinnedPinnedNote.tabs),
+    );
+    check("closed the unpinned chat's tab", await closeTab("Pinned note"), "no close control");
+    const baseline = await settle();
+    check(
+      "closing the extra tab lands on the one-chat baseline, strip drawn with one tab",
+      baseline.tabCount === 1 &&
+        baseline.tabs[0]?.label === "Alpha planning" &&
+        baseline.tabs[0]?.active === true &&
+        baseline.strip !== null &&
+        baseline.newTab !== null &&
+        baseline.newTab.visible === true &&
+        baseline.newTab.box.left >= (baseline.tabs[0]?.box?.right ?? Infinity) &&
+        baseline.heading === "Alpha planning" &&
+        baseline.surface === "thread",
+      JSON.stringify({ tabs: baseline.tabs, strip: baseline.strip, heading: baseline.heading }),
+    );
+
+    // 1d — the strip is drawn even with one tab, so its one tab's close control
+    // is on screen and Mod+W must match it: a real press closes that tab and
+    // hands the screen to the blank slate. On the slate nothing is left to
+    // close, and a real press there would be taken by the platform (closing the
+    // rig's window), so the "left alone" half is probed with a synthetic
+    // keydown — the only safe probe for a key the app declines.
+    await pressKey("W", ["control"]);
+    const closedOnlyTab = await settle();
+    check(
+      "Mod+W closes the only tab while the strip is drawn",
+      closedOnlyTab.tabCount === 0 &&
+        closedOnlyTab.strip === null &&
+        closedOnlyTab.surface === "thread" &&
+        closedOnlyTab.heading === "Chat",
+      JSON.stringify({ heading: closedOnlyTab.heading, tabs: closedOnlyTab.tabCount }),
+    );
+    const swallowedWithoutStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
+    const noStripKey = await settle();
+    check(
+      "Mod+W is left alone on the blank slate",
+      swallowedWithoutStrip === false &&
+        noStripKey.tabCount === 0 &&
+        noStripKey.strip === null &&
+        noStripKey.heading === "Chat",
+      JSON.stringify({ swallowedWithoutStrip, heading: noStripKey.heading, tabs: noStripKey.tabCount }),
+    );
+    // The cycle keys are declined by the same rule: with no strip drawn there
+    // is no other tab to reach, so the platform keeps Ctrl+Tab.
+    const swallowedCycleWithoutStrip = await dispatchKeyDown({ key: "Tab", ctrlKey: true });
+    probes.tabKeys = { withoutStrip: swallowedCycleWithoutStrip, withOneTab: null };
+    const noStripCycle = await settle();
+    check(
+      "Ctrl+Tab is left alone on the blank slate",
+      swallowedCycleWithoutStrip === false &&
+        noStripCycle.tabCount === 0 &&
+        noStripCycle.strip === null &&
+        noStripCycle.heading === "Chat",
+      JSON.stringify({
+        swallowed: swallowedCycleWithoutStrip,
+        heading: noStripCycle.heading,
+        tabs: noStripCycle.tabCount,
+      }),
+    );
+
+    // 2 — a plain click is navigation: the clicked chat takes over the main chat
+    // and no tab is added.
+    check("clicked Bravo", await clickSidebarRow("Bravo budget"), "no row button");
+    const opened = await settle();
+    check(
+      "the dock shows the chat the row named",
+      opened.heading === "Bravo budget" && opened.thread,
+      `heading "${opened.heading}"`,
+    );
+    check(
+      "the transcript read is the clicked chat's",
+      opened.messageCalls.at(-1) === "chat-bravo",
+      JSON.stringify(opened.messageCalls.slice(-3)),
+    );
+    check(
+      "a plain click added no tab: the one tab took the clicked chat's name",
+      opened.tabCount === 1 &&
+        opened.tabs[0]?.label === "Bravo budget" &&
+        opened.tabs[0]?.active === true,
+      JSON.stringify(opened.tabs),
+    );
+    check(
+      "the clicked chat is the active row",
+      opened.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify(opened.rows),
+    );
+    // One tab is still no second tab to switch to: the cycle key is declined
+    // and the strip stays where it is. (A real press is unsafe here for the same
+    // reason it is for Mod+W — an unhandled Ctrl+Tab belongs to the platform.)
+    const swallowedCycleWithOneTab = await dispatchKeyDown({ key: "Tab", ctrlKey: true });
+    if (probes.tabKeys) probes.tabKeys.withOneTab = swallowedCycleWithOneTab;
+    const oneTabCycle = await settle();
+    check(
+      "Ctrl+Tab is left alone with a single tab",
+      swallowedCycleWithOneTab === false &&
+        oneTabCycle.tabCount === 1 &&
+        oneTabCycle.tabs[0]?.label === "Bravo budget" &&
+        oneTabCycle.tabs[0]?.active === true &&
+        oneTabCycle.heading === "Bravo budget",
+      JSON.stringify({
+        swallowed: swallowedCycleWithOneTab,
+        tabs: oneTabCycle.tabs,
+        heading: oneTabCycle.heading,
+      }),
+    );
+
+    // 3 — a middle click keeps the chat in front and gives the clicked chat its
+    // own tab. If step 2 had added a tab instead of replacing, this would draw
+    // three; two is the proof that the plain click navigated.
+    check("middle-clicked Alpha", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const middleOpened = await settle();
+    check(
+      "a middle click opens the chat in a new tab",
+      middleOpened.tabCount === 2 &&
+        middleOpened.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        middleOpened.tabs[1]?.active === true &&
+        middleOpened.heading === "Alpha planning",
+      JSON.stringify({ tabs: middleOpened.tabs, heading: middleOpened.heading }),
+    );
+
+    // 3b — Mod+W is the browser's tab-close key: it closes the tab in front and
+    // the strip hands the screen to its neighbour, exactly as the close control
+    // and the close button's menu item do. The dock stays open on a thread.
+    // Sent as a real key press through the window's input pipeline, so this
+    // proves the operator's own keyboard, not a synthetic DOM event.
+    await pressKey("W", ["control"]);
+    const keyClosed = await settle();
+    check(
+      "Mod+W closes the tab in front and hands over to its neighbour",
+      keyClosed.tabCount === 1 &&
+        keyClosed.tabs[0]?.label === "Bravo budget" &&
+        keyClosed.tabs[0]?.active === true &&
+        keyClosed.strip !== null &&
+        keyClosed.heading === "Bravo budget" &&
+        keyClosed.surface === "thread" &&
+        keyClosed.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify({
+        tabs: keyClosed.tabs,
+        strip: keyClosed.strip,
+        heading: keyClosed.heading,
+        activeRow: keyClosed.rows.find((row) => row.active)?.label,
+      }),
+    );
+    // Put the two-tab baseline back for step 4: reopening the closed chat gives
+    // it a fresh tab, and clicking it puts the same chat in front as before.
+    check("re-opened Alpha after the key closed it", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const reopenedAfterKey = await settle();
+    check(
+      "the key's close left the chat listed and reopenable",
+      reopenedAfterKey.tabCount === 2 &&
+        reopenedAfterKey.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        reopenedAfterKey.heading === "Alpha planning",
+      JSON.stringify({ tabs: reopenedAfterKey.tabs, heading: reopenedAfterKey.heading }),
+    );
+
+    // 3c — Ctrl+Tab is the browser's tab-switch key, the counterpart of Mod+W:
+    // it walks the strip to its next tab in the order the strip draws, and
+    // Ctrl+Shift+Tab walks back, wrapping at both ends. The caret is put in the
+    // chat composer first: this is the key the operator reaches for while
+    // working in the chatbar, and the field must keep focus across the hop.
+    // Both are real presses through the window's input pipeline, so the proof is
+    // the operator's own keyboard, not a synthetic DOM event.
+    check("focused the chat composer before the cycle keys", await focusComposer(), "no composer");
+    const beforeCycle = await settle();
+    check(
+      "the composer holds the caret before the cycle keys",
+      beforeCycle.composer?.focused === true && beforeCycle.heading === "Alpha planning",
+      JSON.stringify({ composer: beforeCycle.composer, heading: beforeCycle.heading }),
+    );
+    // Alpha planning is the last tab; the forward step wraps to the first.
+    await pressKey("Tab", ["control"]);
+    const tabCycledForward = await settle();
+    check(
+      "Ctrl+Tab steps the strip to the next tab, wrapping to the first",
+      tabCycledForward.tabCount === 2 &&
+        tabCycledForward.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning" &&
+        tabCycledForward.tabs[0]?.active === true &&
+        tabCycledForward.tabs[1]?.active === false &&
+        tabCycledForward.heading === "Bravo budget" &&
+        tabCycledForward.surface === "thread" &&
+        tabCycledForward.composer?.focused === true &&
+        tabCycledForward.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify({
+        tabs: tabCycledForward.tabs,
+        heading: tabCycledForward.heading,
+        composer: tabCycledForward.composer,
+      }),
+    );
+    // Bravo budget is the first tab; the backward step wraps to the last.
+    await pressKey("Tab", ["control", "shift"]);
+    const tabCycledBack = await settle();
+    check(
+      "Ctrl+Shift+Tab steps the strip back to the previous tab, wrapping to the last",
+      tabCycledBack.tabCount === 2 &&
+        tabCycledBack.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning" &&
+        tabCycledBack.tabs[0]?.active === false &&
+        tabCycledBack.tabs[1]?.active === true &&
+        tabCycledBack.heading === "Alpha planning" &&
+        tabCycledBack.surface === "thread" &&
+        tabCycledBack.composer?.focused === true &&
+        tabCycledBack.rows.find((row) => row.label === "Alpha planning")?.active === true,
+      JSON.stringify({
+        tabs: tabCycledBack.tabs,
+        heading: tabCycledBack.heading,
+        composer: tabCycledBack.composer,
+      }),
+    );
+    screenshots.push(await shot("tab-cycle-keys"));
+    mark("tab-cycle-keys");
+
+    // 4 — the row menu offers the same gesture in words.
+    check("opened Delta's menu", await openSidebarMenu("Delta automation"), "no menu control");
+    check(
+      "clicked Open in new tab",
+      await clickSidebarMenuItem("Open in new tab"),
+      "no Open in new tab item",
+    );
+    const menuOpened = await settle();
+    check(
+      "the menu's Open in new tab adds a tab",
+      menuOpened.tabCount === 3 &&
+        menuOpened.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning/Delta automation" &&
+        menuOpened.heading === "Delta automation",
+      JSON.stringify({ tabs: menuOpened.tabs, heading: menuOpened.heading }),
+    );
+
+    // 5 — closing that tab lands on a neighbour and keeps the chat listed.
+    check("closed Delta's tab", await closeTab("Delta automation"), "no close control");
+    const menuClosed = await settle();
+    check(
+      "closing a tab hands over to its neighbour",
+      menuClosed.tabCount === 2 &&
+        menuClosed.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        menuClosed.heading === "Alpha planning",
+      JSON.stringify({ tabs: menuClosed.tabs, heading: menuClosed.heading }),
+    );
+    check(
+      "the closed chat is still in the sidebar",
+      menuClosed.rows.some((row) => row.label === "Delta automation"),
+      JSON.stringify(menuClosed.rows.map((row) => row.label)),
+    );
+
+    // 5b — the middle button is the browser's other close gesture: the tab under
+    // the pointer leaves, even when it is the one in front, and the strip hands
+    // the screen to its neighbour. The press is swallowed so no paste starts.
+    const middleClosed = await middleClickTab("Alpha planning");
+    const afterMiddleClose = await settle();
+    check(
+      "a middle click is swallowed and closes the tab under the pointer",
+      middleClosed.ok === true &&
+        middleClosed.downPrevented === true &&
+        middleClosed.auxPrevented === true &&
+        middleClosed.pinned === false,
+      JSON.stringify(middleClosed),
+    );
+    check(
+      "the middle-closed tab hands the thread to its neighbour",
+      afterMiddleClose.tabCount === 1 &&
+        afterMiddleClose.tabs[0]?.label === "Bravo budget" &&
+        afterMiddleClose.strip !== null &&
+        afterMiddleClose.heading === "Bravo budget" &&
+        afterMiddleClose.surface === "thread",
+      JSON.stringify({
+        tabs: afterMiddleClose.tabs,
+        strip: afterMiddleClose.strip,
+        heading: afterMiddleClose.heading,
+      }),
+    );
+    // Put the two-tab baseline back for step 6 — the same state the close
+    // control left the strip in after step 5.
+    check("re-opened Alpha after the middle click", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const afterMiddleReopen = await settle();
+    check(
+      "the middle-closed chat is still listed and reopenable",
+      afterMiddleReopen.tabCount === 2 &&
+        afterMiddleReopen.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        afterMiddleReopen.heading === "Alpha planning",
+      JSON.stringify({ tabs: afterMiddleReopen.tabs, heading: afterMiddleReopen.heading }),
+    );
+
+    // 6 — send in Alpha, then switch to Bravo and send there while Alpha is
+    // still in the air. The two turns must not serialise.
+    check("sent in Alpha", (await typeAndSend("Plan the alpha launch")) === "sent", "composer refused");
+    const alphaLive = await settle();
+    check(
+      "Alpha's turn reached the bridge as Alpha",
+      alphaLive.calls.at(-1)?.sessionId === "chat-alpha",
+      JSON.stringify(alphaLive.calls),
+    );
+    check(
+      "Alpha's tab and row both show the live turn",
+      alphaLive.tabs.find((tab) => tab.label === "Alpha planning")?.live === true &&
+        alphaLive.rows.find((row) => row.label === "Alpha planning")?.live === true,
+      JSON.stringify({ tabs: alphaLive.tabs, rows: alphaLive.rows }),
+    );
+    check(
+      "the sidebar counts the running chat",
+      alphaLive.rail?.liveCount === "1 running",
+      JSON.stringify(alphaLive.rail?.liveCount),
+    );
+
+    check("switched to Bravo", await clickTab("Bravo budget"), "no Bravo tab");
+    const bravoReady = await settle();
+    check(
+      "Bravo's composer is usable while Alpha runs",
+      bravoReady.composer !== null && !bravoReady.composer.disabled,
+      JSON.stringify(bravoReady.composer),
+    );
+    check(
+      "switching did not drop Alpha's live tab",
+      bravoReady.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(bravoReady.tabs),
+    );
+    check("sent in Bravo", (await typeAndSend("Plan the bravo budget")) === "sent", "composer refused");
+    const bothLive = await settle();
+    check(
+      "both turns are in the air at once",
+      bothLive.calls.length === 2 &&
+        bothLive.tabs.filter((tab) => tab.live).length === 2 &&
+        bothLive.rows.filter((row) => row.live).length === 2,
+      JSON.stringify({ calls: bothLive.calls, tabs: bothLive.tabs, rows: bothLive.rows }),
+    );
+    check(
+      "the sidebar counts both running chats",
+      bothLive.rail?.liveCount === "2 running",
+      JSON.stringify(bothLive.rail?.liveCount),
+    );
+    screenshots.push(await shot("parallel"));
+
+    // 7 — frames land in the chat that owns them, even when it is not on screen.
+    await emit("chat-bravo", { type: "run.started", runId: "run-bravo" });
+    await emit("chat-bravo", { type: "assistant.delta", text: "BRAVO-ONLY-1 " });
+    await emit("chat-alpha", { type: "assistant.delta", text: "ALPHA-ONLY-1 " });
+    await emit("chat-bravo", { type: "assistant.delta", text: "BRAVO-ONLY-2 " });
+    await emit("chat-alpha", { type: "assistant.delta", text: "ALPHA-ONLY-2" });
+    const interleaved = await settle();
+    const bravoText = interleaved.messages.map((m) => m.content).join(" | ");
+    check(
+      "Bravo's thread holds only Bravo's deltas",
+      bravoText.includes("BRAVO-ONLY-1") &&
+        bravoText.includes("BRAVO-ONLY-2") &&
+        !bravoText.includes("ALPHA-ONLY") &&
+        bravoText.includes("Plan the bravo budget"),
+      bravoText,
+    );
+
+    check("switched to Alpha", await clickTab("Alpha planning"), "no Alpha tab");
+    const alphaThread = await settle();
+    const alphaText = alphaThread.messages.map((m) => m.content).join(" | ");
+    check(
+      "Alpha's thread holds only Alpha's deltas",
+      alphaText.includes("ALPHA-ONLY-1") &&
+        alphaText.includes("ALPHA-ONLY-2") &&
+        !alphaText.includes("BRAVO-ONLY"),
+      alphaText,
+    );
+
+    // 8 — the turns settle, and the live marks go with them.
+    await emit("chat-alpha", { type: "run.completed" });
+    await emit("chat-bravo", { type: "run.completed" });
+    await run("window.__lqFinishChat('chat-alpha')");
+    await run("window.__lqFinishChat('chat-bravo')");
+    const finished = await settle();
+    check(
+      "no tab stays live once the turns end",
+      finished.tabs.every((tab) => !tab.live),
+      JSON.stringify(finished.tabs),
+    );
+    check(
+      "no row stays live once the turns end",
+      finished.rows.every((row) => !row.live),
+      JSON.stringify(finished.rows),
+    );
+    check(
+      "the running count goes away with the last turn",
+      !finished.rail?.liveCount,
+      JSON.stringify(finished.rail?.liveCount),
+    );
+
+    // 9 — a plain click mid-turn still replaces the main chat: the running chat
+    // is split into its own tab first, so the reply is never hidden.
+    check("sent in Alpha again", (await typeAndSend("Alpha follow-up")) === "sent", "composer refused");
+    const alphaAgain = await settle();
+    check(
+      "Alpha is live again",
+      alphaAgain.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(alphaAgain.tabs),
+    );
+    check("clicked Charlie while Alpha runs", await clickSidebarRow("Charlie retro"), "no row button");
+    const split = await settle();
+    check(
+      "the plain click replaced the main chat",
+      split.heading === "Charlie retro" && split.thread,
+      `heading "${split.heading}"`,
+    );
+    check(
+      "the running chat was split into its own tab rather than lost",
+      split.tabCount === 3 &&
+        split.tabs.find((tab) => tab.label === "Charlie retro")?.active === true &&
+        split.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(split.tabs),
+    );
+    check(
+      "the running chat's tab is still there",
+      split.tabs.some((tab) => tab.label === "Alpha planning"),
+      JSON.stringify(split.tabs),
+    );
+    await emit("chat-alpha", { type: "run.completed" });
+    await run("window.__lqFinishChat('chat-alpha')");
+    const splitSettled = await settle();
+    check(
+      "the split tab settles with its run",
+      splitSettled.tabs.every((tab) => !tab.live),
+      JSON.stringify(splitSettled.tabs),
+    );
+
+    // 10 — the row's hover pin control: one patch to the bridge, and the row
+    // becomes the very first row (a fresh pin leads the list).
+    check("hovered Bravo", await hoverSidebarRow("Bravo budget"), "no row to hover");
+    const hoveredBravo = await settle();
+    check(
+      "Bravo's hover pin control is visible before the click",
+      hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin.visible === true,
+      JSON.stringify(hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin),
+    );
+    check(
+      "clicked Bravo's hover pin",
+      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the pin", await unhover(), "no neutral point");
+    const pinned = await settle();
+    check(
+      "Pin reached the bridge for Bravo",
+      pinned.patchCalls.at(-1)?.id === "chat-bravo" &&
+        pinned.patchCalls.at(-1)?.patch.pinned === true,
+      JSON.stringify(pinned.patchCalls.at(-1)),
+    );
+    check(
+      "the newly pinned chat is the very first row",
+      pinned.rows[0]?.label === "Bravo budget" && pinned.rows[0]?.pinned === true,
+      JSON.stringify(pinned.rows.map((row) => [row.label, row.pinned])),
+    );
+    check(
+      "the pinned row shows its resting pin mark and its hover controls are gone",
+      pinned.rows[0]?.pinState === true && pinned.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(pinned.rows.map((row) => [row.label, row.pinState, row.actionsVisible])),
+    );
+    // Pinning a chat turns the tab it already had into a pin-led tab at the
+    // front, keeping its name: pinned tabs come first in the strip, whatever
+    // order the working set was made in.
+    check(
+      "pinning a chat turns its open tab into a pin-led tab at the front",
+      pinned.tabCount === 3 &&
+        pinned.tabs[0]?.pinned === true &&
+        pinned.tabs[0]?.label === "Bravo budget" &&
+        pinned.tabs[0]?.pin === true &&
+        pinned.tabs[0]?.hasClose === false &&
+        pinned.tabs.filter((tab) => tab.pinned).length === 1,
+      JSON.stringify(pinned.tabs),
+    );
+
+    // 10b — the same control toggles: Unpin un-pins, and the row leaves the front.
+    check("hovered the now-pinned Bravo", await hoverSidebarRow("Bravo budget"), "no row to hover");
+    const hoveredPinned = await settle();
+    const pinnedHover = hoveredPinned.rows.find((row) => row.label === "Bravo budget");
+    check(
+      "the pinned row's hover control reads Unpin and is filled",
+      pinnedHover?.pin.visible === true &&
+        pinnedHover?.pin.label === "Unpin chat" &&
+        pinnedHover?.pin.dataPinned === "true" &&
+        pinnedHover?.pin.filled === true &&
+        pinnedHover?.pinState === false,
+      JSON.stringify(pinnedHover?.pin),
+    );
+    check(
+      "clicked Bravo's hover Unpin",
+      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the unpin", await unhover(), "no neutral point");
+    const unpinned = await settle();
+    check(
+      "Unpin reached the bridge for Bravo",
+      unpinned.patchCalls.at(-1)?.id === "chat-bravo" &&
+        unpinned.patchCalls.at(-1)?.patch.pinned === false,
+      JSON.stringify(unpinned.patchCalls.at(-1)),
+    );
+    const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
+    check(
+      "the unpinned chat left the front and lost its pin mark",
+      // The fixture's own pin was unpinned and closed at 1c, so the front of the
+      // list is the first of the activity order.
+      unpinnedBravo?.pinned === false &&
+        unpinnedBravo?.pinState === false &&
+        unpinned.rows[0]?.label === "Alpha planning",
+      JSON.stringify(unpinned.rows.map((row) => [row.label, row.pinned, row.pinState])),
+    );
+    check(
+      "the unpinned chat's tab is a normal tab again",
+      unpinned.tabCount === 3 &&
+        unpinned.tabs.every((tab) => tab.pinned === false) &&
+        unpinned.tabs.find((tab) => tab.label === "Bravo budget")?.hasClose === true,
+      JSON.stringify(unpinned.tabs),
+    );
+
+    // Bravo is deliberately left unpinned here: a pinned row has no hover
+    // Archive control (that is the point of the pin), and the rest of this
+    // suite archives Bravo from that control. Every pinned chat was unpinned and
+    // its extra tab closed at 1c, so from here the list and strip are the plain
+    // unpinned ones the remaining steps were written against.
+
+    // 11 — the hover archive control removes the row and the tab it had.
+    check("hovered Alpha", await hoverSidebarRow("Alpha planning"), "no row to hover");
+    const hoveredAlpha = await settle();
+    check(
+      "Alpha's hover archive control is visible before the click",
+      hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive.visible === true,
+      JSON.stringify(hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive),
+    );
+    check(
+      "clicked Alpha's hover archive",
+      await clickRowControl("Alpha planning", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    check("moved the pointer off the rows after the archive", await unhover(), "no neutral point");
+    const archived = await settle();
+    check(
+      "Archive reached the bridge for Alpha",
+      archived.patchCalls.at(-1)?.id === "chat-alpha" &&
+        archived.patchCalls.at(-1)?.patch.archived === true,
+      JSON.stringify(archived.patchCalls.at(-1)),
+    );
+    check(
+      "the archived chat left the sidebar",
+      !archived.rows.some((row) => row.label === "Alpha planning") && archived.rowCount === 4,
+      JSON.stringify(archived.rows.map((row) => row.label)),
+    );
+    check(
+      "the archived chat's tab went with it",
+      archived.tabs.every((tab) => tab.label !== "Alpha planning"),
+      JSON.stringify(archived.tabs),
+    );
+    check(
+      "archiving a background tab did not move the open thread",
+      archived.heading === "Charlie retro",
+      `heading "${archived.heading}"`,
+    );
+
+    // 12 — delete asks through the app's own dialog, and only then writes.
+    check("opened Charlie's menu", await openSidebarMenu("Charlie retro"), "no menu control");
+    check("clicked Delete", await clickSidebarMenuItem("Delete chat"), "no Delete item");
+    const asked = await settle();
+    check(
+      "delete asked first, in the app's dialog",
+      asked.dialog?.title === "Delete chat" && asked.dialog?.confirm === true,
+      JSON.stringify(asked.dialog),
+    );
+    check("delete wrote nothing before the answer", asked.deleteCalls.length === 0, JSON.stringify(asked.deleteCalls));
+    check("answered the dialog", await clickDialog("cancel"), "no cancel control");
+    const declined = await settle();
+    check("a cancelled delete wrote nothing", declined.deleteCalls.length === 0, JSON.stringify(declined.deleteCalls));
+    check("a cancelled delete kept the row", declined.rowCount === 4, `${declined.rowCount} rows`);
+
+    check("opened Charlie's menu once more", await openSidebarMenu("Charlie retro"), "no menu control");
+    check("clicked Delete again", await clickSidebarMenuItem("Delete chat"), "no Delete item");
+    check("confirmed the delete", await clickDialog("confirm"), "no confirm control");
+    const deleted = await settle();
+    check(
+      "the delete reached the bridge for Charlie",
+      deleted.deleteCalls.at(-1) === "chat-charlie",
+      JSON.stringify(deleted.deleteCalls),
+    );
+    check(
+      "the deleted chat left the sidebar",
+      !deleted.rows.some((row) => row.label === "Charlie retro") && deleted.rowCount === 3,
+      JSON.stringify(deleted.rows.map((row) => row.label)),
+    );
+    check(
+      "deleting the open chat hands over to its neighbour tab",
+      deleted.heading === "Bravo budget" &&
+        deleted.tabCount === 1 &&
+        deleted.tabs[0]?.label === "Bravo budget" &&
+        deleted.tabs[0]?.active === true,
+      JSON.stringify({ tabs: deleted.tabs, heading: deleted.heading }),
+    );
+
+    // 13 — a run for a chat nobody opened appears as a tab without stealing the
+    // screen. This is the scheduled-automation case.
+    await emit("chat-delta", { type: "run.started", runId: "run-delta" });
+    await emit("chat-delta", { type: "assistant.delta", text: "DELTA-BACKGROUND" });
+    const background = await settle();
+    check(
+      "a background run grows a tab",
+      background.tabCount === 2 &&
+        background.tabs.some((tab) => tab.label === "Delta automation" && tab.live),
+      JSON.stringify(background.tabs),
+    );
+    check(
+      "the background run does not steal the active chat",
+      background.heading === "Bravo budget" &&
+        background.tabs.find((tab) => tab.label === "Bravo budget")?.active === true,
+      JSON.stringify({ heading: background.heading, tabs: background.tabs }),
+    );
+    check(
+      "the background chat's sidebar row shows it running",
+      background.rows.find((row) => row.label === "Delta automation")?.live === true,
+      JSON.stringify(background.rows),
+    );
+    screenshots.push(await shot("background"));
+
+    // 14 — closing a live tab stops its run, and the tab does not come back on
+    // the frames that were already on the wire.
+    check("closed the live Delta tab", await closeTab("Delta automation"), "no close control");
+    const closedLive = await settle();
+    check(
+      "closing a live tab stopped its run",
+      closedLive.stopCalls.includes("run-delta"),
+      JSON.stringify(closedLive.stopCalls),
+    );
+    await emit("chat-delta", { type: "assistant.delta", text: " LATE" });
+    const lateFrame = await settle();
+    check(
+      "a late frame does not resurrect the closed tab",
+      lateFrame.tabCount === 1 &&
+        lateFrame.tabs[0]?.label === "Bravo budget" &&
+        lateFrame.heading === "Bravo budget",
+      JSON.stringify({ tabs: lateFrame.tabs, heading: lateFrame.heading }),
+    );
+    check(
+      "the late frame still landed in the chat's own run",
+      lateFrame.rows.find((row) => row.label === "Delta automation")?.live === true,
+      JSON.stringify(lateFrame.rows),
+    );
+
+    // 15 — the chats header carries its two controls in line with the heading:
+    // search the list, and choose which views (all chats or hidden archives)
+    // the list is drawn from.
+    const header = await settle();
+    check(
+      "the chats header carries a search and a view control",
+      header.rail?.header?.controls.map((control) => control.label).join("/") ===
+        "Search chats/View options",
+      JSON.stringify(header.rail?.header?.controls),
+    );
+    check(
+      "both header controls sit on the heading's row",
+      Boolean(header.rail?.header) &&
+        header.rail.header.controls.every(
+          (control) =>
+            Math.abs(
+              (control.box.top + control.box.bottom) / 2 -
+                (header.rail.header.titleBox.top + header.rail.header.titleBox.bottom) / 2,
+            ) <= 4,
+        ),
+      JSON.stringify(header.rail?.header),
+    );
+    check(
+      "no search box before the icon is clicked",
+      header.rail?.search === null,
+      JSON.stringify(header.rail?.search),
+    );
+    check(
+      "no view menu before the icon is clicked",
+      header.rail?.viewMenu === null,
+      JSON.stringify(header.rail?.viewMenu),
+    );
+
+    // 16 — the search icon opens a full-width field; typing narrows the rows to
+    // the chats that match, without touching the dock.
+    check("clicked search", await clickRailControl("Search chats"), "no search control");
+    const searchOpen = await settle();
+    check(
+      "the search icon turns the header into a search box",
+      searchOpen.rail?.search?.focused === true &&
+        searchOpen.rail.search.value === "" &&
+        searchOpen.rail.search.placeholder === "Search chats",
+      JSON.stringify(searchOpen.rail?.search),
+    );
+    check(
+      "the field takes the header's own line",
+      Boolean(searchOpen.rail?.search && searchOpen.rail.header) &&
+        searchOpen.rail.header.titleBox === null &&
+        searchOpen.rail.header.controls.length === 0 &&
+        searchOpen.rail.search.panelBox.top >= searchOpen.rail.header.box.top - 1 &&
+        searchOpen.rail.search.panelBox.bottom <=
+          searchOpen.rail.header.box.bottom + 1,
+      JSON.stringify({
+        search: searchOpen.rail?.search?.panelBox,
+        header: searchOpen.rail?.header,
+      }),
+    );
+    check(
+      "the field spans the row the title and icons had",
+      Boolean(searchOpen.rail?.search && searchOpen.rail.newChatBox) &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.left -
+            searchOpen.rail.newChatBox.left,
+        ) <= 1 &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.right -
+            searchOpen.rail.newChatBox.right,
+        ) <= 1,
+      `search ${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs New chat ${JSON.stringify(searchOpen.rail?.newChatBox)}`,
+    );
+    check("typed in the search box", await typeSearch("delta"), "no search input");
+    const searched = await settle();
+    check(
+      "the search narrows the rows to the match",
+      searched.rows.map((row) => row.label).join("/") === "Delta automation" &&
+        searched.rail?.groups.length === 0,
+      JSON.stringify(searched.rows.map((row) => [row.group, row.label])),
+    );
+    check(
+      "searching leaves the open chat alone",
+      searched.heading === "Bravo budget",
+      `heading "${searched.heading}"`,
+    );
+    screenshots.push(await shot("search"));
+    check("typed a miss", await typeSearch("zzz"), "no search input");
+    const noMatch = await settle();
+    check(
+      "a search with no match says so",
+      noMatch.rowCount === 0 &&
+        (noMatch.rail?.empty ?? "").includes("No chats match"),
+      JSON.stringify({ rows: noMatch.rowCount, empty: noMatch.rail?.empty }),
+    );
+    check(
+      "the archived chats are not searchable while the view hides them",
+      (await typeSearch("alpha")) && (await settle()).rowCount === 0,
+      "an archived chat came back through the search while hidden",
+    );
+    check("closed the search with its cross", await closeSearchBox(), "no close control");
+    const closedByCross = await settle();
+    check(
+      "the cross restores the chats header",
+      closedByCross.rail?.search === null &&
+        closedByCross.rail?.header?.titleBox !== null &&
+        closedByCross.rail?.header?.controls.length === 2 &&
+        closedByCross.rowCount === 3,
+      JSON.stringify({
+        search: closedByCross.rail?.search,
+        header: closedByCross.rail?.header,
+        rows: closedByCross.rowCount,
+      }),
+    );
+    check("reopened the search", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed outside the field", await pressOutsideSearch(), "no list to press");
+    const closedByOutside = await settle();
+    check(
+      "a press outside the field closes it and restores the header",
+      closedByOutside.rail?.search === null &&
+        closedByOutside.rail?.header?.controls.length === 2,
+      JSON.stringify({
+        search: closedByOutside.rail?.search,
+        header: closedByOutside.rail?.header,
+      }),
+    );
+    check("reopened the search once more", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed Escape in the field", await pressEscapeSearch(), "no search input");
+    const closedByEscape = await settle();
+    check(
+      "Escape also closes the field",
+      closedByEscape.rail?.search === null &&
+        closedByEscape.rail?.header?.controls.length === 2,
+      JSON.stringify(closedByEscape.rail?.header),
+    );
+
+    // 17 — the view options icon opens the filter: hide the archived chats, or
+    // show them as their own greyed, restorable group.
+    check("opened view options", await clickRailControl("View options"), "no view control");
+    const viewMenu = await settle();
+    check(
+      "the view menu names its three views",
+      viewMenu.rail?.viewMenu?.title === "View options" &&
+        JSON.stringify(viewMenu.rail.viewMenu.items) ===
+          JSON.stringify([
+            { label: "Hide archived chats", checked: true },
+            { label: "Show archived chats", checked: false },
+            { label: "Only archived chats", checked: false },
+          ]),
+      JSON.stringify(viewMenu.rail?.viewMenu),
+    );
+    screenshots.push(await shot("view-options"));
+    check(
+      "clicked Show archived chats",
+      await clickViewOption("Show archived chats"),
+      "no Show archived item",
+    );
+    const archivedShown = await settle(420);
+    check(
+      "the archived chats came into the list",
+      archivedShown.rowCount === 6,
+      `${archivedShown.rowCount} rows: ${JSON.stringify(archivedShown.rows.map((row) => row.label))}`,
+    );
+    check(
+      "the view asked the list for the archived rows",
+      archivedShown.rail?.listOptions.at(-1)?.includeArchived === true,
+      JSON.stringify(archivedShown.rail?.listOptions),
+    );
+    check(
+      "the archived chats sit in their own group",
+      archivedShown.rail?.groups.includes("Archived") &&
+        archivedShown.rows
+          .filter((row) => row.archived)
+          .map((row) => row.label)
+          .sort()
+          .join("/") === "Alpha planning/Echo archived/Foxtrot archived",
+      JSON.stringify(archivedShown.rows.map((row) => [row.group, row.label, row.archived])),
+    );
+    check(
+      "archived rows are greyed, tagged and not openable",
+      archivedShown.rows
+        .filter((row) => row.archived)
+        .every(
+          (row) =>
+            row.archivedTag === "Archived" &&
+            row.disabled === true &&
+            row.group === "Archived",
+        ),
+      JSON.stringify(archivedShown.rows.filter((row) => row.archived)),
+    );
+    check(
+      "the live chats are still listed above them",
+      archivedShown.rows.filter((row) => !row.archived).length === 3,
+      JSON.stringify(archivedShown.rows.filter((row) => !row.archived).map((row) => row.label)),
+    );
+    check(
+      "the show-archived view does not change the open chat",
+      archivedShown.heading === "Bravo budget",
+      `heading "${archivedShown.heading}"`,
+    );
+    screenshots.push(await shot("archived-view"));
+    check("clicked an archived row", await clickSidebarRow("Echo archived"), "no archived row");
+    const archivedClick = await settle();
+    check(
+      "an archived row cannot be opened",
+      archivedClick.heading === "Bravo budget" &&
+        archivedClick.messageCalls.at(-1) !== "chat-echo",
+      JSON.stringify({ heading: archivedClick.heading, reads: archivedClick.messageCalls.slice(-2) }),
+    );
+    check("searched the archived view", await clickRailControl("Search chats"), "no search control");
+    check("typed an archived title", await typeSearch("echo"), "no search input");
+    const archivedSearch = await settle();
+    check(
+      "the search finds an archived chat while the view shows them",
+      archivedSearch.rowCount === 1 && archivedSearch.rows[0]?.archived === true,
+      JSON.stringify(archivedSearch.rows.map((row) => [row.label, row.archived])),
+    );
+    check("closed the archived search", await closeSearchBox(), "no close control");
+    await settle();
+    check(
+      "restored the archived chat",
+      (await openSidebarMenu("Echo archived")) &&
+        (await clickSidebarMenuItem("Unarchive chat")),
+      "no Unarchive item",
+    );
+    const unarchived = await settle();
+    check(
+      "Unarchive reached the bridge",
+      unarchived.patchCalls.at(-1)?.id === "chat-echo" &&
+        unarchived.patchCalls.at(-1)?.patch.archived === false,
+      JSON.stringify(unarchived.patchCalls.at(-1)),
+    );
+    check(
+      "the restored chat rejoined the flat live list",
+      unarchived.rows.find((row) => row.label === "Echo archived")?.archived === false &&
+        unarchived.rows.find((row) => row.label === "Echo archived")?.group === "" &&
+        unarchived.rowCount === 6,
+      JSON.stringify(unarchived.rows.map((row) => [row.group, row.label, row.archived])),
+    );
+    check("opened view options again", await clickRailControl("View options"), "no view control");
+    const viewMenuShown = await settle();
+    check(
+      "the view menu marks the current view",
+      JSON.stringify(viewMenuShown.rail?.viewMenu?.items) ===
+        JSON.stringify([
+          { label: "Hide archived chats", checked: false },
+          { label: "Show archived chats", checked: true },
+          { label: "Only archived chats", checked: false },
+        ]),
+      JSON.stringify(viewMenuShown.rail?.viewMenu),
+    );
+    check(
+      "clicked Hide archived chats",
+      await clickViewOption("Hide archived chats"),
+      "no Hide archived item",
+    );
+    const archivedHidden = await settle(420);
+    check(
+      "hiding the archived view takes the archived rows out again",
+      archivedHidden.rowCount === 4 &&
+        !archivedHidden.rail?.groups.includes("Archived") &&
+        archivedHidden.rail?.listOptions.at(-1)?.includeArchived === false,
+      JSON.stringify({
+        rows: archivedHidden.rows.map((row) => [row.group, row.label]),
+        listOptions: archivedHidden.rail?.listOptions,
+      }),
+    );
+    check(
+      "the restored chat survives the view being hidden",
+      archivedHidden.rows.some((row) => row.label === "Echo archived" && !row.archived),
+      JSON.stringify(archivedHidden.rows.map((row) => row.label)),
+    );
+
+    // 18 — the dock's New chat is the gesture that KEEPS the chat in front: it
+    // opens a blank conversation in a tab of its own instead of replacing the
+    // one on screen. The old behaviour — the slot navigating the same tab —
+    // shows up here as one tab, with the chat that was in front gone.
+    check(
+      "pressed the dock's New chat",
+      await clickNewChat(),
+      "no New chat control in the dock's action bar",
+    );
+    const newChatTab = await settle(420);
+    check(
+      "New chat opens a second tab instead of replacing the chat in front",
+      newChatTab.tabCount === 2 &&
+        newChatTab.tabs.map((tab) => tab.label).join("/") === "Bravo budget/New chat" &&
+        newChatTab.tabs[1]?.active === true &&
+        newChatTab.heading === "New chat",
+      JSON.stringify({ tabs: newChatTab.tabs, heading: newChatTab.heading }),
+    );
+    check(
+      "the chat that was in front kept its tab",
+      newChatTab.tabs.some((tab) => tab.label === "Bravo budget"),
+      JSON.stringify(newChatTab.tabs.map((tab) => tab.label)),
+    );
+    check(
+      "the new blank chat joined the sidebar list",
+      newChatTab.rows.some((row) => row.label === "New chat"),
+      JSON.stringify(newChatTab.rows.map((row) => row.label)),
+    );
+    screenshots.push(await shot("new-chat-tab"));
+
+    // The chat that was in front is still open, not merely still listed: its tab
+    // is there and clicking it brings its thread back. New chat added a tab, it
+    // did not close one.
+    check("clicked the previous chat's tab", await clickTab("Bravo budget"), "no Bravo tab");
+    const newChatKept = await settle();
+    check(
+      "the previous chat is still open and reachable beside the new one",
+      newChatKept.heading === "Bravo budget" &&
+        newChatKept.tabCount === 2 &&
+        newChatKept.tabs.some((tab) => tab.label === "New chat"),
+      JSON.stringify({ heading: newChatKept.heading, tabs: newChatKept.tabs }),
+    );
+    check("switched back to the new chat", await clickTab("New chat"), "no New chat tab");
+    const newChatActive = await settle();
+    check(
+      "the new chat is the one in front when its own tab is clicked",
+      newChatActive.heading === "New chat" &&
+        newChatActive.tabs.find((tab) => tab.label === "New chat")?.active === true,
+      JSON.stringify({ heading: newChatActive.heading, tabs: newChatActive.tabs }),
+    );
+
+    // 19 — a tab is its own name, not a share of the band: with room, a long
+    // title keeps its words and a short one keeps a short tab; only when the row
+    // fills do the tabs compress, and below the floor the strip scrolls.
+    check(
+      "middle-clicked Delta for a third tab",
+      await middleClickSidebarRow("Delta automation"),
+      "no row button",
+    );
+    const defaultTabs = await settle();
+    const openLabels = defaultTabs.tabs.map((tab) => tab.label);
+    check(
+      "three chats are open, with labels of different lengths",
+      defaultTabs.tabCount === 3 &&
+        openLabels.join("/") === "Bravo budget/New chat/Delta automation" &&
+        new Set(openLabels.map((label) => label.length)).size > 1,
+      JSON.stringify(openLabels),
+    );
+
+    // With room the tabs are content-sized: a wide dock shows every fixture name
+    // in full, the long one holding a wider tab than the short one, and none of
+    // them past the cap.
+    const widened = await widenDock();
+    const contentTabs = await settle(320);
+    const contentWidths = contentTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    check(
+      "the divider walked the dock wide enough for the strip's content",
+      widened.moved === true &&
+        Boolean(contentTabs.chatDivider) &&
+        (contentTabs.chatDivider.now ?? 0) > (defaultTabs.chatDivider?.now ?? 0),
+      JSON.stringify({ walk: widened, divider: contentTabs.chatDivider }),
+    );
+    check(
+      "the tabs take the width of their names, not equal shares",
+      contentTabs.tabs.length === 3 &&
+        contentWidths.every((width) => Number.isFinite(width)) &&
+        Math.max(...contentWidths) - Math.min(...contentWidths) > 2,
+      JSON.stringify({ widths: contentWidths, tabs: openLabels }),
+    );
+    check(
+      "a longer name holds a wider tab than a shorter one",
+      (contentTabs.tabs.find((tab) => tab.label === "Delta automation")?.box?.width ?? 0) >
+        (contentTabs.tabs.find((tab) => tab.label === "New chat")?.box?.width ?? 0) &&
+        (contentTabs.tabs.find((tab) => tab.label === "Bravo budget")?.box?.width ?? 0) >
+          (contentTabs.tabs.find((tab) => tab.label === "New chat")?.box?.width ?? 0),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width])),
+    );
+    check(
+      "the fixture names are written in full at a wide dock",
+      contentTabs.tabs.every((tab) => tab.label === tab.name.split(" — ")[0]),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "no tab grows past its cap",
+      contentTabs.tabs.every(
+        (tab) =>
+          typeof tab.maxWidth === "number" &&
+          tab.maxWidth > 0 &&
+          typeof tab.box?.width === "number" &&
+          tab.box.width <= tab.maxWidth + 1,
+      ),
+      JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width, tab.maxWidth])),
+    );
+
+    screenshots.push(await shot("content-sized"));
+    // 19b — the cap: a few words fit; a title longer than that is truncated
+    // inside the tab rather than growing it without end, and the full name stays
+    // in the tab's title and accessible name. Renamed and restored here so the
+    // rest of the run keeps its fixture names.
+    const longName = "A very long session name that keeps going far past four words";
+    check(
+      "opened the active row's menu",
+      await clickRowControl("Delta automation", ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check(
+      "opened Rename chat for the long name",
+      await clickSidebarMenuItem("Rename chat"),
+      "no Rename chat item",
+    );
+    check("typed the long name", await typeRowRename(longName), "no rename field");
+    check("committed the long name", await commitRowRename(), "no rename field");
+    const capped = await settle(420);
+    const cappedTab = capped.tabs.find((tab) => tab.active) ?? null;
+    check(
+      "a title past the cap is truncated inside the tab, not left to grow",
+      cappedTab !== null &&
+        typeof cappedTab.maxWidth === "number" &&
+        cappedTab.maxWidth > 0 &&
+        typeof cappedTab.box?.width === "number" &&
+        cappedTab.box.width <= cappedTab.maxWidth + 1 &&
+        typeof cappedTab.labelWidth === "number" &&
+        typeof cappedTab.textWidth === "number" &&
+        cappedTab.labelWidth + 1 < cappedTab.textWidth &&
+        cappedTab.name.includes(longName),
+      JSON.stringify({
+        tab: cappedTab && {
+          label: cappedTab.label,
+          box: cappedTab.box,
+          maxWidth: cappedTab.maxWidth,
+          labelWidth: cappedTab.labelWidth,
+          textWidth: cappedTab.textWidth,
+          name: cappedTab.name,
+        },
+      }),
+    );
+    screenshots.push(await shot("tab-cap"));
+    check(
+      "opened the renamed row's menu",
+      await clickRowControl(longName, ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check(
+      "opened Rename chat to restore the fixture name",
+      await clickSidebarMenuItem("Rename chat"),
+      "no Rename chat item",
+    );
+    check("typed the fixture name again", await typeRowRename("Delta automation"), "no rename field");
+    check("committed the fixture name", await commitRowRename(), "no rename field");
+    const renamedBack = await settle(420);
+    check(
+      "the tab's fixture name came back",
+      renamedBack.tabs.some((tab) => tab.label === "Delta automation"),
+      JSON.stringify(renamedBack.tabs.map((tab) => tab.label)),
+    );
+
+    // Hit the divider's ArrowRight until the dock is at its floor, then read the
+    // same three tabs again: the row compresses instead of keeping the wide
+    // strip, and the tabs shrink toward the shared floor — never below the room
+    // three characters of the label need beside its mark and close control. A
+    // strip that keeps squeezing past that floor, or that clips the tabs instead
+    // of scrolling them, is what step 19c and the crowded strip are for.
+    const narrowed = await narrowDockToFloor(60);
+    const narrowTabs = await settle(360);
+    check(
+      "the divider walked the dock down to its floor",
+      narrowed.reached === true &&
+        typeof narrowTabs.chatDivider?.now === "number" &&
+        narrowTabs.chatDivider.now === narrowTabs.chatDivider.min &&
+        narrowTabs.chatDivider.now < (defaultTabs.chatDivider?.now ?? 0),
+      JSON.stringify({
+        walk: narrowed,
+        divider: narrowTabs.chatDivider,
+        panelBefore: defaultTabs.panel,
+        panelAfter: narrowTabs.panel,
+      }),
+    );
+    check(
+      "the dock really got narrower",
+      (narrowTabs.panel?.width ?? 0) < (defaultTabs.panel?.width ?? 0),
+      JSON.stringify({ before: defaultTabs.panel, after: narrowTabs.panel }),
+    );
+    const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? null);
+    check(
+      "the tabs are held at the shared floor at the dock's narrowest",
+      narrowTabs.tabCount === 3 &&
+        narrowWidths.length === 3 &&
+        narrowWidths.every((width) => typeof width === "number") &&
+        Math.max(...narrowWidths) - Math.min(...narrowWidths) <= 1,
+      JSON.stringify({ widths: narrowWidths, tabs: narrowTabs.tabs.map((tab) => tab.label) }),
+    );
+    check(
+      "every tab is narrower at the dock's floor than at the wide dock",
+      narrowWidths.length === contentWidths.length &&
+        narrowWidths.every(
+          (width, index) =>
+            typeof width === "number" && width < (contentWidths[index] ?? Number.POSITIVE_INFINITY),
+        ),
+      JSON.stringify({ content: contentWidths, floor: narrowWidths }),
+    );
+    check(
+      "the strip kept all three chats while the dock narrowed",
+      narrowTabs.tabs.map((tab) => tab.label).join("/") === openLabels.join("/"),
+      JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
+    );
+    check(
+      "the strip kept all three chats while the dock narrowed",
+      narrowTabs.tabs.map((tab) => tab.label).join("/") === openLabels.join("/"),
+      JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
+    );
+    // 19b — the same three tabs at the dock's narrowest are the browser's tab
+    // floor, not a squeeze to one glyph: every tab's label still has room for
+    // three of its own characters plus the ellipsis glyph in the label's own font,
+    // and still carries its leading mark and close control. The strip overflows
+    // and scrolls from here
+    // (step 26 puts enough tabs on it to make that the only way to fit), so a
+    // strip that shrinks the tabs instead of travelling is what fails. The
+    // fixture's automation chat is the mark case: its tab wears the kickoff icon
+    // in the slot a plain tab spends on the status dot, without losing any of the
+    // floor or the tab's own name.
+    const narrowFloorTabs = narrowTabs.tabs.filter((tab) => !tab.pinned);
+    check(
+      "every tab keeps three characters plus the ellipsis at the dock's narrowest",
+      narrowFloorTabs.length === 3 &&
+        narrowFloorTabs.every(
+          (tab) =>
+            typeof tab.labelWidth === "number" &&
+            typeof tab.floorWidth === "number" &&
+            tab.labelWidth + 1 >= tab.floorWidth,
+        ),
+      JSON.stringify(
+        narrowFloorTabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]),
+      ),
+    );
+    check(
+      "the floor's labels still carry their chats' names",
+      narrowFloorTabs.length === 3 &&
+        narrowFloorTabs.every(
+          (tab) => tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        ),
+      JSON.stringify(narrowFloorTabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "the floor keeps every tab's leading mark and close control",
+      narrowFloorTabs.every(
+        (tab) =>
+          tab.mark.exists === true &&
+          tab.mark.visible === true &&
+          tab.hasClose === true &&
+          tab.closeVisible === true,
+      ),
+      JSON.stringify(
+        narrowFloorTabs.map((tab) => [tab.label, tab.mark, tab.closeVisible]),
+      ),
+    );
+    const narrowDelta = narrowTabs.tabs.find((tab) => tab.label === "Delta automation");
+    check(
+      "the fixture's automation chat wears its kickoff mark on its tab",
+      narrowDelta?.icon === "automation" &&
+        narrowDelta.mark.exists === true &&
+        narrowDelta.mark.svg === true &&
+        narrowDelta.mark.visible === true,
+      JSON.stringify(narrowDelta),
+    );
+    check(
+      "the kickoff mark leaves the tab's name and close label alone",
+      (narrowDelta?.name ?? "").startsWith("Delta automation") &&
+        narrowDelta?.close === "Close Delta automation",
+      JSON.stringify({ name: narrowDelta?.name, close: narrowDelta?.close }),
+    );
+    check(
+      "a plain chat's tab carries no kickoff mark",
+      narrowTabs.tabs
+        .filter((tab) => tab.label === "Bravo budget" || tab.label === "New chat")
+        .every((tab) => tab.icon === null && tab.mark.exists === true && tab.mark.svg === false),
+      JSON.stringify(narrowTabs.tabs.map((tab) => [tab.label, tab.icon, tab.mark.svg])),
+    );
+    screenshots.push(await shot("narrow-tabs"));
+    mark("narrow-tabs");
+
+    // 20 — the row menu opens into the room that exists. A long history is
+    // scrolled to its foot and the three-dot pressed on the last chat: the list
+    // is a scroll port, so a menu hung downward there was half outside the port,
+    // and the operator had to scroll to reach it. The menu must open above the
+    // row, wholly inside the list, without moving the list; and a row that has
+    // the room under it must still open downward.
+    mark("seeding");
+    const seeded = await seedRailHistory(20);
+    mark("seeded");
+    await settle(420);
+    const longList = await sample();
+    check(
+      "the seeded history overflows the chats list",
+      seeded > 0 &&
+        Boolean(longList.rail?.list) &&
+        (longList.rail?.list?.scrollHeight ?? 0) >
+          (longList.rail?.list?.clientHeight ?? 0) + 40,
+      JSON.stringify({ seeded, list: longList.rail?.list, rows: longList.rowCount }),
+    );
+    // Scroll to the foot, the way the operator reaches the last chat.
+    const footTop = await scrollRailList("bottom");
+    const atFoot = await sample();
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    check(
+      "the chats list is scrolled to its last row",
+      typeof footTop === "number" &&
+        footTop > 0 &&
+        Math.abs(footTop - footMax) <= 1 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      JSON.stringify({ footTop, footMax, list: atFoot.rail?.list }),
+    );
+    mark("scrolled");
+    const lastIndex = atFoot.rowCount - 1;
+    const lastLabel = atFoot.rows[lastIndex]?.label ?? null;
+    const lastRowBox = atFoot.rows[lastIndex]?.box ?? null;
+    check(
+      "the last row sits at the foot of the list",
+      Boolean(lastRowBox && atFoot.rail?.list?.box) &&
+        lastRowBox.bottom <= (atFoot.rail?.list?.box.bottom ?? 0) + 1 &&
+        lastRowBox.bottom >= (atFoot.rail?.list?.box.bottom ?? 0) - 48,
+      JSON.stringify({ lastLabel, lastRowBox, list: atFoot.rail?.list?.box }),
+    );
+    check("opened the last row's menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    const flipped = await settle();
+    check(
+      "the last row's menu opens upward, into the room above it",
+      flipped.rail?.menu?.placement === "above" &&
+        flipped.rail.menu.rowLabel === lastLabel &&
+        flipped.rail.menu.items === 5 &&
+        flipped.rail.menu.box.bottom <= flipped.rail.menu.rowBox.top + 1,
+      JSON.stringify({ menu: flipped.rail?.menu, lastLabel }),
+    );
+    check(
+      "the flipped menu is wholly inside the list, so no scroll is needed",
+      Boolean(flipped.rail?.menu && flipped.rail?.list?.box) &&
+        flipped.rail.menu.box.top >= (flipped.rail.list.box.top ?? 0) - 1 &&
+        flipped.rail.menu.box.bottom <= (flipped.rail.list.box.bottom ?? 0) + 1 &&
+        flipped.rail.menu.box.height > 60,
+      JSON.stringify({ menu: flipped.rail?.menu?.box, list: flipped.rail?.list?.box }),
+    );
+    check(
+      "opening the flipped menu did not scroll the list",
+      Math.abs((flipped.rail?.list?.scrollTop ?? -1) - footTop) <= 1,
+      JSON.stringify({ before: footTop, after: flipped.rail?.list?.scrollTop }),
+    );
+    mark("flipped");
+    screenshots.push(await shot("menu-flipped"));
+    check("closed the flipped menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    await settle();
+
+    // The other half of the rule: roomy rows still open their menu downward.
+    const topTop = await scrollRailList("top");
+    const atTop = await sample();
+    check(
+      "the chats list is back at its top",
+      topTop === 0 && (atTop.rail?.list?.scrollTop ?? -1) === 0,
+      JSON.stringify({ topTop, list: atTop.rail?.list }),
+    );
+    check("opened the first row's menu", await openSidebarMenuAt(0), "no menu control");
+    const downward = await settle();
+    check(
+      "a row with the room under it still opens its menu downward",
+      downward.rail?.menu?.placement === "below" &&
+        downward.rail.menu.items === 5 &&
+        downward.rail.menu.box.top >= downward.rail.menu.rowBox.bottom - 1 &&
+        downward.rail.menu.box.top >= (downward.rail.list?.box.top ?? 0) - 1 &&
+        downward.rail.menu.box.bottom <= (downward.rail.list?.box.bottom ?? 0) + 1,
+      JSON.stringify({ menu: downward.rail?.menu, list: downward.rail?.list?.box }),
+    );
+
+    // 21 — archiving the chat in front is a tab close, not a trip to the history
+    // page. The strip hands the screen to the tab that takes its place (or to
+    // the one before it, when the archived tab was last), and archiving the last
+    // open chat leaves a blank New chat on the thread. The reported fault was the
+    // dock falling back to the Chats list and making the operator pick a chat.
+    check("closed the open row menu", await openSidebarMenuAt(0), "no menu control");
+    const menuShutBeforeArchive = await settle();
+    check(
+      "the row menu is gone before the archive starts",
+      menuShutBeforeArchive.rail?.menu === null,
+      JSON.stringify(menuShutBeforeArchive.rail?.menu),
+    );
+    check("brought the middle tab to the front", await clickTab("New chat"), "no New chat tab");
+    const beforeActiveArchive = await settle();
+    check(
+      "the middle tab is the one in front before the archive",
+      beforeActiveArchive.heading === "New chat" && beforeActiveArchive.tabCount === 3,
+      JSON.stringify({ heading: beforeActiveArchive.heading, tabs: beforeActiveArchive.tabs }),
+    );
+    check(
+      "archived the chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const activeArchived = await settle();
+    check(
+      "archiving the chat in front keeps the thread up",
+      activeArchived.surface === "thread" && activeArchived.thread === true,
+      JSON.stringify({ surface: activeArchived.surface, heading: activeArchived.heading }),
+    );
+    check(
+      "the next tab takes the archived tab's place",
+      activeArchived.tabCount === 2 &&
+        activeArchived.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Delta automation" &&
+        activeArchived.heading === "Delta automation" &&
+        activeArchived.tabs.find((tab) => tab.label === "Delta automation")?.active === true,
+      JSON.stringify({ tabs: activeArchived.tabs, heading: activeArchived.heading }),
+    );
+    check(
+      "the archived chat left the sidebar",
+      !activeArchived.rows.some((row) => row.label === "New chat"),
+      JSON.stringify(activeArchived.rows.map((row) => row.label)),
+    );
+    screenshots.push(await shot("archived-active-tab"));
+
+    // The archived tab was the last of the strip: the tab before it takes the
+    // front, still without a view swap. One tab is left, and the strip keeps
+    // drawing it — the plus beside it is the way back to a second chat.
+    check(
+      "archived the tab that was last in the strip",
+      await clickRowControl("Delta automation", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const previousTabArchived = await settle();
+    check(
+      "the previous tab takes the front when the last one is archived",
+      previousTabArchived.tabCount === 1 &&
+        previousTabArchived.tabs[0]?.label === "Bravo budget" &&
+        previousTabArchived.tabs[0]?.active === true &&
+        previousTabArchived.heading === "Bravo budget" &&
+        previousTabArchived.surface === "thread",
+      JSON.stringify({
+        tabs: previousTabArchived.tabs,
+        heading: previousTabArchived.heading,
+      }),
+    );
+
+    // Only one chat left: archiving it leaves the strip's one tab for the blank
+    // New chat the slot opens, the blank slate the New chat slot lands on.
+    const createsBeforeLastArchive = previousTabArchived.createCalls.length;
+    check(
+      "archived the last open chat",
+      await clickRowControl("Bravo budget", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const lastArchived = await settle(420);
+    check(
+      "archiving the last open chat leaves a blank New chat on the thread",
+      lastArchived.surface === "thread" &&
+        lastArchived.thread === true &&
+        lastArchived.tabCount === 1 &&
+        lastArchived.tabs[0]?.label === "New chat" &&
+        lastArchived.heading === "New chat" &&
+        lastArchived.messages.length === 0 &&
+        lastArchived.composer?.disabled === false &&
+        lastArchived.rows.some((row) => row.label === "New chat") &&
+        lastArchived.createCalls.length === createsBeforeLastArchive + 1,
+      JSON.stringify({
+        surface: lastArchived.surface,
+        tabs: lastArchived.tabs,
+        heading: lastArchived.heading,
+        messages: lastArchived.messages,
+        composer: lastArchived.composer,
+        creates: lastArchived.createCalls,
+      }),
+    );
+    screenshots.push(await shot("archived-last-tab"));
+
+    // 22 — the archived view must not offer an archived blank back as the new
+    // chat. With the archived band showing, archiving the blank chat in front
+    // opens a live blank; reopening the archived one would resurrect a chat the
+    // operator just put away.
+    check("opened view options", await clickRailControl("View options"), "no view control");
+    await settle();
+    check(
+      "showed the archived chats",
+      await clickViewOption("Show archived chats"),
+      "no Show archived item",
+    );
+    const archivedViewOpen = await settle(420);
+    check(
+      "the archived view lists an archived blank",
+      archivedViewOpen.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify(archivedViewOpen.rows.filter((row) => row.label === "New chat")),
+    );
+    const createsBeforeBlankArchive = archivedViewOpen.createCalls.length;
+    check(
+      "archived the live blank chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control on the live New chat row",
+    );
+    const blankArchived = await settle(420);
+    check(
+      "archiving a blank in the archived view opens a live blank, not the archived one",
+      blankArchived.surface === "thread" &&
+        blankArchived.thread === true &&
+        blankArchived.heading === "New chat" &&
+        blankArchived.createCalls.length === createsBeforeBlankArchive + 1 &&
+        blankArchived.rows.some((row) => row.label === "New chat" && !row.archived) &&
+        blankArchived.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify({
+        heading: blankArchived.heading,
+        creates: blankArchived.createCalls.length,
+        newChats: blankArchived.rows
+          .filter((row) => row.label === "New chat")
+          .map((row) => row.archived),
+      }),
+    );
+    screenshots.push(await shot("archived-blank-not-reused"));
+
+    // 22b — the New chat slot lands on a blank chat that already exists instead
+    // of minting a second one. The live blank above is in front, so the slot's
+    // press changes no state at all — the case a rule hung on state changes
+    // misses entirely — and the bridge must see no create.
+    const createsBeforeReuse = blankArchived.createCalls.length;
+    check("pressed New chat on its own blank chat", await clickNewChat(), "no New chat control");
+    const blankReused = await settle(320);
+    check(
+      "the New chat slot reuses the blank chat already open",
+      blankReused.surface === "thread" &&
+        blankReused.heading === "New chat" &&
+        blankReused.tabCount === 1 &&
+        blankReused.tabs[0]?.label === "New chat" &&
+        blankReused.createCalls.length === createsBeforeReuse,
+      JSON.stringify({
+        surface: blankReused.surface,
+        heading: blankReused.heading,
+        creates: blankReused.createCalls.length,
+      }),
+    );
+
+    // 23 — an archive made from the sidebar while the dock is on the chain keeps
+    // the chain up and mints no blank chat: the operator asked to put a chat
+    // away, not to be handed a new one. There is no history page in the dock for
+    // that archive to land on any more — the whole history is the sidebar's.
+    check("switched the dock to the chain", await clickDockControl("Notebox"), "no Notebox control");
+    const chainUp = await settle();
+    check(
+      "the chain is the surface",
+      chainUp.surface === "chain" && chainUp.thread === false,
+      JSON.stringify({ surface: chainUp.surface, heading: chainUp.heading }),
+    );
+    check(
+      "the chain draws no tab strip band",
+      chainUp.strip === null,
+      JSON.stringify({ strip: chainUp.strip }),
+    );
+    const createsBeforeChainArchive = chainUp.createCalls.length;
+    check(
+      "archived the chat in front from the chain",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const archivedFromChain = await settle(420);
+    check(
+      "archiving from the chain keeps the chain up and opens no blank chat",
+      archivedFromChain.surface === "chain" &&
+        archivedFromChain.thread === false &&
+        archivedFromChain.tabCount === 0 &&
+        archivedFromChain.strip === null &&
+        archivedFromChain.createCalls.length === createsBeforeChainArchive,
+      JSON.stringify({
+        surface: archivedFromChain.surface,
+        heading: archivedFromChain.heading,
+        creates: archivedFromChain.createCalls.length,
+      }),
+    );
+    screenshots.push(await shot("archived-from-chain"));
+
+    // 24 — a rename field belongs to the chat it was opened on. The dock header
+    // lost its Rename control with the rest of its chat controls, so rename now
+    // starts on the row; the field it opens is that row's, and switching the
+    // header to another chat must not carry it across or write one chat's name
+    // onto the next.
+    check("opened Pinned note", await clickSidebarRow("Pinned note"), "no row");
+    await settle();
+    check(
+      "opened the row menu",
+      await clickRowControl("Seed chat 09", ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check("opened the rename field", await clickSidebarMenuItem("Rename chat"), "no Rename chat item");
+    check("typed a name", await typeRowRename("Wrong chat name"), "no rename field");
+    const renameOpen = await settle();
+    check(
+      "the rename field is open on the chat it was opened for",
+      renameOpen.rowRenaming === true && renameOpen.rowRenameValue === "Wrong chat name",
+      JSON.stringify({ rowRenaming: renameOpen.rowRenaming, value: renameOpen.rowRenameValue }),
+    );
+    const patchesBeforeSwitch = renameOpen.patchCalls.length;
+    check("switched the header to another chat", await clickSidebarRow("Seed chat 10"), "no row");
+    const renameSwitched = await settle(300);
+    check(
+      "the field stays on its own row when the header moves to another chat",
+      renameSwitched.rowRenaming === true &&
+        renameSwitched.rowRenameValue === "Wrong chat name" &&
+        renameSwitched.heading === "Seed chat 10" &&
+        renameSwitched.patchCalls.length === patchesBeforeSwitch &&
+        !renameSwitched.patchCalls.some((call) => call.patch.title === "Wrong chat name"),
+      JSON.stringify({
+        rowRenaming: renameSwitched.rowRenaming,
+        value: renameSwitched.rowRenameValue,
+        heading: renameSwitched.heading,
+        patches: renameSwitched.patchCalls.slice(-4),
+        before: patchesBeforeSwitch,
+        now: renameSwitched.patchCalls.length,
+      }),
+    );
+    check(
+      "cancelled the rename",
+      await run(`(async () => {
+        const el = document.querySelector('.chats-rail__rename [aria-label="Cancel rename"]');
+        if (!el) return false;
+        el.click();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return true;
+      })()`),
+      "no cancel control",
+    );
+    const renameCancelled = await settle(300);
+    check(
+      "cancelling closes the field and writes nothing",
+      renameCancelled.rowRenaming === false &&
+        renameCancelled.patchCalls.length === patchesBeforeSwitch &&
+        !renameCancelled.patchCalls.some((call) => call.patch.title === "Wrong chat name"),
+      JSON.stringify({
+        rowRenaming: renameCancelled.rowRenaming,
+        before: patchesBeforeSwitch,
+        now: renameCancelled.patchCalls.length,
+      }),
+    );
+    screenshots.push(await shot("archived-while-renaming"));
+
+    // 25 — the plus after the last tab is the strip's own door: it opens a new
+    // blank conversation in a tab of its own, beside the chat in front, without
+    // disturbing that chat. The step lands at a one-tab state on purpose — the
+    // strip is drawn for a single chat precisely so this control is reachable
+    // before a second tab exists.
+    const createsBeforePlus = renameCancelled.createCalls.length;
+    check("clicked the strip's plus", await clickNewTab(), "no New chat tab control");
+    const plusOpened = await settle(420);
+    check(
+      "the plus opens a new chat tab beside the chat in front",
+      plusOpened.surface === "thread" &&
+        plusOpened.tabCount === 2 &&
+        plusOpened.tabs[0]?.label === "Seed chat 10" &&
+        plusOpened.tabs[0]?.active === false &&
+        plusOpened.tabs[1]?.label === "New chat" &&
+        plusOpened.tabs[1]?.active === true &&
+        plusOpened.heading === "New chat" &&
+        plusOpened.createCalls.length === createsBeforePlus + 1,
+      JSON.stringify({ tabs: plusOpened.tabs, heading: plusOpened.heading }),
+    );
+    check(
+      "the strip keeps its place above the name row after the new tab",
+      plusOpened.strip !== null &&
+        plusOpened.header !== null &&
+        plusOpened.strip.box.bottom === plusOpened.header.box.top &&
+        plusOpened.newTab !== null &&
+        plusOpened.newTab.visible === true &&
+        plusOpened.newTab.role === null &&
+        plusOpened.newTab.box.left >= (plusOpened.tabs.at(-1)?.box?.right ?? Infinity) &&
+        plusOpened.newTab.box.right <= plusOpened.strip.box.right,
+      JSON.stringify({
+        strip: plusOpened.strip?.box,
+        header: plusOpened.header?.box,
+        plus: plusOpened.newTab
+      }),
+    );
+    screenshots.push(await shot("new-tab-plus"));
+
+    // The one-blank rule, pressed through the strip's own door: a second plus
+    // lands on the blank chat already open instead of minting another, so the
+    // tab count and the bridge's create calls both stay put.
+    check("clicked the plus again on the blank chat", await clickNewTab(), "no New chat tab control");
+    const plusAgain = await settle(320);
+    check(
+      "a second plus reuses the blank tab instead of minting another chat",
+      plusAgain.surface === "thread" &&
+        plusAgain.tabCount === 2 &&
+        plusAgain.tabs.map((tab) => tab.label).join("/") === "Seed chat 10/New chat" &&
+        plusAgain.tabs.at(-1)?.active === true &&
+        plusAgain.heading === "New chat" &&
+        plusAgain.createCalls.length === plusOpened.createCalls.length,
+      JSON.stringify({
+        tabs: plusAgain.tabs,
+        heading: plusAgain.heading,
+        creates: plusAgain.createCalls.length
+      }),
+    );
+
+    // 26 — the strip is a browser's tab band at the dock's narrowest: a tab has
+    // a floor (three characters of its label plus the ellipsis, beside its mark
+    // and close control), and past that the band overflows and scrolls sideways
+    // instead of squeezing every chat to a glyph. Four unpinned chats beside a
+    // pinned tab is what makes the floor reachable: at 300px the tabs cannot all
+    // fit above it.
+    const floorDivider = plusAgain.chatDivider;
+    check(
+      "pinned a chat to put a pinned tab back in the strip",
+      await clickRowControl("Seed chat 11", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    await settle(320);
+    check(
+      "middle-clicked two more chats beside the open pair",
+      (await middleClickSidebarRow("Seed chat 12")) &&
+        (await middleClickSidebarRow("Seed chat 13")),
+      "no row button",
+    );
+    const floorStrip = await settle(420);
+    const floorTabCounts = {
+      all: floorStrip.tabCount,
+      pinned: floorStrip.tabs.filter((tab) => tab.pinned).length,
+      unpinned: floorStrip.tabs.filter((tab) => !tab.pinned).length,
+    };
+    check(
+      "four unpinned chats and the pinned tab are open at the dock's floor",
+      floorTabCounts.all === 5 &&
+        floorTabCounts.pinned === 1 &&
+        floorTabCounts.unpinned === 4,
+      JSON.stringify({
+        tabs: floorStrip.tabs.map((tab) => [tab.label, tab.pinned]),
+        counts: floorTabCounts,
+      }),
+    );
+    check(
+      "the dock is still at its floor for the strip claim",
+      typeof floorStrip.chatDivider?.now === "number" &&
+        floorStrip.chatDivider.now === floorStrip.chatDivider.min &&
+        floorStrip.chatDivider.now === floorDivider?.now,
+      JSON.stringify({ divider: floorStrip.chatDivider, before: floorDivider }),
+    );
+    check(
+      "the strip overflows sideways instead of squeezing past the tab floor",
+      Boolean(floorStrip.strip) &&
+        floorStrip.strip.scrollWidth > floorStrip.strip.clientWidth + 1,
+      JSON.stringify({ strip: floorStrip.strip }),
+    );
+    const floorFloorTabs = floorStrip.tabs.filter((tab) => !tab.pinned);
+    check(
+      "every crowded tab keeps three characters plus the ellipsis at the floor",
+      floorFloorTabs.length === 4 &&
+        floorFloorTabs.every(
+          (tab) =>
+            typeof tab.labelWidth === "number" &&
+            typeof tab.floorWidth === "number" &&
+            tab.labelWidth + 1 >= tab.floorWidth,
+        ),
+      JSON.stringify(
+        floorFloorTabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]),
+      ),
+    );
+    check(
+      "the crowded floor's labels still carry their chats' names",
+      floorFloorTabs.length === 4 &&
+        floorFloorTabs.every(
+          (tab) => tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        ),
+      JSON.stringify(floorFloorTabs.map((tab) => [tab.label, tab.name])),
+    );
+    check(
+      "the crowded floor keeps every tab's mark and close control",
+      floorFloorTabs.every(
+        (tab) =>
+          tab.mark.exists === true &&
+          tab.mark.visible === true &&
+          tab.hasClose === true &&
+          tab.closeVisible === true,
+      ),
+      JSON.stringify(floorFloorTabs.map((tab) => [tab.label, tab.mark, tab.closeVisible])),
+    );
+    screenshots.push(await shot("tab-strip-floor"));
+    mark("tab-strip-floor");
+
+    // 27 — a vertical wheel over the band walks it sideways, the browser habit
+    // the floor buys. The gesture must move the strip's own scrollLeft (clamped to
+    // its travel) and must be swallowed, or the page behind the strip scrolls
+    // instead of the tabs.
+    const stripAtZero = await scrollStripTo(0);
+    const wheel = await wheelStrip(120);
+    probes.wheel = wheel;
+    const wheelExpectation = wheel.ok ? Math.min(120, wheel.maxScroll) : 0;
+    check(
+      "the strip is parked at its leading edge before the wheel",
+      stripAtZero === 0,
+      JSON.stringify({ stripAtZero }),
+    );
+    check(
+      "a vertical wheel over the strip moves it sideways and is swallowed",
+      wheel.ok === true &&
+        wheel.before === 0 &&
+        wheel.prevented === true &&
+        wheel.dispatched === false &&
+        Math.abs(wheel.after - wheelExpectation) <= 1,
+      JSON.stringify({ ...wheel, expected: wheelExpectation }),
+    );
+    const wheeled = await settle(240);
+    check(
+      "the strip stays where the wheel left it",
+      wheel.ok === true && wheeled.strip?.scrollLeft === wheel.after,
+      JSON.stringify({
+        strip: { scrollLeft: wheeled.strip?.scrollLeft },
+        wheel: { after: wheel.after },
+      }),
+    );
+    screenshots.push(await shot("tab-strip-wheel"));
+    mark("tab-strip-wheel");
+
+    // 28 — the tab in front is always in the band: a chat appended at the far end
+    // is scrolled into view, ending inside the strip's own visible band. Without
+    // the scroll, the operator has a conversation on screen and no tab to find it
+    // by.
+    const resetStrip = await scrollStripTo(0);
+    check(
+      "the strip is parked at its leading edge before the append",
+      resetStrip === 0,
+      JSON.stringify({ resetStrip }),
+    );
+    check(
+      "middle-clicked a chat that appends past the band's edge",
+      await middleClickSidebarRow("Seed chat 14"),
+      "no row button",
+    );
+    const revealed = await settle(420);
+    const revealedFront = revealed.tabs.find((tab) => tab.active) ?? null;
+    check(
+      "the appended tab is the one in front",
+      revealedFront !== null &&
+        revealedFront.label === "Seed chat 14" &&
+        revealed.tabCount === floorTabCounts.all + 1,
+      JSON.stringify({
+        front: revealedFront?.label,
+        tabs: revealed.tabs.map((tab) => [tab.label, tab.active]),
+      }),
+    );
+    check(
+      "the tab in front is scrolled into the strip's visible band",
+      Boolean(revealed.strip && revealedFront?.box) &&
+        revealed.strip.scrollLeft > 0 &&
+        revealedFront.box.left >= revealed.strip.box.left - 1 &&
+        revealedFront.box.right <= revealed.strip.box.right + 1,
+      JSON.stringify({
+        front: revealedFront?.box,
+        strip: revealed.strip?.box,
+        scrollLeft: revealed.strip?.scrollLeft,
+      }),
+    );
+    screenshots.push(await shot("tab-scrolled-into-view"));
+    mark("tab-scrolled-into-view");
+
+    // 29 — the write path a page uses to start a task chat: the chat is created
+    // through the shipping bridge, then handed to the dock with the kickoff mark
+    // of the work that started it. The tab wears that mark in the slot a plain
+    // tab spends on the status dot, keeps its own name and close label, keeps the
+    // three-characters-plus-ellipsis floor, and the mark is written to the profile's remembered
+    // map so a restart can dress the tab the same way. A chat the operator opened
+    // stays plain.
+    const created = await createChat("Task · Wire the strip");
+    const createdSession = created && created.ok ? created.value : null;
+    probes.task = createdSession ? { id: createdSession.id } : null;
+    check(
+      "the stub bridge created a task chat",
+      Boolean(createdSession && createdSession.id),
+      JSON.stringify(created),
+    );
+    check(
+      "handed the created chat to the dock as a task kickoff",
+      Boolean(createdSession) && (await requestSession(createdSession, "task")),
+      "the fixture exposes no request door",
+    );
+    const taskIcon = await settle(560);
+    const taskTab = taskIcon.tabs.find((tab) => tab.label === "Task · Wire the strip") ?? null;
+    check(
+      "the task chat's tab wears its kickoff mark",
+      taskTab !== null &&
+        taskTab.icon === "task" &&
+        taskTab.mark.exists === true &&
+        taskTab.mark.svg === true &&
+        taskTab.mark.visible === true,
+      JSON.stringify(taskTab),
+    );
+    check(
+      "the kickoff mark leaves the tab's name and close label alone",
+      (taskTab?.name ?? "").startsWith("Task · Wire the strip") &&
+        taskTab?.close === "Close Task · Wire the strip",
+      JSON.stringify({ name: taskTab?.name, close: taskTab?.close }),
+    );
+    check(
+      "the kickoff mark does not take the tab below the three-characters-plus-ellipsis floor",
+      Boolean(taskTab) &&
+        typeof taskTab.labelWidth === "number" &&
+        typeof taskTab.floorWidth === "number" &&
+        taskTab.labelWidth + 1 >= taskTab.floorWidth,
+      JSON.stringify({ labelWidth: taskTab?.labelWidth, floor: taskTab?.floorWidth }),
+    );
+    check(
+      "the kickoff mark is remembered in the legacy icon slot",
+      Boolean(createdSession) &&
+        taskIcon.sessionIcons !== null &&
+        typeof taskIcon.sessionIcons === "object" &&
+        taskIcon.sessionIcons[createdSession.id] === "task" &&
+        taskIcon.sessionIcons["chat-delta"] === "automation",
+      JSON.stringify({ stored: taskIcon.sessionIcons, id: createdSession?.id }),
+    );
+    check(
+      "a chat the operator opened keeps a plain tab with no kickoff mark",
+      taskIcon.tabs
+        .filter((tab) => tab.icon === null && !tab.pinned)
+        .every((tab) => tab.mark.exists === true && tab.mark.svg === false) &&
+        taskIcon.tabs.filter((tab) => tab.icon !== null).length === 1,
+      JSON.stringify(taskIcon.tabs.map((tab) => [tab.label, tab.icon, tab.mark.svg])),
+    );
+    screenshots.push(await shot("tab-session-icon-task"));
+    mark("tab-session-icon-task");
+
+    // 30 — the same kickoff mark now leads the chat's name in the Chats sidebar,
+    // not only its tab. The store's remembered map is the one source for both
+    // surfaces: the fixture's seeded automation mark dresses the Delta row, a
+    // chat opened plainly keeps the transparent status dot in the same one-slot
+    // leading column, and the task chat the write-path probe created — which the
+    // store adopts into the list — wears its task mark on its row too.
+    const landingDelta = landing.rows.find((row) => row.label === "Delta automation") ?? null;
+    const landingBravo = landing.rows.find((row) => row.label === "Bravo budget") ?? null;
+    check(
+      "the automation chat's sidebar row wears its kickoff mark",
+      landingDelta !== null &&
+        landingDelta.icon === "automation" &&
+        landingDelta.mark.exists === true &&
+        landingDelta.mark.svg === true &&
+        landingDelta.mark.visible === true,
+      JSON.stringify(landingDelta),
+    );
+    check(
+      "the sidebar mark leaves the row's label and its verbs alone",
+      landingDelta?.label === "Delta automation" &&
+        landingDelta?.pin.exists === true &&
+        landingDelta?.archive.exists === true,
+      JSON.stringify({
+        label: landingDelta?.label,
+        pin: landingDelta?.pin,
+        archive: landingDelta?.archive,
+      }),
+    );
+    check(
+      "a chat opened plainly keeps the status dot in the sidebar's leading slot",
+      landingBravo !== null &&
+        landingBravo.icon === null &&
+        landingBravo.mark.exists === true &&
+        landingBravo.mark.visible === true &&
+        landingBravo.mark.svg === false &&
+        landingBravo.dot.exists === true &&
+        landingBravo.dot.visible === true,
+      JSON.stringify(landingBravo),
+    );
+    check(
+      "the sidebar mark changes neither the row's height nor its leading edge",
+      Boolean(landingDelta?.box && landingBravo?.box) &&
+        Math.abs(landingDelta.box.height - landingBravo.box.height) <= 1 &&
+        Boolean(
+          landingDelta?.mark.box && landingDelta.mainBox && landingDelta.labelBox,
+        ) &&
+        landingDelta.mark.box.left >= landingDelta.mainBox.left - 1 &&
+        landingDelta.mark.box.right <= landingDelta.labelBox.left + 1,
+      JSON.stringify({
+        heights: [landingDelta?.box?.height, landingBravo?.box?.height],
+        mark: landingDelta?.mark?.box,
+        main: landingDelta?.mainBox,
+        label: landingDelta?.labelBox,
+      }),
+    );
+    const backgroundDelta =
+      background.rows.find((row) => row.label === "Delta automation") ?? null;
+    check(
+      "the live sidebar row paints its kickoff mark, and a live dot still pulses",
+      backgroundDelta?.live === true &&
+        backgroundDelta.icon === "automation" &&
+        backgroundDelta.mark.exists === true &&
+        backgroundDelta.mark.svg === true &&
+        [backgroundDelta.mark.animation, backgroundDelta.mark.glyphAnimation].some(
+          (name) => name && name !== "none",
+        ) &&
+        bothLive.rows
+          .filter((row) => row.live)
+          .every(
+            (row) =>
+              row.mark.exists === true &&
+              row.mark.svg === false &&
+              row.dot.exists === true &&
+              row.dot.visible === true &&
+              [row.mark.animation, row.dot.animation].some(
+                (name) => name && name !== "none",
+              ),
+          ),
+      JSON.stringify({
+        liveDelta: {
+          live: backgroundDelta?.live,
+          mark: backgroundDelta?.mark,
+        },
+        livePlainRows: bothLive.rows
+          .filter((row) => row.live)
+          .map((row) => ({ label: row.label, mark: row.mark, dot: row.dot })),
+      }),
+    );
+    const taskRow =
+      taskIcon.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    const taskPlainRow =
+      taskIcon.rows.find((row) => row.icon === null && row.label === "New chat") ??
+      taskIcon.rows.find((row) => row.icon === null) ??
+      null;
+    check(
+      "the created task chat is listed in the sidebar wearing its kickoff mark",
+      taskRow !== null &&
+        taskRow.icon === "task" &&
+        taskRow.mark.exists === true &&
+        taskRow.mark.svg === true &&
+        taskRow.mark.visible === true,
+      JSON.stringify(taskRow),
+    );
+    check(
+      "the task row keeps a plain row's height and puts its mark before the label",
+      Boolean(taskRow?.box && taskPlainRow?.box) &&
+        Math.abs(taskRow.box.height - taskPlainRow.box.height) <= 1 &&
+        Boolean(taskRow?.mark.box && taskRow.mainBox && taskRow.labelBox) &&
+        taskRow.mark.box.left >= taskRow.mainBox.left - 1 &&
+        taskRow.mark.box.right <= taskRow.labelBox.left + 1,
+      JSON.stringify({
+        heights: [taskRow?.box?.height, taskPlainRow?.box?.height],
+        mark: taskRow?.mark?.box,
+        main: taskRow?.mainBox,
+        label: taskRow?.labelBox,
+      }),
+    );
+
+    // 31 — the mark is the chat's, not one render's: a plain list re-read (the
+    // store's own loadSessions, what any background refresh runs) must leave the
+    // remembered kickoff maps alone, so the rows keep their marks instead of
+    // falling back to the plain dot.
+    check(
+      "the store re-read the chat list",
+      await run(`(async () => {
+        if (!window.__lqChat) return false;
+        await window.__lqChat.loadSessions();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        return true;
+      })()`),
+      "no list handle on the page",
+    );
+    const rowsReread = await settle(420);
+    const rereadDelta =
+      rowsReread.rows.find((row) => row.label === "Delta automation") ?? null;
+    const rereadTask =
+      rowsReread.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    check(
+      "a plain list re-read keeps the kicked-off chats' sidebar marks",
+      rereadDelta?.icon === "automation" &&
+        rereadDelta.mark.svg === true &&
+        rereadTask?.icon === "task" &&
+        rereadTask.mark.svg === true &&
+        rowsReread.sessionIcons?.["chat-delta"] === "automation",
+      JSON.stringify({
+        delta: [rereadDelta?.icon, rereadDelta?.mark],
+        task: [rereadTask?.icon, rereadTask?.mark],
+        stored: rowsReread.sessionIcons,
+      }),
+    );
+    screenshots.push(await shot("sidebar-kickoff-marks"));
+    mark("sidebar-kickoff-marks");
+
+    mark("done");
+    report = {
+      url,
+      ranAt: new Date().toISOString(),
+      window: DEFAULT_SIZE,
+      screenshots,
+      marks,
+      states: {
+        landing,
+        hovered,
+        hoveredUnpinned,
+        unhovered,
+        opened,
+        middleOpened,
+        menuOpened,
+        menuClosed,
+        alphaLive,
+        bravoReady,
+        bothLive,
+        interleaved,
+        alphaThread,
+        finished,
+        alphaAgain,
+        split,
+        splitSettled,
+        hoveredBravo,
+        pinned,
+        hoveredPinned,
+        unpinned,
+        unpinnedPinnedNote,
+        baseline,
+        hoveredAlpha,
+        tabCycledForward,
+        tabCycledBack,
+        archived,
+        asked,
+        declined,
+        deleted,
+        background,
+        closedLive,
+        lateFrame,
+        header,
+        searchOpen,
+        searched,
+        noMatch,
+        closedByCross,
+        closedByOutside,
+        closedByEscape,
+        viewMenu,
+        archivedShown,
+        archivedClick,
+        archivedSearch,
+        unarchived,
+        viewMenuShown,
+        archivedHidden,
+        newChatTab,
+        newChatKept,
+        newChatActive,
+        defaultTabs,
+        contentTabs,
+        cappedTabs: capped,
+        restoredTabs: renamedBack,
+        narrowTabs,
+        longList,
+        atFoot,
+        menuFlipped: flipped,
+        menuDownward: downward,
+        beforeActiveArchive,
+        activeArchived,
+        previousTabArchived,
+        lastArchived,
+        archivedViewOpen,
+        blankArchived,
+        blankReused,
+        chainUp,
+        archivedFromChain,
+        renameOpen,
+        renameSwitched,
+        renameCancelled,
+        plusOpened,
+        plusAgain,
+        floorStrip,
+        wheel: wheeled,
+        revealed,
+        taskIcon,
+        rowsReread,
+      },
+      // The gesture readings the states cannot carry: the wheel's own
+      // before/after/prevented numbers and the id of the chat the write-path
+      // probe created (the wrapper checks the remembered icon map against it).
+      probes,
+      failures,
+      pass: failures.length === 0,
+    };
+  } catch (error) {
+    report = {
+      url,
+      ranAt: new Date().toISOString(),
+      failures: [
+        ...failures,
+        `threw: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      ],
+      pass: false,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  fs.writeFileSync(
+    path.join(artifactsDir, "chat-tabs.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+  );
+
+  const state = report.states;
+  if (state) {
+    const table = [
+      ["state", "rows", "tabs", "live", "heading", "calls", "patches"],
+      ["landing", state.landing.rowCount, state.landing.tabCount, "", state.landing.heading, "", ""],
+      ["hovered", state.hovered.rowCount, state.hovered.tabCount, "", state.hovered.heading, "", ""],
+      ["hovered unpinned", state.hoveredUnpinned.rowCount, state.hoveredUnpinned.tabCount, "", state.hoveredUnpinned.heading, "", ""],
+      ["unhovered", state.unhovered.rowCount, state.unhovered.tabCount, "", state.unhovered.heading, "", ""],
+      ["opened", state.opened.rowCount, state.opened.tabCount, "", state.opened.heading, "", ""],
+      ["middle", state.middleOpened.rowCount, state.middleOpened.tabCount, "", state.middleOpened.heading, "", ""],
+      ["menu", state.menuOpened.rowCount, state.menuOpened.tabCount, "", state.menuOpened.heading, "", ""],
+      ["alpha live", state.alphaLive.rowCount, state.alphaLive.tabCount, "alpha", state.alphaLive.heading, state.alphaLive.calls.length, ""],
+      ["both live", state.bothLive.rowCount, state.bothLive.tabCount, "alpha + bravo", state.bothLive.heading, state.bothLive.calls.length, ""],
+      ["finished", state.finished.rowCount, state.finished.tabCount, "", state.finished.heading, "", ""],
+      ["split", state.split.rowCount, state.split.tabCount, "alpha", state.split.heading, "", ""],
+      ["pinned", state.pinned.rowCount, state.pinned.tabCount, "", state.pinned.heading, "", state.pinned.patchCalls.length],
+      ["unpinned", state.unpinned.rowCount, state.unpinned.tabCount, "", state.unpinned.heading, "", state.unpinned.patchCalls.length],
+      [
+        "unpinned pinned-note",
+        state.unpinnedPinnedNote.rowCount,
+        state.unpinnedPinnedNote.tabCount,
+        "",
+        state.unpinnedPinnedNote.heading,
+        "",
+        state.unpinnedPinnedNote.patchCalls.length,
+      ],
+      ["baseline", state.baseline.rowCount, state.baseline.tabCount, "", state.baseline.heading, "", ""],
+      [
+        "tab cycle →",
+        state.tabCycledForward.rowCount,
+        state.tabCycledForward.tabCount,
+        "",
+        state.tabCycledForward.heading,
+        "",
+        `tabs ${JSON.stringify(state.tabCycledForward.tabs.map((tab) => [tab.label, tab.active]))}`,
+      ],
+      [
+        "tab cycle ←",
+        state.tabCycledBack.rowCount,
+        state.tabCycledBack.tabCount,
+        "",
+        state.tabCycledBack.heading,
+        "",
+        `tabs ${JSON.stringify(state.tabCycledBack.tabs.map((tab) => [tab.label, tab.active]))}`,
+      ],
+      ["archived", state.archived.rowCount, state.archived.tabCount, "", state.archived.heading, "", state.archived.patchCalls.length],
+      ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
+      ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],
+      ["new chat", state.newChatTab.rowCount, state.newChatTab.tabCount, "", state.newChatTab.heading, "", ""],
+      ["new chat kept", state.newChatKept.rowCount, state.newChatKept.tabCount, "", state.newChatKept.heading, "", ""],
+      ["three tabs", state.defaultTabs.rowCount, state.defaultTabs.tabCount, "", state.defaultTabs.heading, "", ""],
+      [
+        "tabs at floor",
+        state.narrowTabs.rowCount,
+        state.narrowTabs.tabCount,
+        "",
+        state.narrowTabs.heading,
+        "",
+        `widths ${JSON.stringify(state.narrowTabs.tabs.map((tab) => tab.box?.width ?? null))}`,
+      ],
+      [
+        "long history",
+        state.longList.rowCount,
+        state.longList.tabCount,
+        "",
+        state.longList.heading,
+        "",
+        `list ${JSON.stringify(state.longList.rail?.list)}`,
+      ],
+      [
+        "menu at foot",
+        state.menuFlipped.rowCount,
+        state.menuFlipped.tabCount,
+        "",
+        state.menuFlipped.heading,
+        "",
+        `placement ${state.menuFlipped.rail?.menu?.placement} ${JSON.stringify(state.menuFlipped.rail?.menu?.box)}`,
+      ],
+      [
+        "menu at top",
+        state.menuDownward.rowCount,
+        state.menuDownward.tabCount,
+        "",
+        state.menuDownward.heading,
+        "",
+        `placement ${state.menuDownward.rail?.menu?.placement}`,
+      ],
+      [
+        "active tab archived",
+        state.activeArchived.rowCount,
+        state.activeArchived.tabCount,
+        "",
+        state.activeArchived.heading,
+        "",
+        `tabs ${JSON.stringify(state.activeArchived.tabs.map((tab) => tab.label))}`,
+      ],
+      [
+        "last tab archived",
+        state.lastArchived.rowCount,
+        state.lastArchived.tabCount,
+        "",
+        state.lastArchived.heading,
+        "",
+        `messages ${state.lastArchived.messages.length}, creates ${state.lastArchived.createCalls.length}`,
+      ],
+      [
+        "blank archived (archived view)",
+        state.blankArchived.rowCount,
+        state.blankArchived.tabCount,
+        "",
+        state.blankArchived.heading,
+        "",
+        `creates ${state.blankArchived.createCalls.length}`,
+      ],
+      [
+        "blank reused",
+        state.blankReused.rowCount,
+        state.blankReused.tabCount,
+        "",
+        state.blankReused.heading,
+        "",
+        `surface ${state.blankReused.surface}, creates ${state.blankReused.createCalls.length}`,
+      ],
+      [
+        "archived from the chain",
+        state.archivedFromChain.rowCount,
+        state.archivedFromChain.tabCount,
+        "",
+        state.archivedFromChain.heading,
+        "",
+        `surface ${state.archivedFromChain.surface}, creates ${state.archivedFromChain.createCalls.length}`,
+      ],
+      [
+        "rename while switching chat",
+        state.renameSwitched.rowCount,
+        state.renameSwitched.tabCount,
+        "",
+        state.renameSwitched.heading,
+        "",
+        `renaming ${state.renameSwitched.rowRenaming}`,
+      ],
+      [
+        "plus opened tab",
+        state.plusOpened.rowCount,
+        state.plusOpened.tabCount,
+        "",
+        state.plusOpened.heading,
+        "",
+        `tabs ${JSON.stringify(state.plusOpened.tabs.map((tab) => tab.label))}, header ${JSON.stringify(state.plusOpened.header?.box)}, strip ${JSON.stringify(state.plusOpened.strip?.box)}`,
+      ],
+      [
+        "plus pressed again",
+        state.plusAgain.rowCount,
+        state.plusAgain.tabCount,
+        "",
+        state.plusAgain.heading,
+        "",
+        `tabs ${JSON.stringify(state.plusAgain.tabs.map((tab) => tab.label))}, creates ${state.plusAgain.createCalls.length}`,
+      ],
+      [
+        "strip at the floor",
+        state.floorStrip.rowCount,
+        state.floorStrip.tabCount,
+        "",
+        state.floorStrip.heading,
+        "",
+        `strip ${JSON.stringify(state.floorStrip.strip)}, labels ${JSON.stringify(state.floorStrip.tabs.map((tab) => [tab.label, tab.labelWidth, tab.floorWidth]))}`,
+      ],
+      [
+        "wheel over the strip",
+        state.wheel.rowCount,
+        state.wheel.tabCount,
+        "",
+        state.wheel.heading,
+        "",
+        `wheel ${JSON.stringify(report.probes?.wheel)}, scrollLeft ${state.wheel.strip?.scrollLeft}`,
+      ],
+      [
+        "tab in front revealed",
+        state.revealed.rowCount,
+        state.revealed.tabCount,
+        "",
+        state.revealed.heading,
+        "",
+        `front ${JSON.stringify(state.revealed.tabs.find((tab) => tab.active)?.box)}, strip ${JSON.stringify(state.revealed.strip)}`,
+      ],
+      [
+        "task kickoff mark",
+        state.taskIcon.rowCount,
+        state.taskIcon.tabCount,
+        "",
+        state.taskIcon.heading,
+        "",
+        `icons ${JSON.stringify(state.taskIcon.tabs.map((tab) => [tab.label, tab.icon]))}, stored ${JSON.stringify(state.taskIcon.sessionIcons)}`,
+      ],
+      [
+        "sidebar marks after a re-read",
+        state.rowsReread.rowCount,
+        state.rowsReread.tabCount,
+        "",
+        state.rowsReread.heading,
+        "",
+        `rows ${JSON.stringify(state.rowsReread.rows.filter((row) => row.icon).map((row) => [row.label, row.icon, row.mark.svg]))}, stored ${JSON.stringify(state.rowsReread.sessionIcons)}`,
+      ],
+    ];
+    console.log(table.map((row) => row.join(" | ")).join("\n"));
+  }
+  for (const failure of report.failures ?? []) console.error(`FAIL ${failure}`);
+  console.log(`chat-tabs: ${report.pass ? "pass" : "fail"}`);
+
+  app.exit(report.pass ? 0 : 1);
+}
+
+app.whenReady().then(main);

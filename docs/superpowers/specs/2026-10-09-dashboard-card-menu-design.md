@@ -1,6 +1,6 @@
 # The Dashboard card menu: Archive, and Delete
 
-**Status:** design — amended 2026-10-16: the grip is gone too, so a locked board draws no chrome at all and its cards are not tab stops. The menu is unchanged.
+**Status:** design — amended 2026-10-16: the grip is gone too, so a locked board draws no chrome at all and its cards are not tab stops. The menu is unchanged. Superseded in part 2026-11-05 by `2026-11-05-dashboard-multi-card-context-design.md`: the per-card chat control is gone — the card itself toggles its chat context. The rest of this menu design stands.
 **Date:** 2026-10-09
 **Touches:** `apps/desktop/src/components/home/PinChrome.tsx`, `apps/desktop/src/pages/HomePage.tsx`,
 `apps/desktop/src/styles/global.css`, `LAWS/DASHBOARD.md`

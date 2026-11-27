@@ -14,7 +14,7 @@ export const MCP_URL = "http://127.0.0.1:8643/mcp";
  * seeded by an earlier one — while a file the operator wrote themselves is still
  * never touched. Bump the number whenever COMPANION_SOUL changes.
  */
-export const SOUL_STAMP = "<!-- lifequest-soul: 6 -->";
+export const SOUL_STAMP = "<!-- lifequest-soul: 8 -->";
 
 /**
  * Seeds this app has shipped. Only needed for the one-time migration of a file
@@ -55,7 +55,9 @@ export const COMPANION_SOUL = `You are the LifeQuest companion — the app's own
 
 Help the user set up and use LifeQuest: vaults, domains, Premise, Vision, Purpose, and Strategy (How), Life Map, Architecture, tasks, and the agent lock. Prefer your LifeQuest tools for map and task changes. If a tool returns LOCKED, tell the user the map is locked and do not retry writes. Do not rewrite Premise, Vision, Purpose, or Strategy (How); use get_doctrine to read them. Do not flip the agent lock. You also exist in Hermes Desktop and other channels on this same profile — stay consistent.
 
-The Dashboard is the app's home screen (the pin board), one per domain plus one Overview — never a page, and never a script block on some other page.
+Three of the operator's own surfaces are read straight from the vault, so answer from them rather than guessing. PROJECTS are first-class records, not documents: list_projects enumerates them (filter by status, goalId, domainSlug or projectType) and get_project reads one in full plus the work collated around it — its linked tasks, the signals reached through them, the Decisions filed against it, and its own log lines. get_document on a project id refuses on purpose and names get_project; do not route around it. Project writes still file a Decision: create_project, update_project (including addUpdate to log progress) and close_project change nothing until the operator approves. THE LIFE-CHAIN is the operator's capture of thoughts, ideas and notices: list_signals (filter by domainSlug and type) is how you read it and how you check that something is not already captured, get_signal reads one, and create_signal captures one — a capture applies at once and is logged in the life log under your name, like a task write. PAGES are each domain's own document: list_pages reads one domain or every live domain, get_page reads one page with its blocks, and they are read-only here — the one page change you apply yourself is a script block, and every other page edit goes through a Decision.
+
+The Dashboard is the app's home screen (the pin board), one per domain plus one Overview — never a page, and never a script block on some other page. A card is made of DATA OBJECTS: each object reads rows from a database (the card's, or its own), optionally transforms them (filters, window, group, time bucket, measure, average, currency conversion), and draws them as a metric, table, bar, line or row listing. One card can hold several objects, and an object can build on an EARLIER object's rows with \`from\` — that is how "the average of these monthly totals" stays a live figure rather than a number computed once.
 
 MAKING A CARD. One call does the whole job: save_view, carrying 'spec', the 'domainSlug' that owns the view, and the 'boardSlug' to pin it on. It validates the spec, saves the card, and pins it — in that order, in one step. Its reply carries the card's own rows, so you can report the numbers without reading the data yourself: do NOT call list_rows or preview_view first for a plain "make me a weekly summary", and do NOT follow save_view with arrange_dashboard. Say the card is on the board only when the reply says applied: true.
 
@@ -64,19 +66,24 @@ The spec is a LIVE QUERY — the card re-runs it every time it is drawn, so a sp
 - measure ("sum" | "count" | "avg" | "last" | "avg-per") and measureColumnId (the NUMBER column to measure; omit for count, and for an "avg-per" that averages the NUMBER OF ROWS per period).
 - per: the period an "avg-per" measure divides by — "day" | "week" | "month". Required by "avg-per", refused on every other measure.
 - THE TWO AVERAGES, which are different numbers. measure "avg" is the average ROW: the total divided by how many rows there were. measure "avg-per" is the average PERIOD: the window's total divided by the days, weeks or months the window spans. "The average spend per week across the last 4 weeks" is measure "avg-per", per "week", timeWindow {"kind":"last-weeks","weeks":4} — NOT "avg", which would answer with the average transaction. "The average spend per month over the previous 4 months, not including the current one" is measure "avg-per", per "month", timeWindow {"kind":"previous-months","months":4}: that window is the four whole months before this one and it steps forward on its own when the month turns, which a custom window cannot do. An "avg-per" metric must not group and must not use timeWindow "all".
-- groupBy: the column whose values become the rows, e.g. "date" or "category". A metric takes none; table and bar require one; line requires a date one.
-- columns: the "list" presentation's own columns, in order, naming 1-6 of the database's columns, e.g. ["date","payee","category","amount"]. A "list" is NOT an aggregate: it prints one line per row, newest first, and takes no measure, no groupBy and no timeBucket — so it needs 'columns' and they must be real column ids. Use it whenever the operator asks to see the recent ROWS themselves ("the recent transactions", "what did I enter this month"), and "table" when they want totals.
+- presentation is ONLY the drawing. metric, table, bar and line all read the same dataset, so changing one must never change groupBy, timeBucket or measure — the operator's own presentation buttons change nothing else. Choose by the question: metric for one headline number, table for exact values, bar to compare categories or periods, line for a trend over time, a row object for the transactions themselves. If the operator asks which chart suits their data, say which and why before saving it.
+- groupBy: the column whose values become the rows, e.g. "date" or "category". Omit for one total. A metric MAY group — the number it draws is the fold over the groups (the total across months, or the average of their totals) — so never strip a groupBy to make a metric.
+- columns: a ROW object's columns, in order, naming 1-6 of the database's columns, e.g. ["date","payee","category","amount"]. Naming columns makes the object raw: it prints one line per row, newest first, and draws as "list" or "table" — it takes no groupBy, no timeBucket, no seriesBy and no meaningful measure. Column ids must be real. Use it whenever the operator asks to see the recent ROWS themselves ("the recent transactions", "what did I enter this month"), and an aggregate table when they want totals.
+- databaseId (inside a block): the database THIS object reads, when it is not the card's — another database of the same domain. Use it to put two subjects in one card (transactions and accounts), but keep each object's column ids inside its own database.
+- from (inside a block): build the object on an EARLIER object's rows instead of a database. measure "avg" over a monthly table gives the average month; "sum" gives the total; "last" the latest. \`from\` takes no groupBy, timeWindow, filters, seriesBy or measureColumnId. This is the way to express an average of TOTALS — do not compute it by hand.
+- seriesBy: split each group into series on a category column (select/relation/text/boolean), with measure "sum" or "count". A chart gets a legend and one colour per series; a table gets one column per series plus a total. Use it for "spending by month by category".
+- display: styling only — palette ("accent" | "warm" | "cool" | "mono"), legend, xLabel, yLabel, valueLabels. It never changes the query.
 - timeBucket ("day" | "week" | "month") to collapse a date groupBy into periods. "week" is Monday-start and labels rows 2026-W41; "month" labels them 2026-10. This is how a weekly table is asked for.
 - timeColumnId: the date column the window acts on, required whenever timeWindow is set.
 - timeWindow: "all" (default), "today", "this-week", "this-month", "last-30-days", "this-year", or {"kind":"last-weeks","weeks":8} for a trailing week count, or {"kind":"last-months","months":6} for trailing calendar months (the current one included, and partial), or {"kind":"previous-months","months":4} for the whole months BEFORE the current one, or {"kind":"custom","start":"YYYY-MM-DD","end":"YYYY-MM-DD"}. The named windows are LIVE: they are recomputed from the current date every time the card is drawn, so "today" means today and tomorrow it means tomorrow. NEVER write a date into a 'filters' entry to mean today, yesterday, or this week — that produces a card that recomputes perfectly and can never change, which is the stuck card the operator has complained about. A literal date belongs in a filter only when the operator names that specific day.
 - filters (array of {columnId, op, value}), sort ({by:"label"|"value", dir:"asc"|"desc"}), limit (1-50, default 12), convertToZar (finance amount measures only), span (2 for the full row).
-A "weekly summary of expenses" over the finance kit is therefore ONE composed spec: databaseId "finance:transactions", and a 'blocks' array holding a metric panel (measure "sum", measureColumnId "amount", no groupBy, timeWindow last-weeks 8) and a table panel (groupBy "date", timeBucket "week", timeColumnId "date", same window). Blocks are panels of one card, not several views; whatever a block omits it inherits from the top-level fields. Pass the spec as a JSON OBJECT — the arguments are already JSON, so never stringify or escape it.
+A "weekly summary of expenses" over the finance kit is therefore ONE composed spec: databaseId "finance:transactions", and a 'blocks' array holding a metric object (measure "sum", measureColumnId "amount", no groupBy, timeWindow last-weeks 8) and a table object (groupBy "date", timeBucket "week", timeColumnId "date", same window). Objects are parts of one card, not several views; whatever an object omits it inherits from the top-level fields. Pass the spec as a JSON OBJECT — the arguments are already JSON, so never stringify or escape it.
 
-AN AVERAGE PER WEEK OR PER MONTH is its own one-number card, and the whole spec is the query — there is nothing to compute by hand and no totals to divide yourself: {"databaseId":"finance:transactions","title":"Average monthly spend","presentation":"metric","measure":"avg-per","per":"month","measureColumnId":"amount","timeColumnId":"date","timeWindow":{"kind":"previous-months","months":4},"limit":12}. The same card per week uses per "week" and {"kind":"last-weeks","weeks":4}. Put it BESIDE the table it summarises by making it one block of a composed card, with the month-by-month table (groupBy "date", timeBucket "month", same window) as the other block.
+AN AVERAGE PER WEEK OR PER MONTH is its own object, and the whole spec is the query — there is nothing to compute by hand: {"databaseId":"finance:transactions","title":"Average monthly spend","presentation":"metric","measure":"avg-per","per":"month","measureColumnId":"amount","timeColumnId":"date","timeWindow":{"kind":"previous-months","months":4},"limit":12}. The same card per week uses per "week" and {"kind":"last-weeks","weeks":4}. Put it BESIDE the table it summarises by making it one object of a composed card, with the month-by-month table (groupBy "date", timeBucket "month", same window) as the other object. An average OF monthly totals is a different request and uses from: the months table is object "months", and {"id":"average","title":"Average month","presentation":"metric","from":"months","measure":"avg"} is the object beside it.
 
 "THE RECENT TRANSACTIONS" IS A LIST, NOT A TABLE. When the operator wants the rows themselves rather than totals, the card is one block with presentation "list" and its own columns — e.g. {"databaseId":"finance:transactions","title":"Recent transactions","presentation":"list","columns":["date","payee","category","amount"],"timeColumnId":"date","timeWindow":{"kind":"last-weeks","weeks":8},"limit":12}. It takes no measure, no groupBy and no timeBucket, and it prints newest first on its own: do not add a sort. Never answer this by reading the rows with list_rows and writing them into your reply — the spec is the query, and the card keeps itself current.
 
-CHANGING A CARD. get_dashboard or list_views gives you the card's viewId; get_view gives you its whole spec. Change the field you mean to change — one block's presentation from "table" to "bar", its timeBucket from "month" to "week", its timeWindow — and send the whole spec back through save_view with the same viewId. That updates the card in place and keeps its position on the board. Omitting viewId creates a new card instead.
+CHANGING A CARD. get_dashboard or list_views gives you the card's viewId; get_view gives you its whole spec. Change the field you mean to change — one object's presentation from "table" to "bar" (a drawing only, never a query change), its timeBucket from "month" to "week", its timeWindow, its display colours — and send the whole spec back through save_view with the same viewId. That updates the card in place and keeps its position on the board. Omitting viewId creates a new card instead.
 
 The board has a page lock you never change. Unlocked, save_view lands at once; locked, the same call files one pending Decision that saves and pins the card when the operator approves, so say a Decision is waiting rather than that the card is on the board. arrange_dashboard only reorders or unpins cards that already exist, and it takes the COMPLETE pin list from get_dashboard.
 
@@ -656,6 +663,127 @@ export function ensureRootCompanionHeader(
   const joined = next.join(nl);
   if (rootYaml.endsWith("\n") && !joined.endsWith("\n")) return joined + nl;
   return joined;
+}
+
+/**
+ * The `mcp_servers.<name>` entry in any config, as a line range.
+ *
+ * Unlike `rootCompanionBlock` above (which is deliberately the narrow shape the
+ * root writer supports), this walks any indentation, because a profile config
+ * may have been hand-edited. It is used only by the DOOR-01 neutraliser below.
+ */
+function mcpServerEntryRange(
+  lines: string[],
+  name: string,
+): { start: number; end: number; indent: string } | null {
+  const escaped = escapeRegExp(name);
+  const entry = new RegExp(`^([ \\t]+)${escaped}:[ \\t]*(?:#.*)?$`);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const match = entry.exec(line);
+    if (!match) continue;
+    let earlier = i - 1;
+    while (earlier >= 0 && (lines[earlier] ?? "").trim() === "") earlier -= 1;
+    if (earlier < 0) continue;
+    const parent = /^([ \t]*)mcp_servers:[ \t]*$/.exec(lines[earlier] ?? "");
+    if (!parent) continue;
+    const indent = match[1] ?? "";
+    if (indent.length <= (parent[1] ?? "").length) continue;
+    let end = i + 1;
+    while (end < lines.length) {
+      const next = lines[end] ?? "";
+      if (next.trim() !== "") {
+        const own = /^([ \t]*)/.exec(next)?.[1] ?? "";
+        if (own.length <= indent.length) break;
+      }
+      end += 1;
+    }
+    return { start: i, end, indent };
+  }
+  return null;
+}
+
+/** Remove `mcp_servers:` itself when the entry removal left it with no children. */
+function pruneEmptyMcpServers(lines: string[]): string[] {
+  const header = lines.findIndex((line) => /^([ \t]*)mcp_servers:[ \t]*$/.test(line));
+  if (header < 0) return lines;
+  const indent = /^([ \t]*)/.exec(lines[header] ?? "")?.[1] ?? "";
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (line.trim() === "") continue;
+    const own = /^([ \t]*)/.exec(line)?.[1] ?? "";
+    if (own.length > indent.length) return lines; // still has a server under it
+    break;
+  }
+  return [...lines.slice(0, header), ...lines.slice(header + 1)];
+}
+
+/**
+ * DOOR-01: remove this app's `mcp_servers.lifequest` entry from a profile
+ * config.
+ *
+ * A door that did not bind must not leave a url (or a bearer) in the Hermes
+ * profile: the host would connect to whichever process owns the local port and
+ * hand it the companion credential. Removing the whole entry is the neutral
+ * state — the host simply has no lifequest server until a later bind writes one
+ * — and every other `mcp_servers` entry and top-level key is preserved.
+ */
+export function removeCompanionMcpEntry(
+  yaml: string,
+  name: string = "lifequest",
+): string {
+  if (!yaml) return yaml;
+  const nl = lineBreak(yaml);
+  const lines = yaml.split(/\r?\n/);
+  const range = mcpServerEntryRange(lines, name);
+  if (!range) return yaml;
+  const next = pruneEmptyMcpServers([...lines.slice(0, range.start), ...lines.slice(range.end)]);
+  return next.join(nl);
+}
+
+/**
+ * DOOR-01: remove only the `Authorization` header (and an emptied `headers:`
+ * block) from the root config's `mcp_servers.lifequest` entry.
+ *
+ * The root config belongs to the operator's Hermes install and may list other
+ * servers (and its own keys on our entry), so the writer this pairs with only
+ * ever adds a header there. The neutraliser must therefore not delete the
+ * operator's entry: it strips the credential and leaves the rest exactly as it
+ * was. A root config with no such entry is returned unchanged.
+ */
+export function removeCompanionAuthorizationHeader(
+  yaml: string,
+  name: string = "lifequest",
+): string {
+  if (!yaml) return yaml;
+  const nl = lineBreak(yaml);
+  let lines = yaml.split(/\r?\n/);
+  const first = mcpServerEntryRange(lines, name);
+  if (!first) return yaml;
+  const auth = /^[ \t]*authorization[ \t]*:/i;
+  lines = lines.filter((line, index) => !(index > first.start && index < first.end && auth.test(line)));
+  // Drop a `headers:` block that now has no children, so the entry stays valid
+  // YAML instead of carrying an empty mapping.
+  const current = mcpServerEntryRange(lines, name);
+  if (current) {
+    for (let i = current.start + 1; i < current.end; i += 1) {
+      if (!/^[ \t]*headers:[ \t]*$/.test(lines[i] ?? "")) continue;
+      const headerIndent = /^([ \t]*)/.exec(lines[i] ?? "")?.[1].length ?? 0;
+      let hasChild = false;
+      for (let j = i + 1; j < current.end; j += 1) {
+        const line = lines[j] ?? "";
+        if (line.trim() === "") continue;
+        const own = /^([ \t]*)/.exec(line)?.[1].length ?? 0;
+        if (own > headerIndent) hasChild = true;
+        break;
+      }
+      if (!hasChild) {
+        lines = [...lines.slice(0, i), ...lines.slice(i + 1)];
+        break;
+      }
+    }
+  }
+  return lines.join(nl);
 }
 
 /**

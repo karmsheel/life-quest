@@ -4,9 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
 import { getPage } from "./pages.ts";
-import { vaultPaths } from "./paths.ts";
+import { assertPhysicalContainment, vaultPaths } from "./paths.ts";
 import { isDomainLive } from "./domain-databases.ts";
 import { toSqlBindable } from "./sql-bind.ts";
+import { EGRESS_MAX_BODY_BYTES, fetchPublicText } from "./egress.ts";
 import type {
   Actor,
   PageBlock,
@@ -20,6 +21,15 @@ import type {
 
 const MAX_ROWS = 200;
 const MAX_BODY = 65536;
+/**
+ * KAR-56 script blocks are an operator convenience, not a batch language: five
+ * statements and five fetches is far past any block the product has ever shown,
+ * and the cap keeps one block from wedging the synchronous main-process call.
+ */
+const MAX_QUERIES = 5;
+const MAX_FETCHES = 5;
+/** A script is a statement or a small JSON object, never a document. */
+const MAX_SOURCE_LENGTH = 16 * 1024;
 const READ_ONLY_ERROR = "Script queries must be a single read-only SELECT";
 
 const FORBIDDEN_WORDS = [
@@ -36,7 +46,19 @@ const FORBIDDEN_WORDS = [
   "reindex",
   "pragma",
   "load_extension",
+  // `WITH RECURSIVE` starts with `with`, so the statement check above lets it
+  // through, and SQLite will happily build an unbounded result set from it. A
+  // script block has no legitimate recursive query against the row store.
+  "recursive",
 ];
+
+/**
+ * Functions a read-only script has no use for and which can allocate or touch
+ * files outside the row store. `randomblob(500_000_000)` measured as a 4 s,
+ * 500 MB allocation inside the synchronous main-process call, so the argument is
+ * not something a bounds check on the result set can contain.
+ */
+const BANNED_FUNCTIONS = ["randomblob", "zeroblob", "readfile", "writefile", "load_extension"];
 
 type ScriptParam = string | number | boolean | null;
 
@@ -66,6 +88,11 @@ function checkReadOnly(sql: string): Result<string> {
       return { ok: false, error: READ_ONLY_ERROR };
     }
   }
+  for (const fn of BANNED_FUNCTIONS) {
+    if (new RegExp(`\\b${fn}\\s*\\(`, "i").test(body)) {
+      return { ok: false, error: `Script queries cannot use ${fn}()` };
+    }
+  }
   return { ok: true, value: body };
 }
 
@@ -84,6 +111,12 @@ function checkParams(raw: unknown): Result<ScriptParam[]> {
 
 /** Parse the pasted source into queries + fetches. Never evaluates code. */
 export function parseScriptSource(source: string): Result<ParsedScript> {
+  if (typeof source !== "string") {
+    return { ok: false, error: "Script source must be a string" };
+  }
+  if (source.length > MAX_SOURCE_LENGTH) {
+    return { ok: false, error: `Script source is longer than ${MAX_SOURCE_LENGTH} characters` };
+  }
   const trimmed = source.trim();
   if (!trimmed) return { ok: true, value: { queries: [], fetches: [] } };
 
@@ -103,6 +136,9 @@ export function parseScriptSource(source: string): Result<ParsedScript> {
     if (obj.queries !== undefined) {
       if (!Array.isArray(obj.queries)) {
         return { ok: false, error: "Script queries must be an array" };
+      }
+      if (obj.queries.length > MAX_QUERIES) {
+        return { ok: false, error: `A script may run at most ${MAX_QUERIES} queries` };
       }
       for (const entry of obj.queries) {
         if (!entry || typeof entry !== "object") {
@@ -124,6 +160,9 @@ export function parseScriptSource(source: string): Result<ParsedScript> {
     if (obj.fetches !== undefined) {
       if (!Array.isArray(obj.fetches)) {
         return { ok: false, error: "Script fetches must be an array" };
+      }
+      if (obj.fetches.length > MAX_FETCHES) {
+        return { ok: false, error: `A script may fetch at most ${MAX_FETCHES} URLs` };
       }
       for (const entry of obj.fetches) {
         if (!entry || typeof entry !== "object") {
@@ -150,9 +189,15 @@ export function parseScriptSource(source: string): Result<ParsedScript> {
 }
 
 async function defaultFetch(url: string): Promise<{ status: number; body: string }> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  const text = await res.text();
-  return { status: res.status, body: text.slice(0, MAX_BODY) };
+  // https only, public host only, manual re-validated redirects, streamed byte
+  // cap. See `egress.ts`: this is the same guard the FX refresh uses, because
+  // both fetch a URL that came from data the attacker may control.
+  const res = await fetchPublicText(url, {
+    timeoutMs: 5_000,
+    maxBytes: Math.min(MAX_BODY, EGRESS_MAX_BODY_BYTES),
+    maxRedirects: 3,
+  });
+  return { status: res.status, body: res.body };
 }
 
 async function runQueries(
@@ -184,6 +229,7 @@ async function runQueries(
   }
 
   try {
+    await assertPhysicalContainment(root, sqlitePath, "read");
     await fs.access(sqlitePath);
   } catch {
     // Never create the file. Queries stay empty; fetches still run.
@@ -199,13 +245,24 @@ async function runQueries(
       const columns = stmt.columns().map((c: { name: string }) => c.name);
       // Bind through `toSqlBindable`: a script may write `true` for a flag, and
       // node:sqlite refuses a boolean at bind time (see `sql-bind.ts`).
-      const all = stmt.all(...q.params.map(toSqlBindable)) as Array<
+      //
+      // Iterate rather than `.all()`: the cap must bound the WORK, not just the
+      // answer. `.all()` builds the entire result set in memory before the slice
+      // (200k rows measured 375 ms and a hostile query can be far larger), while
+      // stopping the iterator at MAX_ROWS finalises the statement with the same
+      // cheap `LIMIT`-like effect.
+      const rows: Array<Array<unknown>> = [];
+      let truncated = false;
+      for (const row of stmt.iterate(...q.params.map(toSqlBindable)) as Iterable<
         Record<string, unknown>
-      >;
-      const rows = all
-        .slice(0, MAX_ROWS)
-        .map((r) => columns.map((c: string) => r[c] ?? null));
-      if (all.length > MAX_ROWS) warnings.push("Query truncated to 200 rows");
+      >) {
+        if (rows.length >= MAX_ROWS) {
+          truncated = true;
+          break;
+        }
+        rows.push(columns.map((c: string) => row[c] ?? null));
+      }
+      if (truncated) warnings.push("Query truncated to 200 rows");
       out.push({ sql: q.sql, columns, rows });
     }
   } catch (e) {
@@ -314,6 +371,7 @@ export async function applyScriptBlock(
     };
 
     const filePath = vaultPaths(root).domainPage(input.domainSlug, input.pageId);
+    await assertPhysicalContainment(root, filePath, "write");
     await atomicWriteFile(filePath, `${JSON.stringify(updated, null, 2)}\n`);
 
     await appendLog(root, {

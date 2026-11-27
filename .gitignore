@@ -18,3 +18,10 @@ release
 
 # E2E artifacts (reproduce with `node e2e/composer-autogrow.electron.mjs`)
 apps/desktop/e2e/artifacts/
+
+# local npm cache for sandboxed installs
+.npm-cache/
+
+# MkDocs staging and build output (docs site is generated in CI)
+.docs-build/
+site/

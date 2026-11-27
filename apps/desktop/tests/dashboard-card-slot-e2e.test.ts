@@ -53,7 +53,7 @@ const MAIN_BUNDLE = path.join(desktopRoot, "dist-electron/main.js");
  *    Decision path is a second implementation of the placement rule — in
  *    `decisions.ts` rather than in `views-tools.ts` — and the one a fix to the
  *    first would have left behind.
- *  - The edited card is third of seven, asserted as a precondition: on a board of
+ *  - The edited card is third of nine, asserted as a precondition: on a board of
  *    two, "it kept its index" is true of a card that had nowhere to go.
  *
  * It needs the Vite dev server (the harness page) and the built `dist-electron`
@@ -185,7 +185,7 @@ describe("dashboard card slot e2e", () => {
     assert.equal(report.checks.doorReady, true, "the MCP door never answered");
 
     // ── the instrument, asserted before the claim is read ───────────────────
-    // Third of seven, and the board scrolls. Both are preconditions: a card that
+    // Third of nine, and the board scrolls. Both are preconditions: a card that
     // is already last has nowhere to move to, and a board that fits on screen has
     // only one place on it.
     assert.ok(report.editIndex > 0, "the fixture put the edited card first");

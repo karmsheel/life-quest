@@ -71,7 +71,7 @@ const SAMPLE = `(() => {
     active: el.classList.contains("nav-rail__link--active"),
   }));
   const tabs = Array.from(
-    document.querySelectorAll(".top-bar__wings .ui-segmented__option"),
+    document.querySelectorAll(".nav-rail__wings .ui-segmented__option"),
   ).map((el) => ({
     label: text(el),
     selected: el.getAttribute("aria-selected") === "true",
@@ -831,9 +831,12 @@ async function run() {
     );
 
     // ── 9. the wide page spreads the strip and the box apart ─────────────────
-    win.setContentSize(1800, 1040);
+    // 78rem is the page's own width, and the wide sidebar takes more of the
+    // frame than the old icon rail did — so the window that gives the page its
+    // two columns is wider too.
+    win.setContentSize(2000, 1040);
     await waitFor(
-      `window.innerWidth >= 1790`,
+      `window.innerWidth >= 1990`,
       "the wide window",
     );
     await js(
@@ -950,9 +953,9 @@ async function run() {
     // with it: the documents, the box and the title stay exactly where they were,
     // and the reclaimed width opens as empty page past the box.
     check(
-      "the chat toggle collapsed the dock",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the dock's own collapse control collapsed the dock",
+      await clickSelector('[data-testid="chat-collapse"]'),
+      "no chat collapse control",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
@@ -988,9 +991,9 @@ async function run() {
     }
     screenshots.push(await shoot("wide-collapsed"));
     check(
-      "the chat toggle reopened the dock",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the floating launcher reopened the dock",
+      await clickSelector(".chat-launcher"),
+      "no chat launcher",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,
@@ -1001,7 +1004,7 @@ async function run() {
     // edge, past the box, and the header follows the box to the leading one.
     check(
       "the chat-side switch clicked",
-      await clickSelector(".window-titlebar__side-switch"),
+      await clickSelector('[data-testid="chat-side-switch"]'),
       "no chat-side switch",
     );
     await waitFor(
@@ -1063,9 +1066,9 @@ async function run() {
     // The leading dock has its own inset, and collapsing it must hold the page
     // still on that side too.
     check(
-      "the leading chat toggle collapsed the dock",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the leading dock's collapse control collapsed the dock",
+      await clickSelector('[data-testid="chat-collapse"]'),
+      "no chat collapse control",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
@@ -1097,9 +1100,9 @@ async function run() {
     }
     screenshots.push(await shoot("wide-left-collapsed"));
     check(
-      "the leading chat toggle reopened the dock",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the leading dock's launcher reopened it",
+      await clickSelector(".chat-launcher"),
+      "no chat launcher",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,
@@ -1109,7 +1112,7 @@ async function run() {
     // Put the dock back where it started for the rest of the run.
     check(
       "the chat-side switch restored the dock",
-      await clickSelector(".window-titlebar__side-switch"),
+      await clickSelector('[data-testid="chat-side-switch"]'),
       "no chat-side switch",
     );
     await waitFor(
@@ -1127,9 +1130,9 @@ async function run() {
     const narrow = await sample();
     checks.narrow = narrow.layout;
     check(
-      "the chat toggle collapsed the dock at the narrow size",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the dock's collapse control collapsed it at the narrow size",
+      await clickSelector('[data-testid="chat-collapse"]'),
+      "no chat collapse control",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
@@ -1157,9 +1160,9 @@ async function run() {
       );
     }
     check(
-      "the narrow chat toggle reopened the dock",
-      await clickSelector(".window-titlebar__chat-toggle"),
-      "no chat toggle",
+      "the narrow dock's launcher reopened it",
+      await clickSelector(".chat-launcher"),
+      "no chat launcher",
     );
     await waitFor(
       `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,

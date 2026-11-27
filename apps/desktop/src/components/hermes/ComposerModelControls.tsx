@@ -38,8 +38,12 @@ const EFFORT_LABELS: Record<string, string> = {
   max: "Max",
 };
 
-/** Last path segment of a model id: `stealth/space-bunny-alpha` → the alpha. */
-function shortModelLabel(model: string): string {
+/**
+ * Last path segment of a model id: `stealth/space-bunny-alpha` → the alpha.
+ * Exported because the thread's retired-model notice names the same model the
+ * way the pill does.
+ */
+export function shortModelLabel(model: string): string {
   const id = model.trim();
   const slash = id.lastIndexOf("/");
   const tail = slash >= 0 ? id.slice(slash + 1) : id;
@@ -77,13 +81,29 @@ function providerName(catalog: CompanionModelCatalog, slug: string): string {
 export function ComposerModelControls({
   catalog,
   disabled,
+  sessionModel,
   pick,
   onChange,
+  continuedReason,
 }: {
   catalog: CompanionModelCatalog | null;
   disabled: boolean;
+  /**
+   * The model the open chat's gateway session is locked to, when the gateway
+   * reported one. With no pick set, this — not the profile default — is what
+   * the next turn actually runs on, so the pill names it.
+   */
+  sessionModel?: string | null;
   pick: CompanionRuntimeOverride;
   onChange: (next: CompanionRuntimeOverride) => void;
+  /**
+   * Set when the open chat is being continued from another surface over the
+   * gateway WebSocket. That door carries a prompt only, so the per-turn model
+   * and thinking picks cannot ride it: both pills are drawn disabled with this
+   * sentence as their title and accessible name. The chat keeps running on the
+   * model it was started with either way.
+   */
+  continuedReason?: string;
 }) {
   const [openMenu, setOpenMenu] = useState<"model" | "reasoning" | null>(null);
   const [providerSlug, setProviderSlug] = useState("");
@@ -101,8 +121,9 @@ export function ComposerModelControls({
 
   const pickedProvider = (pick.provider ?? "").trim();
   const pickedModel = (pick.model ?? "").trim();
+  const sessionPickedModel = (sessionModel ?? "").trim();
   const effectiveProvider = pickedProvider || catalog?.current.provider || "";
-  const effectiveModel = pickedModel || catalog?.current.model || "";
+  const effectiveModel = pickedModel || sessionPickedModel || catalog?.current.model || "";
   const choice = catalog ? findChoice(catalog, effectiveProvider, effectiveModel) : null;
   const listProvider = providerSlug || effectiveProvider || catalog?.providers[0]?.slug || "";
   const list = catalog?.providers.find((p) => p.slug === listProvider);
@@ -116,10 +137,12 @@ export function ComposerModelControls({
 
   // A pill must not stay open once the composer is unusable — the row is
   // disabled while a turn streams, and a menu left hanging over a live turn
-  // would offer a pick that could not be applied to it.
+  // would offer a pick that could not be applied to it. A continued chat's
+  // pills can never be applied either, so its menu closes the same way.
+  const picksLocked = disabled || Boolean(continuedReason);
   useEffect(() => {
-    if (disabled) setOpenMenu(null);
-  }, [disabled]);
+    if (picksLocked) setOpenMenu(null);
+  }, [picksLocked]);
 
   // The row keeps the panel's own menu idiom (see the chat and chain rows):
   // Escape and a click outside close it, the trigger toggles it.
@@ -169,7 +192,9 @@ export function ComposerModelControls({
 
   const modelTitle = pickedModel
     ? `Model: ${effectiveModel} on ${providerName(catalog, effectiveProvider)} — click to change`
-    : `Model: the profile's own default (${effectiveModel || "unknown"}) — click to choose another`;
+    : sessionPickedModel
+      ? `Model: ${effectiveModel} — this chat's own model — click to change`
+      : `Model: the profile's own default (${effectiveModel || "unknown"}) — click to choose another`;
 
   const canDisableReasoning = choice?.canDisableReasoning === true;
   // Mirrors the Desktop reasoning pill: it is present whenever the catalog says
@@ -182,16 +207,21 @@ export function ComposerModelControls({
       <button
         type="button"
         className="chat-panel__pill"
-        aria-label={modelTitle}
-        title={modelTitle}
+        aria-label={continuedReason ?? modelTitle}
+        title={continuedReason ?? modelTitle}
         aria-haspopup="menu"
         aria-expanded={openMenu === "model"}
         data-override={pickedModel ? "true" : "false"}
-        disabled={disabled}
+        data-continued-disabled={continuedReason ? "true" : undefined}
+        disabled={disabled || Boolean(continuedReason)}
         onClick={() => toggleMenu("model")}
       >
         <span className="chat-panel__pill-label">
-          {pickedModel ? shortModelLabel(pickedModel) : defaultLabel}
+          {pickedModel
+            ? shortModelLabel(pickedModel)
+            : sessionPickedModel
+              ? shortModelLabel(sessionPickedModel)
+              : defaultLabel}
         </span>
         {pickedModel ? <span className="chat-panel__pill-dot" aria-hidden /> : null}
         <ChevronDown size={11} aria-hidden />
@@ -266,12 +296,16 @@ export function ComposerModelControls({
         <button
           type="button"
           className="chat-panel__pill"
-          aria-label={`Thinking level: ${effortLabel(pick.reasoningEffort)} — click to change`}
-          title={`Thinking level: ${effortLabel(pick.reasoningEffort)}`}
+          aria-label={
+            continuedReason ??
+            `Thinking level: ${effortLabel(pick.reasoningEffort)} — click to change`
+          }
+          title={continuedReason ?? `Thinking level: ${effortLabel(pick.reasoningEffort)}`}
           aria-haspopup="menu"
           aria-expanded={openMenu === "reasoning"}
           data-override={pick.reasoningEffort ? "true" : "false"}
-          disabled={disabled}
+          data-continued-disabled={continuedReason ? "true" : undefined}
+          disabled={disabled || Boolean(continuedReason)}
           onClick={() => toggleMenu("reasoning")}
         >
           <span className="chat-panel__pill-label">{effortLabel(pick.reasoningEffort)}</span>

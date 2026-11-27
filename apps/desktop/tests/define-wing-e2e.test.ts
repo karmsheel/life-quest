@@ -123,7 +123,7 @@ describe("define wing (Define rail, Dream / Vision split, Documents on Home)", (
     assert.deepEqual(
       tabLabels(home),
       WING_TABS,
-      "the top bar no longer carries Home / Define / Plan / Execute / Review",
+      "the rail no longer carries Home / Define / Plan / Act / Review",
     );
 
     // Documents belongs to Home now, and is not duplicated into Define.

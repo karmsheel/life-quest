@@ -69,6 +69,14 @@ function waitForPort(port, timeoutMs = 60_000) {
   });
 }
 
+/**
+ * The dev/rig bundle keeps the e2e seam; the shipped bundle (`npm run build`,
+ * see bundle-electron.mjs) defines it false so the seam is dropped whole. Every
+ * e2e rig imports `../dist-electron/main.js`, and the bench builds it through
+ * this file, which is why the seam has to be compiled in here.
+ */
+const DEV_DEFINE = { __LIFEQUEST_E2E_SEAM__: "true" };
+
 async function bundleElectron() {
   // Main: ESM (.js, loaded natively by Electron main).
   await build({
@@ -80,6 +88,7 @@ async function bundleElectron() {
     external: ["electron"],
     sourcemap: true,
     target: "node20",
+    define: DEV_DEFINE,
     banner: {
       // The main bundle is ESM, but a bundled CommonJS dependency may still call
       // require() for a builtin. qrcode, which draws the pairing QR, does.

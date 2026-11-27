@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { atomicWriteBytes, atomicWriteFile } from "./atomic-write.ts";
 import {
   actorDisplayName,
@@ -8,7 +9,12 @@ import {
 } from "./documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
-import { vaultPaths } from "./paths.ts";
+import {
+  assertNoSymlinkLeaf,
+  assertPhysicalContainment,
+  vaultPaths,
+  VaultSymlinkError,
+} from "./paths.ts";
 import {
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
@@ -45,10 +51,28 @@ function doctrineMatter(title: string, locked: boolean, updatedAt: string) {
   return { title, locked, updatedAt };
 }
 
+/**
+ * The vault root that owns a doctrine path.
+ *
+ * Doctrine paths are always built by `vaultPaths(root).documentMd(slug, kind)`,
+ * i.e. `<root>/domains/<slug>/<kind>.md`, and the two callers (open-vault and
+ * domains) pass exactly that. Deriving the root here lets the open path — which
+ * does not hand this module the root — run the full physical walk, so a
+ * symlinked `domains` directory or domain directory is refused before its files
+ * are read. A symlink here is not a doctrine file: reading it would copy the
+ * bytes it points at (an SSH key, a config file) into the snapshot the renderer
+ * draws and agent tools return.
+ */
+function doctrineRootOf(filePath: string): string {
+  return path.dirname(path.dirname(path.dirname(path.resolve(filePath))));
+}
+
 async function readDoctrineFile(
   filePath: string,
   kind: DocumentKind,
 ): Promise<DoctrineDocument> {
+  await assertPhysicalContainment(doctrineRootOf(filePath), filePath, "read");
+  await assertNoSymlinkLeaf(filePath);
   const raw = await fs.readFile(filePath, "utf8");
   const st = await fs.stat(filePath);
   const { data, body } = parseFrontmatter(raw);
@@ -69,6 +93,19 @@ export async function readOrCreateDoctrineFile(
   try {
     return await readDoctrineFile(filePath, kind);
   } catch (e) {
+    if (e instanceof VaultSymlinkError) {
+      // Fail closed but keep the vault openable: the operator gets an empty room
+      // with the standard title instead of the target's bytes, and the file is
+      // left exactly as it is on disk (never followed, never replaced).
+      return {
+        kind,
+        title: DOCUMENT_KIND_LABELS[kind],
+        locked: false,
+        updatedAt: new Date(0).toISOString(),
+        bodyMarkdown: "",
+        mtimeMs: 0,
+      };
+    }
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
   const now = new Date().toISOString();
@@ -92,6 +129,7 @@ export async function getDocument(
     }
     const paths = vaultPaths(rootPath);
     const filePath = paths.documentMd(slug, kind);
+    await assertPhysicalContainment(rootPath, filePath, "read");
     try {
       const doc = await readDoctrineFile(filePath, kind);
       return { ok: true, value: doc };
@@ -120,6 +158,7 @@ export async function saveDocument(
     }
     const paths = vaultPaths(rootPath);
     const filePath = paths.documentMd(slug, kind);
+    await assertPhysicalContainment(rootPath, filePath, "read");
 
     let existing: DoctrineDocument;
     try {
@@ -142,6 +181,7 @@ export async function saveDocument(
       doctrineMatter(nextTitle, existing.locked, now),
       bodyMarkdown,
     );
+    await assertPhysicalContainment(rootPath, filePath, "write");
     await atomicWriteFile(filePath, md);
 
     const logRes = await appendLog(paths.root, {
@@ -176,6 +216,7 @@ export async function setDocumentLocked(
     }
     const paths = vaultPaths(rootPath);
     const filePath = paths.documentMd(slug, kind);
+    await assertPhysicalContainment(rootPath, filePath, "read");
 
     let existing: DoctrineDocument;
     try {
@@ -196,6 +237,7 @@ export async function setDocumentLocked(
       doctrineMatter(existing.title, locked, now),
       existing.bodyMarkdown,
     );
+    await assertPhysicalContainment(rootPath, filePath, "write");
     await atomicWriteFile(filePath, md);
 
     const logRes = await appendLog(paths.root, {
@@ -239,6 +281,7 @@ export async function saveDocumentMedia(
     }
     const name = `${randomUUID()}.${kind.ext}`;
     const filePath = paths.domainMediaFile(slug, name);
+    await assertPhysicalContainment(rootPath, filePath, "write");
     await atomicWriteBytes(filePath, input.bytes);
     return { ok: true, value: { relPath: `media/${name}` } };
   } catch (e) {
@@ -260,6 +303,8 @@ export async function readDocumentMedia(
     const mime = EXT_MIME[ext];
     if (!mime) return { ok: false, error: `Unsupported image type: ${ext}` };
     const filePath = vaultPaths(rootPath).domainMediaFile(slug, name);
+    await assertPhysicalContainment(rootPath, filePath, "read");
+    await assertNoSymlinkLeaf(filePath);
     const buf = await fs.readFile(filePath);
     return { ok: true, value: { bytes: new Uint8Array(buf), mime } };
   } catch (e) {

@@ -13,6 +13,7 @@ export function SegmentedControl<T extends string>({
   ariaLabel,
   className = "",
   disabled = false,
+  size = "md",
 }: {
   value: T;
   options: SegmentedOption<T>[];
@@ -20,10 +21,22 @@ export function SegmentedControl<T extends string>({
   ariaLabel: string;
   className?: string;
   disabled?: boolean;
+  /**
+   * `sm` is the settings-row size: it sits on the label's own line rather than
+   * under it, so the row reads as one line (name left, control right) instead
+   * of a heading with a full-width bar beneath it.
+   */
+  size?: "md" | "sm";
 }) {
   return (
     <div
-      className={["ui-segmented", className].filter(Boolean).join(" ")}
+      className={[
+        "ui-segmented",
+        size === "sm" ? "ui-segmented--sm" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="group"
       aria-label={ariaLabel}
     >

@@ -1,10 +1,19 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { chatQuestionsFromUnknown, parseChatQuestionsPatch } from "./chat-questions.ts";
+import {
+  decisionInboxFromUnknown,
+  parseDecisionInboxPatch,
+} from "./decision-inbox.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
-import type { AgentHire, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
+import {
+  parseReviewAvailabilityPatch,
+  reviewAvailabilityFromUnknown,
+} from "./review-availability.ts";
+import type { AgentHire, AgentScope, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
 
@@ -120,9 +129,40 @@ async function countMdFiles(dir: string): Promise<number> {
 
 export async function countWeeklyVaultFiles(rootPath: string): Promise<number> {
   const paths = vaultPaths(rootPath);
-  const reviews = await countMdFiles(paths.reviewsCadenceDir("weekly"));
+  const reviews = await countWeeklyReviewPeriods(paths.reviewsCadenceDir("weekly"));
   const planning = await countMdFiles(paths.planningCadenceDir("weekly"));
   return reviews + planning;
+}
+
+/**
+ * Weekly review periods, whichever layout they are in: a notebook directory
+ * (one holding review.json) is one period, and a compatibility-release `.md`
+ * file that the migration has not reached is one period too. Counting the
+ * directory's page files instead would inflate the count by one per area.
+ */
+async function countWeeklyReviewPeriods(dir: string): Promise<number> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw e;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      count += 1;
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+    try {
+      await fs.access(path.join(dir, entry.name, "review.json"));
+      count += 1;
+    } catch {
+      // A directory without a manifest is not a review period; leave it out.
+    }
+  }
+  return count;
 }
 
 export function autoApproveInsertsFromUnknown(value: unknown): AutoApproveInsert[] {
@@ -173,6 +213,40 @@ export async function readAutoApproveInserts(rootPath: string): Promise<AutoAppr
   }
 }
 
+/**
+ * Validate the stored scopes.
+ *
+ * A malformed entry is dropped rather than failing the whole settings write: a
+ * scope list is configuration, and one bad row must not make the vault's other
+ * settings unsavable.
+ */
+export function agentScopesFromUnknown(value: unknown): AgentScope[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: AgentScope[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = raw as { agentId?: unknown; domains?: unknown; defaultFor?: unknown };
+    const agentId = typeof entry.agentId === "string" ? entry.agentId.trim() : "";
+    if (!agentId || seen.has(agentId)) continue;
+    const clean = (list: unknown): string[] =>
+      Array.isArray(list)
+        ? Array.from(
+            new Set(
+              list.filter(
+                (slug): slug is string => typeof slug === "string" && slug.trim() !== "",
+              ),
+            ),
+          )
+        : [];
+    const domains = clean(entry.domains);
+    const defaultFor = clean(entry.defaultFor).filter((slug) => domains.length === 0 || domains.includes(slug));
+    seen.add(agentId);
+    out.push({ agentId, domains, defaultFor });
+  }
+  return out;
+}
+
 export async function updateSettings(
   rootPath: string,
   patch: Partial<VaultSettings>,
@@ -198,6 +272,18 @@ export async function updateSettings(
     const currentQuestions: ChatQuestion[] = chatQuestionsFromUnknown(
       current.chatQuestions,
     );
+    // `next` is rebuilt from named fields rather than spread from `current`, so
+    // every field this function does not know about is dropped on the next
+    // unrelated write. The new switches therefore have to be carried through
+    // explicitly, normalized so a legacy vault gains the defaults.
+    const currentInbox = decisionInboxFromUnknown(current.decisionInbox);
+    // The review windows are the other new settings block: carried through the
+    // explicit rebuild below so an unrelated write does not drop it, and
+    // normalized so a legacy vault gains the defaults on its first save.
+    const currentAvailability = reviewAvailabilityFromUnknown(
+      current.reviewAvailability,
+    );
+    const currentScopes = agentScopesFromUnknown(current.agentScopes);
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
@@ -205,6 +291,9 @@ export async function updateSettings(
       weekStartDay: currentWeekStart,
       autoApproveInserts: currentInserts,
       chatQuestions: currentQuestions,
+      decisionInbox: currentInbox,
+      reviewAvailability: currentAvailability,
+      agentScopes: currentScopes,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -253,6 +342,38 @@ export async function updateSettings(
       const parsedQuestions = parseChatQuestionsPatch(patch.chatQuestions);
       if (!parsedQuestions.ok) return parsedQuestions;
       next.chatQuestions = parsedQuestions.value;
+    }
+
+    if (patch.agentScopes !== undefined) {
+      next.agentScopes = agentScopesFromUnknown(patch.agentScopes);
+    }
+
+    if (patch.decisionInbox !== undefined) {
+      // Merge the patch over the value already stored, not over the defaults:
+      // a caller that writes one switch (the settings page sends both, but the
+      // IPC channel is public) must not silently reset the other to its default
+      // and undo a choice the operator made. Field types are still validated on
+      // the merged object, so a hand-edited string is refused.
+      const parsedInbox = parseDecisionInboxPatch({
+        ...currentInbox,
+        ...patch.decisionInbox,
+      });
+      if (!parsedInbox.ok) return parsedInbox;
+      next.decisionInbox = parsedInbox.value;
+    }
+
+    if (patch.reviewAvailability !== undefined) {
+      // Same merge rule, one level deeper: a patch may carry only the daily
+      // window (the settings page saves the single cadence it edited), and the
+      // other four have to keep what is stored rather than snap back to the
+      // defaults. The parser merges over `currentAvailability` and validates
+      // the merged windows, so a partial edit cannot smuggle in a bad value.
+      const parsedAvailability = parseReviewAvailabilityPatch(
+        patch.reviewAvailability,
+        currentAvailability,
+      );
+      if (!parsedAvailability.ok) return parsedAvailability;
+      next.reviewAvailability = parsedAvailability.value;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);

@@ -15,6 +15,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runElectronBuilder } from "./electron-builder.mjs";
 
@@ -43,6 +44,27 @@ function sha256(file) {
 function human(bytes) {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(1)} MB`;
+}
+
+/**
+ * The wiki is part of the release.
+ *
+ * `scripts/docs-check.mjs` is the same gate CI runs: the version the wiki says
+ * it covers, every route, rail label and Settings tab, every internal link and
+ * the MkDocs nav. A release built over a stale wiki is a release whose docs
+ * describe the previous one, so this refuses before electron-builder starts.
+ */
+const repoRoot = path.join(root, "..", "..");
+try {
+  execFileSync(process.execPath, [path.join(repoRoot, "scripts", "docs-check.mjs")], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+} catch {
+  console.error(
+    "[release] the wiki is out of date; fix the drift `npm run docs:check` reports, then release again.",
+  );
+  process.exit(1);
 }
 
 console.log(`[release] building ${productName} ${version} for Windows x64…`);

@@ -1,37 +1,58 @@
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
-  DatabaseBatchDecisionBody,
+  DatabaseColumnSpec,
   DatabaseColumnType,
   DatabaseDecisionBody,
+  DatabaseMergeSource,
   DatabaseMeta,
 } from "./types.ts";
 import {
   DATABASE_COLUMN_TYPES,
-  FINANCE_DB_IDS,
-  FINANCE_DOMAIN_SLUG,
 } from "./types.ts";
 import {
+  addDatabaseColumn,
   checkDatabaseCells,
   countRows,
+  createDatabase,
   getDatabase,
   getRow,
+  insertRows,
   rowDisplayLabel,
   isDomainLive,
   listDatabases,
+  describePayeeIssues,
   listRows,
+  normaliseFinancePayeeCells,
+  upsertRow,
   validateRowCells,
 } from "./domain-databases.ts";
+import {
+  MERGE_SOURCES_MAX,
+  databaseRowFingerprint,
+  describeDatabaseLifecycleRefusal,
+  isFinanceDatabase as isFinanceDb,
+  planDatabaseMerge,
+  readDatabaseColumnSignature,
+} from "./database-lifecycle.ts";
 import { listSyncConflicts } from "./adapters.ts";
 import { listInstalledKits } from "./finance-kit.ts";
-import { createDecision, listDecisions, resolveDecision } from "./decisions.ts";
-import { readAutoApproveInserts } from "./agents.ts";
+import { createDecision, listDecisions } from "./decisions.ts";
+import { appendLog } from "./log.ts";
 import { lookupExternalId } from "./ingest.ts";
 import { vaultPaths } from "./paths.ts";
 
 const INSERT_ROWS_MAX = 200;
+
+/**
+ * A table that arrives with more columns than this was almost certainly built
+ * from a copy-paste of another schema; fifty is comfortably past any table the
+ * app's own kits define. The cap also keeps one Decision's proposed body small
+ * enough for the operator to actually read before approving it.
+ */
+const CREATE_DATABASE_COLUMNS_MAX = 50;
 
 /**
  * KAR-63: one generic tool set keyed on (domainSlug, databaseId), covering every
@@ -125,11 +146,14 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "upsert_row",
     description:
-      "Propose creating or fully replacing a row in a database. Cells is a map of column id to " +
+      "Create a new row or fully replace an existing row in a database. Cells is a map of column id to " +
       "value and MUST contain the complete set of cells for an existing row (read the row with " +
-      "get_row first); this is a replace, not a patch. Every call files a Decision; the operator " +
-      "approves it in Decisions. A rejected Decision must not be retried as a silent write. " +
-      "A create in a database on the operator's insert allowlist can return posted: true. An update stays pending until the operator approves it.",
+      "get_row first); this is a replace, not a patch. " +
+      "Without an id this CREATES a row and writes it immediately: call it only after the operator " +
+      "has agreed in the chat to that row, and claim it landed only when the result says posted: true. " +
+      "With an id this is an UPDATE of data that already exists: it files one pending Decision, writes " +
+      "nothing until the operator approves it in Decisions, and a rejected Decision must not be retried " +
+      "as a silent write.",
     parameters: {
       type: "object",
       properties: {
@@ -137,7 +161,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
         databaseId: { type: "string" },
         id: {
           type: "string",
-          description: "Row id for an update. Omit entirely to create a new row (a UUID is generated).",
+          description:
+            "Row id for an update. Omit entirely to create a new row (a UUID is generated and the row is written at once).",
         },
         cells: {
           type: "object",
@@ -151,7 +176,11 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "insert_rows",
     description:
-      "Insert many new rows into one database. rows is an array of cell objects, at most 200, and this call does not take row ids. One call files one Decision titled Insert N rows into the database. Use upsert_row for a single new row or any edit. The result includes posted and rowCount. Claim that rows landed only when posted is true. status pending means one Decision is waiting; name the database and the count. status rejected includes reason; do not send those same rows again.",
+      "Insert many new rows into one database. rows is an array of cell objects, at most 200, and this " +
+      "call does not take row ids. The rows are written immediately: call it only after the operator has " +
+      "agreed in the chat to those rows. Use upsert_row with an id to change an existing row (that files " +
+      "a pending Decision). The result includes posted: true and rowCount; name the database and the row " +
+      "count. A row that fails validation is named in the error and nothing is written.",
     parameters: {
       type: "object",
       properties: {
@@ -169,8 +198,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "delete_row",
     description:
-      "Propose deleting a row by id. Files a Decision. The operator approves or rejects it in " +
-      "Decisions; a rejected Decision must not be retried silently.",
+      "Propose deleting a row by id. Deleting existing data files a pending Decision; the row is still " +
+      "there until the operator approves it in Decisions, and a rejected Decision must not be retried silently.",
     parameters: {
       type: "object",
       properties: {
@@ -184,21 +213,50 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "create_database",
     description:
-      "Propose creating a new empty database in a live domain. Files a Decision naming the database id " +
-      "it proposes. Columns are added by a separate add_column call, one per column (also " +
-      "Decision-gated).",
+      "Create a database in a live domain, optionally with its columns in the same call. This writes " +
+      "immediately: call it only after the operator has agreed in the chat to the database and its " +
+      "columns. Columns are validated first (unique names, known types, options for select, an existing " +
+      "database for relation), so a bad schema writes nothing. Returns " +
+      "{ applied: true, databaseId, name, columns } where columns is how many were created; claim the " +
+      "database exists only when applied is true. Use add_column to add a column to a database that " +
+      "already exists (that files a pending Decision). Call list_databases first and reuse an existing " +
+      "database with the same name; a duplicate name is refused.",
     parameters: {
       type: "object",
-      properties: { domainSlug: { type: "string" }, name: { type: "string" } },
+      properties: {
+        domainSlug: { type: "string" },
+        name: { type: "string" },
+        columns: {
+          type: "array",
+          description:
+            "Optional columns the new database is born with, 1 to 50. Omit for an empty database.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              type: {
+                type: "string",
+                description: "One of: text, number, date, select, checkbox, relation, file.",
+              },
+              options: { type: "array", description: "Required for type 'select'." },
+              relationDatabaseId: {
+                type: "string",
+                description: "Required for type 'relation'; an existing database in this domain.",
+              },
+            },
+            required: ["name", "type"],
+          },
+        },
+      },
       required: ["domainSlug", "name"],
     },
   },
   {
     name: "add_column",
     description:
-      "Propose adding one column to an existing database. Files a Decision. The relation target is " +
-      "an existing databaseId, so a self-referential or newly created column cannot be added in the " +
-      "same call.",
+      "Propose adding one column to an existing database. Changing an existing database's schema files a " +
+      "Decision; the column exists only after the operator approves it. The relation target is an " +
+      "existing databaseId, so a self-referential or newly created column cannot be added in the same call.",
     parameters: {
       type: "object",
       properties: {
@@ -213,6 +271,62 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
         relationDatabaseId: { type: "string", description: "Required for type 'relation'." },
       },
       required: ["domainSlug", "databaseId", "name", "type"],
+    },
+  },
+  {
+    name: "delete_database",
+    description:
+      "Propose deleting a whole database and every row in it. This removes data that already exists, so " +
+      "it files ONE pending Decision and writes nothing: the database and its rows are still there until " +
+      "the operator approves it in Decisions, and a rejected Decision must not be retried as a silent " +
+      "write. Refused, with nothing filed, when the database is linked to an outside adapter, belongs to " +
+      "the Finance kit, is the target of another database's relation column, or is read by a saved " +
+      "dashboard view; the error names what has to be removed first. Returns " +
+      "{ decisionId, status: 'pending', posted: false, databaseId, name, rowCount }.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+      },
+      required: ["domainSlug", "databaseId"],
+    },
+  },
+  {
+    name: "merge_databases",
+    description:
+      "Propose collapsing one or more duplicate databases into a target database and then deleting the " +
+      "sources. This changes data that already exists, so it files ONE pending Decision and writes " +
+      "nothing: rows move into the target only when the operator approves it in Decisions. Columns are " +
+      "matched by name; a source column with no match is added to the target; select options are " +
+      "unioned; a relation column must point at the same database in both. Each moved row keeps its own " +
+      "created and updated timestamps, and rows whose mapped cells exactly duplicate a row already in " +
+      "the target are skipped unless dedupe is false. sourceDatabaseIds must be 1 to 20 distinct " +
+      "databases in the same area as the target, and must not include it. Refused, with nothing filed, " +
+      "when any database is adapter-linked or owned by the Finance kit, or when a SOURCE is referenced " +
+      "by another database's relation column or read by a saved view. Returns " +
+      "{ decisionId, status: 'pending', posted: false, targetDatabaseId, targetName, " +
+      "sources: [{ databaseId, name, rowCount }], rowsToMove, newColumns, dedupe }.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        targetDatabaseId: {
+          type: "string",
+          description: "The database that survives and receives the moved rows.",
+        },
+        sourceDatabaseIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "1 to 20 databases to move into the target and delete.",
+        },
+        dedupe: {
+          type: "boolean",
+          description:
+            "Skip rows whose mapped cells exactly duplicate an existing target row (default true).",
+        },
+      },
+      required: ["domainSlug", "targetDatabaseId", "sourceDatabaseIds"],
     },
   },
 ];
@@ -349,13 +463,164 @@ async function liveDomainSlugs(root: string): Promise<string[]> {
 }
 
 /**
+ * Validate a create_database `columns` argument up front and return the exact
+ * specs the Decision will carry.
+ *
+ * ALL schema validation happens here rather than being split between propose and
+ * apply: the operator approves one body, so a column that only fails at apply
+ * time would turn one approval into a half-created database. The apply path
+ * still has to cope with the vault moving underneath it (a relation target
+ * deleted while the Decision sat pending), which is why it can still fail — it
+ * just cannot fail on a spec this function accepted.
+ *
+ * The rules match add_column's own engine checks, so a spec that is legal here
+ * stays legal when addDatabaseColumn runs it for real.
+ */
+async function validateNewDatabaseColumns(
+  root: string,
+  domainSlug: string,
+  raw: unknown,
+): Promise<
+  | { ok: true; columns: DatabaseColumnSpec[] }
+  | { ok: false; result: DatabaseToolResult }
+> {
+  // Absent is the pre-existing call shape: a database with no columns yet.
+  if (raw === undefined || raw === null) return { ok: true, columns: [] };
+  if (!Array.isArray(raw)) {
+    return { ok: false, result: fail("VALIDATION", "columns must be an array of column objects") };
+  }
+  if (raw.length < 1 || raw.length > CREATE_DATABASE_COLUMNS_MAX) {
+    return {
+      ok: false,
+      result: fail(
+        "VALIDATION",
+        `columns must contain 1 to ${CREATE_DATABASE_COLUMNS_MAX} column objects`,
+      ),
+    };
+  }
+
+  const columns: DatabaseColumnSpec[] = [];
+  // Case-insensitive because the operator reads the schema as a table header row,
+  // and two headers differing only in case read as one column repeated.
+  const seenNames = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const columnNumber = i + 1;
+    const entry = raw[i];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: must be a JSON object`),
+      };
+    }
+    const spec = entry as Record<string, unknown>;
+
+    if (!isNonEmptyString(spec.name)) {
+      return { ok: false, result: fail("VALIDATION", `Column ${columnNumber}: name is required`) };
+    }
+    const name = spec.name.trim();
+    if (seenNames.has(name.toLowerCase())) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: duplicate column name "${name}"`),
+      };
+    }
+    seenNames.add(name.toLowerCase());
+
+    if (!isNonEmptyString(spec.type)) {
+      return { ok: false, result: fail("VALIDATION", `Column ${columnNumber}: type is required`) };
+    }
+    const type = spec.type as DatabaseColumnType;
+    if (!(DATABASE_COLUMN_TYPES as readonly string[]).includes(type)) {
+      return {
+        ok: false,
+        result: fail(
+          "VALIDATION",
+          `Column ${columnNumber}: Unknown column type: ${type}. One of: ${DATABASE_COLUMN_TYPES.join(", ")}`,
+        ),
+      };
+    }
+
+    // Same coercion add_column applies, so a spec filed here is the spec the
+    // engine will store. A non-array options value is rejected rather than
+    // ignored: silently dropping it would propose a select with no choices.
+    let options: string[] | undefined;
+    if (spec.options !== undefined && spec.options !== null) {
+      if (!Array.isArray(spec.options)) {
+        return {
+          ok: false,
+          result: fail("VALIDATION", `Column ${columnNumber}: options must be an array`),
+        };
+      }
+      options = spec.options.map(String);
+    }
+    if (type === "select" && (!options || options.length < 1)) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: select requires at least one option`),
+      };
+    }
+
+    let relationDatabaseId: string | undefined;
+    if (spec.relationDatabaseId !== undefined && spec.relationDatabaseId !== null) {
+      if (!isNonEmptyString(spec.relationDatabaseId)) {
+        return {
+          ok: false,
+          result: fail(
+            "VALIDATION",
+            `Column ${columnNumber}: relationDatabaseId must be a non-empty string`,
+          ),
+        };
+      }
+      relationDatabaseId = spec.relationDatabaseId.trim();
+    }
+    if (type === "relation" && !relationDatabaseId) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: relation requires relationDatabaseId`),
+      };
+    }
+    if (type !== "relation" && relationDatabaseId !== undefined) {
+      return {
+        ok: false,
+        result: fail(
+          "VALIDATION",
+          `Column ${columnNumber}: relationDatabaseId is only valid for type 'relation'`,
+        ),
+      };
+    }
+    // The new database cannot be a relation target for itself (it does not exist
+    // until approval), so only a database already in this live domain qualifies.
+    if (relationDatabaseId) {
+      const target = await getDatabase(root, domainSlug, relationDatabaseId);
+      if (!target.ok) {
+        return {
+          ok: false,
+          result: fail(
+            "VALIDATION",
+            `Column ${columnNumber}: relation target not found in this domain: ${relationDatabaseId}`,
+          ),
+        };
+      }
+    }
+
+    const column: DatabaseColumnSpec = { name, type };
+    if (options) column.options = options;
+    if (relationDatabaseId) column.relationDatabaseId = relationDatabaseId;
+    columns.push(column);
+  }
+
+  return { ok: true, columns };
+}
+
+/**
  * KAR-65 §3.2: used only to title a Decision and enable the extra finance checks.
  * It is deliberately NOT used to decide whether to gate: the gate is
  * unconditional, for every database in every live domain under any sotMode.
+ *
+ * The predicate itself lives in `database-lifecycle.ts`, beside the refusal it
+ * feeds: a finance database is one of the two lifecycles' untouchable tables, and
+ * the propose and apply paths must agree about which ones those are.
  */
-const isFinanceDb = (domainSlug: string, databaseId: string): boolean =>
-  domainSlug === FINANCE_DOMAIN_SLUG &&
-  (Object.values(FINANCE_DB_IDS) as string[]).includes(databaseId);
 
 function decisionTitle(
   op: DatabaseDecisionBody["op"],
@@ -436,53 +701,64 @@ async function checkConflicts(
 }
 
 /**
- * Map a finished allowlist resolve onto the tool result.
- * Rows are already in the database when the re-read record is approved, including
- * when the decision.resolved log line failed after that write.
+ * The write policy for the database tools (operator decision, 2026-10-28).
+ *
+ * Adding data is not a change to data that already exists, so it does not wait
+ * in the approval queue: the chat confirmation is the operator's yes, and the
+ * tool then writes. That covers a NEW DATABASE (`create_database`), a NEW ROW
+ * (`upsert_row` with no id) and a BATCH OF NEW ROWS (`insert_rows`).
+ *
+ * Changing what the vault already holds still goes through Decisions:
+ * `upsert_row` with an id (an update), `delete_row`, `add_column`,
+ * `delete_database` and `merge_databases` all file one pending Decision and
+ * write nothing until the operator approves it. That
+ * is the operator's own line — "the update or delete of existing data should
+ * definitely go through the decision gate" — and it is why the direct path
+ * below is limited to creates. Deleting a whole database and moving its rows
+ * into another one (2026-11-15) are changes to data that exists, so they are on
+ * the gated side for the same reason; LAWS/DATABASES.md says so in as many
+ * words.
+ *
+ * Ingest mappings and batches keep their own gate (LAWS/DATABASES.md): they are
+ * not the companion adding a row it was asked for, they are a file import whose
+ * mapping the operator has not seen.
+ *
+ * A write applied directly is logged here, because the Life log is how the
+ * operator sees what the companion added when no Decision card exists to show
+ * it. `createDatabase` writes its own `database.created` line; rows have no
+ * engine-level log, so this is where they get one.
  */
-export function postedAllowlistResult(
-  decisionId: string,
-  rowCount: number,
-  reason: string,
-  record: { status: string; reason?: string | null } | undefined,
-): DatabaseToolResult {
-  if (record?.status === "approved") {
-    return { decisionId, status: "approved", posted: true, rowCount };
-  }
-  if (record?.status === "rejected") {
-    return {
-      decisionId,
-      status: "rejected",
-      posted: false,
+async function logAppliedRows(
+  root: string,
+  actor: Actor,
+  input: {
+    domainSlug: string;
+    databaseId: string;
+    databaseName: string;
+    rowIds: string[];
+    /** The first row's display label, for a single-row write's summary. */
+    label?: string | null;
+  },
+): Promise<void> {
+  const rowCount = input.rowIds.length;
+  const result = await appendLog(root, {
+    domainSlug: input.domainSlug,
+    type: rowCount === 1 ? "database.row.created" : "database.rows.created",
+    summary:
+      rowCount === 1
+        ? `Added ${input.label ?? "a row"} to ${input.databaseName}`
+        : `Added ${rowCount} rows to ${input.databaseName}`,
+    payload: {
+      databaseId: input.databaseId,
+      databaseName: input.databaseName,
+      rowIds: input.rowIds,
       rowCount,
-      reason: record.reason ?? reason,
-    };
-  }
-  return { decisionId, status: "pending", posted: false, rowCount, reason };
-}
-
-/** An allowlisted create resolves in this call. Anything else stays pending and writes nothing. */
-async function finishWrite(
-  root: string,
-  decisionId: string,
-  rowCount: number,
-  allow: boolean,
-): Promise<DatabaseToolResult> {
-  if (!allow) return { decisionId, status: "pending", posted: false, rowCount };
-  const resolved = await resolveDecision(root, decisionId, "approved");
-  if (resolved.ok) return postedAllowlistResult(decisionId, rowCount, "", { status: "approved" });
-  const listed = await listDecisions(root);
-  const record = listed.ok ? listed.value.find((d) => d.id === decisionId) : undefined;
-  return postedAllowlistResult(decisionId, rowCount, resolved.error, record);
-}
-
-async function allowInsert(
-  root: string,
-  domainSlug: string,
-  databaseId: string,
-): Promise<boolean> {
-  const list = await readAutoApproveInserts(root);
-  return list.some((entry) => entry.domainSlug === domainSlug && entry.databaseId === databaseId);
+    },
+    actor,
+  });
+  // The rows are already written: a log line that could not be appended is not a
+  // reason to answer the write as failed and invite the agent to write it again.
+  void result;
 }
 
 /** File the Decision and return the tool's success shape. Nothing is written here. */
@@ -506,27 +782,6 @@ async function fileDecision(
     previousBodyMarkdown: input.previousBodyMarkdown,
     // The actor is the one executeTool received, never one from args: a
     // model-controlled parameter is not an identity source.
-    actor,
-  });
-  if (!created.ok) return engineError(created.error);
-  return { decisionId: created.value.id, status: created.value.status };
-}
-
-async function fileBatchDecision(
-  root: string,
-  actor: Actor,
-  input: {
-    target: { type: "database-batch"; domainSlug: string; databaseId: string };
-    proposedTitle: string;
-    body: DatabaseBatchDecisionBody;
-  },
-): Promise<DatabaseToolResult> {
-  const created = await createDecision(root, {
-    target: input.target,
-    proposedTitle: input.proposedTitle,
-    proposedBodyMarkdown: JSON.stringify(input.body, null, 2),
-    previousBodyMarkdown: null,
-    // The actor is the function argument, never one from args.
     actor,
   });
   if (!created.ok) return engineError(created.error);
@@ -668,7 +923,7 @@ export async function executeDatabaseTool(
       };
     }
 
-    // ─── Writes. Every one of these files a Decision; nothing is written here. ──
+    // ─── Writes. A create writes now; a change to existing data files a Decision. ──
     case "upsert_row": {
       const live = await requireLiveDomain(root, args.domainSlug);
       if (!live.ok) return live.result;
@@ -682,13 +937,23 @@ export async function executeDatabaseTool(
       if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
         return fail("VALIDATION", "cells must be a JSON object keyed by column id");
       }
-      const cellMap = cells as Record<string, unknown>;
+      const rawCellMap = cells as Record<string, unknown>;
       // validateCells passes vacuously on {}, so an empty map is rejected here.
-      if (Object.keys(cellMap).length === 0) {
+      if (Object.keys(rawCellMap).length === 0) {
         return fail("VALIDATION", "cells must not be empty");
       }
 
       const { slug: domainSlug } = live;
+      // Normalise before the write is labelled or filed, so a pending Decision
+      // shows the cells that will actually land — not the polluted payee.
+      const normalisedPayee = await normaliseFinancePayeeCells(
+        root,
+        domainSlug,
+        String(args.databaseId),
+        rawCellMap,
+      );
+      const cellMap = normalisedPayee.cells;
+      const payeeWarnings = describePayeeIssues(normalisedPayee.issues);
       const databaseId = String(args.databaseId);
       const rowId = isNonEmptyString(args.id) ? String(args.id) : null;
 
@@ -712,23 +977,45 @@ export async function executeDatabaseTool(
         }
       }
 
-      // Capture the current state so the inbox shows a real before/after, and so
-      // the apply can refuse a proposal made against a row that has moved on.
-      let previousCells: Record<string, unknown> | null = null;
-      let expectedUpdatedAt: string | null = null;
-      if (rowId) {
-        const existing = await getRow(root, domainSlug, databaseId, rowId);
-        if (!existing.ok) return engineError(existing.error);
-        previousCells = existing.value.cells as Record<string, unknown>;
-        expectedUpdatedAt = existing.value.updatedAt;
-      }
-
-      // The relation-row-exists and posted-transaction rules are checked at
-      // propose time too, so a bad proposal is never filed in the first place.
+      // The relation-row-exists and posted-transaction rules are checked here
+      // for both shapes: a direct create must not write a row the engine will
+      // reject, and a pending update must not be filed against one either.
       const referential = await checkDatabaseCells(root, domainSlug, databaseId, cellMap);
       if (!referential.ok) return engineError(referential.error);
 
       const label = rowDisplayLabel(dbMeta, cellMap) || null;
+
+      // No id means a NEW row: data the operator asked to add, not a change to
+      // data the vault holds. It is written now and logged, with no Decision —
+      // the chat confirmation is the answer. An update (the branch below) is a
+      // change to existing data and always goes through the approval queue.
+      if (rowId === null) {
+        const written = await upsertRow(root, domainSlug, databaseId, { cells: cellMap });
+        if (!written.ok) return engineError(written.error);
+        await logAppliedRows(root, actor, {
+          domainSlug,
+          databaseId,
+          databaseName: dbMeta.name,
+          rowIds: [written.value.id],
+          label,
+        });
+        return {
+          posted: true,
+          applied: true,
+          databaseId,
+          rowId: written.value.id,
+          rowCount: 1,
+          ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
+        };
+      }
+
+      // Capture the current state so the inbox shows a real before/after, and so
+      // the apply can refuse a proposal made against a row that has moved on.
+      const existing = await getRow(root, domainSlug, databaseId, rowId);
+      if (!existing.ok) return engineError(existing.error);
+      const previousCells = existing.value.cells as Record<string, unknown>;
+      const expectedUpdatedAt = existing.value.updatedAt;
+
       const body: DatabaseDecisionBody = {
         op: "upsert",
         databaseName: dbMeta.name,
@@ -745,8 +1032,13 @@ export async function executeDatabaseTool(
       });
       if ("error" in filed) return filed;
       const decisionId = String((filed as { decisionId: string }).decisionId);
-      const allow = rowId === null && (await allowInsert(root, domainSlug, databaseId));
-      return finishWrite(root, decisionId, 1, allow);
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        rowCount: 1,
+        ...(payeeWarnings.length > 0 ? { warnings: payeeWarnings } : {}),
+      };
     }
 
     case "delete_row": {
@@ -799,28 +1091,65 @@ export async function executeDatabaseTool(
       const { slug: domainSlug } = live;
       const name = String(args.name).trim();
 
-      // The id is minted here, at propose time, and carried through the body. The
-      // alternative — creating the database before filing — is the ungated write
-      // this design exists to prevent, and it would leave an un-approved database
-      // behind on rejection. No name-uniqueness check: duplicate names stay legal
-      // for the agent and the operator alike.
-      const newDatabaseId = randomUUID();
-      const body: DatabaseDecisionBody = {
-        op: "create-database",
-        databaseId: newDatabaseId,
+      // Prevention belongs with the tool, not only with the prompt. The
+      // companion minted four "Supplement log" tables because "call
+      // list_databases first" is advice a model forgets; a second database whose
+      // name (trimmed, case-insensitive) already exists in this area is refused,
+      // and the message tells it which id to reuse. The Data page can still make
+      // a same-named database by hand — this rule is about the tool path.
+      const existingDatabases = await listDatabases(root, domainSlug);
+      if (existingDatabases.ok) {
+        const key = name.toLowerCase();
+        const collision = existingDatabases.value.find(
+          (entry) => entry.database.name.trim().toLowerCase() === key,
+        );
+        if (collision) {
+          return fail(
+            "VALIDATION",
+            `A database named "${collision.database.name.trim()}" already exists in ${domainSlug} ` +
+              `(id ${collision.database.id}). Use it instead of creating another; rename the new ` +
+              "one if it is genuinely different.",
+          );
+        }
+      }
+
+      const validatedColumns = await validateNewDatabaseColumns(
+        root,
+        domainSlug,
+        args.columns,
+      );
+      if (!validatedColumns.ok) return validatedColumns.result;
+
+      // A new database is data the operator asked to add, so it is written now
+      // rather than parked in the approval queue: the chat confirmation is the
+      // answer. `createDatabase` mints the id and logs `database.created`; the
+      // columns are added one by one, exactly as the old approve path did, so a
+      // database and its schema are still one call.
+      const created = await createDatabase(root, domainSlug, { name });
+      if (!created.ok) return engineError(created.error);
+      const databaseId = created.value.id;
+
+      for (let i = 0; i < validatedColumns.columns.length; i++) {
+        const spec = validatedColumns.columns[i]!;
+        const added = await addDatabaseColumn(root, domainSlug, databaseId, spec);
+        if (!added.ok) {
+          // The database itself is already written. Saying which column failed
+          // and leaving the rest to add_column is honest; reporting the whole
+          // call as "nothing happened" would not be.
+          return fail(
+            "FAILED",
+            `Database "${name}" was created, but column ${i + 1} "${spec.name}" failed: ` +
+              `${added.error}. Add the remaining columns with add_column.`,
+          );
+        }
+      }
+
+      return {
+        applied: true,
+        databaseId,
         name,
-        databaseName: name,
-        rowLabel: null,
-        previousCells: null,
-        cells: null,
-        expectedUpdatedAt: null,
+        columns: validatedColumns.columns.length,
       };
-      return fileDecision(root, actor, {
-        target: { type: "database", domainSlug, databaseId: newDatabaseId },
-        proposedTitle: decisionTitle("create-database", null, domainSlug, null, name),
-        body,
-        previousBodyMarkdown: null,
-      });
     }
 
     case "add_column": {
@@ -891,6 +1220,197 @@ export async function executeDatabaseTool(
       });
     }
 
+    // ─── Database lifecycle: one pending Decision each, nothing written. ──────
+    case "delete_database": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      // The guards are refusals, not errors: nothing is filed, and the message
+      // says what has to be removed first. They are re-checked on approve.
+      const refusal = await describeDatabaseLifecycleRefusal(root, domainSlug, databaseId);
+      if (refusal) return fail("VALIDATION", refusal);
+
+      // The row count the operator is shown and the digest the apply re-checks
+      // are read together, from the same table snapshot.
+      const rows = await databaseRowFingerprint(root, domainSlug, databaseId);
+      if (!rows.ok) return engineError(rows.error);
+
+      const body: DatabaseDecisionBody = {
+        op: "delete-database",
+        databaseName: dbMeta.name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+        rowCount: rows.value.rowCount,
+        fingerprint: rows.value.fingerprint,
+      };
+      const filed = await fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId },
+        proposedTitle: `Delete database "${dbMeta.name}"`,
+        body,
+        previousBodyMarkdown: null,
+      });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        databaseId,
+        name: dbMeta.name,
+        rowCount: rows.value.rowCount,
+      };
+    }
+
+    case "merge_databases": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.targetDatabaseId)) {
+        return fail("VALIDATION", "targetDatabaseId is required");
+      }
+      const { slug: domainSlug } = live;
+      const targetDatabaseId = String(args.targetDatabaseId).trim();
+
+      const rawSources = args.sourceDatabaseIds;
+      if (!Array.isArray(rawSources)) {
+        return fail("VALIDATION", "sourceDatabaseIds must be an array of database ids");
+      }
+      if (rawSources.length < 1 || rawSources.length > MERGE_SOURCES_MAX) {
+        return fail(
+          "VALIDATION",
+          `sourceDatabaseIds must contain 1 to ${MERGE_SOURCES_MAX} database ids`,
+        );
+      }
+      const sourceIds: string[] = [];
+      const seenSourceIds = new Set<string>();
+      for (let i = 0; i < rawSources.length; i++) {
+        if (!isNonEmptyString(rawSources[i])) {
+          return fail("VALIDATION", `sourceDatabaseIds[${i}] must be a non-empty database id`);
+        }
+        const id = String(rawSources[i]).trim();
+        if (seenSourceIds.has(id)) {
+          return fail("VALIDATION", `sourceDatabaseIds names the same database twice: ${id}`);
+        }
+        seenSourceIds.add(id);
+        sourceIds.push(id);
+      }
+      if (sourceIds.includes(targetDatabaseId)) {
+        return fail("VALIDATION", "A database cannot be merged into itself");
+      }
+      const dedupe = args.dedupe === undefined || args.dedupe === null ? true : args.dedupe;
+      if (typeof dedupe !== "boolean") {
+        return fail("VALIDATION", "dedupe must be a boolean");
+      }
+
+      const target = await getDatabase(root, domainSlug, targetDatabaseId);
+      if (!target.ok) return engineError(target.error);
+      const targetMeta = target.value;
+
+      // Adapter/kit guards apply to the target as well: it survives, but the
+      // merge writes its schema and rows. Relation/view references only block the
+      // SOURCES — a card or a relation onto the surviving table stays valid, and
+      // refusing it would block collapsing duplicates into the table the operator
+      // already reads.
+      const targetRefusal = await describeDatabaseLifecycleRefusal(
+        root,
+        domainSlug,
+        targetDatabaseId,
+        { references: false },
+      );
+      if (targetRefusal) return fail("VALIDATION", targetRefusal);
+
+      const sourceMetas: DatabaseMeta[] = [];
+      for (const sourceId of sourceIds) {
+        const meta = await getDatabase(root, domainSlug, sourceId);
+        if (!meta.ok) return engineError(meta.error);
+        const refusal = await describeDatabaseLifecycleRefusal(root, domainSlug, sourceId);
+        if (refusal) return fail("VALIDATION", refusal);
+        sourceMetas.push(meta.value);
+      }
+
+      // The column plan is what the operator approves, so a conflict in it is a
+      // refusal now rather than a half-applied merge later.
+      const plan = await planDatabaseMerge(root, domainSlug, targetMeta, sourceMetas);
+      if (!plan.ok) return engineError(plan.error);
+
+      const sources: DatabaseMergeSource[] = [];
+      let rowsToMove = 0;
+      for (const meta of sourceMetas) {
+        const rows = await databaseRowFingerprint(root, domainSlug, meta.id);
+        if (!rows.ok) return engineError(rows.error);
+        rowsToMove += rows.value.rowCount;
+        sources.push({
+          databaseId: meta.id,
+          name: meta.name,
+          rowCount: rows.value.rowCount,
+          fingerprint: rows.value.fingerprint,
+          columns: readDatabaseColumnSignature(meta),
+        });
+      }
+
+      // The merge's own digest is a summary of the source fingerprints. The
+      // per-source fields are what the apply re-checks; this one lets the card
+      // and the log carry one value for the whole move.
+      const fingerprint = createHash("sha256")
+        .update(
+          [...sources]
+            .sort((a, b) => a.databaseId.localeCompare(b.databaseId))
+            .map((source) => `${source.databaseId}:${source.fingerprint}`)
+            .join("\n"),
+        )
+        .digest("hex");
+
+      const body: DatabaseDecisionBody = {
+        op: "merge-databases",
+        databaseName: targetMeta.name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+        sources,
+        newColumns: plan.value.newColumns,
+        widenedColumns: plan.value.widenedColumns,
+        expectedColumns: readDatabaseColumnSignature(targetMeta),
+        dedupe,
+        fingerprint,
+      };
+      const filed = await fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId: targetDatabaseId },
+        proposedTitle:
+          `Merge ${sourceMetas.length} ` +
+          `${sourceMetas.length === 1 ? "database" : "databases"} into "${targetMeta.name}"`,
+        body,
+        previousBodyMarkdown: null,
+      });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      return {
+        decisionId,
+        status: "pending",
+        posted: false,
+        targetDatabaseId,
+        targetName: targetMeta.name,
+        sources: sources.map((source) => ({
+          databaseId: source.databaseId,
+          name: source.name,
+          rowCount: source.rowCount,
+        })),
+        rowsToMove,
+        newColumns: plan.value.newColumns.map((spec) => spec.name),
+        dedupe,
+      };
+    }
+
     case "insert_rows": {
       const live = await requireLiveDomain(root, args.domainSlug);
       if (!live.ok) return live.result;
@@ -915,16 +1435,29 @@ export async function executeDatabaseTool(
         (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
       )?.id;
       const seenExternal = new Set<string>();
-      const batchRows: DatabaseBatchDecisionBody["rows"] = [];
+      const batchPayeeWarnings = new Set<string>();
+      const ids: string[] = [];
+      const rows: Array<{ id: string; cells: Record<string, unknown> }> = [];
+      const labels: string[] = [];
       for (let i = 0; i < rowsArg.length; i++) {
         const rowNumber = i + 1;
         const cells = rowsArg[i];
         if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must be a JSON object keyed by column id`);
         }
-        const cellMap = cells as Record<string, unknown>;
-        if (Object.keys(cellMap).length === 0) {
+        const draftCellMap = cells as Record<string, unknown>;
+        if (Object.keys(draftCellMap).length === 0) {
           return fail("VALIDATION", `Row ${rowNumber}: cells must not be empty`);
+        }
+        const normalisedPayee = await normaliseFinancePayeeCells(
+          root,
+          domainSlug,
+          databaseId,
+          draftCellMap,
+        );
+        const cellMap = normalisedPayee.cells;
+        for (const warning of describePayeeIssues(normalisedPayee.issues)) {
+          batchPayeeWarnings.add(warning);
         }
 
         const typed = await validateRowCells(root, domainSlug, databaseId, cellMap);
@@ -946,27 +1479,34 @@ export async function executeDatabaseTool(
           seenExternal.add(externalId);
         }
 
-        batchRows.push({
-          id: randomUUID(),
-          cells: cellMap,
-          rowLabel: rowDisplayLabel(dbMeta, cellMap) || null,
-        });
+        const id = randomUUID();
+        ids.push(id);
+        rows.push({ id, cells: cellMap });
+        labels.push(rowDisplayLabel(dbMeta, cellMap) || "");
       }
 
-      const proposedTitle = `Insert ${rowsArg.length} rows into ${dbMeta.name}`;
-      const filed = await fileBatchDecision(root, actor, {
-        target: { type: "database-batch", domainSlug, databaseId },
-        proposedTitle,
-        body: { op: "insert-rows", databaseName: dbMeta.name, rows: batchRows },
+      // New rows are data the operator asked to add, so they are written now —
+      // one transaction, nothing written if any row fails. This is not a change
+      // to existing data, so there is no Decision to approve; the chat is where
+      // the operator already said yes and the Life log is where the write is
+      // recorded.
+      const written = await insertRows(root, domainSlug, databaseId, rows);
+      if (!written.ok) return engineError(written.error);
+      await logAppliedRows(root, actor, {
+        domainSlug,
+        databaseId,
+        databaseName: dbMeta.name,
+        rowIds: ids,
+        label: rows.length === 1 ? labels[0] || null : null,
       });
-      if ("error" in filed) return filed;
-      const decisionId = String((filed as { decisionId: string }).decisionId);
-      return finishWrite(
-        root,
-        decisionId,
-        rowsArg.length,
-        await allowInsert(root, domainSlug, databaseId),
-      );
+      return {
+        posted: true,
+        applied: true,
+        databaseId,
+        rowCount: rows.length,
+        rowIds: ids,
+        ...(batchPayeeWarnings.size > 0 ? { warnings: [...batchPayeeWarnings] } : {}),
+      };
     }
 
     default:

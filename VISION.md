@@ -63,13 +63,13 @@ Agents may log a conversational transaction without a Decision when amount and a
 If amount or account is missing, the companion asks in chat and does not post until the operator answers.
 Agents may apply a page script block the same way: write, then the chat names what changed, without a Decision.
 A domain-owning agent may prepare tomorrow's Daily Schedule overnight; the operator can discard it in the morning.
-Agent writes to doctrine, library, reviews, projects, goal records, Architecture templates, pages other than script blocks, pins, ingest mappings, posted ledger edits, and kit install go through Decisions.
+Agent writes to doctrine, library, reviews, projects, goal records, Blueprint templates, pages other than script blocks, pins, ingest mappings, posted ledger edits, and kit install go through Decisions.
 The companion may file those Decisions whenever a chat turn implies a document change; the operator can disable that.
 Reads do not need approval.
 The operator writes directly.
 The studio does not use an agent lock.
 Life Map is the timeline and calendar of this vault, not a second app.
-Architecture is where the operator designs day templates: habits, schedule, and the ideal day, as many as they need.
+Blueprints is where the operator designs day templates: habits, schedule, and the ideal day, as many as they need.
 Execute includes a Daily Schedule: pick a template, then record the actual day as it unfolds, rearranging when things run over or finish early.
 A habit tracker is welcome as its own Execute page and may show consecutive-day streaks there.
 Consecutive-day streaks do not live on Daily Schedule.
@@ -78,9 +78,9 @@ A capture may become a task without turning the chain into an inbox.
 Conversational money capture on the desktop is the same family as Life-Chain.
 The phone may queue a draft transaction while the studio is quit; it does not post until the companion confirms in chat.
 The phone may show a metric the operator pinned.
-It does not carry the Finance kit, edit doctrine, talk to Hermes, or open Architecture.
+It does not carry the Finance kit, edit doctrine, talk to Hermes, or open Blueprints.
 Capture may write into the vault while the studio is quit.
-Dream, Life Map, Architecture, Daily Schedule, and Act stay reachable.
+Dream, Life Map, Blueprints, Daily Schedule, and Act stay reachable.
 The studio is not a sequential unlock quest.
 
 ## The studio is the work surface
@@ -95,12 +95,13 @@ A pin board of spend and net worth is welcome, including on Overview after kit i
 A Home that feels like a metrics terminal is not.
 It does not restyle toward BERD glass, dot-grid, or novelty-first AI visuals.
 
-## Hermes is required for the studio, and is not the product
+## The companion is required for the studio, and is not the product
 
 The studio does not open without the companion.
 Capture is not the studio.
 LifeQuest owns the vault, the MCP door, and the UI.
-Hermes owns the agent loop, memory, skills, and transcripts, through one named lifequest profile in the chat pane.
+The companion owns the agent loop, memory, skills, and transcripts, wherever it runs.
+The built-in companion is Pi; a Hermes gateway on the operator's machine is an optional external sidekick.
 The desktop attaches to that profile if it is up and starts it if it is not.
 It does not bundle Hermes, and it does not kill a gateway it did not start.
 The renderer never holds the raw API key.

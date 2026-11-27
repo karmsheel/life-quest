@@ -1,6 +1,8 @@
 import type {
   DomainLens,
+  SignalPriority,
   SignalRecord,
+  SignalStatus,
   SignalType,
 } from "@lifequest/vault-core";
 
@@ -44,12 +46,110 @@ export function formatSignalTime(iso: string): string {
   }
 }
 
-export function signalDomainLabel(
-  slug: string | null,
+/**
+ * Bytes in the operator's units, for a capture's file chip and card. Exact
+ * bytes below a kilobyte, one decimal below ten in the unit ("1.4 MB"), whole
+ * numbers above it ("12 KB") — deterministic, so the same size always reads the
+ * same in both places.
+ */
+export function formatSignalFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const text = value < 10 ? value.toFixed(1) : String(Math.round(value));
+  return `${text} ${units[unit]}`;
+}
+
+/**
+ * Turn text the operator pasted into a link, or say why it is not one. A paste
+ * that carries a sentence is not this: a URL glued to other words stays text,
+ * and only a single whitespace-free absolute http(s) URL becomes a capture.
+ *
+ * Shared by the Notebox page and the dock's Notebox surface, so a paste that is
+ * a link in one place is a link in the other: one validator, not two that drift.
+ */
+export function parseLink(raw: string): { url: string } | { error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { error: "Paste the link you want to keep." };
+  if (/\s/.test(trimmed)) {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  if (trimmed.length > 2048) return { error: "That link is too long to keep." };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { error: "Links must be an absolute http or https URL." };
+  }
+  return { url: parsed.href };
+}
+
+/**
+ * The inbox's per-row area label. A row in the inbox must never paint a blank
+ * cell, and the general (unassigned) area reads "Life (general)" — the same
+ * wording the box and the area filter use, so the one state has one name.
+ */
+export function signalRowDomainLabel(
+  slug: string | null | undefined,
   domains: { slug: string; name: string }[],
 ): string {
-  if (!slug) return "- unassigned -";
+  if (!slug) return "Life (general)";
   return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/** The five triage states, as the operator reads them on a row or a chip. */
+export const SIGNAL_STATUS_LABELS: Record<SignalStatus, string> = {
+  inbox: "Inbox",
+  triaged: "Triaged",
+  acting: "Acting",
+  done: "Done",
+  dropped: "Dropped",
+};
+
+/** The three priorities, as the operator reads them. "None" is unset, not low. */
+export const SIGNAL_PRIORITY_LABELS: Record<SignalPriority, string> = {
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
+
+/**
+ * A row's status word. A record written before the inbox existed carries no
+ * status key; the store reads that as "inbox", and so does this label.
+ */
+export function signalStatusLabel(
+  status: SignalStatus | null | undefined,
+): string {
+  return (status && SIGNAL_STATUS_LABELS[status]) || SIGNAL_STATUS_LABELS.inbox;
+}
+
+/** A row's priority word: one of High/Normal/Low, or "None" when unset. */
+export function signalPriorityLabel(
+  priority: SignalPriority | null | undefined,
+): string {
+  return (priority && SIGNAL_PRIORITY_LABELS[priority]) || "None";
+}
+
+/**
+ * What a row's project cell reads: the live project's title, else the stored id
+ * (a project may have been deleted while the signal kept its link), else
+ * "No project" for an unfiled capture. Never blank.
+ */
+export function projectDisplayLabel(
+  projectId: string | null | undefined,
+  projects: readonly { id: string; title: string }[],
+): string {
+  if (!projectId) return "No project";
+  return projects.find((p) => p.id === projectId)?.title || projectId;
 }
 
 /** Overview: all. A domain tab: unassigned plus that domain. */
@@ -119,7 +219,17 @@ export function filterSignals(
     }
     if (!q) return true;
     const title = (r.title ?? "").toLowerCase();
-    return title.includes(q) || r.body.toLowerCase().includes(q);
+    const attachmentText =
+      r.attachment?.kind === "link"
+        ? r.attachment.url.toLowerCase()
+        : r.attachment?.kind === "image" || r.attachment?.kind === "file"
+          ? r.attachment.name.toLowerCase()
+          : "";
+    return (
+      title.includes(q) ||
+      r.body.toLowerCase().includes(q) ||
+      attachmentText.includes(q)
+    );
   });
 }
 
@@ -154,6 +264,47 @@ export function taskFromSignalBody(body: string): { title: string; notes: string
   }
   if (title.length > 80) title = `${title.slice(0, 80)}...`;
   return { title, notes };
+}
+
+/** The host of a stored link, for a card's label. Empty when it cannot parse. */
+export function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+/** The same 80-plus-ellipsis cap the body-derived title uses. */
+function capTaskTitle(title: string): string {
+  return title.length > 80 ? `${title.slice(0, 80)}...` : title;
+}
+
+/**
+ * What a capture becomes when it is made a task. The body leads; a capture that
+ * is only a picture or a link names itself from the attachment, so an image
+ * dropped with no words still has a handle on the Act board.
+ */
+export function taskFromSignal(signal: SignalRecord): {
+  title: string;
+  notes: string;
+} {
+  const body = signal.body.trim();
+  if (body) return taskFromSignalBody(body);
+  const attachment = signal.attachment;
+  if (attachment?.kind === "link") {
+    return {
+      title: capTaskTitle(`Link: ${linkHost(attachment.url) || attachment.url}`),
+      notes: attachment.url,
+    };
+  }
+  if (attachment?.kind === "image") {
+    return { title: capTaskTitle(`Image: ${attachment.name}`), notes: attachment.name };
+  }
+  if (attachment?.kind === "file") {
+    return { title: capTaskTitle(`File: ${attachment.name}`), notes: attachment.name };
+  }
+  return { title: "", notes: "" };
 }
 
 export function taskForSignal(

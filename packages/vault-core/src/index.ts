@@ -1,5 +1,7 @@
 export * from "./types.ts";
 export * from "./chat-questions.ts";
+export * from "./decision-inbox.ts";
+export * from "./review-availability.ts";
 export type { AutoApproveInsert } from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
@@ -9,10 +11,12 @@ export * from "./atomic-write.ts";
 export * from "./log.ts";
 export * from "./create-vault.ts";
 export * from "./open-vault.ts";
+export * from "./onboarding.ts";
 export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./decision-labels.ts";
+export * from "./manual-decisions.ts";
 export * from "./agents.ts";
 export { readAutoApproveInserts } from "./agents.ts";
 export {
@@ -33,10 +37,13 @@ export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
 export {
   commandForProjectTool,
+  executeProjectReadTool,
+  isProjectReadTool,
   projectClose,
   projectCreate,
   projectGet,
   projectList,
+  projectToolArgumentError,
   projectUpdate,
   PROJECT_TOOL_DEFS,
 } from "./projects.ts";
@@ -63,8 +70,17 @@ export {
   resolveWeek,
   TASK_COLUMNS,
   isTaskColumn,
+  RECURRENCE_UNITS,
+  RECURRING_HISTORY_LIMIT,
+  isRecurrence,
+  nextOccurrenceAfter,
+  occurrenceOnOrAfter,
+  recurringState,
+  recurringWeekEnd,
+  isIsoDate,
 } from "./map/public.ts";
 export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
+export * from "./recurrence.ts";
 export {
   commandForGoalTool,
   commandForTool,
@@ -77,13 +93,20 @@ export {
   executeDocumentTool,
 } from "./document-tools.ts";
 export {
+  ONBOARDING_TOOL_DEFS,
+  executeOnboardingTool,
+} from "./onboarding-tools.ts";
+export {
   COMPANION_ACTOR,
-  WRITE_TOOL_NAMES,
+  collectImpliedTurn,
   fileImpliedChange,
-  shouldFileImpliedTurn,
+  fileImpliedChanges,
 } from "./implied-decision.ts";
 export type {
   ImpliedChange,
+  ImpliedFilingOutcome,
+  ImpliedTurnFailure,
+  ImpliedTurnFailureReason,
   ImpliedTurnReason,
   ImpliedTurnVerdict,
 } from "./implied-decision.ts";
@@ -101,6 +124,8 @@ export {
   nextPeriod,
   isFuturePeriod,
   isCurrentPeriod,
+  periodLabel,
+  periodForDate,
   periodTitle,
   isValidLocalIsoDate,
   shiftLocalIsoDate,
@@ -110,30 +135,133 @@ export {
   type IsoWeek,
 } from "./period.ts";
 export {
+  DAILY_REVIEW_NO_AREAS,
   ensureReview,
+  ensureReviewPage,
   getReview,
+  getReviewAreaChecklist,
+  getReviewNotebook,
+  getReviewPage,
+  getReviewPageBody,
   writeReview,
+  writeReviewPage,
+  applyReviewPageBody,
   markReviewDone,
   unlockReview,
   setReviewSessionId,
   listReviewIndex,
   applyLockedReviewBody,
+  migrateLegacyReviews,
 } from "./reviews.ts";
+export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
+export {
+  REVIEW_PAGE_COMMON_HEADINGS,
+  REVIEW_PAGE_TEMPLATE_MAX_EXTRAS,
+  canonicalizeReviewPageTemplate,
+  getReviewPageTemplate,
+  parseReviewPageTemplate,
+  reviewPageTemplateSeed,
+  writeReviewPageTemplate,
+} from "./review-templates.ts";
+export type { ReviewPageTemplate } from "./review-templates.ts";
 export {
   REVIEW_SECTIONS,
-  FINANCE_SNAPSHOT_ID,
   defaultReviewSkill,
   ensureReviewSkill,
   formatSnapshotNumber,
   getReviewSkill,
   parseSnapshotDirectives,
   prepopulateReview,
+  previousPhase4DefaultReviewSkill,
+  previousShippedDefaultReviewSkill,
   renderSnapshotMarkdown,
   snapshotCloseMarker,
   snapshotOpenMarker,
   upsertSnapshotBlock,
   writeReviewSkill,
 } from "./review-skills.ts";
+export {
+  FIGURE_SECTION,
+  METRICS_OVERALL_ID,
+  formatMetricAsOf,
+  formatMetricNumber,
+  isPeriodToDate,
+  metricCloseMarker,
+  metricFigureId,
+  metricOpenMarker,
+  metricProvenanceText,
+  metricUnitSuffix,
+  metricValueText,
+  metricWindowLabel,
+  metricsOverallCloseMarker,
+  metricsOverallOpenMarker,
+  planAreaFigures,
+  planOverallFigures,
+  removeMetricsOverallBlock,
+  removeStaleMetricFigures,
+  renderMetricFigure,
+  renderMetricsOverall,
+  upsertFigureBlock,
+} from "./review-figures.ts";
+export type {
+  MetricFigurePlan,
+  MetricOverviewRow,
+  PlannedMetricFigure,
+  PlannedOverallBlock,
+} from "./review-figures.ts";
+export {
+  METRIC_ID_PATTERN,
+  METRICS_DATABASE_ID,
+  METRICS_DATABASE_NAME,
+  applyMetricDefinitionChange,
+  compileMetricSpec,
+  compileMetricSpecForVault,
+  defineMetric,
+  draftToDefineMetricInput,
+  ensureMetricsDatabase,
+  getMetric,
+  getMetricsSummary,
+  listMetricDefinitions,
+  logMetric,
+  metricDisplayValue,
+  metricMagnitude,
+  proposeMetricDefinitionChange,
+  synthesizeDerivedMetricSpec,
+} from "./metrics.ts";
+export type {
+  ApplyMetricDefinitionChangeResult,
+  DefineMetricInput,
+  GetMetricsSummaryInput,
+  LogMetricInput,
+  LoggedMetricEvent,
+  MetricBounds,
+  MetricDefinitionApplyTarget,
+  MetricErrorCode,
+  MetricEventColumns,
+  MetricResult,
+  MetricsSummaryResult,
+  ProposeMetricDefinitionChangeInput,
+} from "./metrics.ts";
+export {
+  ANALYTICS_DEFAULT_PERIODS,
+  ANALYTICS_MAX_PERIODS,
+  getAnalyticsMatrix,
+  listMetricEvents,
+} from "./analytics.ts";
+export type {
+  AnalyticsCell,
+  AnalyticsMetricRow,
+  AnalyticsMatrix,
+  AnalyticsPeriod,
+  GetAnalyticsMatrixInput,
+  ListMetricEventsInput,
+  MetricEventRow,
+  MetricEvents,
+} from "./analytics.ts";
+export {
+  METRICS_TOOL_DEFS,
+  executeMetricsTool,
+} from "./metrics-tools.ts";
 export {
   ensurePlanningStub,
   getPlanningStub,
@@ -158,20 +286,65 @@ export {
   updateIdealState,
 } from "./ideal-state.ts";
 export {
+  IMAGE_MAX_BYTES,
+  IMAGE_NAME_MAX,
+  IMAGE_CAPTION_MAX,
+  BOARD_MAX_BLOCKS,
+  BOARD_TEXT_MAX,
+  BOARD_HEADING_MAX,
+  BOARD_ITEMS_MAX,
+  BOARD_ITEM_MAX,
+  BOARD_IMAGE_CAPTION_MAX,
+  BOARD_MAX_BYTES,
+  deleteImage,
+  getVisionBoard,
+  listImages,
+  readImage,
+  saveImage,
+  saveVisionBoard,
+  sniffImageMime,
+  updateImage,
+} from "./images.ts";
+export {
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
 } from "./daily-note-tools.ts";
 export {
+  COMPANION_BRIEF_TOOL_DEFS,
+  executeCompanionBriefTool,
+} from "./companion-brief-tools.ts";
+export {
+  readCompanionBrief,
+  setCompanionBrief,
+  dismissBriefItem,
+  expireBriefItems,
+  defaultBriefExpiry,
+  endOfLocalDay,
+  BRIEF_DISMISSAL_LOG_MAX,
+  BRIEF_DISMISSAL_RETENTION_MS,
+  BRIEF_EXPIRED_VISIBLE_MS,
+  BRIEF_LONG_KIND_MS,
+  BRIEF_DISMISSALS_SHOWN,
+  COMPANION_BRIEF_WRITER_ID,
+} from "./companion-brief.ts";
+export type { CompanionBriefWriteResult } from "./companion-brief.ts";
+export {
+  isDomainLive,
   createDatabase,
   listDatabases,
   getDatabase,
   addDatabaseColumn,
+  updateDatabaseColumnOptions,
   listRows,
   countRows,
   getRow,
   upsertRow,
   insertRows,
+  insertMovedRows,
+  updateRowCellsBulk,
+  normaliseFinancePayeeCells,
   deleteRow,
+  deleteDatabase,
   checkDatabaseCells,
   validateRowCells,
   rowDisplayLabel,
@@ -180,6 +353,19 @@ export {
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
 } from "./domain-databases.ts";
+export {
+  MERGE_SOURCES_MAX,
+  applyDatabaseDelete,
+  applyDatabaseMerge,
+  columnSignatureKey,
+  databaseRowFingerprint,
+  describeDatabaseLifecycleRefusal,
+  isFinanceDatabase,
+  isTerminalDatabaseLifecycleError,
+  planDatabaseMerge,
+  readDatabaseColumnSignature,
+} from "./database-lifecycle.ts";
+export type { MergePlan } from "./database-lifecycle.ts";
 export {
   listPages,
   getPage,
@@ -221,14 +407,17 @@ export {
   syncLinkedDatabases,
   listSyncConflicts,
   resolveSyncConflict,
+  rebaseSyncBaselines,
 } from "./adapters.ts";
 export {
   installFinanceKit,
   listInstalledKits,
   getFinanceKitSettings,
   applyFinanceKitInstall,
+  ensureFinanceMetrics,
   setFinanceCaptureAccount,
 } from "./finance-kit.ts";
+export type { FinanceMetricsInstallResult } from "./finance-kit.ts";
 export {
   DEFAULT_FX_SOURCE,
   fxSourceOf,
@@ -245,6 +434,11 @@ export {
   isStoredReceiptPath,
   isReceiptStoreReady,
 } from "./capture.ts";
+export { sanitisePayee, PAYEE_SANITISER_VERSION } from "./payee.ts";
+export type { PayeeLintIssue, PayeeSanitiseInput, PayeeSanitiseResult } from "./payee.ts";
+export { normaliseFinancePayeeHistory } from "./finance-payee.ts";
+export type { PayeeMigrationOutcome } from "./finance-payee.ts";
+export type { FinancePayeeNormalisation } from "./domain-databases.ts";
 export {
   budgetVsActual,
   netWorth,
@@ -307,16 +501,26 @@ export type {
   DatabaseToolResult,
   DatabaseErrorCode,
 } from "./database-tools.ts";
+export { PAGE_TOOL_DEFS, executePageTool } from "./pages-tools.ts";
+export type { PageToolResult } from "./pages-tools.ts";
+export { SIGNAL_TOOL_DEFS, executeSignalTool } from "./signal-tools.ts";
+export type { SignalToolResult } from "./signal-tools.ts";
+export type { ProjectToolResult } from "./projects.ts";
 
 import { MAP_TOOL_DEFS, GOALS_TOOL_DEFS } from "./map/tools.ts";
 import { DOCUMENT_TOOL_DEFS } from "./document-tools.ts";
 import { REVIEW_TOOL_DEFS } from "./review-tools.ts";
+import { METRICS_TOOL_DEFS } from "./metrics-tools.ts";
 import { CAPTURE_TOOL_DEFS } from "./capture-tools.ts";
 import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
 import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
 import { VIEW_TOOL_DEFS } from "./views-tools.ts";
 import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
+import { COMPANION_BRIEF_TOOL_DEFS } from "./companion-brief-tools.ts";
+import { PAGE_TOOL_DEFS } from "./pages-tools.ts";
+import { SIGNAL_TOOL_DEFS } from "./signal-tools.ts";
+import { ONBOARDING_TOOL_DEFS } from "./onboarding-tools.ts";
 import { PHONE_TOOL_DEFS } from "./phone-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
@@ -330,12 +534,17 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...GOALS_TOOL_DEFS,
   ...DOCUMENT_TOOL_DEFS,
   ...REVIEW_TOOL_DEFS,
+  ...METRICS_TOOL_DEFS,
   ...CAPTURE_TOOL_DEFS,
   ...SCRIPT_TOOL_DEFS,
   ...PROJECT_TOOL_DEFS,
   ...DATABASE_TOOL_DEFS,
   ...VIEW_TOOL_DEFS,
   ...DAILY_NOTE_TOOL_DEFS,
+  ...PAGE_TOOL_DEFS,
+  ...SIGNAL_TOOL_DEFS,
+  ...COMPANION_BRIEF_TOOL_DEFS,
+  ...ONBOARDING_TOOL_DEFS,
   ...PHONE_TOOL_DEFS,
 ];
 

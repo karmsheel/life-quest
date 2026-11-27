@@ -1,9 +1,21 @@
+import { THEME_VOCABULARY } from "../shared/theme-file.ts";
+
 export type CompanionInstructionsInput = {
   domainName: string | null;
   domainSlug: string | null;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  /**
+   * The open vault's absolute root, when one is open.
+   *
+   * The picture rule tells the companion to save a generated or shared picture
+   * into the vault before writing the markdown tag that draws it, and the
+   * gateway process's working directory is neither the vault nor stable — so a
+   * turn names the root it may actually save under. Absent when no vault is
+   * open, and the rule then names only a vault-relative path.
+   */
+  vaultRoot?: string | null;
   /** Which home Dashboard board the operator is looking at: null = Overview. */
   viewingBoard?: string | null;
   /**
@@ -13,10 +25,11 @@ export type CompanionInstructionsInput = {
    */
   viewingBoardLocked?: boolean;
   /**
-   * The one card the operator put in front of the chat, if any. Absent means
-   * nobody pointed at a card, and the turn is the turn it always was.
+   * The cards the operator put in front of the chat, in the order they were
+   * chosen. Absent (or empty) means nobody pointed at a card, and the turn is
+   * the turn it always was.
    */
-  focusedCard?: FocusedCardContext | null;
+  focusedCards?: FocusedCardContext[] | null;
   /**
    * The page the operator has open, when the composer's page-context pill is
    * on. Absent means the operator turned that pill off, or no page is mounted,
@@ -40,6 +53,23 @@ export type CompanionInstructionsInput = {
    * ordinary turn, and on every chat no automation opened.
    */
   automationContext?: string;
+  /**
+   * The vault's onboarding interview, while it is still owed.
+   *
+   * Present only while the interview is unfinished: `not_started` (the welcome
+   * card is showing and nobody has pressed Begin) or `in_progress` (it began
+   * and was left). Absent or null means complete — the ordinary turn, and the
+   * legacy vault whose onboarding predates the interview — and the paragraph
+   * carrying the private rubric is then not sent at all.
+   *
+   * `proposalPending` is the confirmation card: the operator is looking at the
+   * one proposal right now, so the companion revises by calling
+   * `propose_onboarding_unlock` again rather than proposing a second one.
+   */
+  onboarding?: {
+    status: "not_started" | "in_progress";
+    proposalPending: boolean;
+  } | null;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
   /**
@@ -48,7 +78,41 @@ export type CompanionInstructionsInput = {
    * cite and the path main holds cannot come from two different places.
    */
   attachedFile?: { relPath: string; name: string } | null;
+  /**
+   * The general attachments this turn carries.
+   *
+   * Set by the chat call from the pending-attachment store, not by the
+   * renderer, for the same reason the receipt is: the path the agent is told
+   * about and the file on disk must not be able to come from two different
+   * places. `absolutePath` is there because the agent's file tools resolve a
+   * relative path against the gateway process's working directory, which is
+   * neither the vault nor stable - so the instruction names the absolute path
+   * and the vault-relative one beside it.
+   */
+  attachments?: TurnAttachment[] | null;
 };
+
+/**
+ * The onboarding field a vault snapshot produces, or null once it is complete.
+ *
+ * One function because three callers assemble the same instructions context
+ * from the same snapshot — the chat path, the Settings preview, and the
+ * renderer's own payload — and a rubric that reached only two of them would be
+ * a companion that knows the areas on one screen and not on another. `status`
+ * is widened to a string so the caller can pass a snapshot record without this
+ * module importing the engine; anything that is not one of the two unfinished
+ * statuses (including the synthetic `completed` a legacy vault reads as) gives
+ * null, which omits the paragraph entirely.
+ */
+export function onboardingContextOf(
+  record: { status: string },
+  proposalPending: boolean,
+): CompanionInstructionsInput["onboarding"] {
+  if (record.status !== "not_started" && record.status !== "in_progress") {
+    return null;
+  }
+  return { status: record.status, proposalPending };
+}
 
 /**
  * The dashboard card the chat is about.
@@ -94,31 +158,117 @@ export type PageContextInput = {
   body: string;
 };
 
-/** One receipt riding a turn: what the model sees, and where the original is. */
+/**
+ * What the model is shown, and what the agent is told about, one attachment.
+ *
+ * The receipt was the first thing that could ride a turn, and it was an image
+ * and nothing else. A general attachment is one of four kinds, and the kind
+ * decides how it travels:
+ *
+ *  - `image` - the bytes ride the turn as an `image_url` part, so the model
+ *    SEES it, and the stored path rides the instructions, so the agent can
+ *    open the original;
+ *  - `video`, `audio`, `file` - the bytes cannot ride the turn at all. The
+ *    gateway's content array accepts text and image parts only
+ *    (`api_server._normalize_multimodal_content` refuses a `file` part with
+ *    `unsupported_content_type`), so these travel as a stored path the agent
+ *    reads with its own file tools.
+ *
+ * `dataUrl` is therefore null for everything that is not an inlineable image,
+ * and `relPath` is always present: the file is on disk before the turn that
+ * names it is posted.
+ */
 export type TurnAttachment = {
+  /** The join key the renderer sent back; stable for the life of the attach. */
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
   relPath: string;
   name: string;
-  /** The re-encoded copy, as a `data:image/jpeg;base64,` URL. */
-  dataUrl: string;
+  /** The byte length of the original. */
+  size: number;
+  /** The mime the store settled on. */
+  mime: string;
+  /**
+   * The inline copy, as a `data:image/...;base64,` URL. Null for everything
+   * that may not be inlined, and for an image whose format the providers do
+   * not decode.
+   */
+  dataUrl: string | null;
+  /**
+   * The absolute path on this machine.
+   *
+   * The agent reads an attachment with its own file tools, and those resolve a
+   * relative path against the gateway process's working directory, which is
+   * neither the vault nor stable. So the instruction names the absolute path
+   * and the vault-relative one beside it.
+   */
+  absolutePath: string;
+};
+
+/**
+ * What the renderer says a turn carries, at the IPC boundary.
+ *
+ * The id is the whole of it. The renderer never names a path or sends bytes
+ * for a turn: it names the attachments it attached, by the ids main minted
+ * when they were attached, and main resolves everything else from the pending
+ * store. That is what keeps the path the agent is told about and the file on
+ * disk from coming from two different places.
+ *
+ * The other fields ride along so the renderer can render the turn's own
+ * attachment chips without a second round trip. They are NOT what main trusts:
+ * the stored file's own name, size and mime are the facts.
+ */
+export type TurnAttachmentRequest = {
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
+  name: string;
+  mime: string;
+  size: number;
+  /** The stored path, when the renderer knows it. Main resolves its own. */
+  relPath?: string;
 };
 
 /**
  * What `/chat/stream` receives as `input`.
  *
- * A turn with no receipt stays the plain string it has always been: the
+ * A turn with nothing attached stays the plain string it has always been: the
  * gateway collapses text-only content to a string for its own logging, and
- * sending a one-part array would be a different shape for no gain. A turn with
- * a receipt becomes the two-part vision form the gateway validates — the words
- * first, then the image.
+ * sending a one-part array would be a different shape for no gain.
+ *
+ * A turn with attachments becomes the vision form the gateway validates - the
+ * words first, then ONE `image_url` part per image. The gateway accepts a
+ * LIST of parts and more than one image among them
+ * (`_normalize_multimodal_content` walks every part and refuses only the
+ * types it cannot read), so several pictures ride one turn. The receipt is
+ * one of those images and rides it too.
+ *
+ * Non-image attachments are NOT here and must never be: the gateway rejects a
+ * `file` part outright, and a video or an audio file has no inlined form at
+ * all. They ride the turn as a stored path in the instructions instead - see
+ * `buildInstructions`.
  */
 export function buildTurnInput(
   text: string,
-  attachment?: TurnAttachment | null,
+  attachments?: TurnAttachment[] | null,
+  receipt?: TurnAttachment | null,
 ): unknown {
-  if (!attachment) return text;
+  // The receipt is an image like any other, and it rides the turn the same way:
+  // as an `image_url` part the model can see. It is passed separately because
+  // it comes from its own pending slot and keeps its own instruction wording,
+  // but the WIRE does not know that - the gateway sees one list of parts.
+  const images = [
+    ...(receipt && receipt.dataUrl ? [receipt] : []),
+    ...(attachments ?? []).filter(
+      (attachment) => attachment.kind === "image" && attachment.dataUrl,
+    ),
+  ];
+  if (images.length === 0) return text;
   return [
     { type: "text", text },
-    { type: "image_url", image_url: { url: attachment.dataUrl, detail: "high" } },
+    ...images.map((attachment) => ({
+      type: "image_url",
+      image_url: { url: attachment.dataUrl, detail: "high" },
+    })),
   ];
 }
 
@@ -135,13 +285,52 @@ export function buildTurnInput(
 const PAUSED_CONVERSATION_MARKER = /unknown_execution/i;
 
 /**
- * The operator-facing sentence for that state. It names the cause (a turn was
- * interrupted), the consequence (this conversation is paused), and the one
- * control that gets a working chat back — the dock's new-chat button, because a
- * paused conversation cannot be revived from the app at all.
+ * The operator-facing sentence for that state, used when the app could NOT
+ * recover the chat itself. It names the cause (a turn was interrupted) and the
+ * consequence (this conversation is paused).
+ *
+ * It deliberately no longer says the only way out is a new chat: Hermes can
+ * acknowledge the lost turn (`prompt.resolve_unknown`, the `/discard` command,
+ * `hermes sessions discard`) and then runs the messages queued behind it, so the
+ * conversation keeps its history. `companion.ts` performs that recovery on the
+ * paused frame; this sentence is the fallback for when it cannot (an older
+ * Hermes, a missing CLI). Before 2026-11-13 the app only showed this sentence,
+ * which told operators to throw a recoverable conversation away.
  */
 export const PAUSED_CONVERSATION_MESSAGE =
   "This conversation is paused because a turn was interrupted — start a new chat.";
+
+/**
+ * The turn note when the app did recover a paused chat in place.
+ *
+ * The turn itself is honestly still `incomplete` — the interrupted turn never
+ * produced an answer — but the note has to say the chat continues, or an
+ * operator reads the usual "ended before finishing" footer as another dead end
+ * and starts a needless new chat. The reply to the message queued behind the
+ * lost turn arrives in the same snapshot.
+ */
+export const PAUSED_RECOVERED_REASON =
+  "the chat had been paused after an interrupted turn — it was recovered and continues below";
+
+/**
+ * The same note when the recovery found nothing waiting to run.
+ *
+ * A pause can also be met by a send that was never committed behind the lost
+ * turn (the previous client's send was the lost one). The chat is recovered all
+ * the same, but no reply is coming on its own, so the note must not promise one:
+ * it says the chat continues and the operator can send.
+ */
+export const PAUSED_RECOVERED_IDLE_REASON =
+  "the chat had been paused after an interrupted turn — it was recovered; send again to continue";
+
+/**
+ * Whether a host error message is the paused-conversation token. Exported so
+ * the main process can decide to recover instead of report; the token itself
+ * never reaches the screen.
+ */
+export function isPausedConversation(message: string): boolean {
+  return PAUSED_CONVERSATION_MARKER.test(message);
+}
 
 /**
  * Host error vocabulary to the app's, in one place.
@@ -156,16 +345,144 @@ function operatorFacingStreamError(message: string): string {
     : message;
 }
 
+/**
+ * Token accounting for one turn, when the harness reports it exactly.
+ *
+ * Absent fields stay absent: a harness that cannot account for cache reads must
+ * not be presented as if it could. `total` is the harness's own total when it
+ * sends one, otherwise the app's input+output (never an estimate of tokens it
+ * never saw).
+ */
+export type TurnUsage = {
+  input?: number;
+  output?: number;
+  total?: number;
+};
+
+/**
+ * One picture a transcript row carries.
+ *
+ * `src` is a data URL the row already holds — the built-in companion stores its
+ * image parts that way, and the CSP already allows `data:`. `ref` is a path main
+ * can read through `chat:imageRead`: a vault-relative one, or the absolute
+ * `native-inputs/` hint Hermes persists for a picture the operator sent. A row
+ * carries at least one of them.
+ */
+export type TranscriptImage = { name: string; ref?: string; src?: string };
+
+/**
+ * One structured transcript row: a user message, an assistant message with the
+ * calls it requested, or the result of one of those calls.
+ *
+ * This is the shape history is rebuilt from — both harnesses already store it.
+ * The flat `{role, content, at}` rows the dock used to read are a strict subset,
+ * so an older gateway, a persisted Pi session, or an E2E stub that knows only
+ * about bubbles still parses.
+ */
+export type TranscriptMessage = {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  /** Creation time as epoch milliseconds. */
+  at?: number;
+  /** User rows: the pictures this message carried, in the order they were sent. */
+  images?: TranscriptImage[];
+  /** Assistant rows: the tool calls this message requested. */
+  toolCalls?: { id: string; name: string; args?: unknown }[];
+  /** Tool rows: which assistant call this result answers. */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  /** Assistant rows: thinking the harness kept in its transcript. */
+  reasoning?: string;
+  usage?: TurnUsage;
+};
+
+/** The design doc's name for a structured transcript row. */
+export type TranscriptEntry = TranscriptMessage;
+
+/**
+ * The outcome of one chat turn.
+ *
+ * `settlesOnStream` is set only by a transport that GUARANTEES its own terminal
+ * frame before it answers the turn call — the gateway-WebSocket continuation of
+ * another surface's chat. The renderer's post-call settle is a safety net for a
+ * transport that died without a terminal frame; on this path the terminal is
+ * already on its way, and settling before it lands would split the turn in two
+ * (the IPC frames and the call's reply are different channels and arrive in
+ * either order). So the renderer leaves such a turn to its frames.
+ */
+export type ChatStreamOutcome =
+  | { ok: true; settlesOnStream?: boolean }
+  | { ok: false; error: string };
+
+/**
+ * One frame of a turn's stream.
+ *
+ * The `run.*` family is the turn skeleton every harness must speak: start,
+ * text, tools, terminal. Everything between is additive and optional — a
+ * harness that cannot produce a field omits the frame rather than sending a
+ * placeholder, and the panel renders what it has.
+ *
+ * The last two are the app's own, not the gateway's: a companion turn can end
+ * with proposals in its prose that the main process files as Decisions after the
+ * model has stopped talking, and the operator needs to be told that happened
+ * where they are looking. They arrive after the terminal frame, on the same
+ * channel, so a chat that just said "here are the changes" also says what became
+ * of them.
+ */
 export type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string; target: string }
-  | { type: "tool.completed"; name: string }
+  /** The model's thinking, when the harness exposes real reasoning deltas. */
+  | { type: "reasoning.delta"; text: string }
+  /** A harness-authored mid-turn update (Hermes commentary), rendered as narration. */
+  | { type: "assistant.commentary"; text: string; alreadyStreamed?: boolean }
+  /** The turn's authoritative final answer, when the harness can name it. */
+  | { type: "assistant.final"; text: string }
+  | {
+      type: "tool.started";
+      name: string;
+      target: string;
+      /** Native per-call id, when the harness has one. */
+      callId?: string;
+      /** Raw or display arguments, bounded by the main process before it crosses IPC. */
+      args?: unknown;
+    }
+  /** Partial output for a call that is still running. */
+  | { type: "tool.progress"; callId: string; text: string }
+  | {
+      type: "tool.completed";
+      name: string;
+      callId?: string;
+      isError?: boolean;
+      /** Harness-measured duration; absent means the app's clock is the only one. */
+      durationMs?: number;
+      /** Bounded, redacted result text for the row disclosure. */
+      resultPreview?: string;
+    }
+  | { type: "usage"; usage: TurnUsage }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
-  | { type: "run.stopped" }
-  | { type: "run.incomplete"; reason: string }
-  | { type: "run.completed" }
-  | { type: "error"; message: string };
+  /** The turn was interrupted: the text delivered so far is a partial reply. */
+  | { type: "run.stopped"; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  /** The turn ended without finishing (failure, iteration budget, partial). */
+  | { type: "run.incomplete"; reason: string; usage?: TurnUsage; snapshot?: TranscriptEntry[] }
+  | {
+      type: "run.completed";
+      usage?: TurnUsage;
+      stopReason?: string;
+      /** Authoritative rows for this turn, when the harness keeps them. */
+      snapshot?: TranscriptEntry[];
+    }
+  /**
+   * `paused` marks the host's paused-conversation token, which the main process
+   * recovers from instead of reporting: the chat is not dead, it is blocked
+   * behind a lost turn that can be acknowledged.
+   */
+  | { type: "error"; message: string; paused?: true }
+  /** Pending Decisions this turn's fenced proposals became. */
+  | { type: "decisions.filed"; ids: string[]; titles: string[] }
+  /** Proposals in this turn's reply that could not be filed, and why. */
+  | { type: "decisions.problem"; message: string };
 
 export type HermesSession = {
   id: string;
@@ -176,6 +493,16 @@ export type HermesSession = {
   lastActive: number | null;
   /** Durable sidebar flag: a pinned chat is never archived and never sinks out of the list. */
   pinned: boolean;
+  /**
+   * Durable flag: the chat is archived. Archived rows are listed only when the
+   * caller asked for them (the sidebar's view options), and the dock's working
+   * list never contains one.
+   */
+  archived: boolean;
+  /** The gateway's own per-session model lock. Null when the row carries none. */
+  model: string | null;
+  /** The surface that created the session, as the gateway recorded it. */
+  source: string;
 };
 
 /**
@@ -327,6 +654,8 @@ type SessionRow = {
   hidden?: unknown;
   archived?: unknown;
   pinned?: unknown;
+  model?: unknown;
+  source?: unknown;
 };
 
 const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
@@ -381,17 +710,30 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     preview: preview || null,
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
+    archived: flag(r.archived),
+    model: typeof r.model === "string" ? r.model.trim() || null : null,
+    source: typeof r.source === "string" ? r.source.trim() : "",
   };
 }
 
-export function sessionsFromPayload(payload: unknown): HermesSession[] {
+/**
+ * The list as the dock and the sidebar draw it.
+ *
+ * Hidden rows are Hermes Desktop's own business and never cross this boundary.
+ * Archived rows cross it only when `includeArchived` asks: the sidebar's view
+ * options are the one surface that shows them, greyed and restorable, and the
+ * working list (and the dock) must never contain one.
+ */
+export function sessionsFromPayload(
+  payload: unknown,
+  options: { includeArchived?: boolean } = {},
+): HermesSession[] {
   const out: HermesSession[] = [];
   for (const row of rowsOf(payload, ["sessions", "data", "items"])) {
     if (!row || typeof row !== "object") continue;
     const r = row as SessionRow;
-    // Archived and hidden rows belong to Hermes Desktop's recovery surface; the
-    // dock lists live chats only.
-    if (flag(r.hidden) || flag(r.archived)) continue;
+    if (flag(r.hidden)) continue;
+    if (flag(r.archived) && !options.includeArchived) continue;
     const session = sessionFromRow(r);
     if (session) out.push(session);
   }
@@ -421,6 +763,65 @@ export function createdSessionFromPayload(
   return row;
 }
 
+/**
+ * The surfaces the gateway's OpenAI-compatible API owns.
+ *
+ * Hermes refuses a turn aimed at any other surface's session
+ * (`gateway/session_api_turn.py`: "API sessions are their own sessions") because
+ * the API would otherwise run a second agent on a transcript a CLI, Desktop,
+ * TUI or messaging lane is already writing. Those other-surface chats are still
+ * listed and readable here; they are continued over the gateway's canonical
+ * WebSocket instead, which is the door Hermes points clients at
+ * (`docs/user-guide/features/api-server.md`, "attach through the gateway
+ * WebSocket"). Keep this set in step with the sources the API transport accepts.
+ */
+const API_OWNED_SOURCES = new Set(["", "api_server", "bot_room"]);
+
+/**
+ * Whether a chat belongs to another surface, and therefore has to be continued
+ * through the gateway WebSocket rather than the API transport. An unknown or
+ * empty label is not continuable: an older gateway row carries no source, and
+ * the API path is the one that has always served it.
+ */
+export function isContinuableSession(
+  session: Pick<HermesSession, "source"> | string | null | undefined,
+): boolean {
+  const source =
+    typeof session === "string" ? session : (session?.source ?? "");
+  return !API_OWNED_SOURCES.has(source.trim().toLowerCase());
+}
+
+/**
+ * The surface's own name, for a chip or a sentence. Unknown label -> "another
+ * surface", so a platform Hermes grows later still reads as something.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  telegram: "Telegram",
+  discord: "Discord",
+  slack: "Slack",
+  whatsapp: "WhatsApp",
+  signal: "Signal",
+  imessage: "iMessage",
+  matrix: "Matrix",
+  mattermost: "Mattermost",
+  teams: "Teams",
+  buzz: "Buzz",
+  desktop: "Hermes Desktop",
+  gui: "Hermes Desktop",
+  cli: "Hermes CLI",
+  tui: "Hermes CLI",
+  local: "Hermes",
+  cron: "an automation",
+  acp: "an ACP client",
+  oneshot: "a one-shot run",
+};
+
+export function sessionSourceLabel(source: string | null | undefined): string {
+  const key = (source ?? "").trim().toLowerCase();
+  if (!key) return "";
+  return SOURCE_LABELS[key] ?? "another surface";
+}
+
 /** Visible chat name: a set title, otherwise the first thing the user asked. */
 export function sessionLabel(session: Pick<HermesSession, "title" | "preview">): string {
   const title = session.title.trim();
@@ -446,13 +847,6 @@ export function formatSessionWhen(lastActive: number | null, nowMs = Date.now())
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** One transcript row, with the time it was sent when the gateway knows it. */
-export type TranscriptMessage = {
-  role: "user" | "assistant";
-  content: string;
-  /** Creation time as epoch milliseconds. */
-  at?: number;
-};
 
 /**
  * The gateway stamps `timestamp` in epoch seconds (a float). Some surfaces
@@ -473,16 +867,186 @@ function messageAt(row: { timestamp?: unknown }): number | undefined {
   return undefined;
 }
 
+function usageNumber(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
+}
+
+/** The gateway's token accounting, read across the shapes its rows carry. */
+function usageOf(raw: unknown): TurnUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as Record<string, unknown>;
+  const input = usageNumber(u.input ?? u.input_tokens ?? u.prompt_tokens ?? u.promptTokens);
+  const output = usageNumber(u.output ?? u.output_tokens ?? u.completion_tokens ?? u.completionTokens);
+  const total = usageNumber(u.total ?? u.total_tokens ?? u.totalTokens);
+  if (input == null && output == null && total == null) return undefined;
+  const resolvedTotal = total ?? (input != null && output != null ? input + output : undefined);
+  return {
+    ...(input == null ? {} : { input }),
+    ...(output == null ? {} : { output }),
+    ...(resolvedTotal == null ? {} : { total: resolvedTotal }),
+  };
+}
+
+/** The assistant rows' requested calls, including the ids a result row answers. */
+function toolCallsOf(raw: unknown): { id: string; name: string; args?: unknown }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const calls: { id: string; name: string; args?: unknown }[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const call = row as Record<string, unknown>;
+    const fn = (call.function && typeof call.function === "object" ? call.function : call) as Record<string, unknown>;
+    const name = typeof fn.name === "string" ? fn.name.trim() : "";
+    if (!name) continue;
+    const idValue = call.id ?? call.tool_call_id ?? call.call_id;
+    const id = typeof idValue === "string" && idValue.trim() ? idValue.trim() : `call_${calls.length}`;
+    const args = parseArgs(fn.arguments ?? fn.args);
+    calls.push({ id, name, ...(args == null ? {} : { args }) });
+  }
+  return calls.length > 0 ? calls : undefined;
+}
+
+/**
+ * The gateway's evidence that a user message carried a picture.
+ *
+ * Hermes keeps a sent picture as two persisted lines rather than as a content
+ * part: a `[screenshot]` marker (sometimes with a detail hint) and a line naming
+ * where its retained copy lives. `[Image attached at: …]` names a local copy the
+ * read door may open; `[Image attached: …]` is a remote one, which the chat
+ * deliberately never draws. Neither line is conversation text — the operator
+ * never typed it — so both are stripped from the displayed content.
+ */
+const SCREENSHOT_MARKER = /^\[screenshot(?: detail=(?:low|high|auto))?\]$/;
+const LOCAL_IMAGE_HINT = /^\[Image attached at: (.+)\]$/;
+const REMOTE_IMAGE_HINT = /^\[Image attached: (.+)\]$/;
+
+/** At most this many pictures come out of one stored row. */
+const MAX_TRANSCRIPT_IMAGES = 8;
+
+/** The last path segment, without dragging node:path into the renderer bundle. */
+function baseName(value: string): string {
+  const parts = value.split(/[\\/]+/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * A user row's pictures, and its text with their evidence removed.
+ *
+ * The two kinds of line pair up IN ORDER, one marker per hint. A row whose
+ * counts disagree is left exactly as it was: a half pair is not evidence of
+ * anything, and stripping it would eat a line the operator may have typed. A
+ * pair with a remote hint is stripped without becoming an image, so a URL never
+ * turns into a ref the door would then have to refuse.
+ */
+function userImagesOf(content: string): {
+  content: string;
+  images: { name: string; ref: string }[];
+} {
+  const lines = content.split("\n");
+  const markers: number[] = [];
+  const hints: { index: number; ref: string | null }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    // A CRLF row keeps its \r in the split; the match sees the line without it.
+    const line = (lines[i] ?? "").replace(/\r$/, "");
+    if (SCREENSHOT_MARKER.test(line)) {
+      markers.push(i);
+      continue;
+    }
+    const local = LOCAL_IMAGE_HINT.exec(line);
+    if (local) {
+      hints.push({ index: i, ref: local[1]!.trim() });
+      continue;
+    }
+    if (REMOTE_IMAGE_HINT.test(line)) hints.push({ index: i, ref: null });
+  }
+  if (markers.length === 0 || markers.length !== hints.length) {
+    return { content, images: [] };
+  }
+  const dropped = new Set<number>(markers);
+  for (const hint of hints) dropped.add(hint.index);
+  const images: { name: string; ref: string }[] = [];
+  for (const hint of hints) {
+    if (!hint.ref || images.length >= MAX_TRANSCRIPT_IMAGES) continue;
+    images.push({ name: baseName(hint.ref), ref: hint.ref });
+  }
+  return {
+    // Dropping lines leaves the newline that ended them behind; the displayed
+    // text is the operator's words, so only that removal artifact is trimmed.
+    content: lines
+      .filter((_, i) => !dropped.has(i))
+      .join("\n")
+      .replace(/[\r\n]+$/, ""),
+    images,
+  };
+}
+
+/**
+ * Turn gateway rows into the dock's structured transcript.
+ *
+ * Assistant rows keep the calls they requested, result rows keep the id they
+ * answer, and each keeps whatever accounting the row carried. A result row is
+ * not dropped when its text is empty: the row is evidence a call happened even
+ * when the tool returned nothing. A user row that held only a picture is the
+ * same case: its text is empty after the evidence is stripped, and dropping it
+ * would lose the operator's own message from a reloaded chat.
+ */
 export function messagesFromPayload(payload: unknown): TranscriptMessage[] {
   const value: TranscriptMessage[] = [];
   for (const row of rowsOf(payload, ["data", "messages", "items"])) {
     if (!row || typeof row !== "object") continue;
-    const r = row as { role?: unknown; content?: unknown; timestamp?: unknown };
-    if (r.role !== "user" && r.role !== "assistant") continue;
+    const r = row as {
+      role?: unknown;
+      content?: unknown;
+      timestamp?: unknown;
+      tool_calls?: unknown;
+      tool_call_id?: unknown;
+      tool_calls_id?: unknown;
+      tool_name?: unknown;
+      name?: unknown;
+      is_error?: unknown;
+      reasoning?: unknown;
+      usage?: unknown;
+      token_count?: unknown;
+    };
+    const role =
+      r.role === "user" || r.role === "assistant" || r.role === "tool" ? r.role : null;
+    if (!role) continue;
     const content = messageText(r.content);
-    if (!content.trim()) continue;
     const at = messageAt(r);
-    value.push(at == null ? { role: r.role, content } : { role: r.role, content, at });
+    const usage = usageOf(r.usage ?? r.token_count);
+    if (role === "tool") {
+      const name = oneLine(r.tool_name ?? r.name);
+      const callId = r.tool_call_id ?? r.tool_calls_id;
+      const toolRow: TranscriptMessage = {
+        role: "tool",
+        content,
+        ...(at == null ? {} : { at }),
+        ...(typeof callId === "string" && callId.trim() ? { toolCallId: callId.trim() } : {}),
+        ...(name ? { toolName: name } : {}),
+        ...(r.is_error === true ? { isError: true } : {}),
+        ...(usage ? { usage } : {}),
+      };
+      value.push(toolRow);
+      continue;
+    }
+    const toolCalls = role === "assistant" ? toolCallsOf(r.tool_calls) : undefined;
+    const userPictures = role === "user" ? userImagesOf(content) : null;
+    const shown = userPictures ? userPictures.content : content;
+    const images = userPictures?.images ?? [];
+    if (role === "assistant" && !content.trim() && !toolCalls) continue;
+    if (role === "user" && !shown.trim() && images.length === 0) continue;
+    const reasoning = role === "assistant" && typeof r.reasoning === "string" && r.reasoning.trim()
+      ? r.reasoning
+      : undefined;
+    value.push({
+      role,
+      content: shown,
+      ...(at == null ? {} : { at }),
+      ...(images.length > 0 ? { images } : {}),
+      ...(toolCalls ? { toolCalls } : {}),
+      ...(reasoning ? { reasoning } : {}),
+      ...(usage ? { usage } : {}),
+    });
   }
   return value;
 }
@@ -514,20 +1078,19 @@ export function formatMessageWhen(atMs: number | undefined, nowMs = Date.now()):
 }
 
 /**
- * The one card the operator put in front of this chat, said in the terms that
- * card can actually be changed in.
+ * One dashboard card, said in the terms that card can actually be changed in.
  *
  * The three kinds of card are changed three different ways, so one generic "a
  * card is in context" would teach a model to offer the wrong tool: a built-in
  * card has no spec for `save_view` to rewrite, and a page card is not a view at
- * all. Each branch names the card, says what "it" means, and gives the path that
- * works — or says plainly that there is not one, which is the honest answer and
- * the one that keeps a promise from being made and then broken.
+ * all. Each branch names the card, gives the path that works — or says plainly
+ * that there is not one, which is the honest answer and the one that keeps a
+ * promise from being made and then broken.
  */
-function focusedCardLine(card: FocusedCardContext): string {
+function cardFacts(card: FocusedCardContext): string {
   const where =
     card.boardSlug === null
-      ? "the Overview dashboard"
+      ? "the Life dashboard"
       : `the ${card.boardSlug} dashboard`;
   const ids =
     card.kind === "view"
@@ -535,30 +1098,52 @@ function focusedCardLine(card: FocusedCardContext): string {
       : card.kind === "page"
         ? `(pinId "${card.pinId}", pageId "${card.pageId}", domainSlug "${card.domainSlug}")`
         : `(pinId "${card.pinId}", built-in card "${card.system}")`;
-  const named = `the card titled "${card.label}" on ${where}`;
-  const means = `When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.`;
-  const opening = `The operator has put ONE dashboard card in front of this chat as context: ${named} ${ids}.`;
+  return `the card titled "${card.label}" on ${where} ${ids}`;
+}
+
+/** How this kind of card is changed, in the words that are true for it. */
+function cardChangePath(card: FocusedCardContext): string {
   if (card.kind === "view") {
-    return [
-      opening,
-      means,
-      "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug — that updates the card where it already sits.",
-      "save_view's reply carries the card's own rows, so explain the figures from that rather than reading them yourself.",
-    ].join(" ");
+    return "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug — that updates the card where it already sits. save_view's reply carries the card's own rows, so explain the figures from that rather than reading them yourself.";
   }
   if (card.kind === "page") {
+    return "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.";
+  }
+  if (card.kind === "system" && card.system === "companion-brief") {
+    return "It is the companion brief card, and you are its only writer: read it with get_companion_brief to see the active items and the operator's dismissals, then re-derive it with set_companion_brief (a replacement, never an append; at most five typed items with text, why, sourceRef, domainSlug, priority and an expiry). Do not offer save_view for it, and do not offer to edit it as a page. You cannot dismiss an item or mark it done: only the operator settles an item, with done / not-useful / wrong / later.";
+  }
+  return "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it. Say what it draws from the records behind it, and change those records with the tool that owns them.";
+}
+
+/**
+ * The cards the operator put in front of this chat.
+ *
+ * One card keeps the shipped wording, because "this card" then has exactly one
+ * answer. Two or three are laid out one per line with each card's own change
+ * path — a model told the wrong path for one of three will promise the wrong
+ * thing about it — and the block says plainly what "this card" means when
+ * several are named. With more than one on the table, guessing is the failure
+ * the context exists to prevent; asking which named card is meant is the honest
+ * answer, and it is not the same question as "which cards are in context".
+ */
+function focusedCardsLine(cards: FocusedCardContext[]): string {
+  if (cards.length === 1) {
+    const card = cards[0]!;
     return [
-      opening,
-      means,
-      "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.",
+      `The operator has put ONE dashboard card in front of this chat as context: ${cardFacts(card)}.`,
+      `When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.`,
+      cardChangePath(card),
     ].join(" ");
   }
+  const count = cards.length === 2 ? "TWO" : "THREE";
+  const listed = cards.map(
+    (card, index) => `${index + 1}. ${cardFacts(card)}. ${cardChangePath(card)}`,
+  );
   return [
-    opening,
-    means,
-    "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it.",
-    "Say what it draws from the records behind it, and change those records with the tool that owns them.",
-  ].join(" ");
+    `The operator has put ${count} dashboard cards in front of this chat as context:`,
+    ...listed,
+    `When the operator says "these cards", they mean all ${cards.length} of them. When they say "this card", "it", or "this block", they mean the one they clearly refer to; if more than one could be meant, ask which of the named cards they mean rather than guessing. They are named above, so do not ask which cards are in context.`,
+  ].join("\n");
 }
 
 /**
@@ -594,7 +1179,148 @@ function pageContextLine(page: PageContextInput): string {
   return [where, ...quoted].join("\n");
 }
 
-export function buildInstructions(input: CompanionInstructionsInput): string {
+/**
+ * How the turn's attachments are described to the agent.
+ *
+ * An IMAGE is described twice, because it travels twice: the model sees the
+ * picture inline, and the agent may also want the original on disk (a receipt
+ * photo that is hard to read inline is still a receipt photo). So the line
+ * says the picture is attached AND gives its stored path.
+ *
+ * Everything else is described once, as a stored file: the name, the kind, the
+ * size, and the absolute path. The kind is in the line because it is what
+ * tells the agent which tool to reach for - a video is read with a media
+ * extractor, an audio file with a transcriber, a document with a text
+ * extractor - and a file named `voice memo.m4a` does not say so by itself.
+ *
+ * The instruction says where the file lives in the vault's own layout as well
+ * as where it lives on this machine, because the operator asks about stored
+ * files by their vault path and the agent answers with them.
+ */
+function attachmentsInstructions(attachments?: TurnAttachment[] | null): string {
+  if (!attachments || attachments.length === 0) return "";
+  const facts = attachments.map((attachment) => {
+    const kind = ATTACHMENT_KIND_WORDS[attachment.kind] ?? "file";
+    const where = `the file "${attachment.name}" (${kind}, ${attachment.mime}, ${formatAttachmentSize(attachment.size)})`;
+    if (attachment.kind === "image" && attachment.dataUrl) {
+      return [
+        `${where} is attached to this turn as a picture, so you can see it.`,
+        `Its original is stored in the vault at ${attachment.relPath} and on this machine at ${attachment.absolutePath}.`,
+        `Read that path with your own file tools if you need the original at full resolution rather than the picture above.`,
+      ].join(" ");
+    }
+    return [
+      `${where} is attached to this turn.`,
+      `It is stored in the vault at ${attachment.relPath} and on this machine at ${attachment.absolutePath}.`,
+      "It cannot be sent to the model as an inline part, so read it with your own file tools at that absolute path.",
+      "Say what you read, and name the file when you refer to it.",
+    ].join(" ");
+  });
+  const count = facts.length;
+  return [
+    count === 1
+      ? "One file is attached to this turn:"
+      : `${count} files are attached to this turn:`,
+    ...facts.map((fact, index) => `${index + 1}. ${fact}`),
+    "Every path above was given to you by the app. Do not invent a path for a file that was not attached, and do not read a path that was not named here.",
+  ].join("\n");
+}
+
+/**
+ * The permanent picture rule: the chat draws a file in the vault, never a URL.
+ *
+ * Every reply carries it because drawing is a capability of the app, not of a
+ * turn. When a vault is open its root is named, so "save it inside the vault" is
+ * a path the agent can actually write: the gateway process's working directory
+ * is neither the vault nor stable, and a relative save would land somewhere
+ * nobody looks. With no vault open the rule stays correct by asking for a
+ * vault-relative path only.
+ */
+function pictureInstructions(vaultRoot?: string | null): string {
+  const root = vaultRoot ? vaultRoot.replace(/[\\/]+$/, "") : "";
+  return [
+    "The chat draws a picture only when it is a file in the vault: save it inside the vault first, then write ![short caption](vault-relative-path) in your reply — for example ![floor plan](attachments/chat/floor-plan.png).",
+    root
+      ? `The vault's root on this machine is ${root}; save the file under it (for example ${root}/attachments/chat/name.png) and then write ![short caption](attachments/chat/name.png).`
+      : "",
+    "A remote URL or a data URL is never drawn, so download a generated picture into the vault before you reference it.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The word the instruction uses for each kind of attachment. */
+const ATTACHMENT_KIND_WORDS: Record<TurnAttachment["kind"], string> = {
+  image: "image",
+  video: "video",
+  audio: "audio recording",
+  file: "file",
+};
+
+/**
+ * A size an operator can read.
+ *
+ * The bytes are what the store knows; a human reads "2.4 MB". Rounded to one
+ * decimal place, and in bytes only for something small enough that bytes are
+ * the friendlier number.
+ */
+function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
+}
+
+/**
+ * The onboarding interview, as the companion's private rubric and its rules.
+ *
+ * This block exists because the areas are deliberately absent from every tool
+ * result: a locked area is invisible in `list_domains`, `list_databases` and
+ * `list_documents`, so the only way the companion can know the five areas — and
+ * the only way it can propose one from what the operator actually said — is to
+ * be told them here. It is prompt-side on purpose, exactly like the operator's
+ * copy: the app never names a locked area to them, and neither does a tool.
+ *
+ * The block is omitted entirely once the record is `completed`, which is what
+ * "never bring the interview up again" means in code: there is nothing left in
+ * the prompt to bring it up with.
+ */
+function onboardingInstructions(onboarding: {
+  status: "not_started" | "in_progress";
+  proposalPending: boolean;
+}): string {
+  const lines = [
+    "The operator has not finished the onboarding interview: the one first-run conversation that opens the areas of life this vault will hold. It is a conversation, never a form.",
+    "The five areas are your PRIVATE RUBRIC, never a list you read out to them: Health (health) — the body: sleep, training, nutrition, medical; Mind (mind) — inner life: mood, attention, learning, study; Finance (financial) — money: accounts, transactions, budgets; Business (business) — work, ventures, clients, offers; Relationships (relationships) — people, interactions, cadences. Never enumerate these to the operator, never name a locked area, and never ask which area they want.",
+    "Run it as a conversation: four to six open questions with follow-ups, never a form — what's on your mind right now, what's bothering or worrying you, who matters to you at the moment, what you're working on, what you'd like to be different in a year, anything you're proud of or want more of. Each answer may point at zero or more areas; an area opens on one clear signal in the operator's own words (\"I'm exhausted, I never sleep\" → Health), never on a keyword.",
+    "Before opening anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all five: a first session that opens five is a taxonomy delivery in disguise.",
+    "propose_onboarding_unlock is the one way to finish the interview: calling it opens the one to three areas you named immediately — it unlocks them, writes their four doctrine drafts from what the operator actually said — premise (\"Beliefs & Premise\"), what (\"Vision & Desire\"), why (\"Purpose\") and how (\"Strategy (How)\") — creates at most one table if the conversation clearly asked for one, and writes the one short note of the interview. The app then shows the operator a card that says what was opened; there is no question and no consent step, and nothing waits on them. Never write anything they did not say; a line you cannot source from their words stays thin rather than invented. Call the tool once, and only when you have genuinely heard enough.",
+  ];
+  if (onboarding.status === "not_started") {
+    lines.push(
+      "They have not pressed Begin yet. If they type first, offer the interview in one sentence and then continue with their request — never block them, and never turn their first message into the interview's first question.",
+    );
+  }
+  lines.push(
+    "Never write anything the operator did not say, and never file the interview into a Decision. If their answers surface real distress, step out of interview mode and point at real help instead of sorting it into an area: this is not therapy. Once the interview is complete, never bring it up again.",
+  );
+  return lines.join("\n");
+}
+
+export function buildInstructions(
+  input: CompanionInstructionsInput,
+  /**
+   * How this companion reaches the vault's tools.
+   *
+   * "hermes" is the external MCP client, and its paragraph warns the agent not
+   * to re-pair itself through the doors. "pi" is the built-in companion, whose
+   * tools are registered in-process through the same door, so there is no
+   * server name to pass and nothing to curl. Everything else in this prompt is
+   * shared, because every rule in it is about the vault, not the transport.
+   */
+  transport: "hermes" | "pi" = "hermes",
+): string {
   const domain =
     input.domainName || input.domainSlug
       ? `${input.domainName ?? "unnamed"}${input.domainSlug ? ` (${input.domainSlug})` : ""}`
@@ -606,7 +1332,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     input.viewingBoard === undefined
       ? null // caller did not say; fall back to the domain line only
       : input.viewingBoard === null
-        ? "the Overview dashboard (domainSlug: null)"
+        ? "the Life dashboard (domainSlug: null)"
         : `the ${input.viewingBoard} dashboard (domainSlug: "${input.viewingBoard}")`;
   const boardLine = board
     ? `The operator is looking at ${board} right now — when they say "the Dashboard", they mean that board, and the boardSlug you pass to save_view is that domainSlug (null for Overview).`
@@ -624,13 +1350,20 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   const fileUnsolicited = input.fileUnsolicited ?? true;
   const fenceRule = fileUnsolicited
     ? [
-        "When you propose a doctrine, library, goal, or day-template change and you did not call a write tool for it, end the turn with one fenced block whose info string is exactly lifequest-decision and whose body is one JSON object, for example:",
+        "When your reply proposes one or more changes to the vault's documents, goals, day templates or projects, and you did not apply that change with a write tool, list EVERY proposal in fenced blocks whose info string is exactly lifequest-decision and whose body is one JSON object. One block per proposal; EVERY block is filed as its own pending Decision. A block that is not readable is reported to the operator, so nothing you propose disappears silently.",
         "```lifequest-decision",
         '{"kind":"doctrine","domainSlug":"health","documentKind":"why","title":"Purpose","body":"new body"}',
         "```",
-        "One block per turn, and only the last valid one counts. Prose outside the block is not a change. A project kind is not a document and files nothing, so do not use it.",
-        "That block becomes one pending Decision; it never edits a file. Silence does not apply a proposal: only the operator approving it does.",
-        "Omit the block entirely when a write tool already ran in this turn.",
+        "The proposal kinds and their bodies:",
+        '- doctrine: {"kind":"doctrine","domainSlug","documentKind":"premise|what|why|how","title","body"}',
+        '- library: {"kind":"library","title","body","domainSlugs":["health"]} — add "id" to update an existing note.',
+        '- goal: {"kind":"goal","command":{...}} with a createGoal, updateGoal or deleteGoal command.',
+        '- day-template: {"kind":"day-template","command":{...}} with a day-type command.',
+        '- project: {"kind":"project","command":{"type":"createProject","title","goalId","domainSlug","bodyMarkdown"}} to propose a new project, or {"kind":"project","command":{"type":"closeProject","id"}} to propose closing one.',
+        'Instead of several blocks you may put them all in one block whose body is {"decisions":[ {...}, {...} ]}.',
+        "A new database or a dashboard card is a tool call, not a block: create_database writes a new database at once, and save_view applies at once on an unlocked board and files a pending Decision on a locked one. The block list above is for the changes no tool covers.",
+        "A write tool that already applied one change does not cancel the rest: fence every OTHER change you did not apply with a tool. Prose outside a block is not a change.",
+        "Each block becomes one pending Decision; nothing edits a file until the operator approves it. Say how many changes you are proposing, and never say a decision was filed unless a fenced block carried it or a tool result answered pending with a decisionId. Silence does not apply a proposal: only the operator approving it does.",
       ]
     : [
         "Filing implied changes is off for this session. Do not emit a lifequest-decision fence; just describe the change in prose and let the operator ask for it.",
@@ -646,16 +1379,36 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         "If the image does not give you an amount or an account, ask and post no row; the stored file stays.",
       ].join(" ")
     : "";
-  // The one card the operator pointed at, if they pointed at one. Absent is the
+  // The general attachments this turn carries. Two shapes, because the
+  // gateway has exactly two: an image rides the turn as an `image_url` part
+  // and the model SEES it, and anything else cannot ride the turn at all
+  // (`_normalize_multimodal_content` refuses a `file` part with
+  // `unsupported_content_type`), so it travels as a stored path.
+  //
+  // The path is named ABSOLUTE as well as vault-relative because the agent
+  // reads it with its own file tools, and those resolve a relative path
+  // against the gateway process's working directory, which is neither the
+  // vault nor stable. A relative path here would be a path the agent cannot
+  // open, and the turn would read as though the attachment had been ignored.
+  const attachmentsLine = attachmentsInstructions(input.attachments);
+  // The picture rule rides every turn, not only turns that carry a file: the
+  // agent has to know a markdown tag can draw before it writes one.
+  const pictureRule = pictureInstructions(input.vaultRoot);
+  // The cards the operator pointed at, if they pointed at any. Absent is the
   // ordinary turn and must stay the ordinary turn: no line, no change in shape.
-  const focusedCard = input.focusedCard
-    ? focusedCardLine(input.focusedCard)
-    : "";
+  const focusedCards =
+    input.focusedCards && input.focusedCards.length > 0
+      ? focusedCardsLine(input.focusedCards)
+      : "";
   // The screen the operator has open, when the composer's page-context pill is
   // on. Absent is the ordinary turn and must stay the ordinary turn.
   const pageContext = input.pageContext
     ? pageContextLine(input.pageContext)
     : "";
+  // The first-run interview, while it is still owed. Absent (complete, or the
+  // legacy vault) is the ordinary turn: the paragraph carries the five-area
+  // rubric, which must never reach a turn after the record is done.
+  const onboarding = input.onboarding ? onboardingInstructions(input.onboarding) : "";
   // The phone's queue. One block, only when something waits: an ordinary turn
   // stays byte-identical to the turn it was. The text is JSON-quoted so a draft
   // that carries quotes or newlines cannot break the list it sits in.
@@ -679,30 +1432,51 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
             : []),
           "Do not post a draft unless the operator confirms it in this chat. When they do, call post_phone_draft with its clientId, and with the corrected text if they gave one. If they dismiss it, call dismiss_phone_draft. Never invent a clientId or a draft that is not in this list. After posting, report the receipt and the date.",
         ].join("\n");
+  // The one part of this prompt that depends on how the companion is wired.
+  // Absent from the shared block so a second harness cannot drift from the
+  // governance rules by copying them.
+  const toolTransport =
+    transport === "pi"
+      ? [
+          "LifeQuest's tools are already yours: their names are the tool names in this session, so use them directly for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion, acting as the operator, with full access to this vault. There is no server name, credential, handshake, or invite code in this path, and you must never try to reach the MCP door yourself. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it.",
+        ]
+      : [
+          "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+        ];
   const base = [
     "You are chatting inside the LifeQuest app.",
-    `Active domain: ${domain}`,
+    `Active area: ${domain}`,
     `About me: ${about}`,
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
-    "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
-    "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+    ...toolTransport,
+    THEME_VOCABULARY,
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
+    "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,
-    "When adding many new rows to one database, call insert_rows once. Use upsert_row for a single new row or any edit. If the tool result has posted: true, name the database and the row count. If status is pending, say a decision is waiting and name the database and the count. If status is rejected, give the reason and do not send those rows again.",
+    attachmentsLine,
+    pictureRule,
+    "Database writes split by what they touch. ADDING DATA is written at once, with no Decision: create_database writes a new database and its columns (it refuses a name that area already has), upsert_row without an id creates a row, and insert_rows adds up to 200 new rows; their results say applied: true / posted: true. CHANGING OR REMOVING DATA THAT ALREADY EXISTS still files a pending Decision and writes nothing until the operator approves it: upsert_row WITH an id (an update), delete_row, add_column, delete_database (deleting a whole database and every row in it) and merge_databases (collapsing duplicate databases into one — the rows move into the target, then the sources are deleted). Each of those returns a decisionId and status: \"pending\" and writes nothing, so describe it as a decision waiting for the operator, never as done. The chat confirmation is the operator's yes, so call a direct write only after the operator has agreed in this chat to that exact database or those exact rows — never create a database or add rows speculatively, and never claim a database or row exists unless the tool result says applied: true / posted: true. For a write that became a Decision, say a decision is waiting and name it; a rejected Decision must not be retried as a silent write.",
+    "Before create_database, call list_databases for that area and REUSE a database that already has the same name or the same shape — a second same-named database is refused, and duplicate tables are drift. A project is a project record, not a table: use list_projects / create_project, never a 'Projects' database.",
+    "When adding many new rows to one database, call insert_rows once. Use upsert_row without an id for a single new row. With an id, upsert_row is an EDIT of existing data and files a Decision instead of writing; say the decision is waiting.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
-    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there, ONE save_view call does the whole job: it validates the spec, saves the card, and pins it to the board you name, and its reply carries the card's own rows, so you can report the figures without reading the rows yourself — do not call list_rows or preview_view first for a plain summary request, and do not follow save_view with arrange_dashboard. Pass the spec as a JSON OBJECT, never as a string. Say the card is on the board only when the reply says applied: true. To CHANGE a card that already exists — including how one of its blocks is displayed — get_view for its spec, change the field you mean, and save_view again with the same viewId; that updates it in place and keeps its place on the board. Each dashboard also has a page lock the operator controls: on an unlocked board save_view applies at once, and on a locked board the same call files one pending Decision that saves and pins the card when it is approved. Never claim you changed a locked board directly.",
-    "A view spec is a live query, so it carries data and never looks: no totals, no currency symbols, thousands separators, markdown, or prose in a title. Its fields are databaseId, title, presentation (table | bar | line | metric | list), measure (sum | count | avg | last | avg-per), measureColumnId (a NUMBER column; omit for count, and for an avg-per that averages the NUMBER OF ROWS per period), per (the period an avg-per divides by: day | week | month — required by avg-per, refused on every other measure), groupBy (the column whose values become the rows), columns (the list presentation's own columns, in order, naming 1-6 real column ids), timeBucket (day | week | month, to collapse a date groupBy into periods — 'week' labels rows 2026-W41), timeColumnId (the date column a timeWindow acts on, required whenever timeWindow is set), timeWindow (\"all\", \"today\", \"this-week\", \"this-month\", \"last-30-days\", \"this-year\", {\"kind\":\"last-weeks\",\"weeks\":8}, {\"kind\":\"last-months\",\"months\":6} for trailing calendar months including this one, {\"kind\":\"previous-months\",\"months\":4} for the whole months BEFORE this one, or {\"kind\":\"custom\",\"start\":\"YYYY-MM-DD\",\"end\":\"YYYY-MM-DD\"}), filters, sort, limit (1-50, default 12), convertToZar, and span (2 for the full row). A metric takes no groupBy; table and bar require one; line requires a date groupBy plus a timeBucket; an avg-per measure is a metric with a bounded window and never \"all\". A \"list\" is not an aggregate: it prints one line per row, newest first, and takes no measure, no groupBy and no timeBucket — use it whenever the operator asks for the recent ROWS themselves (\"the recent transactions\", \"what did I enter this month\"), which is NOT a table of totals. A spec whose title says \"summary\" but whose figures are several is ONE card with a `blocks` array — a metric panel for the headline number, a table panel for the detail, a bar or line panel for the trend — not several views. Whatever a block omits it inherits from the top-level fields. Pass span: 2 for a composed card.",
+    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there, ONE save_view call does the whole job: it validates the spec, saves the card, and pins it to the board you name, and its reply carries the card's own rows, so you can report the figures without reading the rows yourself — do not call list_rows or preview_view first for a plain summary request, and do not follow save_view with arrange_dashboard. Pass the spec as a JSON OBJECT, never as a string. Say the card is on the board only when the reply says applied: true. To CHANGE a card that already exists — including how one of its objects is displayed — get_view for its spec, change the field you mean, and save_view again with the same viewId; that updates it in place and keeps its place on the board. Each dashboard also has a page lock the operator controls: on an unlocked board save_view applies at once, and on a locked board the same call files one pending Decision that saves and pins the card when it is approved. Never claim you changed a locked board directly.",
+    "A card is a set of LIVE DATA OBJECTS, not a picture. Each object reads rows (the card's database, or its own databaseId from the same domain), transforms them (filters, timeWindow, groupBy, timeBucket, measure, per, convertToZar) and draws them (presentation + display). The spec carries data and never looks: no totals, no currency symbols, thousands separators, markdown, or prose in a title. Its fields are databaseId, title, presentation (table | bar | line | metric | list), measure (sum | count | avg | last | avg-per), measureColumnId (a NUMBER column; omit for count, and for an avg-per that averages the NUMBER OF ROWS per period), per (day | week | month — required by avg-per, refused on every other measure), groupBy, columns, timeBucket, timeColumnId, timeWindow, filters, sort, limit, convertToZar, seriesBy, display, and span. PRESENTATION IS ONLY THE DRAWING: metric, table, bar and line all read the same dataset, so changing one must never change groupBy, timeBucket or measure; a metric MAY group and shows the fold over the groups. Choose the drawing for the question — metric for one headline number, table for exact values, bar to compare categories or periods, line for a trend over time, and a row object when the operator wants the transactions themselves. If they ask which chart suits their data, say which and why, then save it. A row object is an object with `columns` (1-6 real ids): it prints one line per row, newest first, and draws as list or table, taking no groupBy, timeBucket, seriesBy or meaningful measure. A spec whose title says \"summary\" but whose figures are several is ONE card with a `blocks` array — a metric object for the headline, a table object for the detail, a bar or line object for the trend — not several views. An object with `from` does not read a database: it folds an EARLIER object's rows (measure avg gives the average of that table's totals), which is how a transformation over computed data stays live. An object with seriesBy splits a sum/count by a category into coloured series with a legend. `display` is styling only: palette accent | warm | cool | mono, legend, xLabel, yLabel, valueLabels. Whatever an object omits it inherits from the top-level fields. Pass span: 2 for a composed card.",
     "THE TWO AVERAGES ARE DIFFERENT NUMBERS, and picking the wrong one is a wrong figure said confidently. measure \"avg\" is the average ROW: the total divided by how many rows there were. measure \"avg-per\" is the average PERIOD: the window's total divided by the days, weeks or months that window spans, and it is what \"the average spend per week/month\" means. \"The average spend per week across the last 4 weeks\" is measure \"avg-per\" with per \"week\" and timeWindow {\"kind\":\"last-weeks\",\"weeks\":4}; \"the average spend per month over the previous 4 months, not including the current one\" is measure \"avg-per\" with per \"month\" and timeWindow {\"kind\":\"previous-months\",\"months\":4} — a live window of the four whole months before this one, which steps forward by itself when the month turns. An average of no rows is R0, not a blank.",
     "A named timeWindow is LIVE: \"today\" and \"this-week\" are recomputed from the current date every time the card is drawn, so \"today's spending\" is timeWindow \"today\" with timeColumnId set. NEVER put a date in `filters` to mean today, yesterday, or this week — a literal date makes a card that recomputes perfectly and can never change, which is exactly the stuck card the operator has complained about. Use a literal date only when the operator names that specific day (\"what did I spend on 12 October\").",
-    "A weekly summary of expenses over the finance kit is therefore one composed spec: databaseId \"finance:transactions\", with a metric block (measure \"sum\", measureColumnId \"amount\", no groupBy, timeWindow {\"kind\":\"last-weeks\",\"weeks\":8}) and a table block (groupBy \"date\", timeBucket \"week\", timeColumnId \"date\", the same window). Never compute a dashboard figure with Python, a terminal, SQL of your own, or a page script block: the query belongs in the spec. If a tool refuses your spec it returns a `fix` object naming that database's real column ids, the allowed values, and two specs that would pass — read it and retry once with the corrected shape. If a skill in your library describes a longer procedure (fetch the rows, group them by hand, then save), ignore the extra steps.",
+    "A weekly summary of expenses over the finance kit is therefore one composed spec: databaseId \"finance:transactions\", with a metric object (measure \"sum\", measureColumnId \"amount\", no groupBy, timeWindow {\"kind\":\"last-weeks\",\"weeks\":8}) and a table object (groupBy \"date\", timeBucket \"week\", timeColumnId \"date\", the same window). An average OF monthly totals is expressed, not computed: make \"months\" the table object and add {\"id\":\"average\",\"title\":\"Average month\",\"presentation\":\"metric\",\"from\":\"months\",\"measure\":\"avg\"}. Never compute a dashboard figure with Python, a terminal, SQL of your own, or a page script block: the query belongs in the spec. If a tool refuses your spec it returns a `fix` object naming that database's real column ids, the allowed values, and two specs that would pass — read it and retry once with the corrected shape. If a skill in your library describes a longer procedure (fetch the rows, group them by hand, then save), ignore the extra steps.",
     "A dashboard card draws itself: it wears the board's own card, headings, hairlines, and number formatting, and its table headers come from the query you send — a timeBucket makes the label column Month or Week, a groupBy names the column it grouped by, and a list names its own `columns`. Keep a table under about 12 rows and a chart under about 20 points, because that is all a card has room for; a list shows up to 50 rows of the database as they stand, newest first. A figure that is not a row of the database is written in your reply, not saved as a view.",
     "arrange_dashboard is for reordering or unpinning cards that already exist, and it takes the COMPLETE pin list from get_dashboard. It is not how you add a new card: save_view is. On a locked board neither one writes — both file a Decision.",
+    "At the START of every session, call get_companion_brief before answering: it returns what your brief said and how the operator answered it — done, not-useful, wrong, later, or expired-unseen when nobody acted. That feedback is how you learn what is worth putting on the brief, so read it rather than asking the operator to read the card to you.",
+    "The Dashboard carries a COMPANION BRIEF card, and it is the one place that holds the durable things a daily note would otherwise lose — a decision, a watch, a commitment, a pattern — because every other surface is either a task (action) or a signal (a write-only capture list). Write it with set_companion_brief: up to five TYPED items, never free text. Every item has a kind (watch: body, money, a risk; prompt: a question to think about, not a task; ahead: a deadline, renewal or follow-up falling due; commitment: the operator said they would do X and has not; pattern: the same thing said, done or avoided N times), text (the line they read, 120 characters max), why (the justification, 160 max — required, a brief item without a reason is wallpaper), sourceRef (\"note 2026-11-05\", \"signal:<id>\", \"task:<id>\", \"conversation 2026-11-04\"), domainSlug (null for vault-wide, or a slug to show it only on that board's lens), priority 1-5, and expiresAt. Omit expiresAt for the kind's default: prompt and ahead stand until the end of the local day, watch, commitment and pattern for seven days. A write REPLACES the whole active set, never appends: re-derive it. Write it at the end of a daily-note analysis pass, at the top of a weekly review, and whenever the operator revises a note; an item past its expiry is reported back as expired-unseen, so you can see what you wrote that nobody acted on. You cannot dismiss an item or mark it done — only the operator does that, with done / not-useful / wrong / later.",
     boardLine,
     boardLock,
-    focusedCard,
+    focusedCards,
     pageContext,
     phoneDraftsBlock,
+    onboarding,
     ...fenceRule,
   ].filter(Boolean).join("\n");
   // The page material an automation opened this chat with. It is appended the
@@ -724,6 +1498,12 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
  * row used to render as the literal word "tool"; reading `ok` is why a row
  * used to claim success for a key the wire never sends.
  */
+/** The terminal frames carry the turn's own transcript rows under `messages`. */
+function snapshotOf(data: Record<string, unknown>): TranscriptMessage[] | undefined {
+  const rows = messagesFromPayload({ messages: data.messages });
+  return rows.length > 0 ? rows : undefined;
+}
+
 function toolName(data: Record<string, unknown>): string {
   const name = data.tool_name ?? data.name;
   return typeof name === "string" && name.trim() ? name.trim() : "tool";
@@ -803,9 +1583,11 @@ export function parseSseBlock(raw: string): ChatStreamEvent | null {
       if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
     } catch {
       if (eventName === "error" || dataRaw) {
+        const raw = dataRaw || "Invalid stream payload";
         return {
           type: "error",
-          message: operatorFacingStreamError(dataRaw || "Invalid stream payload"),
+          message: operatorFacingStreamError(raw),
+          ...(isPausedConversation(raw) ? { paused: true as const } : {}),
         };
       }
       return null;
@@ -832,13 +1614,19 @@ export function mapStreamEvent(
       // The turn was interrupted: the deltas already delivered are a PARTIAL
       // reply, and nothing else on the wire says so. The panel needs this to
       // keep a stopped turn from reading like a finished one.
-      return { type: "run.stopped" };
+      return {
+        type: "run.stopped",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
+      };
     case "run.failed":
       // Same family, no interrupt: the turn ended without finishing (failure,
       // iteration budget, partial). ``turn_exit_reason`` names it when present.
       return {
         type: "run.incomplete",
         reason: typeof data.turn_exit_reason === "string" ? data.turn_exit_reason : "",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
       };
     case "assistant.delta": {
       const text =
@@ -849,12 +1637,42 @@ export function mapStreamEvent(
             : "";
       return { type: "assistant.delta", text };
     }
-    case "tool.started":
+    case "assistant.completed": {
+      // The authoritative whole reply. It arrives after the deltas, so the
+      // panel can settle on it instead of trusting whichever delta landed last.
+      const text = typeof data.content === "string" ? data.content : "";
+      return text.trim() ? { type: "assistant.final", text } : null;
+    }
+    case "assistant.commentary": {
+      // A mid-turn update the runtime chose to say in prose (Codex commentary).
+      // It is narration inside the work log, never the answer.
+      const text = typeof data.text === "string" ? data.text : "";
+      return text.trim()
+        ? { type: "assistant.commentary", text, alreadyStreamed: data.already_streamed === true }
+        : null;
+    }
+    case "tool.started": {
+      const args = parseArgs(data.args);
       return {
         type: "tool.started",
         name: toolName(data),
         target: toolTargetLine(data.args),
+        ...(args ? { args } : {}),
       };
+    }
+    case "tool.progress": {
+      // The session stream's thinking channel: the runtime's model output
+      // sampled to a bounded preview, named `_thinking`. Real deltas are not
+      // wired on this route; the descriptor calls this "preview" so the panel
+      // labels it as a preview rather than claiming a stream it does not have.
+      if (data.tool_name !== "_thinking") return null;
+      const text = typeof data.text === "string" ? data.text : typeof data.delta === "string" ? data.delta : "";
+      return text.trim() ? { type: "reasoning.delta", text } : null;
+    }
+    case "tool.failed":
+      // A failed call must still close its row; without this frame the row
+      // spins forever and the turn reads as if it were still working.
+      return { type: "tool.completed", name: toolName(data), isError: true };
     case "tool.completed":
       // Nothing to add to the row: the frame carries no outcome, so this is
       // only the panel's signal that the call named here is no longer running.
@@ -868,14 +1686,20 @@ export function mapStreamEvent(
       };
     }
     case "run.completed":
-      return { type: "run.completed" };
-    case "error":
+      return {
+        type: "run.completed",
+        ...(usageOf(data.usage) ? { usage: usageOf(data.usage) } : {}),
+        ...(snapshotOf(data) ? { snapshot: snapshotOf(data) } : {}),
+      };
+    case "error": {
+      const raw = String(data.message ?? data.error ?? "Stream error");
       return {
         type: "error",
-        message: operatorFacingStreamError(
-          String(data.message ?? data.error ?? "Stream error"),
-        ),
+        message: operatorFacingStreamError(raw),
+        // The paused token is not an error to report: main recovers the chat.
+        ...(isPausedConversation(raw) ? { paused: true as const } : {}),
       };
+    }
     default:
       return null;
   }
@@ -891,4 +1715,153 @@ export function splitSse(buffer: string): { events: ChatStreamEvent[]; rest: str
     if (evt) events.push(evt);
   }
   return { events, rest };
+}
+
+// ---------------------------------------------------------------------------
+// Bounding and redaction at the IPC boundary
+// ---------------------------------------------------------------------------
+
+const ARGS_BOUND = 2048;
+const RESULT_BOUND = 500;
+const SNAPSHOT_ROW_BOUND = 2000;
+const SNAPSHOT_MAX_ROWS = 400;
+
+function clipText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/**
+ * Remove the one thing a tool argument or result should never carry across a
+ * channel: a credential. Deliberately narrow — a key/value whose name says it
+ * is a secret, and provider-style `sk-` tokens. It runs on tool payloads, never
+ * on the assistant's prose, because redacting an answer the operator is reading
+ * would be a different (and worse) bug.
+ */
+export function redactSecrets(value: string): string {
+  return value
+    .replace(
+      /((?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password)\s*[:=]\s*)(["']?)([^\s"',;}]+)/gi,
+      "$1$2[redacted]",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[redacted]");
+}
+
+function bounded(value: unknown): unknown {
+  if (value == null) return undefined;
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw) return undefined;
+    if (raw.length <= ARGS_BOUND) return value;
+    return `${raw.slice(0, ARGS_BOUND)}…`;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeSnapshot(rows: TranscriptEntry[]): TranscriptEntry[] {
+  return rows.slice(0, SNAPSHOT_MAX_ROWS).map((row) => ({
+    ...row,
+    content: redactSecrets(clipText(row.content, SNAPSHOT_ROW_BOUND)),
+    ...(row.reasoning
+      ? { reasoning: redactSecrets(clipText(row.reasoning, SNAPSHOT_ROW_BOUND)) }
+      : {}),
+    ...(row.toolCalls
+      ? {
+          toolCalls: row.toolCalls.slice(0, 64).map((call) => ({
+            ...call,
+            ...(call.args === undefined ? {} : { args: bounded(call.args) }),
+          })),
+        }
+      : {}),
+  }));
+}
+
+/**
+ * A row's pictures, bounded and reduced to strings.
+ *
+ * A transcript may come from a persisted file this process did not write, so a
+ * field is kept only when it is a string and a picture is kept only when it
+ * names something drawable. A path is not a credential — the read door is what
+ * decides whether it may be opened — so no redaction happens here.
+ */
+function sanitizeRowImages(
+  images: TranscriptImage[] | undefined,
+): TranscriptImage[] | undefined {
+  if (!Array.isArray(images) || images.length === 0) return undefined;
+  const kept: TranscriptImage[] = [];
+  for (const image of images) {
+    if (kept.length >= MAX_TRANSCRIPT_IMAGES) break;
+    if (!image || typeof image !== "object") continue;
+    const name = typeof image.name === "string" ? image.name : "";
+    const ref = typeof image.ref === "string" && image.ref ? image.ref : undefined;
+    const src = typeof image.src === "string" && image.src ? image.src : undefined;
+    if (!ref && !src) continue;
+    kept.push({ name, ...(ref ? { ref } : {}), ...(src ? { src } : {}) });
+  }
+  return kept.length > 0 ? kept : undefined;
+}
+
+/**
+ * The last gate before a stored transcript crosses IPC.
+ *
+ * Assistant and user text is passed through: it is the conversation, and its
+ * length is the answer's length. Tool rows are evidence, not prose — their
+ * result text and call arguments are clipped and redacted exactly like a live
+ * tool frame, so an old transcript cannot carry a file or a key the live path
+ * would have refused. A user row's pictures are bounded and string-only, for
+ * the same reason: the renderer must not have to trust a stored session with
+ * more than it can draw.
+ */
+export function sanitizeTranscriptRows(rows: TranscriptMessage[]): TranscriptMessage[] {
+  return rows.map((row) => {
+    const images = sanitizeRowImages(row.images);
+    if (row.role !== "tool" && !row.toolCalls && !row.reasoning && !images) return row;
+    return {
+      ...row,
+      ...(images ? { images } : {}),
+      ...(row.role === "tool"
+        ? { content: redactSecrets(clipText(row.content, SNAPSHOT_ROW_BOUND)) }
+        : {}),
+      ...(row.reasoning
+        ? { reasoning: redactSecrets(clipText(row.reasoning, SNAPSHOT_ROW_BOUND)) }
+        : {}),
+      ...(row.toolCalls
+        ? {
+            toolCalls: row.toolCalls.slice(0, 64).map((call) => ({
+              ...call,
+              ...(call.args === undefined ? {} : { args: bounded(call.args) }),
+            })),
+          }
+        : {}),
+    };
+  });
+}
+
+/**
+ * The last gate before a turn frame crosses IPC.
+ *
+ * Harness adapters already bound what they own, but the renderer must not have
+ * to trust that: args and result previews are clipped and credential-shaped
+ * text is redacted here, so a future harness cannot flood the channel or leak a
+ * key by forgetting to bound one field. The assistant's own text is untouched.
+ */
+export function sanitizeStreamEvent(evt: ChatStreamEvent): ChatStreamEvent {
+  switch (evt.type) {
+    case "tool.started":
+      return evt.args === undefined ? evt : { ...evt, args: bounded(evt.args) };
+    case "tool.progress":
+      return { ...evt, text: redactSecrets(clipText(evt.text, RESULT_BOUND)) };
+    case "tool.completed":
+      return evt.resultPreview === undefined
+        ? evt
+        : { ...evt, resultPreview: redactSecrets(clipText(evt.resultPreview, RESULT_BOUND)) };
+    case "run.completed":
+    case "run.stopped":
+    case "run.incomplete":
+      return evt.snapshot === undefined
+        ? evt
+        : { ...evt, snapshot: sanitizeSnapshot(evt.snapshot) };
+    default:
+      return evt;
+  }
 }

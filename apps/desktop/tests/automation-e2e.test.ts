@@ -123,6 +123,8 @@ type Editor = {
 };
 type Sample = {
   route: string | null;
+  /** The chat the fixture already had on screen when the run started. */
+  priorChatTitle: string | null;
   rail: {
     wing: Link[];
     shelf: Link[];
@@ -131,7 +133,12 @@ type Sample = {
     dividerRole: boolean;
     wingBox: Box | null;
     firstWingBox: Box | null;
-    topBarBox: Box | null;
+    /**
+     * The rail's wing-switcher band, directly above the wing's rows. It replaced
+     * the sheet's retired `.top-bar` as the chrome row the first icon starts
+     * below: the band still begins at the window strip's bottom edge.
+     */
+    wingsBandBox: Box | null;
     shelfBox: Box | null;
     footerBox: Box | null;
   };
@@ -143,6 +150,7 @@ type Sample = {
     editor: Editor | null;
   };
   note: {
+    name: string | null;
     heading: string | null;
     day: string | null;
     automationButtons: string[] | null;
@@ -152,6 +160,10 @@ type Sample = {
   chat: {
     open: boolean;
     title: string | null;
+    /** The dock's open tabs, in strip order, with the tab in front marked. */
+    tabs: { label: string | null; active: boolean }[];
+    /** The Chats list's live rows: each chat the store lists, by name. */
+    sidebarRows: { label: string | null; active: boolean }[];
     userMessages: string[];
   };
   sessionCalls: { id: string; title: string }[];
@@ -223,7 +235,7 @@ describe("automations e2e", () => {
     // ── the shelf is its own cordoned group, above the Log ──────────────────
     assert.deepEqual(
       landing.rail.shelf.map((link) => link.label),
-      ["Life-Chain", "Decisions", "Daily Note", "Automations"],
+      ["Notebox", "Decisions", "Daily Journal", "Automations"],
       "the governed shelf is not the four icons the operator named",
     );
     assert.deepEqual(
@@ -254,9 +266,9 @@ describe("automations e2e", () => {
     );
     assert.ok(
       landing.rail.firstWingBox &&
-        landing.rail.topBarBox &&
-        landing.rail.firstWingBox.top >= landing.rail.topBarBox.bottom,
-      `the wing's first icon starts at ${landing.rail.firstWingBox?.top}px, above the top bar's bottom at ${landing.rail.topBarBox?.bottom}px`,
+        landing.rail.wingsBandBox &&
+        landing.rail.firstWingBox.top >= landing.rail.wingsBandBox.bottom,
+      `the wing's first icon starts at ${landing.rail.firstWingBox?.top}px, above the rail's wing band bottom at ${landing.rail.wingsBandBox?.bottom}px`,
     );
 
     // ── the page groups by trigger type ─────────────────────────────────────
@@ -272,7 +284,7 @@ describe("automations e2e", () => {
     assert.ok(builtIn, "the built-in row is missing");
     assert.equal(builtIn!.trigger, "manual");
     assert.match(String(builtIn!.meta), /Manual/);
-    assert.match(String(builtIn!.meta), /Daily Note/);
+    assert.match(String(builtIn!.meta), /Daily Journal/);
     assert.deepEqual(
       ["Run now", "Edit", "Pause", "Delete"].filter(
         (label) => !builtIn!.actions.some((action) => action.includes(label)),
@@ -356,7 +368,14 @@ describe("automations e2e", () => {
     assert.match(String(scheduledRow!.meta), /Last run/);
 
     // ── the Daily Note's manual button still opens the chat ─────────────────
-    assert.equal(dayPage.note.heading, "Daily Note");
+    // The page is named by its eyebrow and headed by the day: the date is the
+    // page's one heading now, so the name is not what the `h1` carries.
+    assert.equal(dayPage.note.name, "Daily Journal");
+    assert.equal(
+      dayPage.note.heading,
+      dayPage.note.day,
+      "the page's heading is not the day it is showing",
+    );
     assert.deepEqual(
       dayPage.note.automationButtons,
       ["Analyze note", "Morning focus"],
@@ -367,6 +386,20 @@ describe("automations e2e", () => {
       dayPage.note.analyze?.disabled,
       false,
       "the trigger is disabled while a note is on screen",
+    );
+    assert.equal(
+      dayPage.chat.title,
+      dayPage.priorChatTitle,
+      "the conversation before the run is not the one the fixture left on screen",
+    );
+    assert.deepEqual(
+      dayPage.chat.tabs,
+      [{ label: dayPage.priorChatTitle, active: true }],
+      "a single chat did not draw its one tab before the run",
+    );
+    assert.ok(
+      dayPage.chat.sidebarRows.some((row) => row.label === dayPage.priorChatTitle),
+      "the chat on screen before the run is missing from Chats",
     );
 
     const expectedTitle = `Analyze note · ${new Intl.DateTimeFormat("en-GB", {
@@ -381,8 +414,31 @@ describe("automations e2e", () => {
     assert.ok(session, "the manual run did not create its chat");
     assert.equal(after.chat.open, true, "the dock did not open on the new chat");
     assert.equal(after.chat.title, expectedTitle, "the dock is not showing the new chat");
+    // The chat the page started takes a tab of its own: the conversation that was
+    // on screen keeps its tab, and the new tab wears the chat's own name. Taking
+    // that tab over, or a tab labelled "Chat", is what this rig refused before
+    // the store adopted the session the page created.
+    assert.deepEqual(
+      after.chat.tabs,
+      [
+        { label: after.priorChatTitle, active: false },
+        { label: expectedTitle, active: true },
+      ],
+      "the new chat did not open in its own tab beside the one on screen",
+    );
+    // The scheduled sweep's chat is in the list too — a scheduled run waits in
+    // Chats without opening the dock — so this asks that both of the chats this
+    // button's run cares about are there, not that the list holds nothing else.
+    assert.ok(
+      after.chat.sidebarRows.some((row) => row.label === expectedTitle),
+      `Chats does not list the new chat by name: ${JSON.stringify(after.chat.sidebarRows)}`,
+    );
+    assert.ok(
+      after.chat.sidebarRows.some((row) => row.label === after.priorChatTitle),
+      `Chats lost the chat that was on screen before the run: ${JSON.stringify(after.chat.sidebarRows)}`,
+    );
     assert.equal(after.chat.userMessages.length, 1);
-    assert.match(after.chat.userMessages[0]!, /Analyze the Daily Note for/);
+    assert.match(after.chat.userMessages[0]!, /Analyze the Daily Journal for/);
     assert.match(after.chat.userMessages[0]!, /Kanban board/);
     assert.match(after.chat.userMessages[0]!, /Goals at different timeframes/);
     assert.match(after.chat.userMessages[0]!, /no place for yet/);
@@ -400,8 +456,8 @@ describe("automations e2e", () => {
     assert.equal(call.sessionId, session.id);
     const context = call.instructionsContext.automationContext ?? "";
     assert.match(context, /AUTOMATION — ANALYZE NOTE/);
-    assert.match(context, /--- DAILY NOTE \(/);
-    assert.match(context, /--- END DAILY NOTE ---/);
+    assert.match(context, /--- DAILY JOURNAL \(/);
+    assert.match(context, /--- END DAILY JOURNAL ---/);
     assert.match(context, /^Friday: a long day, and a lot of it belongs somewhere else in LifeQuest\./m);
     assert.match(context, /Context note 1:/);
     assert.match(context, /Context note 55:/);

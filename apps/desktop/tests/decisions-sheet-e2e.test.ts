@@ -283,10 +283,14 @@ describe("the decisions sheet over the app", () => {
       "pending",
       "the newest card is not pending",
     );
+    // The pending card now offers three controls: Edit sits between the two
+    // answers, so the operator can correct the proposal in place instead of
+    // accepting or refusing the agent's wording verbatim. Both answers are still
+    // offered; the sheet just also offers the amendment that precedes them.
     assert.deepEqual(
       opened.cards[0]?.actions,
-      ["Reject", "Approve"],
-      "the card does not offer both answers",
+      ["Reject", "Edit", "Approve"],
+      "the card does not offer both answers with the amend control between them",
     );
     assert.equal(opened.focus?.insideSheet, true, "the caret escaped the modal sheet");
 

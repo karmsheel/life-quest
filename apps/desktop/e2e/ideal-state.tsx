@@ -204,6 +204,11 @@ const bridge: Record<string, unknown> = {
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
   pinsList: () => ok({ pins: [], locked: false }),
+  // The shell's pending-decisions badge reads the inbox on mount. These pages
+  // are not about that badge, so the list is empty — but the call is modelled:
+  // a rig that leaves it unnamed fails on the shell's own read, not on the page
+  // under test.
+  decisionList: () => ok([]),
   onCompanionStream: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),

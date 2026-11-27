@@ -1,0 +1,474 @@
+/* Customizations — the workshop for the data-only customisation files.
+   One card is one file: what it changes, whether it is the active one, and the
+   four verbs the operator owns — switch, try, edit, remove. The editor is the
+   same card's file opened as text, with the validation verdict underneath. */
+.customizations-page {
+  width: 100%;
+  max-width: 56rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  container-type: inline-size;
+  /*
+   * Ink for the quiet band. The `--muted` alias points at `--muted-foreground`
+   * (a text colour), so it is never a surface; `--muted-surface` is the band.
+   * Plain muted text on that band lands at 4.29:1 by day — just under the 4.5
+   * AA floor for small text — so these labels take one 8% step toward the
+   * foreground: still quiet, 4.76:1 by day and 6.1:1 at night.
+   */
+  --customizations-quiet-ink: color-mix(
+    in srgb,
+    var(--muted-foreground) 92%,
+    var(--foreground)
+  );
+}
+
+.customizations-page__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem 1rem;
+}
+
+.customizations-page__header > div {
+  min-width: 0;
+}
+
+.customizations-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.customizations-page__summary {
+  margin: -0.4rem 0 0;
+  font-size: 0.8rem;
+}
+
+.customizations-page__summary code {
+  font-size: 0.78rem;
+}
+
+.customizations-page__empty {
+  margin: 0;
+  padding: 1.4rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+
+/* Create panel */
+.customizations-page__create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.customizations-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.customizations-page__field input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+}
+
+.customizations-page__source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0.82rem;
+}
+
+.customizations-page__source legend {
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+}
+
+.customizations-page__source label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.customizations-page__create-actions,
+.customizations-page__editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Editor */
+.customizations-page__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.customizations-page__editor-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.customizations-page__editor-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+}
+
+.customizations-page__editor-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.customizations-page__editor-title code {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* Editor tabs — Fields (the studio) and JSON (the raw file). One panel at a
+   time; History stays under both, because a save is a save from either. The
+   strip is the quiet band so the raised active tab reads against it; the
+   inactive label is quiet ink, not the old `--muted` text colour. */
+.customizations-page__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted-surface);
+  align-self: flex-start;
+}
+
+.customizations-page__tab {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--customizations-quiet-ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.customizations-page__tab.is-active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+}
+
+.customizations-page__tab:hover {
+  color: var(--foreground);
+}
+
+.customizations-page__tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.customizations-page__editor-raw {
+  width: 100%;
+  min-height: 16rem;
+  resize: vertical;
+  padding: 0.7rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.customizations-page__valid {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+
+/* History — the undo the editor grew: one row per saved version, held outside
+   the theme list. A row is a small table: when, what the look was called, how
+   big the snapshot is, and the one verb. */
+.customizations-page__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.customizations-page__history-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.customizations-page__history-note {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.customizations-page__history-empty {
+  margin: 0;
+  padding: 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.customizations-page__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.customizations-page__history-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  font-size: 0.78rem;
+}
+
+.customizations-page__history-time {
+  color: var(--muted-foreground);
+}
+
+.customizations-page__history-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.customizations-page__history-bytes {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cards */
+.customizations-page__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.customization-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.customization-card--active {
+  border-color: var(--ring);
+  box-shadow: var(--shadow-sm);
+}
+
+.customization-card__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.customization-card__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.customization-card__icon {
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+}
+
+.customization-card__label {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.customization-card__file {
+  font-size: 0.74rem;
+  color: var(--muted-foreground);
+}
+
+.customization-card__pill {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.customization-card__pill--active {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+
+/* A bundled example says so: the chip keeps the pill's size and takes the quiet
+   band as its surface (never `--muted`, which is a text alias), and one line
+   under the description explains that removing it is final. */
+.customization-card__pill--gallery {
+  border-color: var(--border);
+  background: var(--muted-surface);
+  color: var(--customizations-quiet-ink);
+}
+
+.customization-card__gallery-note {
+  margin: 0;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+.customization-card__desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.customization-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+/* The card's summary chips: the quiet band as their surface (not the text
+   colour), with quiet ink on top. */
+.customization-chip {
+  padding: 0.02rem 0.38rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--customizations-quiet-ink);
+  font-size: 0.68rem;
+}
+
+.customization-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The switch: a native toggle, not a button that lies about its role. */
+.customization-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.customization-switch__control {
+  position: relative;
+  width: 2rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  cursor: pointer;
+}
+
+.customization-switch__control[aria-checked="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* The thumb carries the state colour, like the app's Toggle: the quiet ink
+   when off (4.29:1 against the band by day, 5.66:1 at night — past the 3:1
+   floor for a control part), the card fill when on the accent track. */
+.customization-switch__knob {
+  position: absolute;
+  top: 50%;
+  left: 0.12rem;
+  width: 0.78rem;
+  height: 0.78rem;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  transform: translateY(-50%);
+  transition: left 120ms ease;
+}
+
+.customization-switch__control[aria-checked="true"] .customization-switch__knob {
+  left: calc(100% - 0.9rem);
+  background: var(--card);
+}
+
+.customization-switch__control:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@container (max-width: 40rem) {
+  .customizations-page__header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customizations-page__header-actions {
+    justify-content: flex-start;
+  }
+
+  .customization-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customization-card__actions {
+    justify-content: flex-start;
+  }
+}

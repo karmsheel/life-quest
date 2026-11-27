@@ -3,6 +3,7 @@ import { deadlinePressureGoals, filterByLens, daysUntilDeadline } from "@lifeque
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 function localIsoDate(): string {
   const now = new Date();
@@ -48,7 +49,10 @@ export function DeadlineBanner() {
   return (
     <div role="status" className="deadline-banner" aria-live="polite">
       <div className="deadline-banner__content">
-        <span className="deadline-banner__label muted">Deadline pressure</span>
+        <span className="deadline-banner__row">
+          <span className="deadline-banner__label muted">Deadline pressure</span>
+          <BuiltInBadge />
+        </span>
         <span className="deadline-banner__text">
           {pressureGoals.length === 1 ? (
             pressureGoals[0].name

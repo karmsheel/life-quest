@@ -59,10 +59,10 @@ harness.viewCardCalls = [];
 const fixtures = (harness.viewCardFixtures = {});
 
 /**
- * The schema the card reads to decide which presentation switches are possible.
- * A real one from the finance kit: a date to bucket, a number to measure, and a
- * relation to group by. `retargetBlock` reads the TYPES, so a rig with the wrong
- * types would prove the wrong set of enabled controls.
+ * The database schema the card reads. Since presentations became drawings the
+ * switch no longer depends on column types — a row object offers list/table and
+ * an aggregate offers all four — but the card still reads the database, so the
+ * fixture stays a real one rather than a stub.
  */
 const SCHEMA = {
   id: "finance:transactions",
@@ -199,12 +199,10 @@ function Harness({
     const report = () => {
       const blocks = Array.from(document.querySelectorAll(".view-card__block")).map((el) => ({
         title: el.querySelector(".view-card__block-title")?.textContent ?? null,
-        active: Array.from(el.querySelectorAll(".view-card__tool"))
-          .filter((b) => b.getAttribute("aria-pressed") === "true")
-          .map((b) => b.getAttribute("data-presentation")),
-        tools: Array.from(el.querySelectorAll(".view-card__tool")).map((b) =>
-          b.getAttribute("data-presentation"),
-        ),
+        // The drawing is on the block itself, so this reading survives a closed
+        // display menu — and a save, which is when this channel is read.
+        active: [el.getAttribute("data-presentation")].filter(Boolean),
+        menus: el.querySelectorAll("[data-testid='view-block-display-menu']").length,
         tableRows: el.querySelectorAll(".view-card__table tbody tr").length,
         bars: el.querySelectorAll(".view-card__bar").length,
         metric: el.querySelector(".view-card__metric")?.textContent ?? null,

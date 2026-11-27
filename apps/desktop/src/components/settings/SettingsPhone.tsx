@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Toggle } from "@/components/ui/Toggle";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
@@ -171,12 +172,11 @@ export function SettingsPhone() {
         label="Phone access"
         description="Serve the phone client from this machine on 127.0.0.1:8647. It is reachable only through the tunnel you expose it on."
         action={
-          <input
-            type="checkbox"
-            aria-label="Phone access"
+          <Toggle
             checked={state.enabled}
             disabled={busy}
-            onChange={(event) => void onToggleAccess(event.target.checked)}
+            label="Phone access"
+            onChange={(next) => void onToggleAccess(next)}
           />
         }
       />

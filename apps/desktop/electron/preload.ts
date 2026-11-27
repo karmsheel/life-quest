@@ -2,6 +2,35 @@ import { contextBridge, ipcRenderer } from "electron";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/**
+ * The bridge's metric-definition payload: the two sources, neither carrying a
+ * ViewSpec. A `derived` draft names its database and two columns and the engine
+ * builds/validates the query.
+ */
+type MetricDefinitionDraft =
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: "sum" | "count" | "last" | "avg";
+      eventKey: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    }
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "derived";
+      aggregation: "sum" | "count" | "last" | "avg";
+      databaseId: string;
+      measureColumnId?: string | null;
+      timeColumnId: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    };
+
 /** KAR-70: the two loopback doors, as main reports them. */
 type McpDoors = {
   localUrl: string;
@@ -22,6 +51,55 @@ type ConnectedAgent = {
   door: "local" | "invite";
   createdAt: string;
   decidedAt: string | null;
+};
+
+/** Which agent a vault runs on, as main stores it. */
+type VaultAgentBinding = { harness: "hermes" | "pi"; hermesProfile: string | null };
+
+/** One Hermes profile the operator could bind, with the vaults it already uses. */
+type VaultAgentProfile = {
+  name: string;
+  path: string;
+  isDefault: boolean;
+  hasSoul: boolean;
+  hasConfig: boolean;
+  usedBy: { vaultId: string; vaultName: string }[];
+};
+
+/** Settings → Agents in this vault, in one read. */
+type VaultAgentsState = {
+  vaultId: string | null;
+  binding: VaultAgentBinding;
+  installedProfiles: VaultAgentProfile[];
+  vaultOpen: boolean;
+};
+
+/** Create a new agent for the vault, or reuse an installed one explicitly. */
+type VaultAgentAddInput =
+  | { mode: "fresh"; name?: string }
+  | { mode: "existing"; profile: string };
+
+/** The push that says the open vault's agent changed. */
+type CompanionHarnessChanged = {
+  harness: "hermes" | "pi";
+  vaultId: string | null;
+};
+
+/** One file in the app profile's `themes/` directory, as main reads it. */
+type ThemeFileEntry =
+  | { file: string; raw: string; mtime: number }
+  | { file: string; error: string };
+
+/**
+ * One saved version of one theme file. Declared locally (rather than imported
+ * from main's store) so the preload bundle stays a bridge and nothing more;
+ * the fields mirror `ThemeVersion` in `theme-store.ts` and `vite-env.d.ts`.
+ */
+type ThemeVersion = {
+  id: string;
+  savedAt: string;
+  label: string;
+  bytes: number;
 };
 
 const lifequest = {
@@ -48,12 +126,28 @@ const lifequest = {
     ipcRenderer.invoke("domain:archive", slug) as Promise<Result<unknown>>,
   domainUnarchive: (slug: string) =>
     ipcRenderer.invoke("domain:unarchive", slug) as Promise<Result<unknown>>,
+  domainUnlock: (slug: string) =>
+    ipcRenderer.invoke("domain:unlock", slug) as Promise<Result<unknown>>,
   domainDelete: (slug: string) =>
     ipcRenderer.invoke("domain:delete", slug) as Promise<Result<unknown>>,
   domainSetActive: (slug: string | null) =>
     ipcRenderer.invoke("domain:setActive", slug) as Promise<Result<string | null>>,
   domainGetActive: () =>
     ipcRenderer.invoke("domain:getActive") as Promise<string | null>,
+
+  // The onboarding interview's three operator verbs. Each re-reads the vault on
+  // the way through and the IPC door announces the write, so the dock's
+  // welcome/continue/confirmation cards redraw without a reload.
+  onboardingStart: () =>
+    ipcRenderer.invoke("onboarding:start") as Promise<Result<unknown>>,
+  onboardingConfirm: (options?: {
+    skipDoctrineKinds?: string[];
+    includeTable?: boolean;
+    includeNote?: boolean;
+  }) =>
+    ipcRenderer.invoke("onboarding:confirm", options) as Promise<Result<unknown>>,
+  onboardingDiscard: () =>
+    ipcRenderer.invoke("onboarding:discard") as Promise<Result<unknown>>,
 
   // KAR-55 domain databases
   dbList: (domainSlug: string | null) =>
@@ -133,10 +227,28 @@ const lifequest = {
     ipcRenderer.invoke("view:run", slug, spec) as Promise<Result<unknown>>,
   viewRunSaved: (slug: string, viewId: string) =>
     ipcRenderer.invoke("view:runSaved", slug, viewId) as Promise<Result<unknown>>,
-  // The composer's receipt: stored in the vault before the turn is posted.
-  receiptAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>
-    ipcRenderer.invoke("receipt:attach", input) as Promise<
+  // The composer's receipt: a picture the operator attached is promoted into
+  // the finance file store, so the turn that follows carries the receipt.
+  receiptPromote: (input: { id: string }) =>
+    ipcRenderer.invoke("receipt:promote", input) as Promise<
       Result<{ relPath: string; fileId: string; name: string; size: number }>
+    >,
+  // Whether the receipt store exists (kit installed, Financial area live). One
+  // predicate, owned by main, so the chip's offer and the press agree.
+  receiptReady: () =>
+    ipcRenderer.invoke("receipt:ready") as Promise<Result<boolean>>,
+  // The composer's general attachment: any media or file, stored in the vault
+  // before the turn is posted. Main answers with the id the turn names back.
+  attachmentAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>
+    ipcRenderer.invoke("attachment:attach", input) as Promise<
+      Result<{
+        id: string;
+        kind: "image" | "video" | "audio" | "file";
+        name: string;
+        size: number;
+        mime: string;
+        relPath: string;
+      }>
     >,
   // KAR-53 ingest
   // KAR-61 finance kit
@@ -220,10 +332,16 @@ const lifequest = {
     ipcRenderer.invoke("decision:list") as Promise<Result<unknown>>,
   decisionCreate: (input: Record<string, unknown>) =>
     ipcRenderer.invoke("decision:create", input) as Promise<Result<unknown>>,
+  decisionAmend: (id: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke("decision:amend", id, input) as Promise<Result<unknown>>,
   decisionResolve: (id: string, resolution: "approved" | "rejected") =>
     ipcRenderer.invoke("decision:resolve", id, resolution) as Promise<
       Result<unknown>
     >,
+  manualDecisionList: () =>
+    ipcRenderer.invoke("manualDecision:list") as Promise<Result<unknown>>,
+  manualDecisionCreate: (input: Record<string, unknown>) =>
+    ipcRenderer.invoke("manualDecision:create", input) as Promise<Result<unknown>>,
 
   logList: () => ipcRenderer.invoke("log:list") as Promise<Result<unknown>>,
 
@@ -237,6 +355,14 @@ const lifequest = {
     >,
   signalChainDelete: (id: string) =>
     ipcRenderer.invoke("signalChain:delete", id) as Promise<Result<unknown>>,
+  signalChainReadImage: (relPath: string) =>
+    ipcRenderer.invoke("signalChain:readImage", relPath) as Promise<
+      Result<unknown>
+    >,
+  signalChainReadFile: (relPath: string) =>
+    ipcRenderer.invoke("signalChain:readFile", relPath) as Promise<
+      Result<unknown>
+    >,
 
   libraryList: () => ipcRenderer.invoke("library:list"),
   libraryCreate: (input: Record<string, unknown>) =>
@@ -358,11 +484,73 @@ const lifequest = {
   companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
   companionUseProfile: (name: string) =>
     ipcRenderer.invoke("companion:useProfile", name),
-  companionSessionsList: () => ipcRenderer.invoke("companion:sessionsList"),
+  /**
+   * Which companion the dock is talking to, and the switch. A chat belongs to
+   * the harness that made it, so the picker is app-level, not per chat.
+   */
+  companionHarnesses: () => ipcRenderer.invoke("companion:harnesses"),
+  companionUseHarness: (id: "hermes" | "pi") =>
+    ipcRenderer.invoke("companion:useHarness", id),
+  /**
+   * The switch made from the open studio: it answers at once with what is
+   * already known about the target (or a `switching` status), and the target's
+   * ensure lands later on `companion:statusChanged`.
+   */
+  companionSwitchHarness: (id: "hermes" | "pi") =>
+    ipcRenderer.invoke("companion:switchHarness", id),
+  /**
+   * The agents in this vault. The companion choice and the Hermes agent belong
+   * to the vault, so Settings asks here instead of the app-level picker above
+   * (which the setup screen keeps, because it runs before a vault exists).
+   */
+  vaultAgentsGet: () =>
+    ipcRenderer.invoke("vaultAgents:get") as Promise<VaultAgentsState>,
+  vaultAgentsAddHermes: (input: VaultAgentAddInput) =>
+    ipcRenderer.invoke("vaultAgents:addHermes", input) as Promise<
+      Result<VaultAgentBinding>
+    >,
+  vaultAgentsRemoveHermes: () =>
+    ipcRenderer.invoke("vaultAgents:removeHermes") as Promise<
+      Result<VaultAgentBinding>
+    >,
+  /**
+   * The open vault's agent changed — its binding was applied on vault open, or
+   * the operator switched from the dock. Separate from the status push: the
+   * harness id can move while neither agent's status does.
+   */
+  onCompanionHarnessChanged: (cb: (payload: CompanionHarnessChanged) => void) => {
+    const listener = (_event: unknown, payload: CompanionHarnessChanged) => {
+      cb(payload);
+    };
+    ipcRenderer.on("companion:harnessChanged", listener);
+    return () => {
+      ipcRenderer.removeListener("companion:harnessChanged", listener);
+    };
+  },
+  /** The built-in companion's endpoint. The key is write-only in this direction. */
+  companionPiSettings: () => ipcRenderer.invoke("companion:piSettings"),
+  companionPiSettingsSave: (input: {
+    baseUrl?: string;
+    model?: string;
+    providerName?: string;
+    apiKey?: string | null;
+  }) => ipcRenderer.invoke("companion:piSettingsSave", input),
+  companionSessionsList: (options?: { includeArchived?: boolean }) =>
+    ipcRenderer.invoke("companion:sessionsList", options),
   companionSessionCreate: (title: string) =>
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
     ipcRenderer.invoke("companion:sessionMessages", id),
+  // One picture a chat bubble wants to draw. The ref is what the transcript
+  // stored — a vault-relative path, or the gateway's absolute `native-inputs`
+  // hint — and main refuses anything that is not a real picture inside the
+  // vault or that copy. A refusal is the bubble's quiet missing chip.
+  chatImageRead: (ref: string) =>
+    ipcRenderer.invoke("chat:imageRead", ref) as Promise<
+      Result<{ bytes: Uint8Array; mime: string }>
+    >,
+  companionSessionModelSet: (payload: { sessionId: string; model: string; provider?: string }) =>
+    ipcRenderer.invoke("companion:sessionModelSet", payload),
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
@@ -378,7 +566,7 @@ const lifequest = {
       domainSlug: string | null;
       viewingBoard?: string | null;
       viewingBoardLocked?: boolean;
-      focusedCard?: {
+      focusedCards?: {
         label: string;
         pinId: string;
         kind: "system" | "view" | "page";
@@ -387,13 +575,23 @@ const lifequest = {
         viewId?: string;
         pageId?: string;
         system?: string;
-      } | null;
+      }[] | null;
       pageContext?: {
         route: string;
         label: string;
         body: string;
       } | null;
       automationContext?: string;
+      /**
+       * The vault's onboarding interview, while it is unfinished. The renderer
+       * sends it for the same reason it sends the board: the paragraph has to
+       * be in the turn. Main re-derives it from the snapshot before the turn is
+       * sent, so a stale value here cannot re-offer a finished interview.
+       */
+      onboarding?: {
+        status: "not_started" | "in_progress";
+        proposalPending: boolean;
+      } | null;
       aboutMe: string;
       locked: boolean;
       vaultOpen: boolean;
@@ -404,6 +602,15 @@ const lifequest = {
       reasoningEffort?: string;
     } | null;
     receiptRelPath?: string | null;
+    /** The files this turn carries, named by the id main minted for them. */
+    attachments?: Array<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      mime: string;
+      size: number;
+      relPath?: string;
+    }> | null;
   }) => ipcRenderer.invoke("companion:chatStream", payload),
   companionApproval: (payload: {
     runId: string;
@@ -412,6 +619,12 @@ const lifequest = {
   }) => ipcRenderer.invoke("companion:approval", payload),
   companionRunStop: (runId: string) =>
     ipcRenderer.invoke("companion:runStop", runId) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
+  // Steer the live run: the operator's words go into the turn that is already
+  // working, instead of waiting for the next one.
+  companionRunSteer: (runId: string, text: string) =>
+    ipcRenderer.invoke("companion:runSteer", runId, text) as Promise<
       { ok: true } | { ok: false; error: string }
     >,
   companionOpenProfileFolder: () =>
@@ -453,13 +666,40 @@ const lifequest = {
 
   reviewGet: (cadence: string, period: string) =>
     ipcRenderer.invoke("review:get", cadence, period) as Promise<Result<unknown>>,
+  reviewNotebookGet: (cadence: string, period: string) =>
+    ipcRenderer.invoke("review:notebook", cadence, period) as Promise<
+      Result<unknown>
+    >,
+  reviewPageGet: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageGet", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageEnsure: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageEnsure", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    baseRev: number,
+  ) =>
+    ipcRenderer.invoke(
+      "review:pageWrite",
+      cadence,
+      period,
+      scope,
+      body,
+      baseRev,
+    ) as Promise<unknown>,
   reviewEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:ensure", cadence, period, scope) as Promise<
       Result<unknown>
     >,
-  reviewWrite: (cadence: string, period: string, body: string) =>
-    ipcRenderer.invoke("review:write", cadence, period, body) as Promise<
-      Result<unknown>
+  reviewWrite: (cadence: string, period: string, body: string, baseRev?: number) =>
+    ipcRenderer.invoke("review:write", cadence, period, body, baseRev) as Promise<
+      unknown
     >,
   reviewMarkDone: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:markDone", cadence, period, scope) as Promise<
@@ -483,6 +723,43 @@ const lifequest = {
     ipcRenderer.invoke("review:prepopulate", cadence, period, scope) as Promise<
       Result<unknown>
     >,
+  // Phase 6 Analytics: the matrix read, one events metric's rows for a period,
+  // and the two immediate writes (log an event, define an events metric).
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => ipcRenderer.invoke("analytics:matrix", input) as Promise<Result<unknown>>,
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => ipcRenderer.invoke("metrics:events", input) as Promise<Result<unknown>>,
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => ipcRenderer.invoke("metrics:logEvent", input) as Promise<Result<unknown>>,
+  metricDefine: (input: {
+    area: string;
+    definition: MetricDefinitionDraft;
+  }) => ipcRenderer.invoke("metrics:define", input) as Promise<Result<unknown>>,
+  // Editing/deleting a definition is a governed change: these door calls read
+  // one definition for the form, or file the proposal (nothing changes until the
+  // operator approves the Decision).
+  metricGet: (input: {
+    area: string;
+    metricId: string;
+  }) => ipcRenderer.invoke("metrics:get", input) as Promise<Result<unknown>>,
+  metricPropose: (input: {
+    area: string;
+    metricId: string;
+    action: "update" | "delete";
+    definition?: MetricDefinitionDraft;
+  }) => ipcRenderer.invoke("metrics:propose", input) as Promise<Result<unknown>>,
   planningEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
       Result<unknown>
@@ -511,6 +788,13 @@ const lifequest = {
   dailyNoteWindow: (start: string, end: string) =>
     ipcRenderer.invoke("note:window", start, end) as Promise<Result<unknown>>,
 
+  // The companion's brief is read from the renderer, and the operator's only
+  // verb is dismissing one item; the companion's `set_companion_brief` tool is
+  // the only writer.
+  briefGet: () => ipcRenderer.invoke("brief:get") as Promise<Result<unknown>>,
+  briefDismiss: (itemId: string, reason: string) =>
+    ipcRenderer.invoke("brief:dismiss", itemId, reason) as Promise<Result<unknown>>,
+
   idealStateList: () =>
     ipcRenderer.invoke("ideal-state:list") as Promise<Result<unknown>>,
   idealStateGet: (id: string) =>
@@ -521,6 +805,27 @@ const lifequest = {
     ipcRenderer.invoke("ideal-state:update", id, patch) as Promise<Result<unknown>>,
   idealStateDelete: (id: string) =>
     ipcRenderer.invoke("ideal-state:delete", id) as Promise<Result<unknown>>,
+
+  // Define → Images. Bytes in, ids out — the renderer never names a vault path.
+  imagesList: () =>
+    ipcRenderer.invoke("images:list") as Promise<Result<unknown>>,
+  imagesSave: (input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+    width?: number | null;
+    height?: number | null;
+  }) => ipcRenderer.invoke("images:save", input) as Promise<Result<unknown>>,
+  imagesRead: (relPath: string) =>
+    ipcRenderer.invoke("images:read", relPath) as Promise<Result<unknown>>,
+  imagesUpdate: (id: string, patch: { name?: string; caption?: string }) =>
+    ipcRenderer.invoke("images:update", id, patch) as Promise<Result<unknown>>,
+  imagesDelete: (id: string) =>
+    ipcRenderer.invoke("images:delete", id) as Promise<Result<unknown>>,
+  imagesBoardGet: () =>
+    ipcRenderer.invoke("images:boardGet") as Promise<Result<unknown>>,
+  imagesBoardSave: (input: { blocks: unknown[] }) =>
+    ipcRenderer.invoke("images:boardSave", input) as Promise<Result<unknown>>,
 
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
@@ -566,6 +871,20 @@ const lifequest = {
       ipcRenderer.removeListener("update:progress", listener);
     };
   },
+  /**
+   * The feed answered on main's own clock: a release to show, or the news that a
+   * release already announced is gone. Pushed, not asked for — the renderer has
+   * no timer of its own, so a hidden or throttled window cannot miss the news.
+   */
+  onUpdateDecision: (cb: (decision: unknown) => void) => {
+    const listener = (_event: unknown, decision: unknown) => {
+      cb(decision);
+    };
+    ipcRenderer.on("update:decision", listener);
+    return () => {
+      ipcRenderer.removeListener("update:decision", listener);
+    };
+  },
 
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {
@@ -592,6 +911,75 @@ const lifequest = {
     ipcRenderer.on("vault:dataChanged", listener);
     return () => {
       ipcRenderer.removeListener("vault:dataChanged", listener);
+    };
+  },
+
+  /**
+   * Theme files, v2. The directory is the app profile's, never the vault's; the
+   * window reads it on mount and again whenever main says it moved.
+   */
+  themesList: () =>
+    ipcRenderer.invoke("theme:list") as Promise<Result<ThemeFileEntry[]>>,
+  themeGetState: () =>
+    ipcRenderer.invoke("theme:getState") as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeSetKept: (file: string | null) =>
+    ipcRenderer.invoke("theme:setKept", file) as Promise<
+      Result<{ keptFile: string | null }>
+    >,
+  themeRead: (file: string) =>
+    ipcRenderer.invoke("theme:read", file) as Promise<Result<string>>,
+  themeWrite: (file: string, raw: string) =>
+    ipcRenderer.invoke("theme:write", file, raw) as Promise<
+      Result<{ file: string }>
+    >,
+  themeDelete: (file: string) =>
+    ipcRenderer.invoke("theme:delete", file) as Promise<
+      Result<{ deleted: boolean }>
+    >,
+  themeOpenFolder: () =>
+    ipcRenderer.invoke("theme:openFolder") as Promise<Result<boolean>>,
+  themeExport: (theme: unknown) =>
+    ipcRenderer.invoke("theme:export", theme) as Promise<
+      Result<{ path: string } | null>
+    >,
+  /** The saved versions behind one file, newest first; empty means none yet. */
+  themeHistory: (file: string) =>
+    ipcRenderer.invoke("theme:history", file) as Promise<
+      Result<{ file: string; versions: ThemeVersion[] }>
+    >,
+  /** Put a saved version back; it previews like any other write. */
+  themeRestore: (file: string, id: string) =>
+    ipcRenderer.invoke("theme:restore", file, id) as Promise<
+      Result<{ file: string; label: string }>
+    >,
+  /** Import a theme through main's dialog; `null` is the operator cancelling. */
+  themeImport: () =>
+    ipcRenderer.invoke("theme:import") as Promise<
+      Result<{ file: string; label: string } | null>
+    >,
+  /**
+   * Choose a background picture through main's dialog; main copies it into the
+   * profile and answers with the stored file name. `null` is the operator
+   * cancelling, and a refusal is main's operator-readable sentence.
+   */
+  themePickBackground: () =>
+    ipcRenderer.invoke("theme:pickBackground") as Promise<
+      Result<{ file: string } | null>
+    >,
+  /** One stored background picture's bytes; a failed read is a quiet refusal. */
+  themeReadBackground: (file: string) =>
+    ipcRenderer.invoke("theme:readBackground", file) as Promise<
+      Result<{ file: string; mime: string; bytes: Uint8Array }>
+    >,
+  onThemesChanged: (cb: () => void) => {
+    const listener = () => {
+      cb();
+    };
+    ipcRenderer.on("theme:changed", listener);
+    return () => {
+      ipcRenderer.removeListener("theme:changed", listener);
     };
   },
 

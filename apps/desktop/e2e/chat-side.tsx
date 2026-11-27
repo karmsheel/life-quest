@@ -5,10 +5,11 @@
  * This is a system-in-isolation rig, so the ways it can fail are written down
  * before the assertions:
  *
- *  1. No control — the titlebar's trailing cluster carries no switch, so the
+ *  1. No control — the dock's bottom action bar carries no switch, so the
  *     operator has nothing to click.
- *  2. Control in the wrong place — the switch is not beside the settings it was
- *     asked to sit by (or it lands outside the trailing cluster entirely).
+ *  2. Control in the wrong place — the switch is not in the dock's own bar,
+ *     immediately before the collapse it belongs with (or the titlebar still
+ *     carries a stale copy of it).
  *  3. Dead click — the panes do not move when the switch is clicked.
  *  4. Only the dock moves — the sheet keeps the middle track, so the two panes
  *     overlap, or a column of mat opens between them.
@@ -26,16 +27,19 @@
  *     gap at the window's edge.
  * 10. One-way door — the control does not come back, or a second click does not
  *     land on the geometry the first one started from.
- * 11. Icons that do not follow the side — the collapse and expand arrows must
- *     point into the pane they open, on whichever side the dock is standing.
+ * 11. Icons that do not follow the side — the collapse arrow must point out of
+ *     the side the dock is standing on, and the switch's own icon is the two
+ *     panes trading places rather than the side they are on.
  * 12. The collapsed dock breaks the swap — a collapsed dock still has to sit in
  *     the column its side asks for, with the sheet flush to the window.
  * 13. The swap fights the collapsed rail — with no rail the dock takes the
  *     window's leading edge and the sheet still reaches the trailing one.
- * 14. The collapsed mark stays on the trailing corner — swapping the dock's side
- *     (even while it is collapsed, where the mark is the only control on screen)
- *     or collapsing the rail has to carry the floating launcher with it, or it
- *     points at a corner the dock no longer holds.
+ * 14. The collapsed mark stays on the wrong corner — collapsing the rail or the
+ *     dock has to carry the floating launcher with it, or it points at a corner
+ *     the dock no longer holds. The switch itself is unreachable while the dock
+ *     is collapsed (the collapsed dock renders only the launcher), so the swap
+ *     is driven from the open dock and the launcher has to follow the side it
+ *     was swapped to.
  * 15. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
  *
@@ -56,7 +60,22 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
+import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
+
+/*
+ * The palette this rig measures: Forge in its night palette. Rigs share the
+ * dev-server origin's localStorage, so a skin left by a concurrent rig would
+ * otherwise decide the colours asserted below. Painting the shipped default
+ * here, and writing the preference key `ThemeProvider` reads, makes the run
+ * self-contained.
+ */
+applyAppSkin("dark", "forge");
+try {
+  localStorage.setItem("lifequest-theme", "dark");
+} catch {
+  /* ignore */
+}
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
@@ -101,14 +120,24 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback below is wrong
+  // for all three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page, leaving the driver waiting
+  // on a ready flag that never comes.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
     ok([{ role: "assistant" as const, content: "Chat side harness turn" }]),
   onCompanionStream: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
-  // its trailing cluster (theme, settings, switch, collapse) and not the
-  // fallback window controls.
+  // its trailing cluster (theme, shortcut reference, settings) and not the
+  // fallback window controls. The switch and the collapse live in the dock's
+  // own bottom action bar now.
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -124,6 +153,10 @@ const stubbed = new Proxy(bridge, {
   get(target, prop) {
     const found = target[prop as string];
     if (found !== undefined) return found;
+    // Every `on*` channel is a subscription: main answers with an unsubscribe
+    // function and the caller runs it from an effect cleanup. A Promise here
+    // throws on cleanup and takes the tree with it.
+    if (typeof prop === "string" && prop.startsWith("on")) return () => () => {};
     return () => ok(null);
   },
   has: () => true,
@@ -182,7 +215,7 @@ const ready = new Promise<void>((resolve) => {
 const waitForShell = () => {
   const chat = document.querySelector(".chat-panel");
   const main = document.querySelector(".shell__main");
-  const sideSwitch = document.querySelector(".window-titlebar__side-switch");
+  const sideSwitch = document.querySelector('[data-testid="chat-side-switch"]');
   if (!chat || !main || !sideSwitch) {
     requestAnimationFrame(waitForShell);
     return;

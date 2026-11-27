@@ -1,0 +1,417 @@
+import type { ThemeFile } from "./theme-file.ts";
+
+/**
+ * The bundled showcase themes — the gallery a fresh profile opens with.
+ *
+ * These are examples, not defaults: data-only theme files, exactly like an
+ * operator- or companion-authored one (a complete palette, the chrome
+ * placements, the material steps, the scene layer). The app copies each into
+ * the profile's `themes/` directory once, and from then on it is just a theme
+ * file the operator owns: wear it, override it, edit it, or delete it — a
+ * deleted showcase stays deleted because seeding remembers every NAME it has
+ * handed over (`theme-state.json`'s `seededShowcase`).
+ *
+ * The first two are R3/R4's: "Solar System" shows the dark scene layer and
+ * "Helios" shows the whole ladder at once, orbit rings included. S4's gallery
+ * adds three moods so the possibility space is visible on a first run rather
+ * than described — a daylight editorial page, a calm night watch, and an
+ * instrument panel — which also exercises all three composition layouts
+ * (stack, polar, grid) and both colour modes.
+ *
+ * They stay in `shared/` so both the main process (seeding) and any test read
+ * the same data; none is ever worn implicitly and none is part of the vault.
+ * Each carries both palettes (`colors` and `darkColors`): the studio picks the
+ * one the operator's colour mode asks for, so a showcase that only named
+ * `colors` would be ignored in dark mode.
+ */
+export const SHOWCASE_THEMES: readonly ThemeFile[] = [
+  {
+    name: "showcase-solar-system",
+    label: "Solar System",
+    description:
+      "A dark-orbit sky, a haloed page and raised cards; the rail and the dock ride the edges.",
+    colors: {
+      background: "#0a0e1f",
+      foreground: "#e8ecff",
+      card: "#131a33",
+      cardForeground: "#dfe6ff",
+      muted: "#0f1530",
+      mutedForeground: "#b6c0e4",
+      popover: "#121933",
+      popoverForeground: "#e8ecff",
+      primary: "#f2a33c",
+      primaryForeground: "#171003",
+      secondary: "#24304f",
+      secondaryForeground: "#dfe6ff",
+      accent: "#7fd4ff",
+      accentForeground: "#04121c",
+      border: "#2a3654",
+      input: "#1a2340",
+      ring: "#7fd4ff",
+      destructive: "#ff6b6b",
+      destructiveForeground: "#2a0808",
+    },
+    darkColors: {
+      background: "#070b17",
+      foreground: "#e8ecff",
+      card: "#131a33",
+      cardForeground: "#dfe6ff",
+      muted: "#0f1530",
+      mutedForeground: "#b6c0e4",
+      popover: "#121933",
+      popoverForeground: "#e8ecff",
+      primary: "#f2a33c",
+      primaryForeground: "#171003",
+      secondary: "#24304f",
+      secondaryForeground: "#dfe6ff",
+      accent: "#7fd4ff",
+      accentForeground: "#04121c",
+      border: "#2a3654",
+      input: "#1a2340",
+      ring: "#7fd4ff",
+      destructive: "#ff6b6b",
+      destructiveForeground: "#2a0808",
+    },
+    chrome: {
+      wingSwitcher: { place: "floating-left", variant: "icons" },
+      domainSwitcher: { place: "bottom-center", variant: "pill", frame: "pill" },
+      navRail: { place: "floating", width: "wide" },
+      chatDock: { side: "left" },
+      titlebar: { size: "tall" },
+    },
+    material: {
+      radius: "round",
+      shadow: "deep",
+      typeScale: "airy",
+      density: "airy",
+      motion: "calm",
+      backdrop: "grid",
+    },
+    scene: {
+      background: { preset: "orbit", intensity: "calm" },
+      frames: { canvas: "halo", cards: "raised" },
+    },
+  },
+  {
+    name: "showcase-helios",
+    label: "Helios",
+    description:
+      "A solar HUD: warm dust, a golden ring of quick actions standing on the page, and a haloed sheet. The whole R4 ladder in one file.",
+    colors: {
+      background: "#120b06",
+      foreground: "#ffeeda",
+      card: "#1f1409",
+      cardForeground: "#ffeeda",
+      muted: "#171008",
+      mutedForeground: "#d9b98f",
+      popover: "#1b1109",
+      popoverForeground: "#ffeeda",
+      primary: "#ffb341",
+      primaryForeground: "#241201",
+      secondary: "#2c1c0d",
+      secondaryForeground: "#ffeeda",
+      accent: "#ff7d4d",
+      accentForeground: "#2a0d02",
+      border: "#3d2717",
+      input: "#241608",
+      ring: "#ffb341",
+      destructive: "#ff6b5a",
+      destructiveForeground: "#2a0603",
+    },
+    darkColors: {
+      background: "#0b0704",
+      foreground: "#ffeeda",
+      card: "#1a1008",
+      cardForeground: "#ffeeda",
+      muted: "#120c06",
+      mutedForeground: "#d9b98f",
+      popover: "#1b1109",
+      popoverForeground: "#ffeeda",
+      primary: "#ffb341",
+      primaryForeground: "#241201",
+      secondary: "#2c1c0d",
+      secondaryForeground: "#ffeeda",
+      accent: "#ff7d4d",
+      accentForeground: "#2a0d02",
+      border: "#3d2717",
+      input: "#120c06",
+      ring: "#ffb341",
+      destructive: "#ff6b5a",
+      destructiveForeground: "#2a0603",
+    },
+    chrome: {
+      wingSwitcher: { place: "floating-left", variant: "icons" },
+      domainSwitcher: { place: "titlebar-center", variant: "pill", frame: "pill" },
+      navRail: { place: "floating", width: "wide" },
+      chatDock: { side: "right" },
+      titlebar: { size: "tall" },
+    },
+    material: {
+      radius: "round",
+      shadow: "deep",
+      typeScale: "airy",
+      density: "airy",
+      motion: "calm",
+      backdrop: "wash",
+    },
+    scene: {
+      background: { preset: "orbit", intensity: "default" },
+      frames: { canvas: "halo", cards: "raised" },
+    },
+    composition: {
+      layout: "polar",
+      radius: "wide",
+      widgets: [
+        { type: "quickAction", region: "page.orbit", route: "home", label: "Home", tone: "accent" },
+        { type: "quickAction", region: "page.orbit", route: "goals", label: "Goals", tone: "accent" },
+        { type: "quickAction", region: "page.orbit", route: "projects", label: "Projects", tone: "warning" },
+        { type: "quickAction", region: "page.orbit", route: "notes", label: "Notes", tone: "warning" },
+        { type: "badge", region: "page.orbit", data: "decisions.count", label: "Decisions", tone: "muted" },
+        { type: "meter", region: "page.orbit", data: "weekly.files", label: "Week", max: 7, tone: "success" },
+      ],
+    },
+  },
+  /**
+   * Daylight editorial: the gallery's light-palette example, and the stack
+   * layout — a brief at the top, a short domain list at the foot.
+   */
+  {
+    name: "showcase-paper-trail",
+    label: "Paper Trail",
+    description: "A daylight editorial page: warm paper, sharp corners, a hairline edge and a wash of light behind the work. Compact type, the domain switcher in the titlebar.",
+    colors: {
+      background: "#f4efe4",
+      foreground: "#2b2620",
+      card: "#fbf7ee",
+      cardForeground: "#2b2620",
+      muted: "#e7e0d2",
+      mutedForeground: "#544d41",
+      popover: "#fbf7ee",
+      popoverForeground: "#2b2620",
+      primary: "#8a3b1f",
+      primaryForeground: "#fdf9f1",
+      secondary: "#ded5c4",
+      secondaryForeground: "#2b2620",
+      accent: "#1f5568",
+      accentForeground: "#f2fbfd",
+      border: "#cfc5b2",
+      input: "#ffffff",
+      ring: "#1f5568",
+      destructive: "#a3241f",
+      destructiveForeground: "#fff5f3",
+    },
+    darkColors: {
+      background: "#211d18",
+      foreground: "#efe7d8",
+      card: "#2b261f",
+      cardForeground: "#efe7d8",
+      muted: "#2f2a22",
+      mutedForeground: "#c4b9a5",
+      popover: "#2b261f",
+      popoverForeground: "#efe7d8",
+      primary: "#e8a06a",
+      primaryForeground: "#2a1608",
+      secondary: "#3a332a",
+      secondaryForeground: "#efe7d8",
+      accent: "#8fd0d8",
+      accentForeground: "#062126",
+      border: "#443b30",
+      input: "#16130f",
+      ring: "#8fd0d8",
+      destructive: "#ff8a7a",
+      destructiveForeground: "#2a0a06",
+    },
+    chrome: {
+      wingSwitcher: { place: "titlebar-left", variant: "labels" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
+      navRail: { place: "left", width: "default" },
+      chatDock: { side: "right" },
+      titlebar: { size: "compact" },
+    },
+    material: {
+      radius: "sharp",
+      shadow: "flat",
+      typeScale: "default",
+      density: "compact",
+      motion: "calm",
+      backdrop: "wash",
+    },
+    scene: {
+      background: { preset: "plain", intensity: "calm" },
+      frames: { canvas: "hairline", cards: "outline" },
+    },
+    composition: {
+      layout: "stack",
+      widgets: [
+        { type: "brief", region: "page.masthead", data: "weekly.files", label: "This week", caption: "Seven days of work, at a glance.", tone: "accent" },
+        { type: "list", region: "page.footer", data: "domains.names", label: "Domains", limit: 4, tone: "muted" },
+      ],
+    },
+  },
+  /**
+   * Night calm: the dark palette and the polar ring — three quick actions and
+   * the week's meter, behind a starfield and a floating rail.
+   */
+  {
+    name: "showcase-night-shift",
+    label: "Night Shift",
+    description: "A calm night watch: a starfield behind the page, a floating rail and a ring of quick actions with the week's meter nearby. Deep palette, round corners, quiet motion.",
+    colors: {
+      background: "#0e1424",
+      foreground: "#e6ebf7",
+      card: "#172036",
+      cardForeground: "#e6ebf7",
+      muted: "#121a2d",
+      mutedForeground: "#aab6cf",
+      popover: "#182137",
+      popoverForeground: "#e6ebf7",
+      primary: "#f0c674",
+      primaryForeground: "#241a05",
+      secondary: "#232e47",
+      secondaryForeground: "#e6ebf7",
+      accent: "#7fc8e8",
+      accentForeground: "#061a24",
+      border: "#2a3550",
+      input: "#111a2e",
+      ring: "#7fc8e8",
+      destructive: "#f4796b",
+      destructiveForeground: "#2a0906",
+    },
+    darkColors: {
+      background: "#080d18",
+      foreground: "#e6ebf7",
+      card: "#131b2e",
+      cardForeground: "#e6ebf7",
+      muted: "#0d1422",
+      mutedForeground: "#aab6cf",
+      popover: "#141d31",
+      popoverForeground: "#e6ebf7",
+      primary: "#f0c674",
+      primaryForeground: "#241a05",
+      secondary: "#1d2740",
+      secondaryForeground: "#e6ebf7",
+      accent: "#7fc8e8",
+      accentForeground: "#061a24",
+      border: "#243049",
+      input: "#0b1222",
+      ring: "#7fc8e8",
+      destructive: "#f4796b",
+      destructiveForeground: "#2a0906",
+    },
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "icons" },
+      domainSwitcher: { place: "below-titlebar", variant: "pill", frame: "pill" },
+      navRail: { place: "floating", width: "narrow" },
+      chatDock: { side: "right" },
+      titlebar: { size: "compact" },
+      // A night watch is long: the agent's name beside its mark answers "who
+      // has the floor" without opening anything.
+      agentPicker: { mode: "named-chip" },
+    },
+    material: {
+      radius: "round",
+      shadow: "deep",
+      typeScale: "default",
+      density: "default",
+      motion: "calm",
+      backdrop: "plain",
+    },
+    scene: {
+      background: { preset: "starfield", intensity: "calm" },
+      frames: { canvas: "none", cards: "theme" },
+    },
+    composition: {
+      layout: "polar",
+      radius: "wide",
+      widgets: [
+        { type: "quickAction", region: "page.orbit", route: "home", label: "Home", tone: "accent" },
+        { type: "quickAction", region: "page.orbit", route: "goals", label: "Goals", tone: "accent" },
+        { type: "quickAction", region: "page.orbit", route: "notes", label: "Notes", tone: "warning" },
+        { type: "meter", region: "page.orbit", data: "weekly.files", label: "Week", max: 7, tone: "success" },
+      ],
+    },
+  },
+  /**
+   * Instrument panel: the grid layout with three readouts in a hairline
+   * three-column grid, sharp and motionless under a tall titlebar.
+   */
+  {
+    name: "showcase-control-room",
+    label: "Control Room",
+    description: "An instrument panel: a hairline grid, compact sharp corners and three readouts in a column grid — decisions, the week's meter and a way into automations. Tall titlebar overhead.",
+    colors: {
+      background: "#e9edf2",
+      foreground: "#1c2430",
+      card: "#f5f7fa",
+      cardForeground: "#1c2430",
+      muted: "#dde3ea",
+      mutedForeground: "#45525f",
+      popover: "#f5f7fa",
+      popoverForeground: "#1c2430",
+      primary: "#145c66",
+      primaryForeground: "#eefafb",
+      secondary: "#d3dbe4",
+      secondaryForeground: "#1c2430",
+      accent: "#a3520a",
+      accentForeground: "#fff8ef",
+      border: "#c2ccd7",
+      input: "#ffffff",
+      ring: "#145c66",
+      destructive: "#9c2626",
+      destructiveForeground: "#fff5f4",
+    },
+    darkColors: {
+      background: "#11161d",
+      foreground: "#e2e8f0",
+      card: "#1a212b",
+      cardForeground: "#e2e8f0",
+      muted: "#151c25",
+      mutedForeground: "#a3b0c0",
+      popover: "#1a212b",
+      popoverForeground: "#e2e8f0",
+      primary: "#f0b45a",
+      primaryForeground: "#241703",
+      secondary: "#253040",
+      secondaryForeground: "#e2e8f0",
+      accent: "#6fd2e0",
+      accentForeground: "#052026",
+      border: "#2c3846",
+      input: "#10161d",
+      ring: "#6fd2e0",
+      destructive: "#f2786a",
+      destructiveForeground: "#2a0906",
+    },
+    chrome: {
+      wingSwitcher: { place: "rail-top", variant: "compact" },
+      domainSwitcher: { place: "titlebar-center", variant: "segmented", frame: "pill" },
+      navRail: { place: "left", width: "narrow" },
+      chatDock: { side: "right" },
+      titlebar: { size: "tall" },
+      // The instrument panel keeps every readout in the open: both agents sit
+      // in the dock row as compact hairline marks, no menu between the operator
+      // and the switch.
+      agentPicker: { mode: "custom", recipe: { roster: "inline", ring: "hairline", size: "compact" } },
+    },
+    material: {
+      radius: "sharp",
+      shadow: "soft",
+      typeScale: "compact",
+      density: "compact",
+      motion: "none",
+      backdrop: "grid",
+    },
+    scene: {
+      background: { preset: "plain", intensity: "calm" },
+      frames: { canvas: "hairline", cards: "outline" },
+    },
+    composition: {
+      layout: "grid",
+      columns: 3,
+      widgets: [
+        { type: "badge", region: "page.masthead", data: "decisions.count", label: "Decisions", tone: "warning" },
+        { type: "meter", region: "page.masthead", data: "weekly.files", label: "Week", max: 7, tone: "success" },
+        { type: "quickAction", region: "page.masthead", route: "automations", label: "Automations", tone: "accent" },
+      ],
+    },
+  },
+];

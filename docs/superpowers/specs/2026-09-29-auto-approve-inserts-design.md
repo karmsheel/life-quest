@@ -1,7 +1,12 @@
 # Design: Auto-approved inserts and one decision per batch
 
 **Date**: 2026-09-29
-**Status**: Approved 2026-09-29. Implementation plan: `docs/superpowers/plans/2026-09-29-auto-approve-inserts.md`.
+**Status**: Approved 2026-09-29. **Superseded 2026-10-28** by
+[direct database writes](./2026-10-28-direct-database-writes-design.md): adding data
+(new databases, new rows, batches) is no longer gated at all, so the insert allowlist
+and the batch Decision were retired. The approval path described below still applies
+to old Decisions and to updates/deletes. Implementation plan:
+`docs/superpowers/plans/2026-09-29-auto-approve-inserts.md`.
 
 ## Problem
 

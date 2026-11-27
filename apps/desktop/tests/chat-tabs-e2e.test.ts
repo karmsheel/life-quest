@@ -1,0 +1,2150 @@
+/**
+ * The chats column and the dock's parallel tabs.
+ *
+ * The rig (`e2e/chat-tabs.electron.mjs`) drives the harness page
+ * (`e2e/chat-tabs.{html,tsx}`) in a real Electron window: the shipping sidebar,
+ * the shipping dock, the shipping store, and a stubbed bridge whose turns are
+ * held open until the driver ends them. This wrapper asserts the report the rig
+ * wrote, so a skipped or silently broken run cannot pass.
+ */
+
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, it } from "node:test";
+
+const desktopRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const require = createRequire(import.meta.url);
+const electron = require("electron") as string;
+
+const DEV_PORT = 5173;
+const REPORT = path.join(desktopRoot, "e2e/artifacts/chat-tabs.json");
+
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+type Row = {
+  group: string;
+  label: string;
+  when: string;
+  whenVisible: boolean;
+  active: boolean;
+  archived: boolean;
+  archivedTag: string;
+  disabled: boolean;
+  live: boolean;
+  approval: boolean;
+  menuOpen: boolean;
+  /** The kickoff mark's kind (`data-icon`), or null on a chat opened plainly. */
+  icon: string | null;
+  /** The row's one leading slot: the kickoff icon's svg, or the status dot. */
+  mark: {
+    exists: boolean;
+    svg: boolean;
+    visible: boolean;
+    box: Box | null;
+    /** Animation on the slot itself (a live row pulses whichever glyph it holds). */
+    animation: string | null;
+    /** Animation on the glyph inside the slot. */
+    glyphAnimation: string | null;
+    glyphColor: string | null;
+    /** An approval ring, if the state paints one, on slot or glyph. */
+    ring: string | null;
+    glyphRing: string | null;
+  };
+  /** The plain chat's status dot, still drawn in the same slot. */
+  dot: {
+    exists: boolean;
+    visible: boolean;
+    box: Box | null;
+    animation: string | null;
+  };
+  /** The label's box and the button's: the mark has to sit between them. */
+  labelBox: Box | null;
+  mainBox: Box | null;
+  pinned: boolean;
+  pinState: boolean;
+  actionsVisible: boolean;
+  pin: {
+    exists: boolean;
+    visible: boolean;
+    label: string | null;
+    dataPinned: string | null;
+    filled: boolean;
+  };
+  archive: {
+    exists: boolean;
+    visible: boolean;
+    label: string | null;
+    beforePin: boolean;
+  };
+  box: Box | null;
+};
+
+type Tab = {
+  label: string;
+  /** The leader glyph (retired with the square); always null now. */
+  letter: string | null;
+  /** The tab's accessible name; a pinned tab's names its chat. */
+  name: string;
+  /** The kickoff mark's kind (`data-icon`), or null on a chat opened plainly. */
+  icon: string | null;
+  /** The tab's one leading slot: the status dot, or a kickoff chat's icon. */
+  mark: {
+    exists: boolean;
+    /** The kickoff icon is drawn as an svg in the slot; a plain tab is a dot. */
+    svg: boolean;
+    visible: boolean;
+    box: Box | null;
+  };
+  /** The label element's own room, where the label floor is measured. */
+  labelWidth: number | null;
+  /** Canvas width of the label's first three characters in its computed font. */
+  threeCharWidth: number | null;
+  /**
+   * Canvas width of those three characters plus the ellipsis glyph: the real
+   * floor, because the ellipsis that truncates a label costs a character's width.
+   */
+  floorWidth: number | null;
+  /** A pinned chat is drawn as a square: letter + pin, no label, no close. */
+  pinned: boolean;
+  pin: boolean;
+  pinVisible: boolean;
+  active: boolean | null;
+  live: boolean;
+  approval: boolean;
+  close: string | null;
+  hasClose: boolean;
+  closeVisible: boolean;
+  box: Box | null;
+};
+
+/** The dock's tab band: its box, its sideways travel, and its scroll geometry. */
+type Strip = {
+  box: Box | null;
+  scrollLeft: number;
+  scrollWidth: number;
+  clientWidth: number;
+  /** The band has more tabs than fit: it must scroll, not squeeze past the floor. */
+  overflow: boolean;
+};
+
+/** The wheel over the strip, as the driver's own dispatch measured it. */
+type WheelProbe = {
+  ok: boolean;
+  reason?: string;
+  before: number;
+  after: number;
+  prevented: boolean;
+  dispatched: boolean;
+  maxScroll: number;
+};
+
+/** The open tab context menu, when the rig right-clicked a tab. */
+type TabMenu = {
+  box: Box | null;
+  menuFor: string | null;
+  tabId: string | null;
+  itemLabels: (string | null)[];
+};
+
+type State = {
+  rowCount: number;
+  rows: Row[];
+  tabs: Tab[];
+  tabCount: number;
+  /** The strip's own box, scroll geometry and sticky corner; null when not drawn. */
+  strip: Strip | null;
+  /** The dock's own column box, so a narrowed dock is a measured claim. */
+  panel: Box | null;
+  /** The profile's remembered kickoff marks (session id -> icon kind). */
+  sessionIcons: Record<string, string> | null;
+  /** The thread's name row, the row the strip leads. */
+  header: { box: Box | null } | null;
+  /** The plus after the last tab; null when no strip is drawn. */
+  newTab: {
+    label: string | null;
+    /** Explicit ARIA role; null on a plain <button>. */
+    role: string | null;
+    tag: string;
+    visible: boolean;
+    box: Box | null;
+  } | null;
+  tabMenu: TabMenu | null;
+  chatDivider: {
+    label: string | null;
+    now: number;
+    min: number;
+    max: number;
+    box: Box | null;
+  } | null;
+  heading: string;
+  /** Which surface the dock is on: "thread" | "chain" | "shortcuts". */
+  surface: string | null;
+  thread: boolean;
+  rail: {
+    box: Box | null;
+    label: string | null;
+    title: string;
+    liveCount: string;
+    newChat: boolean;
+    newChatCentered: boolean | null;
+    paddingTop: number;
+    paddingBottom: number;
+    groups: string[];
+    empty: string;
+    newChatBox: Box | null;
+    header: {
+      box: Box;
+      titleBox: Box | null;
+      controls: { label: string; box: Box }[];
+    } | null;
+    search: {
+      value: string;
+      placeholder: string | null;
+      focused: boolean;
+      panelBox: Box;
+    } | null;
+    viewMenu: {
+      title: string;
+      items: { label: string; checked: boolean }[];
+    } | null;
+    listOptions: ({ includeArchived?: boolean } | null)[];
+    list: {
+      box: Box | null;
+      scrollTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+    } | null;
+    menu: {
+      box: Box | null;
+      placement: string | null;
+      items: number;
+      rowLabel: string | null;
+      rowBox: Box | null;
+    } | null;
+  } | null;
+  composer: { value: string; disabled: boolean; focused: boolean } | null;
+  messages: { role: string; content: string }[];
+  renaming: boolean;
+  renameValue: string | null;
+  /** The sidebar row's inline rename field, and what it holds. */
+  rowRenaming: boolean;
+  rowRenameValue: string | null;
+  dialog: { title: string; message: string; confirm: boolean } | null;
+  calls: { sessionId: string; input: string }[];
+  patchCalls: { id: string; patch: Record<string, unknown> }[];
+  deleteCalls: string[];
+  messageCalls: string[];
+  createCalls: string[];
+  stopCalls: string[];
+};
+
+type Report = {
+  pass: boolean;
+  failures: string[];
+  screenshots: string[];
+  states: Record<string, State>;
+  /**
+   * The gesture readings a page sample cannot carry: the wheel's own numbers,
+   * the id of the chat the write-path probe created and whether the cycle keys
+   * were left to the platform where the dock had nothing to switch to. A silent
+   * wheel, a request that never reached the dock or a cycled key cannot pass on a
+   * plausible-looking page sample alone.
+   */
+  probes?: {
+    wheel: WheelProbe | null;
+    task: { id: string } | null;
+    tabKeys: {
+      /** The synthetic keydown's `defaultPrevented` with no strip drawn. */
+      withoutStrip: boolean | null;
+      /** The same with one tab in the strip: no second tab to switch to. */
+      withOneTab: boolean | null;
+    } | null;
+  };
+};
+
+/** The dev-server probe every desktop rig uses: no server, no run. */
+function devServerUp(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port: DEV_PORT, host: "127.0.0.1" });
+    const done = (up: boolean) => {
+      socket.destroy();
+      resolve(up);
+    };
+    socket.on("connect", () => done(true));
+    socket.on("error", () => done(false));
+  });
+}
+
+function runDriver(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      electron,
+      [path.join(desktopRoot, "e2e/chat-tabs.electron.mjs")],
+      { cwd: desktopRoot, timeout: 120_000 },
+      (error) => {
+        if (error && typeof error.code !== "number") {
+          reject(error);
+          return;
+        }
+        resolve(error ? (error.code as number) : 0);
+      },
+    );
+  });
+}
+
+describe("chat dock tabs and sidebar chats", () => {
+  it("runs parallel chats as tabs and manages them from the left column", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(
+        `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
+      );
+      return;
+    }
+
+    fs.rmSync(REPORT, { force: true });
+    const exitCode = await runDriver();
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    assert.deepEqual(report.failures, []);
+    assert.equal(exitCode, 0, "driver exited non-zero");
+    assert.equal(report.pass, true);
+
+    const {
+      landing,
+      hovered,
+      hoveredUnpinned,
+      unhovered,
+      opened,
+      middleOpened,
+      menuOpened,
+      menuClosed,
+      alphaLive,
+      bravoReady,
+      bothLive,
+      interleaved,
+      alphaThread,
+      finished,
+      alphaAgain,
+      split,
+      splitSettled,
+      hoveredBravo,
+      pinned,
+      hoveredPinned,
+      unpinned,
+      unpinnedPinnedNote,
+      baseline,
+      hoveredAlpha,
+      tabCycledForward,
+      tabCycledBack,
+      archived,
+      asked,
+      declined,
+      deleted,
+      background,
+      closedLive,
+      lateFrame,
+      header,
+      searchOpen,
+      searched,
+      noMatch,
+      closedByCross,
+      closedByOutside,
+      closedByEscape,
+      viewMenu,
+      archivedShown,
+      archivedClick,
+      archivedSearch,
+      unarchived,
+      viewMenuShown,
+      archivedHidden,
+      newChatTab,
+      newChatKept,
+      newChatActive,
+      defaultTabs,
+      contentTabs,
+      cappedTabs,
+      restoredTabs,
+      narrowTabs,
+      longList,
+      atFoot,
+      menuFlipped,
+      menuDownward,
+      beforeActiveArchive,
+      activeArchived,
+      previousTabArchived,
+      lastArchived,
+      archivedViewOpen,
+      blankArchived,
+      blankReused,
+      chainUp,
+      archivedFromChain,
+      renameOpen,
+      renameSwitched,
+      renameCancelled,
+      plusOpened,
+      plusAgain,
+      floorStrip,
+      wheel: wheelState,
+      revealed,
+      taskIcon,
+      rowsReread,
+    } = report.states;
+
+    // The sidebar is one flat list of the profile's chats, pinned first; the
+    // pin/archive controls belong to a hover, not to the resting row, and the
+    // rail keeps dead space above and below its rows.
+    assert.equal(landing.rowCount, 5, "the sidebar did not list every chat");
+    assert.equal(landing.rail?.title, "Chats", "the sidebar has no heading");
+    assert.equal(landing.rail?.newChat, true, "the sidebar offers no New chat");
+    assert.equal(
+      landing.rail?.newChatCentered,
+      true,
+      "the New chat button does not centre its icon and label",
+    );
+    assert.ok(
+      (landing.rail?.paddingTop ?? 0) >= 10,
+      `the rail has no dead space above its rows (${landing.rail?.paddingTop}px)`,
+    );
+    assert.ok(
+      (landing.rail?.paddingBottom ?? 0) >= 10,
+      `the rail has no dead space below its rows (${landing.rail?.paddingBottom}px)`,
+    );
+    assert.equal(landing.rows[0]?.label, "Pinned note", "the pinned chat is not the first row");
+    assert.equal(landing.rows[0]?.pinned, true, "the first row is not marked pinned");
+    assert.equal(landing.rows[0]?.pinState, true, "the pinned row shows no resting pin mark");
+    assert.deepEqual(
+      landing.rows.slice(1).map((row) => row.pinned),
+      [false, false, false, false],
+      "an unpinned chat is marked pinned",
+    );
+    assert.equal(
+      landing.rows.slice(1).every((row) => row.pinState === false),
+      true,
+      "an unpinned row wears a pin mark",
+    );
+    assert.equal(
+      landing.rows.every((row) => row.whenVisible),
+      true,
+      "a resting row hides its time",
+    );
+    assert.equal(
+      landing.rows.some((row) => row.actionsVisible),
+      false,
+      "pin/archive are not hover-only: a row shows its actions at rest",
+    );
+    // A pinned chat is a tab at boot — the pin is durable Hermes state — that
+    // leads with its pin, keeps its name and carries no close control, ahead of
+    // the open chat.
+    assert.equal(
+      landing.tabCount,
+      2,
+      "the landing did not draw the pinned tab beside the open chat",
+    );
+    assert.equal(landing.tabs[0]?.pinned, true, "the first tab is not the pinned one");
+    assert.equal(landing.tabs[0]?.pin, true, "the pinned tab carries no pin icon");
+    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned tab has a close control");
+    assert.equal(landing.tabs[0]?.label, "Pinned note", "the pinned tab lost its name");
+    assert.equal(landing.tabs[1]?.pinned, false, "the open chat's tab is marked pinned");
+    assert.equal(landing.tabs[1]?.label, "Alpha planning");
+    assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
+    assert.equal(landing.tabs[1]?.active, true, "the open chat's tab is not the active one");
+    assert.notEqual(landing.strip, null, "the strip is not drawn for the pinned tab");
+    // The swap: the tab strip leads the dock and the chat's name row sits
+    // directly beneath it, measured rather than read off the JSX.
+    assert.equal(
+      landing.strip?.box.bottom,
+      landing.header?.box.top,
+      "the name row does not begin where the tab strip ends",
+    );
+    assert.ok(
+      (landing.strip?.box.top ?? Number.POSITIVE_INFINITY) <
+        (landing.header?.box.top ?? 0),
+      "the tab strip is not above the chat's name row",
+    );
+    assert.equal(
+      landing.newTab?.label,
+      "New chat tab",
+      "the strip ends with no New chat tab control",
+    );
+    assert.equal(landing.newTab?.visible, true, "the New chat tab control is not visible");
+    assert.ok(
+      (landing.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (landing.tabs.at(-1)?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the New chat tab control is not after the last tab",
+    );
+    assert.ok(
+      (landing.newTab?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (landing.strip?.box.right ?? Number.NEGATIVE_INFINITY),
+      "the New chat tab control runs past the strip's trailing edge",
+    );
+    assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
+
+    // The same kickoff mark leads the chat's name in the Chats sidebar: the
+    // fixture's seeded automation mark dresses the Delta row from the store's own
+    // memory, while a chat the operator opened keeps the quiet status dot in the
+    // slot. The slot is one box either way, so the row's height and the label's
+    // leading edge do not move; the row's label and its pin/archive verbs stay.
+    const landingDelta = landing.rows.find((row) => row.label === "Delta automation");
+    const landingBravo = landing.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(
+      landingDelta?.icon,
+      "automation",
+      `the automation chat's sidebar row does not wear its kickoff mark (${JSON.stringify(landingDelta && [landingDelta.label, landingDelta.icon])})`,
+    );
+    assert.equal(landingDelta?.mark.exists, true, "the automation row has no leading mark slot");
+    assert.equal(
+      landingDelta?.mark.svg,
+      true,
+      "the sidebar row's kickoff mark is not drawn as an icon",
+    );
+    assert.equal(landingDelta?.mark.visible, true, "the sidebar row's kickoff mark is not visible");
+    assert.equal(
+      landingDelta?.label,
+      "Delta automation",
+      `the kickoff mark changed the row's label ("${landingDelta?.label}")`,
+    );
+    assert.equal(landingDelta?.pin.exists, true, "the marked row lost its pin control");
+    assert.equal(landingDelta?.archive.exists, true, "the marked row lost its archive control");
+    assert.equal(
+      landingBravo?.icon,
+      null,
+      "a chat opened plainly wears a kickoff mark in the sidebar",
+    );
+    assert.equal(landingBravo?.mark.exists, true, "a plain row has no leading mark slot");
+    assert.equal(
+      landingBravo?.mark.svg,
+      false,
+      "a plain row's mark slot draws an icon instead of the status dot",
+    );
+    assert.equal(landingBravo?.dot.exists, true, "a plain row lost its status dot");
+    assert.equal(landingBravo?.dot.visible, true, "a plain row's status dot is not visible");
+    assert.ok(
+      Math.abs((landingDelta?.box?.height ?? 0) - (landingBravo?.box?.height ?? 0)) <= 1,
+      `the kickoff mark changed the row's height: ${JSON.stringify({ marked: landingDelta?.box, plain: landingBravo?.box })}`,
+    );
+    assert.ok(
+      (landingDelta?.mark.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (landingDelta?.mainBox?.left ?? Number.POSITIVE_INFINITY) - 1,
+      `the mark slot is not inside the row's leading edge: mark ${JSON.stringify(landingDelta?.mark.box)}, row ${JSON.stringify(landingDelta?.mainBox)}`,
+    );
+    assert.ok(
+      (landingDelta?.mark.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (landingDelta?.labelBox?.left ?? Number.NEGATIVE_INFINITY) + 1,
+      `the mark slot runs into the row's label: mark ${JSON.stringify(landingDelta?.mark.box)}, label ${JSON.stringify(landingDelta?.labelBox)}`,
+    );
+
+    // A real pointer over a row reveals its pin/archive controls and hides the
+    // resting time and pin mark; moving off restores the resting row.
+    const hoveredPinnedRow = hovered.rows.find((row) => row.label === "Pinned note");
+    assert.equal(hoveredPinnedRow?.actionsVisible, true, "hovering a row revealed no actions");
+    assert.deepEqual(
+      hovered.rows.filter((row) => row.actionsVisible).map((row) => row.label),
+      ["Pinned note"],
+      "hover revealed another row's actions",
+    );
+    assert.equal(hoveredPinnedRow?.whenVisible, false, "the hovering row still shows its time");
+    assert.equal(
+      hoveredPinnedRow?.pinState,
+      false,
+      "the hovering pinned row still shows its pin mark",
+    );
+    assert.equal(hoveredPinnedRow?.pin.exists, true, "the pinned row has no pin control");
+    assert.equal(hoveredPinnedRow?.pin.visible, true, "the pinned row's hover pin is not visible");
+    assert.equal(
+      hoveredPinnedRow?.pin.label,
+      "Unpin chat",
+      "the pinned row's hover control is not Unpin",
+    );
+    assert.equal(
+      hoveredPinnedRow?.pin.dataPinned,
+      "true",
+      "the hover pin control does not carry the pinned flag",
+    );
+    assert.equal(hoveredPinnedRow?.pin.filled, true, "the pinned hover pin is not filled");
+    // A pinned row hides Archive: a pin is a promise the chat stays in the
+    // working set, so archiving it is one Unpin away instead of one stray click.
+    assert.equal(
+      hoveredPinnedRow?.archive.visible,
+      false,
+      "the pinned row still shows its hover archive control",
+    );
+
+    const alphaHover = hoveredUnpinned.rows.find((row) => row.label === "Alpha planning");
+    assert.equal(alphaHover?.actionsVisible, true, "hovering an unpinned row revealed no actions");
+    assert.deepEqual(
+      hoveredUnpinned.rows.filter((row) => row.actionsVisible).map((row) => row.label),
+      ["Alpha planning"],
+      "the hover leaked to another row",
+    );
+    assert.equal(alphaHover?.pin.visible, true, "the unpinned row's hover pin is not visible");
+    assert.equal(alphaHover?.pin.label, "Pin chat", "the unpinned hover control is not Pin");
+    assert.equal(
+      alphaHover?.pin.dataPinned,
+      null,
+      "the unpinned hover pin control carries a pinned flag",
+    );
+    assert.equal(alphaHover?.pin.filled, false, "the unpinned hover pin is filled");
+    assert.equal(
+      alphaHover?.archive.visible,
+      true,
+      "the unpinned row's hover archive is not visible",
+    );
+    assert.equal(alphaHover?.archive.beforePin, true, "Archive does not sit right before Pin");
+
+    assert.equal(
+      unhovered.rows.some((row) => row.actionsVisible),
+      false,
+      "the hover controls stayed after the pointer left",
+    );
+    assert.equal(
+      unhovered.rows.every((row) => row.whenVisible),
+      true,
+      "the resting time did not come back",
+    );
+    assert.equal(
+      unhovered.rows.find((row) => row.label === "Pinned note")?.pinState,
+      true,
+      "the resting pin mark did not come back",
+    );
+
+    // A plain click is navigation: the clicked chat takes over the one tab on
+    // screen, and no second tab is added. The strip keeps its single tab wearing
+    // the new name; step 3 below shows the count rising only on the middle
+    // click.
+    assert.equal(opened.heading, "Bravo budget", "the row click loaded the wrong chat");
+    assert.equal(
+      opened.messageCalls.at(-1),
+      "chat-bravo",
+      "the row click read a different transcript",
+    );
+    assert.equal(opened.tabCount, 1, "a plain click added a tab");
+    assert.equal(
+      opened.tabs[0]?.label,
+      "Bravo budget",
+      "the one tab did not take the clicked chat's name",
+    );
+    assert.equal(
+      opened.rows.find((row) => row.label === "Bravo budget")?.active,
+      true,
+      "the clicked chat is not the active row",
+    );
+
+    // A middle click keeps the chat in front and gives the clicked chat its own
+    // tab: exactly two now, not three.
+    assert.deepEqual(
+      middleOpened.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "the middle click did not open a second tab",
+    );
+    assert.equal(middleOpened.tabs[1]?.active, true, "the new tab is not the active one");
+    assert.equal(middleOpened.heading, "Alpha planning");
+
+    // Ctrl+Tab and Ctrl+Shift+Tab are the browser's tab-switch keys, the
+    // counterpart of Mod+W: a real press from the chat composer walks the strip
+    // in its drawing order, wraps at both ends, hands the thread and the sidebar
+    // to the tab it lands on, and leaves the caret in the field it was pressed
+    // from. With no strip drawn, or only one tab in it, the platform keeps the
+    // key instead.
+    assert.equal(
+      report.probes?.tabKeys?.withoutStrip,
+      false,
+      `Ctrl+Tab was swallowed on the blank slate: ${JSON.stringify(report.probes?.tabKeys)}`,
+    );
+    assert.equal(
+      report.probes?.tabKeys?.withOneTab,
+      false,
+      `Ctrl+Tab was swallowed with a single tab: ${JSON.stringify(report.probes?.tabKeys)}`,
+    );
+    assert.deepEqual(
+      tabCycledForward.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "Ctrl+Tab reordered the strip instead of walking it",
+    );
+    assert.equal(
+      tabCycledForward.tabs[0]?.active,
+      true,
+      "Ctrl+Tab did not step forward from the last tab, wrapping to the first",
+    );
+    assert.equal(tabCycledForward.tabs[1]?.active, false, "two tabs are active after Ctrl+Tab");
+    assert.equal(tabCycledForward.heading, "Bravo budget", "Ctrl+Tab loaded the wrong chat");
+    assert.equal(
+      tabCycledForward.composer?.focused,
+      true,
+      "Ctrl+Tab dropped the caret out of the chat composer",
+    );
+    assert.equal(
+      tabCycledForward.rows.find((row) => row.label === "Bravo budget")?.active,
+      true,
+      "Ctrl+Tab left the sidebar on another chat",
+    );
+    assert.deepEqual(
+      tabCycledBack.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "Ctrl+Shift+Tab reordered the strip instead of walking it",
+    );
+    assert.equal(
+      tabCycledBack.tabs[1]?.active,
+      true,
+      "Ctrl+Shift+Tab did not step back from the first tab, wrapping to the last",
+    );
+    assert.equal(tabCycledBack.tabs[0]?.active, false, "two tabs are active after Ctrl+Shift+Tab");
+    assert.equal(tabCycledBack.heading, "Alpha planning", "Ctrl+Shift+Tab loaded the wrong chat");
+    assert.equal(
+      tabCycledBack.composer?.focused,
+      true,
+      "Ctrl+Shift+Tab dropped the caret out of the chat composer",
+    );
+    assert.equal(
+      tabCycledBack.rows.find((row) => row.label === "Alpha planning")?.active,
+      true,
+      "Ctrl+Shift+Tab left the sidebar on another chat",
+    );
+
+    // The row menu offers the same gesture.
+    assert.deepEqual(
+      menuOpened.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning", "Delta automation"],
+      "Open in new tab did not add a tab",
+    );
+    assert.equal(menuOpened.heading, "Delta automation");
+    assert.equal(menuClosed.tabCount, 2, "closing the menu-opened tab left the wrong count");
+    assert.equal(menuClosed.heading, "Alpha planning", "closing a tab did not hand over");
+    assert.equal(
+      menuClosed.rows.some((row) => row.label === "Delta automation"),
+      true,
+      "closing a tab removed the chat from the sidebar",
+    );
+
+    // Two turns in the air at once, each in its own tab.
+    assert.equal(alphaLive.calls.length, 1, "Alpha's send never reached the bridge");
+    assert.equal(alphaLive.calls[0]?.sessionId, "chat-alpha");
+    assert.equal(
+      alphaLive.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "Alpha's tab is not marked live",
+    );
+    assert.equal(alphaLive.rail?.liveCount, "1 running", "the sidebar did not count the run");
+    assert.equal(
+      bravoReady.composer?.disabled,
+      false,
+      "the composer stayed locked while another chat was running",
+    );
+    assert.equal(
+      bravoReady.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "switching tabs dropped the other run's live state",
+    );
+    assert.equal(bothLive.calls.length, 2, "the second send did not reach the bridge");
+    assert.deepEqual(
+      bothLive.calls.map((call) => call.sessionId),
+      ["chat-alpha", "chat-bravo"],
+      "the two sends were not for two different chats",
+    );
+    assert.equal(
+      bothLive.tabs.filter((tab) => tab.live).length,
+      2,
+      "the strip does not show both turns running",
+    );
+    assert.equal(
+      bothLive.rows.filter((row) => row.live).length,
+      2,
+      "the sidebar does not show both turns running",
+    );
+    // The live state still paints the row's leading slot, whichever glyph it
+    // holds: a plain chat keeps its dot and the dot pulses. The icon row is the
+    // background automation further down the run; here both live rows are plain.
+    for (const row of bothLive.rows.filter((candidate) => candidate.live)) {
+      assert.equal(row.icon, null, `"${row.label}"'s live row wears a kickoff mark`);
+      assert.equal(row.mark.exists, true, `"${row.label}"'s live row has no mark slot`);
+      assert.equal(row.mark.svg, false, `"${row.label}"'s live row lost its dot to an icon`);
+      assert.equal(row.dot.exists, true, `"${row.label}"'s live row lost its status dot`);
+      assert.equal(row.dot.visible, true, `"${row.label}"'s live dot is not visible`);
+      assert.ok(
+        [row.mark.animation, row.dot.animation].some(
+          (name) => name !== null && name !== "none",
+        ),
+        `"${row.label}"'s live dot is not pulsing (animations ${JSON.stringify([row.mark.animation, row.dot.animation])})`,
+      );
+    }
+    assert.equal(bothLive.rail?.liveCount, "2 running");
+
+    // Frames are routed by session id: a delta for the chat that is not on
+    // screen lands in that chat, not in the open one.
+    const bravoText = interleaved.messages.map((m) => m.content).join(" | ");
+    assert.match(bravoText, /BRAVO-ONLY-1/);
+    assert.match(bravoText, /BRAVO-ONLY-2/);
+    assert.match(bravoText, /Plan the bravo budget/);
+    assert.doesNotMatch(bravoText, /ALPHA-ONLY/, "Alpha's deltas leaked into Bravo");
+    const alphaText = alphaThread.messages.map((m) => m.content).join(" | ");
+    assert.match(alphaText, /ALPHA-ONLY-1/);
+    assert.match(alphaText, /ALPHA-ONLY-2/);
+    assert.doesNotMatch(alphaText, /BRAVO-ONLY/, "Bravo's deltas leaked into Alpha");
+
+    // Settling clears every live mark.
+    assert.equal(finished.tabs.every((tab) => !tab.live), true, "a tab stayed live");
+    assert.equal(finished.rows.every((row) => !row.live), true, "a row stayed live");
+    assert.equal(finished.rail?.liveCount, "", "the running count outlived the runs");
+
+    // A plain click during a live turn still replaces the main chat, but the
+    // running chat is split into its own tab first rather than hidden.
+    assert.equal(
+      alphaAgain.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "Alpha's second turn is not live",
+    );
+    assert.equal(split.heading, "Charlie retro", "the mid-turn click did not replace the main chat");
+    assert.equal(split.tabCount, 3, "the mid-turn click did not leave three tabs");
+    assert.equal(
+      split.tabs.find((tab) => tab.label === "Charlie retro")?.active,
+      true,
+      "the clicked chat did not take the active tab",
+    );
+    assert.equal(
+      split.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "the running chat's tab was lost when the main chat was replaced",
+    );
+    assert.equal(
+      splitSettled.tabs.every((tab) => !tab.live),
+      true,
+      "the split tab stayed live after its run ended",
+    );
+
+    // The hover pin control reaches the gateway and the list follows: a fresh
+    // pin is the very first row and wears a resting pin mark.
+    assert.equal(
+      hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin.visible,
+      true,
+      "Bravo's hover pin control did not appear",
+    );
+    const pin = pinned.patchCalls.at(-1);
+    assert.equal(pin?.id, "chat-bravo", "Pin hit the wrong chat");
+    assert.equal(pin?.patch.pinned, true, "Pin never reached the bridge");
+    assert.equal(pinned.rows[0]?.label, "Bravo budget", "the pinned chat did not become the first row");
+    assert.equal(pinned.rows[0]?.pinned, true, "the first row is not marked pinned");
+    assert.equal(pinned.rows[0]?.pinState, true, "the pinned row lost its resting pin mark");
+    assert.equal(
+      pinned.rows.some((row) => row.actionsVisible),
+      false,
+      "the hover controls stayed up after the pointer left and the pin landed",
+    );
+
+    // The same control toggles off: Unpin leaves the front and drops the flag.
+    const pinnedHover = hoveredPinned.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(pinnedHover?.pin.visible, true, "the pinned row's hover pin is not visible");
+    assert.equal(pinnedHover?.pin.label, "Unpin chat", "the pinned hover control does not read Unpin");
+    assert.equal(pinnedHover?.pin.dataPinned, "true", "the pinned hover control lost its flag");
+    assert.equal(pinnedHover?.pin.filled, true, "the pinned hover pin is not filled");
+    const unpin = unpinned.patchCalls.at(-1);
+    assert.equal(unpin?.id, "chat-bravo", "Unpin hit the wrong chat");
+    assert.equal(unpin?.patch.pinned, false, "Unpin never reached the bridge");
+    const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(unpinnedBravo?.pinned, false, "the unpinned chat kept its pinned flag");
+    assert.equal(unpinnedBravo?.pinState, false, "the unpinned chat still wears a pin mark");
+    // The fixture's own pin was unpinned and its tab closed at 1c, so no pinned
+    // row is left: the front of the list is the first of the activity order.
+    assert.equal(
+      unpinned.rows[0]?.label,
+      "Alpha planning",
+      "unpinning did not hand the front back to the activity order",
+    );
+    assert.equal(unpinned.tabCount, 3, "the unpinned tab left the strip");
+    assert.equal(
+      unpinned.tabs.every((tab) => tab.pinned === false),
+      true,
+      "a tab is still drawn as a pinned tab",
+    );
+    assert.equal(
+      unpinned.tabs.find((tab) => tab.label === "Bravo budget")?.hasClose,
+      true,
+      "the unpinned chat's tab has no close control",
+    );
+
+    // 1c left a one-chat baseline: the fixture's pinned chat was unpinned from
+    // the sidebar and its now-normal tab closed, so the strip is back down to the
+    // one tab it always was, and every later tab count is the unpinned one.
+    const pinnedNoteUnpin = unpinnedPinnedNote.patchCalls.at(-1);
+    assert.equal(pinnedNoteUnpin?.id, "chat-pinned", "the sidebar Unpin hit the wrong chat");
+    assert.equal(pinnedNoteUnpin?.patch.pinned, false, "the sidebar Unpin never reached the bridge");
+    assert.equal(
+      unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose,
+      true,
+      "the unpinned tab did not become a normal tab with a close control",
+    );
+    assert.equal(baseline.tabCount, 1, "closing the extra tab did not leave one tab");
+    assert.equal(
+      baseline.tabs[0]?.label,
+      "Alpha planning",
+      "the one remaining tab is not the chat in front",
+    );
+    assert.notEqual(
+      baseline.strip,
+      null,
+      "the strip is not drawn for one chat, so the plus is unreachable",
+    );
+    assert.equal(
+      baseline.newTab?.visible,
+      true,
+      "a one-tab strip has no visible New chat tab control",
+    );
+    assert.ok(
+      (baseline.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (baseline.tabs[0]?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the New chat tab control is not after the single tab",
+    );
+    assert.equal(baseline.heading, "Alpha planning");
+
+    // The hover archive control removes the row and the tab it had, and does not
+    // move the open thread when the archived chat is a background tab.
+    assert.equal(
+      hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive.visible,
+      true,
+      "Alpha's hover archive control did not appear",
+    );
+    const archive = archived.patchCalls.at(-1);
+    assert.equal(archive?.id, "chat-alpha", "Archive hit the wrong chat");
+    assert.equal(archive?.patch.archived, true, "Archive never reached the bridge");
+    assert.equal(
+      archived.rows.some((row) => row.label === "Alpha planning"),
+      false,
+      "the archived chat is still listed",
+    );
+    assert.equal(archived.rowCount, 4, "archive changed the wrong number of rows");
+    assert.equal(
+      archived.tabs.some((tab) => tab.label === "Alpha planning"),
+      false,
+      "the archived chat kept its tab",
+    );
+    assert.equal(archived.heading, "Charlie retro", "archiving a background tab moved the open thread");
+
+    // Delete asks in the app's own dialog, writes only on yes, and hands the
+    // dock to a neighbour tab.
+    assert.equal(asked.dialog?.title, "Delete chat", "delete did not ask");
+    assert.equal(asked.dialog?.confirm, true, "the ask has no confirm control");
+    assert.deepEqual(asked.deleteCalls, [], "delete wrote before it was answered");
+    assert.deepEqual(declined.deleteCalls, [], "a cancelled delete wrote anyway");
+    assert.equal(declined.rowCount, 4, "a cancelled delete lost the row");
+    assert.equal(deleted.deleteCalls.at(-1), "chat-charlie", "the delete hit the wrong chat");
+    assert.equal(
+      deleted.rows.some((row) => row.label === "Charlie retro"),
+      false,
+      "the deleted chat is still listed",
+    );
+    assert.equal(deleted.rowCount, 3, "the delete changed the wrong number of rows");
+    assert.equal(deleted.tabCount, 1, "deleting the open chat left a second tab");
+    assert.equal(
+      deleted.tabs[0]?.label,
+      "Bravo budget",
+      "deleting the open chat did not leave its neighbour as the one tab",
+    );
+    assert.equal(deleted.heading, "Bravo budget", "deleting the open chat did not hand over");
+
+    // A background run — an automation, or any chat nobody opened — appears as
+    // a tab without taking the screen.
+    assert.equal(background.tabCount, 2, "the background run did not grow a tab");
+    assert.equal(
+      background.tabs.find((tab) => tab.label === "Delta automation")?.live,
+      true,
+      "the background tab is not marked live",
+    );
+    assert.equal(
+      background.tabs.find((tab) => tab.label === "Bravo budget")?.active,
+      true,
+      "the background run stole the active chat",
+    );
+    assert.equal(background.heading, "Bravo budget", "the background run moved the dock");
+    assert.equal(
+      background.rows.find((row) => row.label === "Delta automation")?.live,
+      true,
+      "the background chat's row is not live",
+    );
+    // A live row whose chat was started by an automation keeps its kickoff mark
+    // and that mark carries the live state: the icon turns the accent and pulses,
+    // rather than a dot appearing beside it.
+    const liveAutomationRow = background.rows.find(
+      (row) => row.label === "Delta automation",
+    );
+    assert.equal(
+      liveAutomationRow?.icon,
+      "automation",
+      "the live automation row lost its kickoff mark",
+    );
+    assert.equal(liveAutomationRow?.mark.exists, true, "the live automation row has no mark slot");
+    assert.equal(
+      liveAutomationRow?.mark.svg,
+      true,
+      "the live automation row's mark is not the kickoff icon",
+    );
+    assert.equal(
+      liveAutomationRow?.mark.visible,
+      true,
+      "the live automation row's mark is not visible",
+    );
+    assert.ok(
+      [liveAutomationRow?.mark.animation, liveAutomationRow?.mark.glyphAnimation].some(
+        (name) => name !== null && name !== "none",
+      ),
+      `the live automation row's kickoff mark is not pulsing (animations ${JSON.stringify([liveAutomationRow?.mark.animation, liveAutomationRow?.mark.glyphAnimation])})`,
+    );
+
+    // Closing a live tab stops its run, and the frames already on the wire do
+    // not resurrect the tab.
+    assert.equal(
+      closedLive.stopCalls.includes("run-delta"),
+      true,
+      "closing a live tab did not stop its run",
+    );
+    assert.equal(lateFrame.tabCount, 1, "a late frame resurrected the closed tab");
+    assert.equal(
+      lateFrame.tabs[0]?.label,
+      "Bravo budget",
+      "the late frame left something other than the one open chat",
+    );
+    assert.equal(lateFrame.heading, "Bravo budget", "a late frame moved the dock");
+    assert.equal(
+      lateFrame.rows.find((row) => row.label === "Delta automation")?.live,
+      true,
+      "the late frame did not land in its own run",
+    );
+
+    // The header's two controls: search the list, and choose the view it is
+    // drawn from. Both sit in line with the "Chats" heading, not in a row of
+    // their own above it.
+    assert.deepEqual(
+      header.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "the chats header does not carry the search and view controls",
+    );
+    for (const control of header.rail?.header?.controls ?? []) {
+      assert.ok(
+        Math.abs(
+          (control.box.top + control.box.bottom) / 2 -
+            (header.rail!.header!.titleBox!.top + header.rail!.header!.titleBox!.bottom) / 2,
+        ) <= 4,
+        `${control.label} is not on the heading's row (${JSON.stringify(control.box)} vs ${JSON.stringify(header.rail?.header?.titleBox)})`,
+      );
+    }
+    assert.equal(header.rail?.search, null, "a search box is drawn before the icon is clicked");
+    assert.equal(header.rail?.viewMenu, null, "the view menu is drawn before the icon is clicked");
+
+    // The search icon turns the header itself into a full-width field: the
+    // title and both icons step aside, and the field occupies their row.
+    assert.equal(searchOpen.rail?.search?.focused, true, "the search box did not take focus");
+    assert.equal(searchOpen.rail?.search?.value, "", "the search box opened with text in it");
+    assert.equal(searchOpen.rail?.search?.placeholder, "Search chats");
+    assert.equal(
+      searchOpen.rail?.header?.titleBox,
+      null,
+      "the Chats title is still drawn behind the open search",
+    );
+    assert.deepEqual(
+      searchOpen.rail?.header?.controls,
+      [],
+      "the header icons are still drawn behind the open search",
+    );
+    assert.ok(
+      (searchOpen.rail?.search?.panelBox.top ?? 0) >=
+        (searchOpen.rail?.header?.box.top ?? 0) - 1 &&
+        (searchOpen.rail?.search?.panelBox.bottom ?? 0) <=
+          (searchOpen.rail?.header?.box.bottom ?? 0) + 1,
+      `the search box left the header's row (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs ${JSON.stringify(searchOpen.rail?.header?.box)})`,
+    );
+    assert.ok(
+      Math.abs(
+        (searchOpen.rail?.search?.panelBox.left ?? 0) -
+          (searchOpen.rail?.newChatBox?.left ?? -99),
+      ) <= 1 &&
+        Math.abs(
+          (searchOpen.rail?.search?.panelBox.right ?? 0) -
+            (searchOpen.rail?.newChatBox?.right ?? -99),
+        ) <= 1,
+      `the field does not span the row the title and icons had (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs New chat ${JSON.stringify(searchOpen.rail?.newChatBox)})`,
+    );
+    assert.equal(searchOpen.rail?.newChat, true, "New chat left the section while searching");
+    assert.deepEqual(
+      searched.rows.map((row) => row.label),
+      ["Delta automation"],
+      "the search did not narrow the rows to the match",
+    );
+    assert.deepEqual(searched.rail?.groups, [], "the filtered list kept an empty group heading");
+    assert.equal(searched.heading, "Bravo budget", "searching moved the open chat");
+    assert.equal(noMatch.rowCount, 0, "a search with no match still listed rows");
+    assert.match(
+      noMatch.rail?.empty ?? "",
+      /No chats match/,
+      "a search with no match said nothing",
+    );
+    assert.equal(closedByCross.rowCount, 3, "closing the search did not bring the rows back");
+    assert.equal(closedByCross.rail?.search, null, "the cross did not close the search");
+    assert.equal(
+      closedByCross.rail?.header?.titleBox !== null,
+      true,
+      "the Chats title did not come back with the header",
+    );
+    assert.deepEqual(
+      closedByCross.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "the header icons did not come back",
+    );
+    assert.equal(
+      closedByOutside.rail?.search,
+      null,
+      "a press outside the field did not close the search",
+    );
+    assert.deepEqual(
+      closedByOutside.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "a press outside the field did not restore the header",
+    );
+    assert.equal(
+      closedByEscape.rail?.search,
+      null,
+      "Escape did not close the search",
+    );
+    assert.deepEqual(
+      closedByEscape.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "Escape did not restore the header",
+    );
+
+    // The view menu is the filter: hide the archived chats (the default), show
+    // them as a greyed, restorable group, or show the archive alone.
+    assert.equal(viewMenu.rail?.viewMenu?.title, "View options");
+    assert.deepEqual(
+      viewMenu.rail?.viewMenu?.items,
+      [
+        { label: "Hide archived chats", checked: true },
+        { label: "Show archived chats", checked: false },
+        { label: "Only archived chats", checked: false },
+      ],
+      "the view menu does not offer hide/show/only archived, or marks the wrong one",
+    );
+    assert.equal(
+      archivedShown.rowCount,
+      6,
+      `showing archived chats listed ${archivedShown.rowCount} rows, expected 3 live + 3 archived`,
+    );
+    assert.equal(
+      archivedShown.rail?.listOptions.at(-1)?.includeArchived,
+      true,
+      "the show-archived view did not ask the list for archived rows",
+    );
+    assert.ok(
+      archivedShown.rail?.groups.includes("Archived"),
+      `the archived rows have no group of their own: ${JSON.stringify(archivedShown.rail?.groups)}`,
+    );
+    const shownArchived = archivedShown.rows.filter((row) => row.archived);
+    assert.deepEqual(
+      shownArchived.map((row) => row.label).sort(),
+      ["Alpha planning", "Echo archived", "Foxtrot archived"],
+      "the archived group is not the archived chats",
+    );
+    for (const row of shownArchived) {
+      assert.equal(row.archivedTag, "Archived", `${row.label} carries no Archived tag`);
+      assert.equal(row.disabled, true, `${row.label} is openable while archived`);
+      assert.equal(row.group, "Archived", `${row.label} is outside the Archived group`);
+    }
+    assert.equal(
+      archivedShown.rows.filter((row) => !row.archived).length,
+      3,
+      "the live chats left the list while the archived view was shown",
+    );
+    assert.equal(archivedShown.heading, "Bravo budget", "showing archived chats moved the dock");
+    assert.equal(
+      archivedClick.heading,
+      "Bravo budget",
+      "clicking an archived row opened it",
+    );
+    assert.notEqual(
+      archivedClick.messageCalls.at(-1),
+      "chat-echo",
+      "clicking an archived row read its transcript",
+    );
+    assert.deepEqual(
+      archivedSearch.rows.map((row) => [row.label, row.archived]),
+      [["Echo archived", true]],
+      "the search did not find the archived chat while the view showed it",
+    );
+
+    // Unarchive restores the chat to the working list, and hiding the archived
+    // view again leaves the restored chat where it belongs.
+    assert.equal(unarchived.patchCalls.at(-1)?.id, "chat-echo", "Unarchive hit the wrong chat");
+    assert.equal(
+      unarchived.patchCalls.at(-1)?.patch.archived,
+      false,
+      "Unarchive never reached the bridge",
+    );
+    assert.deepEqual(
+      [
+        unarchived.rows.find((row) => row.label === "Echo archived")?.group,
+        unarchived.rows.find((row) => row.label === "Echo archived")?.archived,
+      ],
+      ["", false],
+      "the restored chat did not rejoin the flat working list",
+    );
+    assert.equal(unarchived.rowCount, 6, "unarchive changed the wrong number of rows");
+    assert.deepEqual(
+      viewMenuShown.rail?.viewMenu?.items,
+      [
+        { label: "Hide archived chats", checked: false },
+        { label: "Show archived chats", checked: true },
+        { label: "Only archived chats", checked: false },
+      ],
+      "the view menu does not mark the shown-archived view as current",
+    );
+    assert.equal(
+      archivedHidden.rowCount,
+      4,
+      `hiding archived chats left ${archivedHidden.rowCount} rows, expected the 4 live chats`,
+    );
+    assert.equal(
+      archivedHidden.rail?.listOptions.at(-1)?.includeArchived,
+      false,
+      "the hide-archived view did not ask for a live-only list",
+    );
+    assert.equal(
+      archivedHidden.rail?.groups.includes("Archived"),
+      false,
+      "the Archived group survived the view being hidden",
+    );
+    assert.equal(
+      archivedHidden.rows.some(
+        (row) => row.label === "Echo archived" && !row.archived,
+      ),
+      true,
+      "hiding the archived view dropped the restored chat",
+    );
+
+    // The dock's New chat keeps the chat in front: the blank conversation opens
+    // as a second tab instead of replacing the open one. The old behaviour is
+    // one tab with the chat that was in front gone, so both tabs are named and
+    // each one's thread is visited: a tab that is merely listed is not proof the
+    // chat is still open.
+    assert.equal(
+      newChatTab.tabCount,
+      2,
+      `New chat drew ${newChatTab.tabCount} tab(s) instead of a second tab beside the open chat`,
+    );
+    assert.deepEqual(
+      newChatTab.tabs.map((tab) => tab.label),
+      ["Bravo budget", "New chat"],
+      "New chat did not open the blank chat as its own tab",
+    );
+    assert.equal(
+      newChatTab.tabs[1]?.active,
+      true,
+      "the new chat's tab is not the one in front",
+    );
+    assert.equal(
+      newChatTab.heading,
+      "New chat",
+      `the dock did not land on the new chat ("${newChatTab.heading}")`,
+    );
+    assert.equal(
+      newChatTab.tabs.some((tab) => tab.label === "Bravo budget"),
+      true,
+      "New chat made the chat that was in front lose its tab",
+    );
+    assert.equal(
+      newChatTab.rows.some((row) => row.label === "New chat"),
+      true,
+      "the new blank chat never joined the sidebar list",
+    );
+    assert.equal(
+      newChatTab.createCalls.length,
+      archivedHidden.createCalls.length + 1,
+      "the New chat slot never asked the bridge for a chat",
+    );
+    assert.equal(
+      newChatKept.heading,
+      "Bravo budget",
+      `the previous chat's tab did not bring its thread back ("${newChatKept.heading}")`,
+    );
+    assert.equal(newChatKept.tabCount, 2, "revisiting the previous chat dropped a tab");
+    assert.equal(
+      newChatKept.tabs.some((tab) => tab.label === "New chat"),
+      true,
+      "the new chat's tab went away when the previous chat was revisited",
+    );
+    assert.equal(
+      newChatActive.heading,
+      "New chat",
+      `the new chat's tab did not bring its thread back ("${newChatActive.heading}")`,
+    );
+    assert.equal(
+      newChatActive.tabs.find((tab) => tab.label === "New chat")?.active,
+      true,
+      "the new chat is not the active tab after clicking it",
+    );
+
+    // Content-sized tabs: with room in the strip a tab takes the width of its
+    // name — capped at a few words — so a long fixture name holds a wider tab
+    // than a short one and every short name is written in full. Only when the row
+    // fills do the tabs compress, down to the shared floor; the labels truncate
+    // and then the strip scrolls. An equal share fails the spread; a tab that
+    // keeps its wide width fails the floor; a tab past the cap fails the cap.
+    assert.equal(
+      defaultTabs.tabCount,
+      3,
+      `the third chat did not open a tab: ${JSON.stringify(defaultTabs.tabs.map((tab) => tab.label))}`,
+    );
+    const openLabels = defaultTabs.tabs.map((tab) => tab.label);
+    assert.deepEqual(
+      openLabels,
+      ["Bravo budget", "New chat", "Delta automation"],
+      "the three open chats are not the three tabs",
+    );
+    assert.ok(
+      new Set(openLabels.map((label) => label.length)).size > 1,
+      "every tab label is the same length, so a content-sized strip would not show",
+    );
+    const spread = (widths: number[]) => Math.max(...widths) - Math.min(...widths);
+    const widthOf = (state: typeof contentTabs, label: string) =>
+      state.tabs.find((tab) => tab.label === label)?.box?.width ?? Number.NaN;
+    assert.ok(
+      contentTabs.chatDivider !== null &&
+        (contentTabs.chatDivider.now ?? 0) > (defaultTabs.chatDivider?.now ?? 0),
+      `the dock never widened for the content-sized claim (${defaultTabs.chatDivider?.now}px → ${contentTabs.chatDivider?.now}px)`,
+    );
+    const contentWidths = contentTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    assert.equal(contentWidths.length, 3, "not every tab was measured at the wide dock");
+    assert.ok(
+      contentWidths.every((width) => Number.isFinite(width)),
+      "a tab has no box to measure at the wide dock",
+    );
+    assert.ok(
+      spread(contentWidths) > 2,
+      `tabs are equal shares, not content-sized: ${JSON.stringify(contentWidths)}`,
+    );
+    assert.ok(
+      widthOf(contentTabs, "Delta automation") > widthOf(contentTabs, "New chat") &&
+        widthOf(contentTabs, "Bravo budget") > widthOf(contentTabs, "New chat"),
+      `a longer name did not hold a wider tab: ${JSON.stringify(contentTabs.tabs.map((tab) => [tab.label, tab.box?.width]))}`,
+    );
+    for (const tab of contentTabs.tabs) {
+      assert.equal(
+        tab.label,
+        tab.name.split(" — ")[0],
+        `"${tab.label}" is truncated while the wide strip has room for it (${tab.name})`,
+      );
+      assert.ok(
+        Number.isFinite(tab.maxWidth) &&
+          tab.maxWidth > 0 &&
+          (tab.box?.width ?? Number.POSITIVE_INFINITY) <= tab.maxWidth + 1,
+        `"${tab.label}" grows past its cap (${tab.box?.width}px vs ${tab.maxWidth}px)`,
+      );
+    }
+    // The cap holds a long title to a few words: the tab stops at its max-width,
+    // the label truncates inside it, and the full name stays in its tooltip and
+    // accessible name.
+    const capped = cappedTabs.tabs.find((tab) => tab.active) ?? null;
+    assert.ok(capped, "the long-named tab was not found");
+    assert.ok(
+      Number.isFinite(capped.maxWidth) &&
+        capped.maxWidth > 0 &&
+        (capped.box?.width ?? Number.POSITIVE_INFINITY) <= capped.maxWidth + 1,
+      `the long name grew the tab past its cap (${capped.box?.width}px vs ${capped.maxWidth}px)`,
+    );
+    assert.ok(
+      capped.labelWidth !== null &&
+        capped.textWidth !== null &&
+        capped.labelWidth + 1 < capped.textWidth,
+      `the long name is not truncated inside the tab (label ${capped.labelWidth}px, name ${capped.textWidth}px)`,
+    );
+    assert.ok(
+      capped.name.includes("A very long session name"),
+      `the long name left the tab's tooltip and accessible name (${capped.name})`,
+    );
+    assert.ok(
+      restoredTabs.tabs.some((tab) => tab.label === "Delta automation"),
+      `the fixture name was not restored: ${JSON.stringify(restoredTabs.tabs.map((tab) => tab.label))}`,
+    );
+
+    assert.notEqual(narrowTabs.chatDivider, null, "the dock has no resize handle");
+    assert.equal(
+      narrowTabs.chatDivider?.now,
+      narrowTabs.chatDivider?.min,
+      `the dock never reached its floor (${narrowTabs.chatDivider?.now}px, floor ${narrowTabs.chatDivider?.min}px), so the narrow-strip claim is untested`,
+    );
+    assert.ok(
+      (narrowTabs.chatDivider?.now ?? Number.POSITIVE_INFINITY) <
+        (defaultTabs.chatDivider?.now ?? Number.NEGATIVE_INFINITY),
+      `the divider did not move to the floor (${defaultTabs.chatDivider?.now}px → ${narrowTabs.chatDivider?.now}px)`,
+    );
+    assert.ok(
+      (narrowTabs.panel?.width ?? Number.POSITIVE_INFINITY) <
+        (defaultTabs.panel?.width ?? Number.NEGATIVE_INFINITY),
+      `the dock did not get narrower (${defaultTabs.panel?.width}px → ${narrowTabs.panel?.width}px)`,
+    );
+    const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    assert.equal(narrowTabs.tabCount, 3, "the strip lost a tab while the dock narrowed");
+    assert.deepEqual(
+      narrowTabs.tabs.map((tab) => tab.label),
+      openLabels,
+      "the strip's chats changed while the dock narrowed",
+    );
+    assert.ok(
+      narrowWidths.every((width) => Number.isFinite(width)),
+      "a tab has no box at the dock's floor",
+    );
+    assert.ok(
+      spread(narrowWidths) <= 1,
+      `the tabs are not held at the shared floor at the dock's narrowest: ${JSON.stringify(narrowWidths)}`,
+    );
+    assert.ok(
+      narrowWidths.every(
+        (width, index) =>
+          width < (contentWidths[index] ?? Number.POSITIVE_INFINITY),
+      ),
+      `the tabs did not compress with the dock: ${JSON.stringify(contentWidths)} → ${JSON.stringify(narrowWidths)}`,
+    );
+
+    // The floor itself, measured where it hurts most — the dock's narrowest and a
+    // tab whose leading slot is an icon rather than the plain dot. The ask is
+    // "three characters plus an icon (when there is one)", and the ellipsis that
+    // follows a truncated label costs about a character of width, so the label's
+    // clientWidth has to hold the label's first three characters AND the ellipsis
+    // glyph in the label's own font. Three characters alone is not enough: it
+    // renders two characters and "…". The tab also still carries its mark, its
+    // close control, and the label is still the chat's name rather than empty.
+    const narrowFloorTabs = narrowTabs.tabs.filter((tab) => !tab.pinned);
+    assert.equal(
+      narrowFloorTabs.length,
+      3,
+      `the floor claim is not about the three open chats: ${JSON.stringify(narrowTabs.tabs.map((tab) => [tab.label, tab.pinned]))}`,
+    );
+    for (const tab of narrowFloorTabs) {
+      assert.notEqual(tab.labelWidth, null, `${tab.label} has no label element to measure`);
+      assert.notEqual(
+        tab.floorWidth,
+        null,
+        `${tab.label}'s three characters plus the ellipsis could not be measured in its own font`,
+      );
+      assert.ok(
+        (tab.labelWidth ?? Number.NEGATIVE_INFINITY) + 1 >=
+          (tab.floorWidth ?? Number.POSITIVE_INFINITY),
+        `"${tab.label}" shrank below its three-characters-plus-ellipsis floor at the dock's narrowest (label ${tab.labelWidth}px, 3 characters + ellipsis ${tab.floorWidth}px)`,
+      );
+      assert.ok(
+        tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        `"${tab.label}"'s rendered label no longer carries its chat's name (label "${tab.label}", accessible name "${tab.name}")`,
+      );
+      assert.equal(
+        tab.mark.exists,
+        true,
+        `"${tab.label}"'s tab has no leading mark slot`,
+      );
+      assert.equal(
+        tab.mark.visible,
+        true,
+        `"${tab.label}"'s leading mark is not visible at the floor`,
+      );
+      assert.equal(tab.hasClose, true, `"${tab.label}"'s tab lost its close control at the floor`);
+      assert.equal(
+        tab.closeVisible,
+        true,
+        `"${tab.label}"'s close control is not visible at the floor`,
+      );
+    }
+
+    // The fixture's automation chat is the kickoff-mark case: the store read the
+    // profile's remembered mark at the landing, so that tab wears the automation
+    // icon in the slot a plain tab spends on the status dot — without touching
+    // the tab's accessible name, its close label, or the label floor above.
+    const narrowDelta = narrowTabs.tabs.find((tab) => tab.label === "Delta automation");
+    assert.equal(
+      narrowDelta?.icon,
+      "automation",
+      "the automation chat's tab does not wear its kickoff mark",
+    );
+    assert.equal(narrowDelta?.mark.exists, true, "the automation tab has no mark slot");
+    assert.equal(narrowDelta?.mark.svg, true, "the kickoff mark is not drawn as an icon");
+    assert.equal(narrowDelta?.mark.visible, true, "the kickoff mark is not visible");
+    assert.match(
+      narrowDelta?.name ?? "",
+      /^Delta automation/,
+      `the kickoff mark took over the tab's accessible name ("${narrowDelta?.name}")`,
+    );
+    assert.equal(
+      narrowDelta?.close,
+      "Close Delta automation",
+      "the kickoff mark changed the tab's close label",
+    );
+    for (const plain of ["Bravo budget", "New chat"]) {
+      const tab = narrowTabs.tabs.find((candidate) => candidate.label === plain);
+      assert.equal(tab?.icon, null, `a chat opened plainly wears a kickoff mark ("${plain}")`);
+      assert.equal(tab?.mark.exists, true, `"${plain}" has no leading mark slot`);
+      assert.equal(tab?.mark.svg, false, `"${plain}"'s slot draws an icon, not the status dot`);
+    }
+
+    // The row menu opens into the space that exists. With the history grown past
+    // the list's scroll port and scrolled to its last chat, the three-dot menu
+    // has to open above its row — a menu hanging below the row would be cut by
+    // the list's own edge, which is the reported fault. It must sit wholly
+    // inside the list and opening it must not move the list. A row at the top,
+    // with the room under it, still opens downward.
+    assert.ok(
+      (longList.rail?.list?.scrollHeight ?? 0) >
+        (longList.rail?.list?.clientHeight ?? 0) + 40,
+      `the seeded history does not overflow the chats list, so the menu is never clipped (${JSON.stringify(longList.rail?.list)})`,
+    );
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    assert.ok(
+      footMax > 0 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      `the chats list did not reach its last row (scrollTop ${atFoot.rail?.list?.scrollTop}, max ${footMax})`,
+    );
+    const footRow = atFoot.rows.at(-1);
+    assert.ok(footRow, "the scrolled list has no last row");
+    assert.ok(
+      (footRow.box?.bottom ?? 0) <= (atFoot.rail?.list?.box?.bottom ?? 0) + 1 &&
+        (footRow.box?.bottom ?? 0) >= (atFoot.rail?.list?.box?.bottom ?? 0) - 48,
+      `the last row is not at the foot of the list (${JSON.stringify({ row: footRow.box, list: atFoot.rail?.list?.box })})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.placement,
+      "above",
+      `the last chat's row menu did not flip upward (${JSON.stringify(menuFlipped.rail?.menu)})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.rowLabel,
+      footRow.label,
+      "the opened menu belongs to a row other than the last chat",
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.items,
+      5,
+      `the flipped menu lost its items (${menuFlipped.rail?.menu?.items})`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+        (menuFlipped.rail?.menu?.rowBox?.top ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is not drawn over its row: ${JSON.stringify(menuFlipped.rail?.menu)}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuFlipped.rail?.list?.box?.top ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuFlipped.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is clipped by the chats list: ${JSON.stringify({ menu: menuFlipped.rail?.menu?.box, list: menuFlipped.rail?.list?.box })}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.height ?? 0) > 60,
+      `the flipped menu was squeezed to ${menuFlipped.rail?.menu?.box?.height}px`,
+    );
+    assert.ok(
+      Math.abs((menuFlipped.rail?.list?.scrollTop ?? -1) - footMax) <= 1,
+      `opening the menu moved the list (scrollTop ${menuFlipped.rail?.list?.scrollTop}, expected ${footMax})`,
+    );
+    assert.equal(
+      menuDownward.rail?.menu?.placement,
+      "below",
+      `a roomy row's menu did not open downward (${JSON.stringify(menuDownward.rail?.menu)})`,
+    );
+    assert.ok(
+      (menuDownward.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuDownward.rail?.menu?.rowBox?.bottom ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuDownward.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuDownward.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the downward menu is not wholly under its row and inside the list: ${JSON.stringify({ menu: menuDownward.rail?.menu, list: menuDownward.rail?.list?.box })}`,
+    );
+
+    // Archiving the chat in front closes its tab and hands the screen to the tab
+    // that takes its place — never out of the dock, which is where the operator
+    // used to be dumped on a history page to pick another chat.
+    assert.equal(
+      activeArchived.surface,
+      "thread",
+      "archiving the chat in front left the thread",
+    );
+    assert.equal(
+      activeArchived.thread,
+      true,
+      "archiving the chat in front left no thread up",
+    );
+    assert.deepEqual(
+      activeArchived.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Delta automation"],
+      "the archived tab's neighbour did not take its place in the strip",
+    );
+    assert.equal(
+      activeArchived.heading,
+      "Delta automation",
+      `archiving the chat in front did not land on its neighbour ("${activeArchived.heading}")`,
+    );
+    assert.equal(
+      activeArchived.tabs.find((tab) => tab.label === "Delta automation")?.active,
+      true,
+      "the neighbour that took the place is not the tab in front",
+    );
+    assert.equal(
+      activeArchived.rows.some((row) => row.label === "New chat"),
+      false,
+      "the archived chat stayed in the sidebar",
+    );
+
+    // The archived tab was last in the strip: the tab before it takes the front.
+    // One tab is left, and the strip still draws it with the plus beside it.
+    assert.equal(
+      previousTabArchived.tabCount,
+      1,
+      `the neighbour tab did not stay in the strip (${previousTabArchived.tabCount} tabs)`,
+    );
+    assert.equal(previousTabArchived.tabs[0]?.label, "Bravo budget");
+    assert.equal(previousTabArchived.tabs[0]?.active, true);
+    assert.equal(
+      previousTabArchived.heading,
+      "Bravo budget",
+      `archiving the last tab did not hand the front to the tab before it ("${previousTabArchived.heading}")`,
+    );
+    assert.equal(
+      previousTabArchived.surface,
+      "thread",
+      "archiving the last tab left the thread",
+    );
+
+    // Archiving the last open chat leaves a blank New chat on the thread: the
+    // blank slate the New chat slot lands on, not a page to pick another chat
+    // from.
+    assert.equal(
+      lastArchived.surface,
+      "thread",
+      "archiving the last open chat left the thread",
+    );
+    assert.equal(
+      lastArchived.thread,
+      true,
+      "archiving the last open chat left no thread up",
+    );
+    assert.equal(
+      lastArchived.tabCount,
+      1,
+      "the blank New chat did not draw its one tab",
+    );
+    assert.equal(
+      lastArchived.tabs[0]?.label,
+      "New chat",
+      "the blank New chat's tab is not the chat on screen",
+    );
+    assert.equal(
+      lastArchived.heading,
+      "New chat",
+      `archiving the last open chat did not open a blank New chat ("${lastArchived.heading}")`,
+    );
+    assert.deepEqual(
+      lastArchived.messages,
+      [],
+      "the blank New chat archiving opened has a transcript",
+    );
+    assert.equal(
+      lastArchived.composer?.disabled,
+      false,
+      "the blank New chat archiving opened cannot be typed in",
+    );
+    assert.equal(
+      lastArchived.rows.some((row) => row.label === "New chat"),
+      true,
+      "the blank New chat archiving opened is not listed",
+    );
+    assert.equal(
+      lastArchived.createCalls.length,
+      previousTabArchived.createCalls.length + 1,
+      `archiving the last open chat did not ask the bridge for a blank chat (${JSON.stringify(lastArchived.createCalls)})`,
+    );
+
+    // The archived view must not hand an archived blank back as the new chat:
+    // with the band showing, archiving the blank in front opens a live one.
+    assert.equal(
+      archivedViewOpen.rows.some((row) => row.label === "New chat" && row.archived),
+      true,
+      "the archived view did not list the archived blank chat",
+    );
+    assert.equal(
+      blankArchived.surface,
+      "thread",
+      "archiving a blank in the archived view left the thread",
+    );
+    assert.equal(
+      blankArchived.thread,
+      true,
+      "archiving a blank in the archived view left no thread up",
+    );
+    assert.equal(
+      blankArchived.heading,
+      "New chat",
+      `archiving a blank in the archived view did not open a blank New chat ("${blankArchived.heading}")`,
+    );
+    assert.equal(
+      blankArchived.createCalls.length,
+      archivedViewOpen.createCalls.length + 1,
+      "archiving a blank in the archived view reopened the archived chat instead of making a live blank",
+    );
+    assert.equal(
+      blankArchived.rows.some((row) => row.label === "New chat" && !row.archived),
+      true,
+      "the live blank chat archiving opened is not listed",
+    );
+    assert.equal(
+      blankArchived.rows.some((row) => row.label === "New chat" && row.archived),
+      true,
+      "the archived blank chat left the archived view",
+    );
+
+    // The New chat slot lands on the blank chat that is already open: pressing it
+    // with a live blank in front must change nothing and mint no second chat.
+    assert.equal(
+      blankReused.surface,
+      "thread",
+      `the New chat slot left the thread ("${blankReused.surface}")`,
+    );
+    assert.equal(
+      blankReused.heading,
+      "New chat",
+      `the New chat slot opened something other than the blank chat ("${blankReused.heading}")`,
+    );
+    assert.equal(blankReused.tabCount, 1, "reusing the blank chat lost its tab");
+    assert.equal(blankReused.tabs[0]?.label, "New chat");
+    assert.equal(
+      blankReused.createCalls.length,
+      blankArchived.createCalls.length,
+      "pressing New chat on its own blank chat minted a second chat",
+    );
+
+    // Archiving the chat in front while the dock shows the chain keeps the chain
+    // up and opens nothing: the operator asked to put a chat away, not to be
+    // handed a new one. Neither surface draws the strip — the band is the
+    // thread's, and no empty band may be left behind on chain.
+    assert.equal(
+      chainUp.surface,
+      "chain",
+      "the chain never came up for the archive-from-chain case",
+    );
+    assert.equal(chainUp.strip, null, "the chain drew a tab strip band");
+    assert.equal(
+      archivedFromChain.strip,
+      null,
+      "archiving from the chain left a strip band on the chain",
+    );
+    assert.equal(
+      archivedFromChain.surface,
+      "chain",
+      "archiving from the chain moved the dock off the chain",
+    );
+    assert.equal(
+      archivedFromChain.thread,
+      false,
+      "archiving from the chain opened a thread",
+    );
+    assert.equal(
+      archivedFromChain.tabCount,
+      0,
+      "archiving from the chain drew a tab strip",
+    );
+    assert.equal(
+      archivedFromChain.createCalls.length,
+      chainUp.createCalls.length,
+      "archiving from the chain minted a blank chat",
+    );
+
+    // The plus after the last tab opens a new chat tab without disturbing the
+    // chat in front. It is pressed from a one-tab state: the strip is drawn for
+    // a single chat so the door to a second one is reachable before it exists.
+    assert.equal(
+      plusOpened.surface,
+      "thread",
+      "the plus left the thread",
+    );
+    assert.equal(
+      plusOpened.tabCount,
+      2,
+      `the plus did not open a second tab (${plusOpened.tabCount} tabs)`,
+    );
+    assert.equal(plusOpened.tabs[0]?.label, "Seed chat 10", "the chat in front lost its tab");
+    assert.equal(plusOpened.tabs[0]?.active, false, "the plus did not make the new tab active");
+    assert.equal(plusOpened.tabs[1]?.label, "New chat", "the new tab is not a blank chat");
+    assert.equal(plusOpened.tabs[1]?.active, true);
+    assert.equal(plusOpened.heading, "New chat", "the new tab did not become the thread");
+    assert.equal(
+      plusOpened.createCalls.length,
+      renameCancelled.createCalls.length + 1,
+      "the plus did not ask the bridge for a blank chat",
+    );
+    assert.equal(
+      plusOpened.strip?.box.bottom,
+      plusOpened.header?.box.top,
+      "the strip left its place above the name row after the new tab",
+    );
+    assert.equal(plusOpened.newTab?.tag, "button", "the plus is not a button");
+    assert.equal(plusOpened.newTab?.role, null, "the plus is wearing a tab role");
+    assert.ok(
+      (plusOpened.newTab?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (plusOpened.tabs.at(-1)?.box?.right ?? Number.POSITIVE_INFINITY),
+      "the plus is not after the last tab once a second tab exists",
+    );
+    assert.ok(
+      (plusOpened.newTab?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (plusOpened.strip?.box.right ?? Number.NEGATIVE_INFINITY),
+      "the plus runs past the strip's trailing edge",
+    );
+
+    // A second press on the plus is the one-blank rule through the strip's own
+    // door: it lands on the blank tab already open, so nothing is minted and the
+    // strip does not grow.
+    assert.equal(plusAgain.tabCount, 2, "a second plus grew the strip");
+    assert.deepEqual(
+      plusAgain.tabs.map((tab) => tab.label),
+      ["Seed chat 10", "New chat"],
+      "a second plus changed the strip's chats",
+    );
+    assert.equal(
+      plusAgain.tabs.at(-1)?.active,
+      true,
+      "a second plus moved the front off the blank tab",
+    );
+    assert.equal(
+      plusAgain.createCalls.length,
+      plusOpened.createCalls.length,
+      "a second plus minted a second blank chat",
+    );
+
+    // A rename field belongs to the chat it was opened on. With the dock header
+    // no longer carrying chat controls, rename starts on the row; switching the
+    // header to another chat must leave the field on its own row and write
+    // nothing across.
+    assert.equal(renameOpen.rowRenaming, true, "the row rename field never opened");
+    assert.equal(renameOpen.rowRenameValue, "Wrong chat name");
+    assert.equal(
+      renameSwitched.heading,
+      "Seed chat 10",
+      `switching chats did not move the header ("${renameSwitched.heading}")`,
+    );
+    assert.equal(
+      renameSwitched.rowRenaming,
+      true,
+      "the rename field disappeared when the header moved",
+    );
+    assert.equal(
+      renameSwitched.patchCalls.some(
+        (call) => call.patch.title === "Wrong chat name",
+      ),
+      false,
+      "a rename was written to the wrong chat",
+    );
+    assert.equal(renameCancelled.rowRenaming, false, "Cancel left the rename field open");
+
+    // The crowded band at the dock's floor: four unpinned chats beside the pinned
+    // square. The tabs sit at their floor rather than under it — every label still
+    // holds three of its own characters plus the ellipsis beside its mark and close
+    // control — and the strip genuinely overflows. A strip that keeps shrinking the tabs, or
+    // clips the last ones instead of scrolling, fails here.
+    assert.equal(
+      floorStrip.tabCount,
+      5,
+      `the crowded strip drew ${floorStrip.tabCount} tab(s), expected the pinned square plus four chats`,
+    );
+    assert.equal(
+      floorStrip.tabs.filter((tab) => tab.pinned).length,
+      1,
+      `the crowded strip does not carry exactly one pinned square: ${JSON.stringify(floorStrip.tabs.map((tab) => [tab.label, tab.pinned]))}`,
+    );
+    const floorUnpinned = floorStrip.tabs.filter((tab) => !tab.pinned);
+    assert.equal(
+      floorUnpinned.length,
+      4,
+      `the crowded strip drew ${floorUnpinned.length} unpinned tabs, expected four`,
+    );
+    assert.equal(
+      floorStrip.chatDivider?.now,
+      floorStrip.chatDivider?.min,
+      `the crowded strip was not measured at the dock's floor (${floorStrip.chatDivider?.now}px, floor ${floorStrip.chatDivider?.min}px)`,
+    );
+    assert.notEqual(floorStrip.strip, null, "the crowded state drew no tab strip");
+    assert.ok(
+      (floorStrip.strip?.scrollWidth ?? 0) > (floorStrip.strip?.clientWidth ?? Number.POSITIVE_INFINITY) + 1,
+      `the strip does not overflow at the dock's floor: scrollWidth ${floorStrip.strip?.scrollWidth}px, clientWidth ${floorStrip.strip?.clientWidth}px — the tabs must keep their floor and the band must scroll instead`,
+    );
+    for (const tab of floorUnpinned) {
+      assert.notEqual(tab.labelWidth, null, `${tab.label} has no label element to measure`);
+      assert.notEqual(
+        tab.floorWidth,
+        null,
+        `${tab.label}'s three characters plus the ellipsis could not be measured in its own font`,
+      );
+      assert.ok(
+        (tab.labelWidth ?? Number.NEGATIVE_INFINITY) + 1 >=
+          (tab.floorWidth ?? Number.POSITIVE_INFINITY),
+        `"${tab.label}" shrank below its three-characters-plus-ellipsis floor in the crowded strip (label ${tab.labelWidth}px, 3 characters + ellipsis ${tab.floorWidth}px)`,
+      );
+      assert.ok(
+        tab.label.trim().length > 0 && tab.name.startsWith(tab.label.trim()),
+        `"${tab.label}"'s rendered label no longer carries its chat's name (label "${tab.label}", accessible name "${tab.name}")`,
+      );
+      assert.equal(tab.mark.exists, true, `"${tab.label}"'s tab has no leading mark slot`);
+      assert.equal(tab.hasClose, true, `"${tab.label}"'s tab lost its close control at the floor`);
+      assert.equal(
+        tab.closeVisible,
+        true,
+        `"${tab.label}"'s close control is not visible at the floor`,
+      );
+    }
+
+    // A vertical wheel over the band walks it sideways — and swallows the event,
+    // or the page behind the strip would scroll instead. The movement is the
+    // gesture's own: the band was parked at its leading edge first.
+    const wheelProbe = report.probes?.wheel ?? null;
+    assert.notEqual(wheelProbe, null, "the rig did not report the wheel over the strip");
+    assert.equal(
+      wheelProbe?.ok,
+      true,
+      `the wheel claim had no overflowing strip to land on (${wheelProbe?.reason ?? "no probe"})`,
+    );
+    assert.ok(
+      (wheelProbe?.maxScroll ?? 0) > 0,
+      `the strip had no horizontal travel to wheel (${wheelProbe?.maxScroll}px)`,
+    );
+    assert.equal(
+      wheelProbe?.before,
+      0,
+      `the strip was not at its leading edge before the wheel (scrollLeft ${wheelProbe?.before})`,
+    );
+    assert.equal(
+      wheelProbe?.prevented,
+      true,
+      "the wheel over the strip was not default-prevented, so the page behind it would scroll instead",
+    );
+    assert.equal(
+      wheelProbe?.dispatched,
+      false,
+      "the wheel event was not cancelled at the dispatch",
+    );
+    const wheelExpected = Math.min(120, wheelProbe?.maxScroll ?? 0);
+    assert.equal(
+      wheelProbe?.after,
+      wheelExpected,
+      `the wheel left the strip at ${wheelProbe?.after}px, expected ${wheelExpected}px (travel ${wheelProbe?.maxScroll}px)`,
+    );
+    assert.equal(
+      wheelState.strip?.scrollLeft,
+      wheelProbe?.after,
+      "the strip did not stay where the wheel left it",
+    );
+
+    // The tab in front is walked into the band: a chat appended at the far end is
+    // in front, and its tab ends inside the strip's visible edge. Nothing rides
+    // that edge any more — the full-screen door is in the bottom action bar — so
+    // the band is tabs all the way to its own trailing edge.
+    const revealedFront = revealed.tabs.find((tab) => tab.active) ?? null;
+    assert.equal(
+      revealed.tabCount,
+      floorStrip.tabCount + 1,
+      `middle-clicking a chat at the band's edge did not append one tab (${floorStrip.tabCount} → ${revealed.tabCount})`,
+    );
+    assert.equal(
+      revealedFront?.label,
+      "Seed chat 14",
+      `the appended chat is not the tab in front ("${revealedFront?.label}")`,
+    );
+    assert.notEqual(revealed.strip, null, "the reveal state drew no tab strip");
+    assert.notEqual(revealedFront?.box, null, "the tab in front has no box to measure");
+    assert.ok(
+      (revealed.strip?.scrollLeft ?? 0) > 0,
+      `the strip did not scroll to reach the appended tab (scrollLeft ${revealed.strip?.scrollLeft})`,
+    );
+    assert.ok(
+      (revealedFront?.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (revealed.strip?.box?.left ?? Number.POSITIVE_INFINITY) - 1,
+      `the tab in front begins outside the strip's left edge: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}`,
+    );
+    assert.ok(
+      (revealedFront?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (revealed.strip?.box?.right ?? Number.NEGATIVE_INFINITY) + 1,
+      `the tab in front runs past the strip's visible edge instead of ending inside the band: tab ${JSON.stringify(revealedFront?.box)}, strip ${JSON.stringify(revealed.strip?.box)}`,
+    );
+
+    // The write path a page uses to start a task chat: the created chat's tab
+    // wears the kickoff icon in its leading slot, keeps its name/close label and
+    // the label floor, and the mark is written to the profile's remembered map
+    // (legacy slot: the harness page has no agent), beside the fixture's seeded
+    // automation mark. Chats opened plainly stay plain.
+    const taskProbe = report.probes?.task ?? null;
+    assert.notEqual(taskProbe, null, "the rig did not report the created task chat");
+    const taskTab =
+      taskIcon.tabs.find((tab) => tab.label === "Task · Wire the strip") ?? null;
+    assert.notEqual(taskTab, null, "the created task chat never drew a tab");
+    assert.equal(
+      taskTab?.icon,
+      "task",
+      `the task chat's tab does not wear its kickoff mark (data-icon ${taskTab?.icon})`,
+    );
+    assert.equal(taskTab?.mark.exists, true, "the task tab has no leading mark slot");
+    assert.equal(
+      taskTab?.mark.svg,
+      true,
+      "the task tab's kickoff mark is not drawn as an icon",
+    );
+    assert.equal(taskTab?.mark.visible, true, "the task tab's kickoff mark is not visible");
+    assert.match(
+      taskTab?.name ?? "",
+      /^Task · Wire the strip/,
+      `the kickoff mark took over the task tab's accessible name ("${taskTab?.name}")`,
+    );
+    assert.equal(
+      taskTab?.close,
+      "Close Task · Wire the strip",
+      "the kickoff mark changed the task tab's close label",
+    );
+    assert.ok(
+      (taskTab?.labelWidth ?? Number.NEGATIVE_INFINITY) + 1 >=
+        (taskTab?.floorWidth ?? Number.POSITIVE_INFINITY),
+      `the kickoff mark pushed the task tab below the three-characters-plus-ellipsis floor (label ${taskTab?.labelWidth}px, 3 characters + ellipsis ${taskTab?.floorWidth}px)`,
+    );
+    const taskId = taskProbe?.id ?? "";
+    assert.notEqual(
+      taskIcon.sessionIcons,
+      null,
+      "the remembered kickoff marks were never written",
+    );
+    assert.equal(
+      taskIcon.sessionIcons?.[taskId],
+      "task",
+      `the created chat's mark was not written to the legacy icon slot: ${JSON.stringify({ stored: taskIcon.sessionIcons, id: taskId })}`,
+    );
+    assert.equal(
+      taskIcon.sessionIcons?.["chat-delta"],
+      "automation",
+      `the fixture's seeded mark is not in the remembered map: ${JSON.stringify(taskIcon.sessionIcons)}`,
+    );
+    assert.deepEqual(
+      Object.keys(taskIcon.sessionIcons ?? {}).sort(),
+      ["chat-delta", taskId].sort(),
+      `the remembered map holds kickoff marks for chats that have none: ${JSON.stringify(taskIcon.sessionIcons)}`,
+    );
+    const taskIconTabs = taskIcon.tabs.filter((tab) => tab.icon !== null);
+    assert.deepEqual(
+      taskIconTabs.map((tab) => [tab.label, tab.icon]),
+      [["Task · Wire the strip", "task"]],
+      "a chat the operator opened wears a kickoff mark",
+    );
+    for (const plain of taskIcon.tabs.filter((tab) => tab.icon === null && !tab.pinned)) {
+      assert.equal(
+        plain.mark.exists,
+        true,
+        `"${plain.label}"'s tab has no leading mark slot`,
+      );
+      assert.equal(
+        plain.mark.svg,
+        false,
+        `"${plain.label}"'s slot draws a kickoff icon on a chat that has no mark`,
+      );
+    }
+
+    // The same mark now leads the chat's name in the Chats sidebar, so the chat
+    // the write path started is listed there with data-icon="task" and an icon in
+    // its leading slot — and the row keeps a plain row's height and puts the mark
+    // before its label rather than over it.
+    const taskRow =
+      taskIcon.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    assert.notEqual(taskRow, null, "the created task chat is not listed in the sidebar");
+    assert.equal(
+      taskRow?.icon,
+      "task",
+      `the task chat's sidebar row does not wear its kickoff mark (data-icon ${taskRow?.icon})`,
+    );
+    assert.equal(taskRow?.mark.exists, true, "the task row has no leading mark slot");
+    assert.equal(
+      taskRow?.mark.svg,
+      true,
+      "the task row's kickoff mark is not drawn as an icon",
+    );
+    assert.equal(taskRow?.mark.visible, true, "the task row's kickoff mark is not visible");
+    const taskPlainRow =
+      taskIcon.rows.find((row) => row.icon === null && row.label === "New chat") ??
+      taskIcon.rows.find((row) => row.icon === null) ??
+      null;
+    assert.ok(
+      Math.abs((taskRow?.box?.height ?? 0) - (taskPlainRow?.box?.height ?? Number.POSITIVE_INFINITY)) <= 1,
+      `the task row's mark changed the row's height: ${JSON.stringify({ marked: taskRow?.box, plain: taskPlainRow?.box })}`,
+    );
+    assert.ok(
+      (taskRow?.mark.box?.left ?? Number.NEGATIVE_INFINITY) >=
+        (taskRow?.mainBox?.left ?? Number.POSITIVE_INFINITY) - 1 &&
+        (taskRow?.mark.box?.right ?? Number.POSITIVE_INFINITY) <=
+          (taskRow?.labelBox?.left ?? Number.NEGATIVE_INFINITY) + 1,
+      `the task row's mark is not between the row's leading edge and its label: mark ${JSON.stringify(taskRow?.mark.box)}, row ${JSON.stringify(taskRow?.mainBox)}, label ${JSON.stringify(taskRow?.labelBox)}`,
+    );
+
+    // A plain list re-read — the store's own loadSessions, what a background
+    // refresh runs — keeps the remembered marks (they live in the provider's
+    // memory, not in the gateway's session rows), so both carved rows still wear
+    // their icons afterwards and the map is unchanged.
+    const rereadDelta =
+      rowsReread.rows.find((row) => row.label === "Delta automation") ?? null;
+    const rereadTask =
+      rowsReread.rows.find((row) => row.label === "Task · Wire the strip") ?? null;
+    assert.equal(
+      rereadDelta?.icon,
+      "automation",
+      "a plain list re-read dropped the automation row's kickoff mark",
+    );
+    assert.equal(
+      rereadDelta?.mark.svg,
+      true,
+      "a plain list re-read dropped the automation row's icon",
+    );
+    assert.equal(
+      rereadTask?.icon,
+      "task",
+      "a plain list re-read dropped the task row's kickoff mark",
+    );
+    assert.equal(
+      rereadTask?.mark.svg,
+      true,
+      "a plain list re-read dropped the task row's icon",
+    );
+    assert.equal(
+      rowsReread.sessionIcons?.["chat-delta"],
+      "automation",
+      `the remembered map lost the seeded mark across the re-read: ${JSON.stringify(rowsReread.sessionIcons)}`,
+    );
+    assert.equal(
+      rowsReread.sessionIcons?.[taskId],
+      "task",
+      `the remembered map lost the task mark across the re-read: ${JSON.stringify(rowsReread.sessionIcons)}`,
+    );
+    for (const row of rowsReread.rows.filter((candidate) => candidate.icon === null)) {
+      const shapeIsPlain =
+        row.mark.exists === true && row.mark.svg === false;
+      assert.equal(
+        shapeIsPlain,
+        true,
+        `"${row.label}"'s row has no mark but is not drawn as a plain row`,
+      );
+      assert.equal(
+        row.dot.exists,
+        true,
+        `"${row.label}"'s plain row lost its status dot`,
+      );
+    }
+
+    for (const file of report.screenshots) {
+      assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
+    }
+  });
+});

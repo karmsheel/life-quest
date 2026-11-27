@@ -117,8 +117,31 @@ const SAMPLE = `(() => {
     ),
   ).map((el) => (el.textContent || "").trim());
   const chatHeading = document.querySelector(".chat-panel__heading--thread");
+  // The dock's tabs, in strip order: a chat started by a page must take a tab of
+  // its own beside the one on screen, and that tab must wear the chat's name.
+  const tabs = Array.from(
+    document.querySelectorAll(".chat-panel__tabs [role=tab]"),
+  ).map((tab) => ({
+    label:
+      text(tab.querySelector(".chat-panel__tab-label")) ??
+      text(tab.querySelector(".chat-panel__tab-letter")) ??
+      text(tab),
+    active: tab.getAttribute("aria-selected") === "true",
+  }));
+  // The Chats list on the left is the same store the tabs read, so a chat the
+  // dock adopted is a row there — with its own name, not "Chat".
+  const sidebarRows = Array.from(
+    document.querySelectorAll(".chats-rail__rows > li.chats-rail__row"),
+  ).map((row) => {
+    const main = row.querySelector(".chats-rail__row-main");
+    return {
+      label: text(row.querySelector(".chats-rail__label")),
+      active: main?.getAttribute("aria-current") === "true",
+    };
+  });
   return {
     route: window.automationRoute ?? null,
+    priorChatTitle: window.automationPriorChatTitle ?? null,
     rail: {
       wing: links(wing),
       shelf: links(shelf),
@@ -133,7 +156,12 @@ const SAMPLE = `(() => {
         : false,
       wingBox: box(wing),
       firstWingBox: box(wing ? wing.querySelector(".nav-rail__link") : null),
-      topBarBox: box(document.querySelector(".top-bar")),
+      // The band directly above the wing's rows: the honest reference for "the
+      // wing's first icon starts below the chrome". The sheet's top bar this used
+      // to be measured against was retired — the domain lens moved up into the
+      // window strip — while the rail's band still starts at the strip's bottom
+      // and keeps its 44px height.
+      wingsBandBox: box(document.querySelector(".nav-rail__wings-band")),
       shelfBox: box(shelf),
       footerBox: box(footer),
       bottomBox: box(bottom),
@@ -165,6 +193,10 @@ const SAMPLE = `(() => {
         : null,
     },
     note: {
+      // The page's name is a label above the day now: the date is the page's one
+      // heading, so the name the surface is known by is read off the eyebrow and
+      // the day off the heading.
+      name: text(document.querySelector(".daily-note .wing-eyebrow")),
       heading: text(document.querySelector("[data-page-context-root] h1")),
       day: text(document.querySelector('[data-testid="daily-note-day"]')),
       automationButtons: Array.from(
@@ -186,6 +218,8 @@ const SAMPLE = `(() => {
         ? true
         : false,
       title: chatHeading ? text(chatHeading) : null,
+      tabs,
+      sidebarRows,
       userMessages,
       thinking: Boolean(document.querySelector(".chat-panel__thinking")),
     },
@@ -357,14 +391,14 @@ async function main() {
     checks.landing = landing;
     check("the harness landed on /automations", landing.route === "/automations", landing.route);
     check(
-      "the shelf is Life-Chain, Decisions, Daily Note, Automations",
+      "the shelf is Notebox, Decisions, Daily Journal, Automations",
       JSON.stringify(landing.rail.shelf.map((l) => l.label)) ===
-        JSON.stringify(["Life-Chain", "Decisions", "Daily Note", "Automations"]),
+        JSON.stringify(["Notebox", "Decisions", "Daily Journal", "Automations"]),
       JSON.stringify(landing.rail.shelf.map((l) => l.label)),
     );
     check(
-      "Daily Note is directly under Decisions and Automations directly under it",
-      landing.rail.shelf[2]?.label === "Daily Note" &&
+      "Daily Journal is directly under Decisions and Automations directly under it",
+      landing.rail.shelf[2]?.label === "Daily Journal" &&
         landing.rail.shelf[3]?.label === "Automations",
       JSON.stringify(landing.rail.shelf.map((l) => l.label)),
     );
@@ -394,12 +428,12 @@ async function main() {
       JSON.stringify({ wingBox, shelfBox, footerBox }),
     );
     check(
-      "the wing's first icon starts below the top bar's bottom hairline",
-      Boolean(landing.rail.firstWingBox && landing.rail.topBarBox) &&
-        landing.rail.firstWingBox.top >= landing.rail.topBarBox.bottom,
+      "the wing's first icon starts below the rail's wing band",
+      Boolean(landing.rail.firstWingBox && landing.rail.wingsBandBox) &&
+        landing.rail.firstWingBox.top >= landing.rail.wingsBandBox.bottom,
       JSON.stringify({
         first: landing.rail.firstWingBox,
-        topBar: landing.rail.topBarBox,
+        wingsBand: landing.rail.wingsBandBox,
       }),
     );
 
@@ -420,10 +454,10 @@ async function main() {
     );
     check("the built-in row is on the shelf", Boolean(builtIn), JSON.stringify(landing.automations.rows));
     check(
-      "the built-in is a manual job that reads the Daily Note",
+      "the built-in is a manual job that reads the Daily Journal",
       builtIn?.trigger === "manual" &&
         /Manual/.test(builtIn?.meta ?? "") &&
-        /Daily Note/.test(builtIn?.meta ?? ""),
+        /Daily Journal/.test(builtIn?.meta ?? ""),
       JSON.stringify(builtIn),
     );
     check(
@@ -632,13 +666,13 @@ async function main() {
     const manualCreated = await sample(win);
     checks.manualCreated = manualCreated.automations;
     check(
-      "the manual job lands in the Manual group on the Daily Note",
+      "the manual job lands in the Manual group on the Daily Journal",
       manualCreated.automations.groups[0]?.title === "Manual 2" &&
         manualCreated.automations.rows.some(
           (row) =>
             row.testId === "automation-automation-created-2" &&
             row.trigger === "manual" &&
-            /Daily Note/.test(row.meta ?? ""),
+            /Daily Journal/.test(row.meta ?? ""),
         ),
       JSON.stringify(manualCreated.automations),
     );
@@ -723,9 +757,16 @@ async function main() {
     const dayPage = await sample(win);
     checks.dayPage = dayPage;
     check(
-      "the Daily Note page is on screen",
-      dayPage.note.heading === "Daily Note" && dayPage.note.bodyLength > 4000,
-      JSON.stringify({ heading: dayPage.note.heading, bodyLength: dayPage.note.bodyLength }),
+      "the Daily Journal page is on screen",
+      dayPage.note.name === "Daily Journal" &&
+        dayPage.note.heading === dayPage.note.day &&
+        dayPage.note.bodyLength > 4000,
+      JSON.stringify({
+        name: dayPage.note.name,
+        heading: dayPage.note.heading,
+        day: dayPage.note.day,
+        bodyLength: dayPage.note.bodyLength,
+      }),
     );
     check(
       "the Analyze note control is on the page and usable",
@@ -740,9 +781,26 @@ async function main() {
       JSON.stringify(dayPage.note.automationButtons),
     );
     check(
-      "Daily Note is the active rail row on its route",
-      dayPage.rail.shelf.find((l) => l.label === "Daily Note")?.active === true,
+      "Daily Journal is the active rail row on its route",
+      dayPage.rail.shelf.find((l) => l.label === "Daily Journal")?.active === true,
       JSON.stringify(dayPage.rail.shelf),
+    );
+    check(
+      "a conversation from before the run is already on screen",
+      dayPage.chat.title === dayPage.priorChatTitle &&
+        dayPage.chat.sidebarRows.some((row) => row.label === dayPage.priorChatTitle),
+      JSON.stringify({
+        title: dayPage.chat.title,
+        prior: dayPage.priorChatTitle,
+        rows: dayPage.chat.sidebarRows,
+      }),
+    );
+    check(
+      "one chat draws its one tab, with the plus beside it",
+      dayPage.chat.tabs.length === 1 &&
+        dayPage.chat.tabs[0]?.label === dayPage.priorChatTitle &&
+        dayPage.chat.tabs[0]?.active === true,
+      JSON.stringify(dayPage.chat.tabs),
     );
 
     const clicked = await click(win, "daily-note-analyze");
@@ -761,8 +819,9 @@ async function main() {
     const after = await sample(win);
     checks.after = after;
 
+    const analyzeTitle = `Analyze note · ${dayLabel(today)}`;
     const session = after.sessionCalls.find(
-      (call) => call.title === `Analyze note · ${dayLabel(today)}`,
+      (call) => call.title === analyzeTitle,
     );
     check(
       "a fresh chat was created for the run",
@@ -771,14 +830,28 @@ async function main() {
     );
     check(
       "the dock opened on that chat",
-      after.chat.open === true &&
-        after.chat.title === `Analyze note · ${dayLabel(today)}`,
+      after.chat.open === true && after.chat.title === analyzeTitle,
       JSON.stringify({ open: after.chat.open, title: after.chat.title }),
+    );
+    check(
+      "the new chat opens in a tab of its own, beside the one that was on screen",
+      after.chat.tabs.length === 2 &&
+        after.chat.tabs[0]?.label === after.priorChatTitle &&
+        after.chat.tabs[0]?.active === false &&
+        after.chat.tabs[1]?.label === analyzeTitle &&
+        after.chat.tabs[1]?.active === true,
+      JSON.stringify(after.chat.tabs),
+    );
+    check(
+      "the new chat is listed in Chats under its own name, beside the previous chat",
+      after.chat.sidebarRows.some((row) => row.label === analyzeTitle) &&
+        after.chat.sidebarRows.some((row) => row.label === after.priorChatTitle),
+      JSON.stringify(after.chat.sidebarRows),
     );
     check(
       "the visible turn is the automation's prompt",
       after.chat.userMessages.length === 1 &&
-        /Analyze the Daily Note for/.test(after.chat.userMessages[0] ?? "") &&
+        /Analyze the Daily Journal for/.test(after.chat.userMessages[0] ?? "") &&
         /Kanban board/.test(after.chat.userMessages[0] ?? "") &&
         /Goals at different timeframes/.test(after.chat.userMessages[0] ?? "") &&
         /propose the document, page or database/.test(
@@ -831,8 +904,8 @@ async function main() {
     );
     check(
       "the automation context names the page's own day",
-      context.includes(`--- DAILY NOTE (${today}) ---`) &&
-        context.includes("--- END DAILY NOTE ---"),
+      context.includes(`--- DAILY JOURNAL (${today}) ---`) &&
+        context.includes("--- END DAILY JOURNAL ---"),
       JSON.stringify({ today }),
     );
     check(
@@ -885,7 +958,7 @@ async function main() {
   console.log(`created:   ${JSON.stringify(checks.created?.createCalls?.[0]?.name)}`);
   console.log(`scheduled: ${JSON.stringify(checks.scheduled?.markCalls)}`);
   console.log(
-    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.find((c) => c.input.startsWith("Analyze the Daily Note"))?.instructionsContext?.automationContext?.length ?? 0} chars`,
+    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.find((c) => c.input.startsWith("Analyze the Daily Journal"))?.instructionsContext?.automationContext?.length ?? 0} chars`,
   );
   console.log(`failures:  ${errors.length === 0 ? "none" : errors.join("; ")}`);
 

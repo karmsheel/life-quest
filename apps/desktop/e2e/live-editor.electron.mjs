@@ -8,10 +8,13 @@
  *   node e2e/live-editor.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims. It ships with three pictures of the same run: the
+ * same command, same claims. It ships with five pictures of the same run: the
  * document editor with a paragraph open as its own markdown
- * (`live-editor-document.png`), the same document locked
- * (`live-editor-locked.png`), and the review editor (`live-editor-review.png`).
+ * (`live-editor-document.png`), the same document with its page menu open and
+ * locked (`live-editor-menu.png`), the document locked
+ * (`live-editor-locked.png`), the review editor (`live-editor-review.png`), and
+ * the note box with a soft-wrapped paragraph open under the caret
+ * (`live-editor-arrow-visual.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -28,12 +31,32 @@
  *     blank line and all, is the body `documentSave` receives.
  *  5. A locked document has no writing line at all, and a click on its prose
  *     opens none: the engine refuses a locked write, so the UI must not offer one.
+ *     The doctrine page's own actions are behind the three-dot menu in its
+ *     top-right corner, and the lock is that menu's FIRST item: the trigger opens
+ *     the popover, the menu item is a `menuitemcheckbox` whose track and thumb
+ *     draw its state, flipping it sends `documentSetLocked` once and leaves the
+ *     menu open, and the page behind turns read-only. While locked the menu's
+ *     second item is Propose change; choosing it closes the menu and opens the
+ *     propose dialog. The bottom actions row is Save while unlocked and absent
+ *     while locked.
  *  6. A pasted image is saved once, and its markdown lands in the note as its own
  *     paragraph, which the box then renders as an `<img>` resolved through
  *     `documentMediaRead`.
  *  7. The review editor is the same widget: one box, prose, a paragraph opening
  *     as its own source, and Save writing exactly that body through `reviewWrite`.
  *  8. No bridge call this rig does not model, and no console error.
+ *  9. ArrowUp and ArrowDown step VISUAL (soft-wrapped) lines, and only leave a
+ *     paragraph from its true first/last visual line. W is the writing line's
+ *     own visual-line count read off the textarea itself
+ *     (`Math.round(scrollHeight / lineHeight)`), so the claim is measured, not
+ *     assumed: from the paragraph's start, W-1 ArrowDown presses must stay in
+ *     the same focused textarea with the caret stepping down one line at a time,
+ *     and press W must hand the box to the next paragraph at its start; the
+ *     mirror holds upward from the paragraph's end. A hard-broken
+ *     (Shift+Enter) block whose two logical lines both wrap is walked the same
+ *     way in both directions. A handler that leaves on the first press fails
+ *     with the press it left on, the paragraph it landed on and the caret it
+ *     carried there; the paragraph's own text must survive the walk unchanged.
  *
  * NOT covered here: the Daily Note's own page, which has its own rig
  * (`daily-note.electron.mjs`), and that any of it reaches disk — that is the
@@ -60,8 +83,16 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const rect = (el) => {
+    if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
   };
   const box = document.querySelector(".note-live");
   const input = box ? box.querySelector("textarea") : null;
@@ -80,6 +111,27 @@ const SAMPLE = `(() => {
   const save = button(".doc-editor__actions", "Save");
   const edit = button(".review-page__actions", "Edit");
   const reviewSave = button(".review-page__actions", "Save");
+  // The doctrine page's actions, behind the three-dot menu in the page corner.
+  // Every one of these is read off the rendered DOM: a closed menu has no items
+  // in the document, which is itself a claim.
+  const pageMenu = document.querySelector('[data-testid="document-page-menu"]');
+  const popover = document.querySelector('[data-testid="document-page-menu-popover"]');
+  const lockItem = document.querySelector('[data-testid="document-lock-toggle"]');
+  const actionsRow = document.querySelector(".doc-editor__actions");
+  const dialog = document.querySelector('.propose-dialog[role="dialog"]');
+  const header = document.querySelector(".doc-editor__header");
+  const menuItem = (el) =>
+    el
+      ? {
+          testid: el.getAttribute("data-testid"),
+          role: el.getAttribute("role"),
+          text: (el.textContent || "").trim(),
+          label: el.getAttribute("aria-label"),
+          checked: el.getAttribute("aria-checked"),
+          expanded: el.getAttribute("aria-expanded"),
+          disabled: Boolean(el.disabled),
+        }
+      : null;
   return {
     heading: text(document.querySelector(".doc-editor__title")),
     body: parts.join("\\n\\n").trim(),
@@ -99,9 +151,69 @@ const SAMPLE = `(() => {
     renderedRect: rendered[0] ? rect(rendered[0]) : null,
     boxRect: box ? rect(box) : null,
     saveDisabled: save ? save.disabled : null,
+    // The document's lock lives in the page's three-dot menu now: the trigger in
+    // the header's top-right corner, the popover it opens, and the lock as that
+    // menu's first item. The badge still sits beside the document's name.
+    lockBadge: text(document.querySelector(".doc-editor__header .doc-status-badge")),
+    headerRect: rect(header),
+    headingRect: rect(document.querySelector(".doc-editor__title")),
+    lockBadgeRect: rect(document.querySelector(".doc-editor__header .doc-status-badge")),
+    pageMenu: pageMenu
+      ? {
+          tag: pageMenu.tagName,
+          classes: pageMenu.className,
+          haspopup: pageMenu.getAttribute("aria-haspopup"),
+          expanded: pageMenu.getAttribute("aria-expanded"),
+          label: pageMenu.getAttribute("aria-label"),
+          svgCount: pageMenu.querySelectorAll("svg").length,
+        }
+      : null,
+    pageMenuTriggerRect: rect(pageMenu),
+    pageMenuPopover: popover
+      ? {
+          role: popover.getAttribute("role"),
+          label: popover.getAttribute("aria-label"),
+          classes: popover.className,
+          firstItemTestId: popover.firstElementChild
+            ? popover.firstElementChild.getAttribute("data-testid")
+            : null,
+        }
+      : null,
+    pageMenuPopoverRect: rect(popover),
+    menuItems: popover
+      ? Array.from(
+          popover.querySelectorAll('[role="menuitemcheckbox"], [role="menuitem"]'),
+        ).map(menuItem)
+      : null,
+    lockSwitch: lockItem
+      ? {
+          role: lockItem.getAttribute("role"),
+          checked: lockItem.getAttribute("aria-checked"),
+          label: lockItem.getAttribute("aria-label"),
+          caption: (lockItem.querySelector(".page-menu__item-label")?.textContent || "").trim(),
+          locked: lockItem.dataset.locked ?? null,
+          hasTrack: Boolean(lockItem.querySelector(".page-menu__track")),
+          hasThumb: Boolean(lockItem.querySelector(".page-menu__track .page-menu__thumb")),
+        }
+      : null,
+    lockSwitchRect: rect(lockItem),
+    // The page's own bottom row: present (Save) while unlocked, absent while
+    // locked, because the locked document's action is the menu's Propose change.
+    docActions: actionsRow
+      ? Array.from(actionsRow.querySelectorAll("button")).map((b) =>
+          (b.textContent || "").trim(),
+        )
+      : null,
+    proposeDialog: dialog
+      ? {
+          role: dialog.getAttribute("role"),
+          heading: text(document.getElementById("propose-dialog-title")),
+          classes: dialog.className,
+        }
+      : null,
     reviewEditing: Boolean(document.querySelector(".review-page__actions")),
     reviewSaveDisabled: reviewSave ? reviewSave.disabled : null,
-    reviewPeriod: text(document.querySelector(".review-page__period")),
+    reviewPeriod: text(document.querySelector('[data-testid="review-period"]')),
     error: text(document.querySelector(".form-error")),
     unexpected: (window.liveEditorUnexpectedCalls ?? []).slice(),
   };
@@ -198,6 +310,165 @@ function clickLabel(win, rootSelector, label) {
 
 function sample(win) {
   return win.webContents.executeJavaScript(SAMPLE);
+}
+
+// ── Arrow keys: the operator's report ──────────────────────────────────────
+// The box soft-wraps, so one logical line is several visual lines. Everything
+// below is measured from the DOM, never from the editor's own idea of where the
+// caret is: `visualLines` is the textarea's collapsed scrollHeight over its line
+// height (the writing line has no padding, so that is its true painted height),
+// and every press is read back as the open paragraph, the caret index and the
+// textarea node itself. The claims therefore stay falsifiable whatever the
+// handler measures internally.
+
+/** The editor as the DOM reports it after one press. */
+const ARROW_STATE = `(() => {
+  const box = document.querySelector(".note-live");
+  const blocks = box ? Array.from(box.querySelectorAll("[data-note-block]")) : [];
+  const editingIndex = blocks.findIndex((b) => b.querySelector("textarea"));
+  const el = editingIndex >= 0 ? blocks[editingIndex].querySelector("textarea") : null;
+  const lineHeight = el ? parseFloat(getComputedStyle(el).lineHeight) : null;
+  return {
+    blocks: blocks.length,
+    editingIndex,
+    caret: el ? el.selectionStart : null,
+    value: el ? el.value : null,
+    valueLength: el ? el.value.length : null,
+    visualLines: el ? Math.round(el.scrollHeight / lineHeight) : null,
+    lineHeight,
+    sameArea: el !== null && el === window.__arrowArea,
+    focused: el !== null && document.activeElement === el,
+  };
+})()`;
+
+/**
+ * Visual lines the writing line would paint `text` in, at its own width and
+ * font: a clone of the same textarea, same parent, sized by the same stylesheet,
+ * measured and removed inside this one synchronous call. It is how the two
+ * logical lines of a hard-broken block are each proven to wrap.
+ */
+const ARROW_LINES = `((text) => {
+  const el = document.querySelector(".note-live textarea");
+  if (!el) return null;
+  const clone = el.cloneNode(false);
+  clone.value = text;
+  clone.style.height = "auto";
+  clone.style.visibility = "hidden";
+  el.parentNode.appendChild(clone);
+  const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+  const scrollHeight = clone.scrollHeight;
+  clone.remove();
+  return { visualLines: Math.round(scrollHeight / lineHeight), scrollHeight, lineHeight };
+})`;
+
+/** One real key press, through the browser's own input pipeline. */
+async function pressKey(win, keyCode, modifiers = []) {
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+  // The default caret move and React's own commit both settle within this beat;
+  // the next sample is a fact about the settled box, not a race against it.
+  await new Promise((resolve) => setTimeout(resolve, 90));
+}
+
+function arrowState(win) {
+  return win.webContents.executeJavaScript(ARROW_STATE);
+}
+
+/**
+ * Put the caret at one end of the open writing line, and remember that textarea
+ * node so the next samples can say whether the caret stayed in it.
+ */
+function caretAt(win, where) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('.note-live textarea');
+    if (!el) return null;
+    window.__arrowArea = el;
+    el.focus();
+    const at = ${where === "start" ? "0" : "el.value.length"};
+    el.setSelectionRange(at, at);
+    return { caret: el.selectionStart, valueLength: el.value.length };
+  })()`);
+}
+
+/** Open one paragraph and wait until IT is the line under the caret. */
+async function openBlockAt(win, index) {
+  await openBlock(win, index);
+  await waitFor(
+    win,
+    `Array.from(document.querySelectorAll(".note-live [data-note-block]")).findIndex((b) => b.querySelector("textarea")) === ${index}`,
+    `paragraph ${index} to be the open writing line`,
+  );
+}
+
+/** Press an arrow key `count` times, reading the editor after every press. */
+async function traverse(win, keyCode, count) {
+  const steps = [];
+  for (let press = 1; press <= count; press += 1) {
+    await pressKey(win, keyCode);
+    steps.push({ press, ...(await arrowState(win)) });
+  }
+  return steps;
+}
+
+/**
+ * The press-by-press verdict for one direction across one paragraph; the strings
+ * it returns are the claim's failure messages, empty when the claim holds.
+ *
+ * The first `stay` presses must keep the SAME textarea focused, carry the text
+ * unchanged and move the caret one visual line further (`direction`); press
+ * `stay + 1` must leave for `leave.index` with `leave.caret` and `leave.value`.
+ * A press that leaves early is reported with the paragraph it landed on and the
+ * caret it carried there — that is the operator's bug, in numbers.
+ */
+function judgeTraversal(steps, options) {
+  const { index, direction, stay, startCaret, startLength, visualLines, leave } = options;
+  const problems = [];
+  if (steps.length !== stay + 1) {
+    problems.push(`recorded ${steps.length} press(es), expected ${stay + 1}`);
+  }
+  let previous = startCaret;
+  steps.slice(0, stay).forEach((step, offset) => {
+    const press = offset + 1;
+    if (step.editingIndex !== index) {
+      problems.push(
+        `press ${press} left paragraph ${index} for paragraph ${step.editingIndex} (caret ${step.caret})`,
+      );
+      return;
+    }
+    if (!step.sameArea) problems.push(`press ${press} handed the caret to a different textarea`);
+    if (!step.focused) problems.push(`press ${press} left the writing line unfocused`);
+    if (step.valueLength !== startLength) {
+      problems.push(`press ${press} changed the paragraph to ${step.valueLength} characters`);
+    }
+    if (visualLines !== null && step.visualLines !== visualLines) {
+      problems.push(`press ${press} measured ${step.visualLines} visual lines, not ${visualLines}`);
+    }
+    const moved = direction === "down" ? step.caret - previous : previous - step.caret;
+    if (moved <= 0) {
+      problems.push(
+        `press ${press} put the caret at ${step.caret}, ${moved === 0 ? "not past" : "backwards from"} ${previous}: not one visual line ${direction}`,
+      );
+    }
+    previous = step.caret;
+  });
+  const last = steps[stay];
+  if (last) {
+    if (last.editingIndex !== leave.index) {
+      problems.push(
+        `press ${stay + 1} landed on paragraph ${last.editingIndex}, expected paragraph ${leave.index}`,
+      );
+    }
+    if (last.caret !== leave.caret) {
+      problems.push(`press ${stay + 1} left the caret at ${last.caret}, expected ${leave.caret}`);
+    }
+    if (last.value !== leave.value) {
+      problems.push(
+        `press ${stay + 1} opened ${JSON.stringify((last.value ?? "").slice(0, 40))}, expected ${JSON.stringify(leave.value.slice(0, 40))}`,
+      );
+    }
+    if (!last.focused) problems.push(`press ${stay + 1} left the writing line unfocused`);
+  }
+  return problems;
 }
 
 async function main() {
@@ -380,8 +651,410 @@ async function main() {
     failure(`the box did not resolve the image it was given: ${JSON.stringify(mediaReads)}`);
   }
 
+  // ── 4b. the doctrine page's actions are behind one three-dot menu ────────
+  // The menu is the page's only action surface: closed, it puts no items in the
+  // document; open, its first item is the document's lock.
+  const initialMenu = document.pageMenu;
+  if (!initialMenu) {
+    failure("the doctrine page drew no page menu trigger");
+  } else {
+    for (const cls of ["btn", "btn-ghost", "page-menu__trigger", "page-corner__action"]) {
+      if (!initialMenu.classes.split(/\s+/).includes(cls)) {
+        failure(
+          `the page menu trigger is missing class ${JSON.stringify(cls)}: ${JSON.stringify(initialMenu.classes)}`,
+        );
+      }
+    }
+    if (initialMenu.haspopup !== "menu") {
+      failure(`the page menu trigger's aria-haspopup read ${JSON.stringify(initialMenu.haspopup)}`);
+    }
+    if (initialMenu.expanded !== "false") {
+      failure(
+        `the page menu was expanded on landing: aria-expanded=${JSON.stringify(initialMenu.expanded)}`,
+      );
+    }
+    if (initialMenu.label !== "Document actions") {
+      failure(`the page menu trigger's aria-label read ${JSON.stringify(initialMenu.label)}`);
+    }
+    if (initialMenu.svgCount !== 1) {
+      failure(`the page menu trigger drew ${initialMenu.svgCount} icon(s), expected 1`);
+    }
+  }
+  if (document.pageMenuPopover !== null) {
+    failure("the page menu popover was in the document before the menu was opened");
+  }
+  if (document.menuItems !== null) {
+    failure(`a closed page menu still put ${document.menuItems.length} item(s) in the document`);
+  }
+  if (document.lockSwitch !== null) {
+    failure("a closed page menu still put its lock item in the document");
+  }
+  if (document.lockBadge !== "Unlocked") {
+    failure(`the unlocked document's badge read ${JSON.stringify(document.lockBadge)}`);
+  }
+  if (JSON.stringify(document.docActions) !== JSON.stringify(["Save"])) {
+    failure(`the unlocked document's bottom row held ${JSON.stringify(document.docActions)}`);
+  }
+
+  // Open it the way a person does: one click on the trigger.
+  if (!(await click(win, '[data-testid="document-page-menu"]'))) {
+    failure("the page menu trigger could not be clicked");
+  }
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="document-page-menu-popover"]'))`,
+    "the document page menu to open",
+  );
+  const menuOpen = await sample(win);
+  checks.documentMenu = menuOpen;
+
+  if (menuOpen.pageMenu?.expanded !== "true") {
+    failure(
+      `the open menu's trigger read aria-expanded=${JSON.stringify(menuOpen.pageMenu?.expanded)}`,
+    );
+  }
+  if (menuOpen.pageMenuPopover?.role !== "menu") {
+    failure(`the page menu popover had role ${JSON.stringify(menuOpen.pageMenuPopover?.role)}`);
+  }
+  if (menuOpen.pageMenuPopover?.label !== "Document actions") {
+    failure(
+      `the page menu popover's aria-label read ${JSON.stringify(menuOpen.pageMenuPopover?.label)}`,
+    );
+  }
+  if (!(menuOpen.pageMenuPopover?.classes ?? "").split(/\s+/).includes("page-menu__popover")) {
+    failure(
+      `the page menu popover is not .page-menu__popover: ${JSON.stringify(menuOpen.pageMenuPopover?.classes)}`,
+    );
+  }
+  if (menuOpen.pageMenuPopover?.firstItemTestId !== "document-lock-toggle") {
+    failure(
+      `the page menu's first item is ${JSON.stringify(menuOpen.pageMenuPopover?.firstItemTestId)}, not the lock`,
+    );
+  }
+  const sw = menuOpen.lockSwitch;
+  if (!sw) {
+    failure("the open page menu drew no lock item");
+  } else {
+    if (sw.role !== "menuitemcheckbox") {
+      failure(`the document's lock item had role ${JSON.stringify(sw.role)}`);
+    }
+    if (sw.checked !== "false") {
+      failure(`the unlocked document's lock item read aria-checked=${JSON.stringify(sw.checked)}`);
+    }
+    if (sw.locked !== "false") {
+      failure(`the unlocked document's lock item read data-locked=${JSON.stringify(sw.locked)}`);
+    }
+    if (sw.label !== "Lock this document") {
+      failure(`the unlocked document's lock item was named ${JSON.stringify(sw.label)}`);
+    }
+    if (sw.caption !== "Lock") {
+      failure(`the document's lock item caption read ${JSON.stringify(sw.caption)}`);
+    }
+    if (!sw.hasTrack) failure("the document's lock item drew no track");
+    if (!sw.hasThumb) failure("the document's lock item drew no thumb");
+  }
+  if (menuOpen.menuItems?.length !== 1) {
+    failure(
+      `the unlocked document's menu held ${menuOpen.menuItems?.length} item(s), expected the lock alone`,
+    );
+  }
+  if (menuOpen.lockBadge !== "Unlocked") {
+    failure(`the unlocked document's badge read ${JSON.stringify(menuOpen.lockBadge)}`);
+  }
+
+  // Geometry, measured rather than assumed: the trigger is the header's top-right
+  // control; the popover hangs under it, right-aligned, inside the page column;
+  // the badge is still on the document's name line, left of the trigger.
+  {
+    const headerBox = menuOpen.headerRect;
+    const headingBox = menuOpen.headingRect;
+    const badgeBox = menuOpen.lockBadgeRect;
+    const triggerBox = menuOpen.pageMenuTriggerRect;
+    const popoverBox = menuOpen.pageMenuPopoverRect;
+    if (!headerBox || !headingBox || !badgeBox || !triggerBox || !popoverBox) {
+      failure("the page menu or the page's lock chrome recorded no box");
+    } else {
+      const headingMid = (headingBox.top + headingBox.bottom) / 2;
+      const badgeMid = (badgeBox.top + badgeBox.bottom) / 2;
+      if (Math.abs(headingMid - badgeMid) > 6) {
+        failure(
+          `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+        );
+      }
+      if (badgeBox.left < headingBox.left) {
+        failure("the document badge sits left of the document's name");
+      }
+      if (badgeBox.right >= triggerBox.left) {
+        failure(
+          `the badge (right ${badgeBox.right}) is not left of the page menu (left ${triggerBox.left})`,
+        );
+      }
+      if (triggerBox.left < headingBox.right) {
+        failure(
+          `the page menu (left ${triggerBox.left}) is not in the page's right column (name ends ${headingBox.right})`,
+        );
+      }
+      if (Math.abs(headerBox.right - triggerBox.right) > 2) {
+        failure(
+          `the page menu trigger (right ${triggerBox.right}) is not at the page's right edge (${headerBox.right})`,
+        );
+      }
+      if (Math.abs(triggerBox.top - headerBox.top) > 4) {
+        failure(
+          `the page menu trigger (top ${triggerBox.top}) is not on the header's top row (${headerBox.top})`,
+        );
+      }
+      if (popoverBox.top < triggerBox.bottom) {
+        failure(
+          `the page menu popover (top ${popoverBox.top}) is not under the trigger (bottom ${triggerBox.bottom})`,
+        );
+      }
+      if (popoverBox.top - triggerBox.bottom > 14) {
+        failure(
+          `the page menu popover floats ${popoverBox.top - triggerBox.bottom}px below the trigger`,
+        );
+      }
+      if (Math.abs(popoverBox.right - triggerBox.right) > 2) {
+        failure(
+          `the page menu popover (right ${popoverBox.right}) is not right-aligned to the trigger (right ${triggerBox.right})`,
+        );
+      }
+      if (popoverBox.right > headerBox.right + 2 || popoverBox.left < headerBox.left) {
+        failure(
+          `the page menu popover [${popoverBox.left}, ${popoverBox.right}] leaves the page column [${headerBox.left}, ${headerBox.right}]`,
+        );
+      }
+    }
+  }
+
+  // The trigger toggles: a second click closes the menu and takes its popover and
+  // items back out of the document; a third opens it again for the lock flow.
+  await click(win, '[data-testid="document-page-menu"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-page-menu-popover"]')`,
+    "the document page menu to close",
+  );
+  const menuClosed = await sample(win);
+  if (menuClosed.pageMenu?.expanded !== "false") {
+    failure(
+      `the page menu trigger read aria-expanded=${JSON.stringify(menuClosed.pageMenu?.expanded)} after closing`,
+    );
+  }
+  if (menuClosed.pageMenuPopover !== null || menuClosed.lockSwitch !== null) {
+    failure("the closed page menu left its popover or its items in the document");
+  }
+  await click(win, '[data-testid="document-page-menu"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="document-page-menu-popover"]'))`,
+    "the document page menu to reopen",
+  );
+
+  // One click on the lock writes the setting and leaves the menu open, so the
+  // operator watches the track move and the page behind it go read-only together.
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'true'`,
+    "the document to lock",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's lock item to settle",
+  );
+  await waitFor(
+    win,
+    `document.querySelector('.note-live')?.getAttribute("data-read-only") === "true"`,
+    "the box to go read-only behind the menu",
+  );
+  const lockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentLockCalls = lockCalls;
+  if (lockCalls.length !== 1) {
+    failure(
+      `the document's lock item called documentSetLocked ${lockCalls.length} time(s), expected 1`,
+    );
+  }
+  if (lockCalls[0] !== "documentSetLocked:health:what:true") {
+    failure(`locking the document sent ${JSON.stringify(lockCalls[0])}`);
+  }
+  const lockedDoc = await sample(win);
+  checks.documentLocked = lockedDoc;
+  if (lockedDoc.lockBadge !== "Locked") {
+    failure(`the locked document's badge read ${JSON.stringify(lockedDoc.lockBadge)}`);
+  }
+  if (lockedDoc.lockSwitch?.checked !== "true" || lockedDoc.lockSwitch?.locked !== "true") {
+    failure(
+      `the locked document's lock item read aria-checked=${JSON.stringify(lockedDoc.lockSwitch?.checked)}, data-locked=${JSON.stringify(lockedDoc.lockSwitch?.locked)}`,
+    );
+  }
+  if (lockedDoc.lockSwitch?.label !== "Unlock this document") {
+    failure(
+      `the locked document's lock item was named ${JSON.stringify(lockedDoc.lockSwitch?.label)}`,
+    );
+  }
+  if (lockedDoc.readOnly !== true) {
+    failure("locking the document from the menu left the box editable");
+  }
+  if (lockedDoc.docActions !== null) {
+    failure(
+      `the locked document still drew a bottom actions row: ${JSON.stringify(lockedDoc.docActions)}`,
+    );
+  }
+  // The menu stayed open, and the locked document's second item is Propose change.
+  if (lockedDoc.pageMenuPopover === null || lockedDoc.pageMenu?.expanded !== "true") {
+    failure("the page menu closed when its lock item was chosen");
+  }
+  if (lockedDoc.menuItems?.length !== 2) {
+    failure(`the locked document's menu held ${lockedDoc.menuItems?.length} item(s), expected 2`);
+  }
+  const proposeItem = lockedDoc.menuItems?.[1];
+  if (proposeItem?.testid !== "document-propose" || proposeItem?.role !== "menuitem") {
+    failure(`the locked menu's second item is ${JSON.stringify(proposeItem)}`);
+  }
+  if (proposeItem?.text !== "Propose change") {
+    failure(`the locked menu's second item read ${JSON.stringify(proposeItem?.text)}`);
+  }
+
+  // Choosing the lock again unlocks in place: the same single write, the other way.
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'false'`,
+    "the document to unlock",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's lock item to settle after unlocking",
+  );
+  const unlockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentUnlockCalls = unlockCalls;
+  if (unlockCalls.length !== 2 || unlockCalls.at(-1) !== "documentSetLocked:health:what:false") {
+    failure(`unlocking the document sent ${JSON.stringify(unlockCalls)}`);
+  }
+  const unlockedDoc = await sample(win);
+  checks.documentUnlocked = unlockedDoc;
+  if (unlockedDoc.lockBadge !== "Unlocked") {
+    failure(
+      `unlocking the document from the menu left the badge ${JSON.stringify(unlockedDoc.lockBadge)}`,
+    );
+  }
+  if (unlockedDoc.readOnly !== false) {
+    failure("unlocking the document from the menu left the box read-only");
+  }
+  if (unlockedDoc.lockSwitch?.checked !== "false") {
+    failure(
+      `the unlocked document's lock item read aria-checked=${JSON.stringify(unlockedDoc.lockSwitch?.checked)}`,
+    );
+  }
+  if (unlockedDoc.menuItems?.length !== 1) {
+    failure(
+      `the unlocked document's menu held ${unlockedDoc.menuItems?.length} item(s), expected the lock alone`,
+    );
+  }
+  if (unlockedDoc.docActions === null || !unlockedDoc.docActions.includes("Save")) {
+    failure(
+      `the unlocked document's bottom row held ${JSON.stringify(unlockedDoc.docActions)}, expected Save`,
+    );
+  }
+  if (unlockedDoc.pageMenuPopover === null) {
+    failure("the page menu closed when its lock item was chosen");
+  }
+  // The write refreshes the vault snapshot, and the page re-reads its document
+  // off that refresh. Let that settle so the round-trip is judged on the page
+  // that came back, not on one still re-reading.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  const afterLockCycle = await sample(win);
+  checks.documentAfterLockCycle = afterLockCycle;
+  if (afterLockCycle.blockCount !== 2) {
+    failure(
+      `after the lock round-trip the document rendered ${afterLockCycle.blockCount} block(s), expected 2`,
+    );
+  }
+
+  // Lock once more: claim 5's locked document is the one this menu locked, and
+  // its open menu is the picture that shows the lock leading the page's actions.
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'true'`,
+    "the document to lock again",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's lock item to settle after re-locking",
+  );
+  await waitFor(
+    win,
+    `document.querySelector('.note-live')?.getAttribute("data-read-only") === "true"`,
+    "the box to go read-only after re-locking",
+  );
+  const relockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentRelockCalls = relockCalls;
+  if (relockCalls.length !== 3 || relockCalls.at(-1) !== "documentSetLocked:health:what:true") {
+    failure(`re-locking the document sent ${JSON.stringify(relockCalls)}`);
+  }
+  const menuLocked = await sample(win);
+  checks.documentMenuLocked = menuLocked;
+  if (menuLocked.lockBadge !== "Locked" || menuLocked.readOnly !== true) {
+    failure(
+      `the re-locked document read badge=${JSON.stringify(menuLocked.lockBadge)}, readOnly=${JSON.stringify(menuLocked.readOnly)}`,
+    );
+  }
+  if (menuLocked.menuItems?.[1]?.testid !== "document-propose") {
+    failure(`the re-locked menu's second item is ${JSON.stringify(menuLocked.menuItems?.[1])}`);
+  }
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const menuShot = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(artifactsDir, "live-editor-menu.png"), menuShot.toPNG());
+
+  // Propose change is the locked document's action: choosing it closes the menu
+  // first (an action that opens a dialog must not leave a menu over it) and
+  // opens the dialog.
+  await click(win, '[data-testid="document-propose"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('.propose-dialog[role="dialog"]'))`,
+    "the propose change dialog",
+  );
+  const proposed = await sample(win);
+  checks.proposeDialog = proposed;
+  if (proposed.proposeDialog?.role !== "dialog") {
+    failure(`the propose change dialog had role ${JSON.stringify(proposed.proposeDialog?.role)}`);
+  }
+  if (proposed.proposeDialog?.heading !== "Propose change") {
+    failure(
+      `the propose change dialog headed ${JSON.stringify(proposed.proposeDialog?.heading)}`,
+    );
+  }
+  if (proposed.pageMenuPopover !== null || proposed.menuItems !== null) {
+    failure("the page menu stayed open behind the propose change dialog");
+  }
+  // Close the dialog before moving on: the next section navigates.
+  if (!(await clickLabel(win, ".propose-dialog__actions", "Cancel"))) {
+    failure("the propose change dialog offered no Cancel control");
+  }
+  await waitFor(
+    win,
+    `!document.querySelector('.propose-dialog[role="dialog"]')`,
+    "the propose change dialog to close",
+  );
+
   // ── 5. a locked document has no writing line at all ─────────────────────
-  await win.webContents.executeJavaScript("window.liveEditorLocked = true");
+  // The document was locked from its own menu above, so arriving here after a
+  // round-trip through the review page proves the lock the menu wrote is the
+  // state the page reads back — not a harness flag set behind the UI's back.
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/review/weekly")`);
   await waitFor(win, `Boolean(document.querySelector(".review-page__actions"))`, "the review page");
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/vision/health/what")`);
@@ -395,6 +1068,16 @@ async function main() {
   if (locked.editing) failure("a locked document opened a writing line");
   if (locked.readOnly !== true) failure("the box did not report itself read-only");
   if (locked.blockCount < 1) failure("the locked document rendered nothing");
+  if (locked.lockBadge !== "Locked") {
+    failure(`the locked document's badge read ${JSON.stringify(locked.lockBadge)}`);
+  }
+  // A fresh visit arrives with the menu closed: its items are not furniture.
+  if (locked.pageMenu?.expanded !== "false") {
+    failure("the locked document arrived with its page menu open");
+  }
+  if (locked.lockSwitch !== null) {
+    failure("the locked document put its page menu items in the page before it was opened");
+  }
   // A click on locked prose opens nothing: the engine refuses a locked write, so
   // the surface must not offer one.
   await win.webContents.executeJavaScript(`(() => {
@@ -496,7 +1179,326 @@ async function main() {
     failure(`the review was written ${settled.length} times for one edit`);
   }
 
-  // ── 7. nothing unexpected, nothing on fire ──────────────────────────────
+  // ── 7. arrow keys step visual lines, and only leave a block from its edge ─
+  // The operator's report: in the note editor some paragraphs skip to the bottom
+  // of the paragraph on the way down while going up is line by line, and others
+  // do the opposite. The paragraph IS the shared note box, so this walks the
+  // document editor's own paragraphs.
+  //
+  // Measured, not assumed: W is the writing line's own visual-line count
+  // (`scrollHeight / lineHeight`, read off the textarea). From the paragraph's
+  // first visual line, W-1 ArrowDown presses must each keep THAT textarea
+  // focused and step the caret one visual line down; press W must hand the box
+  // to the next paragraph with the caret at its start. From its last visual
+  // line, the mirror upward. A handler that leaves on the first press is the
+  // bug, and fails here with the press, the paragraph it landed on and the
+  // caret it carried there.
+  await win.webContents.executeJavaScript("window.liveEditorLocked = false");
+  await win.webContents.executeJavaScript(`window.liveEditorGoto("/vision/health/what")`);
+  // The route swap is not instant, and the review page draws the same
+  // `.note-live` box: wait for the doctrine page itself, not for a box that is
+  // the old page's.
+  await waitFor(
+    win,
+    `document.querySelector(".doc-editor__title")?.textContent.trim() === "Vision & Desire · Health"`,
+    "the doctrine page for the arrow keys",
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector(".note-live"))`,
+    "the document editor for the arrow keys",
+  );
+  await waitFor(
+    win,
+    `document.querySelector('.note-live')?.getAttribute("data-read-only") !== "true"`,
+    "the unlocked document editor for the arrow keys",
+  );
+  await waitFor(
+    win,
+    `document.querySelectorAll(".note-live [data-note-block]").length === 2`,
+    "the document's two paragraphs before the wrapped one is typed",
+  );
+
+  const ARROW_SENTENCE =
+    "The morning walk keeps the day honest and the week even, so the plan is a walk " +
+    "before the first meeting and another after the last, because the point is the " +
+    "habit rather than the route.";
+  // One logical line (no newline), long enough to wrap over several visual lines
+  // at the writing line's width. The claim measures W; this only has to be long.
+  const ARROW_P = `${ARROW_SENTENCE} `.repeat(3).trim();
+  const ARROW_BELOW = "One more short line under the paragraph.";
+  const ARROW_FIRST = "A calm, strong body at 60.";
+
+  // Type the paragraph the way a person does: over the second paragraph, a real
+  // Enter for the paragraph break, then the line below it. The note then holds
+  // the operator's shape — the wrapped paragraph between two others.
+  await openBlockAt(win, 1);
+  await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('.note-live textarea');
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+    return el.value.length;
+  })()`);
+  win.webContents.insertText(ARROW_P);
+  await waitFor(
+    win,
+    `(document.querySelector('.note-live textarea')?.value ?? "") === ${JSON.stringify(ARROW_P)}`,
+    "the wrapped paragraph to be typed",
+  );
+  await pressKey(win, "Enter");
+  await waitFor(
+    win,
+    `document.querySelectorAll(".note-live [data-note-block]").length === 3`,
+    "the paragraph break to open a paragraph below",
+  );
+  await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('.note-live textarea');
+    el.focus();
+    return el === document.activeElement;
+  })()`);
+  win.webContents.insertText(ARROW_BELOW);
+  await waitFor(
+    win,
+    `(document.querySelector('.note-live textarea')?.value ?? "") === ${JSON.stringify(ARROW_BELOW)}`,
+    "the paragraph below to be typed",
+  );
+  await leaveTheLine(win);
+  await waitFor(
+    win,
+    `document.querySelectorAll(".note-live [data-note-block]").length === 3`,
+    "the note to hold the wrapped paragraph between two others",
+  );
+
+  await openBlockAt(win, 1);
+  const arrowStartCaret = await caretAt(win, "start");
+  const arrowStart = await arrowState(win);
+  const W = arrowStart.visualLines;
+
+  // The picture of the claim: the note box itself, with the wrapped paragraph
+  // open as its own markdown under the caret.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const arrowBox = await win.webContents.executeJavaScript(`(() => {
+    const r = document.querySelector(".note-live").getBoundingClientRect();
+    const x = Math.max(0, Math.round(r.left));
+    const y = Math.max(0, Math.round(r.top));
+    return {
+      x,
+      y,
+      width: Math.min(Math.round(r.width), window.innerWidth - x),
+      height: Math.min(Math.round(r.height), window.innerHeight - y),
+    };
+  })()`);
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  const arrowShot = await win.webContents.capturePage(arrowBox);
+  fs.writeFileSync(path.join(artifactsDir, "live-editor-arrow-visual.png"), arrowShot.toPNG());
+
+  if ((arrowStart.value ?? "").includes("\n")) {
+    failure("arrow-down-visual-lines: the paragraph under the caret is not one logical line");
+  }
+  if (!(W >= 3)) {
+    failure(
+      `arrow-down-visual-lines: the paragraph wraps into ${W} visual line(s), expected at least 3`,
+    );
+  }
+
+  const arrowDownSteps = await traverse(win, "Down", Math.max(1, W));
+  const arrowDownProblems = judgeTraversal(arrowDownSteps, {
+    index: 1,
+    direction: "down",
+    stay: W - 1,
+    startCaret: arrowStartCaret.caret,
+    startLength: arrowStartCaret.valueLength,
+    visualLines: W,
+    leave: { index: 2, caret: 0, value: ARROW_BELOW },
+  });
+  for (const problem of arrowDownProblems) failure(`arrow-down-visual-lines: ${problem}`);
+
+  // The mirror: from the paragraph's end, W-1 ArrowUp presses must step up one
+  // visual line each and press W must leave for the paragraph above, caret at
+  // its end — where coming up from below naturally lands.
+  await openBlockAt(win, 1);
+  const arrowUpStartCaret = await caretAt(win, "end");
+  const arrowUpStart = await arrowState(win);
+  const arrowUpSteps = await traverse(win, "Up", Math.max(1, W));
+  const arrowUpProblems = judgeTraversal(arrowUpSteps, {
+    index: 1,
+    direction: "up",
+    stay: W - 1,
+    startCaret: arrowUpStartCaret.caret,
+    startLength: arrowUpStartCaret.valueLength,
+    visualLines: W,
+    leave: { index: 0, caret: ARROW_FIRST.length, value: ARROW_FIRST },
+  });
+  for (const problem of arrowUpProblems) failure(`arrow-up-visual-lines: ${problem}`);
+  if (arrowUpStart.visualLines !== W) {
+    failure(
+      `arrow-up-visual-lines: the same paragraph measured ${arrowUpStart.visualLines} visual lines from its end, ${W} from its start`,
+    );
+  }
+
+  // ── the hard-broken block: two logical lines, each wrapping ──────────────
+  // Shift+Enter keeps both lines in ONE block, so the block is taller than the
+  // caret's logical line. That is where the operator saw the skip.
+  const ARROW_L1 =
+    "A hard break begins a new logical line here, and this first logical line is long " +
+    "enough that the box has to wrap it over several visual lines, which is exactly the " +
+    "shape the operator reported as asymmetric.";
+  const ARROW_L2 =
+    "The second logical line behind Shift and Enter also wraps over several visual lines " +
+    "of its own, so the block as a whole is taller than either one of them.";
+  const ARROW_HARD = `${ARROW_L1}\n${ARROW_L2}`;
+  await openBlockAt(win, 1);
+  await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('.note-live textarea');
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+    return el.value.length;
+  })()`);
+  win.webContents.insertText(ARROW_L1);
+  await waitFor(
+    win,
+    `(document.querySelector('.note-live textarea')?.value ?? "") === ${JSON.stringify(ARROW_L1)}`,
+    "the first logical line to be typed",
+  );
+  // A real Shift+Enter: the modified key and the newline it types.
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter", modifiers: ["shift"] });
+  win.webContents.sendInputEvent({ type: "char", keyCode: "Enter", modifiers: ["shift"] });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter", modifiers: ["shift"] });
+  await waitFor(
+    win,
+    `(document.querySelector('.note-live textarea')?.value ?? "") === ${JSON.stringify(`${ARROW_L1}\n`)}`,
+    "the Shift+Enter hard break to land",
+  );
+  win.webContents.insertText(ARROW_L2);
+  await waitFor(
+    win,
+    `(document.querySelector('.note-live textarea')?.value ?? "") === ${JSON.stringify(ARROW_HARD)}`,
+    "the second logical line to be typed",
+  );
+  await leaveTheLine(win);
+  await waitFor(
+    win,
+    `document.querySelectorAll(".note-live [data-note-block]").length === 3`,
+    "the hard-broken paragraph to stay one block",
+  );
+
+  await openBlockAt(win, 1);
+  const hardStartCaret = await caretAt(win, "start");
+  const hardStart = await arrowState(win);
+  const hardW = hardStart.visualLines;
+  const hardFirstLines = await win.webContents.executeJavaScript(
+    `${ARROW_LINES}(${JSON.stringify(ARROW_L1)})`,
+  );
+  const hardSecondLines = await win.webContents.executeJavaScript(
+    `${ARROW_LINES}(${JSON.stringify(ARROW_L2)})`,
+  );
+  const hardBothLines = await win.webContents.executeJavaScript(
+    `${ARROW_LINES}(${JSON.stringify(ARROW_HARD)})`,
+  );
+  if (hardFirstLines.visualLines < 2 || hardSecondLines.visualLines < 2) {
+    failure(
+      `arrow-hard-break-visual-lines: the first logical line wraps into ${hardFirstLines.visualLines} and the second into ${hardSecondLines.visualLines} visual line(s); both must wrap`,
+    );
+  }
+  if (hardBothLines.visualLines !== hardFirstLines.visualLines + hardSecondLines.visualLines) {
+    failure(
+      `arrow-hard-break-visual-lines: the block paints ${hardBothLines.visualLines} visual line(s), its two logical lines ${hardFirstLines.visualLines} + ${hardSecondLines.visualLines}`,
+    );
+  }
+  if (hardW !== hardBothLines.visualLines) {
+    failure(
+      `arrow-hard-break-visual-lines: the open textarea measures ${hardW} visual line(s), its text ${hardBothLines.visualLines}`,
+    );
+  }
+
+  const hardDownSteps = await traverse(win, "Down", Math.max(1, hardW));
+  const hardDownProblems = judgeTraversal(hardDownSteps, {
+    index: 1,
+    direction: "down",
+    stay: hardW - 1,
+    startCaret: hardStartCaret.caret,
+    startLength: hardStartCaret.valueLength,
+    visualLines: hardW,
+    leave: { index: 2, caret: 0, value: ARROW_BELOW },
+  });
+  for (const problem of hardDownProblems) failure(`arrow-hard-break-visual-lines (down): ${problem}`);
+
+  await openBlockAt(win, 1);
+  const hardUpStartCaret = await caretAt(win, "end");
+  const hardUpSteps = await traverse(win, "Up", Math.max(1, hardW));
+  const hardUpProblems = judgeTraversal(hardUpSteps, {
+    index: 1,
+    direction: "up",
+    stay: hardW - 1,
+    startCaret: hardUpStartCaret.caret,
+    startLength: hardUpStartCaret.valueLength,
+    visualLines: hardW,
+    leave: { index: 0, caret: ARROW_FIRST.length, value: ARROW_FIRST },
+  });
+  for (const problem of hardUpProblems) failure(`arrow-hard-break-visual-lines (up): ${problem}`);
+
+  // ── nothing the walk did may reach the file ──────────────────────────────
+  // The same block, read back after the walk, and the body Save carries: the
+  // note the operator typed, not a character lost or doubled by the caret.
+  await openBlockAt(win, 1);
+  const hardAfterTraversal = (await arrowState(win)).value;
+  if (hardAfterTraversal !== ARROW_HARD) {
+    failure(
+      `arrow-body-unchanged: the paragraph under the caret reads ${JSON.stringify((hardAfterTraversal ?? "").slice(0, 60))} after the walk, expected ${JSON.stringify(ARROW_HARD.slice(0, 60))}`,
+    );
+  }
+  const arrowExpectedBody = `${ARROW_FIRST}\n\n${ARROW_HARD}\n\n${ARROW_BELOW}`;
+  await leaveTheLine(win);
+  const savesBeforeArrow = await win.webContents.executeJavaScript(
+    "(window.liveEditorSaves ?? []).length",
+  );
+  if (!(await clickLabel(win, ".doc-editor__actions", "Save"))) {
+    failure("arrow-body-unchanged: the document's Save control was gone after the walk");
+  }
+  await waitFor(
+    win,
+    `(window.liveEditorSaves ?? []).length > ${savesBeforeArrow}`,
+    "the walk's save to reach the bridge",
+  );
+  const arrowSaves = await win.webContents.executeJavaScript("window.liveEditorSaves");
+  const savedArrowBody = String(arrowSaves.at(-1)?.body ?? "").trimEnd();
+  if (savedArrowBody !== arrowExpectedBody) {
+    failure(
+      `arrow-body-unchanged: the save carried ${JSON.stringify(savedArrowBody.slice(0, 80))}, expected ${JSON.stringify(arrowExpectedBody.slice(0, 80))}`,
+    );
+  }
+
+  const arrowTrail = (steps) =>
+    steps.map((step) => `${step.editingIndex}:${step.caret}`).join(" ");
+  checks.arrow = {
+    shot: "live-editor-arrow-visual.png",
+    paragraph: {
+      text: ARROW_P,
+      length: ARROW_P.length,
+      visualLines: W,
+      down: { steps: arrowDownSteps, problems: arrowDownProblems },
+      up: { steps: arrowUpSteps, problems: arrowUpProblems },
+    },
+    hardBreak: {
+      firstLine: ARROW_L1,
+      secondLine: ARROW_L2,
+      firstLineVisualLines: hardFirstLines.visualLines,
+      secondLineVisualLines: hardSecondLines.visualLines,
+      visualLines: hardW,
+      down: { steps: hardDownSteps, problems: hardDownProblems },
+      up: { steps: hardUpSteps, problems: hardUpProblems },
+    },
+    body: {
+      expected: arrowExpectedBody,
+      afterTraversal: hardAfterTraversal,
+      saved: savedArrowBody,
+      trail: { down: arrowTrail(hardDownSteps), up: arrowTrail(hardUpSteps) },
+    },
+  };
+
+  // ── 8. nothing unexpected, nothing on fire ──────────────────────────────
   const unexpected = await win.webContents.executeJavaScript("window.liveEditorUnexpectedCalls");
   checks.unexpectedBridgeCalls = unexpected;
   if (unexpected.length > 0) {
@@ -522,8 +1524,18 @@ async function main() {
   console.log(`opened:    ${JSON.stringify(opened.inputValue)}`);
   console.log(`saved:     ${JSON.stringify(saves[0]?.body)}`);
   console.log(`pasted:    ${JSON.stringify(media[0])} → ${withImage.images} image(s)`);
+  console.log(
+    `menu:      ${JSON.stringify(menuLocked.menuItems?.map((item) => item.testid))} open=${menuLocked.pageMenu?.expanded}`,
+  );
   console.log(`locked:    readOnly=${locked.readOnly} writingLines=${afterClick.writingLines}`);
   console.log(`review:    ${review.blockCount} block(s), opened ${JSON.stringify(reviewOpened.inputValue)}`);
+  console.log(
+    `arrows:    paragraph W=${W}, down [${arrowTrail(arrowDownSteps)}] up [${arrowTrail(arrowUpSteps)}]`,
+  );
+  console.log(
+    `hard-break: ${hardFirstLines.visualLines}+${hardSecondLines.visualLines} visual line(s) (W=${hardW}), down [${arrowTrail(hardDownSteps)}] up [${arrowTrail(hardUpSteps)}]`,
+  );
+  console.log(`arrow body: ${JSON.stringify(savedArrowBody.slice(0, 72))}`);
   console.log(`failures:  ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

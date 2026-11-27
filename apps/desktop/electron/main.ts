@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain as electronIpcMain,
   Notification,
+  session,
   shell,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -11,26 +12,52 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Chromium 140 (Electron 38) allocates renderer shared memory in /dev/shm.
+// On a locked-down host — a container, or this project's headless bench — that
+// directory is not writable and the renderer dies before the first window with
+// a bare "fork failed". /tmp always works, and this app's pages are small
+// enough that the cost is irrelevant. A no-op on Windows, which has no /dev/shm.
+app.commandLine.appendSwitch("disable-dev-shm-usage");
 import { stopMcp, setMcpPorts } from "./mcp-server.js";
 import {
   channelMayChangeData,
   noteDataChanged,
   onDataChanged,
 } from "./data-revision.js";
+import { invalidateDecisionList } from "./decision-list-cache.js";
 import * as companion from "./companion.js";
+import * as harness from "./harness/facade.js";
+import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted } from "./harness/pi-settings.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
+import { parseThemeFile } from "../shared/theme-file.ts";
+import { SHOWCASE_THEMES } from "../shared/showcase-themes.ts";
+import {
+  importThemeFile,
+  isThemeVersionId,
+  listThemeHistory,
+  readThemeSnapshot,
+  restoreThemeVersion,
+  saveThemeFile,
+  THEME_FILE,
+} from "./theme-store.js";
+import { readBackground, storeBackground } from "./theme-background.js";
 import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
 } from "./companion-client.js";
 import * as vault from "./vault-service.js";
+import * as vaultAgents from "./vault-agents.js";
 import * as phone from "./phone-service.js";
 import {
   checkForUpdate,
   installUpdate,
+  MIN_UPDATE_POLL_MS,
   setUpdateFeedUrl,
   setUpdateLauncher,
   setUpdateTrustPolicy,
+  startUpdateWatch,
+  type UpdateWatchNews,
+  validateInstallRequest,
 } from "./updater.js";
 import {
   setDeadlineDismissedOn,
@@ -67,13 +94,24 @@ const isDev = !app.isPackaged;
  * are 8643 and 8646 in the product, and the operator's own app holds both, so a
  * rig that watches a door bind has to move it off those ports. The listeners and
  * the url written into the Hermes profile move together (see `mcp-server.ts`).
+ *
+ * TWO GATES, and both matter. `__LIFEQUEST_E2E_SEAM__` is a build-time constant
+ * (`true` in `dev.mjs`, `false` in `bundle-electron.mjs`) so the shipped bundle
+ * contains no seam at all; `!app.isPackaged` is the runtime belt for a bundle
+ * built by the dev script that is nevertheless running packaged. A packaged
+ * LifeQuest therefore cannot be pointed at another profile, feed, trust policy,
+ * or installer launcher by setting an environment variable.
  */
-const E2E_RAW = process.env.LIFEQUEST_E2E;
+declare const __LIFEQUEST_E2E_SEAM__: boolean;
 const E2E: {
   userData?: string;
   showWindow: boolean;
   mcpPorts?: { local?: number; invite?: number };
-  /** The phone rig: a throwaway door on a free port, and the built shell. */
+  /**
+   * The phone rig: a throwaway door on a free port, and the built shell it
+   * serves. Present only inside the seam gate; the product reads its own
+   * Settings for these.
+   */
   phone?: {
     enabled?: boolean;
     port?: number;
@@ -88,116 +126,223 @@ const E2E: {
   updateFeedUrl?: string;
   updateLauncher?: { exe?: unknown; args?: unknown };
   /**
+   * How often the update watch reads the feed, in milliseconds. Present only for
+   * the polling rig: the product's cadence is `UPDATE_POLL_MS` (one hour), and a
+   * rig that waited an hour for a tick would not test the watch at all.
+   */
+  updatePollMs?: number;
+  /**
+   * How long a chat stream may produce no bytes before the app declares it lost,
+   * in milliseconds. Present only for the stalled-turn rig: the product's bound
+   * is `PRODUCT_STREAM_IDLE_MS` (45 s), and a rig that waited 45 real seconds for
+   * it would spend more time proving the clock than the behaviour.
+   */
+  streamIdleMs?: number;
+  /**
    * Where the install's bytes are allowed to come from. Present only for the
    * auto-update rig, which serves them over loopback; the product leaves the
    * policy at GitHub over https.
    */
-  updateTrust?: { hosts: string[]; allowHttp?: boolean };
+  updateTrust?: { hosts: string[]; allowHttp?: boolean; strictAssetPath?: boolean };
+  /**
+   * Where `theme:import` takes its next file from, for the import rig. The
+   * product opens a dialog, which a rig cannot drive; a queued absolute path is
+   * consumed instead, one per call. Present only inside the seam gate below, so
+   * the shipped bundle has neither the branch nor the string.
+   */
+  themeImportSources?: string[];
+  /**
+   * Where `theme:pickBackground` takes its next picture from, for the background
+   * rig. Same shape and same reason as the import queue above: the product's
+   * native dialog cannot be driven by a rig, so a queued absolute path stands in
+   * for it. Present only inside the seam gate.
+   */
+  themeBackgroundSources?: string[];
 } = { showWindow: true };
-if (E2E_RAW) {
-  try {
-    const parsed = JSON.parse(E2E_RAW) as {
-      userData?: unknown;
-      showWindow?: unknown;
-      mcpPorts?: { local?: unknown; invite?: unknown };
-      phone?: {
-        enabled?: unknown;
-        port?: unknown;
-        publicOrigin?: unknown;
-        staticDir?: unknown;
+/**
+ * Whether the rig seam is live in this process.
+ *
+ * The one place that decides, so "the product does not do this" stays a single
+ * expression: the update install confirmation is skipped only here, and the
+ * shipped bundle — where `__LIFEQUEST_E2E_SEAM__` is defined false — compiles
+ * this to the constant `false`.
+ */
+const E2E_ACTIVE =
+  __LIFEQUEST_E2E_SEAM__ && !app.isPackaged && Boolean(process.env.LIFEQUEST_E2E);
+/*
+ * The seam itself. The gate is the build-time constant and the runtime
+ * `!app.isPackaged`, both on the `if` itself: with the constant false esbuild
+ * removes the whole branch (dead code), so the shipped `dist-electron/main.js`
+ * contains no seam code, no seam string, and nothing to reach by setting an
+ * environment variable. `dev.mjs` compiles the constant true so the rigs and
+ * the bench keep the whole seam.
+ */
+if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
+  const E2E_RAW = process.env.LIFEQUEST_E2E;
+  if (E2E_RAW) {
+    try {
+      const parsed = JSON.parse(E2E_RAW) as {
+        userData?: unknown;
+        showWindow?: unknown;
+        mcpPorts?: { local?: unknown; invite?: unknown };
+        phone?: {
+          enabled?: unknown;
+          port?: unknown;
+          publicOrigin?: unknown;
+          staticDir?: unknown;
+        };
+        updateFeedUrl?: unknown;
+        updateLauncher?: { exe?: unknown; args?: unknown };
+        updatePollMs?: unknown;
+        streamIdleMs?: unknown;
+        updateTrust?: {
+          hosts?: unknown;
+          allowHttp?: unknown;
+          strictAssetPath?: unknown;
+        };
+        themeImportSources?: unknown;
+        themeBackgroundSources?: unknown;
       };
-      updateFeedUrl?: unknown;
-      updateLauncher?: { exe?: unknown; args?: unknown };
-      updateTrust?: { hosts?: unknown; allowHttp?: unknown };
-    };
-    if (typeof parsed.userData === "string" && parsed.userData.trim()) {
-      // Realpath, not the string: `userData` must be absolute and existing
-      // before Electron resolves its own paths, and a typo here would silently
-      // fall back to the operator's profile.
-      E2E.userData = fs.realpathSync(parsed.userData);
+      if (typeof parsed.userData === "string" && parsed.userData.trim()) {
+        // Realpath, not the string: `userData` must be absolute and existing
+        // before Electron resolves its own paths, and a typo here would silently
+        // fall back to the operator's profile.
+        E2E.userData = fs.realpathSync(parsed.userData);
+      }
+      if (parsed.showWindow === false) E2E.showWindow = false;
+      const local = parsed.mcpPorts?.local;
+      const invite = parsed.mcpPorts?.invite;
+      if (typeof local === "number" || typeof invite === "number") {
+        E2E.mcpPorts = {
+          ...(typeof local === "number" ? { local } : {}),
+          ...(typeof invite === "number" ? { invite } : {}),
+        };
+      }
+      if (parsed.phone && typeof parsed.phone === "object") {
+        const rawPhone = parsed.phone;
+        E2E.phone = {
+          ...(rawPhone.enabled === true || rawPhone.enabled === false
+            ? { enabled: rawPhone.enabled }
+            : {}),
+          ...(typeof rawPhone.port === "number" ? { port: rawPhone.port } : {}),
+          ...(typeof rawPhone.publicOrigin === "string" && rawPhone.publicOrigin.trim()
+            ? { publicOrigin: rawPhone.publicOrigin.trim() }
+            : {}),
+          ...(typeof rawPhone.staticDir === "string" && rawPhone.staticDir.trim()
+            ? { staticDir: rawPhone.staticDir.trim() }
+            : {}),
+        };
+      }
+      if (
+        typeof parsed.updateFeedUrl === "string" &&
+        parsed.updateFeedUrl.trim()
+      ) {
+        E2E.updateFeedUrl = parsed.updateFeedUrl;
+      }
+      if (
+        typeof parsed.updatePollMs === "number" &&
+        Number.isFinite(parsed.updatePollMs) &&
+        parsed.updatePollMs >= MIN_UPDATE_POLL_MS
+      ) {
+        E2E.updatePollMs = Math.round(parsed.updatePollMs);
+      }
+      if (
+        typeof parsed.streamIdleMs === "number" &&
+        Number.isFinite(parsed.streamIdleMs) &&
+        parsed.streamIdleMs >= 500
+      ) {
+        E2E.streamIdleMs = Math.round(parsed.streamIdleMs);
+      }
+      // A rig cannot let the app launch a real installer, and cannot read an
+      // assertion out of a process it did not start: the launcher is replaced
+      // by one the rig owns, which records the file it was handed.
+      if (
+        parsed.updateLauncher &&
+        typeof parsed.updateLauncher.exe === "string" &&
+        parsed.updateLauncher.exe.trim()
+      ) {
+        E2E.updateLauncher = {
+          exe: parsed.updateLauncher.exe,
+          args: Array.isArray(parsed.updateLauncher.args)
+            ? parsed.updateLauncher.args.filter(
+                (arg): arg is string => typeof arg === "string",
+              )
+            : [],
+        };
+      }
+      const hosts = parsed.updateTrust?.hosts;
+      if (
+        Array.isArray(hosts) &&
+        hosts.length > 0 &&
+        hosts.every((host): host is string => typeof host === "string")
+      ) {
+        E2E.updateTrust = {
+          hosts,
+          allowHttp: parsed.updateTrust?.allowHttp === true,
+          strictAssetPath: parsed.updateTrust?.strictAssetPath === true,
+        };
+      }
+      // The import rig's queue. Absolute paths only: the handler reads whatever
+      // it is given, and a relative one would resolve against the process's
+      // working directory rather than the fixture the rig wrote.
+      const importSources = parsed.themeImportSources;
+      if (Array.isArray(importSources)) {
+        const absolute = importSources.filter(
+          (source): source is string =>
+            typeof source === "string" && path.isAbsolute(source),
+        );
+        if (absolute.length > 0) E2E.themeImportSources = absolute;
+      }
+      // The background rig's queue: the same absolute-path rule, because the
+      // picture's source path is the whole capability `storeBackground` reads.
+      const backgroundSources = parsed.themeBackgroundSources;
+      if (Array.isArray(backgroundSources)) {
+        const absolute = backgroundSources.filter(
+          (source): source is string =>
+            typeof source === "string" && path.isAbsolute(source),
+        );
+        if (absolute.length > 0) E2E.themeBackgroundSources = absolute;
+      }
+    } catch (err) {
+      console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
     }
-    if (parsed.showWindow === false) E2E.showWindow = false;
-    const local = parsed.mcpPorts?.local;
-    const invite = parsed.mcpPorts?.invite;
-    if (typeof local === "number" || typeof invite === "number") {
-      E2E.mcpPorts = {
-        ...(typeof local === "number" ? { local } : {}),
-        ...(typeof invite === "number" ? { invite } : {}),
-      };
-    }
-    if (parsed.phone && typeof parsed.phone === "object") {
-      const raw = parsed.phone;
-      E2E.phone = {
-        ...(raw.enabled === true || raw.enabled === false ? { enabled: raw.enabled } : {}),
-        ...(typeof raw.port === "number" ? { port: raw.port } : {}),
-        ...(typeof raw.publicOrigin === "string" && raw.publicOrigin.trim()
-          ? { publicOrigin: raw.publicOrigin.trim() }
-          : {}),
-        ...(typeof raw.staticDir === "string" && raw.staticDir.trim()
-          ? { staticDir: raw.staticDir.trim() }
-          : {}),
-      };
-    }
-    if (typeof parsed.updateFeedUrl === "string" && parsed.updateFeedUrl.trim()) {
-      E2E.updateFeedUrl = parsed.updateFeedUrl;
-    }
-    // A rig cannot let the app launch a real installer, and cannot read an
-    // assertion out of a process it did not start: the launcher is replaced by
-    // one the rig owns, which records the file it was handed.
-    if (
-      parsed.updateLauncher &&
-      typeof parsed.updateLauncher.exe === "string" &&
-      parsed.updateLauncher.exe.trim()
-    ) {
-      E2E.updateLauncher = {
-        exe: parsed.updateLauncher.exe,
-        args: Array.isArray(parsed.updateLauncher.args)
-          ? parsed.updateLauncher.args.filter(
-              (arg): arg is string => typeof arg === "string",
-            )
-          : [],
-      };
-    }
-    const hosts = parsed.updateTrust?.hosts;
-    if (
-      Array.isArray(hosts) &&
-      hosts.length > 0 &&
-      hosts.every((host): host is string => typeof host === "string")
-    ) {
-      E2E.updateTrust = {
-        hosts,
-        allowHttp: parsed.updateTrust?.allowHttp === true,
-      };
-    }
-  } catch (err) {
-    console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
   }
-}
-if (E2E.userData) {
-  app.setPath("userData", E2E.userData);
-}
-if (E2E.mcpPorts) {
-  // Before any window or vault: a door binds with whatever is set here.
-  setMcpPorts(E2E.mcpPorts);
-}
-if (E2E.phone) {
-  // Same reason: the phone door reads its port and address at vault open.
-  phone.configurePhoneFromE2e(E2E.phone);
-}
-if (E2E.updateFeedUrl) {
-  setUpdateFeedUrl(E2E.updateFeedUrl);
-}
-if (typeof E2E.updateLauncher?.exe === "string") {
-  setUpdateLauncher({
-    exe: E2E.updateLauncher.exe,
-    args: (E2E.updateLauncher.args as string[] | undefined) ?? [],
-  });
-}
-if (E2E.updateTrust) {
-  setUpdateTrustPolicy({
-    hosts: E2E.updateTrust.hosts,
-    allowHttp: E2E.updateTrust.allowHttp === true,
-  });
+  // The seam's effects live inside the same gate as its parse: in the shipped
+  // bundle this whole block is dead code and dropped, so there is nothing to
+  // reach even by setting the environment variable.
+  if (E2E.userData) {
+    app.setPath("userData", E2E.userData);
+  }
+  if (E2E.mcpPorts) {
+    // Before any window or vault: a door binds with whatever is set here.
+    setMcpPorts(E2E.mcpPorts);
+  }
+  if (E2E.phone) {
+    // Same reason as the MCP ports: the phone door reads its port and address
+    // when a vault opens, so the seam sets them before any window exists.
+    phone.configurePhoneFromE2e(E2E.phone);
+  }
+  if (E2E.streamIdleMs !== undefined) {
+    // The chat stream's silence bound, shortened for the stalled-turn rig only.
+    // The product keeps its own 45 seconds because this line never runs.
+    companion.setChatStreamIdleMs(E2E.streamIdleMs);
+  }
+  if (E2E.updateFeedUrl) {
+    setUpdateFeedUrl(E2E.updateFeedUrl);
+  }
+  if (typeof E2E.updateLauncher?.exe === "string") {
+    setUpdateLauncher({
+      exe: E2E.updateLauncher.exe,
+      args: (E2E.updateLauncher.args as string[] | undefined) ?? [],
+    });
+  }
+  if (E2E.updateTrust) {
+    setUpdateTrustPolicy({
+      hosts: E2E.updateTrust.hosts,
+      allowHttp: E2E.updateTrust.allowHttp === true,
+      strictAssetPath: E2E.updateTrust.strictAssetPath === true,
+    });
+  }
 }
 
 const TITLEBAR_OVERLAY_HEIGHT = 32;
@@ -216,6 +361,25 @@ function localIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * One line of vault-supplied text, safe for OS chrome.
+ *
+ * Control characters (including newlines, which a notification would split on)
+ * collapse to a space; the run collapses; the length is bounded. The caller owns
+ * the fixed prefix, so the vault can never choose what the notification claims
+ * to be about.
+ */
+function sanitizeNotificationText(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value : "";
+  const cleaned = text
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > maxLength
+    ? `${cleaned.slice(0, Math.max(0, maxLength - 1))}…`
+    : cleaned;
+}
+
 function windowFromEvent(event: { sender: Electron.WebContents }): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
 }
@@ -231,12 +395,16 @@ function registerWindowAccelerators(win: BrowserWindow) {
       win.reload();
       return;
     }
-    if (ctrl && input.shift && !input.alt && key === "i") {
+    // DevTools is a development tool. In a packaged build it is the whole
+    // preload bridge in a REPL: anyone at the keyboard could read or rewrite the
+    // vault, approve agent tool calls, and run the updater. Gate both the
+    // shortcut and (in `createWindow`) the `devTools` preference on `isDev`.
+    if (isDev && ctrl && input.shift && !input.alt && key === "i") {
       event.preventDefault();
       win.webContents.toggleDevTools();
       return;
     }
-    if (input.key === "F12") {
+    if (isDev && input.key === "F12") {
       event.preventDefault();
       win.webContents.toggleDevTools();
       return;
@@ -254,13 +422,222 @@ function registerWindowAccelerators(win: BrowserWindow) {
 }
 
 /**
- * `ipcMain`, with the live-dashboard notice added.
+ * The product's one window.
+ *
+ * Two things key off this object and nothing else: the packaged-build IPC
+ * allowlist (the only WebContents that may call a handler) and the identity of
+ * "the window main created" when deciding whether a navigation guard belongs on
+ * it. Rig-created harness windows are deliberately not tracked: they are the
+ * rig's, they are unpackaged-only, and the dev IPC rule below covers them.
+ */
+let productWindow: BrowserWindow | null = null;
+
+function productWindowWebContentsId(): number | null {
+  if (!productWindow || productWindow.isDestroyed()) return null;
+  return productWindow.webContents.id;
+}
+
+/** The renderer's URL: the Vite server in dev, the packaged file otherwise. */
+const DEV_SERVER_URL =
+  process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+
+/** The document the packaged app loads — and the only file document it may be. */
+const APP_INDEX_PATH = path.join(__dirname, "../dist/index.html");
+
+/** A host that can only be this machine. Never a name a DNS record can answer. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+/** The dev server's port, so a loopback page on some other port is not "the app". */
+function devServerPort(): string {
+  try {
+    return new URL(DEV_SERVER_URL).port || "80";
+  } catch {
+    return "5173";
+  }
+}
+
+/**
+ * Whether a URL is the app's own document.
+ *
+ * In dev that is any path on the Vite origin — the product window and the rig
+ * harness pages are served from it. In a packaged build it is exactly the
+ * `dist/index.html` the window was told to load, and nothing else on disk.
+ */
+function isAppDocumentUrl(rawUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (isDev) {
+    try {
+      return url.origin === new URL(DEV_SERVER_URL).origin;
+    } catch {
+      return false;
+    }
+  }
+  if (url.protocol !== "file:") return false;
+  try {
+    return fileURLToPath(url) === APP_INDEX_PATH;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Open an https URL in the operator's own browser, and nothing else.
+ *
+ * This is the *only* way renderer content reaches `shell.openExternal`: parsed
+ * with `new URL` (not a regex), https only, with a host and without userinfo.
+ * An `http:` link is deliberately a no-op — an in-app link should never be able
+ * to make the app launch a browser at a loopback address or an ambiguous URL,
+ * and the product only ever links to https.
+ */
+function openExternalHttps(rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "https:") return;
+  if (!url.hostname || url.username || url.password) return;
+  void shell.openExternal(url.href).catch(() => {
+    // The browser failing to start is not a reason to take the app down.
+  });
+}
+
+/**
+ * Confine one window to the app's own document.
+ *
+ * Electron's default is to let the renderer navigate anywhere, and the preload
+ * is attached to the WebContents — so a navigation to a foreign origin would
+ * run `preload.js` (and expose the whole `window.lifequest` bridge) to that
+ * origin. These guards are the control that keeps a link click, a `location`
+ * assignment, a meta refresh, or a server redirect on the app document:
+ *
+ *  - `will-navigate` (main frame, user/page initiated): allow only the app
+ *    document; a denied https link is the operator asking to see that page, so
+ *    it goes to the system browser; an http link is simply refused.
+ *  - `will-frame-navigate`: any subframe is someone else's document. The app has
+ *    no iframes; deny, and never open a browser from one.
+ *  - `will-redirect`: a redirect is the server talking, not the operator. Deny
+ *    an off-document hop without opening anything.
+ *  - `setWindowOpenHandler`: `window.open`/`target=_blank` may not create a
+ *    child BrowserWindow at all; an https URL is handed to the browser instead.
+ *
+ * Attached per window main creates (`createWindow`), not app-wide: rig-created
+ * harness windows are the rig's own and must keep loading whatever they test.
+ */
+function installContentGuards(win: BrowserWindow): void {
+  const contents = win.webContents;
+
+  contents.on("will-navigate", (details) => {
+    if (isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+    openExternalHttps(details.url);
+  });
+
+  contents.on("will-frame-navigate", (details) => {
+    if (details.isMainFrame && isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+  });
+
+  contents.on("will-redirect", (details) => {
+    if (isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+  });
+
+  contents.setWindowOpenHandler((details) => {
+    openExternalHttps(details.url);
+    return { action: "deny" };
+  });
+
+  // `<webview>` is not used by this app (the preference is off by default), and
+  // a renderer must not be able to create one: it would be a second frame with
+  // its own preload. Refuse every attach outright.
+  contents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+}
+
+/**
+ * Whether this IPC event comes from a frame the app is willing to serve.
+ *
+ * Every channel goes through this (see the `ipcMain` facade). The rules:
+ *
+ *  - the sender must be a top-level frame (a subframe is never the app);
+ *  - a packaged build: the sender must be *the* product window and the frame
+ *    must be loading the app document. Nothing else exists or is accepted;
+ *  - unpackaged/dev: the bench's dev server is the trust boundary. The product
+ *    window and the rig-created windows that load harness pages from that same
+ *    loopback port may call IPC — which is what keeps the existing rigs on the
+ *    real bridge — while a frame that navigated to any other origin is refused.
+ *
+ * `senderFrame` is null when the frame is already gone; null is a refusal.
+ */
+function isTrustedIpcSender(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  if (!frame || frame.parent !== null) return false;
+  if (event.sender.mainFrame !== frame) return false;
+  let url: URL;
+  try {
+    url = new URL(frame.url);
+  } catch {
+    return false;
+  }
+  if (isDev) {
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    return isLoopbackHost(url.hostname) && url.port === devServerPort();
+  }
+  if (event.sender.id !== productWindowWebContentsId()) return false;
+  return isAppDocumentUrl(frame.url);
+}
+
+/**
+ * The Decision writes that keep the inbox's cached list true themselves.
+ *
+ * Every other mutating channel invalidates that cache (see
+ * `decision-list-cache.ts`), because any of them can change what a
+ * `decision:list` would answer — a database row the labels resolve against, a
+ * page a proposal targets. These three are the exception: each one returns the
+ * record it wrote, and the vault service patches that record into the cached
+ * list. Invalidating for them as well would make an approve burst re-read the
+ * whole Decisions directory between every card, which is exactly the wait this
+ * change exists to remove.
+ *
+ * A FAILED decision write is not in this set's way: the patch inside the vault
+ * service only runs when the write returned ok, so a refusal leaves the cached
+ * list exactly as valid as it was.
+ */
+const DECISION_WRITE_CHANNELS: ReadonlySet<string> = new Set([
+  "decision:create",
+  "decision:amend",
+  "decision:resolve",
+]);
+
+/**
+ * `ipcMain`, with the live-dashboard notice added and every sender checked.
  *
  * Every channel below is registered through this object rather than through
  * Electron's registrar directly, so "which channels announce a change" is one
  * list in `data-revision.ts` instead of a decision taken again at each of the
  * hundred-odd registration sites — and a channel added later is covered by
  * whatever that list says about it rather than by whether its author remembered.
+ *
+ * The same facade is where the decisions inbox's cached list is invalidated: it
+ * is the one place every renderer write passes through, and the cache may only
+ * be trusted for as long as the app's own change signal says nothing moved.
+ *
+ * The sender check lives here for the same reason: Electron's checklist asks
+ * every handler to validate `event.sender`/`senderFrame`, and one facade means a
+ * channel added tomorrow is covered without anyone remembering to check. An
+ * invoke from a refused frame rejects; a fire-and-forget send from one is
+ * dropped.
  *
  * The notice is sent once a handler has settled, and only for a channel the list
  * names. Both of those are load-bearing. The filter, because a card's repaint
@@ -282,15 +659,28 @@ const ipcMain = {
     listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
   ): void {
     electronIpcMain.handle(channel, async (event, ...args: unknown[]) => {
+      if (!isTrustedIpcSender(event)) {
+        throw new Error(
+          `LifeQuest refused ${channel} from a frame that is not the app window.`,
+        );
+      }
       try {
         return await listener(event, ...args);
       } finally {
-        if (channelMayChangeData(channel)) noteDataChanged();
+        if (channelMayChangeData(channel)) {
+          // A Decision write patched the cached list itself; anything else that
+          // can change what the inbox would draw must throw it away.
+          if (!DECISION_WRITE_CHANNELS.has(channel)) invalidateDecisionList();
+          noteDataChanged();
+        }
       }
     });
   },
   on(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
-    electronIpcMain.on(channel, listener);
+    electronIpcMain.on(channel, (event, ...args: unknown[]) => {
+      if (!isTrustedIpcSender(event)) return;
+      listener(event, ...args);
+    });
   },
 };
 
@@ -337,14 +727,33 @@ function startDataChangeBroadcast(): void {
  * window opened later reads `companion:status` for itself on mount.
  */
 function startCompanionStatusBroadcast(): void {
-  companion.onCompanionStatusChanged((status) => {
+  harness.onHarnessStatusChanged((status) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send("companion:statusChanged", status);
     }
   });
 }
 
-function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
+/**
+ * The agent of the open vault, pushed to every window when it changes.
+ *
+ * A vault open applies its binding without the renderer asking, so a studio that
+ * is already on screen has to hear that "the companion" is now a different
+ * agent — and the harness id can move while neither agent's status does. A vault
+ * switch itself rides the vault snapshot; this event is only about the agent.
+ */
+function startCompanionHarnessBroadcast(): void {
+  vaultAgents.onHarnessChanged((payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("companion:harnessChanged", payload);
+      }
+    }
+  });
+}
+
+function registerIpcHandlers() {
+  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
   ipcMain.handle("vault:open", async (_e, rootPath: string) => {
@@ -390,6 +799,9 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("domain:unarchive", (_e, slug: string) =>
     vault.domainUnarchive(slug),
   );
+  ipcMain.handle("domain:unlock", (_e, slug: string) =>
+    vault.domainUnlock(slug),
+  );
   ipcMain.handle("domain:delete", (_e, slug: string) =>
     vault.domainDelete(slug),
   );
@@ -397,6 +809,19 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     vault.domainSetActive(slug),
   );
   ipcMain.handle("domain:getActive", () => vault.domainGetActive());
+
+  // The onboarding interview. Three operator verbs, each one a vault write, so
+  // each is a mutating channel in data-revision.ts and every window repaints
+  // from the fresh snapshot — the welcome, continue and confirmation cards are
+  // gated on it, and a card that only appeared after a reload would be the
+  // first-run bug this whole slice exists to avoid.
+  ipcMain.handle("onboarding:start", () => vault.onboardingStart());
+  ipcMain.handle(
+    "onboarding:confirm",
+    (_e, options?: Parameters<typeof vault.onboardingConfirm>[0]) =>
+      vault.onboardingConfirm(options),
+  );
+  ipcMain.handle("onboarding:discard", () => vault.onboardingDiscard());
 
   // KAR-55 domain databases
   ipcMain.handle("db:list", (_e, domainSlug: string | null) => vault.dbList(domainSlug));
@@ -408,12 +833,23 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("db:upsertRow", (_e, slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) => vault.dbUpsertRow(slug, dbId, input));
   ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
   ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
-  // The composer's receipt. The original is written here, before the turn that
-  // scans it is ever posted, so the row always points at bytes on disk.
+  // The composer's receipt. The plus stores the picture as any other
+  // attachment; this press promotes it into the finance store, before the turn
+  // that scans it is ever posted, so the row always points at bytes on disk.
+  ipcMain.handle("receipt:promote", (_e, input: { id: string }) =>
+    vault.receiptPromoteAttachment(input),
+  );
+  // Whether the receipt store exists at all: the kit installed and its area
+  // live. The composer offers "Use as receipt" only on a true answer, and main
+  // is the one place that decides it.
+  ipcMain.handle("receipt:ready", () => vault.receiptReady());
+  // The composer's general attachment: any media or file. The original is
+  // written here, before the turn that names it is ever posted, so the agent
+  // always has bytes on disk to read.
   ipcMain.handle(
-    "receipt:attach",
+    "attachment:attach",
     (_e, input: { bytes: Uint8Array; mime: string; name: string }) =>
-      vault.receiptAttach(input),
+      vault.attachmentAttach(input),
   );
 
   // KAR-58 books export and restore
@@ -531,9 +967,26 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       vault.decisionCreate(input),
   );
   ipcMain.handle(
+    "decision:amend",
+    (
+      _e,
+      id: string,
+      input: Parameters<typeof vault.decisionAmend>[1],
+    ) => vault.decisionAmend(id, input),
+  );
+  ipcMain.handle(
     "decision:resolve",
     (_e, id: string, resolution: "approved" | "rejected") =>
       vault.decisionResolve(id, resolution),
+  );
+
+  // The operator's own decisions: logged, not proposed. A create is a write that
+  // changes History, so `data-revision.ts` names the channel above.
+  ipcMain.handle("manualDecision:list", () => vault.manualDecisionList());
+  ipcMain.handle(
+    "manualDecision:create",
+    (_e, input: Parameters<typeof vault.manualDecisionCreate>[0]) =>
+      vault.manualDecisionCreate(input),
   );
 
   ipcMain.handle("log:list", () => vault.logList());
@@ -554,6 +1007,16 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   );
   ipcMain.handle("signalChain:delete", (_e, id: string) =>
     vault.signalChainDelete(id),
+  );
+  // A capture's picture is a file in the vault; the renderer draws it from a
+  // blob URL and never names a path. The vault refuses anything it did not mint.
+  ipcMain.handle("signalChain:readImage", (_e, relPath: string) =>
+    vault.signalChainReadImage(relPath),
+  );
+  // A non-image capture file is read back only so the renderer can hand the
+  // operator a copy; the same containment rule as a picture applies.
+  ipcMain.handle("signalChain:readFile", (_e, relPath: string) =>
+    vault.signalChainReadFile(relPath),
   );
 
   ipcMain.handle("library:list", () => vault.libraryListCall());
@@ -682,20 +1145,121 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     vault.connectedAgentsDropInvite(typeof id === "string" ? id : ""),
   );
 
-  ipcMain.handle("companion:ensure", () => companion.companionEnsure());
-  ipcMain.handle("companion:status", () => companion.companionStatus());
+  ipcMain.handle("companion:ensure", () => harness.harnessEnsure());
+  ipcMain.handle("companion:status", () => harness.harnessStatus());
+  // Which companion the studio talks to. Two, not a plugin system: the picker
+  // is a choice between the built-in companion and the external sidekick.
+  ipcMain.handle("companion:harnesses", () => harness.harnessSummaries());
+  ipcMain.handle("companion:useHarness", (_e, id: string) =>
+    harness.useHarness(id === "hermes" ? "hermes" : "pi"),
+  );
+  /*
+   * The switch made from the studio itself. It answers at once instead of
+   * waiting for the target agent to come up: a switch that held the app still
+   * while a gateway restarted read as a reconnection. The target's ensure keeps
+   * running and reports on `companion:statusChanged`, tagged with its agent.
+   */
+  ipcMain.handle("companion:switchHarness", (_e, id: string) =>
+    harness.switchHarness(id === "hermes" ? "hermes" : "pi"),
+  );
+  // The agents in this vault. Which companion the open vault runs on, and which
+  // Hermes agent it has (if any), belongs to the vault; the setup screen keeps
+  // using the app-level picker above, because it runs before a vault exists.
+  ipcMain.handle("vaultAgents:get", () =>
+    vaultAgents.vaultAgentsState(harness.activeHarnessId()),
+  );
+  ipcMain.handle(
+    "vaultAgents:addHermes",
+    async (
+      _e,
+      input: Parameters<typeof vaultAgents.addHermesAgentToVault>[0],
+    ) => {
+      const res = await vaultAgents.addHermesAgentToVault(input);
+      // "Change agent" on a vault already running Hermes re-points the companion
+      // at the agent just bound. A vault that is on Pi still needs the explicit
+      // switch: adding an agent is not the same as using it.
+      if (
+        res.ok &&
+        res.value.hermesProfile &&
+        harness.activeHarnessId() === "hermes"
+      ) {
+        void companion
+          .companionUseProfile(res.value.hermesProfile)
+          .catch(() => undefined);
+      }
+      return res;
+    },
+  );
+  ipcMain.handle("vaultAgents:removeHermes", () =>
+    vaultAgents.removeHermesAgentFromVault(),
+  );
+  // The built-in companion's endpoint. The key is write-only: it goes to OS
+  // secure storage and never travels back to the renderer.
+  ipcMain.handle("companion:piSettings", async () => {
+    const settings = await readPiSettings();
+    return {
+      ...settings,
+      hasKey: await hasPiKey(),
+      keyPersisted: piKeyIsPersisted(),
+    };
+  });
+  ipcMain.handle(
+    "companion:piSettingsSave",
+    async (
+      _e,
+      input: {
+        baseUrl?: string;
+        model?: string;
+        providerName?: string;
+        apiKey?: string | null;
+      },
+    ) => {
+      const currentSettings = await readPiSettings();
+      await writePiSettings({
+        baseUrl:
+          typeof input?.baseUrl === "string" ? input.baseUrl : currentSettings.baseUrl,
+        model: typeof input?.model === "string" ? input.model : currentSettings.model,
+        providerName:
+          typeof input?.providerName === "string"
+            ? input.providerName
+            : currentSettings.providerName,
+      });
+      if (typeof input?.apiKey === "string") await writePiKey(input.apiKey);
+      return harness.harnessEnsure();
+    },
+  );
   // The profile picker: every installed Hermes profile, and the switch that
   // moves the companion onto one (or creates the app's own `lifequest`).
   ipcMain.handle("companion:profilesList", () => companion.companionProfilesList());
   ipcMain.handle("companion:useProfile", (_e, name: string) =>
     companion.companionUseProfile(typeof name === "string" ? name : ""),
   );
-  ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
+  ipcMain.handle("companion:sessionsList", (_e, options?: { includeArchived?: boolean }) =>
+    harness.harnessSessionsList({
+      includeArchived: options?.includeArchived === true,
+    }),
+  );
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
-    companion.companionSessionCreate(typeof title === "string" ? title : ""),
+    harness.harnessSessionCreate(typeof title === "string" ? title : ""),
   );
   ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
-    companion.companionSessionMessages(id),
+    harness.harnessSessionMessages(id),
+  );
+  // The gateway's own session-model lock: the composer's Save writes the chat's
+  // model here so a chat whose provider retired its model can be moved.
+  ipcMain.handle(
+    "companion:sessionModelSet",
+    (
+      _e,
+      payload: { sessionId?: unknown; model?: unknown; provider?: unknown },
+    ) =>
+      harness.harnessSessionModelSet(
+        typeof payload?.sessionId === "string" ? payload.sessionId : "",
+        {
+          model: typeof payload?.model === "string" ? payload.model : "",
+          provider: typeof payload?.provider === "string" ? payload.provider : "",
+        },
+      ),
   );
   ipcMain.handle(
     "companion:sessionPatch",
@@ -704,16 +1268,16 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       id: string,
       patch: { title?: string; pinned?: boolean; archived?: boolean },
     ) =>
-      companion.companionSessionPatch(
+      harness.harnessSessionPatch(
         typeof id === "string" ? id : "",
         patch && typeof patch === "object" ? patch : {},
       ),
   );
   ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
-    companion.companionSessionDelete(typeof id === "string" ? id : ""),
+    harness.harnessSessionDelete(typeof id === "string" ? id : ""),
   );
   ipcMain.handle("companion:modelOptions", () =>
-    companion.companionModelOptions(),
+    harness.harnessModelOptions(),
   );
   ipcMain.handle(
     "companion:chatStream",
@@ -727,6 +1291,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
         runtime?: CompanionRuntimeOverride | null;
         /** The pending receipt this turn carries, named by the path main minted. */
         receiptRelPath?: string | null;
+        /** The files this turn carries, named by the ids main minted. */
+        attachments?: Array<{
+          id: string;
+          kind: "image" | "video" | "audio" | "file";
+          name: string;
+          mime: string;
+          size: number;
+          relPath?: string;
+        }> | null;
       },
     ) => {
       return vault.companionChatStreamWithPack(
@@ -735,21 +1308,37 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
         payload.instructionsContext,
         (evt) => {
           if (!event.sender.isDestroyed()) {
-            event.sender.send("companion:stream", evt);
+            // Every frame names the chat it belongs to. The renderer keeps more
+            // than one turn in the air at a time, so the channel is a single
+            // wire carrying many conversations — an untagged delta would be
+            // folded into whichever thread happened to be open.
+            event.sender.send("companion:stream", {
+              sessionId: payload.sessionId,
+              event: evt,
+            });
           }
         },
         payload.runtime ?? null,
         payload.receiptRelPath ?? null,
+        payload.attachments ?? null,
       );
     },
   );
   ipcMain.handle(
     "companion:approval",
     (_e, payload: { runId: string; requestId: string; allow: boolean }) =>
-      companion.companionApproval(payload.runId, payload.requestId, payload.allow),
+      harness.harnessApproval(payload.runId, payload.requestId, payload.allow),
   );
   ipcMain.handle("companion:runStop", (_e, runId: string) =>
-    companion.companionRunStop(runId),
+    harness.harnessRunStop(runId),
+  );
+  // Steer the live run: the operator's words go into the turn that is already
+  // working, so a thought that arrives halfway through is not lost. It goes
+  // through the harness, because steering is a companion capability and not a
+  // Hermes one: the built-in companion steers its own agent, the external one
+  // asks its gateway.
+  ipcMain.handle("companion:runSteer", (_e, runId: string, text: string) =>
+    harness.harnessRunSteer(runId, text),
   );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),
@@ -761,6 +1350,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   // What the companion is told and what it has been given to read: the profile's
   // SOUL, the per-turn instructions this app builds, and the skill library.
   ipcMain.handle("companion:prompts", () => companion.companionPrompts());
+  // One picture a chat bubble wants to draw. The ref is whatever the transcript
+  // stored — a vault-relative path, or the gateway's absolute `native-inputs`
+  // hint — and the vault decides whether it may be read. The profile is named
+  // here because that retained copy lives under the ACTIVE profile, not the
+  // app's, and only the companion module can say which one is in force.
+  ipcMain.handle("chat:imageRead", async (_e, ref: string) =>
+    vault.chatImageRead(ref, await companion.activeProfileHome()),
+  );
 
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
@@ -793,6 +1390,40 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       vault.reviewGet(cadence, period),
   );
   ipcMain.handle(
+    "review:notebook",
+    (_e, cadence: Parameters<typeof vault.reviewNotebookGet>[0], period: string) =>
+      vault.reviewNotebookGet(cadence, period),
+  );
+  ipcMain.handle(
+    "review:pageGet",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageGet>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageGet>[2],
+    ) => vault.reviewPageGet(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageEnsure",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageEnsure>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageEnsure>[2],
+    ) => vault.reviewPageEnsure(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageWrite",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageWrite>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageWrite>[2],
+      body: string,
+      baseRev: number,
+    ) => vault.reviewPageWrite(cadence, period, scope, body, baseRev),
+  );
+  ipcMain.handle(
     "review:ensure",
     (
       _e,
@@ -808,7 +1439,8 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       cadence: Parameters<typeof vault.reviewWrite>[0],
       period: string,
       body: string,
-    ) => vault.reviewWrite(cadence, period, body),
+      baseRev?: number,
+    ) => vault.reviewWrite(cadence, period, body, baseRev),
   );
   ipcMain.handle(
     "review:markDone",
@@ -842,6 +1474,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("note:window", (_e, start: string, end: string) =>
     vault.dailyNoteWindow(start, end),
   );
+  // The companion's brief: the card reads it here, and the operator's only verb
+  // is dismissing one item. Writing is the companion's `set_companion_brief`
+  // tool and has no IPC path, so the renderer cannot author the brief.
+  ipcMain.handle("brief:get", () => vault.companionBriefGet());
+  ipcMain.handle(
+    "brief:dismiss",
+    (_e, itemId: string, reason: Parameters<typeof vault.companionBriefDismiss>[1]) =>
+      vault.companionBriefDismiss(itemId, reason),
+  );
   // Ideal State: any number of titled, freeform documents under Define.
   ipcMain.handle("ideal-state:list", () => vault.idealStateList());
   ipcMain.handle("ideal-state:get", (_e, id: string) =>
@@ -859,6 +1500,29 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   );
   ipcMain.handle("ideal-state:delete", (_e, id: string) =>
     vault.idealStateDelete(id),
+  );
+  // Define → Images: a vault-level picture library and the vision document
+  // written beside it. The renderer never names a path: it hands over bytes and
+  // gets back an id the vault minted.
+  ipcMain.handle("images:list", () => vault.imagesList());
+  ipcMain.handle(
+    "images:save",
+    (_e, input: Parameters<typeof vault.imagesSave>[0]) => vault.imagesSave(input),
+  );
+  ipcMain.handle("images:read", (_e, relPath: string) =>
+    vault.imagesRead(relPath),
+  );
+  ipcMain.handle(
+    "images:update",
+    (_e, id: string, patch: Parameters<typeof vault.imagesUpdate>[1]) =>
+      vault.imagesUpdate(id, patch),
+  );
+  ipcMain.handle("images:delete", (_e, id: string) => vault.imagesDelete(id));
+  ipcMain.handle("images:boardGet", () => vault.imagesBoardGet());
+  ipcMain.handle(
+    "images:boardSave",
+    (_e, input: Parameters<typeof vault.imagesBoardSave>[0]) =>
+      vault.imagesBoardSave(input),
   );
   // A cadence's standing review rules, and the snapshot pass the review page
   // runs before it asks the agent for anything.
@@ -892,6 +1556,39 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       period: string,
       scope: Parameters<typeof vault.planningEnsure>[2],
     ) => vault.planningEnsure(cadence, period, scope),
+  );
+  // Phase 6: the Analytics matrix (a read) and the metrics doors. Logging an
+  // event and creating a definition apply immediately; an edit or delete of an
+  // existing definition is filed through `metrics:propose` and applies only on
+  // approval. `metrics:define`, `metrics:logEvent` and `metrics:propose` are
+  // named in data-revision.ts so the vault's change signal fires and an open
+  // matrix/inbox reloads.
+  ipcMain.handle(
+    "analytics:matrix",
+    (_e, input: Parameters<typeof vault.analyticsMatrix>[0]) =>
+      vault.analyticsMatrix(input),
+  );
+  ipcMain.handle(
+    "metrics:events",
+    (_e, input: Parameters<typeof vault.metricEvents>[0]) => vault.metricEvents(input),
+  );
+  ipcMain.handle(
+    "metrics:logEvent",
+    (_e, input: Parameters<typeof vault.metricLogEvent>[0]) =>
+      vault.metricLogEvent(input),
+  );
+  ipcMain.handle(
+    "metrics:define",
+    (_e, input: Parameters<typeof vault.metricDefine>[0]) => vault.metricDefine(input),
+  );
+  ipcMain.handle(
+    "metrics:get",
+    (_e, input: Parameters<typeof vault.metricGet>[0]) => vault.metricGet(input),
+  );
+  ipcMain.handle(
+    "metrics:propose",
+    (_e, input: Parameters<typeof vault.metricPropose>[0]) =>
+      vault.metricPropose(input),
   );
   ipcMain.handle(
     "review:startOrResume",
@@ -942,11 +1639,17 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     await setDeadlineNotifiedOn(vaultId);
     const soonest = pressured[0];
     const days = daysUntilDeadline(soonest.deadline, today);
+    // Goal names come out of the vault (which the operator syncs and shares),
+    // and this text lands in OS chrome outside the app window and its CSP. A
+    // native notification showing "Vault corrupted — visit …" would be a
+    // trusted-looking phishing surface, so the fixed prefix is the app's and the
+    // vault-supplied name is bounded to one line of plain text.
+    const goalName = sanitizeNotificationText(soonest.name, 96);
     const body = days < 0
-      ? `${soonest.name} — overdue`
+      ? `LifeQuest: ${goalName} — overdue`
       : days === 0
-        ? `${soonest.name} — due today`
-        : `${soonest.name} — due in ${days} days`;
+        ? `LifeQuest: ${goalName} — due today`
+        : `LifeQuest: ${goalName} — due in ${days} days`;
     const title = pressured.length > 1
       ? `LifeQuest: ${pressured.length} deadlines approaching`
       : `LifeQuest: deadline pressure`;
@@ -957,31 +1660,76 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   });
 
   // —— auto-update ——————————————————————————————————————————————————————————
-  // `update:check` is the launch's one call; `force` is the operator asking by
-  // hand — the rail's build number, or Settings → Updates. Progress is pushed,
-  // not polled: a download reports itself as it arrives.
+  // `update:check` is the launch's call; `force` is the operator asking by hand
+  // (the rail's build number, or Settings → Updates). The watch's own reads do
+  // not come through here — they are main's clock, not the renderer's
+  // (`startUpdateWatch`). Progress is pushed, not polled: a download reports
+  // itself as it arrives.
   ipcMain.handle(
     "update:check",
     (_e, options?: { force?: boolean }) =>
       checkForUpdate({ force: options?.force === true }),
   );
-  ipcMain.handle("update:install", (event, asset: unknown) => {
+  ipcMain.handle("update:install", async (event, asset: unknown) => {
+    // `update:install` runs a downloaded executable, and its argument crosses the
+    // IPC boundary from the renderer. Main therefore decides twice: first that
+    // this is the install it already offered and would trust (`updater.ts`), and
+    // only then — with a URL no renderer chose — that a human confirmed it.
+    const checked = validateInstallRequest(asset);
+    if (!checked.ok) return checked;
     const win = windowFromEvent(event);
-    return installUpdate(asset, (progress) => {
+    if (!E2E_ACTIVE) {
+      const options: Electron.MessageBoxOptions = {
+        type: "question",
+        buttons: ["Install update", "Cancel"],
+        // Cancel is the default: Enter closes the dialog, not the vault.
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: "LifeQuest",
+        message: "Install this LifeQuest update?",
+        detail:
+          `${checked.asset.name}\n\n` +
+          "LifeQuest downloaded it from its GitHub release and will close so the " +
+          "installer can replace its files. Only do this if you asked for it.",
+      };
+      const parent = win && !win.isDestroyed() ? win : null;
+      const { response } = parent
+        ? await dialog.showMessageBox(parent, options)
+        : await dialog.showMessageBox(options);
+      if (response !== 0) {
+        return { ok: false as const, error: "The update was not installed." };
+      }
+    }
+    return installUpdate(checked.asset, (progress) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send("update:progress", progress);
       }
     });
   });
   ipcMain.handle("update:openReleasePage", async (_e, url: string) => {
-    // The renderer chooses the url, so it is checked here: this opens the
+    // The renderer chooses the url, so it is parsed here: this opens the
     // operator's own browser, and the only page the app has any business
-    // opening on its behalf is the release it just told them about.
-    if (!/^https:\/\/(www\.)?github\.com\//i.test(url)) {
+    // opening on its behalf is the release it just told them about. `new URL`,
+    // not a regex, because the regexes are where `github.com@evil.example` and
+    // protocol-relative tricks live.
+    let parsed: URL;
+    try {
+      parsed = new URL(String(url));
+    } catch {
+      return { ok: false as const, error: "Only GitHub release pages are opened." };
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      parsed.protocol !== "https:" ||
+      (host !== "github.com" && host !== "www.github.com") ||
+      parsed.username ||
+      parsed.password
+    ) {
       return { ok: false as const, error: "Only GitHub release pages are opened." };
     }
     try {
-      await shell.openExternal(url);
+      await shell.openExternal(parsed.href);
     } catch (error) {
       return {
         ok: false as const,
@@ -989,6 +1737,322 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       };
     }
     return { ok: true as const, value: true as const };
+  });
+
+  /**
+   * Theme files, v2.
+   *
+   * A theme is presentation, not life: it lives in the app profile's `themes/`
+   * directory, never in the vault, so it is not part of the repository the
+   * operator syncs or hands to the companion. The companion authors one by
+   * writing a file; this read is how the window learns it changed.
+   */
+  ipcMain.handle("theme:list", async () => {
+    const dir = path.join(app.getPath("userData"), "themes");
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      const entries = (await fs.promises.readdir(dir))
+        .filter((file) => file.endsWith(".json"))
+        .sort();
+      const files: Array<
+        | { file: string; raw: string; mtime: number }
+        | { file: string; error: string }
+      > = [];
+      for (const file of entries) {
+        const full = path.join(dir, file);
+        try {
+          const [raw, stat] = await Promise.all([
+            fs.promises.readFile(full, "utf8"),
+            fs.promises.stat(full),
+          ]);
+          files.push({ file, raw, mtime: stat.mtimeMs });
+        } catch (error) {
+          files.push({
+            file,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return { ok: true as const, value: files };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  // The store's rule, not a second copy of it: every writer and the state reader
+  // have to agree on what a theme file name is.
+  const safeThemeFile = (file: unknown): string | null =>
+    typeof file === "string" && THEME_FILE.test(file) ? file : null;
+
+  ipcMain.handle("theme:getState", () => readThemeState().then((value) => ({ ok: true as const, value })));
+
+  ipcMain.handle("theme:setKept", async (_event, file: unknown) => {
+    const safe = file === null ? null : safeThemeFile(file);
+    if (file !== null && safe === null) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    try {
+      await writeThemeState(safe);
+      return { ok: true as const, value: { keptFile: safe } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("theme:delete", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    try {
+      await fs.promises.rm(path.join(app.getPath("userData"), "themes", safe), { force: true });
+      const state = await readThemeState();
+      if (state.keptFile === safe) await writeThemeState(null);
+      return { ok: true as const, value: { deleted: true } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /*
+   * Read one theme file on the operator's behalf — the Customizations editor's load.
+   *
+   * The write side lives below and in `theme-store.ts`: the parser, the atomic
+   * write and the history snapshot are one path now, shared with the
+   * companion's `write_theme`, restore and import.
+   */
+  ipcMain.handle("theme:read", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    try {
+      const raw = await fs.promises.readFile(
+        path.join(app.getPath("userData"), "themes", safe),
+        "utf8",
+      );
+      return { ok: true as const, value: raw };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  /**
+   * Write one theme file, and answer for the versions around it.
+   *
+   * The write itself now lives in `theme-store.ts`, the one module every writer
+   * goes through: it validates, keeps the bytes it replaces as history, and
+   * renames atomically. This handler keeps only what belongs to IPC — the
+   * argument types, the window's immediate notice, and the same `Result`
+   * envelope the renderer already handles. The notice matters because the
+   * watcher is for files that appear from outside, not for this window's own
+   * writes: waiting for the fs event would make Save feel one beat slow.
+   */
+  ipcMain.handle("theme:write", async (event, file: unknown, raw: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    if (typeof raw !== "string") {
+      return { ok: false as const, error: "theme source must be a JSON string" };
+    }
+    const written = await saveThemeFile(safe, raw);
+    if (!written.ok) return written;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: { file: written.file } };
+  });
+
+  /**
+   * The saved versions behind one file's Save button.
+   *
+   * Empty is a valid answer, not an error: a theme that has never been replaced
+   * has no history, and the editor says so in its own empty state.
+   */
+  ipcMain.handle("theme:history", async (_event, file: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    try {
+      return {
+        ok: true as const,
+        value: { file: safe, versions: await listThemeHistory(safe) },
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  /**
+   * Put a saved version back.
+   *
+   * The id is allow-listed before it reaches the store, because it names a path
+   * segment. Restoring is a write, so the window hears `theme:changed` and the
+   * bytes it replaced become the next version; `label` is read back from the
+   * snapshot so the caller can say what was restored without re-parsing it.
+   */
+  ipcMain.handle("theme:restore", async (event, file: unknown, id: unknown) => {
+    const safe = safeThemeFile(file);
+    if (!safe) {
+      return { ok: false as const, error: "theme file must be a lowercase .json name" };
+    }
+    if (!isThemeVersionId(id)) {
+      return { ok: false as const, error: "theme version id is not valid" };
+    }
+    // Read the label before the restore, not after: the restore itself adds a
+    // version and prunes the oldest, so the snapshot being restored can be the
+    // one the retention window drops. The bytes are read once here for the
+    // caller's sentence; the store reads them again to validate and write.
+    let label = safe.replace(/\.json$/, "");
+    try {
+      const raw = await readThemeSnapshot(safe, id);
+      if (raw !== null) {
+        const json = JSON.parse(raw) as { label?: unknown };
+        if (typeof json.label === "string" && json.label.trim()) label = json.label;
+      }
+    } catch {
+      // The restore below will refuse the id if its bytes are not readable.
+    }
+    const restored = await restoreThemeVersion(safe, id);
+    if (!restored.ok) return restored;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: { file: restored.file, label } };
+  });
+
+  /**
+   * Copy a theme file from somewhere on disk into the profile.
+   *
+   * In the product the path comes from the operator's own dialog, so the
+   * renderer never supplies one — a renderer that could name the path could
+   * read any file the app can. The rig cannot drive a native dialog and gets
+   * the queued fixture instead, taken only when the whole seam is live. A
+   * cancelled dialog is `{ ok: true, value: null }`: backing out is not a
+   * failure. The copy is not kept automatically — the watcher previews it like
+   * any other write, and the operator's Keep is still the consent.
+   */
+  ipcMain.handle("theme:import", async (event) => {
+    let sourcePath: string | null = null;
+    if (E2E_ACTIVE && E2E.themeImportSources?.length) {
+      sourcePath = E2E.themeImportSources.shift() ?? null;
+    } else {
+      const win = windowFromEvent(event);
+      const options: Electron.OpenDialogOptions = {
+        title: "Import theme",
+        filters: [{ name: "LifeQuest theme", extensions: ["json"] }],
+        properties: ["openFile"],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: true as const, value: null };
+      }
+      sourcePath = result.filePaths[0] ?? null;
+    }
+    if (!sourcePath) return { ok: true as const, value: null };
+    const imported = await importThemeFile(sourcePath);
+    if (!imported.ok) return imported;
+    BrowserWindow.fromWebContents(event.sender)?.webContents.send("theme:changed");
+    return { ok: true as const, value: imported.value };
+  });
+
+  /**
+   * Choose a background picture and copy it into the profile.
+   *
+   * The picture is the operator's own, so the path comes from their dialog and
+   * never from the renderer — a renderer that could name the path could read any
+   * file the app can. The rig gets a queued fixture instead, taken only when the
+   * whole seam is live. Cancelling is `{ ok: true, value: null }`: backing out is
+   * not a failure. What comes back is the *stored* file name, which is what a
+   * theme or the operator's override names from then on.
+   */
+  ipcMain.handle("theme:pickBackground", async (event) => {
+    let sourcePath: string | null = null;
+    if (E2E_ACTIVE && E2E.themeBackgroundSources) {
+      // A defined queue is the rig's stand-in for the dialog for the whole run:
+      // once it is empty the answer is a cancel, never a native dialog a
+      // headless rig could not see. (The import queue above opens the dialog
+      // again instead, because one import per run is all that rig needs.)
+      sourcePath = E2E.themeBackgroundSources.shift() ?? null;
+    } else {
+      const win = windowFromEvent(event);
+      const options: Electron.OpenDialogOptions = {
+        title: "Choose a background picture",
+        filters: [
+          {
+            name: "Pictures",
+            extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+          },
+        ],
+        properties: ["openFile"],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: true as const, value: null };
+      }
+      sourcePath = result.filePaths[0] ?? null;
+    }
+    if (!sourcePath) return { ok: true as const, value: null };
+    const stored = await storeBackground(sourcePath);
+    if (!stored.ok) return stored;
+    return { ok: true as const, value: stored.value };
+  });
+
+  /**
+   * One stored picture's bytes, for the page to draw.
+   *
+   * The renderer supplies only the stored file name; `readBackground` proves it
+   * is one of ours and re-checks the bytes. A read failure is quiet data — the
+   * drawn preset keeps painting — so the refusal is passed through as the
+   * module's one sentence rather than turned into an error the page would show.
+   */
+  ipcMain.handle("theme:readBackground", async (_event, file: unknown) => {
+    if (typeof file !== "string") {
+      return { ok: false as const, error: "That picture could not be read." };
+    }
+    const picture = await readBackground(file);
+    if (!picture.ok) return picture;
+    return {
+      ok: true as const,
+      value: { file, mime: picture.value.mime, bytes: picture.value.bytes },
+    };
+  });
+
+  ipcMain.handle("theme:openFolder", async () => {
+    const dir = path.join(app.getPath("userData"), "themes");
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      const failure = await shell.openPath(dir);
+      return failure ? { ok: false as const, error: failure } : { ok: true as const, value: true };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("theme:export", async (_event, theme: unknown) => {
+    const parsed = parseThemeFile(theme);
+    if (!parsed.ok) return { ok: false as const, error: parsed.error };
+    const result = await dialog.showSaveDialog({
+      title: "Export theme",
+      defaultPath: path.join(app.getPath("documents"), `${parsed.theme.name}.json`),
+      filters: [{ name: "LifeQuest theme", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: true as const, value: null };
+    try {
+      await fs.promises.writeFile(result.filePath, `${JSON.stringify(parsed.theme, null, 2)}\n`);
+      return { ok: true as const, value: { path: result.filePath } };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle("window:getChrome", () => ({
@@ -1029,6 +2093,37 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
 }
 
 /**
+ * Watch the profile's `themes/` directory and tell the window when it moves.
+ *
+ * Hot reload is the whole authoring loop: the companion writes a theme file and
+ * the window wearing it repaints, without a restart and without an IPC call from
+ * the renderer. `fs.watch` is deliberately unconditional — the renderer reads
+ * the directory itself when it hears this, so a spurious event costs one read.
+ */
+let themeWatcher: fs.FSWatcher | null = null;
+
+function startThemeWatcher(win: BrowserWindow): void {
+  if (themeWatcher) return;
+  const dir = path.join(app.getPath("userData"), "themes");
+  void fs.promises
+    .mkdir(dir, { recursive: true })
+    .then(() => {
+      try {
+        themeWatcher = fs.watch(dir, { persistent: false }, () => {
+          if (win.isDestroyed()) return;
+          win.webContents.send("theme:changed");
+        });
+      } catch {
+        // A missing watch only costs hot reload; the next launch reads the
+        // directory anyway.
+      }
+    })
+    .catch(() => {
+      // Same: an unwritable profile is a bigger problem than a theme.
+    });
+}
+
+/**
  * The app's one window, published for the e2e seam.
  *
  * `bootForE2e` must hand back the window the PRODUCT created, not a second one:
@@ -1038,6 +2133,138 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
  * handlers are registered once behind this latch.
  */
 let ipcRegistered = false;
+
+/** The kept theme's file name, in the app profile; the tools read it too. */
+const themeStateFile = (): string => path.join(app.getPath("userData"), "theme-state.json");
+
+/**
+ * The gallery names that existed when the legacy `showcaseSeeded` boolean was
+ * written. A profile carrying that boolean is handed exactly these names by the
+ * read below, so the migration cannot invent a names list the profile never saw.
+ */
+const LEGACY_SHOWCASE_NAMES: readonly string[] = [
+  "showcase-solar-system",
+  "showcase-helios",
+];
+
+/**
+ * What the profile remembers about themes: which file is kept, and which
+ * bundled gallery names have been seeded into it.
+ *
+ * `seededShowcase` holds theme NAMES (`showcase-solar-system`), not file names:
+ * the name a removal is remembered against is the one `SHOWCASE_THEMES` carries.
+ * It replaced the old `showcaseSeeded: true` boolean, which could only remember
+ * "the first gallery happened" and so could never hand an existing profile the
+ * three newer examples without re-adding files the operator had deleted.
+ */
+type ThemeStateFile = {
+  keptFile: string | null;
+  seededShowcase: string[];
+};
+
+/**
+ * The seeded names a state file claims, filtered to ones that could be ours.
+ *
+ * A trailing `.json` is tolerated and stripped: the stored shape is names, but
+ * a hand-edited file (or a future write) may spell one as a file name, and both
+ * spellings mean the same gallery entry. Every entry then has to pass the same
+ * theme-file rule as a real file, so a corrupt state file can never make the
+ * seeder believe it already handed over a theme that is not in the gallery.
+ */
+const seededShowcaseNames = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const names = value
+    .filter((name): name is string => typeof name === "string")
+    .map((name) => name.trim().replace(/\.json$/i, ""))
+    .filter((name) => THEME_FILE.test(`${name}.json`));
+  return [...new Set(names)];
+};
+
+const readThemeStateFile = async (): Promise<ThemeStateFile> => {
+  try {
+    const raw = JSON.parse(await fs.promises.readFile(themeStateFile(), "utf8"));
+    const kept = raw && typeof raw.keptFile === "string" ? raw.keptFile : null;
+    // The array shape wins when it exists; only a file written before it (the
+    // legacy boolean) falls back to the two names that existed then.
+    const seededShowcase = Array.isArray(raw?.seededShowcase)
+      ? seededShowcaseNames(raw.seededShowcase)
+      : raw?.showcaseSeeded === true
+        ? [...LEGACY_SHOWCASE_NAMES]
+        : [];
+    return {
+      keptFile: kept && THEME_FILE.test(kept) ? kept : null,
+      seededShowcase,
+    };
+  } catch {
+    return { keptFile: null, seededShowcase: [] };
+  }
+};
+const readThemeState = async (): Promise<{ keptFile: string | null }> => {
+  const { keptFile } = await readThemeStateFile();
+  return { keptFile };
+};
+const writeThemeStateFile = async (state: ThemeStateFile): Promise<void> => {
+  const next = {
+    keptFile: state.keptFile,
+    // An empty list means this profile has never seeded anything, which is the
+    // same fact as an absent key; omitting it keeps such a file exactly as
+    // small as the old `{ keptFile }` one.
+    ...(state.seededShowcase.length > 0
+      ? { seededShowcase: state.seededShowcase }
+      : {}),
+  };
+  await fs.promises.writeFile(`${themeStateFile()}.tmp`, `${JSON.stringify(next, null, 2)}\n`);
+  await fs.promises.rename(`${themeStateFile()}.tmp`, themeStateFile());
+};
+const writeThemeState = async (keptFile: string | null): Promise<void> => {
+  const previous = await readThemeStateFile();
+  // Keeping a theme must not forget the gallery: the list is how a removed
+  // bundled theme stays removed across every later launch.
+  await writeThemeStateFile({ keptFile, seededShowcase: previous.seededShowcase });
+};
+
+/**
+ * Copy the bundled gallery into the profile's themes directory, one name at a
+ * time, so the operator can try the whole surface without an agent.
+ *
+ * A name is written only when the state does not record it, and `wx` means an
+ * existing file is never overwritten: if the operator has already authored or
+ * edited a file of that name, it is theirs and stays. The name is recorded even
+ * when the file already existed — the gallery copy was not handed over, and
+ * because a recorded name is NEVER re-added, a later Remove stays final.
+ *
+ * The list is persisted once, at the end: a boot that seeds three new examples
+ * costs one state write, and a failure half-way leaves the list unwritten so
+ * the next launch retries the whole batch (EEXIST is fine for the files that
+ * did land). A failure here is not fatal — a missing gallery is a lost example,
+ * not the studio — but it is said out loud in the main log.
+ */
+const seedShowcaseThemes = async (): Promise<void> => {
+  const dir = path.join(app.getPath("userData"), "themes");
+  const state = await readThemeStateFile();
+  const seeded = [...state.seededShowcase];
+  const pending = SHOWCASE_THEMES.filter((theme) => !seeded.includes(theme.name));
+  if (pending.length === 0) return;
+  try {
+    await fs.promises.mkdir(dir, { recursive: true });
+    for (const theme of pending) {
+      const file = `${theme.name}.json`;
+      try {
+        await fs.promises.writeFile(
+          path.join(dir, file),
+          `${JSON.stringify(theme, null, 2)}\n`,
+          { flag: "wx" },
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      seeded.push(theme.name);
+    }
+    await writeThemeStateFile({ keptFile: state.keptFile, seededShowcase: seeded });
+  } catch (error) {
+    console.error("showcase seed failed:", error);
+  }
+};
 let windowReady: Promise<BrowserWindow> | null = null;
 
 /**
@@ -1054,15 +2281,39 @@ export async function bootForE2e(): Promise<BrowserWindow> {
     registerIpcHandlers();
   }
   if (windowReady) return windowReady;
-  windowReady = createWindow();
+  windowReady = (async () => {
+    await harness.loadHarnessSelection();
+    // Before the first window, so the theme list a fresh profile opens already
+    // holds the bundled showcase. It never wears it: data, not an act.
+    await seedShowcaseThemes();
+    return createWindow();
+  })();
   return windowReady;
+}
+
+/**
+ * The window icon for the runs that read it off the window instead of off a
+ * packaged executable: development, and Linux in general.
+ *
+ * A packaged Windows build is the exception twice over — the taskbar, the
+ * shortcuts and the installer take the icon electron-builder stamped into the
+ * executable from `build/icon.ico`, and `build/` is not inside app.asar. So this
+ * resolves the committed master PNG from the source tree and only while the app
+ * is unpackaged; a packaged window does not ask for it.
+ */
+function unpackagedWindowIcon(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const icon = path.join(__dirname, "..", "build", "icon.png");
+  return fs.existsSync(icon) ? icon : undefined;
 }
 
 async function createWindow() {
   const overlay = usesTitleBarOverlay();
+  const windowIcon = unpackagedWindowIcon();
   const win = new BrowserWindow({    width: 1280,
     height: 800,
     titleBarStyle: "hidden",
+    ...(windowIcon ? { icon: windowIcon } : {}),
     ...(overlay
       ? {
           titleBarOverlay: {
@@ -1076,13 +2327,26 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // A packaged build has no DevTools: it is the whole preload bridge in a
+      // REPL, and nothing in production needs it. Development and e2e keep it.
+      devTools: isDev,
     },
   });
+
+  // The one window main owns. The packaged IPC allowlist and the navigation
+  // guards both key off it (rig-created harness windows are deliberately left
+  // alone; see `installContentGuards` and `isTrustedIpcSender`).
+  productWindow = win;
+  win.on("closed", () => {
+    if (productWindow === win) productWindow = null;
+  });
+  startThemeWatcher(win);
 
   if (process.platform !== "darwin") {
     win.removeMenu();
   }
   registerWindowAccelerators(win);
+  installContentGuards(win);
   // Hidden only for an e2e rig that asked for it, and applied after Electron
   // has already shown the window during load (see the E2E block at the top).
   if (!E2E.showWindow) {
@@ -1105,7 +2369,13 @@ async function createWindow() {
   // back to the window is the moment to re-read the numbers — the same thing a
   // spreadsheet does when you return to it — and one repaint of the visible
   // cards per focus is a price worth paying for never showing a stale figure.
+  //
+  // The inbox's cached list is a reader of that signal like any other, and
+  // focus is also the moment a Decision file changed by a sync client or a hand
+  // repair becomes visible: it is invalidated here for the same reason, and the
+  // read that follows draws the vault as it is now.
   win.on("focus", () => {
+    invalidateDecisionList();
     noteDataChanged();
     void (async () => {
       try {
@@ -1121,10 +2391,9 @@ async function createWindow() {
   });
 
   if (isDev) {
-    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
-    await win.loadURL(devUrl);
+    await win.loadURL(DEV_SERVER_URL);
   } else {
-    await win.loadFile(path.join(__dirname, "../dist/index.html"));
+    await win.loadFile(APP_INDEX_PATH);
   }
   return win;
 }
@@ -1174,8 +2443,70 @@ function startFxRefreshLoop(): void {
 }
 
 /** Exported for the e2e seam: a rig should not wait an hour to see a refresh. */
+/**
+ * E2E seam: the companion's MCP door, so a rig can exercise the real tool path
+ * (transport, schema advertising, dispatch) instead of calling a tool body.
+ *
+ * Same shape as `fxRefreshForE2e`: exported only for the rigs, and only after
+ * `bootForE2e` has opened a vault — before that the token has no vault to pair.
+ */
+export async function e2eCompanionDoor(): Promise<{
+  url: string;
+  token: string;
+} | null> {
+  const url = vault.getMcpUrl();
+  const token = await vault.ensureCurrentCompanionToken();
+  if (!url || !token.ok) return null;
+  return { url, token: token.value };
+}
+
 export async function fxRefreshForE2e(): Promise<void> {
   await refreshFxNow();
+}
+
+/**
+ * Tell whatever is open that the feed answered on the watch's clock.
+ *
+ * The renderer gets every answer the watch reports — a release to show, or the
+ * news that a release is gone — over one channel, so the dock's badge and its
+ * dialog always draw the feed's latest answer rather than two views that can
+ * disagree. The OS notification is the second half, and it fires only when the
+ * window is not focused: an operator looking at the studio already sees the
+ * build number glowing, and two notifications for one release would be one too
+ * many.
+ *
+ * The e2e seam skips it. A hidden rig window is never focused, so without this
+ * the suite would fire a real desktop notification on the machine running it —
+ * a side effect no rig asked for, and nothing a hidden window can screenshot.
+ */
+function announceUpdateNews(news: UpdateWatchNews): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("update:decision", news);
+  }
+  if (news.state !== "available" || E2E_ACTIVE) return;
+  const win = productWindow;
+  if (win && !win.isDestroyed() && win.isFocused()) return;
+  if (!Notification.isSupported()) return;
+  try {
+    const notification = new Notification({
+      title: `LifeQuest ${news.latest} is available`,
+      body: "Open LifeQuest to download and install it.",
+    });
+    // Clicking the notification is the operator answering it: bring the window
+    // that carries the offer to the front rather than leaving them to find it in
+    // the taskbar. The glowing build number is already waiting there.
+    notification.on("click", () => {
+      const target = productWindow;
+      if (!target || target.isDestroyed()) return;
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+    });
+    notification.show();
+  } catch {
+    // A notification is a courtesy; the dock's glowing build number carries the
+    // news whether or not the OS accepts it.
+  }
 }
 
 app.whenReady().then(() => {
@@ -1183,6 +2514,23 @@ app.whenReady().then(() => {
     ipcRegistered = true;
     registerIpcHandlers();
   }
+  // Permissions are denied by default, for every session that might load a
+  // document. The app asks the renderer for nothing — no camera, microphone,
+  // geolocation, notifications, USB, serial, screen capture or clipboard read:
+  // the only notification is constructed in main, and file access goes through
+  // the bridge. Electron's default is to grant whatever a page asks for, which
+  // means an attacker page in a child window (or any future navigated document)
+  // would silently get a camera. One exception is deliberate: the Copy buttons
+  // use `navigator.clipboard.writeText`, so *sanitized clipboard write* stays
+  // allowed; it can overwrite the clipboard, but never read it.
+  const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler(
+    (_contents, permission, callback) =>
+      callback(ALLOWED_PERMISSIONS.has(permission)),
+  );
+  session.defaultSession.setPermissionCheckHandler(
+    (_contents, permission) => ALLOWED_PERMISSIONS.has(permission),
+  );
   // Before any window exists, so the first write of the session already has
   // somewhere to go. Subscribing once is enough: the broadcast walks whatever
   // windows are open at the moment a change is noted, so a window opened later
@@ -1192,19 +2540,37 @@ app.whenReady().then(() => {
   // ~0.6s after the ready status, and a window that opened first must still
   // hear it.
   startCompanionStatusBroadcast();
+  // Armed beside it, for the same reason: a vault open applies its agent
+  // binding without the renderer asking, and a studio already on screen must
+  // hear that the agent changed.
+  startCompanionHarnessBroadcast();
   // Published before it is awaited, so a rig that calls `bootForE2e` while the
   // product's own boot is still loading joins that window instead of opening a
   // second one.
-  windowReady = createWindow();
+  // The choice has to be hydrated before the first window asks for a status:
+  // the renderer calls companion:ensure on mount, and a lazy probe there would
+  // race the answer.
+  windowReady = (async () => {
+    await harness.loadHarnessSelection();
+    // Before the first window, so the theme list a fresh profile opens already
+    // holds the bundled showcase. It never wears it: data, not an act.
+    await seedShowcaseThemes();
+    return createWindow();
+  })();
   void windowReady;
   // The rate is read on a clock, not on a draw, so it is armed once here rather
   // than wherever a card happens to be rendered.
   startFxRefreshLoop();
+  // The feed is read on a clock as well as at launch: a release published while
+  // the studio is open has to reach the operator without a click. Armed beside
+  // the other loops, once, on the product's own cadence — the rig moves the
+  // interval through the seam, and only the rig does.
+  startUpdateWatch(announceUpdateNews, { intervalMs: E2E.updatePollMs });
 });
 
 app.on("window-all-closed", () => {
-  // The door must not outlive the window. On Windows quit() would stop it in
-  // before-quit anyway; on macOS the app stays alive with no window, and a
+  // The phone door must not outlive the window. On Windows quit() would stop it
+  // in before-quit anyway; on macOS the app stays alive with no window, and a
   // listener nobody can see is exactly the state this avoids.
   void phone.stopPhone();
   if (process.platform !== "darwin") app.quit();
@@ -1212,8 +2578,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   event.preventDefault();
-  void companion
-    .companionShutdown()
+  void harness
+    .shutdownHarnesses()
     .finally(() => stopMcp())
     .finally(() => phone.stopPhone())
     .finally(() => app.exit(0));

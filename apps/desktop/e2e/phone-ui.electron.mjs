@@ -110,6 +110,9 @@ async function makeMetricVault(mod) {
   fs.mkdirSync(root, { recursive: true });
   const created = await mod.createVault(root, "Phone rig");
   if (!created.ok) throw new Error(`createVault: ${created.error}`);
+  // Areas seed locked; the kit lives in the Finance area, so open it first.
+  const unlocked = await mod.unlockDomain(root, mod.FINANCE_DOMAIN_SLUG);
+  if (!unlocked.ok) throw new Error(`unlockDomain: ${unlocked.error}`);
   const installed = await mod.installFinanceKit(root, mod.USER_ACTOR);
   if (!installed.ok || !installed.value.applied) throw new Error("installFinanceKit did not apply");
   const account = await mod.upsertRow(root, mod.FINANCE_DOMAIN_SLUG, mod.FINANCE_DB_IDS.accounts, {
@@ -438,16 +441,30 @@ async function settingsLeg() {
 
   try {
     win.webContents.setBackgroundThrottling(false);
+    win.webContents.on("console-message", (_event, level, message) => {
+      progress(`renderer console[${level}]: ${String(message).slice(0, 300)}`);
+    });
+    win.webContents.on("render-process-gone", (_event, details) => {
+      progress(`render-process-gone: ${JSON.stringify(details)}`);
+    });
     await win.loadURL(`${DEV_URL}/e2e/phone-settings.html?rig=${rig}`);
-    await sample(win, "window.phoneSettingsHarnessReady");
+    progress("settings: page loaded");
+    await Promise.race([
+      sample(win, "window.phoneSettingsHarnessReady"),
+      new Promise((resolve) => setTimeout(resolve, 8000)),
+    ]);
+    progress("settings: readiness race done");
 
     // 1 — the shipped section, with its door and its controls.
     const landing = await sample(
       win,
       `(() => ({
         title: document.querySelector(".settings-panel__title")?.textContent ?? null,
-        toggle: Boolean(document.querySelector('input[aria-label="Phone access"]')),
-        toggleChecked: document.querySelector('input[aria-label="Phone access"]')?.checked ?? null,
+        toggle: Boolean(document.querySelector('[role="switch"][aria-label="Phone access"]')),
+        toggleChecked:
+          document
+            .querySelector('[role="switch"][aria-label="Phone access"]')
+            ?.getAttribute("aria-checked") ?? null,
         door: document.querySelector(".settings-field p[role=status]")?.textContent?.trim() ?? null,
         address: document.querySelector('input[aria-label="Phone address"]')?.value ?? null,
       }))()`,
@@ -456,27 +473,27 @@ async function settingsLeg() {
       "settings shows the phone door",
       landing.title === "Phone" &&
         landing.toggle === true &&
-        landing.toggleChecked === true &&
+        landing.toggleChecked === "true" &&
         landing.door === "http://127.0.0.1:8647" &&
         landing.address === "https://studio.example.ts.net",
       JSON.stringify(landing),
     );
 
     // 2 — the toggle really turns it off and on.
-    await click(win, 'input[aria-label="Phone access"]');
+    await click(win, '[role="switch"][aria-label="Phone access"]');
     await waitFor(
       win,
-      `document.querySelector('input[aria-label="Phone access"]')?.checked === false`,
+      `document.querySelector('[role="switch"][aria-label="Phone access"]')?.getAttribute("aria-checked") === "false"`,
       "the toggle to turn phone access off",
     );
     const offCopy = await sample(
       win,
       `document.body.textContent.includes("Turn phone access on to pair a phone")`,
     );
-    await click(win, 'input[aria-label="Phone access"]');
+    await click(win, '[role="switch"][aria-label="Phone access"]');
     await waitFor(
       win,
-      `document.querySelector('input[aria-label="Phone access"]')?.checked === true`,
+      `document.querySelector('[role="switch"][aria-label="Phone access"]')?.getAttribute("aria-checked") === "true"`,
       "the toggle to turn phone access back on",
     );
     check(

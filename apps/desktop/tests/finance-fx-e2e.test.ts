@@ -16,6 +16,7 @@ import {
   refreshFxRate,
   runViewBlocks,
   setFxRateSource,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -186,6 +187,12 @@ describe("finance fx rate e2e", () => {
 
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
     const kit = await applyFinanceKitInstall(vaultRoot);
     assert.equal(kit.ok, true, `applyFinanceKitInstall failed: ${kit.ok ? "" : kit.error}`);
 
@@ -211,7 +218,7 @@ describe("finance fx rate e2e", () => {
       checks.pointed = pointed;
       assert.equal(pointed.ok, true, `setFxRateSource failed: ${pointed.ok ? "" : pointed.error}`);
 
-      const read = await refreshFxRate(vaultRoot);
+      const read = await refreshFxRate(vaultRoot, { allowPrivateNetwork: true });
       checks.refresh = read;
       assert.equal(read.ok, true, `refreshFxRate failed: ${read.ok ? "" : read.error}`);
       const value = (read as { ok: true; value: { rate: number | null; asOf: string | null; refreshed: boolean } }).value;
@@ -305,7 +312,10 @@ describe("finance fx rate e2e", () => {
           ACTOR,
         );
         assert.equal(set.ok, true, `pointing at ${route} failed: ${set.ok ? "" : set.error}`);
-        const res = await refreshFxRate(vaultRoot, { timeoutMs: route === "/slow" ? 800 : 8_000 });
+        const res = await refreshFxRate(vaultRoot, {
+          timeoutMs: route === "/slow" ? 800 : 8_000,
+          allowPrivateNetwork: true,
+        });
         assert.equal(res.ok, true, `a failed refresh must still answer, got ${res.ok ? "" : res.error}`);
         const v = (res as { ok: true; value: { rate: number | null; refreshed: boolean } }).value;
         assert.equal(v.refreshed, false, `${route} was believed`);
@@ -337,7 +347,7 @@ describe("finance fx rate e2e", () => {
         ACTOR,
       );
       assert.equal(pairsSet.ok, true, `pointing at /pairs failed: ${pairsSet.ok ? "" : pairsSet.error}`);
-      const pairs = await refreshFxRate(vaultRoot);
+      const pairs = await refreshFxRate(vaultRoot, { allowPrivateNetwork: true });
       const pairsValue = (pairs as { ok: true; value: { rate: number | null; asOf: string | null; refreshed: boolean } }).value;
       checks.pairs = pairsValue;
       assert.equal(pairsValue.refreshed, true, "a list-of-pairs source was not read");
@@ -423,6 +433,8 @@ describe("finance fx rate e2e", () => {
     const vaultRoot = path.join(workDir, "vault");
     try {
       await createVault(vaultRoot, "E2E");
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(unlockFinancial.ok, true, "unlockDomain(financial) failed");
       await applyFinanceKitInstall(vaultRoot);
       const res = await refreshFxRate(vaultRoot);
       assert.equal(res.ok, true, "the default source could not be read into a vault");

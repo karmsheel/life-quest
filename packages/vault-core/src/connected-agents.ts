@@ -9,6 +9,7 @@ import { vaultPaths } from "./paths.ts";
 import { createDecision } from "./decisions.ts";
 import { listDomains } from "./domains.ts";
 import type { Result } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 export type ConnectedAgentStatus = "pending" | "active" | "rejected" | "revoked";
 
@@ -284,7 +285,7 @@ export async function updateConnectedAgent(
         const domains = await listDomains(rootPath);
         if (!domains.ok) return { ok: false, error: domains.error };
         for (const slug of unique) {
-          const live = domains.value.some((d) => d.slug === slug && !d.meta.archivedAt);
+          const live = domains.value.some((d) => d.slug === slug && isLiveAreaMeta(d.meta));
           // A slug the row already carries is exempt, archived or not.
           // Archiving a domain must not make the row uneditable: the
           // operator still has to be able to narrow the grant, and the

@@ -100,7 +100,7 @@ function runDriver(): Promise<number> {
 }
 
 describe("welcome pane (the boot surfaces' frame)", () => {
-  it("runs flush to the window and keeps its pane gap only under the titlebar", async (t) => {
+  it("runs flush to the window and meets the titlebar strip directly", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -113,7 +113,7 @@ describe("welcome pane (the boot surfaces' frame)", () => {
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
-    const { frame, titlebarHeight } = report.tokens;
+    const { titlebarHeight } = report.tokens;
     const { viewport, pane } = report.state;
 
     assert.deepEqual(report.failures, []);
@@ -140,8 +140,8 @@ describe("welcome pane (the boot surfaces' frame)", () => {
     );
     assert.equal(
       pane.box.top,
-      titlebarHeight + frame,
-      `the strip's hairline is not one pane gap under it (${pane.box.top}px vs ${titlebarHeight + frame}px)`,
+      titlebarHeight,
+      `the pane does not meet the strip directly (${pane.box.top}px vs ${titlebarHeight}px)`,
     );
 
     // A radius on a box flush with the window's edge leaves a notch the canvas

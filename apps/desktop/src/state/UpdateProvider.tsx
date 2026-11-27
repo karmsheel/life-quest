@@ -1,7 +1,15 @@
 /**
- * The app's own view of the update feed: one check at launch, and the operator's
- * manual check from the rail's build number (or Settings → Updates) whenever they
- * ask for one.
+ * The app's own view of the update feed: the launch's check, the watch main runs
+ * on a clock, and the operator's manual check from the rail's build number (or
+ * Settings → Updates) whenever they ask for one.
+ *
+ * A release published while the studio is open used to stay invisible until the
+ * operator clicked the version number — and they had no reason to click it,
+ * because nothing said there was news. Main now reads the feed every
+ * `UPDATE_POLL_MS` and pushes what it finds over `onUpdateDecision`; this provider
+ * turns that push into a state change, so the rail's build number glows without
+ * the operator asking. There is no in-window notice card: the glow, its caption
+ * and the build number's own dialog are the whole surface.
  *
  * This is a system-in-isolation rig's worth of work done in the renderer, so the
  * ways it can fail are written down before the code:
@@ -22,6 +30,13 @@
  *     request joins the first. Two answers racing would let an older one land
  *     last and overwrite a newer one, and the operator's click must not cost a
  *     second read of the feed for an answer that is already on its way.
+ *  7. A watch push landing while the launch's check is still in flight — the
+ *     watch's answer is the newer fact, so the older check must not overwrite it
+ *     when it finally resolves. `pollSeq` is the guard: an answer that started
+ *     before a push is dropped rather than allowed to land last.
+ *  8. A bridge that does not know `onUpdateDecision` (the badge harness's proxy,
+ *     or an older preload) — subscribe only when it is a function; a missing
+ *     channel is a quiet app, not a thrown rail.
  */
 import {
   createContext,
@@ -142,6 +157,14 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /**
+   * A counter of feed answers that arrived *after* a check started. A manual or
+   * launch check is an answer to a question asked at a moment; a watch push is a
+   * newer fact that landed while it was in flight. The older answer is dropped
+   * rather than allowed to overwrite the newer one, whichever resolves last.
+   */
+  const newsSeq = useRef(0);
+
   // One check per launch. The ref, not state: StrictMode's second mount effect
   // must find the first request already made rather than make its own.
   const checked = useRef(false);
@@ -169,8 +192,12 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         return;
       }
       setPhase("checking");
+      // The feed answer this request is asking for. If a watch push lands before
+      // it resolves, that push is the newer fact and this answer is dropped.
+      const newsWhenAsked = newsSeq.current;
       try {
         const result = await bridge.updateCheck(options);
+        if (newsSeq.current !== newsWhenAsked) return;
         if (!result || result.ok !== true) {
           setDecision(null);
           setError(
@@ -190,6 +217,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         setError(null);
         setPhase("ready");
       } catch (err) {
+        if (newsSeq.current !== newsWhenAsked) return;
         setDecision(null);
         setError(err instanceof Error ? err.message : String(err));
         setPhase("failed");
@@ -208,6 +236,43 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     checked.current = true;
     void refresh();
   }, [refresh]);
+
+  // The watch's news. Main reads the feed on a clock and pushes what it found, so
+  // an app that is open when a release is published hears about it without
+  // anyone asking. A channel this bridge does not have (the badge harness's proxy,
+  // an older preload) is a quiet app, not a thrown rail.
+  useEffect(() => {
+    let off: unknown = null;
+    try {
+      const bridge = api();
+      if (typeof bridge.onUpdateDecision !== "function") return;
+      off = bridge.onUpdateDecision((raw) => {
+        const parsed = readDecision(raw);
+        if (!parsed) return;
+        if (parsed.state === "available") {
+          newsSeq.current += 1;
+          setDecision(parsed);
+          setError(null);
+          setPhase("ready");
+          return;
+        }
+        if (parsed.state !== "current") return;
+        // The release is not offered any more: the glow goes with the offer, and
+        // the feed's latest answer is the one on screen.
+        newsSeq.current += 1;
+        setDecision(parsed);
+        setError(null);
+        setPhase("ready");
+      });
+    } catch {
+      off = null;
+    }
+    return () => {
+      // A stub bridge that does not know this channel answers with junk rather
+      // than an unsubscribe. Calling it would take the app down.
+      if (typeof off === "function") (off as () => void)();
+    };
+  }, []);
 
   // Progress is pushed while the download runs. Only the install's own view of
   // it lives here; the file itself never crosses this bridge.

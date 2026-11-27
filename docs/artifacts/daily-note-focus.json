@@ -1,0 +1,2292 @@
+{
+  "url": "http://127.0.0.1:5173/e2e/daily-note.html",
+  "ranAt": "2026-11-06T10:57:38.532Z",
+  "window": {
+    "width": 1280,
+    "height": 900
+  },
+  "fixture": {
+    "sentence": "Focus mode: the note was written with the day on one surface."
+  },
+  "checks": {
+    "today": "2026-11-06",
+    "writes": [
+      {
+        "date": "2026-11-06",
+        "body": "Focus mode: the note was written with the day on one surface.",
+        "shown": "2026-11-06"
+      }
+    ]
+  },
+  "states": {
+    "landing": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": null,
+      "panel": null,
+      "chrome": null,
+      "title": null,
+      "close": null,
+      "body": null,
+      "pageDate": null,
+      "note": null,
+      "foot": null,
+      "statusLine": null,
+      "focusActions": {
+        "present": false,
+        "box": null,
+        "inFoot": false,
+        "actionBox": null,
+        "actionTestId": null
+      },
+      "editor": null,
+      "focusInput": null,
+      "noteLiveInsideOverlay": 0,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "opened": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": true,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": ""
+      },
+      "focusInput": {
+        "value": "",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "closedByCross": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": null,
+      "panel": null,
+      "chrome": null,
+      "title": null,
+      "close": null,
+      "body": null,
+      "pageDate": null,
+      "note": null,
+      "foot": null,
+      "statusLine": null,
+      "focusActions": {
+        "present": false,
+        "box": null,
+        "inFoot": false,
+        "actionBox": null,
+        "actionTestId": null
+      },
+      "editor": null,
+      "focusInput": null,
+      "noteLiveInsideOverlay": 0,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "reopenedForScrim": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": true,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": ""
+      },
+      "focusInput": {
+        "value": "",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "closedByScrim": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": null,
+      "panel": null,
+      "chrome": null,
+      "title": null,
+      "close": null,
+      "body": null,
+      "pageDate": null,
+      "note": null,
+      "foot": null,
+      "statusLine": null,
+      "focusActions": {
+        "present": false,
+        "box": null,
+        "inFoot": false,
+        "actionBox": null,
+        "actionTestId": null
+      },
+      "editor": null,
+      "focusInput": null,
+      "noteLiveInsideOverlay": 0,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "reopenedForEscape": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": true,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": ""
+      },
+      "focusInput": {
+        "value": "",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "closedByEscape": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": null,
+      "panel": null,
+      "chrome": null,
+      "title": null,
+      "close": null,
+      "body": null,
+      "pageDate": null,
+      "note": null,
+      "foot": null,
+      "statusLine": null,
+      "focusActions": {
+        "present": false,
+        "box": null,
+        "inFoot": false,
+        "actionBox": null,
+        "actionTestId": null
+      },
+      "editor": null,
+      "focusInput": null,
+      "noteLiveInsideOverlay": 0,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "reopenedForTyping": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": true,
+      "pageEditorBody": "",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": true,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": ""
+      },
+      "focusInput": {
+        "value": "",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "typedModal": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": false,
+      "pageEditorBody": "Focus mode: the note was written with the day on one surface.",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "Saving…",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": false,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": "Focus mode: the note was written with the day on one surface."
+      },
+      "focusInput": {
+        "value": "Focus mode: the note was written with the day on one surface.",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 0,
+      "unexpectedCalls": []
+    },
+    "saving": {
+      "text": "Saving…",
+      "box": {
+        "left": 229,
+        "top": 797.5,
+        "right": 325,
+        "bottom": 815.89,
+        "width": 96,
+        "height": 18.39
+      },
+      "minHeight": "18.4px",
+      "inFoot": true
+    },
+    "savedByFocus": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "hidden",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": false,
+      "pageEditorBody": "Focus mode: the note was written with the day on one surface.",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": {
+        "present": true,
+        "className": "sheet-overlay sheet-overlay--focus focus-overlay",
+        "dataFocusOverlay": true,
+        "dataSheetOverlay": true,
+        "box": {
+          "left": 0,
+          "top": 0,
+          "right": 1280,
+          "bottom": 900,
+          "width": 1280,
+          "height": 900
+        },
+        "position": "fixed",
+        "zIndex": "50",
+        "backdropFilter": "blur(11px) saturate(0.9)",
+        "background": "color(srgb 0.0784314 0.0862745 0.0980392 / 0.46)"
+      },
+      "panel": {
+        "box": {
+          "left": 192,
+          "top": 45,
+          "right": 1088,
+          "bottom": 855,
+          "width": 896,
+          "height": 810
+        },
+        "centre": {
+          "x": 640,
+          "y": 450
+        },
+        "className": "sheet-overlay__panel sheet-overlay__panel--focus focus-overlay__panel",
+        "inOverlay": true
+      },
+      "chrome": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 46,
+          "width": 894,
+          "height": 0
+        },
+        "inPanel": true,
+        "borderBottom": "0px"
+      },
+      "title": {
+        "box": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1
+        },
+        "centre": {
+          "x": 640,
+          "y": 45
+        },
+        "text": "Daily Note",
+        "inPanel": true,
+        "topOffset": -0.5,
+        "className": "visually-hidden",
+        "hiddenFromView": true,
+        "visibleBox": {
+          "left": 639.5,
+          "top": 44.5,
+          "right": 640.5,
+          "bottom": 45.5,
+          "width": 1,
+          "height": 1,
+          "clipped": true
+        }
+      },
+      "close": {
+        "box": {
+          "left": 1047.81,
+          "top": 57.19,
+          "right": 1075.81,
+          "bottom": 85.19,
+          "width": 28,
+          "height": 28
+        },
+        "centre": {
+          "x": 1061.81,
+          "y": 71.19
+        },
+        "ariaLabel": "Close focus mode",
+        "titleAttr": "Close focus mode",
+        "inPanel": true,
+        "topOffset": 12.19
+      },
+      "body": {
+        "box": {
+          "left": 193,
+          "top": 46,
+          "right": 1087,
+          "bottom": 854,
+          "width": 894,
+          "height": 808
+        },
+        "inPanel": true
+      },
+      "pageDate": {
+        "box": {
+          "left": 229,
+          "top": 86,
+          "right": 1051,
+          "bottom": 111,
+          "width": 822,
+          "height": 25
+        },
+        "centre": {
+          "x": 640,
+          "y": 98.5
+        },
+        "text": "Friday, 6 Nov 2026",
+        "inPanel": true,
+        "tag": "H2",
+        "aboveNote": true,
+        "centredOnPanel": true,
+        "textAlign": "center",
+        "fontSize": "21.6px"
+      },
+      "note": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "inPanel": true
+      },
+      "foot": {
+        "box": {
+          "left": 229,
+          "top": 785.02,
+          "right": 1051,
+          "bottom": 826,
+          "width": 822,
+          "height": 40.98
+        },
+        "inPanel": true,
+        "belowNote": true
+      },
+      "statusLine": {
+        "box": {
+          "left": 229,
+          "top": 797.5,
+          "right": 325,
+          "bottom": 815.89,
+          "width": 96,
+          "height": 18.39
+        },
+        "text": "",
+        "inFoot": true,
+        "minHeight": "18.4px"
+      },
+      "focusActions": {
+        "present": true,
+        "box": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "inFoot": true,
+        "actionBox": {
+          "left": 893.22,
+          "top": 787.41,
+          "right": 1051,
+          "bottom": 826,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "actionTestId": "focus-overlay-action-daily-note-analyze",
+        "actionText": "Analyze note",
+        "actionDisabled": false,
+        "actionSvg": true
+      },
+      "editor": {
+        "box": {
+          "left": 229,
+          "top": 120.59,
+          "right": 1051,
+          "bottom": 775.42,
+          "width": 822,
+          "height": 654.83
+        },
+        "className": "note-live",
+        "noteLive": true,
+        "inNote": true,
+        "inPanel": true,
+        "inputValue": "Focus mode: the note was written with the day on one surface."
+      },
+      "focusInput": {
+        "value": "Focus mode: the note was written with the day on one surface.",
+        "focused": true,
+        "ariaLabel": "Daily note for 6 Nov 2026 in focus mode"
+      },
+      "noteLiveInsideOverlay": 1,
+      "writes": 1,
+      "unexpectedCalls": []
+    },
+    "pageAfterFocus": {
+      "path": "/e2e/daily-note.html",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "bodyOverflowStyle": "",
+      "pageMounted": true,
+      "railMounted": true,
+      "pageEditorMounted": true,
+      "pageEditorOpenLine": false,
+      "pageEditorBody": "Focus mode: the note was written with the day on one surface.",
+      "trigger": {
+        "present": true,
+        "tag": "BUTTON",
+        "box": {
+          "left": 674.83,
+          "top": 54.09,
+          "right": 709.22,
+          "bottom": 88.48,
+          "width": 34.39,
+          "height": 34.39
+        },
+        "centre": {
+          "x": 692.03,
+          "y": 71.29
+        },
+        "ariaLabel": "Focus mode",
+        "titleAttr": "Focus mode — write the day on its own",
+        "text": "",
+        "svg": true,
+        "svgBox": {
+          "left": 684.02,
+          "top": 63.28,
+          "right": 700.02,
+          "bottom": 79.28,
+          "width": 16,
+          "height": 16
+        },
+        "disabled": false,
+        "inHeader": true,
+        "inTitleRow": true,
+        "inActions": true,
+        "domImmediatelyBeforeAutomations": true
+      },
+      "automations": {
+        "present": true,
+        "box": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "centre": {
+          "x": 796.11,
+          "y": 71.3
+        },
+        "analyzeBox": {
+          "left": 717.22,
+          "top": 52,
+          "right": 875,
+          "bottom": 90.59,
+          "width": 157.78,
+          "height": 38.59
+        },
+        "analyzeTestId": "daily-note-analyze"
+      },
+      "titleRow": {
+        "left": 280,
+        "top": 52,
+        "right": 875,
+        "bottom": 90.59,
+        "width": 595,
+        "height": 38.59
+      },
+      "overlay": null,
+      "panel": null,
+      "chrome": null,
+      "title": null,
+      "close": null,
+      "body": null,
+      "pageDate": null,
+      "note": null,
+      "foot": null,
+      "statusLine": null,
+      "focusActions": {
+        "present": false,
+        "box": null,
+        "inFoot": false,
+        "actionBox": null,
+        "actionTestId": null
+      },
+      "editor": null,
+      "focusInput": null,
+      "noteLiveInsideOverlay": 0,
+      "writes": 1,
+      "unexpectedCalls": []
+    }
+  },
+  "steps": {
+    "triggerPresent": true,
+    "openedClick": true,
+    "crossClick": true,
+    "scrimPoint": {
+      "x": 96,
+      "y": 85
+    },
+    "scrimHit": {
+      "hit": "sheet-overlay sheet-overlay--focus focus-overlay",
+      "tag": "DIV",
+      "isOverlay": true,
+      "isPanel": false
+    },
+    "escapeSent": true,
+    "typedLineOpen": true,
+    "typed": {
+      "value": "Focus mode: the note was written with the day on one surface.",
+      "focused": true
+    },
+    "savingBandText": "Saving…",
+    "savingBandHeight": 18.39,
+    "savingBandInFoot": true,
+    "restBandHeight": 18.39,
+    "focusWrite": {
+      "date": "2026-11-06",
+      "body": "Focus mode: the note was written with the day on one surface.",
+      "shown": "2026-11-06"
+    },
+    "screenshot": {
+      "file": "daily-note-focus.png",
+      "bytes": 79030,
+      "width": 1280,
+      "height": 900,
+      "whileOpen": true
+    },
+    "screenshotWhileOpen": true,
+    "closeAfterTypingSent": true
+  },
+  "screenshots": [
+    "daily-note-focus.png"
+  ],
+  "consoleErrors": [],
+  "unexpectedCalls": [],
+  "failures": [],
+  "pass": true
+}

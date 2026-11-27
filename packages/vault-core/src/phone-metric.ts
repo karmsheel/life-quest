@@ -13,8 +13,7 @@
  * Net worth is `netWorth`'s own report, not a second calculation: the phone and
  * the Net worth page must never disagree about the same figure.
  */
-import fs from "node:fs/promises";
-import { listRows, readRegistry } from "./domain-databases.ts";
+import { isDomainLive, listRows, readRegistry } from "./domain-databases.ts";
 import { netWorth, round2 } from "./finance-plan.ts";
 import { todayLocalIso } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
@@ -50,16 +49,9 @@ function currencyOf(value: unknown): FinanceCurrency | null {
   return value === "ZAR" || value === "USD" ? value : null;
 }
 
-/** Whether the Finance kit is installed and its domain is live. */
+/** Whether the Finance kit is installed and its area is live (open, unarchived). */
 async function financeReady(root: string): Promise<boolean> {
-  try {
-    const meta = JSON.parse(
-      await fs.readFile(vaultPaths(root).domainJson(FINANCE_DOMAIN_SLUG), "utf8"),
-    ) as { archivedAt?: unknown };
-    if (meta.archivedAt != null) return false;
-  } catch {
-    return false;
-  }
+  if (!(await isDomainLive(root, FINANCE_DOMAIN_SLUG))) return false;
   const registry = await readRegistry(
     vaultPaths(root).domainRegistry(FINANCE_DOMAIN_SLUG),
   );

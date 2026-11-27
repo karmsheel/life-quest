@@ -11,10 +11,12 @@
  * holds the interactions and the measurements, so a failure names a state rather
  * than a line of driver code.
  *
- * What is measured that a screenshot cannot show: the panel's share of the
- * window, the scrim's computed `backdrop-filter`, the cross's corner, the search
- * field's effect on the section list, which dismissal did what, and the two
- * favourites lists the star feeds.
+ * What is measured that a screenshot cannot show: the panel's own measure and
+ * its centring in the window, the floating search bar's measure, pill ends and
+ * the panel border that crosses its axis, the absent title band between that bar
+ * and the section column, the scrim's computed `backdrop-filter`, the
+ * cross's corner, the search field's effect on the section list, which
+ * dismissal did what, and the two favourites lists the star feeds.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -34,14 +36,14 @@ const url =
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
-const STARRED_SKIN = "Ember";
+const STARRED_SKIN = "Graphite";
 /**
- * The settings sections the sheet must list with no search. Nine product pages
- * plus Phone; the fixture is the count the registry is supposed to produce, so a
- * page that silently disappears still fails the "cleared restores everything"
- * step rather than being measured against itself.
+ * The settings sections the sheet must list with no search: the product's own
+ * pages plus Phone. The fixture is the count the registry is supposed to
+ * produce, so a page that silently disappears still fails the "cleared restores
+ * everything" step rather than being measured against itself.
  */
-const SECTION_COUNT = 10;
+const SECTION_COUNT = 15;
 
 /**
  * A theme in the shape the app installs: the Forge palette, hex only, every
@@ -101,6 +103,7 @@ const SAMPLE = `(() => {
   const overlay = document.querySelector("[data-settings-overlay]");
   const panel = document.querySelector(".settings-overlay__panel");
   const chrome = document.querySelector(".settings-overlay__chrome");
+  const navColumn = document.querySelector(".settings-overlay__nav");
   const close = document.querySelector(".settings-overlay__close");
   const search = document.querySelector(".settings-overlay__search-input");
   const searchBar = document.querySelector(".settings-overlay__search");
@@ -182,13 +185,25 @@ const SAMPLE = `(() => {
       ? {
           box: box(search),
           bar: box(searchBar),
+          // The bar's own corner: a pill, so the radius is half its height.
+          radius: searchBar
+            ? parseFloat(getComputedStyle(searchBar).borderTopLeftRadius)
+            : null,
           value: search.value,
           placeholder: search.getAttribute("placeholder"),
           label: search.getAttribute("aria-label"),
           focused: document.activeElement === search,
         }
       : null,
-    chromeInputs: document.querySelectorAll(".settings-overlay__chrome input").length,
+    // The section column's leading edge is where the "no title band" contract is
+    // read: it must start at the panel's own top edge.
+    navBox: box(navColumn),
+    chromeBox: box(chrome),
+    // The search left the top strip for the floating band on the panel's edge;
+    // count it across the sheet so a second copy would still be caught.
+    searchInputs: document.querySelectorAll(
+      "[data-settings-overlay] input[type='search']"
+    ).length,
     nav,
     navEmpty: text(document.querySelector(".settings-overlay__nav-empty")) || null,
     panelView:
@@ -289,6 +304,35 @@ async function main() {
       el.click();
       return true;
     })()`);
+
+  /**
+   * Real pointer motion onto the day/night control, so the quick menu opens the
+   * way it opens for an operator: the control answers a pointer, not a
+   * scripted click, and `el.click()` would never reach its `pointerenter`.
+   */
+  const hoverQuickMenu = async () => {
+    const point = await run(`(() => {
+      const el = document.querySelector(".theme-mode-toggle");
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    if (!point) throw new Error("no day/night control to hover");
+    win.webContents.sendInputEvent({
+      type: "mouseMove",
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+    });
+    // The control waits out a short rest before the menu appears, so the
+    // pointer has to stay put for a moment before the state is read.
+    await new Promise((resolve) => setTimeout(resolve, 260));
+  };
+
+  /** Take the pointer off the control and the menu, so the menu closes. */
+  const parkPointer = async () => {
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 320));
+  };
 
   const clickNav = (label) =>
     run(`(() => {
@@ -450,9 +494,12 @@ async function main() {
     await win.loadURL(url);
     await waitReady();
 
-    // A favourites list left over from an earlier run would make "starring
-    // Ember" look like it worked before it was pressed.
-    await run("localStorage.removeItem('lifequest-skin-favorites')");
+    // A favourites list, an installed theme or a chosen skin left by an earlier
+    // run would decide the grid before anything here is pressed — rigs share the
+    // dev-server origin's localStorage, so the start state is cleared explicitly.
+    await run(
+      "(() => { for (const key of ['lifequest-skin-favorites', 'lifequest-installed-themes', 'lifequest-skin']) localStorage.removeItem(key); return true; })()",
+    );
     await win.webContents.reload();
     await waitReady();
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
@@ -472,7 +519,7 @@ async function main() {
     record("searchedVault", await settle());
 
     // 4 — a theme name finds the page that holds the themes.
-    await typeQuery("ember");
+    await typeQuery("graphite");
     record("searchedTheme", await settle());
     await shot("search-theme");
 
@@ -525,7 +572,7 @@ async function main() {
     record("appearance", await settle());
 
     // 11 — curate down to one: the quick menu is the starred list, so the other
-    //      six should leave it.
+    //      two should leave it.
     const unstarred = await unstarAllExcept(STARRED_SKIN);
     record("curatedOne", await settle());
     step("unstarredCount", unstarred);
@@ -534,13 +581,13 @@ async function main() {
     const crossClick = await click(".settings-overlay__close");
     record("closedByCross", await settle());
     step("crossClick", crossClick);
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuCurated", await settle());
     await shot("quick-menu-curated");
 
     // 13 — unstar the last one: the menu has nothing to offer, and says so.
-    await pressEscape();
-    await settle();
+    await parkPointer();
     await click("[data-rig-open-settings]");
     await settle();
     const unstarredLast = await clickStar(STARRED_SKIN);
@@ -548,14 +595,14 @@ async function main() {
     step("unstarredLast", unstarredLast);
     await click(".settings-overlay__close");
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuEmpty", await settle());
     await shot("quick-menu-empty");
 
     // 14 — star it again, then install a theme from a file. Installing stars it,
     //      so the new theme is reachable from the quick menu immediately.
-    await pressEscape();
-    await settle();
+    await parkPointer();
     await click("[data-rig-open-settings]");
     await settle();
     const reStarred = await clickStar(STARRED_SKIN);
@@ -586,12 +633,14 @@ async function main() {
     // 17 — the curated list is storage, not session state.
     await click(".settings-overlay__close");
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuAfterInstall", await settle());
     await win.webContents.reload();
     await waitReady();
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuAfterReload", await settle());
     await shot("quick-menu-after-reload");
 

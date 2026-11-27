@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { PageListEntry } from "@lifequest/vault-core";
+import {
+  findBaseArea,
+  liveAreas,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 
 export default function PagesPage() {
@@ -19,8 +25,17 @@ export default function PagesPage() {
   const [query, setQuery] = useState("");
 
   const domainSlug = lens.kind === "domain" ? lens.slug : null;
-  const showDomainSelect = lens.kind !== "domain";
-  const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
+  /** The vault's own container: a page created on Life lands here, no selector. */
+  const baseArea = findBaseArea(snapshot?.domains ?? []);
+  /**
+   * Life creates into the base area when the vault has one; a legacy vault has
+   * no base area and keeps the selector. A domain lens already has its target.
+   */
+  const showDomainSelect = lens.kind !== "domain" && !baseArea;
+  /** Everything the operator can see, base included (its name is "Life"). */
+  const liveDomains = liveAreas(snapshot?.domains ?? []);
+  /** What a new page can be assigned to: unlocked areas, never the base. */
+  const pickAreas = unlockedAreas(snapshot?.domains ?? []);
 
   const load = useCallback(async () => {
     const res = await api().pageList(domainSlug);
@@ -39,12 +54,14 @@ export default function PagesPage() {
     e.preventDefault();
     setError(null);
     if (showDomainSelect && !selectedDomain) {
-      setError("Select a domain to create a page in.");
+      setError("Select an area to create a page in.");
       return;
     }
-    const target = showDomainSelect ? selectedDomain : domainSlug;
+    const target = showDomainSelect
+      ? selectedDomain
+      : (domainSlug ?? baseArea?.slug);
     if (!target) {
-      setError("No domain available.");
+      setError("No area available.");
       return;
     }
     setBusy(true);
@@ -99,7 +116,7 @@ export default function PagesPage() {
   return (
     <div className="page-content pages-studio">
       <header className="pages-studio__header">
-        <p className="pages-studio__eyebrow">Pages</p>
+        <WingEyebrow page="Pages" />
         <h1 className="pages-studio__title">Pages</h1>
         <p className="pages-studio__lead">
           Canvases in this vault. Create one here, then open it to add blocks.
@@ -203,14 +220,14 @@ export default function PagesPage() {
               </label>
               {showDomainSelect ? (
                 <label className="pages-field">
-                  <span className="pages-field__label">Domain</span>
+                  <span className="pages-field__label">Area</span>
                   <select
                     value={selectedDomain}
                     onChange={(e) => setSelectedDomain(e.target.value)}
                     className="input-field"
                   >
-                    <option value="">Select domain…</option>
-                    {liveDomains.map((d) => (
+                    <option value="">Select area…</option>
+                    {pickAreas.map((d) => (
                       <option key={d.slug} value={d.slug}>
                         {d.meta.name}
                       </option>
@@ -232,7 +249,7 @@ export default function PagesPage() {
           {showDomainSelect && perDomain.length > 0 ? (
             <section className="pages-studio__panel" aria-labelledby="pages-domains-heading">
               <div className="pages-studio__panel-head">
-                <h2 id="pages-domains-heading">By domain</h2>
+                <h2 id="pages-domains-heading">By area</h2>
               </div>
               <ul className="pages-studio__stats">
                 {perDomain.map((row) => (

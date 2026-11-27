@@ -1,44 +1,23 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
-import {
-  ArrowLeftRight,
-  Copy,
-  Minus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  Square,
-  X,
-} from "lucide-react";
+import { Copy, Minus, Square, X } from "lucide-react";
 import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
-import { NavCollapseButton } from "./NavCollapseButton";
-import { NavThemeModeToggle } from "./NavThemeModeToggle";
-import { vaultTitleName, windowTitleLabel } from "./window-title";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { DomainSwitcher } from "./DomainSwitcher";
+import { LayoutsMenu } from "./LayoutsMenu";
+import { ThemeQuickMenu } from "./ThemeQuickMenu";
+import { windowTitleLabel } from "./window-title";
 
 export function WindowTitleBar() {
   const { snapshot } = useVault();
-  const {
-    open: chatOpen,
-    setOpen: setChatOpen,
-    present: chatPresent,
-    side: chatSide,
-    swapSide,
-  } = useChatDock();
-  const { collapsed: navCollapsed, present: navPresent } = useNavDock();
+  const { collapsed: navCollapsed } = useNavDock();
+  const { present: chatPresent } = useChatDock();
+  const { chrome: themeChrome } = useTheme();
   const label = windowTitleLabel(snapshot?.lifequest.name);
-  const vaultName = vaultTitleName(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
   const [maximized, setMaximized] = useState(false);
-
-  // The rail's column is reserved for the whole shell, collapsed or not: that is
-  // what keeps the toggle and the vault chip from sliding when it opens and
-  // closes. The welcome flow has no rail, so nothing is reserved there.
-  const navColumn = navPresent;
-  const navToggle = navPresent && navCollapsed;
 
   useEffect(() => {
     document.title = label;
@@ -67,84 +46,64 @@ export function WindowTitleBar() {
 
   const chrome = window.lifequest?.windowChrome;
   const showTrailing = chatPresent || (fallbackControls && Boolean(chrome));
-  const chatOnLeft = chatSide === "left";
 
   return (
     <header
-      className={[
-        "window-titlebar",
-        navColumn ? "window-titlebar--nav-column" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className="window-titlebar"
+      data-nav-collapsed={navCollapsed ? "true" : undefined}
+      data-nav-place={themeChrome.navRail.place}
     >
-      <div className="window-titlebar__leading">
-        {navToggle ? (
-          <NavCollapseButton className="window-titlebar__nav-toggle" />
-        ) : null}
-        <NavLink
-          to="/home"
-          className="window-titlebar__vault"
-          title={label}
-          aria-label={label}
+      {/*
+        The domain lens, raised into the window's strip. It is not a control
+        floating in the chrome: it is painted on the page canvas and reaches the
+        sheet's own top edge, with the page flaring into the strip at its bottom
+        corners, so the operator reads one tab of the page rather than a second
+        band above it. Only a mounted shell has a workspace to lens — the welcome
+        and companion screens get the empty strip.
+      */}
+      {chatPresent && themeChrome.domainSwitcher.place === "titlebar-center" ? (
+        <div
+          className="window-titlebar__lens"
+          data-chrome-slot="domain"
+          data-chrome-place="titlebar-center"
         >
-          {vaultName}
-        </NavLink>
-      </div>
+          <DomainSwitcher variant={themeChrome.domainSwitcher.variant} />
+        </div>
+      ) : null}
+      {/*
+        The leading track is the window's drag handle and nothing else: the vault
+        that used to be named here lives at the foot of the sidebar, with the rest
+        of the navigation. The box stays because the tab is centred by the two
+        outer tracks sharing the slack equally, and this is the leading one of
+        that pair.
+      */}
+      <div className="window-titlebar__leading" />
       {showTrailing ? (
         <div className="window-titlebar__trailing">
           {chatPresent ? (
             <>
-              <NavThemeModeToggle className="window-titlebar__btn" />
-              <SettingsMenu
-                className="window-titlebar__settings"
-                placement="bottom-end"
-              />
               {/*
-                The switch position control, beside the settings it belongs
-                with: one click trades the dock's column for the sheet's, so the
-                chat panel sits just past the rail and the page takes the
-                window's trailing edge. The icon is the two panes swapping sides
-                rather than the side they are on — the state it is in is read
-                off the layout in front of the operator.
+                The day/night control, and the settings it belongs with. The
+                keyboard-shortcuts reference moved into the dock's own bottom
+                bar, where the surfaces it switches between live: the strip no
+                longer carries a second way to change what the dock shows.
+
+                The layouts picker leads the cluster: the window's own shape
+                first, then how it looks (the palette), then where its settings
+                live (the gear). It changes the window's arrangement — the
+                studio, the even split either way round, or the agent alone.
+                Full-screen chat still has its own door in the dock's top row
+                and its Mod+Shift+F shortcut; the picker's "Full agent" card
+                writes that same state rather than opening a second mode, so the
+                two cannot disagree.
+
+                The gear is a plain link to the settings sheet now: the palette
+                and theme quick menu that once opened under it hangs off the
+                day/night control instead, so the strip offers one way into each.
               */}
-              <button
-                type="button"
-                className="window-titlebar__btn window-titlebar__side-switch"
-                aria-label={
-                  chatOnLeft
-                    ? "Move chat to the right of the page"
-                    : "Move chat to the left of the page"
-                }
-                title={
-                  chatOnLeft
-                    ? "Move chat to the right of the page"
-                    : "Move chat to the left of the page"
-                }
-                aria-pressed={chatOnLeft}
-                onClick={swapSide}
-              >
-                <ArrowLeftRight size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="window-titlebar__btn window-titlebar__chat-toggle"
-                aria-label={chatOpen ? "Collapse chat" : "Expand chat"}
-                title={chatOpen ? "Collapse chat" : "Expand chat"}
-                onClick={() => setChatOpen(!chatOpen)}
-              >
-                {chatOpen ? (
-                  chatOnLeft ? (
-                    <PanelLeftClose size={14} aria-hidden />
-                  ) : (
-                    <PanelRightClose size={14} aria-hidden />
-                  )
-                ) : chatOnLeft ? (
-                  <PanelLeftOpen size={14} aria-hidden />
-                ) : (
-                  <PanelRightOpen size={14} aria-hidden />
-                )}
-              </button>
+              <LayoutsMenu className="window-titlebar__btn" />
+              <ThemeQuickMenu className="window-titlebar__btn" />
+              <SettingsMenu className="window-titlebar__settings" />
             </>
           ) : null}
           {fallbackControls && chrome ? (

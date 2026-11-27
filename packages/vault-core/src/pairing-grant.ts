@@ -25,12 +25,15 @@ import type {
   DecisionRecord,
   DocumentTarget,
   Goal,
+  LifeEvent,
   MapEvent,
   PeriodPack,
   ReviewRecord,
   ReviewScopeState,
+  SignalRecord,
   Task,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 import type { MapStoreState, ResolvedWeek } from "./map/public.ts";
 import type { ConnectedAgent } from "./connected-agents.ts";
 
@@ -45,6 +48,16 @@ export type ConnectedGrant = {
 /**
  * KAR-70: the tools a grant allows at all. Every one of these is a read inside
  * the assigned domains; none of them names the operator's own settings.
+ *
+ * Projects, pages and the Life-Chain are here since 2026-11-04. The pairing
+ * design already promised a connected agent pages and projects (§Domain reads);
+ * the read tools that shipped on 2026-10-27 added `list_projects` /
+ * `get_project`, `list_pages` / `get_page`, and the Life-Chain's
+ * `list_signals` / `get_signal`, but none of them was classified, so an agent
+ * with a domain grant was refused them by name and never saw them in
+ * `tools/list`. Classifying them is only half the fix: each is filtered per
+ * call in `executeConnectedTool`, because the grant is what decides which
+ * domains a record may come from.
  */
 export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "get_doctrine",
@@ -67,12 +80,32 @@ export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "preview_view",
   "list_views",
   "get_dashboard",
+  // Metric definitions and their period comparisons (2026-11-26 metrics
+  // design). A definition belongs to one area, so the per-call projection keeps
+  // only the granted areas' definitions; a summary is a read of one area's
+  // values and answers NOT_FOUND outside the grant.
+  "list_metrics",
+  "get_metrics_summary",
+  // Operator surfaces whose records carry a domain: a project, a page and a
+  // signal are each visible only from an assigned domain, and a record with no
+  // domain stays with the companion.
+  "list_projects",
+  "get_project",
+  "list_pages",
+  "get_page",
+  "list_signals",
+  "get_signal",
 ]);
 
 /**
  * KAR-70: tools with no domain of their own. These stay on the companion for
  * good — they configure the vault rather than any domain of it — so a connected
  * agent that calls one is refused rather than filtered.
+ *
+ * The companion brief belongs here for both halves of its rule (2026-11-05):
+ * it is the studio's word, not a domain's, so there is no domain for a grant to
+ * contain it; and it has exactly one writer, the companion, so even the read
+ * stays with the companion rather than being filtered into a hire's lens.
  */
 export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "create_year",
@@ -87,6 +120,11 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "list_phone_drafts",
   "post_phone_draft",
   "dismiss_phone_draft",
+  "get_companion_brief",
+  "set_companion_brief",
+  // The onboarding interview is the companion's own door: a connected agent has
+  // no interview to run, and the proposal is the studio's word, not a domain's.
+  "propose_onboarding_unlock",
 ]);
 
 /**
@@ -96,6 +134,10 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
  * and live-week writes need Schedule and Write, and the day templates need the
  * same two switches — they shape the week rather than posting to it, so they
  * still file a Decision when the gate lets them through.
+ *
+ * Recurring tasks are here with the task tools for the same reason: a schedule
+ * is work's rhythm, not a domain's record, so a grant scoped to Schedule (with
+ * Write for the changes) is what a connected agent needs to keep one.
  */
 const CONNECTED_SCHEDULE_READ_TOOLS: ReadonlySet<string> = new Set(["get_week"]);
 
@@ -110,6 +152,10 @@ export const CONNECTED_SCHEDULE_TOOLS: ReadonlySet<string> = new Set([
   "update_task",
   "move_task",
   "delete_task",
+  "create_recurring_task",
+  "update_recurring_task",
+  "delete_recurring_task",
+  "complete_recurring_task",
 ]);
 
 export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
@@ -122,9 +168,29 @@ export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * KAR-70: the writes that file a Decision. They follow the companion's rule
- * exactly — doctrine, library notes, goals, projects, database changes, and
- * review changes never land on their own — so the only thing this task adds is
- * the domain they are allowed to touch.
+ * exactly — doctrine, library notes, goals, projects, and CHANGES TO DATABASE
+ * DATA never land on their own — so the only thing this task adds is the domain
+ * they are allowed to touch.
+ *
+ * `upsert_row` is the one mixed tool: without an id it CREATES a row and writes
+ * it at once (the companion's own policy, 2026-10-28); with an id it updates
+ * existing data and files a Decision. It stays in this list because the update
+ * case is the one a grant's write check is guarding, and the per-call domain
+ * check below runs for every database write either way.
+ *
+ * `delete_database` and `merge_databases` (2026-11-15) are here, not in the
+ * immediate set: deleting a database or moving its rows into another one changes
+ * data that already exists (LAWS/DATABASES.md), so both file ONE pending
+ * Decision and write nothing. Their per-call domain check is the same
+ * `domainSlug` argument every database write names.
+ *
+ * Fort-Knox AGENT-10: this list is the *advertised* surface, so it may only
+ * carry tools that really do file a Decision. `write_review` and `unlock_review`
+ * were here and were then refused unconditionally by the per-call gate, which
+ * advertised two tools an agent could never call. They are gone; an agent gets
+ * `FORBIDDEN` by name (unclassified = denied) instead of a tool-list entry that
+ * lies. `mark_review_done` moved to the immediate set: `executeReviewTool`
+ * applies it directly, so claiming it files a Decision was wrong.
  */
 export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "update_document",
@@ -133,14 +199,13 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "update_goal",
   "delete_goal",
   "create_project",
+  "update_project",
   "close_project",
   "upsert_row",
   "delete_row",
-  "create_database",
   "add_column",
-  "write_review",
-  "mark_review_done",
-  "unlock_review",
+  "delete_database",
+  "merge_databases",
   // Agent-built dashboard views (plan.md design): a view or a pin change is a
   // write, and whether it lands or becomes a Decision is the board's own page
   // lock rather than this list. It is classified here because the gate is what
@@ -152,8 +217,24 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * KAR-70: the writes that apply immediately, as they do for the companion:
- * events, script blocks on a page, and the capture thread. Each still needs its
- * domain inside the assignment.
+ * events, script blocks on a page, the capture thread, and — since the
+ * 2026-10-28 policy — adding database data (`create_database`,
+ * `insert_rows`). `create_signal` and `update_signal` are here for the same
+ * reason as those: a Notebox capture is adding data and a triage edit is
+ * working the operator's inbox, the companion writes both at once and logs
+ * them under the agent's name, and a Decision per captured thought or status
+ * click would turn the inbox into an approval queue. A new row through
+ * `upsert_row` is not named here because the same tool also updates existing
+ * rows; it is classified with the Decision writes above and the per-call domain
+ * check runs either way. Each tool here still needs its domain inside the
+ * assignment — which is why a connected agent may not file an unassigned
+ * signal: there is no domain to check.
+ *
+ * Fort-Knox AGENT-10: `mark_review_done` belongs here — it applies the scope's
+ * `done` status at once, with no Decision (`review-tools.ts`), so classifying it
+ * as a Decision write described behaviour the vault does not have. (Marking the
+ * `overall` scope also locks the review, but a connected agent can never be
+ * granted `overall`: the per-call gate refuses it.)
  */
 export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "create_event",
@@ -163,6 +244,19 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "capture_transaction",
   "undo_capture",
   "correct_capture",
+  "mark_review_done",
+  "create_database",
+  "insert_rows",
+  "create_signal",
+  "update_signal",
+  // Creating a metric DEFINITION and logging one dated metric event both apply
+  // immediately (spec §10.6): creating is the "define it now" act, and a logged
+  // event is adding data, the same rule `insert_rows` follows. Editing or
+  // deleting a definition is the Decision-gated half and is not exposed as a
+  // tool at all yet. Both still name one area, which the per-call domain check
+  // enforces.
+  "define_metric",
+  "log_metric",
 ]);
 
 /**
@@ -271,7 +365,7 @@ export async function effectiveGrant(
   const listed = await listDomains(rootPath);
   const live = new Set(
     listed.ok
-      ? listed.value.filter((d) => !d.meta.archivedAt).map((d) => d.slug)
+      ? listed.value.filter((d) => isLiveAreaMeta(d.meta)).map((d) => d.slug)
       : [],
   );
   return {
@@ -291,11 +385,42 @@ export function connectedEventVisible(
   return event.domainSlug !== null && grant.domainSlugs.includes(event.domainSlug);
 }
 
+/**
+ * Fort-Knox AGENT-01: whether a dashboard (pin board) is inside the grant.
+ *
+ * A board is a domain: the domain's own board names its slug, and `null` is the
+ * Overview board, which spans every domain — so it is never a connected agent's
+ * board, read or write. The write gate already judged `boardSlug: null` that
+ * way; the read tools had no such check at all, which is how a read-only agent
+ * read another domain's cards and pins.
+ *
+ * An absent slug is not a board either: it means the caller did not say, which
+ * the tools resolve to Overview, so it is refused rather than guessed at.
+ */
+export function connectedBoardAllowed(
+  boardSlug: string | null | undefined,
+  grant: ConnectedGrant,
+): boolean {
+  return typeof boardSlug === "string" && grant.domainSlugs.includes(boardSlug);
+}
+
 export function connectedGoalVisible(
   goal: Pick<Goal, "domainSlug">,
   grant: ConnectedGrant,
 ): boolean {
   return goal.domainSlug !== null && grant.domainSlugs.includes(goal.domainSlug);
+}
+
+/**
+ * KAR-70: a captured signal is visible only from an assigned domain. A signal
+ * with no domain is the companion's, exactly as an unassigned event or goal is:
+ * it is the operator's own capture, not part of any assignment.
+ */
+export function connectedSignalVisible(
+  signal: Pick<SignalRecord, "domainSlug">,
+  grant: ConnectedGrant,
+): boolean {
+  return signal.domainSlug !== null && grant.domainSlugs.includes(signal.domainSlug);
 }
 
 /**
@@ -360,6 +485,50 @@ export function projectConnectedState(
 }
 
 /**
+ * KAR-70: one project and the work collated around it, as a connected agent may
+ * read it. `get_project` is one read that reaches several surfaces, so each part
+ * is projected by the rule its own tool would apply:
+ *
+ *  - the project only from an assigned domain; `null` means the caller answers
+ *    `NOT_FOUND`, the same answer as a project that does not exist;
+ *  - the collated tasks — and the signals reached through them — only when
+ *    Schedule is on, because the board belongs to no domain and Schedule is its
+ *    switch. The keys are omitted rather than emptied, exactly as `get_state`
+ *    does, so an empty array cannot read as "this project has no work";
+ *  - a linked signal only from an assigned domain; a signal with no domain is
+ *    the operator's own capture and stays with the companion;
+ *  - a Decision only when its own domain list is non-empty and entirely inside
+ *    the assignment, the same rule `list_decisions` applies;
+ *  - a log line only from an assigned domain, so a project moved between
+ *    domains does not leak the domain it came from through its own history.
+ */
+export function projectConnectedProjectRead(
+  project: Record<string, unknown>,
+  grant: ConnectedGrant,
+): Record<string, unknown> | null {
+  const domainSlug = project.domainSlug;
+  if (typeof domainSlug !== "string" || !grant.domainSlugs.includes(domainSlug)) {
+    return null;
+  }
+  const out: Record<string, unknown> = { ...project };
+  if (grant.schedule) {
+    out.signals = ((project.signals ?? []) as SignalRecord[]).filter((signal) =>
+      connectedSignalVisible(signal, grant),
+    );
+  } else {
+    delete out.tasks;
+    delete out.signals;
+  }
+  out.decisions = (
+    (project.decisions ?? []) as Pick<DecisionRecord, "target" | "domainSlugs">[]
+  ).filter((decision) => connectedDecisionVisible(decision, grant));
+  out.log = ((project.log ?? []) as LifeEvent[]).filter((event) =>
+    connectedEventVisible(event, grant),
+  );
+  return out;
+}
+
+/**
  * The live week as the store stands today, or `null` when the store carries no
  * year for it — `resolveWeek` throws on a year it does not have, and a missing
  * week is a fact worth reporting rather than a crash to propagate.
@@ -380,12 +549,19 @@ function currentWeek(state: MapStoreState): ResolvedWeek | null {
  * Schedule surface and go empty unless Schedule is on; the previous review and
  * the overall section list belong to the `overall` scope, which a connected
  * agent never has, so they go whatever Schedule says.
+ *
+ * Fort-Knox AGENT-02: `dailyNotes` goes too. A daily note is not domain-scoped —
+ * `getPeriodPack` attaches every note in the window to every scope ("every scope
+ * sees the same journal") — so a grant cannot contain it, exactly as the
+ * daily-note tools are refused by name to a connected agent. Leaving the field
+ * in this spread handed the operator's journal to a one-domain read grant.
  */
 export function projectConnectedPack(pack: PeriodPack, grant: ConnectedGrant): PeriodPack {
   return {
     ...pack,
     tasks: grant.schedule ? pack.tasks : [],
     liveDays: grant.schedule ? pack.liveDays : [],
+    dailyNotes: [],
     previousReview: null,
     domainSections: [],
   };

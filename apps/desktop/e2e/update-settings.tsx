@@ -100,6 +100,14 @@ const bridge: Record<string, unknown> = {
   },
   updateInstall: () => Promise.resolve({ ok: true as const, launched: true as const, installer: "", bytes: 0 }),
   onUpdateProgress: () => () => {},
+  // The theme provider subscribes to the theme folder's watcher and reads the
+  // folder on mount. They are real bridge calls the shell makes; without stubs
+  // the proxy's promise-returning fallback makes the subscription cleanup throw
+  // and the folder read iterate a null, which unmounts the harness before any
+  // view can be asserted.
+  onThemesChanged: () => () => {},
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
   // ThemeProvider reaches for this on every mount, and the proxy's generic answer
   // is a *function* — so `windowChrome.setTitleBarOverlay` would be undefined and
   // the whole tree would come down before anything could be asserted.
@@ -157,10 +165,11 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 requestAnimationFrame(function waitForView() {
-  // Whichever panel this page opened, its own first element is the signal.
+  // Whichever panel this page opened, its own first element is the signal. The
+  // Developer page's switch is a `role="switch"` button, not a checkbox input.
   const found =
     view === "developer"
-      ? document.querySelector("[data-developer-preview]")
+      ? document.querySelector('[role="switch"][aria-label="Preview the update badge"]')
       : document.querySelector("[data-update-summary]");
   if (!found) {
     requestAnimationFrame(waitForView);

@@ -136,7 +136,7 @@ async function main() {
     );
     check(
       "the per-turn instructions are on the page",
-      (seeded.instructions?.text ?? "").includes("Active domain"),
+      (seeded.instructions?.text ?? "").includes("Active area"),
       `instructions start "${(seeded.instructions?.text ?? "").slice(0, 60)}"`,
     );
 
@@ -201,7 +201,7 @@ async function main() {
     );
     check(
       "the context summary is on the page",
-      seeded.contextFields.includes("Dashboard board") && seeded.contextFields.includes("Domain lens"),
+      seeded.contextFields.includes("Dashboard board") && seeded.contextFields.includes("Area lens"),
       `context fields are ${JSON.stringify(seeded.contextFields)}`,
     );
 

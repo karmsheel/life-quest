@@ -2,15 +2,40 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { listDomains } from "./domains.ts";
+import { isDomainLive } from "./domain-databases.ts";
+import { ensureFinanceMetrics, listInstalledKits } from "./finance-kit.ts";
+import { appendLog } from "./log.ts";
+import { metricDisplayValue } from "./metrics.ts";
+import {
+  FIGURE_SECTION,
+  METRICS_OVERALL_ID,
+  metricFigureId,
+  planAreaFigures,
+  planOverallFigures,
+  removeMetricsOverallBlock,
+  removeStaleMetricFigures,
+  upsertFigureBlock,
+  type MetricFigurePlan,
+} from "./review-figures.ts";
 import { periodBounds } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
-import { ensureReview, getReview, writeReview } from "./reviews.ts";
+import {
+  ensureReviewPage,
+  getReview,
+  getReviewPageBody,
+  writeReviewPage,
+} from "./reviews.ts";
 import { applyViewDefaults, resolveViewBlocks, runViewBlocks } from "./views.ts";
 import {
+  FINANCE_DOMAIN_SLUG,
+  FINANCE_KIT_ID,
+  USER_ACTOR,
   type Actor,
   type ComposedViewRunResult,
   type Result,
   type ReviewCadence,
+  type ReviewFigureOutcome,
+  type ReviewPrepopulateOutcome,
   type ReviewPrepopulateResult,
   type ReviewSnapshotDirective,
   type ReviewSnapshotOutcome,
@@ -40,9 +65,11 @@ import {
  * WHY A DEFAULT AND NOT A SEED. `getReviewSkill` answers with the shipped
  * default when the file is missing and does not write it. A read that created a
  * file would freeze the default at the version that first ran; keeping the read
- * pure means a later release can improve a cadence's starting rules and every
- * operator who never edited theirs gets it. `ensureReviewSkill` is the write,
- * and it only runs from the one place a session actually starts.
+ * pure means a later release can improve a cadence's starting rules. The one
+ * exception is `ensureReviewSkill`: when the file on disk is BYTE-IDENTICAL to
+ * the previous shipped default, it was never the operator's, so the write path
+ * replaces it with the improved default. An operator's edit is never matched by
+ * bytes and never touched.
  */
 
 /** The fence that carries one directive: ```lifequest-snapshot */
@@ -72,11 +99,19 @@ export const REVIEW_SECTIONS = [
 ] as const;
 
 /**
- * The shipped rules for a cadence. Each one carries the finance snapshot, whose
- * window is the review's own period: the week's spending in a weekly review, the
- * day's in a daily one, with no second copy of the rules to keep in step.
+ * The PREVIOUS shipped default's finance snapshot, kept in code on purpose.
+ *
+ * The shipped figure used to be one "Spending this period" block: a plain
+ * `sum(amount)` with no filters, which is net cash flow, not spending, and it
+ * printed a week's mixed income and expenses under a "Spending" heading. It is
+ * replaced by Cash in / Cash out / Net cash flow (spec §10.3, decision D3).
+ *
+ * The old builder stays because a vault that never edited its skill file has the
+ * old default ON DISK, byte for byte, and `ensureReviewSkill` must recognise
+ * exactly that content before replacing it. Checking "is this the old default?"
+ * by feature instead of by bytes would also match an operator's edit.
  */
-function financeSnapshotBlock(): Record<string, unknown>[] {
+function previousFinanceSnapshotBlock(): Record<string, unknown>[] {
   return [
     {
       id: "total",
@@ -117,12 +152,12 @@ function financeSnapshotBlock(): Record<string, unknown>[] {
   ];
 }
 
-export const FINANCE_SNAPSHOT_ID = "finance-spend";
+const PREVIOUS_FINANCE_SNAPSHOT_ID = "finance-spend";
 
-function financeSnapshotJson(): string {
+function previousFinanceSnapshotJson(): string {
   return JSON.stringify(
     {
-      id: FINANCE_SNAPSHOT_ID,
+      id: PREVIOUS_FINANCE_SNAPSHOT_ID,
       domain: "financial",
       section: "Look-back",
       title: "Spending this period",
@@ -143,7 +178,7 @@ function financeSnapshotJson(): string {
         limit: 12,
         convertToZar: true,
         columns: [],
-        blocks: financeSnapshotBlock(),
+        blocks: previousFinanceSnapshotBlock(),
       },
     },
     null,
@@ -151,7 +186,238 @@ function financeSnapshotJson(): string {
   );
 }
 
+/**
+ * One shipped finance figure: a single metric spec over the ledger, with the
+ * filters and measure that make its number mean what its title says.
+ *
+ * These are plain `metric` specs — not the snapshot's composed `blocks` form —
+ * because a figure is one number. The `transfer_id is-not-set` filter is the
+ * gross rule (decision D3): a transfer is two rows sharing a transfer id, and
+ * counting either leg as income or spend would inflate both.
+ */
+function financeMetricSpec(input: {
+  title: string;
+  filters: Array<Record<string, unknown>>;
+}): Record<string, unknown> {
+  return {
+    databaseId: "finance:transactions",
+    title: input.title,
+    presentation: "metric",
+    groupBy: null,
+    timeBucket: null,
+    timeColumnId: "date",
+    timeWindow: "all",
+    filters: input.filters,
+    measure: "sum",
+    measureColumnId: "amount",
+    per: null,
+    sort: { by: "value", dir: "desc" },
+    limit: 12,
+    convertToZar: true,
+    columns: [],
+  };
+}
+
+/**
+ * The three shipped finance figures, in reading order.
+ *
+ * Cash in and Cash out are GROSS — transfers excluded — and Cash out is the
+ * negative side of the ledger printed as its size (`magnitude: "abs"`), never a
+ * negated query. Net includes transfers and says so in its title, because the
+ * ledger's `sum(amount)` is net cash flow and labelling it "Spending" was the
+ * concrete weakness the metrics proposal was written to fix.
+ */
+function financeSnapshotDirectives(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: "finance-in",
+      domain: "financial",
+      section: "Look-back",
+      title: "Cash in this period",
+      window: "period",
+      spec: financeMetricSpec({
+        title: "Cash in this period",
+        filters: [
+          { columnId: "amount", op: "gt", value: 0 },
+          { columnId: "transfer_id", op: "is-not-set" },
+        ],
+      }),
+    },
+    {
+      id: "finance-out",
+      domain: "financial",
+      section: "Look-back",
+      title: "Cash out this period",
+      window: "period",
+      magnitude: "abs",
+      spec: financeMetricSpec({
+        title: "Cash out this period",
+        filters: [
+          { columnId: "amount", op: "lt", value: 0 },
+          { columnId: "transfer_id", op: "is-not-set" },
+        ],
+      }),
+    },
+    {
+      id: "finance-net",
+      domain: "financial",
+      section: "Look-back",
+      title: "Net cash flow this period (transfers included)",
+      window: "period",
+      spec: financeMetricSpec({
+        title: "Net cash flow this period (transfers included)",
+        filters: [],
+      }),
+    },
+  ];
+}
+
+function phase4DefaultSkillMarkdown(cadence: ReviewCadence): string {
+  const shared = [
+    "## How to run this review",
+    "",
+    "- Work from the review page the app has open. Read it with `get_review` and the scope you were given before you change anything; a page is written with `write_review(scope, body, baseRev)`.",
+    "- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.",
+    "- Prefer the operator's own words over your summary of them. `get_period_pack` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.",
+    "- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.",
+    "- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.",
+    "- When the report is ready, propose `mark_review_done` rather than marking it done yourself.",
+    "",
+  ];
+  const perCadence: Record<ReviewCadence, string[]> = {
+    daily: [
+      "- One day is small: keep it to a few honest lines rather than a report.",
+      "- The one question worth asking every day is what the day was actually for.",
+    ],
+    weekly: [
+      "- A week is where patterns start to show. Name the one pattern worth changing, not five.",
+      "- Compare against the previous week's review when there is one.",
+    ],
+    monthly: [
+      "- A month is where a goal either has a pulse or does not. Check the open goals before you write intent.",
+    ],
+    quarterly: [
+      "- A quarter is long enough that the honest question is what to stop doing.",
+    ],
+    yearly: [
+      "- A year is a story, not a list. Read the months before you write the year.",
+    ],
+  };
+  const fences = financeSnapshotDirectives().flatMap((directive) => [
+    "```lifequest-snapshot",
+    JSON.stringify(directive, null, 2),
+    "```",
+    "",
+  ]);
+  return [
+    "---",
+    `cadence: ${cadence}`,
+    "---",
+    "# " + cadence.charAt(0).toUpperCase() + cadence.slice(1) + " review skill",
+    "",
+    "Standing rules for this cadence's review sessions. Edit freely, or ask the",
+    "companion to add a rule — the whole file is handed to the review session.",
+    "",
+    ...shared,
+    ...perCadence[cadence],
+    "",
+    "## Snapshots",
+    "",
+    "Each fenced block below names a figure the app itself writes into the review",
+    "before the interview starts, so the numbers are there whether or not the agent",
+    "is running. `window: period` means the block reads exactly the review's own",
+    "period; on the Financial page the three figures are gross cash in, gross cash",
+    "out (transfers excluded, printed positive) and net cash flow (transfers",
+    "included). Marked blocks are refreshed in place on every Start.",
+    "",
+    ...fences,
+  ].join("\n");
+}
+
+/**
+ * The shipped default from this release on.
+ *
+ * The figures are no longer written from fences in this file: the app reads each
+ * area's metric definitions (Phase 4) and writes one figure per definition on
+ * Start. The file therefore describes what the operator will see and how to
+ * change it, and keeps the one door that still belongs to the operator — a
+ * hand-written fence for a custom figure no definition covers.
+ */
 function defaultSkillMarkdown(cadence: ReviewCadence): string {
+  const shared = [
+    "## How to run this review",
+    "",
+    "- Work from the review page the app has open. Read it with `get_review` and the scope you were given before you change anything; a page is written with `write_review(scope, body, baseRev)`.",
+    "- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.",
+    "- Prefer the operator's own words over your summary of them. `get_period_pack` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.",
+    "- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.",
+    "- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.",
+    "- When the report is ready, propose `mark_review_done` rather than marking it done yourself.",
+    "",
+  ];
+  const perCadence: Record<ReviewCadence, string[]> = {
+    daily: [
+      "- One day is small: keep it to a few honest lines rather than a report.",
+      "- The one question worth asking every day is what the day was actually for.",
+    ],
+    weekly: [
+      "- A week is where patterns start to show. Name the one pattern worth changing, not five.",
+      "- Compare against the previous week's review when there is one.",
+    ],
+    monthly: [
+      "- A month is where a goal either has a pulse or does not. Check the open goals before you write intent.",
+    ],
+    quarterly: [
+      "- A quarter is long enough that the honest question is what to stop doing.",
+    ],
+    yearly: [
+      "- A year is a story, not a list. Read the months before you write the year.",
+    ],
+  };
+  return [
+    "---",
+    `cadence: ${cadence}`,
+    "---",
+    "# " + cadence.charAt(0).toUpperCase() + cadence.slice(1) + " review skill",
+    "",
+    "Standing rules for this cadence's review sessions. Edit freely, or ask the",
+    "companion to add a rule — the whole file is handed to the review session.",
+    "",
+    ...shared,
+    ...perCadence[cadence],
+    "",
+    "## Figures",
+    "",
+    "The app writes this review's figures itself when Start is pressed. Each one is",
+    "read from the area's own metric definitions, so the numbers are there whether",
+    "or not the agent is running, and a figure prints its label, its value and unit,",
+    "the window it covers, the as-of minute it was read, and the database or event",
+    "it came from. A review window opens before its period ends, so a figure read",
+    "early says \"period to date\" — the as-of line is what makes the number honest.",
+    "",
+    "Figures refresh on Start while the review is open and freeze once it is",
+    "locked: a finished review is history, not a live dashboard. To change what a",
+    "figure measures, change that area's metric definitions rather than this file.",
+    "",
+    "A hand-written `lifequest-snapshot` fence in this file is still honoured for a",
+    "custom figure the metric definitions do not cover; the app writes and refreshes",
+    "that block on Start exactly as before.",
+    "",
+  ].join("\n");
+}
+
+function previousDefaultSkillMarkdown(cadence: ReviewCadence): string {
+  /**
+   * EXACTLY the bullets 0.3.4 shipped, and nothing else.
+   *
+   * This is a byte-for-byte reproduction of a file that already exists on real
+   * operators' disks, not a "close enough" copy of one: if one character differs
+   * the comparison in `ensureReviewSkill` never matches and an untouched vault
+   * keeps its old "Spending this period" figure forever. The wording here was
+   * captured from the 0.3.4 release, so it predates the Phase 3 page-contract
+   * rewording (`write_review(scope, body, baseRev)`, the extra overall-page
+   * bullet). Do not "tidy" it — a reworded bullet is a broken migration.
+   */
   const shared = [
     "## How to run this review",
     "",
@@ -201,7 +467,7 @@ function defaultSkillMarkdown(cadence: ReviewCadence): string {
     "period. Marked blocks are refreshed in place on every Start.",
     "",
     "```lifequest-snapshot",
-    financeSnapshotJson(),
+    previousFinanceSnapshotJson(),
     "```",
     "",
   ].join("\n");
@@ -209,6 +475,29 @@ function defaultSkillMarkdown(cadence: ReviewCadence): string {
 
 export function defaultReviewSkill(cadence: ReviewCadence): string {
   return defaultSkillMarkdown(cadence);
+}
+
+/**
+ * The default this release replaced, exposed for exactly two readers: the
+ * one-time rewrite above (which must compare bytes against it) and a test that
+ * seeds a pre-upgrade vault. It is NOT an alternative default — nothing should
+ * answer a read with it.
+ */
+export function previousShippedDefaultReviewSkill(cadence: ReviewCadence): string {
+  return previousDefaultSkillMarkdown(cadence);
+}
+
+/**
+ * The Phase 4 default (the three finance `lifequest-snapshot` fences), kept in
+ * code for the same two readers as the 0.3.4 copy above.
+ *
+ * A vault that ran Phase 4 but never edited its skill file has exactly this
+ * content on disk, byte for byte. Phase 5 moved the figures from fences to
+ * metric definitions, so the upgrade must recognise this file and replace it
+ * once — an operator's edit is never byte-identical to it and is left alone.
+ */
+export function previousPhase4DefaultReviewSkill(cadence: ReviewCadence): string {
+  return phase4DefaultSkillMarkdown(cadence);
 }
 
 /**
@@ -285,6 +574,14 @@ export function parseSnapshotDirectives(markdown: string): {
       problems.push(`${label} (${id}): "window" must be "period" or "all"`);
       continue;
     }
+    let magnitude: "abs" | "negate" | null = null;
+    if (raw.magnitude !== undefined && raw.magnitude !== null) {
+      if (raw.magnitude !== "abs" && raw.magnitude !== "negate") {
+        problems.push(`${label} (${id}): "magnitude" must be "abs" or "negate"`);
+        continue;
+      }
+      magnitude = raw.magnitude;
+    }
     seen.add(id);
     directives.push({
       id,
@@ -295,6 +592,7 @@ export function parseSnapshotDirectives(markdown: string): {
           ? raw.title.trim()
           : "Snapshot",
       window,
+      ...(magnitude ? { magnitude } : {}),
       spec: applyViewDefaults(
         spec as Omit<ViewSpec, "schemaVersion">,
       ) as Omit<ViewSpec, "schemaVersion">,
@@ -313,8 +611,10 @@ export async function getReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
 ): Promise<Result<ReviewSkill>> {
-  const file = vaultPaths(rootPath).reviewSkillMd(cadence);
   try {
+    // The builder validates its segment and throws on a traversing cadence
+    // (VAULT-06); inside the try so this read keeps its Result contract.
+    const file = vaultPaths(rootPath).reviewSkillMd(cadence);
     const markdown = await fs.readFile(file, "utf8");
     return { ok: true, value: skillFrom(cadence, markdown, true) };
   } catch (e) {
@@ -329,8 +629,9 @@ export async function getReviewSkill(
 }
 
 /**
- * Write one cadence's rules, and only if there is no file yet for `ensure`.
- * An edited skill is never overwritten: the operator's rules are theirs.
+ * Write one cadence's rules, atomically, normalising the trailing newline.
+ * Shared by the three writers — the first-run seed, the default replacement and
+ * the operator's own `write_review_skill` — so every file on disk has one shape.
  */
 async function writeSkillFile(file: string, markdown: string): Promise<Result<true>> {
   try {
@@ -342,30 +643,89 @@ async function writeSkillFile(file: string, markdown: string): Promise<Result<tr
   }
 }
 
+/**
+ * Write one cadence's rules, and only if there is no file yet for `ensure`.
+ * An edited skill is never overwritten: the operator's rules are theirs.
+ *
+ * The one rewrite is a release that replaced the shipped default. Two are
+ * recognised by bytes, because two releases shipped a default that vaults still
+ * carry on disk: the 0.3.4 single "Spending this period" snapshot, and the Phase
+ * 4 three-fence cash in / out / net default. A file byte-identical to either was
+ * never the operator's, so it is replaced with the current default and logged
+ * once. Comparing bytes is the whole safety property — an operator who changed
+ * even one character no longer matches and is left alone.
+ */
 export async function ensureReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewSkill>> {
-  const file = vaultPaths(rootPath).reviewSkillMd(cadence);
-  const existing = await getReviewSkill(rootPath, cadence);
-  if (!existing.ok) return existing;
-  if (existing.value.exists) return existing;
-  const written = await writeSkillFile(file, existing.value.markdown);
-  if (!written.ok) return written;
-  return getReviewSkill(rootPath, cadence);
+  try {
+    const file = vaultPaths(rootPath).reviewSkillMd(cadence);
+    const existing = await getReviewSkill(rootPath, cadence);
+    if (!existing.ok) return existing;
+    if (existing.value.exists) {
+      const replaced = previousDefaultSkillMarkdown(cadence);
+      const phase4 = phase4DefaultSkillMarkdown(cadence);
+      if (existing.value.markdown !== replaced && existing.value.markdown !== phase4) {
+        return existing;
+      }
+      const from =
+        existing.value.markdown === phase4 ? "phase-4-default" : "0.3.4-default";
+      const migrated = await writeSkillFile(file, defaultReviewSkill(cadence));
+      if (!migrated.ok) return migrated;
+      await appendLog(rootPath, {
+        domainSlug: null,
+        type: "review-skill.migrated",
+        summary: `Replaced the shipped ${from} ${cadence} review skill with the metric-figures default`,
+        payload: { cadence, from, to: "figures-default" },
+        actor,
+      });
+      return getReviewSkill(rootPath, cadence);
+    }
+    const written = await writeSkillFile(file, existing.value.markdown);
+    if (!written.ok) return written;
+    return getReviewSkill(rootPath, cadence);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
+/**
+ * Replace a cadence's standing rules.
+ *
+ * Fort-Knox AGENT-09: this write had no life-log line at all, which made the
+ * instruction-poisoning path — a companion rewriting the rules that every later
+ * review session is told "outrank your own habits" — invisible. The line
+ * carries the actor, the cadence, and the new length; not the prose, which is
+ * already in the file.
+ */
 export async function writeReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
   markdown: string,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewSkill>> {
-  const written = await writeSkillFile(
-    vaultPaths(rootPath).reviewSkillMd(cadence),
-    markdown,
-  );
-  if (!written.ok) return written;
-  return getReviewSkill(rootPath, cadence);
+  try {
+    // The builder validates its segment (VAULT-06) and throws on a traversing
+    // cadence; inside the try so this write keeps its Result contract for every
+    // caller (the tool, the renderer IPC, the review session).
+    const written = await writeSkillFile(
+      vaultPaths(rootPath).reviewSkillMd(cadence),
+      markdown,
+    );
+    if (!written.ok) return written;
+    await appendLog(rootPath, {
+      domainSlug: null,
+      type: "review-skill.written",
+      summary: `Wrote the ${cadence} review skill`,
+      payload: { cadence, chars: markdown.length },
+      actor,
+    });
+    return getReviewSkill(rootPath, cadence);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +780,18 @@ export function renderSnapshotMarkdown(
   out.push(`**${directive.title}**${covers}`);
   out.push("");
 
+  /**
+   * A directive's magnitude is DISPLAY ONLY. "Cash out" sums the ledger's
+   * negative amounts (-3,000) and prints the size the operator spent (3,000);
+   * the query and the stored rows keep the sign, so a figure can never change
+   * what the data says. `negate` is the mirror rule.
+   */
+  const shown = (value: number): number =>
+    metricDisplayValue(
+      value,
+      directive.magnitude ? { magnitude: directive.magnitude } : null,
+    ) ?? value;
+
   let groups = 0;
   run.blocks.forEach((block, index) => {
     const result = block.result;
@@ -436,7 +808,7 @@ export function renderSnapshotMarkdown(
       return;
     }
     if (block.presentation === "metric") {
-      const value = result.rows[0]?.[1] ?? 0;
+      const value = shown(result.rows[0]?.[1] ?? 0);
       groups += 1;
       out.push(
         `${formatSnapshotNumber(value)}${unitSuffix(result.currency)}${result.rows.length === 0 ? " — no rows in this window" : ""}`,
@@ -465,7 +837,7 @@ export function renderSnapshotMarkdown(
     out.push(`| ${cell(label)} | Total${unitSuffix(result.currency)} |`);
     out.push("| --- | --- |");
     for (const [name, value] of result.rows) {
-      out.push(`| ${cell(name)} | ${formatSnapshotNumber(value)} |`);
+      out.push(`| ${cell(name)} | ${formatSnapshotNumber(shown(value))} |`);
     }
     out.push("");
   });
@@ -486,21 +858,49 @@ export function renderSnapshotMarkdown(
 // ---------------------------------------------------------------------------
 
 type SectionSpan = {
-  /** The line index of the `###` heading the block belongs after. */
+  /** The line index of the heading the block belongs after — an H3 under a
+   *  domain, or the overall section's own H2. */
   headingIndex: number;
   /** The line index just past this section's own content. */
   endIndex: number;
 };
 
 /**
- * Where a directive's section is, if the review has one.
+ * Where a directive's block goes, in the order that is the contract.
  *
- * Addressed by the domain's DISPLAY name, because that is what the review file
- * carries: `## Financial`, not `## financial`. A review that has no such section
- * is left alone rather than given one — inventing a domain section would change
- * which scopes the review claims to cover, which is the operator's decision.
+ * 1. The area path — `findDomainSection`: `## Financial` then `### Look-back`.
+ * 2. The overall path — `findOverallSection`: the section's own name as an H2,
+ *    `## Look-back`, the general skeleton every review file carries, whether the
+ *    cadence has area sections or not.
+ *
+ * The area path is tried first so a review that carries both can never have its
+ * block drift out of the area section and into the general one: one shipped
+ * directive has to serve a weekly review (which has areas) and a daily one
+ * (which by design has none) with no per-cadence copy of the rule.
+ *
+ * Only a null from both is a review with nowhere to put the block. A review is
+ * not invented a section here — `prepopulateReview` owns that decision, and it
+ * asks the area path alone, because a plant can only add an area section.
  */
 function findSection(
+  lines: string[],
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return (
+    findDomainSection(lines, domainName, section) ??
+    findOverallSection(lines, section)
+  );
+}
+
+/**
+ * Step 1: the section under the domain's DISPLAY name.
+ *
+ * Display name because that is what the review file carries: `## Financial`, not
+ * `## financial`. The span runs from the `###` heading to the next `###` in the
+ * same domain, the next `##`, or the next `#`.
+ */
+function findDomainSection(
   lines: string[],
   domainName: string,
   section: string,
@@ -535,6 +935,51 @@ function findSection(
 }
 
 /**
+ * Step 2: the section as an H2, outside every domain section.
+ *
+ * A domain section is an H2 of its own, so the first H2 carrying the section's
+ * own name is the general skeleton's, and its span ends at the next H2, the next
+ * H1, or the end of the file.
+ */
+function findOverallSection(lines: string[], section: string): SectionSpan | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const h2 = /^##\s+(.+?)\s*$/.exec(lines[i]!);
+    if (!h2 || h2[1] !== section) continue;
+    let endIndex = lines.length;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (/^#{1,2}\s/.test(lines[j]!)) {
+        endIndex = j;
+        break;
+      }
+    }
+    return { headingIndex: i, endIndex };
+  }
+  return null;
+}
+
+/** `findSection` on a whole body, normalising line endings once. */
+function findSnapshotSection(
+  body: string,
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return findSection(body.replace(/\r\n/g, "\n").split("\n"), domainName, section);
+}
+
+/** The area path alone, on a whole body — what a plant decision asks. */
+function findDomainSnapshotSection(
+  body: string,
+  domainName: string,
+  section: string,
+): SectionSpan | null {
+  return findDomainSection(
+    body.replace(/\r\n/g, "\n").split("\n"),
+    domainName,
+    section,
+  );
+}
+
+/**
  * Put one rendered snapshot where it belongs, replacing what a previous run put
  * there. Replacement is by the marker pair, not by section: the operator's own
  * prose in the same section is never touched, and running Start twice leaves one
@@ -544,6 +989,31 @@ export function upsertSnapshotBlock(
   body: string,
   directive: ReviewSnapshotDirective,
   domainName: string,
+  markdown: string,
+): { body: string; status: "written" | "unchanged" | "skipped"; reason?: string } {
+  return upsertSnapshotAt(
+    body,
+    directive,
+    domainName,
+    findSnapshotSection(body, domainName, directive.section),
+    markdown,
+  );
+}
+
+/**
+ * `upsertSnapshotBlock`, once the destination has already been resolved.
+ *
+ * Placement takes the span rather than looking for it again, so the decision to
+ * run and the decision where the block goes are one decision: `prepopulateReview`
+ * resolves each directive once, skips on null, and hands the hit here. The marker
+ * path needs no span — a block a previous run wrote is replaced where it stands,
+ * whatever the headings later say.
+ */
+function upsertSnapshotAt(
+  body: string,
+  directive: ReviewSnapshotDirective,
+  domainName: string,
+  found: SectionSpan | null,
   markdown: string,
 ): { body: string; status: "written" | "unchanged" | "skipped"; reason?: string } {
   const open = snapshotOpenMarker(directive.id);
@@ -563,7 +1033,6 @@ export function upsertSnapshotBlock(
     };
   }
 
-  const found = findSection(lines, domainName, directive.section);
   if (!found) {
     return {
       body,
@@ -572,11 +1041,41 @@ export function upsertSnapshotBlock(
     };
   }
   // Straight after the heading and whatever blank lines follow it, so the block
-  // opens the section and the operator's prose reads under it.
+  // opens the section and the operator's prose reads under it. When the section
+  // already holds figures, the new one goes after the LAST of them: directives
+  // are declared in reading order (Cash in, Cash out, Net), and inserting each
+  // at the top would reverse them on the first pass.
   let at = found.headingIndex + 1;
   while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  const closeMarker = /^<!-- \/lifequest:snapshot:.+ -->$/;
+  for (let i = found.headingIndex + 1; i < found.endIndex && i < lines.length; i += 1) {
+    if (!closeMarker.test(lines[i]!)) continue;
+    at = i + 1;
+    while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  }
   const next = [...lines.slice(0, at), ...block, "", ...lines.slice(at)];
   return { body: next.join("\n"), status: "written" };
+}
+
+/**
+ * Install the shipped finance metric definitions for a vault that already has
+ * the kit, without letting a definition failure fail the review pass.
+ *
+ * The kit's own install path calls the same helper for a fresh install; this is
+ * the catch-up path for every vault installed before metrics existed. It runs
+ * on Start, which is when the finance figures are about to be written, and it
+ * only creates absent files — an operator's edit or deletion is respected.
+ */
+async function ensureShippedFinanceMetrics(rootPath: string): Promise<void> {
+  try {
+    if (!(await isDomainLive(rootPath, FINANCE_DOMAIN_SLUG))) return;
+    const kits = await listInstalledKits(rootPath, FINANCE_DOMAIN_SLUG);
+    if (!kits.ok || !kits.value.includes(FINANCE_KIT_ID)) return;
+    await ensureFinanceMetrics(rootPath);
+  } catch {
+    // The ledger figures still run; a missing definition file is a library
+    // convenience, not a precondition for the review's own numbers.
+  }
 }
 
 /**
@@ -592,181 +1091,483 @@ export async function prepopulateReview(
   rootPath: string,
   input: { cadence: ReviewCadence; period: string; scope: string; actor: Actor },
 ): Promise<Result<ReviewPrepopulateResult>> {
-  const review = await getReview(rootPath, input.cadence, input.period);
-  if (!review.ok) return review;
-  let record = review.value;
+  const recordRes = await getReview(rootPath, input.cadence, input.period);
+  if (!recordRes.ok) return recordRes;
+  const record = recordRes.value;
+
+  const lockedValue = (bodyMarkdown: string): ReviewPrepopulateResult => ({
+    cadence: input.cadence,
+    period: input.period,
+    scope: input.scope,
+    outcomes: [],
+    applied: 0,
+    planted: [],
+    locked: true,
+    bodyMarkdown,
+  });
 
   if (record.locked) {
-    return {
-      ok: true,
-      value: {
-        cadence: input.cadence,
-        period: input.period,
-        scope: input.scope,
-        outcomes: [],
-        applied: 0,
-        planted: [],
-        locked: true,
-        bodyMarkdown: record.bodyMarkdown,
-      },
-    };
+    return { ok: true, value: lockedValue(record.bodyMarkdown) };
   }
 
-  const skill = await ensureReviewSkill(rootPath, input.cadence);
-  if (!skill.ok) return skill;
-
-  const wanted = skill.value.snapshots.filter(
-    (d) => input.scope === "overall" || d.domain === input.scope,
-  );
-  if (wanted.length === 0 && skill.value.problems.length === 0) {
-    return {
-      ok: true,
-      value: {
-        cadence: input.cadence,
-        period: input.period,
-        scope: input.scope,
-        outcomes: [],
-        applied: 0,
-        planted: [],
-        locked: false,
-        bodyMarkdown: record.bodyMarkdown,
-      },
-    };
-  }
-
-  const listed = await listDomains(rootPath);
-  const names = new Map<string, string>();
-  if (listed.ok) {
-    for (const d of listed.value) names.set(d.slug, d.meta.name);
-  }
-
-  /**
-   * A rule names a domain, so the review gets that domain's section.
-   *
-   * Without this the shipped weekly rule is inert on any review the operator has
-   * not already started a domain scope on — the directive would skip every week
-   * for want of a `## Financial` heading, which is not what "the week's spending
-   * belongs under Financial" means. Planting goes through `ensureReview` with
-   * that domain as its scope, which is the existing, tested way a section and
-   * its scope state appear together; nothing here invents structure of its own.
-   */
-  const planted: string[] = [];
-  for (const directive of wanted) {
-    const domainName = names.get(directive.domain) ?? directive.domain;
-    if (findSection(record.bodyMarkdown.split("\n"), domainName, directive.section)) {
-      continue;
-    }
-    if (planted.includes(directive.domain)) continue;
-    const grown = await ensureReview(rootPath, {
-      cadence: input.cadence,
-      period: input.period,
-      scope: directive.domain,
-    });
-    if (grown.ok) planted.push(directive.domain);
-  }
-  if (planted.length > 0) {
-    const reread = await getReview(rootPath, input.cadence, input.period);
-    if (reread.ok) record = reread.value;
-  }
-
-  const bounds = periodBounds(
+  // The page is the write unit now. A Start can arrive for a page that was not
+  // ensured first (the window's Start does ensure it), so ensure here too: the
+  // figures need a page to land on, and the editor still reads the whole body.
+  const ensured = await ensureReviewPage(rootPath, {
+    cadence: input.cadence,
+    period: input.period,
+    scope: input.scope,
+  });
+  if (!ensured.ok) return ensured;
+  const pageRes = await getReviewPageBody(
+    rootPath,
     input.cadence,
     input.period,
-    record.weekStartDay,
+    input.scope,
   );
-  if (!bounds.ok) return bounds;
+  if (!pageRes.ok) return pageRes;
+  let page = pageRes.value;
 
-  const outcomes: ReviewSnapshotOutcome[] = skill.value.problems.map((problem, index) => ({
-    id: `unparsed-${index + 1}`,
-    domain: "",
-    section: "",
-    title: "Snapshot rule",
-    status: "failed" as const,
-    reason: problem,
-  }));
+  const skill = await ensureReviewSkill(rootPath, input.cadence, input.actor);
+  if (!skill.ok) return skill;
+  // A vault that installed the finance kit before metric definitions shipped
+  // has the ledger but not the three shipped definitions. Start is where the
+  // figures are about to be read, so it is where they are written — idempotent
+  // (only absent files are created) and never overwriting an operator's edit
+  // (spec §10.3). A failure here must not fail the Start's own figures, which
+  // still run from whatever the ledger holds.
+  await ensureShippedFinanceMetrics(rootPath);
 
-  let body = record.bodyMarkdown;
-  let applied = 0;
+  /**
+   * Which directives belong to this page.
+   *
+   * A directive names a domain, and a page has exactly one scope, so the rule is
+   * the scope's own directives. The daily review is the exception: it is one
+   * general page by design, so its page runs every directive (a day's spending
+   * belongs in the day's Look-back). An area-bearing cadence's overall page runs
+   * no domain directive — those figures live on the area pages, and the
+   * cross-domain table is an app-rendered block, not a per-area snapshot.
+   */
+  const wanted = skill.value.snapshots.filter((directive) => {
+    if (input.cadence === "daily") return true;
+    if (input.scope === "overall") return directive.domain === "";
+    return directive.domain === input.scope;
+  });
+
+  const compatBody = async (): Promise<string> => {
+    const fresh = await getReview(rootPath, input.cadence, input.period);
+    return fresh.ok ? fresh.value.bodyMarkdown : page.bodyMarkdown;
+  };
+
+  /**
+   * The app's own figures for this page (spec §10.4).
+   *
+   * An area page gets one figure per definition of that area. The overall page
+   * (daily included: a day is one overall page) gets only the cross-domain
+   * table — this is why the notebook order matters here, and why the pass reads
+   * it after the page was ensured.
+   */
+  const freshRecord = await getReview(rootPath, input.cadence, input.period);
+  const notebookOrder = freshRecord.ok
+    ? (freshRecord.value.pages ?? []).map((summary) => summary.scope)
+    : [];
+  /**
+   * A figure must never fail Start (spec §10.4): the planning helpers report
+   * every read failure as a `failed` outcome, and this belt-and-braces catch
+   * covers an unexpected throw the same way — the operator hears that the
+   * figures did not refresh, and the interview still starts.
+   */
+  let figurePlan: MetricFigurePlan;
+  try {
+    figurePlan =
+      input.scope === "overall"
+        ? await planOverallFigures(rootPath, {
+            cadence: input.cadence,
+            period: input.period,
+            notebookOrder,
+          })
+        : await planAreaFigures(rootPath, {
+            cadence: input.cadence,
+            period: input.period,
+            scope: input.scope,
+          });
+  } catch (e) {
+    figurePlan = {
+      figures: [],
+      overall: null,
+      liveDefinitionIds: null,
+      removeOverall: false,
+      outcomes: [
+        {
+          kind: input.scope === "overall" ? "overall" : "metric",
+          id: input.scope === "overall" ? METRICS_OVERALL_ID : `metrics:${input.scope}`,
+          domain: input.scope === "overall" ? "" : input.scope,
+          section: FIGURE_SECTION,
+          title: "Figures",
+          status: "failed",
+          reason: e instanceof Error ? e.message : String(e),
+        },
+      ],
+    };
+  }
+
+  const boundsRes = periodBounds(input.cadence, input.period, record.weekStartDay);
+  if (!boundsRes.ok) return boundsRes;
+  const bounds = boundsRes.value;
+
+  const outcomes: ReviewPrepopulateOutcome[] = skill.value.problems.map(
+    (problem, index) => ({
+      id: `unparsed-${index + 1}`,
+      domain: "",
+      section: "",
+      title: "Snapshot rule",
+      status: "failed" as const,
+      reason: problem,
+    }),
+  );
+
+  // Run every view first. The query is the slow half of a Start, and a retry
+  // after a conflict must not run it again: only placement changes with the body.
+  const renderedById = new Map<string, { markdown: string; groups: number }>();
+  const failedById = new Map<string, string>();
   for (const directive of wanted) {
-    const domainName = names.get(directive.domain) ?? directive.domain;
-    if (!findSection(body.split("\n"), domainName, directive.section)) {
-      outcomes.push({
-        id: directive.id,
-        domain: directive.domain,
-        section: directive.section,
-        title: directive.title,
-        status: "skipped",
-        reason: `this review has no "${directive.section}" section under ${domainName}`,
-      });
-      continue;
-    }
-    const run = await runSnapshot(rootPath, directive, bounds.value);
+    const run = await runSnapshot(rootPath, directive, bounds);
     if (!run.ok) {
-      outcomes.push({
-        id: directive.id,
-        domain: directive.domain,
-        section: directive.section,
-        title: directive.title,
-        status: "failed",
-        reason: run.error,
-      });
+      failedById.set(directive.id, run.error);
       continue;
     }
     const rendered = renderSnapshotMarkdown(directive, run.value.run, {
       windowLabel:
         directive.window === "period"
-          ? `${bounds.value.start} → ${bounds.value.end}`
+          ? `${bounds.start} → ${bounds.end}`
           : "all time",
       buckets: run.value.blocks.map((b) => b.timeBucket),
       groups: run.value.blocks.map((b) => b.groupBy),
     });
-    const upserted = upsertSnapshotBlock(body, directive, domainName, rendered.markdown);
-    body = upserted.body;
-    if (upserted.status === "skipped") {
-      outcomes.push({
+    renderedById.set(directive.id, { markdown: rendered.markdown, groups: rendered.groups });
+  }
+
+  /**
+   * Place the already-rendered blocks into this page. It is a pure function of
+   * the page body and the rendered figures, which is what makes the write below
+   * retryable: a conflict re-reads the page and places the same figures into the
+   * newer body rather than replaying the queries.
+   *
+   * Placement resolves the page's own H2, not an area wrapper: a page *is* the
+   * area now, so `### Look-back` under `## Health` has become `## Look-back`.
+   */
+  const place = (sourceBody: string) => {
+    let body = sourceBody;
+    const placed: ReviewPrepopulateOutcome[] = [];
+
+    // A definition the operator deleted must stop appearing. The block is the
+    // app's own writing, so this is part of the same write as the refresh; it
+    // only ever runs while the notebook is unlocked (the lock path returned
+    // above), which is what freezes a finished review's figures.
+    if (figurePlan.liveDefinitionIds !== null) {
+      const stale = removeStaleMetricFigures(
+        body,
+        new Set(figurePlan.liveDefinitionIds),
+      );
+      if (stale.removed.length > 0) {
+        body = stale.body;
+        for (const definitionId of stale.removed) {
+          placed.push({
+            kind: "metric",
+            id: metricFigureId(definitionId),
+            definitionId,
+            domain: input.scope,
+            section: FIGURE_SECTION,
+            title: definitionId,
+            status: "written",
+            reason: "its metric definition no longer exists",
+          });
+        }
+      }
+    }
+
+    for (const directive of wanted) {
+      const failure = failedById.get(directive.id);
+      if (failure !== undefined) {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "failed",
+          reason: failure,
+        });
+        continue;
+      }
+      const lines = body.replace(/\r\n/g, "\n").split("\n");
+      const found = findOverallSection(lines, directive.section);
+      if (!found) {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "skipped",
+          reason: `this page has no "${directive.section}" section`,
+        });
+        continue;
+      }
+      const prepared = renderedById.get(directive.id)!;
+      const upserted = upsertSnapshotAt(body, directive, input.scope, found, prepared.markdown);
+      if (upserted.status === "skipped") {
+        placed.push({
+          id: directive.id,
+          domain: directive.domain,
+          section: directive.section,
+          title: directive.title,
+          status: "skipped",
+          reason: upserted.reason,
+        });
+        continue;
+      }
+      body = upserted.body;
+      placed.push({
         id: directive.id,
         domain: directive.domain,
         section: directive.section,
         title: directive.title,
-        status: "skipped",
-        reason: upserted.reason,
+        status: upserted.status,
+        groups: prepared.groups,
       });
-      continue;
     }
-    if (upserted.status === "written") applied += 1;
-    outcomes.push({
-      id: directive.id,
-      domain: directive.domain,
-      section: directive.section,
-      title: directive.title,
-      status: upserted.status,
-      groups: rendered.groups,
+
+    // No definitions at all: the overall page must not keep a table of numbers
+    // nothing produces any more.
+    if (figurePlan.removeOverall) {
+      const removed = removeMetricsOverallBlock(body);
+      if (removed.removed) {
+        body = removed.body;
+        placed.push({
+          kind: "overall",
+          id: METRICS_OVERALL_ID,
+          domain: "",
+          section: FIGURE_SECTION,
+          title: "Metrics this period",
+          status: "written",
+          reason: "there are no metric definitions to show",
+        });
+      }
+    }
+
+    // Figures go after the operator's snapshot blocks, in definition order: the
+    // upsert opens the Look-back only when the section holds no app-written
+    // block yet, so each one lands after the previous.
+    for (const figure of figurePlan.figures) {
+      const upserted = upsertFigureBlock(body, figure);
+      if (upserted.status === "skipped") {
+        placed.push({
+          kind: "metric",
+          id: figure.directive.id,
+          definitionId: figure.directive.definitionId,
+          domain: figure.directive.domain,
+          section: FIGURE_SECTION,
+          title: figure.directive.title,
+          status: "failed",
+          reason: upserted.reason,
+        });
+        continue;
+      }
+      body = upserted.body;
+      placed.push({
+        kind: "metric",
+        id: figure.directive.id,
+        definitionId: figure.directive.definitionId,
+        domain: figure.directive.domain,
+        section: FIGURE_SECTION,
+        title: figure.directive.title,
+        status: upserted.status,
+      });
+    }
+    if (figurePlan.overall !== null) {
+      const upserted = upsertFigureBlock(body, figurePlan.overall);
+      if (upserted.status === "skipped") {
+        placed.push({
+          kind: "overall",
+          id: METRICS_OVERALL_ID,
+          domain: "",
+          section: FIGURE_SECTION,
+          title: "Metrics this period",
+          status: "failed",
+          reason: upserted.reason,
+        });
+      } else {
+        body = upserted.body;
+        placed.push({
+          kind: "overall",
+          id: METRICS_OVERALL_ID,
+          domain: "",
+          section: FIGURE_SECTION,
+          title: "Metrics this period",
+          status: upserted.status,
+        });
+      }
+    }
+    return { body, outcomes: placed };
+  };
+
+  // A page write carries the page rev it read and retries on a conflict: an
+  // operator's autosave that landed between the read and the write keeps their
+  // prose, and the figures are placed into the newer page instead of reverting it.
+  let placed = place(page.bodyMarkdown);
+  let wrote = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (placed.body === page.bodyMarkdown) break;
+    const written = await writeReviewPage(rootPath, {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      bodyMarkdown: placed.body,
+      baseRev: page.rev,
+      actor: input.actor,
     });
+    if (written.ok) {
+      wrote = true;
+      page = written.page;
+      break;
+    }
+    if (written.code === "LOCKED") {
+      return { ok: true, value: lockedValue(await compatBody()) };
+    }
+    if (written.code !== "CONFLICT") {
+      return { ok: false, error: written.error };
+    }
+    const fresh = await getReviewPageBody(
+      rootPath,
+      input.cadence,
+      input.period,
+      input.scope,
+    );
+    if (!fresh.ok) return fresh;
+    page = fresh.value;
+    placed = place(page.bodyMarkdown);
   }
 
-  const value = (bodyMarkdown: string): ReviewPrepopulateResult => ({
-    cadence: input.cadence,
-    period: input.period,
-    scope: input.scope,
-    outcomes,
-    applied,
-    planted,
-    locked: false,
-    bodyMarkdown,
-  });
-
-  if (applied === 0 && planted.length === 0) {
-    return { ok: true, value: value(record.bodyMarkdown) };
+  if (!wrote && placed.body !== page.bodyMarkdown) {
+    return {
+      ok: false,
+      error: "The review changed while its figures were being written; try Start again.",
+    };
   }
 
-  const written = await writeReview(rootPath, {
-    cadence: input.cadence,
-    period: input.period,
-    bodyMarkdown: body,
+  // The log is a record of changes, not of Starts: a pass whose write left the
+  // page exactly as it found it — a second Start, a review none of whose rules
+  // could be placed — appends nothing, so a line here means a figure landed.
+  const bodyMarkdown = await compatBody();
+  const isFigureOutcome = (
+    outcome: ReviewPrepopulateOutcome,
+  ): outcome is ReviewFigureOutcome => "kind" in outcome;
+  const snapshotOutcomes = placed.outcomes.filter(
+    (outcome): outcome is ReviewSnapshotOutcome => !isFigureOutcome(outcome),
+  );
+  if (wrote && snapshotOutcomes.some((outcome) => outcome.status === "written")) {
+    await logSnapshotPass(rootPath, input, record.title, snapshotOutcomes);
+  }
+
+  // Figures log on their own line, with the page scope, so a reader can tell an
+  // operator fence from an app figure and see which page changed. A figure that
+  // FAILED is logged even when the body did not move: it is the one thing an
+  // operator needs to hear about from a pass that otherwise looks clean.
+  const figureOutcomes: ReviewFigureOutcome[] = [
+    ...figurePlan.outcomes,
+    ...placed.outcomes.filter(isFigureOutcome),
+  ];
+  const figureWritten = figureOutcomes.filter((outcome) => outcome.status === "written").length;
+  const figureFailed = figureOutcomes.filter((outcome) => outcome.status === "failed").length;
+  if (figureWritten > 0 || figureFailed > 0) {
+    await logFigurePass(rootPath, input, figureOutcomes);
+  }
+  return {
+    ok: true,
+    value: {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      outcomes: [...outcomes, ...figurePlan.outcomes, ...placed.outcomes],
+      applied: placed.outcomes.filter((outcome) => outcome.status === "written").length,
+      planted: [],
+      locked: false,
+      bodyMarkdown,
+    },
+  };
+}
+
+/**
+ * The audit line for a pass that wrote, refreshed or failed figures.
+ *
+ * Counts, not prose, and the page scope with them: `written` and `unchanged`
+ * answer "did anything move?", `failed` says a definition could not answer —
+ * which must be visible without failing the Start itself.
+ */
+async function logFigurePass(
+  rootPath: string,
+  input: { cadence: ReviewCadence; period: string; scope: string; actor: Actor },
+  outcomes: ReviewFigureOutcome[],
+): Promise<void> {
+  const count = (status: ReviewFigureOutcome["status"]): number =>
+    outcomes.filter((outcome) => outcome.status === status).length;
+  const written = count("written");
+  const failed = count("failed");
+  await appendLog(rootPath, {
+    domainSlug: null,
+    type: "review.figures",
+    summary:
+      written > 0
+        ? `Wrote ${written} figure${written === 1 ? "" : "s"} on the ${input.scope === "overall" ? "overall" : input.scope} page`
+        : `Could not write ${failed} figure${failed === 1 ? "" : "s"} on the ${input.scope === "overall" ? "overall" : input.scope} page`,
+    payload: {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      written,
+      unchanged: count("unchanged"),
+      failed,
+    },
     actor: input.actor,
   });
-  if (!written.ok) return written;
-  return { ok: true, value: value(written.value.bodyMarkdown) };
+}
+
+/**
+ * The audit line for a pass that changed the review.
+ *
+ * Counts, not prose: the file holds the report itself, and the log's job is to
+ * say that a Start actually changed something, who caused it, and how the rules
+ * fared — `written`, `skipped`, `failed`. Before this a skip was invisible
+ * everywhere, which is how a shipped rule could serve every daily review for the
+ * length of a release and leave no trace. The event type is new, so a reader
+ * that ignores unknown types keeps working, and a logging failure must not fail
+ * the write that already landed: `appendLog` reports rather than throws.
+ */
+async function logSnapshotPass(
+  rootPath: string,
+  input: { cadence: ReviewCadence; period: string; scope: string; actor: Actor },
+  title: string,
+  outcomes: ReviewSnapshotOutcome[],
+): Promise<void> {
+  const count = (status: ReviewSnapshotOutcome["status"]): number =>
+    outcomes.filter((outcome) => outcome.status === status).length;
+  const written = count("written");
+  await appendLog(rootPath, {
+    domainSlug: null,
+    type: "review.snapshots",
+    summary:
+      written > 0
+        ? `Filled ${written} snapshot${written === 1 ? "" : "s"} in the ${title}`
+        : `Updated the ${title}`,
+    payload: {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      written,
+      skipped: count("skipped"),
+      failed: count("failed"),
+    },
+    actor: input.actor,
+  });
 }
 
 /**

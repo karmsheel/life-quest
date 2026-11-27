@@ -153,6 +153,15 @@ export type PinArrange = {
   isLifted: (pinId: string) => boolean;
   /** What to say about the last gesture: a live region reads this out. */
   announce: string;
+  /**
+   * Whether the press that just ended was a gesture rather than a click.
+   *
+   * A drag or a hold ends with a `click` the browser still delivers to the card,
+   * and the card is now the chat-context toggle. The page asks this once, before
+   * it treats that click as a selection, and consumes the answer so one gesture
+   * cannot suppress two later presses.
+   */
+  consumeClickSuppression: () => boolean;
 };
 
 /**
@@ -201,6 +210,12 @@ export function usePinArrange(input: {
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   /** The box the board scrolls inside, resolved when a gesture starts. */
   const scrollRef = useRef<HTMLElement | null>(null);
+  /**
+   * Whether the press that just ended was a gesture. The browser still delivers
+   * a `click` after a drag or a hold, and the card body is a click target now;
+   * the page reads this to tell the gesture's tail from the operator's click.
+   */
+  const suppressClickRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
   /** Every card's box before a reorder, so the reflow can be animated (FLIP). */
   const flipRef = useRef<Map<string, DOMRect> | null>(null);
@@ -329,6 +344,24 @@ export function usePinArrange(input: {
     armRef.current = null;
   }, []);
 
+  /**
+   * Keep the lifted card under the hand when the board reflows beneath it.
+   *
+   * A reorder changes the lifted card's slot, and its transform is measured from
+   * that slot — so a reflow without a pointer move leaves the card displaced by
+   * however far the slot travelled. That is invisible while the hand keeps moving
+   * (every move re-measures), and it is exactly what a hand parked at the board's
+   * edge sees when the last auto-scroll frame reflows the board: the board stops,
+   * no more pointer moves arrive, and the card is left a card's height away from
+   * the finger. Re-running `followPointer` after the committed layout is the fix;
+   * it is a no-op when the card is not in the air.
+   */
+  useLayoutEffect(() => {
+    const lifted = liftRef.current;
+    const pointer = pointerRef.current;
+    if (lifted && pointer) followPointer(lifted, pointer.x, pointer.y);
+  }, [order, followPointer]);
+
   /** Stop the board scrolling under a drag. */
   const stopAutoScroll = useCallback(() => {
     if (scrollFrameRef.current != null) {
@@ -369,8 +402,14 @@ export function usePinArrange(input: {
     if (delta !== 0) {
       const was = scroller.scrollTop;
       scroller.scrollTop = was + delta;
-      if (scroller.scrollTop !== was) {
-        followPointer(current, pointer.x, pointer.y);
+      const moved = scroller.scrollTop !== was;
+      // The card is re-placed every frame the hand is in the band, not only on
+      // the frames the board actually moved. A reorder can land after the last
+      // scroll — a board at the end of its travel reflows once more — and a
+      // hand that is parked there sends no pointer move to re-measure it, so
+      // skipping the write would leave the card one slot away from the finger.
+      followPointer(current, pointer.x, pointer.y);
+      if (moved) {
         const to = insertionIndex(slots(current.pinId), pointer);
         if (to !== current.to) {
           const next: Lift = { ...current, to };
@@ -428,6 +467,9 @@ export function usePinArrange(input: {
    */
   const finishLift = useCallback(
     (current: Lift, options: { focus: boolean }) => {
+      // The release of a pointer gesture that actually held or moved a card is
+      // not the operator selecting it. A keyboard drop leaves no click behind.
+      if (current.pointerId !== null) suppressClickRef.current = true;
       const from = pins.findIndex((pin) => pin.id === current.pinId);
       const to = current.to;
       const pinId = current.pinId;
@@ -455,6 +497,9 @@ export function usePinArrange(input: {
         return;
       }
       const cardRect = card.getBoundingClientRect();
+      // The hold that lifted the card is a gesture even if the pointer never
+      // moves; the click its release leaves behind belongs to the gesture.
+      suppressClickRef.current = true;
       try {
         // Capture so the drag keeps its moves outside the card it started on.
         grid.setPointerCapture(arm.pointerId);
@@ -484,6 +529,9 @@ export function usePinArrange(input: {
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      // Every press starts with the tail of the last one already accounted for;
+      // a gesture that follows this press will raise the flag again itself.
+      suppressClickRef.current = false;
       if (event.button !== 0) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       if (locked || busy || pins.length < 2) return;
@@ -524,7 +572,13 @@ export function usePinArrange(input: {
       const arm = armRef.current;
       if (arm && arm.pointerId === event.pointerId) {
         const drift = Math.hypot(event.clientX - arm.startX, event.clientY - arm.startY);
-        if (drift > HOLD_CANCEL_PX) disarm();
+        if (drift > HOLD_CANCEL_PX) {
+          // A press that becomes a drag selects text or moves the pointer; the
+          // click it leaves behind is the gesture's, not the operator asking
+          // for the card.
+          suppressClickRef.current = true;
+          disarm();
+        }
         return;
       }
       const current = liftRef.current;
@@ -690,6 +744,12 @@ export function usePinArrange(input: {
 
   const isLifted = useCallback((pinId: string) => lift?.pinId === pinId, [lift]);
 
+  const consumeClickSuppression = useCallback(() => {
+    const suppressed = suppressClickRef.current;
+    suppressClickRef.current = false;
+    return suppressed;
+  }, []);
+
   return {
     gridRef,
     gridHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
@@ -697,5 +757,6 @@ export function usePinArrange(input: {
     isArranging: lift !== null,
     isLifted,
     announce,
+    consumeClickSuppression,
   };
 }

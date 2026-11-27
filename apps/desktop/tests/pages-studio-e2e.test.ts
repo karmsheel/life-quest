@@ -147,7 +147,7 @@ describe("pages surface matches the Home wing", () => {
     assert.match(report.checks.noMatch.empty ?? "", /No pages match/);
     assert.equal(report.checks.filterCleared, 3, "clearing the filter did not restore the list");
     assert.equal(report.checks.refusal.calls, 0, "a domain-less create still reached the bridge");
-    assert.match(report.checks.refusal.text ?? "", /Select a domain to create a page in/);
+    assert.match(report.checks.refusal.text ?? "", /Select an area to create a page in/);
     assert.deepEqual(report.checks.createCalls, ["pageCreate:health:Race plan"]);
     assert.equal(report.checks.createdRow.rows, 4, "the created page is not on the list");
     assert.equal(report.checks.createdRow.first, "Race plan", "the new page is not first");

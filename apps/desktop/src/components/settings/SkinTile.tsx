@@ -1,13 +1,13 @@
 /**
  * One theme swatch, in both places it is offered: the full Appearance page and
- * the quick settings popover.
+ * the day/night control's quick menu.
  *
  * They were the same markup twice, and the star is the reason they cannot drift:
- * the full page is where a theme is starred, the popover is where the starred
+ * the full page is where a theme is starred, the quick menu is where the starred
  * ones are handy, and both must paint the active theme, the applied palette and
- * the star's state identically. The popover passes no `onToggleFavorite`, so its
- * compact grid stays a picker; the full page passes one, so each tile grows a
- * star.
+ * the star's state identically. The quick menu passes no `onToggleFavorite`, so
+ * its compact grid stays a picker; the full page passes one, so each tile grows
+ * a star.
  *
  * The star is a sibling of the tile rather than a child: a button inside a button
  * is invalid, and the tile is already a radio.

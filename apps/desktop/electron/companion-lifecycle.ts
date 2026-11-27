@@ -11,6 +11,8 @@ import {
   ensureEagerToolSearch,
   ensureRootCompanionHeader,
   hasRootCompanionEntry,
+  removeCompanionAuthorizationHeader,
+  removeCompanionMcpEntry,
   seedModelFromRoot,
   hermesRoot,
   portFromBaseUrl,
@@ -67,6 +69,12 @@ export type CompanionIo = {
   readFile: (p: string) => Promise<string | null>;
   writeFile: (p: string, body: string) => Promise<void>;
   mkdirp: (p: string) => Promise<void>;
+  /**
+   * DOOR-02: correct the mode of a profile file the app owns (0600), for an
+   * install whose files predate the rule. Absent in rigs, which have nothing to
+   * protect; best-effort by contract (a missing file is not an error).
+   */
+  hardenFile?: (p: string) => Promise<void>;
   isPortFree: (port: number) => Promise<boolean>;
   health: (url: string) => Promise<boolean>;
   capabilities: (baseUrl: string, key: string) => Promise<unknown | null>;
@@ -116,6 +124,16 @@ export type CompanionIo = {
    * token; a test may pass its own.
    */
   companionToken?: () => Promise<string | null>;
+  /**
+   * DOOR-01: whether the local door is actually bound to 127.0.0.1 by THIS
+   * process. `attempted` separates "no vault is open yet, so no door was asked
+   * to bind" (leave the profile alone) from "the app tried to bind and a foreign
+   * process owns the port" (the profile must not carry a url or bearer).
+   *
+   * Absent means "assume bound", which is what every existing rig that has no
+   * doors to speak of expects; the real app always supplies it.
+   */
+  localDoor?: () => Promise<{ attempted: boolean; bound: boolean } | null>;
 };
 
 /**
@@ -201,6 +219,50 @@ export async function writeCompanionMcpProfile(
   // re-list.
   await dropCachedToolManifest(io, configPath);
   return { credentialChanged: !hadCredential };
+}
+
+/**
+ * DOOR-01: take this app's door out of the Hermes profile when the local door is
+ * NOT bound by this process.
+ *
+ * Why leave nothing behind: the profile is what the running Hermes host reads to
+ * find `lifequest`. If the app failed to bind the local port — another local
+ * process owns 127.0.0.1:8643 — a profile that still names `http://127.0.0.1:8643/mcp`
+ * and still carries `Authorization: Bearer <companion token>` hands the master
+ * credential to that process the moment the host reconnects. Skipping the write
+ * is not enough: the previous successful run's entry is already there. So the
+ * neutral state is to remove our entry from the profile and the Authorization
+ * header from the root entry, and let a later successful bind write them again.
+ *
+ * Returns true when a file changed. `writeFile` is the caller's private-mode
+ * writer, so the rewrite does not re-expose the files.
+ */
+export async function stripCompanionMcpProfile(
+  io: Pick<CompanionIo, "readFile" | "writeFile">,
+  configPath: string,
+  rootConfigPath?: string | null,
+): Promise<boolean> {
+  let changed = false;
+  const current = await io.readFile(configPath);
+  if (current !== null) {
+    const next = removeCompanionMcpEntry(current);
+    if (next !== current) {
+      await io.writeFile(configPath, next);
+      changed = true;
+    }
+  }
+  if (rootConfigPath) {
+    const rootYaml = await io.readFile(rootConfigPath);
+    if (rootYaml !== null) {
+      const next = removeCompanionAuthorizationHeader(rootYaml);
+      if (next !== rootYaml) {
+        await io.writeFile(rootConfigPath, next);
+        changed = true;
+      }
+    }
+  }
+  if (changed) await dropCachedToolManifest(io, configPath);
+  return changed;
 }
 
 /**
@@ -504,6 +566,24 @@ export async function ensureCompanion(
     };
   }
 
+  // DOOR-02: an upgraded install can carry profile files written with the old
+  // umask-derived modes. Correct them on every ensure, before anything is read
+  // back into the app or left for the host; `hardenFile` is best-effort and is
+  // supplied by the real app (a rig without it has nothing to harden).
+  for (const guarded of [
+    envPath,
+    configPath,
+    soulPath,
+    path.join(root, ".env"),
+    path.join(root, "config.yaml"),
+  ]) {
+    try {
+      await io.hardenFile?.(guarded);
+    } catch {
+      /* Best effort: a mode that cannot be corrected is not a profile failure. */
+    }
+  }
+
   let envText = (await io.readFile(envPath)) ?? "";
   const existing = readEnv(envText);
   const apiKey =
@@ -532,7 +612,16 @@ export async function ensureCompanion(
   try {
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
-    const companionToken = await (io.companionToken ?? openVaultCompanionToken)();
+    // DOOR-01: only hand the host a credential for a door THIS process bound.
+    // The default getter mints/reads the open vault's token; when the local door
+    // failed to bind, that token would be sent to whichever process owns the
+    // port. `localDoor` absent means "a rig with no doors", which keeps the old
+    // behaviour for callers that never had a listener to speak of.
+    const localDoor = (await io.localDoor?.()) ?? null;
+    const localBound = localDoor === null ? true : localDoor.bound;
+    const companionToken = localBound
+      ? await (io.companionToken ?? openVaultCompanionToken)()
+      : null;
     const wrote = await writeCompanionMcpProfile(
       io,
       configPath,
@@ -540,6 +629,12 @@ export async function ensureCompanion(
       path.join(root, "config.yaml"),
     );
     credentialChanged = wrote.credentialChanged;
+    if (localDoor?.attempted && !localDoor.bound) {
+      // The previous run's entry is still in the profile; remove it so the host
+      // cannot reconnect to a foreign listener with our bearer.
+      await stripCompanionMcpProfile(io, configPath, path.join(root, "config.yaml"));
+      credentialChanged = false;
+    }
     const soul = await io.readFile(soulPath);
     if (shouldSeedSoul(soul)) {
       await io.writeFile(soulPath, COMPANION_SOUL);

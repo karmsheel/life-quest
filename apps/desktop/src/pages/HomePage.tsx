@@ -1,22 +1,35 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, Pin as PinIcon } from "lucide-react";
+import { Pin as PinIcon } from "lucide-react";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
-import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
+import {
+  isAreaLive,
+  liveAreas,
+  SYSTEM_PIN_KINDS,
+  type SystemPinKind,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
+import { PageMenu } from "@/components/ui/PageMenu";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
-import { useChatDock } from "@/state/ChatDockProvider";
+import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
 import { DeadlineBanner } from "@/pages/home-pins/DeadlineBanner";
-import { DoctrineProgressCard } from "@/pages/home-pins/DoctrineProgressCard";
 import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
 import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
-import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
+import { CompanionBriefCard } from "@/pages/home-pins/CompanionBriefCard";
 import { PinChrome } from "@/components/home/PinChrome";
 import { cardNameIn } from "@/components/home/card-name";
 import {
@@ -42,16 +55,18 @@ import type { SavedView } from "@lifequest/vault-core";
 type BoardView = SavedView & { domainSlug: string };
 
 /**
- * What a card's chat control says it does, in its two states.
+ * What a press outside the cards must not be mistaken for.
  *
- * The control is a toggle: unpressed it hands the card to the chat, pressed it
- * takes that card back off. The board draws the same fact as a ring around the
- * card, so these words say again what the picture already says — which is what
- * an accessible name is for, and why the pressed state is not left to the ring
- * alone.
+ * A card's own controls — its menu trigger and items, its size handles, a link,
+ * a field, a native button — are that control's press. The card body is the
+ * context toggle, and these are the things inside it that are not the body.
  */
-const CHAT_ASK = "Ask the companion about this card";
-const CHAT_TAKE_OFF = "Take this card out of the chat";
+const CARD_CONTROL =
+  'a, button, input, select, textarea, [role="button"], [role="menu"], [role="menuitem"], [role="separator"], [data-pin-handle]';
+
+/** What the fourth card is told, when three are already in front of the chat. */
+const CONTEXT_FULL_NOTICE =
+  "Three cards are already in the chat context — take one out first.";
 
 export default function HomePage() {
   const { snapshot, reloadGeneration, refresh } = useVault();
@@ -63,13 +78,18 @@ export default function HomePage() {
    * watches must move the ledger table AND the log line that says it happened.
    */
   const live = useLiveData();
-  const { contextCard, setContextCard, setOpen: setChatOpen, livePinId } =
-    useChatDock();
+  const {
+    contextCards,
+    toggleCardContext,
+    clearCardContext,
+    setOpen: setChatOpen,
+    livePinIds,
+  } = useChatDock();
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
-      ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
-      : "Overview";
+      ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Life")
+      : "Life";
   /**
    * The app's own yes/no question, for the one thing on this page that cannot be
    * undone. It is asked in the window rather than by the platform, so it lands
@@ -93,11 +113,21 @@ export default function HomePage() {
    *
    * The row is furniture for a control used once in a while, and below a board of
    * seven cards it sat off the bottom of the window — so the operator had to
-   * scroll past everything they own to add anything. It is a header control now,
-   * closed on landing, and the board is the page. Live state, not a preference:
-   * there is no file that says how somebody left a row, and this adds none.
+   * scroll past everything they own to add anything. It is an item in the page's
+   * menu now, closed on landing, and the board is the page. Live state, not a
+   * preference: there is no file that says how somebody left a row, and this
+   * adds none.
    */
   const [addOpen, setAddOpen] = useState(false);
+  /**
+   * Why the last press did not do what it looked like it would.
+   *
+   * The one such press on this board is the fourth card: the chat holds three,
+   * and adding a fourth would either drop one silently or grow a second ceiling.
+   * The line says what happened and goes away on the next successful press (or
+   * after a few seconds), because it is an answer, not a state of the board.
+   */
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
   /**
    * Which card's 3-dot menu is open, if any.
    *
@@ -175,14 +205,14 @@ export default function HomePage() {
         return "Goals";
       case "deadline":
         return "Deadline";
-      case "doctrine-progress":
-        return "Doctrine";
       case "pending-decisions":
         return "Pending decisions";
       case "today-week":
         return "Today & this week";
       case "recent-log":
         return "Recent activity";
+      case "companion-brief":
+        return "Companion brief";
       default:
         return "This card";
     }
@@ -331,17 +361,17 @@ export default function HomePage() {
         api().logList(),
         api().pinsList(boardSlug),
         api().pageList(boardSlug),
-        // Views exist per domain; Overview lists all domains' views so a card
-        // can be pinned there from any lens. Each one is tagged with the domain
+        // Views exist per area; Life lists every live area's views so a card
+        // can be pinned there from any lens. Each one is tagged with the area
         // it came from, because that is what its pin has to name.
         lens.kind === "domain"
           ? api()
               .viewList(lens.slug)
               .then((r) => (r.ok ? (r.value as SavedView[]).map((v) => ({ ...v, domainSlug: lens.slug })) : []))
           : (async () => {
-              const slugs = (snapshot?.domains ?? [])
-                .filter((d) => !d.meta.archivedAt)
-                .map((d) => d.slug);
+              const slugs = liveAreas(snapshot?.domains ?? []).map(
+                (d) => d.slug,
+              );
               const all: BoardView[] = [];
               for (const s of slugs) {
                 const res = await api().viewList(s);
@@ -456,8 +486,9 @@ export default function HomePage() {
   }, [editingPinId, pins]);
 
   const boardSlug = lens.kind === "domain" ? lens.slug : null;
+  // A locked Finance area offers no kit: liveness is the whole test.
   const financialLive = (snapshot?.domains ?? []).some(
-    (d) => d.slug === "financial" && !d.meta.archivedAt,
+    (d) => d.slug === "financial" && isAreaLive(d),
   );
   const showFinanceInstall =
     financialLive &&
@@ -614,34 +645,100 @@ export default function HomePage() {
   }
 
   /**
-   * Hand one card to the chat — or take back the one this control already handed
-   * over.
-   *
-   * The name travels with the pin, and it is read off the card the control sits
-   * in rather than rebuilt from the pin: the heading is what the operator is
-   * looking at, and the companion has to be told about the card in front of
-   * them. The dock opens on the way — a card in context that the operator cannot
-   * see the pill for is a click that appears to do nothing.
-   *
-   * The press is a toggle, and only on this card's own door: pressing the
-   * control of the card the chat is already holding takes that card off it —
-   * that is the same operator changing their mind, from the card rather than
-   * from the pill — while pressing any other card's control puts THAT card in
-   * context. Nothing else is undone on the way out: the chat stays open, on the
-   * same conversation, minus one card.
+   * The context one card carries into the chat: its pin exactly as the board
+   * holds it, the name read off its own heading at the press, and the board it
+   * sits on.
    */
-  function onChatAbout(pin: Pin, control: HTMLElement) {
-    if (contextCard?.pin.id === pin.id) {
-      setContextCard(null);
+  function cardContextOf(pin: Pin, card: Element | null): ChatCardContext {
+    return {
+      pin,
+      label: cardNameIn(card) || cardLabelOf(pin),
+      boardSlug,
+    };
+  }
+
+  /**
+   * Put a card in the chat's context, or take it back out.
+   *
+   * The card IS the control now. A card already in front of the chat is the same
+   * operator changing their mind, and only that card leaves; a card not in front
+   * of the chat goes in behind at most two others. The dock opens on the way — a
+   * ring the operator can see in one pane and a pill they cannot see in the
+   * other is a press that only half happened.
+   *
+   * A fourth card is refused without changing anything: the ceiling is the
+   * chat's, and the line above the board says so rather than dropping a card the
+   * operator did not ask to lose.
+   */
+  function togglePinContext(pin: Pin, card: Element | null) {
+    const outcome = toggleCardContext(cardContextOf(pin, card));
+    if (outcome === "full") {
+      setContextNotice(CONTEXT_FULL_NOTICE);
       return;
     }
-    setContextCard({
-      pin,
-      label: cardNameIn(control.closest(".home-pin")) || pin.id,
-      boardSlug,
-    });
-    setChatOpen(true);
+    setContextNotice(null);
+    if (outcome === "added") setChatOpen(true);
   }
+
+  /**
+   * A press on the card body.
+   *
+   * Controls inside the card keep their own press — the menu, the size handles,
+   * a link, a field — and so does the tail of an arrange gesture, which the
+   * browser still delivers to the card as a click. Edit mode is the operator
+   * holding the card's borders, so a press there is about the size, not the
+   * chat. A locked board is deliberately not a reason to refuse: asking the
+   * companion about a card is not editing it.
+   */
+  function onCardClick(event: ReactMouseEvent<HTMLDivElement>, pin: Pin) {
+    if (editingPinId !== null) return;
+    if (arrange.consumeClickSuppression()) return;
+    const target = event.target as Element | null;
+    if (target?.closest(CARD_CONTROL)) return;
+    togglePinContext(pin, event.currentTarget);
+  }
+
+  /**
+   * A press on the keyboard/AT control every card carries.
+   *
+   * It is a real button so the context is reachable without a pointer; it stops
+   * its own press from bubbling into the card body, which would toggle twice.
+   */
+  function onContextToggleClick(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    pin: Pin,
+  ) {
+    event.stopPropagation();
+    togglePinContext(pin, event.currentTarget.closest(".home-pin"));
+  }
+
+  /**
+   * A press on the board that is not on a card.
+   *
+   * Empty board space is the operator's way of taking every card back out at
+   * once, and nothing else on this page is: the board's own controls, the page
+   * menu, the pin board and the confirm dialog keep their presses, and presses
+   * on another app surface — the chat, the rail, another route — do not reach
+   * this handler at all.
+   */
+  function onDashboardClick(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as Element | null;
+    if (!target) return;
+    if (target.closest("[data-pin-id]")) return;
+    if (arrange.consumeClickSuppression()) return;
+    if (target.closest(CARD_CONTROL)) return;
+    if (contextCards.length === 0) return;
+    clearCardContext();
+    setContextNotice(null);
+  }
+
+  // The fourth-card answer is an answer, not a state of the board: it clears
+  // itself after a few seconds so it cannot outlive the press that asked for it.
+  useEffect(() => {
+    if (!contextNotice) return;
+    const timer = window.setTimeout(() => setContextNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [contextNotice]);
 
   async function onAddSystemPin(kind: SystemPinKind) {
     const newPin: Pin = { id: `sys:${kind}`, kind: "system", system: kind };
@@ -696,14 +793,14 @@ export default function HomePage() {
           return <GoalProgressCard key={pin.id} />;
         case "deadline":
           return <DeadlineBanner key={pin.id} />;
-        case "doctrine-progress":
-          return <DoctrineProgressCard key={pin.id} />;
         case "pending-decisions":
           return <PendingDecisionsCard key={pin.id} decisions={decisions} />;
         case "today-week":
           return <TodayWeekCard key={pin.id} />;
         case "recent-log":
           return <RecentLogCard key={pin.id} events={events} />;
+        case "companion-brief":
+          return <CompanionBriefCard key={pin.id} />;
         default:
           return null;
       }
@@ -744,19 +841,21 @@ export default function HomePage() {
   /**
    * Whether the chat is holding this card.
    *
-   * It is asked of the dock's own context card rather than kept in a second piece
-   * of board state: the card is ringed while it is the one the chat is about, and
-   * the ring goes the moment it is not — whether the operator took it off with
-   * this control or with the pill's own ✕. There is nothing to keep in step, and
-   * so nothing that can disagree with the chat.
+   * It is asked of the dock's own context array rather than kept in a second
+   * piece of board state: the card is ringed while it is one of the cards the
+   * chat is about, and the ring goes the moment it is not — whether the operator
+   * took it off with a press on the card, with the pill's own ✕, or with a press
+   * on the empty board. There is nothing to keep in step, and so nothing that can
+   * disagree with the chat.
    */
-  const chatHolds = (pinId: string) => contextCard?.pin.id === pinId;
+  const chatHolds = (pinId: string) =>
+    contextCards.some((card) => card.pin.id === pinId);
   /**
    * Whether there is an add path at all.
    *
    * A locked board has none: the board is read-only, and an "Add pin" that
    * silently filed a Decision would be a second, hidden way to propose what the
-   * Lock button already says is not editable. A board with everything already
+   * page's lock already says is not editable. A board with everything already
    * pinned has none either — there is nothing to offer.
    */
   const canAdd =
@@ -764,12 +863,15 @@ export default function HomePage() {
     (availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0);
 
   return (
-    <div className="home-dashboard">
+    <div className="home-dashboard" onClick={onDashboardClick}>
       <header className="home-dashboard__header">
-        <div>
-          <p className="home-dashboard__eyebrow">Dashboard</p>
+        <div className="home-dashboard__intro">
+          <WingEyebrow page="Dashboard" />
           <h1 className="home-dashboard__title">
             {title}
+            {/* The state badge stays beside the page's name: it labels the board
+                the way it labels a doctrine document, and the corner is left to
+                the controls that change it. */}
             <span
               className={`doc-status-badge doc-status-badge--${locked ? "locked" : "unlocked"}`}
               data-locked={locked ? "true" : "false"}
@@ -784,32 +886,53 @@ export default function HomePage() {
               : "This dashboard is unlocked. You and the companion change it in place."}
           </p>
         </div>
-        <div className="home-dashboard__controls">
-          {/* The pin board's own control, at the top of the page with the page's
-              other controls. It is absent exactly when the row would be empty:
-              a locked board is not editable here, and a board with everything
-              pinned has nothing left to offer. */}
-          {canAdd ? (
-            <Button
-              variant="outline"
-              aria-expanded={addOpen}
-              data-testid="board-add-toggle"
-              onClick={() => setAddOpen((wasOpen) => !wasOpen)}
-            >
-              <PinIcon size={13} aria-hidden />
-              {addOpen ? "Hide pin board" : "Pin board"}
-            </Button>
-          ) : null}
-          <Button
-            variant={locked ? "primary" : "outline"}
-            onClick={() => void onToggleLock()}
-            disabled={lockBusy}
-            data-testid="board-lock-toggle"
-          >
-            {lockBusy ? "Saving…" : locked ? "Unlock" : "Lock"}
-          </Button>
+        {/* The page's own actions, behind one three-dot menu at the title's
+            top-right edge. The lock is the menu's first item — it is the page
+            setting every lockable page shares — and the pin board follows it,
+            offered exactly when there is something left to pin: a locked board
+            is not editable here, and a board with everything pinned has nothing
+            left to offer. The menu is the board's one control, so the corner
+            does not grow a second row as actions accrue. */}
+        <div className="page-corner" data-testid="home-page-corner">
+          <PageMenu
+            label="Dashboard actions"
+            testId="board-page-menu"
+            lock={{
+              testId: "board-lock-toggle",
+              locked,
+              busy: lockBusy,
+              label: locked ? "Unlock this dashboard" : "Lock this dashboard",
+              onToggle: () => void onToggleLock(),
+            }}
+            actions={
+              canAdd
+                ? [
+                    {
+                      testId: "board-add-toggle",
+                      label: addOpen ? "Hide pin board" : "Pin board",
+                      icon: <PinIcon size={13} aria-hidden />,
+                      expanded: addOpen,
+                      onSelect: () => setAddOpen((wasOpen) => !wasOpen),
+                    },
+                  ]
+                : []
+            }
+          />
         </div>
       </header>
+
+      {/* The fourth card is the one press on this board that does not land: the
+          chat holds three, and the answer is said here rather than made into a
+          state of the board. A polite status, so a screen reader hears it too. */}
+      {contextNotice ? (
+        <p
+          className="home-dashboard__context-status"
+          role="status"
+          data-testid="pin-context-status"
+        >
+          {contextNotice}
+        </p>
+      ) : null}
 
       {/* The pin board, above the board it adds to. */}
       {canAdd && addOpen ? (
@@ -873,19 +996,23 @@ export default function HomePage() {
             */
             style={pin.height === undefined ? undefined : { minHeight: `${pin.height}rem` }}
             /*
-              The card is its own arrange handle.
+              The card is the chat's control now.
 
-              The grip that used to sit in the chrome is gone: holding a card
-              already picks it up, so a second control for the same gesture was
-              chrome for chrome's sake — and a small one the operator had to find
-              before the board would move. What the grip alone could do is keep
-              the gesture reachable without a pointer, and that is what this
-              `tabIndex` carries: an unlocked card is a tab stop, Enter lifts it,
-              the arrows place it, and Enter drops it. A locked card is not a tab
-              stop, because there is nothing to be done to it.
+              There is no corner icon to find: a press anywhere on the card puts
+              it in front of the chat, and a second press takes that card back
+              out. The board's own gestures keep their own presses — the arrange
+              hold, Edit mode's borders, the 3-dot menu — because the page
+              refuses a press that belongs to them.
+
+              The card is still its own arrange handle for the keyboard: the
+              `tabIndex` below is the arrange path, and the hidden toggle beside
+              it is the context path, so one card can be moved and asked about
+              without a pointer. A locked card is not a tab stop (there is
+              nothing to arrange), but the context toggle still is.
             */
             tabIndex={locked ? undefined : 0}
             aria-describedby={locked ? undefined : "pin-arrange-hint"}
+            onClick={(event) => onCardClick(event, pin)}
             className={[
               "home-pin",
               /*
@@ -900,7 +1027,7 @@ export default function HomePage() {
               pin.span !== 2 && pin.width !== undefined ? "home-pin--sized" : "",
               editingPinId === pin.id ? "is-editing" : "",
               arrange.isLifted(pin.id) ? "is-lifted" : "",
-              livePinId === pin.id ? "is-live" : "",
+              livePinIds.includes(pin.id) ? "is-live" : "",
               chatHolds(pin.id) ? "is-in-context" : "",
               resize.resizingPinId === pin.id ? "is-resizing" : "",
               resize.resizingPinId === pin.id && resize.resizingAxis === "width"
@@ -914,31 +1041,40 @@ export default function HomePage() {
               .join(" ")}
           >
             {/*
-              The card's own controls, in one row in the corner.
+              The context toggle, for the keyboard and the screen reader.
 
-              The chat control is NOT part of `.home-pin__chrome`: that is the
-              board-editing chrome, and the lock takes it away. Asking the
-              companion about a card is not changing it, so the chat control
-              survives the lock — which is exactly why it is a sibling of the
-              chrome rather than a button inside it.
-
-              It stays a toggle on a locked board too: taking a card back out of
-              the chat is not an edit of the board either. `aria-pressed` carries
-              the state, and the card's ring draws it.
+              The card body is a pointer target, not a button: it holds links,
+              tables and its own chrome, so making the whole wrapper a button
+              would swallow them. This is the real control behind the same fact:
+              one hidden button per card, named with the card's own heading and
+              the action it will take, and invisible until it is focused. It is
+              outside `.home-pin__chrome` on purpose — asking about a card is not
+              editing the board, so the lock does not take it away.
             */}
-            <div className="home-pin__tools">
-              <button
-                type="button"
-                className="home-pin__btn home-pin__chat"
-                data-testid="pin-chat"
-                aria-pressed={chatHolds(pin.id)}
-                aria-label={chatHolds(pin.id) ? CHAT_TAKE_OFF : CHAT_ASK}
-                title={chatHolds(pin.id) ? CHAT_TAKE_OFF : CHAT_ASK}
-                onClick={(e) => onChatAbout(pin, e.currentTarget)}
-              >
-                <MessageSquare size={14} aria-hidden />
-              </button>
-              {locked ? null : (
+            <button
+              type="button"
+              className="home-pin__context-toggle"
+              data-testid="pin-context-toggle"
+              data-context-pin-id={pin.id}
+              aria-pressed={chatHolds(pin.id)}
+              aria-label={
+                chatHolds(pin.id)
+                  ? `Take "${cardLabelOf(pin)}" out of the chat context`
+                  : `Add "${cardLabelOf(pin)}" to the chat context`
+              }
+              onClick={(event) => onContextToggleClick(event, pin)}
+            >
+              {chatHolds(pin.id) ? "In the chat context" : "Add to chat context"}
+            </button>
+            {/*
+              The card's editing chrome, in one row in the corner.
+
+              `.home-pin__chrome` still means *board-editing chrome*: the lock
+              takes the whole row away, and what stays is the hidden context
+              toggle above it and the card itself as the pointer target.
+            */}
+            {locked ? null : (
+              <div className="home-pin__tools">
                 <PinChrome
                   busy={boardBusy}
                   menuOpen={menuPinId === pin.id}
@@ -958,8 +1094,8 @@ export default function HomePage() {
                       : (control) => onDeleteRequest(pin, control)
                   }
                 />
-              )}
-            </div>
+              </div>
+            )}
             {renderPin(pin)}
             {/*
               Edit mode's two borders, on an unlocked card and no other.
@@ -1001,17 +1137,13 @@ export default function HomePage() {
             )}
           </div>
         ))}
-
-        <div className="home-pin">
-          <ActiveAgentsCard />
-        </div>
         </div>
 
         {showFinanceInstall ? (
         <section className="home-card home-rail__finance-cta">
           <h2 className="home-card__title">Finance</h2>
           <p className="home-card__empty">
-            Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+            Install the kit into the Finance area. It adds the ledger databases and starter pages.
           </p>
           <Button
             variant="primary"

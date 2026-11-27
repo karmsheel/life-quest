@@ -7,14 +7,17 @@
  *   node e2e/daily-note.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims, no eyeballing the app required. It ships with six
+ * same command, same claims, no eyeballing the app required. It ships with
  * pictures of the same run: the day's page holding a written note
  * (`daily-note.png`), the box with one paragraph open as its own markdown
  * (`daily-note-editing.png`), the writing line a save landed in without touching
  * it (`daily-note-midsentence.png`), the Review panel (`daily-note-panel.png`),
- * and the wide page twice — the strip and the box as one centred block with the
- * dock on its shipped side (`daily-note-split-right.png`) and swapped
- * (`daily-note-split-left.png`).
+ * the journal index's own folder panel with a week opened
+ * (`daily-note-history.png`), the wide page twice — the index and the box as one
+ * centred block with the dock on its shipped side
+ * (`daily-note-split-right.png`) and swapped (`daily-note-split-left.png`), and
+ * the day's page with a soft-wrapped paragraph open as its writing line, the
+ * line the arrow claims walk (`daily-note-arrows.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -88,12 +91,59 @@
  * 20. The days before this week fold under a `W36 (31 Aug - 6 Sep)` label: the
  *     current week stays open, a folded week mounts no rows, and opening a week
  *     draws its days — including the far day's last-edited stamp.
- * 21. A page wide enough for two columns makes one block of the strip and the box
+ * 21. A page wide enough for two columns makes one block of the index and the box
  *     — the Documents page's own arrangement — centred on the page with the strip
  *     on the side away from the dock: as much room before the strip as after the
  *     box, and the gutter between the two as wide as the room between the box and
  *     the dock. Swapping the dock swaps only the strip's side. The header and
  *     pager keep their place over the box.
+ * 22. The day's own automation — the built-in Analyze note control — sits on the
+ *     box's foot now: inside the compose column's footer, below the editor and
+ *     on its trailing edge, level with the autosave line, while Today and the
+ *     square focus key keep the title row. It is one step down from the page's
+ *     chrome: its label is 0.875rem against the page's 1rem, and its key is
+ *     ~35.5px — at least 2px shorter than the title row's square keys — while it
+ *     stays a key rather than an outline chip: the page's own square step, the
+ *     skin's accent as a filled face and the primitive's bevel and lip. The
+ *     whole run is judged in Nous, the palette the operator asked about, because
+ *     a control that reads black-on-black in the theme they run is the defect
+ *     this claim exists to catch.
+ * 23. A skin switch takes the skin it left behind with it. The operator saw
+ *     Graphite's raised Analyze key — on the page and on the focus page — wearing
+ *     a thin orange halo after switching away from Forge, whose line accent
+ *     writes ember-tinted shadows over the shipped ones; Graphite writes none and
+ *     used to inherit them. So the rig loads Graphite cold and records its paint,
+ *     then loads Forge, switches to Graphite through the titlebar's own menu, and
+ *     requires every conditional token *and* every colour painted on those two
+ *     keys to match the cold window. `chroma` (the channel spread of the paint,
+ *     oklab's a/b included) must stay at zero in the colourless theme, so any
+ *     warm ink left behind is a failure rather than a matter of eye.
+ * 24. The arrows step a paragraph's VISUAL lines, not its logical newlines. In
+ *     the day's own box a long single-line paragraph soft-wraps to W visual
+ *     lines; the first W-1 ArrowDown presses keep the same writing line, the
+ *     caret moving down it, and only the Wth leaves for the next paragraph at
+ *     caret 0. Upward from the paragraph's end the same holds: W-1 presses stay
+ *     inside with the caret moving up, and the Wth focuses the paragraph above.
+ *     A Shift+Enter hard-broken paragraph whose two logical lines each wrap
+ *     steps the same way in both directions — the asymmetric case the operator
+ *     reported ("some skip to the bottom going down, go line by line going up;
+ *     others do the opposite"). The walk changes no text and writes no new body.
+ *     W is measured from the rendered box itself
+ *     (`round(scrollHeight / lineHeight)`), never from the handler, so the claim
+ *     is about the layout the operator sees rather than the page's own maths.
+ *
+ * 25. The journal index is ONE framed folder panel, a type step below the page:
+ *     a rectangular card with a name band, a three-column header and the file
+ *     tree's two shapes — a folder row for every week (the current week drawn as
+ *     an open `This week` folder, older weeks as toggles) and a file row for
+ *     every day, each indented under its week's folder glyph, unreadable files in
+ *     their own group. The panel's heading and
+ *     rows are read from their computed type sizes, the frame from its computed
+ *     border and surface, each day's glyph must sit to the right of the folder it
+ *     belongs to, and every row's box must sit inside the panel's own, so
+ *     a loose table floating in the margin, a panel at the page's prose scale, or
+ *     a row that escapes its frame all fail here. The artifact is the panel's own
+ *     picture, cropped to its frame with a week opened.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -115,6 +165,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/daily-note.html";
+// The palette the operator who asked for this feature runs. The driver names it
+// in the URL and the harness persists it before its first render, so the
+// screenshots below are the screen they will see, not the product default.
+const SKIN = "nous";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** Read the rail and the page straight off the rendered DOM. */
@@ -141,7 +195,8 @@ const SAMPLE = `(() => {
       background: style.backgroundColor,
     };
   };
-  // The governed shelf: Life-Chain, Decisions, Daily Note, Automations. It is
+  // The governed shelf: Notebox, Decisions, Daily Journal, Automations,
+  // Customizations. It is
   // the group with its own divider above it, at the foot of the rail, not the
   // wing's list above.
   const governed = document.querySelector('[data-nav-group="governance"]');
@@ -224,12 +279,19 @@ const SAMPLE = `(() => {
     document.querySelectorAll(".daily-note__history-row"),
   ).map((el) => {
     const dateEl = el.querySelector(".daily-note__history-date");
+    const dateText = el.querySelector(".daily-note__history-date-text");
     const rowEl = el.querySelector(".daily-note__history-day") || el;
     return {
       isoDate: el.getAttribute("data-date"),
       width: rowEl.clientWidth,
       overflow: rowEl.scrollWidth - rowEl.clientWidth,
-      dateClipped: Boolean(dateEl && dateEl.scrollWidth > dateEl.clientWidth + 1),
+      // The cell's own ellipsis is the last word: a date that shrinks to
+      // "22 Nov 2026 (Tod…" reads as a different day, so the inner text's own
+      // overflow counts as clipped even though the cell reports none.
+      dateClipped: Boolean(
+        (dateEl && dateEl.scrollWidth > dateEl.clientWidth + 1) ||
+          (dateText && dateText.scrollWidth > dateText.clientWidth + 1),
+      ),
     };
   });
   const content = document.querySelector(".shell__content");
@@ -241,7 +303,22 @@ const SAMPLE = `(() => {
   const shell = document.querySelector(".shell");
   return {
     links,
-    heading: text(".daily-note__header h1"),
+    heading: text(".daily-note .wing-eyebrow"),
+    // The date IS the page's heading now, so it is read as one: the tag it is
+    // painted as, and the size it is painted at. "Daily Note" is a label
+    // above it, not a second heading.
+    headingTag: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? el.tagName : null;
+    })(),
+    headingSize: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
+    eyebrowSize: (() => {
+      const el = document.querySelector(".daily-note .wing-eyebrow");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
     day: text('[data-testid="daily-note-day"]'),
     dayDate: day ? day.getAttribute("data-date") : null,
     body,
@@ -267,13 +344,154 @@ const SAMPLE = `(() => {
         ? px(getComputedStyle(historyHeading).fontSize)
         : null,
       historyRowSize: historyDay ? px(getComputedStyle(historyDay).fontSize) : null,
+      // The index panel itself: one framed block on the card ladder, and the
+      // file tree's two row shapes inside it. A loose table would have no frame
+      // and no folder rows; a panel whose rows escaped it would not be a block.
+      historyPanel: history
+        ? (() => {
+            const style = getComputedStyle(history);
+            const panelBox = rect(history);
+            const groups = Array.from(
+              history.querySelectorAll(".daily-note__history-group"),
+            ).map((group) => ({
+              name: group.getAttribute("data-group"),
+              label: (
+                group.querySelector(".daily-note__history-folder-label")?.textContent || ""
+              ).trim(),
+              count: (
+                group.querySelector(".daily-note__history-folder-count")?.textContent || ""
+              ).trim(),
+              rows: group.querySelectorAll(".daily-note__history-row").length,
+            }));
+            const rowBoxes = Array.from(
+              history.querySelectorAll(".daily-note__history-row"),
+            ).map(rect);
+            // The tree's nesting, read from the rendered boxes rather than from
+            // the stylesheet: each folder glyph and the glyph of the first day
+            // under it, both as offsets from the panel's own leading edge.
+            const tree = Array.from(
+              history.querySelectorAll("[data-group], .daily-note__week"),
+            ).map((container) => {
+              const folderIcon = container.querySelector(
+                ".daily-note__history-folder-icon",
+              );
+              const fileIcon = container.querySelector(".daily-note__history-file");
+              return {
+                name:
+                  container.getAttribute("data-group") ??
+                  container.getAttribute("data-week"),
+                folderIconLeft: folderIcon
+                  ? Math.round(folderIcon.getBoundingClientRect().left - panelBox.left)
+                  : null,
+                firstFileIconLeft: fileIcon
+                  ? Math.round(fileIcon.getBoundingClientRect().left - panelBox.left)
+                  : null,
+                rows: container.querySelectorAll(".daily-note__history-row").length,
+              };
+            });
+            return {
+              borderWidth: px(style.borderTopWidth),
+              borderStyle: style.borderTopStyle,
+              background: style.backgroundColor,
+              radius: px(style.borderTopLeftRadius),
+              bar: Boolean(history.querySelector(".daily-note__history-bar")),
+              head: Boolean(history.querySelector(".daily-note__history-head")),
+              rowsInside: rowBoxes.every(
+                (r) =>
+                  r.left >= panelBox.left - 1 &&
+                  r.top >= panelBox.top - 1 &&
+                  r.left + r.width <= panelBox.left + panelBox.width + 1 &&
+                  r.top + r.height <= panelBox.top + panelBox.height + 1,
+              ),
+              fileIcons: history.querySelectorAll(".daily-note__history-file").length,
+              folderIcons: history.querySelectorAll(
+                ".daily-note__history-folder-icon",
+              ).length,
+              groups,
+              weekFolderIcons: Array.from(
+                history.querySelectorAll(".daily-note__week-toggle"),
+              ).map((el) => Boolean(el.querySelector(".daily-note__history-folder-icon"))),
+              dayFileIcons: Array.from(
+                history.querySelectorAll(".daily-note__history-day"),
+              ).map((el) => Boolean(el.querySelector(".daily-note__history-file"))),
+              tree,
+              rowHeight: historyDay
+                ? Math.round(historyDay.getBoundingClientRect().height)
+                : null,
+            };
+          })()
+        : null,
     },
     // The bridge's own ledger, read as a count so a step can prove the page wrote
     // nothing while it sat still.
     writes: (window.dailyNoteWrites ?? []).length,
     nextDisabled: next ? next.disabled : null,
     prevDisabled: prev ? prev.disabled : null,
+    // The two steps are keys: an arrow and nothing else. Their words, their
+    // frames and — on today — their absence are all part of the contract, so
+    // each is read rather than assumed.
+    prevPresent: Boolean(prev),
+    nextPresent: Boolean(next),
+    prevText: prev ? (prev.textContent || "").trim() : null,
+    nextText: next ? (next.textContent || "").trim() : null,
+    prevLabel: prev ? prev.getAttribute("aria-label") : null,
+    nextLabel: next ? next.getAttribute("aria-label") : null,
+    prevBorder: prev ? getComputedStyle(prev).borderTopStyle : null,
+    nextBorder: next ? getComputedStyle(next).borderTopStyle : null,
+    // The calendar beside the day: the key, and whether it says it is open.
+    calendar: (() => {
+      const el = document.querySelector('[data-testid="daily-note-calendar"]');
+      if (!el) return { present: false };
+      return {
+        present: true,
+        label: el.getAttribute("aria-label"),
+        expanded: el.getAttribute("aria-expanded"),
+        border: getComputedStyle(el).borderTopStyle,
+        text: (el.textContent || "").trim(),
+      };
+    })(),
     todayButton: Boolean(document.querySelector('[data-testid="daily-note-today"]')),
+    // Where the shortcut back to today lives: in the header's own action
+    // cluster, at its leading end — beside the day's other acts rather than
+    // down in the pager.
+    todayPlacement: (() => {
+      const btn = document.querySelector('[data-testid="daily-note-today"]');
+      const actions = document.querySelector(".daily-note__actions");
+      const pager = document.querySelector(".daily-note__pager");
+      if (!btn) return { present: false };
+      const inActions = Boolean(actions && actions.contains(btn));
+      const inPager = Boolean(pager && pager.contains(btn));
+      // The acts are read through their own boxes: a key may be given a slot to
+      // fill (focus mode is, so it can take the row's height and stay square),
+      // so the order is the order of the acts rather than of the boxes.
+      const focusBtn = document.querySelector('[data-testid="daily-note-focus"]');
+      const order = actions
+        ? Array.from(actions.children).map((el) => {
+            const inner = el.matches("button") ? el : el.querySelector("button");
+            return (
+              (inner && inner.getAttribute("data-testid")) ??
+              el.getAttribute("data-testid") ??
+              el.className
+            );
+          })
+        : [];
+      const index = actions
+        ? Array.from(actions.children).findIndex((el) => el.contains(btn))
+        : -1;
+      const focusIndex =
+        actions && focusBtn
+          ? Array.from(actions.children).findIndex((el) => el.contains(focusBtn))
+          : -1;
+      return {
+        present: true,
+        inActions,
+        inPager,
+        order,
+        index,
+        focusIndex,
+        leftOfFocus: index >= 0 && focusIndex >= 0 && index < focusIndex,
+      };
+    })(),
     error: text(".form-error"),
     rows,
     // The weekly fold: one entry per earlier week, with the label it wears and
@@ -299,6 +517,14 @@ const SAMPLE = `(() => {
       prev: prev ? rect(prev) : null,
       next: next ? rect(next) : null,
       dayLabel: day ? rect(day) : null,
+      // The day as the pager sees it: the heading and its calendar key together,
+      // which is the block that must sit on the box's centre.
+      dayBlock: pager
+        ? (() => {
+            const block = pager.querySelector(".daily-note__day");
+            return block ? rect(block) : null;
+          })()
+        : null,
       workspace: workspace ? rect(workspace) : null,
       editor: box ? rect(box) : null,
       history: history ? rect(history) : null,
@@ -329,6 +555,52 @@ const SAMPLE = `(() => {
   };
 })()`;
 
+/**
+ * The calendar key's popover, read off the rendered DOM.
+ *
+ * Every day in the month is read back with its own date, whether it is drawn as
+ * a day that can be chosen, and whether it is the day the page is on — the
+ * operator's whole contract with this surface is "earlier days only", and that
+ * is a claim about every cell rather than about the shape of the grid.
+ */
+const PICKER_SAMPLE = `(() => {
+  const picker = document.querySelector('[data-testid="day-picker"]');
+  if (!picker) return { open: false };
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  };
+  const month = document.querySelector('[data-testid="day-picker-month"]');
+  const nextMonth = document.querySelector('[data-testid="day-picker-next-month"]');
+  const style = getComputedStyle(picker);
+  const days = Array.from(picker.querySelectorAll('[data-testid^="day-picker-day-"]'));
+  const trigger = document.querySelector('[data-testid="daily-note-calendar"]');
+  return {
+    open: true,
+    box: rect(picker),
+    trigger: trigger ? rect(trigger) : null,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    rowWidths: Array.from(picker.querySelectorAll(".day-picker__row")).map(
+      (row) => row.children.length,
+    ),
+    role: picker.getAttribute("role"),
+    label: picker.getAttribute("aria-label"),
+    month: month ? (month.textContent ?? "").trim() : null,
+    nextMonthDisabled: nextMonth ? nextMonth.disabled : null,
+    position: style.position,
+    radius: style.borderTopLeftRadius,
+    days: days.map((el) => ({
+      date: el.getAttribute("data-date"),
+      day: Number((el.textContent ?? "").trim()),
+      disabled: el.disabled,
+      selected: el.getAttribute("aria-current") === "date",
+      today: el.classList.contains("is-today"),
+      background: getComputedStyle(el).backgroundColor,
+      ariaLabel: el.getAttribute("aria-label"),
+    })),
+  };
+})()`;
+
 /** Read the Review page's Daily Note panel off the rendered DOM. */
 const PANEL_SAMPLE = `(() => {
   const text = (sel) => {
@@ -352,7 +624,7 @@ const PANEL_SAMPLE = `(() => {
     empty: text(".review-notes .muted"),
     rows,
     noteLinks: Array.from(document.querySelectorAll('.review-notes a[href]')).map((a) => a.getAttribute("href")),
-    reviewPeriod: text(".review-page__period"),
+    reviewPeriod: text('[data-testid="review-period"]'),
     onFire: text(".form-error"),
   };
 })()`;
@@ -392,6 +664,18 @@ function idle(win, ms) {
   return win.webContents.executeJavaScript(
     `new Promise((resolve) => setTimeout(resolve, ${ms}))`,
   );
+}
+
+/** Let the paint settle — two frames and longer than a quick transition
+ *  (`--dur-quick: 120ms`) — so a reading is of the state, not of the motion
+ *  towards it. The raised key runs its shadow on that transition when it turns
+ *  live or when the palette underneath it changes. */
+function settle(win) {
+  return win.webContents
+    .executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    )
+    .then(() => idle(win, 250));
 }
 
 const INPUT = `[data-testid="daily-note-editor-input"]`;
@@ -492,6 +776,264 @@ function pressShortcut(win, key) {
   })()`);
 }
 
+/** The centre of a selector's box, in the CSS pixels `sendInputEvent` takes. */
+async function centreOf(win, selector) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return {
+      x: Math.round(box.left + box.width / 2),
+      y: Math.round(box.top + Math.min(box.height / 2, 12)),
+    };
+  })()`);
+}
+
+/** A real pointer press, through the window's own input pipeline. */
+async function clickOn(win, selector) {
+  const point = await centreOf(win, selector);
+  if (!point) return false;
+  win.webContents.sendInputEvent({
+    type: "mouseDown",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  win.webContents.sendInputEvent({
+    type: "mouseUp",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  return true;
+}
+
+/**
+ * A key press the *browser* performs.
+ *
+ * The page intercepts the arrows at a paragraph's edge and lets the browser step
+ * inside it; a synthetic `KeyboardEvent` reaches React but never runs the
+ * browser's default action, so a caret step forced with one would prove nothing
+ * about the operator's own arrow keys. The window's input pipeline is the only
+ * one whose caret is theirs. `char` is sent for keys that insert text (the hard
+ * break is a `char`), never for keys the page handles itself.
+ */
+function sendKey(win, keyCode, { modifiers = [], char = null } = {}) {
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+  if (char !== null) {
+    win.webContents.sendInputEvent({ type: "char", keyCode: char, modifiers });
+  }
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+}
+
+/** The one writing line: which paragraph holds it, where the caret is, its text. */
+function caretState(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const blocks = Array.from(document.querySelectorAll("[data-note-block]"));
+    const area = document.querySelector('${INPUT}');
+    if (!area) {
+      return { open: false, block: -1, caret: null, focused: false, value: null, tag: null };
+    }
+    return {
+      open: true,
+      block: blocks.indexOf(area.closest("[data-note-block]")),
+      caret: area.selectionStart,
+      focused: document.activeElement === area,
+      value: area.value,
+      tag: area.dataset.arrowWalk ?? null,
+    };
+  })()`);
+}
+
+/** Open one paragraph and wait for ITS own box to be the writing line. */
+async function openParagraph(win, index) {
+  await win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll("[data-note-block]")[${index}];
+    if (!block) return false;
+    block.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+    );
+    return true;
+  })()`);
+  await waitFor(
+    win,
+    `(() => {
+      const block = document.querySelectorAll("[data-note-block]")[${index}];
+      return Boolean(block && block.querySelector("textarea"));
+    })()`,
+    `paragraph ${index} to open as the writing line`,
+  );
+  return caretState(win);
+}
+
+/**
+ * Put the caret at one edge of a paragraph and stamp the writing line, so a walk
+ * can prove the SAME textarea received every press rather than a re-mount
+ * sitting where it stood.
+ */
+async function placeCaret(win, index, edge, tag) {
+  await openParagraph(win, index);
+  await win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return false;
+    area.focus();
+    const at = ${JSON.stringify(edge)} === "start" ? 0 : area.value.length;
+    area.setSelectionRange(at, at);
+    area.dataset.arrowWalk = ${JSON.stringify(tag)};
+    return true;
+  })()`);
+  return caretState(win);
+}
+
+/** Wait for a key to land: the caret stepped, or the writing line moved. */
+async function nextCaretStep(win, before) {
+  const deadline = Date.now() + 1_500;
+  let state = before;
+  while (Date.now() < deadline) {
+    state = await caretState(win);
+    if (
+      state.open &&
+      state.focused &&
+      (state.block !== before.block || state.caret !== before.caret)
+    ) {
+      return state;
+    }
+    await idle(win, 25);
+  }
+  return state;
+}
+
+/**
+ * Walk a paragraph's visual lines with the arrow keys, recording every press:
+ * the paragraph holding the writing line, the caret, and whether it is the same
+ * textarea. `onPlaced` runs with the paragraph open at the edge the walk starts
+ * from, before the first press — the state the artifact's picture wants.
+ */
+async function walkParagraphLines(win, index, direction, presses, tag, onPlaced) {
+  const placed = await placeCaret(
+    win,
+    index,
+    direction === "down" ? "start" : "end",
+    tag,
+  );
+  const walk = {
+    direction,
+    placed: {
+      block: placed.block,
+      caret: placed.caret,
+      focused: placed.focused,
+      value: placed.value,
+    },
+    steps: [],
+  };
+  if (!placed.open || placed.block !== index || !placed.focused) return walk;
+  if (onPlaced) await onPlaced(placed);
+  let before = placed;
+  for (let press = 1; press <= presses; press += 1) {
+    sendKey(win, direction === "down" ? "Down" : "Up");
+    const after = await nextCaretStep(win, before);
+    walk.steps.push({
+      press,
+      block: after.block,
+      caret: after.caret,
+      focused: after.focused,
+      sameLine: Boolean(after.open) && after.tag === tag,
+    });
+    before = after;
+  }
+  return walk;
+}
+
+/** Every paragraph's own markdown, read by opening it. Nothing is changed. */
+async function paragraphSources(win) {
+  const count = await win.webContents.executeJavaScript(
+    'document.querySelectorAll("[data-note-block]").length',
+  );
+  const sources = [];
+  for (let index = 0; index < count; index += 1) {
+    await openParagraph(win, index);
+    sources.push(
+      await win.webContents.executeJavaScript(`document.querySelector('${INPUT}').value`),
+    );
+  }
+  return sources;
+}
+
+/**
+ * The box's own visual-line count: W = round(scrollHeight / lineHeight), read
+ * from the rendered textarea with the caret in it. This is the number the claim
+ * is about, and it is the layout's: a handler that miscounts cannot move it.
+ */
+function measureWritingLine(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return null;
+    const style = getComputedStyle(area);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    return {
+      value: area.value,
+      lines: Math.round(area.scrollHeight / lineHeight),
+      lineHeight,
+      scrollHeight: area.scrollHeight,
+      width: area.clientWidth,
+      hardBreaks: (area.value.match(/\\n/g) ?? []).length,
+    };
+  })()`);
+}
+
+/**
+ * A hard-broken paragraph's shape: its logical lines, and how many visual lines
+ * each of them wraps to. The clone is a bare textarea wearing the box's own
+ * computed type and width, so the measurement is the layout's — the page's
+ * handler, fixed or not, never runs here.
+ */
+function measureHardBreakShape(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const area = document.querySelector('${INPUT}');
+    if (!area) return null;
+    const style = getComputedStyle(area);
+    const wrappedLines = (text) => {
+      const clone = document.createElement("textarea");
+      clone.setAttribute("aria-hidden", "true");
+      clone.style.cssText = [
+        "position:absolute",
+        "top:0",
+        "left:-10000px",
+        "visibility:hidden",
+        "margin:0",
+        "padding:0",
+        "border:0",
+        "box-sizing:content-box",
+        "overflow:hidden",
+        "resize:none",
+        "white-space:pre-wrap",
+        "width:" + area.clientWidth + "px",
+        "font-family:" + style.fontFamily,
+        "font-size:" + style.fontSize,
+        "font-weight:" + style.fontWeight,
+        "line-height:" + style.lineHeight,
+        "letter-spacing:" + style.letterSpacing,
+        "word-spacing:" + style.wordSpacing,
+      ].join(";");
+      clone.value = text;
+      document.body.append(clone);
+      const lineHeight = Number.parseFloat(getComputedStyle(clone).lineHeight);
+      const lines = Math.round(clone.scrollHeight / lineHeight);
+      clone.remove();
+      return lines;
+    };
+    const logical = area.value.split("\\n");
+    return {
+      value: area.value,
+      logicalLines: logical.length,
+      wrapped: logical.map(wrappedLines),
+      lines: Math.round(area.scrollHeight / Number.parseFloat(style.lineHeight)),
+    };
+  })()`);
+}
+
 function click(win, testId) {
   return win.webContents.executeJavaScript(
     `(() => { const el = document.querySelector('[data-testid="${testId}"]'); if (!el) return false; el.click(); return true; })()`,
@@ -500,6 +1042,10 @@ function click(win, testId) {
 
 function sample(win) {
   return win.webContents.executeJavaScript(SAMPLE);
+}
+
+function pickerSample(win) {
+  return win.webContents.executeJavaScript(PICKER_SAMPLE);
 }
 
 function writesOf(win) {
@@ -666,9 +1212,9 @@ function assertRows(rows, today, when) {
  * journal when the page widens, and this is the reading that catches that.
  */
 function assertPagerOnBox(layout, when) {
-  const { editor, header, prev, next, dayLabel } = layout;
-  if (!editor || !header || !prev || !next || !dayLabel) {
-    return failure(`${when}: the box, header or pager could not be measured`);
+  const { editor, header, prev, next, dayBlock } = layout;
+  if (!editor || !header || !prev || !dayBlock) {
+    return failure(`${when}: the box, header or day row could not be measured`);
   }
   if (Math.abs(header.left - editor.left) > 2 || Math.abs(header.width - editor.width) > 2) {
     failure(
@@ -677,24 +1223,253 @@ function assertPagerOnBox(layout, when) {
   }
   if (Math.abs(prev.left - editor.left) > 2) {
     failure(
-      `${when}: Prev day opens at ${prev.left}, not on the box's leading edge ${editor.left}`,
+      `${when}: the step back opens at ${prev.left}, not on the box's leading edge ${editor.left}`,
     );
   }
-  const nextRight = next.left + next.width;
-  const editorRight = editor.left + editor.width;
-  if (Math.abs(nextRight - editorRight) > 2) {
-    failure(
-      `${when}: Next day closes at ${nextRight}, not on the box's trailing edge ${editorRight}`,
-    );
+  // The forward key is drawn only while there is a day to go to: on today it is
+  // not there at all, so this edge is checked where the key exists.
+  if (next) {
+    const nextRight = next.left + next.width;
+    const editorRight = editor.left + editor.width;
+    if (Math.abs(nextRight - editorRight) > 2) {
+      failure(
+        `${when}: the step forward closes at ${nextRight}, not on the box's trailing edge ${editorRight}`,
+      );
+    }
   }
-  const dateCentre = dayLabel.left + dayLabel.width / 2;
+  // The day and its calendar are one block. The date is the heading, but it is
+  // the block that centres over the prose, so the key cannot pull the day off
+  // the middle of the box.
+  const dayCentre = dayBlock.left + dayBlock.width / 2;
   const editorCentre = editor.left + editor.width / 2;
-  if (Math.abs(dateCentre - editorCentre) > 2) {
+  if (Math.abs(dayCentre - editorCentre) > 2) {
     failure(
-      `${when}: the date is centred at ${dateCentre}, ${dateCentre - editorCentre}px from the box's ${editorCentre}`,
+      `${when}: the day is centred at ${dayCentre}, ${dayCentre - editorCentre}px from the box's ${editorCentre}`,
     );
   }
   return undefined;
+}
+
+/**
+ * One arrow walk's claim.
+ *
+ * With `lines` visual lines drawn in the paragraph, the first `lines - 1`
+ * presses must step the caret inside it — same paragraph, same writing line, the
+ * caret moving strictly in the arrow's direction and not yet reaching the
+ * paragraph's far end — and the `lines`th must leave it for the neighbouring
+ * paragraph (`to`), at caret `toCaret` where the claim names one. Every press is
+ * in the report so a failure names the one that broke, not just the count.
+ */
+function assertVisualWalk({ when, walk, lines, direction, from, to, toCaret, length }) {
+  const steps = walk.steps;
+  const seen = steps
+    .map((step) => `${step.press}: block ${step.block}@${step.caret}`)
+    .join(" ");
+  if (!walk.placed?.focused || walk.placed.block !== from) {
+    return failure(`${when}: the paragraph never took the caret (${JSON.stringify(walk.placed)})`);
+  }
+  if (steps.length !== lines) {
+    return failure(
+      `${when}: walked ${steps.length} press(es) for the ${lines} visual line(s) the box draws — ${seen}`,
+    );
+  }
+  for (let index = 0; index < steps.length - 1; index += 1) {
+    const step = steps[index];
+    const previous =
+      index === 0 ? (direction === "down" ? 0 : length) : steps[index - 1].caret;
+    if (step.block !== from) {
+      return failure(
+        `${when}: press ${step.press} left the paragraph (block ${step.block}, expected ${from}) — ${seen}`,
+      );
+    }
+    if (!step.focused || !step.sameLine) {
+      return failure(
+        `${when}: press ${step.press} took the caret off the writing line — ${seen}`,
+      );
+    }
+    const stepped = direction === "down" ? step.caret > previous : step.caret < previous;
+    if (step.caret === null || !stepped) {
+      return failure(
+        `${when}: press ${step.press} did not step the caret ${direction} (was ${previous}, is ${step.caret}) — ${seen}`,
+      );
+    }
+    const stillInside = direction === "down" ? step.caret < length : step.caret > 0;
+    if (!stillInside) {
+      return failure(
+        `${when}: press ${step.press} moved the caret to the paragraph's ${
+          direction === "down" ? "end" : "start"
+        } (${step.caret} of ${length}) without leaving it — ${seen}`,
+      );
+    }
+  }
+  const last = steps[steps.length - 1];
+  if (last.block !== to || !last.focused) {
+    return failure(
+      `${when}: the ${lines}th press did not leave for paragraph ${to} (block ${last.block}) — ${seen}`,
+    );
+  }
+  if (toCaret !== null && last.caret !== toCaret) {
+    return failure(
+      `${when}: the ${lines}th press landed at caret ${last.caret} in paragraph ${to}, expected ${toCaret} — ${seen}`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Read the tokens and the painted ink of the surfaces a skin switch must not
+ * leave behind, plus how far any of that ink is from grey.
+ *
+ * A switch is only clean if the window lands on the same paint a *cold* window
+ * in the target skin would have: `applySkin` writes the tokens the new palette
+ * declares, and one that leaves a token to tokens.css must not inherit the one
+ * the old palette wrote. So this sample is taken twice — once from a cold load
+ * of the target skin, once after switching to it in the running window — and the
+ * two are compared whole.
+ *
+ * `chroma` is the widest channel spread any colour in the paint names, with
+ * oklab's a/b axes read as the chroma they are. A grey is 0; Forge's ember
+ * shadows and fills are tens of units. It is the measurement that catches a warm
+ * ink surviving into the colourless theme.
+ */
+const SKIN_SAMPLE = `(() => {
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const tokens = {};
+  for (const name of [
+    "--shadow-xs",
+    "--shadow-sm",
+    "--shadow-md",
+    "--shadow-nous",
+    "--stroke-nous",
+    "--bg-fill-tertiary",
+    "--bg-fill-secondary",
+  ]) {
+    tokens[name] = {
+      inline: root.style.getPropertyValue(name),
+      computed: style.getPropertyValue(name).trim(),
+    };
+  }
+  const spreadOf = (value) => {
+    let worst = 0;
+    for (const match of String(value).matchAll(/rgba?\\(([^)]+)\\)/g)) {
+      const parts = match[1].split(",").map(Number);
+      if (parts.length >= 4 && parts[3] === 0) continue;
+      const channels = parts.slice(0, 3);
+      worst = Math.max(worst, Math.max(...channels) - Math.min(...channels));
+    }
+    for (const match of String(value).matchAll(/color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)/g)) {
+      const channels = match.slice(1, 4).map((part) => Number(part) * 255);
+      worst = Math.max(worst, Math.max(...channels) - Math.min(...channels));
+    }
+    for (const match of String(value).matchAll(/oklab\\(([\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)/g)) {
+      worst = Math.max(worst, Math.hypot(Number(match[2]), Number(match[3])) * 255);
+    }
+    return worst;
+  };
+  const paint = (el) => {
+    if (!el) return null;
+    const s = getComputedStyle(el);
+    const ink = [s.backgroundImage, s.borderColor, s.color, s.boxShadow].join(" ");
+    return {
+      backgroundImage: s.backgroundImage,
+      borderColor: s.borderColor,
+      color: s.color,
+      boxShadow: s.boxShadow,
+      disabled: el.disabled === true,
+      chroma: Math.round(spreadOf(ink) * 100) / 100,
+    };
+  };
+  return {
+    skin: root.dataset.skin ?? null,
+    mode: root.dataset.theme ?? null,
+    tokens,
+    page: paint(document.querySelector('[data-testid="daily-note-analyze"]')),
+    focus: paint(document.querySelector(".focus-overlay__action")),
+  };
+})()`;
+
+/** The quick-menu tiles are how the operator actually changes skin. */
+async function switchToSkin(win, name) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const control = document.querySelector(".theme-mode-toggle");
+    if (!control) return null;
+    const box = control.getBoundingClientRect();
+    return {
+      x: Math.round(box.left + box.width / 2),
+      y: Math.round(box.top + box.height / 2),
+    };
+  })()`);
+  if (!point) return false;
+  win.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+  const tile = `[data-skin=${JSON.stringify(name)}] .settings-menu__skin-option`;
+  try {
+    await waitFor(win, `Boolean(document.querySelector('${tile}'))`, `the ${name} tile`, 5_000);
+  } catch {
+    return false;
+  }
+  const chosen = await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('${tile}');
+    if (!el) return false;
+    el.click();
+    return true;
+  })()`);
+  if (!chosen) return false;
+  try {
+    await waitFor(
+      win,
+      `document.documentElement.dataset.skin === ${JSON.stringify(name)}`,
+      `the ${name} skin to land`,
+    );
+  } catch {
+    return false;
+  }
+  // The menu stays where the pointer put it. Take the pointer away so the page
+  // behind it is the page, and wait the close delay out.
+  win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+  try {
+    await waitFor(
+      win,
+      `document.querySelector(".theme-quick-menu__popover") === null`,
+      "the quick menu to close",
+    );
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/** Open focus mode on the day the page holds, and wait for its act to be live. */
+async function openFocusMode(win) {
+  await click(win, "daily-note-focus");
+  await waitFor(
+    win,
+    `Boolean(document.querySelector(".focus-overlay__action"))`,
+    "the focus page's act",
+  );
+  await waitFor(
+    win,
+    `(document.querySelector(".focus-overlay__action") || {}).disabled === false`,
+    "the focus page's act to be live",
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  await idle(win, 250);
+}
+
+/** Leave focus mode through its own cross, and wait for the frame to go. */
+async function closeFocusMode(win) {
+  await win.webContents.executeJavaScript(`(() => {
+    const cross = document.querySelector(".focus-overlay__close");
+    if (cross) cross.click();
+    return Boolean(cross);
+  })()`);
+  await waitFor(
+    win,
+    `!document.querySelector(".focus-overlay__panel")`,
+    "focus mode to close",
+  );
 }
 
 async function main() {
@@ -721,7 +1496,7 @@ async function main() {
     if (event.level === "error") consoleErrors.push(event.message);
   });
 
-  await win.loadURL(`${url}?v=${Date.now()}`);
+  await win.loadURL(`${url}?v=${Date.now()}&skin=${SKIN}`);
   await waitFor(win, "Boolean(window.dailyNoteReady)", "dailyNoteReady");
 
   const today = await win.webContents.executeJavaScript("window.dailyNoteToday");
@@ -737,30 +1512,40 @@ async function main() {
   const checks = { today, yesterday, twoBack, tomorrow, farDay, farDayYear };
 
   // A harness that never applied the skin would draw a palette the operator does
-  // not run, and every layout claim below would be about the wrong theme.
+  // not run, and every layout claim below would be about the wrong theme. This
+  // rig names the palette it judges, so a harness that ignored the name is a
+  // failure here rather than a quietly different set of screenshots.
   checks.skin = await win.webContents.executeJavaScript(
     "({ name: window.dailyNoteSkin, applied: document.documentElement.dataset.skin ?? null })",
   );
   if (!checks.skin.name || checks.skin.applied !== checks.skin.name) {
     failure(`the harness did not paint in the app's skin: ${JSON.stringify(checks.skin)}`);
   }
+  if (checks.skin.name !== SKIN) {
+    failure(
+      `the rig asked for the ${JSON.stringify(SKIN)} skin and the page painted ${JSON.stringify(checks.skin.name)}`,
+    );
+  }
 
   // ── 1. the rail: Daily Note, directly under Decisions on the shelf ────────
   const landing = await sample(win);
   checks.rail = landing.links;
   const labels = landing.links.map((entry) => entry.label);
-  if (labels[labels.length - 1] !== "Automations") {
-    failure(`the governed shelf does not end with Automations: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 1] !== "Customizations") {
+    failure(`the governed shelf does not end with Customizations: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 2] !== "Daily Note") {
-    failure(`Automations is not directly under Daily Note: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 2] !== "Automations") {
+    failure(`Customizations is not directly under Automations: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 3] !== "Decisions") {
-    failure(`Daily Note is not directly under Decisions: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 3] !== "Daily Journal") {
+    failure(`Automations is not directly under Daily Journal: ${JSON.stringify(labels)}`);
   }
-  const noteLink = landing.links.find((entry) => entry.label === "Daily Note");
+  if (labels[labels.length - 4] !== "Decisions") {
+    failure(`Daily Journal is not directly under Decisions: ${JSON.stringify(labels)}`);
+  }
+  const noteLink = landing.links.find((entry) => entry.label === "Daily Journal");
   if (!noteLink) {
-    failure("the rail carries no Daily Note entry at all");
+    failure("the rail carries no Daily Journal entry at all");
   } else {
     // The href is read as the route it names: this rig mounts MemoryRouter, so
     // the studio's HashRouter `#/notes` appears here as `/notes`.
@@ -768,7 +1553,7 @@ async function main() {
       failure(`the rail entry points at ${JSON.stringify(noteLink.href)}, expected the notes route`);
     }
     if (!noteLink.icon) failure("the rail entry drew no icon");
-    if (!noteLink.active) failure("the rail did not mark Daily Note active on its own route");
+    if (!noteLink.active) failure("the rail did not mark Daily Journal active on its own route");
   }
   const decisionsLink = landing.links.find((entry) => entry.label === "Decisions");
   if (decisionsLink && !decisionsLink.icon) failure("the Decisions entry lost its icon");
@@ -782,13 +1567,36 @@ async function main() {
       );
     }
     if (!automationsLink.icon) failure("the Automations entry drew no icon");
-    if (automationsLink.active) failure("Automations is marked active on the Daily Note route");
+    if (automationsLink.active) failure("Automations is marked active on the Daily Journal route");
+  }
+  const customizationsLink = landing.links.find((entry) => entry.label === "Customizations");
+  if (!customizationsLink) {
+    failure("the rail carries no Customizations entry at all");
+  } else {
+    if (!(customizationsLink.href ?? "").endsWith("/customizations")) {
+      failure(
+        `the Customizations entry points at ${JSON.stringify(customizationsLink.href)}, expected the customizations route`,
+      );
+    }
+    if (!customizationsLink.icon) failure("the Customizations entry drew no icon");
+    if (customizationsLink.active) failure("Customizations is marked active on the Daily Journal route");
   }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;
-  if (landing.heading !== "Daily Note") {
-    failure(`the page heading read ${JSON.stringify(landing.heading)}`);
+  if (landing.heading !== "Daily Journal") {
+    failure(`the page name read ${JSON.stringify(landing.heading)}`);
+  }
+  // The date is the page's ONE heading, and it is the big one: the name above
+  // it is a label, so the name must read smaller than the day it sits over.
+  if (landing.headingTag !== "H1") {
+    failure(`the date is painted as a ${JSON.stringify(landing.headingTag)}, not the page's H1`);
+  }
+  if (!(landing.headingSize > landing.eyebrowSize)) {
+    failure(
+      `the date heading is ${landing.headingSize}px and the page name ${landing.eyebrowSize}px — the date is not the larger one`,
+    );
+
   }
   // The date is the label; "Today" is a parenthetical on the end, not a prefix
   // that pushes the date off the centre of the box.
@@ -954,11 +1762,36 @@ async function main() {
   if (landing.writes !== 0) {
     failure(`the page wrote ${landing.writes} time(s) before anything was typed`);
   }
-  if (landing.nextDisabled !== true) {
+  // The steps are keys — an arrow, no frame — and the forward one is not drawn
+  // at all on today: with no day to go to there is nothing to click, so the row
+  // leaves no empty control for the operator to try.
+  if (landing.nextPresent !== false) {
+    failure("a step forward was drawn on today, where there is no day to go to");
+  }
+  if (landing.nextDisabled === false) {
     failure("Next day was live on today — the future is reachable");
   }
-  if (landing.prevDisabled !== false) {
-    failure("Prev day was inert on today, so no past day can be opened");
+  if (landing.prevPresent !== true || landing.prevDisabled !== false) {
+    failure("the step back was missing or inert on today, so no past day can be opened");
+  }
+  if (landing.prevText !== "") {
+    failure(`the step back still wears words: ${JSON.stringify(landing.prevText)}`);
+  }
+  if (landing.prevBorder !== "none") {
+    failure(`the step back still wears a ${landing.prevBorder} frame`);
+  }
+  if (landing.prevLabel !== "Previous day") {
+    failure(`the step back is labelled ${JSON.stringify(landing.prevLabel)} to a screen reader`);
+  }
+  if (!landing.calendar.present) {
+    failure("the day wore no calendar to choose another one by");
+  } else {
+    if (landing.calendar.text !== "") {
+      failure(`the calendar key still wears words: ${JSON.stringify(landing.calendar.text)}`);
+    }
+    if (landing.calendar.expanded !== "false") {
+      failure(`a closed calendar key reported aria-expanded=${JSON.stringify(landing.calendar.expanded)}`);
+    }
   }
   if (landing.todayButton) {
     failure("the Today control was offered while already on today");
@@ -1308,6 +2141,15 @@ async function main() {
   );
   const previous = await sample(win);
   checks.previousDay = previous;
+  // The day that is not today is the only state the shortcut back to today is
+  // on screen in, so it gets its own picture: a review of the day's acts that
+  // only ever saw today would never see the three-button row.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const pastDayShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-past-day.png"), pastDayShot.toPNG());
   if (previous.dayDate !== yesterday) {
     failure(`Prev day landed on ${JSON.stringify(previous.dayDate)}, not ${yesterday}`);
   }
@@ -1317,8 +2159,17 @@ async function main() {
   if (previous.status !== "Saved") {
     failure(`a day with a saved note reported ${JSON.stringify(previous.status)}`);
   }
-  if (previous.nextDisabled !== false) {
-    failure("Next day was inert on a past day, so today cannot be reached forward");
+  if (previous.nextPresent !== true || previous.nextDisabled !== false) {
+    failure("the step forward was missing or inert on a past day, so today cannot be reached forward");
+  }
+  if (previous.nextText !== "") {
+    failure(`the step forward still wears words: ${JSON.stringify(previous.nextText)}`);
+  }
+  if (previous.nextBorder !== "none") {
+    failure(`the step forward still wears a ${previous.nextBorder} frame`);
+  }
+  if (previous.nextLabel !== "Next day") {
+    failure(`the step forward is labelled ${JSON.stringify(previous.nextLabel)} to a screen reader`);
   }
   if (previous.editing) {
     failure("a day with a note opened its writing line instead of reading as prose");
@@ -1327,6 +2178,24 @@ async function main() {
   // the box's centre.
   if (!previous.todayButton) {
     failure("a past day drew no shortcut back to today");
+  }
+  // The shortcut lives with the day's other acts, at the leading end of the
+  // cluster — to the LEFT of focus mode, which is the cluster's trailing key.
+  const todayPlacement = previous.todayPlacement ?? {};
+  if (todayPlacement.present !== true) {
+    failure("a past day drew no shortcut back to today");
+  } else {
+    if (todayPlacement.inActions !== true) {
+      failure("the shortcut back to today is not in the header's action cluster");
+    }
+    if (todayPlacement.inPager) {
+      failure("the shortcut back to today is still down in the pager");
+    }
+    if (todayPlacement.leftOfFocus !== true) {
+      failure(
+        `the shortcut back to today is not left of focus mode — the cluster reads ${JSON.stringify(todayPlacement.order)}`,
+      );
+    }
   }
   assertPagerOnBox(previous.layout, "on a past day");
 
@@ -1536,7 +2405,7 @@ async function main() {
   if (back.dayDate !== today) {
     failure(`returning to today landed on ${JSON.stringify(back.dayDate)}`);
   }
-  if (back.nextDisabled !== true) failure("Next day was live again on today");
+  if (back.nextPresent !== false) failure("a step forward was drawn again on today");
   if (!(back.body ?? "").includes(firstParagraph)) {
     failure(`returning to today lost the note: ${JSON.stringify(back.body)}`);
   }
@@ -1820,10 +2689,13 @@ async function main() {
     }
   };
 
-  win.setContentSize(1800, 1040);
+  // The wide-page rule is a container query on the page: 78rem of page, not of
+  // window. The one wide sidebar takes more of the frame than the old icon rail
+  // did, so the window it takes to give the page that width is wider too.
+  win.setContentSize(2000, 1040);
   await waitFor(
     win,
-    `window.innerWidth >= 1790 && Boolean(document.querySelector(".shell"))`,
+    `window.innerWidth >= 1990 && Boolean(document.querySelector(".shell"))`,
     "the wide window",
   );
   await win.webContents.executeJavaScript(
@@ -1842,10 +2714,48 @@ async function main() {
     wideRightShot.toPNG(),
   );
 
-  // Swap the dock to the leading edge: the strip changes sides with it, so the
-  // box stays between the companion and the journal rather than under it.
+  // The index's own picture: one older week opened, so the artifact shows both
+  // shapes of the journal's file tree — a folder row and the files beneath it —
+  // rather than only the folded labels. The panel is the subject, so the shot is
+  // cropped to its own frame and a little air.
+  const openedIndexWeek = await win.webContents.executeJavaScript(
+    `(() => {
+      const toggle = document.querySelector(".daily-note__week-toggle");
+      if (!toggle) return false;
+      toggle.click();
+      return true;
+    })()`,
+  );
+  if (!openedIndexWeek) failure("the journal index drew no folder row to open");
   await win.webContents.executeJavaScript(
-    `document.querySelector(".window-titlebar__side-switch").click()`,
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const indexSample = await sample(win);
+  if (!indexSample.chrome.historyPanel) {
+    failure("the journal index drew no panel for its picture");
+  }
+  const indexBox = indexSample.layout.history;
+  if (!indexBox) {
+    failure("the journal index's own box could not be measured for its picture");
+  } else {
+    const air = 10;
+    const historyShot = await win.webContents.capturePage({
+      x: Math.max(0, Math.round(indexBox.left - air)),
+      y: Math.max(0, Math.round(indexBox.top - air)),
+      width: Math.round(indexBox.width + air * 2),
+      height: Math.round(indexBox.height + air * 2),
+    });
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-history.png"),
+      historyShot.toPNG(),
+    );
+  }
+
+  // Swap the dock to the leading edge: the strip changes sides with it, so the
+  // box stays between the companion and the journal rather than under it. The
+  // switch lives in the dock's own bottom action bar.
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="chat-side-switch"]').click()`,
   );
   await waitFor(
     win,
@@ -1866,7 +2776,7 @@ async function main() {
 
   // Put the workspace back the way the rest of the run found it.
   await win.webContents.executeJavaScript(
-    `document.querySelector(".window-titlebar__side-switch").click()`,
+    `document.querySelector('[data-testid="chat-side-switch"]').click()`,
   );
   await waitFor(
     win,
@@ -1909,11 +2819,828 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
+  // ── 10. the day's act sits on the box's foot, one step down ────────────────
+  // The operator asked for the Analyze note control to come off the title row's
+  // top-right and sit at the box's bottom-right, under the prose it commits and
+  // level with the autosave line — with a quieter label (0.875rem, not the
+  // page's own 1rem) and a shorter key (~35.5px, not the ~39.6px the title row's
+  // square keys wear). Today and the square focus key stay up in the title row.
+  // The position is measured from the boxes the page draws — inside the compose
+  // column, below the editor, on its trailing edge — and the size from the
+  // button's own computed styles and box; the raised face is measured in the
+  // palette the page is painted in, because a key that sits quietly still has to
+  // read as a key.
+  const automation = await win.webContents.executeJavaScript(`(() => {
+    const row = document.querySelector(".daily-note__automations");
+    const actions = document.querySelector(".daily-note__actions");
+    const footer = document.querySelector(".daily-note__footer");
+    const status = document.querySelector('[data-testid="daily-note-status"]');
+    const editor = document.querySelector(".daily-note__editor");
+    const compose = document.querySelector(".daily-note__compose");
+    const header = document.querySelector(".daily-note__header");
+    const titleRow = document.querySelector(".daily-note__title-row");
+    const focus = document.querySelector(".daily-note__focus-mode");
+    const button = document.querySelector('[data-testid="daily-note-analyze"]');
+    if (!row || !editor || !button) return { present: false };
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+    };
+    // A color-mix() resolves to either rgb() or color(srgb …) depending on the
+    // engine's serializer; both are read to channel values here so the chroma
+    // and the lift are measured on the paint, not on the token's spelling.
+    const channels = (value) => {
+      const mixed = String(value).match(/color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)/);
+      if (mixed) return [mixed[1], mixed[2], mixed[3]].map((v) => Math.round(Number(v) * 255));
+      const rgb = String(value).match(/[\\d.]+/g) ?? [];
+      return rgb.slice(0, 3).map(Number);
+    };
+    const root = getComputedStyle(document.documentElement);
+    const rowBox = rect(row);
+    const editorBox = rect(editor);
+    const statusBox = status ? rect(status) : null;
+    const focusBox = focus ? rect(focus) : null;
+    const buttonBox = rect(button);
+    const style = getComputedStyle(button);
+    // The face is read off the painted gradient (a real property, so the engine
+    // has resolved its colors) rather than off the custom property that fed it.
+    const stops = String(style.backgroundImage).match(/(?:rgb|color\\(srgb)[^)]*\\)/g) ?? [];
+    const fillTop = channels(stops[0] ?? "");
+    const fillBottom = channels(stops[1] ?? stops[0] ?? "");
+    const sheet = document.querySelector(".shell__main") ?? document.body;
+    const page = channels(getComputedStyle(sheet).backgroundColor);
+    return {
+      present: true,
+      inHeader: Boolean(header && header.contains(row)),
+      inTitleRow: Boolean(titleRow && titleRow.contains(row)),
+      inActions: Boolean(actions && actions.contains(row)),
+      inCompose: Boolean(compose && compose.contains(row)),
+      inFooter: Boolean(footer && footer.contains(row)),
+      footerHasStatus: Boolean(footer && status && footer.contains(status)),
+      // The autosave line keeps the foot's leading edge; the act takes its
+      // trailing one, level with it.
+      statusLeftOfRow: Boolean(statusBox && statusBox.right <= rowBox.left + 1),
+      levelWithStatus: Boolean(
+        statusBox &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 - (statusBox.top + statusBox.bottom) / 2,
+          ) <= 8,
+      ),
+      // The title row keeps the page's own keys: focus mode is still up there.
+      // Today is read by the day claims, which see it only off today.
+      focusInTitleRow: Boolean(focus && actions && actions.contains(focus)),
+      focusInHeader: Boolean(focus && header && header.contains(focus)),
+      analyzeInActions: Boolean(actions && actions.contains(button)),
+      belowBox: rowBox.top >= editorBox.bottom - 1,
+      gapBelowBox: Math.round((rowBox.top - editorBox.bottom) * 10) / 10,
+      // The cluster ends on the editor's own trailing edge, not the window's.
+      rightEdgeOffBy: Math.round((rowBox.right - editorBox.right) * 10) / 10,
+      insideBoxColumn:
+        rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
+      // The act's size: a step down from the page's own type, and a shorter key
+      // than the title row's square ones, measured from its box and styles.
+      fontSize: Number.parseFloat(style.fontSize),
+      pageFontSize: Number.parseFloat(root.fontSize),
+      lineHeight: Number.parseFloat(style.lineHeight),
+      paddingBlockTop: Number.parseFloat(style.paddingTop),
+      paddingBlockBottom: Number.parseFloat(style.paddingBottom),
+      height: Math.round(buttonBox.height * 100) / 100,
+      focusHeight: focusBox ? Math.round(focusBox.height * 100) / 100 : null,
+      heightBelowFocus: focusBox
+        ? Math.round((focusBox.height - buttonBox.height) * 100) / 100
+        : null,
+      buttonRadius: parseFloat(style.borderTopLeftRadius),
+      step: parseFloat(root.getPropertyValue("--radius-xs")),
+      backgroundImage: style.backgroundImage,
+      boxShadow: style.boxShadow,
+      color: style.color,
+      disabled: button.disabled,
+      label: (button.textContent || "").trim(),
+      fillTop,
+      fillBottom,
+      page,
+      // How far the face is from grey (a hue that is actually there) and from
+      // the page it sits on (a face, not a hole cut in the sheet).
+      faceChroma: fillTop.length === 3 ? Math.max(...fillTop) - Math.min(...fillTop) : 0,
+      faceLift:
+        fillTop.length === 3 && page.length === 3
+          ? Math.abs(fillTop[0] - page[0]) +
+            Math.abs(fillTop[1] - page[1]) +
+            Math.abs(fillTop[2] - page[2])
+          : 0,
+      distinctStops: JSON.stringify(fillTop) !== JSON.stringify(fillBottom),
+    };
+  })()`);
+  checks.automation = automation;
+  if (!automation.present) {
+    failure("the day's Analyze note button is not on the page at all");
+  } else {
+    // The act belongs to the box's foot now, not the title row's top-right —
+    // and the page's own keys stay where they were.
+    if (automation.inHeader || automation.inTitleRow || automation.inActions) {
+      failure(
+        "the day's automation is still up in the page's title row rather than on the box's foot",
+      );
+    }
+    if (!automation.inCompose || !automation.inFooter) {
+      failure(
+        "the day's automation is not in the box's foot: it is outside the compose column's footer",
+      );
+    }
+    if (!automation.footerHasStatus) {
+      failure("the box's foot does not hold the autosave line beside the day's act");
+    }
+    if (automation.analyzeInActions) {
+      failure("the day's automation is still in the title row's action cluster");
+    }
+    if (!automation.focusInTitleRow || !automation.focusInHeader) {
+      failure("focus mode did not stay in the title row as the page's own key");
+    }
+    if (!automation.belowBox) {
+      failure(
+        `the day's automation sits ${automation.gapBelowBox}px from the box's bottom edge, not below it`,
+      );
+    }
+    if (!automation.statusLeftOfRow) {
+      failure("the autosave line is not on the foot's leading edge beside the day's act");
+    }
+    if (!automation.levelWithStatus) {
+      failure("the day's act is not level with the autosave line on the box's foot");
+    }
+    if (Math.abs(automation.rightEdgeOffBy) > 2) {
+      failure(
+        `the day's act ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+      );
+    }
+    if (!automation.insideBoxColumn) {
+      failure("the day's automation reaches outside the box's own column");
+    }
+    // One step down: the label is the 0.875rem rung, not the page's own 1rem.
+    if (!(automation.fontSize >= 13 && automation.fontSize <= 14.5)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px, not the 0.875rem step (13–14.5px)`,
+      );
+    }
+    if (!(automation.fontSize <= 0.9 * automation.pageFontSize)) {
+      failure(
+        `the Analyze note label is ${automation.fontSize}px against the page's ${automation.pageFontSize}px base — not a step down`,
+      );
+    }
+    // And a shorter key than the title row's square ones.
+    if (!(automation.height >= 33 && automation.height <= 37)) {
+      failure(
+        `the Analyze note button is ${automation.height}px tall, not the ~35.5px foot key`,
+      );
+    }
+    if (automation.focusHeight === null) {
+      failure("the focus key's box could not be measured to compare the act's height");
+    } else if (!(automation.height <= automation.focusHeight - 2)) {
+      failure(
+        `the Analyze note button is ${automation.height}px against the ${automation.focusHeight}px focus key — not at least 2px shorter`,
+      );
+    }
+    if (!(automation.buttonRadius <= automation.step)) {
+      failure(
+        `the Analyze note button is rounded to ${automation.buttonRadius}px, past the ${automation.step}px step`,
+      );
+    }
+    if (automation.disabled) {
+      failure("the Analyze note button is disabled on a day that holds a written note");
+    }
+    if (!/linear-gradient/.test(automation.backgroundImage)) {
+      failure(
+        `the Analyze note button paints ${JSON.stringify(automation.backgroundImage)} instead of a filled face`,
+      );
+    }
+    if (automation.boxShadow === "none" || !/inset/.test(automation.boxShadow)) {
+      failure(
+        `the Analyze note button wears ${JSON.stringify(automation.boxShadow)} — no bevel`,
+      );
+    }
+    if (!(automation.faceChroma >= 24)) {
+      failure(
+        `the Analyze note button's face is ${JSON.stringify(automation.fillTop)} — grey, not the skin's accent`,
+      );
+    }
+    if (!(automation.faceLift >= 40)) {
+      failure(
+        `the Analyze note button's face ${JSON.stringify(automation.fillTop)} is too close to the page ${JSON.stringify(automation.page)} to read as a control`,
+      );
+    }
+    if (!automation.distinctStops) {
+      failure("the Analyze note button's face is one flat stop, not a lit key");
+    }
+  }
+
+  // ── 12. the calendar: this month, and only the days that have happened ──
+  // The pager walks a day at a time; the calendar is how the operator reaches
+  // the note they half remember. It opens on the month the page is on, reaches
+  // back as far as they like, and cannot walk forward past today.
+  await click(win, "daily-note-calendar");
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="day-picker"]'))`,
+    "the calendar to open",
+  );
+  const picker = await pickerSample(win);
+  checks.calendar = picker;
+  // The artifact for this claim: the calendar open over the day, its month in
+  // the header and every day after today drawn inert.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const calendarShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-calendar.png"), calendarShot.toPNG());
+  if (!picker.open) {
+    failure("the calendar key opened nothing");
+  } else {
+    if (picker.role !== "dialog" || picker.label !== "Choose a day") {
+      failure(
+        `the calendar opened as ${JSON.stringify(picker.role)} labelled ${JSON.stringify(picker.label)}`,
+      );
+    }
+    if (picker.position !== "fixed") {
+      failure(`the calendar is ${JSON.stringify(picker.position)} rather than floating over the page`);
+    }
+    // The month hangs under the key it was opened from, and it stays inside the
+    // window: a picker that opened over the calendar key or off the edge would
+    // be a menu the operator cannot read.
+    const { box, trigger: keyBox, viewport, rowWidths } = picker;
+    if (!box || !keyBox || !viewport) {
+      failure("the calendar's own box, its key's box or the window could not be measured");
+    } else {
+      if (box.top < keyBox.bottom - 1) {
+        failure(
+          `the calendar opens at ${box.top}, over the key it hangs from (${keyBox.bottom})`,
+        );
+      }
+      if (box.left < 0 || box.top < 0 || box.right > viewport.width || box.bottom > viewport.height) {
+        failure(
+          `the calendar spills outside the window: ${box.left}…${box.right} × ${box.top}…${box.bottom} in ${viewport.width} × ${viewport.height}`,
+        );
+      }
+      if (Math.abs(box.right - keyBox.right) > 8) {
+        failure(
+          `the calendar's trailing edge is ${box.right}, ${box.right - keyBox.right}px from its key's ${keyBox.right}`,
+        );
+      }
+    }
+    const rows = rowWidths ?? [];
+    if (rows.length === 0) {
+      failure("the calendar drew no week rows");
+    }
+    for (const width of rows) {
+      if (width !== 7) {
+        failure(`a week row of the calendar holds ${width} cells, not the seven days`);
+      }
+    }
+    const monthLabel = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${today}T00:00:00Z`));
+    if (picker.month !== monthLabel) {
+      failure(
+        `the calendar opened on ${JSON.stringify(picker.month)}, not on the month the page is in (${JSON.stringify(monthLabel)})`,
+      );
+    }
+    if (picker.nextMonthDisabled !== true) {
+      failure("the calendar walks forward into months that hold no day it can choose");
+    }
+    const futureDays = picker.days.filter((day) => day.date > today);
+    const liveFutureDays = futureDays.filter((day) => !day.disabled);
+    if (futureDays.length === 0) {
+      failure("the calendar drew no future days in this month, so the closed future was not tested");
+    }
+    if (liveFutureDays.length > 0) {
+      failure(
+        `the calendar offers ${liveFutureDays.map((day) => day.date).join(", ")} — days that have not happened`,
+      );
+    }
+    const chosen = picker.days.find((day) => day.date === yesterday);
+    if (!chosen) {
+      failure("the calendar drew no cell for yesterday");
+    } else if (chosen.disabled) {
+      failure("the calendar refuses yesterday, a day that has happened");
+    }
+    const onScreen = picker.days.find((day) => day.today);
+    if (!onScreen) {
+      failure("the calendar did not mark today");
+    } else if (onScreen.disabled) {
+      failure("the calendar refuses today, the day the page is on");
+    } else if (!onScreen.selected) {
+      failure("the calendar did not mark the day the page is showing");
+    } else if (onScreen.background === "rgba(0, 0, 0, 0)") {
+      failure("the day the page is showing is painted like every other day");
+    }
+  }
+  // The key reports that it is open, so the row says where the calendar hangs.
+  const openKey = await sample(win);
+  if (openKey.calendar.expanded !== "true") {
+    failure(
+      `the open calendar key reported aria-expanded=${JSON.stringify(openKey.calendar.expanded)}`,
+    );
+  }
+  // Choosing a day the calendar drew lands the page on it — a day the pager
+  // would have taken a press per day to reach.
+  await click(win, `day-picker-day-${yesterday}`);
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-day"]').getAttribute("data-date") === ${JSON.stringify(yesterday)}`,
+    "the calendar to land the page on yesterday",
+  );
+  await waitFor(
+    win,
+    `(document.querySelector('[data-testid="daily-note-editor"]')?.textContent ?? "").includes("Yesterday: a walk")`,
+    "the chosen day's note to load",
+  );
+  const picked = await sample(win);
+  checks.calendarPick = picked;
+  if (picked.dayDate !== yesterday) {
+    failure(`the calendar chose ${JSON.stringify(picked.dayDate)}, not yesterday`);
+  }
+  if (await pickerSample(win).then((state) => state.open)) {
+    failure("the calendar stayed open after a day was chosen");
+  }
+  if (!picked.todayButton) {
+    failure("after choosing a past day the shortcut back to today was not offered");
+  }
+  // Back to today for the artifacts.
+  await click(win, "daily-note-today");
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-day"]').getAttribute("data-date") === ${JSON.stringify(today)}`,
+    "the page to return to today",
+  );
+
+  // The artifact for this claim: the day's page with the note written, the act
+  // on the box's foot under the prose, in the operator's own palette.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(".daily-note__automations").scrollIntoView({ block: "nearest" })`,
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const analyzeShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-analyze.png"), analyzeShot.toPNG());
+
   // The screenshot is today's page holding a written note — the state the
   // feature exists for.
   await win.webContents.executeJavaScript(
     "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
   );
+  const image = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(artifactsDir, "daily-note.png"), image.toPNG());
+
+  // ── 13. a skin switch leaves no ink of the skin it left behind ───────────
+  // The operator's report: in Graphite, the Daily Note's raised Analyze key wore
+  // a thin orange halo, and the focus page's key the same — the ember glow of
+  // Forge, the palette they had switched away from. The test is the comparison a
+  // cold window gives: load Graphite and note its paint, then load Forge, switch
+  // to Graphite through the titlebar's own menu, and require every token and
+  // every painted colour to match the cold window, with no warm chroma left in
+  // either raised key.
+  const GRAPHITE_NOTE = "Graphite day: the act and the sheet stay grey.";
+  const noteIn = async (skin, label) => {
+    await win.loadURL(`${url}?v=${Date.now()}&skin=${skin}`);
+    await waitFor(win, "Boolean(window.dailyNoteReady)", `a ${label} page`);
+    await type(win, GRAPHITE_NOTE);
+    await waitFor(
+      win,
+      `(document.querySelector('[data-testid="daily-note-analyze"]') || {}).disabled === false`,
+      `the ${label} act to be live`,
+    );
+    // The key grows its shadow back on the primitive's own transition when it
+    // turns live, so the sample is taken after that has landed; a reading in the
+    // middle would measure the transition, not the palette.
+    await settle(win);
+  };
+
+  await noteIn("graphite", "cold Graphite");
+  const coldPage = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+  await openFocusMode(win);
+  const coldFocus = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+  await closeFocusMode(win);
+
+  await noteIn("forge", "Forge");
+  const switched = await switchToSkin(win, "graphite");
+  const graphite = {
+    switched,
+    skin: null,
+    cold: { page: coldPage, focus: coldFocus },
+    live: null,
+    tokenMismatches: [],
+    paintMismatches: [],
+  };
+  checks.graphiteSwitch = graphite;
+  if (!switched) {
+    failure("the titlebar's theme menu could not switch the window from Forge to Graphite");
+  } else {
+    // The switch repaints over the raised key's shadow transition too: read the
+    // settled window, which is the window the operator is left sitting in.
+    await settle(win);
+    const livePage = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+    await win.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const graphiteShot = await win.webContents.capturePage();
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-graphite.png"),
+      graphiteShot.toPNG(),
+    );
+    await openFocusMode(win);
+    const liveFocus = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+    const focusShot = await win.webContents.capturePage();
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-graphite-focus.png"),
+      focusShot.toPNG(),
+    );
+    await closeFocusMode(win);
+
+    graphite.skin = livePage.skin;
+    graphite.live = { page: livePage, focus: liveFocus };
+    if (livePage.skin !== "graphite" || livePage.mode !== coldPage.mode) {
+      failure(
+        `the switch left the window in ${JSON.stringify(livePage.skin)}/${JSON.stringify(livePage.mode)}, not Graphite/${JSON.stringify(coldPage.mode)}`,
+      );
+    }
+    // A palette that hands a token to tokens.css must hand it back to tokens.css:
+    // every one of these is written inline by Forge's line accent and by nothing
+    // in Graphite, so a cold Graphite window carries none of it and a switch has
+    // to land on the same values.
+    for (const name of Object.keys(coldPage.tokens)) {
+      const cold = coldPage.tokens[name].computed;
+      const live = livePage.tokens[name].computed;
+      if (cold !== live) {
+        graphite.tokenMismatches.push(`${name}: ${JSON.stringify(live)} (cold ${JSON.stringify(cold)})`);
+      }
+    }
+    // And the surfaces the operator named: the paint on the page's raised key and
+    // on the focus page's must be the cold window's paint, not a memory of Forge.
+    if (!coldPage.page || !coldFocus.focus) {
+      failure("a cold Graphite window did not draw both raised keys, so the switch had nothing to be measured against");
+    }
+    if (coldPage.page) {
+      for (const property of ["backgroundImage", "borderColor", "color", "boxShadow"]) {
+        if (coldPage.page[property] !== livePage.page?.[property]) {
+          graphite.paintMismatches.push(
+            `page ${property}: ${JSON.stringify(livePage.page?.[property])} (cold ${JSON.stringify(coldPage.page[property])})`,
+          );
+        }
+      }
+    }
+    if (coldFocus.focus) {
+      for (const property of ["backgroundImage", "borderColor", "color", "boxShadow"]) {
+        if (coldFocus.focus[property] !== liveFocus.focus?.[property]) {
+          graphite.paintMismatches.push(
+            `focus ${property}: ${JSON.stringify(liveFocus.focus?.[property])} (cold ${JSON.stringify(coldFocus.focus[property])})`,
+          );
+        }
+      }
+    }
+    if (graphite.tokenMismatches.length > 0) {
+      failure(
+        `the Forge palette survived the switch to Graphite: ${graphite.tokenMismatches.join("; ")}`,
+      );
+    }
+    if (graphite.paintMismatches.length > 0) {
+      failure(
+        `a raised key still paints like Forge after the switch to Graphite: ${graphite.paintMismatches.join("; ")}`,
+      );
+    }
+    // The colourless theme's key is grey. Any warm ink at all is the bleed back.
+    for (const [surface, paint] of [
+      ["the page's Analyze key", livePage.page],
+      ["the focus page's Analyze key", liveFocus.focus],
+    ]) {
+      if (!paint) {
+        failure(`${surface} could not be read in Graphite`);
+      } else if (paint.disabled) {
+        failure(`${surface} is inert in Graphite, so its raised face was never painted`);
+      } else if (paint.chroma > 2) {
+        failure(
+          `${surface} paints ${paint.chroma} units of chroma in Graphite (${JSON.stringify(paint.boxShadow)}) — colour in the colourless theme`,
+        );
+      }
+    }
+  }
+
+  // ── 14. the arrows step VISUAL lines, and only leave from the true edges ───
+  // The operator's report: in the day's box, some paragraphs skipped to their
+  // bottom going down and went line by line going up, and others did the
+  // opposite. A paragraph is one textarea and the textarea soft-wraps, so a
+  // wrapped paragraph is several visual lines the old handler could not see: it
+  // stepped by the text's own newlines and left a wrapped paragraph on the first
+  // press. The claim is the operator's walk: a press steps one visual line, and
+  // only from the paragraph's true first / last visual line does it leave, into
+  // the neighbouring paragraph. The arrows are the browser's own key events
+  // (`sendKey`), never a synthetic event whose default action never happens; W
+  // is read from the rendered box itself, never from the handler's arithmetic.
+  //
+  // The scenario is built through the UI on a fresh day, with no harness
+  // seeding: click into today's empty writing line, type a long single-line
+  // paragraph that wraps to W >= 3, a hard-broken paragraph (Shift+Enter) whose
+  // two logical lines each wrap, and short paragraphs either side for the
+  // arrows to land in.
+  await win.loadURL(`${url}?v=${Date.now()}&skin=${SKIN}`);
+  await waitFor(win, "Boolean(window.dailyNoteReady)", "a fresh day's page");
+  const arrowsLanding = await sample(win);
+  checks.arrowsLanding = {
+    dayDate: arrowsLanding.dayDate,
+    editing: arrowsLanding.editing,
+    body: arrowsLanding.body,
+  };
+  if (arrowsLanding.dayDate !== today) {
+    failure(
+      `the arrow walk opened ${JSON.stringify(arrowsLanding.dayDate)}, not today (${today})`,
+    );
+  }
+  if (!arrowsLanding.editing || arrowsLanding.body !== "") {
+    failure(
+      `the arrow walk needs today's empty writing line: editing ${JSON.stringify(arrowsLanding.editing)}, body ${JSON.stringify(arrowsLanding.body)}`,
+    );
+  }
+  // A person opens the day by clicking into the box; the pointer press is the
+  // real one, so the page's own mousedown handling decides where the caret goes.
+  if (!(await clickOn(win, INPUT))) {
+    failure("the day's writing line could not be clicked into");
+  }
+  await waitFor(
+    win,
+    `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+    "the clicked writing line to take the caret",
+  );
+
+  const opening = "Opening short paragraph.";
+  // Well past one line: at the box's own width this wraps to four visual lines,
+  // and the claim below is about every one of them.
+  const longLine =
+    "The quick brown fox jumps over the lazy dog and keeps running through the meadow while the sun sets behind the hills and the river carries the last light of the day toward the sea where the boats are waiting.";
+  const hardFirst =
+    "The first hard-broken line goes on long enough that it wraps across more than one visual line in the editor without any newline of its own inside it.";
+  const hardSecond =
+    "The second hard-broken line also runs long enough to wrap over another visual line or two, which is the asymmetry the operator reported.";
+  const closing = "Closing short paragraph.";
+  const typedBlocks = [opening, longLine, `${hardFirst}\n${hardSecond}`, closing];
+  const typedBody = typedBlocks.join("\n\n");
+
+  const typeParagraph = async (text) => {
+    const line = await typeWithCaret(win, text);
+    if (!line?.focused) {
+      failure(
+        `the writing line lost the caret while typing ${JSON.stringify(text.slice(0, 24))}…`,
+      );
+    }
+  };
+  const enterParagraph = async (count) => {
+    sendKey(win, "Enter");
+    await waitFor(
+      win,
+      `document.querySelectorAll("[data-note-block]").length === ${count}`,
+      `${count} paragraphs`,
+    );
+  };
+
+  await typeParagraph(opening);
+  await enterParagraph(2);
+  await typeParagraph(longLine);
+  await enterParagraph(3);
+  // The hard break is a real Shift+Enter: the page leaves it to the browser, so
+  // the newline lands inside the line the way the operator's own does.
+  await typeParagraph(hardFirst);
+  sendKey(win, "Enter", { modifiers: ["shift"], char: "\r" });
+  await waitFor(
+    win,
+    `document.querySelector(${JSON.stringify(INPUT)}).value === ${JSON.stringify(`${hardFirst}\n`)}`,
+    "the Shift+Enter hard break",
+  );
+  win.webContents.insertText(hardSecond);
+  await waitFor(
+    win,
+    `document.querySelector(${JSON.stringify(INPUT)}).value === ${JSON.stringify(`${hardFirst}\n${hardSecond}`)}`,
+    "the hard-broken paragraph's second line",
+  );
+  await enterParagraph(4);
+  await typeParagraph(closing);
+
+  // The day writes itself, and the walk must not be a second draft: the body
+  // the vault receives is exactly the four paragraphs, read back off the
+  // harness's own ledger so "autosaved exactly the typed body" is a fact about
+  // this run rather than a string in the rig.
+  const typedWrites = await waitForWrite(win, 0, "the typed day to autosave");
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-status"]').textContent.trim() === "Saved"`,
+    "the typed day to report Saved",
+  );
+  checks.arrowsTyped = { blocks: typedBlocks, body: typedBody, writes: typedWrites };
+  if (typedWrites.length !== 1) {
+    failure(`typing the arrow scenario wrote the day ${typedWrites.length} time(s), expected 1`);
+  }
+  const typedWrite = typedWrites[typedWrites.length - 1];
+  if ((typedWrite?.body ?? null) !== typedBody) {
+    failure(
+      `the arrow scenario's autosave carried ${JSON.stringify(typedWrite?.body)}, expected ${JSON.stringify(typedBody)}`,
+    );
+  }
+  if (typedWrite?.date !== today) {
+    failure(
+      `the arrow scenario's autosave wrote ${JSON.stringify(typedWrite?.date)}, not today (${today})`,
+    );
+  }
+  if (typedWrite?.shown !== typedWrite?.date) {
+    failure(
+      `a write landed on ${JSON.stringify(typedWrite?.date)} while the page showed ${JSON.stringify(typedWrite?.shown)}`,
+    );
+  }
+  const arrowsOnDisk = await win.webContents.executeJavaScript(
+    `(window.dailyNoteJournal.get(${JSON.stringify(today)}) ?? {}).bodyMarkdown ?? null`,
+  );
+  checks.arrowsOnDisk = arrowsOnDisk;
+  if (arrowsOnDisk !== `${typedBody}\n`) {
+    failure(
+      `the vault holds ${JSON.stringify(arrowsOnDisk)} for the typed day, expected ${JSON.stringify(`${typedBody}\n`)}`,
+    );
+  }
+
+  // The note's own paragraphs, read back before the walk: the source the
+  // traversal must not change, compared again after it.
+  const sourcesBefore = await paragraphSources(win);
+  checks.arrowsSourcesBefore = sourcesBefore;
+  if (JSON.stringify(sourcesBefore) !== JSON.stringify(typedBlocks)) {
+    failure(
+      `the day's paragraphs read ${JSON.stringify(sourcesBefore)}, expected the typed ${JSON.stringify(typedBlocks)}`,
+    );
+  }
+
+  // W: the long paragraph's own visual lines, measured from the rendered box.
+  await openParagraph(win, 1);
+  await idle(win, 100);
+  const longMeasure = await measureWritingLine(win);
+  checks.arrowsLong = longMeasure;
+  if (longMeasure?.value !== longLine) {
+    failure(
+      `the long paragraph opened as ${JSON.stringify((longMeasure?.value ?? "").slice(0, 40))}…, not the typed line`,
+    );
+  }
+  if (longMeasure?.hardBreaks !== 0) {
+    failure(
+      `the long paragraph carries ${JSON.stringify(longMeasure?.hardBreaks)} newline(s), so it is not one soft-wrapped line`,
+    );
+  }
+  if (!(longMeasure?.lines >= 3)) {
+    failure(
+      `the long paragraph drew ${JSON.stringify(longMeasure?.lines)} visual line(s), not the 3 the claim needs`,
+    );
+  }
+  const longLines = longMeasure?.lines ?? 0;
+  if (longLines > 0) {
+    const downWalk = await walkParagraphLines(win, 1, "down", longLines, "long-down");
+    checks.arrowsLongDown = downWalk;
+    assertVisualWalk({
+      when: "walking the long wrapped paragraph down",
+      walk: downWalk,
+      lines: longLines,
+      direction: "down",
+      from: 1,
+      to: 2,
+      toCaret: 0,
+      length: longLine.length,
+    });
+
+    const upWalk = await walkParagraphLines(
+      win,
+      1,
+      "up",
+      longLines,
+      "long-up",
+      async () => {
+        // The artifact: the wrapped paragraph open as its writing line, caret on
+        // its own last visual line — the line an arrow press is supposed to step
+        // through rather than out of.
+        await win.webContents.executeJavaScript(
+          "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+        );
+        const shot = await win.webContents.capturePage();
+        fs.mkdirSync(artifactsDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(artifactsDir, "daily-note-arrows.png"),
+          shot.toPNG(),
+        );
+        checks.arrowsShot = path.join("e2e", "artifacts", "daily-note-arrows.png");
+      },
+    );
+    checks.arrowsLongUp = upWalk;
+    assertVisualWalk({
+      when: "walking the long wrapped paragraph up",
+      walk: upWalk,
+      lines: longLines,
+      direction: "up",
+      from: 1,
+      to: 0,
+      toCaret: null,
+      length: longLine.length,
+    });
+  }
+
+  // The hard-broken paragraph: two logical lines (one Shift+Enter), each
+  // wrapping into more than one visual line, so the old handler's first-line /
+  // last-line test reads the wrong edge in each direction — the operator's
+  // asymmetry.
+  await openParagraph(win, 2);
+  await idle(win, 100);
+  const hardShape = await measureHardBreakShape(win);
+  checks.arrowsHardBreak = hardShape;
+  if (!hardShape) {
+    failure("the hard-broken paragraph could not be measured");
+  } else {
+    if (hardShape.logicalLines !== 2) {
+      failure(
+        `the hard-broken paragraph holds ${hardShape.logicalLines} logical line(s), not the 2 the claim needs`,
+      );
+    }
+    for (const [index, wrapped] of hardShape.wrapped.entries()) {
+      if (!(wrapped >= 2)) {
+        failure(
+          `the hard-broken paragraph's logical line ${index + 1} draws ${wrapped} visual line(s), not the 2+ the claim needs`,
+        );
+      }
+    }
+    if (!(hardShape.lines >= 4)) {
+      failure(
+        `the hard-broken paragraph drew ${JSON.stringify(hardShape.lines)} visual line(s), not the 4 the claim needs`,
+      );
+    }
+  }
+  const hardLines = hardShape?.lines ?? 0;
+  if (hardLines > 0) {
+    const hardDown = await walkParagraphLines(win, 2, "down", hardLines, "hard-down");
+    checks.arrowsHardDown = hardDown;
+    assertVisualWalk({
+      when: "walking the hard-broken paragraph down",
+      walk: hardDown,
+      lines: hardLines,
+      direction: "down",
+      from: 2,
+      to: 3,
+      toCaret: 0,
+      length: `${hardFirst}\n${hardSecond}`.length,
+    });
+
+    const hardUp = await walkParagraphLines(win, 2, "up", hardLines, "hard-up");
+    checks.arrowsHardUp = hardUp;
+    assertVisualWalk({
+      when: "walking the hard-broken paragraph up",
+      walk: hardUp,
+      lines: hardLines,
+      direction: "up",
+      from: 2,
+      to: 1,
+      toCaret: null,
+      length: `${hardFirst}\n${hardSecond}`.length,
+    });
+  }
+
+  // The walk changed no text, and the day on disk is still exactly the body that
+  // was typed — the arrows move a caret, not a document.
+  const sourcesAfter = await paragraphSources(win);
+  checks.arrowsSourcesAfter = sourcesAfter;
+  if (JSON.stringify(sourcesAfter) !== JSON.stringify(sourcesBefore)) {
+    failure(
+      `the arrow walk changed the note: ${JSON.stringify(sourcesAfter)} differs from ${JSON.stringify(sourcesBefore)}`,
+    );
+  }
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-status"]').textContent.trim() === "Saved"`,
+    "the day to be Saved after the walk",
+  );
+  await idle(win, AUTOSAVE_SETTLE_MS);
+  const afterWrites = await writesOf(win);
+  checks.arrowsWrites = afterWrites;
+  const wandered = afterWrites.find(
+    (write) => write.body !== typedBody || write.date !== today,
+  );
+  if (wandered) {
+    failure(`the arrow walk wrote ${JSON.stringify(wandered)} instead of the typed day`);
+  }
+  if (afterWrites.length !== typedWrites.length) {
+    failure(
+      `the arrow walk added ${afterWrites.length - typedWrites.length} write(s) for text it did not change`,
+    );
+  }
+  const stillOnDisk = await win.webContents.executeJavaScript(
+    `(window.dailyNoteJournal.get(${JSON.stringify(today)}) ?? {}).bodyMarkdown ?? null`,
+  );
+  checks.arrowsOnDiskAfter = stillOnDisk;
+  if (stillOnDisk !== `${typedBody}\n`) {
+    failure(
+      `the day's file holds ${JSON.stringify(stillOnDisk)} after the walk, expected the typed body`,
+    );
+  }
 
   const report = {
     pass: errors.length === 0,
@@ -1926,8 +3653,6 @@ async function main() {
     path.join(artifactsDir, "daily-note.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
-  const image = await win.webContents.capturePage();
-  fs.writeFileSync(path.join(artifactsDir, "daily-note.png"), image.toPNG());
 
   console.log(`rail:      ${JSON.stringify(labels)}`);
   console.log(

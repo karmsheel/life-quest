@@ -96,6 +96,14 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic `ok(null)` fallback is wrong for
+  // these: `themesList` is iterated, and `onThemesChanged` must hand back an
+  // unsubscribe the effect calls on cleanup — a Promise there throws in the
+  // StrictMode cleanup and React unmounts the page.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => {},
   phone: {
     state: () => Promise.resolve(current),
     setEnabled: (enabled: boolean) => {
@@ -199,7 +207,7 @@ const ready = new Promise<void>((resolve) => {
 
 const waitForPage = () => {
   const heading = document.querySelector(".settings-panel__title");
-  const toggle = document.querySelector('input[aria-label="Phone access"]');
+  const toggle = document.querySelector('[role="switch"][aria-label="Phone access"]');
   if (!heading || heading.textContent !== "Phone" || !toggle) {
     requestAnimationFrame(waitForPage);
     return;

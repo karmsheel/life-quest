@@ -4,11 +4,16 @@
   max-width: 48rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-board-gap);
 }
 
 .goals-page__header {
   margin-bottom: 0.25rem;
+}
+
+/* The wing eyebrow is the title's own label, so it sits just above it. */
+.goals-page__header .wing-eyebrow {
+  margin-bottom: 0.15rem;
 }
 
 .goals-page__filters {
@@ -59,7 +64,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-board-gap);
 }
 
 .goals-page__row {

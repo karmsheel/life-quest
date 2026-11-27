@@ -516,12 +516,16 @@ export async function syncDatabase(
           const mergedCells = { ...localCells, ...remoteCells };
           if (eidCol) mergedCells[eidCol.id] = externalId;
           if (provCol) mergedCells[provCol.id] = `${db.adapter.kind}:${db.adapter.bindingId}`;
-          await upsertRow(root, slug, dbId, { id: existingRowId, cells: mergedCells });
+          const adopted = await upsertRow(root, slug, dbId, { id: existingRowId, cells: mergedCells });
+          // The write funnel may normalise a payee; the baseline records what
+          // was STORED, or the next sync reads the repair as a local edit and
+          // pushes it back over the remote description.
+          const storedCells = adopted.ok ? adopted.value.cells : mergedCells;
           index.entries[existingRowId] = {
             externalId,
             rowId: existingRowId,
             lastSyncedRemote: remoteCells,
-            lastSyncedLocal: mergedCells,
+            lastSyncedLocal: storedCells,
             updatedAt: new Date().toISOString(),
           };
           result.pulled += 1;
@@ -591,15 +595,16 @@ export async function syncDatabase(
           }
           const mergedCells = { ...localCells, ...remoteCells };
           if (eidCol) mergedCells[eidCol.id] = externalId;
-          await upsertRow(root, slug, dbId, {
+          const pulled = await upsertRow(root, slug, dbId, {
             id: existingRowId,
             cells: mergedCells,
           });
+          const storedCells = pulled.ok ? pulled.value.cells : mergedCells;
           index.entries[existingRowId] = {
             externalId,
             rowId: existingRowId,
             lastSyncedRemote: remoteCells,
-            lastSyncedLocal: mergedCells,
+            lastSyncedLocal: storedCells,
             updatedAt: new Date().toISOString(),
           };
           result.pulled += 1;
@@ -634,7 +639,8 @@ export async function syncDatabase(
             externalId,
             rowId: insertRes.value.id,
             lastSyncedRemote: remoteCells,
-            lastSyncedLocal: cellsToInsert,
+            // What the funnel stored, not the raw remote cells.
+            lastSyncedLocal: insertRes.value.cells,
             updatedAt: new Date().toISOString(),
           };
           result.pulled += 1;
@@ -831,18 +837,19 @@ export async function resolveSyncConflict(
 
     if (choice === "keep-remote") {
       // Write remote cells into sqlite
-      if (conflict.rowId) {
-        await upsertRow(root, slug, conflict.databaseId, {
-          id: conflict.rowId,
-          cells: conflict.remoteCells as Record<string, unknown>,
-        });
-      }
+      const written = conflict.rowId
+        ? await upsertRow(root, slug, conflict.databaseId, {
+            id: conflict.rowId,
+            cells: conflict.remoteCells as Record<string, unknown>,
+          })
+        : null;
       // Update index
       if (conflict.rowId && index.entries[conflict.rowId]) {
         index.entries[conflict.rowId] = {
           ...index.entries[conflict.rowId]!,
           lastSyncedRemote: conflict.remoteCells,
-          lastSyncedLocal: conflict.remoteCells,
+          lastSyncedLocal:
+            written && written.ok ? written.value.cells : conflict.remoteCells,
           updatedAt: new Date().toISOString(),
         };
       }
@@ -892,5 +899,33 @@ export async function resolveSyncConflict(
     return { ok: true, value: null };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * A local repair that changes cells the sync index already has a baseline for
+ * must not read as a local edit on the next sync: it would be pushed over the
+ * remote row. The payee migration calls this with the cells it wrote, so the
+ * repair is recorded as the new local baseline instead.
+ */
+export async function rebaseSyncBaselines(
+  root: string,
+  slug: string,
+  changed: Array<{ rowId: string; cells: Record<string, unknown> }>,
+): Promise<void> {
+  try {
+    const indices = await loadSyncIndex(root, slug);
+    let touched = false;
+    for (const item of changed) {
+      const entry = indices.entries[item.rowId];
+      if (!entry) continue;
+      entry.lastSyncedLocal = { ...entry.lastSyncedLocal, ...item.cells };
+      entry.updatedAt = new Date().toISOString();
+      touched = true;
+    }
+    if (touched) await saveSyncIndex(root, slug, indices);
+  } catch {
+    // A repair line that cannot rebase a baseline is not a reason to fail the
+    // repair; the worst case is one sync that pushes the normalised payee.
   }
 }

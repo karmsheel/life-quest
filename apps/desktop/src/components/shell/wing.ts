@@ -12,7 +12,9 @@ export const WING_LABELS: Record<WingId, string> = {
   home: "Home",
   define: "Define",
   plan: "Plan",
-  execute: "Execute",
+  // The wing is the act phase of the loop; its id stays `execute` so stored
+  // paths, settings and question scopes keep resolving.
+  execute: "Act",
   review: "Review",
 };
 
@@ -32,13 +34,17 @@ const PATH_WING: Record<string, WingId> = {
   "/pages": "home",
   "/documents": "home",
   "/personnel": "home",
+  // Images moved from Define to Home: the picture library is part of what the
+  // operator already has, not part of what they are defining. The route is
+  // unchanged — only the wing it opens under.
+  "/images": "home",
   "/dream": "define",
   "/vision": "define",
   "/ideal-state": "define",
   "/goals": "plan",
-  "/projects": "plan",
+  "/projects": "execute",
   "/chart": "plan",
-  "/track": "plan",
+  "/blueprints": "plan",
   "/act": "execute",
   "/daily": "execute",
   "/review/daily": "review",
@@ -46,6 +52,10 @@ const PATH_WING: Record<string, WingId> = {
   "/review/monthly": "review",
   "/review/quarterly": "review",
   "/review/yearly": "review",
+  // The Review wing's one non-cadence page: the period × metric matrix. It is
+  // period comparison, so it belongs to Review, and the rail names it sixth
+  // after the cadence ladder.
+  "/review/analytics": "review",
 };
 
 export type WingSession = {
@@ -69,7 +79,8 @@ export function wingForPath(pathname: string): WingId | null {
   if (pathname.startsWith("/dream/")) return "define";
   if (pathname.startsWith("/vision/")) return "define";
   if (pathname.startsWith("/ideal-state/")) return "define";
-  if (pathname.startsWith("/track/")) return "plan";
+  if (pathname.startsWith("/blueprints/")) return "plan";
+  if (pathname.startsWith("/projects/")) return "execute";
   if (pathname.startsWith("/data/")) return "home";
   if (pathname.startsWith("/pages/")) return "home";
   return null;

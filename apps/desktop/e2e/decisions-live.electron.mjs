@@ -32,9 +32,10 @@
  *     (`scrollTop` grows by the card's height — or the leg would pass by having
  *     changed nothing) and the card their fold was sitting in keeps its exact
  *     offset in the scrollport.
- *  7. The page shows what belongs to it: a proposal filed for a domain the lens is
- *     not on is not shown, is not counted in the arrival line, and appears the
- *     moment the lens moves there.
+ *  7. The page is global, not one domain's view: with the lens on another domain,
+ *     a proposal filed for `health` is on the page at once, the arrival line
+ *     counts it, and it wears the New mark. Moving the lens to that domain does
+ *     not duplicate the card, drop it, or re-announce what is already drawn.
  *  8. Approving still works, and it works on a card that just arrived.
  *  9. A Decision resolved in another window leaves this list with no reload and
  *     with no "New" chip on it.
@@ -102,6 +103,27 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Let the page paint the state that was just measured, before photographing it.
+ *
+ * A hidden window paints asynchronously and `capturePage` reads the last painted
+ * frame, so a capture taken straight after the DOM changed can show the state
+ * before it — the empty first paint instead of the card that just landed. Two
+ * animation frames put the page's own commit on the compositor; the short settle
+ * gives the capture a frame of its own.
+ */
+async function paint(win) {
+  try {
+    await win.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+    );
+  } catch {
+    // A reload mid-wait clears the globals; the capture below is still the
+    // page's own, just possibly one frame older.
+  }
+  await sleep(150);
+}
 
 /**
  * Wait for a condition, and say whether it ever held.
@@ -216,6 +238,7 @@ async function main() {
   checks.afterFirst = after;
   checks.filedId = filedId;
   // The money shot: the card that arrived, with its mark and the line above it.
+  await paint(win);
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "decisions-live.png"), image.toPNG());
@@ -270,22 +293,29 @@ async function main() {
     `chips=${settled.newChips} arrival=${JSON.stringify(settled.arrival)} still listed=${settled.ids.includes(filedId)}`,
   );
 
-  // A burst: two filings land before the page has drawn either one. Both are the
-  // page's to show, and the line counts them rather than naming the newest twice.
-  await call(win, "decisionsLiveFile", "financial", "Premise revision 2");
-  await call(win, "decisionsLiveFile", "financial", "Premise revision 3");
+  // A burst: two filings land inside one frame — the two Writes happen, then the
+  // one dataChanged broadcast main coalesces them into. Both are the page's to
+  // show, and the line counts them rather than naming the newest twice. Filed as
+  // one burst so the claim is about the page's counting, not about which of two
+  // independent timers happened to win a race under load.
+  const burstIds = await call(win, "decisionsLiveFileBurst", "financial", [
+    "Premise revision 2",
+    "Premise revision 3",
+  ]);
   const burstLanded = await settle(
     win,
     "window.decisionsLiveScreen().arrival !== null",
   );
   const afterBurst = await screen(win);
   checks.afterBurst = afterBurst;
+  checks.burstIds = burstIds;
   claim(
     "two-filings-read-as-a-plural",
     burstLanded &&
       /^2 new decisions filed\.$/.test(afterBurst.arrival ?? "") &&
-      afterBurst.arrived.length === 2,
-    `line=${JSON.stringify(afterBurst.arrival)} marked=${JSON.stringify(afterBurst.arrived)}`,
+      afterBurst.arrived.length === 2 &&
+      burstIds.every((id) => afterBurst.ids.includes(id)),
+    `line=${JSON.stringify(afterBurst.arrival)} marked=${JSON.stringify(afterBurst.arrived)} ids=${JSON.stringify(burstIds)}`,
   );
 
   // ══ a list taller than the scrollport: where the arrival lands ═════════════
@@ -379,54 +409,78 @@ async function main() {
   );
 
   // ══ the lens, and the approve ══════════════════════════════════════════════
-  const beforeLens = await screen(win);
+  //
+  // The reported fault: with the operator's lens on one domain, a proposal filed
+  // for another was invisible EVERYWHERE — this page said "No pending proposals."
+  // and the rail's badge was silent — while the companion said it had filed. The
+  // page is the governance shelf, so the lens must not hide anything on it.
   await call(win, "decisionsLiveSetLens", "financial");
-  const lensRead = await settle(
+  const lensSet = await settle(
     win,
-    `window.decisionsLiveScreen().listCalls > ${beforeLens.listCalls}`,
+    `window.decisionsLiveLens() === "financial"`,
   );
-  const hiddenId = await file(win, "health", "A health premise");
-  await sleep(400);
-  const hidden = await screen(win);
-  checks.hidden = hidden;
+  const beforeCross = await screen(win);
+  const crossId = await file(win, "health", "A health premise");
+  const crossLanded = await settle(
+    win,
+    `(() => {
+      const s = window.decisionsLiveScreen();
+      return s.ids.includes(${JSON.stringify(crossId)}) && s.arrival !== null;
+    })()`,
+  );
+  const cross = await screen(win);
+  checks.beforeCross = beforeCross;
+  checks.cross = cross;
+  checks.crossId = crossId;
   claim(
-    "another-domain-s-proposal-is-not-this-page-s-to-show",
-    lensRead &&
-      !hidden.ids.includes(hiddenId) &&
-      hidden.arrival === null &&
-      hidden.newChips === 0,
-    `lensRead=${lensRead} ids=${JSON.stringify(hidden.ids)} arrival=${JSON.stringify(hidden.arrival)} chips=${hidden.newChips}`,
+    "a-cross-domain-filing-is-shown-at-once",
+    lensSet &&
+      crossLanded &&
+      cross.ids[0] === crossId &&
+      cross.arrival === "New decision filed by Hermes." &&
+      cross.arrived.length === 1 &&
+      cross.arrived[0] === crossId &&
+      cross.newChips === 1,
+    `lensSet=${lensSet} landed=${crossLanded} ids=${JSON.stringify(cross.ids)} arrival=${JSON.stringify(cross.arrival)} marked=${JSON.stringify(cross.arrived)} chips=${cross.newChips}`,
   );
 
-  // The lens moves there: the proposal was never dropped, only filtered, and it is
-  // still the page's arrival to announce while the mark is live.
+  // Moving the lens does not duplicate the card, drop it, or re-announce it: the
+  // list is not a lens view, so there is nothing to reveal and nothing to remove.
+  // Waited past the mark's own lifetime first, so a fresh "New" cannot be mistaken
+  // for one the lens switch created.
+  await sleep(ARRIVAL_MS + 700);
+  const beforeMove = await screen(win);
   await call(win, "decisionsLiveSetLens", "health");
-  const shownUp = await settle(
-    win,
-    `window.decisionsLiveScreen().ids.includes(${JSON.stringify(hiddenId)})`,
-  );
-  const shown = await screen(win);
-  checks.shown = shown;
+  const lensMoved = await settle(win, `window.decisionsLiveLens() === "health"`);
+  await sleep(250);
+  const afterMove = await screen(win);
+  checks.beforeMove = beforeMove;
+  checks.afterMove = afterMove;
   claim(
-    "the-lens-moving-there-reveals-it-marked",
-    shownUp &&
-      shown.ids.length === 1 &&
-      shown.arrived.includes(hiddenId) &&
-      shown.arrival !== null,
-    `shown=${shownUp} ids=${JSON.stringify(shown.ids)} marked=${JSON.stringify(shown.arrived)} arrival=${JSON.stringify(shown.arrival)}`,
+    "moving-the-lens-does-not-duplicate-or-drop-the-card",
+    lensMoved &&
+      afterMove.ids.filter((id) => id === crossId).length === 1 &&
+      afterMove.ids.length === beforeMove.ids.length &&
+      afterMove.ids.indexOf(crossId) === beforeMove.ids.indexOf(crossId) &&
+      afterMove.arrival === null &&
+      afterMove.newChips === 0,
+    `lensMoved=${lensMoved} ids=${JSON.stringify(afterMove.ids)} (before ${JSON.stringify(beforeMove.ids)}) arrival=${JSON.stringify(afterMove.arrival)} chips=${afterMove.newChips}`,
   );
 
   // Approving a card that just arrived: the card's own control, the vault's own
-  // call, and the list settling without a reload.
-  const approved = await call(win, "decisionsLiveApprove", hiddenId);
+  // call, and the list settling without a reload. Other proposals are pending, so
+  // the list must shrink by exactly the answered card rather than empty.
+  const beforeApprove = await screen(win);
+  const approved = await call(win, "decisionsLiveApprove", crossId);
   const gone = await settle(
     win,
-    `!window.decisionsLiveScreen().ids.includes(${JSON.stringify(hiddenId)})`,
+    `!window.decisionsLiveScreen().ids.includes(${JSON.stringify(crossId)})`,
   );
   const resolves = await win.webContents.executeJavaScript(
     "window.decisionsLiveResolves",
   );
   const afterApprove = await screen(win);
+  checks.beforeApprove = beforeApprove;
   checks.afterApprove = afterApprove;
   checks.resolves = resolves;
   claim(
@@ -434,16 +488,17 @@ async function main() {
     approved === true &&
       gone &&
       resolves.length === 1 &&
-      resolves[0].id === hiddenId &&
+      resolves[0].id === crossId &&
       resolves[0].resolution === "approved" &&
-      afterApprove.empty === "No pending proposals.",
-    `approved=${approved} gone=${gone} resolves=${JSON.stringify(resolves)} empty=${JSON.stringify(afterApprove.empty)}`,
+      !afterApprove.arrived.includes(crossId) &&
+      afterApprove.ids.length === beforeApprove.ids.length - 1,
+    `approved=${approved} gone=${gone} resolves=${JSON.stringify(resolves)} ids=${afterApprove.ids.length} (was ${beforeApprove.ids.length})`,
   );
 
   await call(win, "decisionsLiveTab", "History");
   const onHistory = await settle(
     win,
-    `window.decisionsLiveScreen().ids.includes(${JSON.stringify(hiddenId)})`,
+    `window.decisionsLiveScreen().ids.includes(${JSON.stringify(crossId)})`,
   );
   const history = await screen(win);
   checks.history = history;
@@ -451,7 +506,7 @@ async function main() {
     "history-draws-it-as-approved",
     onHistory &&
       history.activeTab === "History" &&
-      history.statuses[history.ids.indexOf(hiddenId)] === "approved",
+      history.statuses[history.ids.indexOf(crossId)] === "approved",
     `tab=${JSON.stringify(history.activeTab)} ids=${JSON.stringify(history.ids)} statuses=${JSON.stringify(history.statuses)}`,
   );
 
@@ -463,10 +518,6 @@ async function main() {
   // and that read is fast. Without a guard on which read owns the screen, the
   // slow one lands last and puts the PENDING list — with the new card on it —
   // under the History tab, where it stays, because nothing asks again.
-  //
-  // The filing is for the lens that is open (`health`), which is what makes the
-  // claim say something: a proposal the pending list would NOT have shown is one
-  // whose arrival cannot be mistaken for the fix working.
   await call(win, "decisionsLiveTab", "Pending");
   await settle(win, 'window.decisionsLiveScreen().activeTab === "Pending"');
   const startsBefore = (await screen(win)).listStarts;

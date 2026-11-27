@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; media-src 'none';"
     />
     <title>LifeQuest</title>
     <link rel="stylesheet" href="./splash.css" />
@@ -13,20 +13,14 @@
   </head>
   <body>
     <div id="splash" class="splash" aria-hidden="true">
-      <p class="splash__title" aria-label="LIFE QUEST">
-        <span class="splash__letter" style="--i: 0">L</span>
-        <span class="splash__letter" style="--i: 1">I</span>
-        <span class="splash__letter" style="--i: 2">F</span>
-        <span class="splash__letter" style="--i: 3">E</span>
-        <span class="splash__letter splash__letter--space" style="--i: 4"
-          >&nbsp;</span
-        >
-        <span class="splash__letter" style="--i: 5">Q</span>
-        <span class="splash__letter" style="--i: 6">U</span>
-        <span class="splash__letter" style="--i: 7">E</span>
-        <span class="splash__letter" style="--i: 8">S</span>
-        <span class="splash__letter" style="--i: 9">T</span>
-      </p>
+      <!--
+        The active LifeQuest lockup. The four shipped variants are injected here
+        at build time by the `lifequest-splash-logo` plugin in vite.config.ts —
+        the same SVG files the sidebar draws, so the splash cannot drift from the
+        rail. `theme-boot.js` reads the stored pick and sets `data-logo` on the
+        document; the matching variant is the one the splash shows.
+      -->
+      <!-- splash-logo -->
       <div class="splash__bar"></div>
     </div>
     <div id="root"></div>

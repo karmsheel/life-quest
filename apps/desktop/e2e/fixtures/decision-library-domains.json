@@ -1,0 +1,14 @@
+{
+  "target": { "type": "library", "id": "71b2f9f4-3a0e-4a0f-9d70-6f1f4a1c2e55" },
+  "body": "# Ledger note\n\nThe ledger is the number the premise has to answer to, not the other way round.\n",
+  "previousBody": "# Ledger note\n\nThe ledger is a spreadsheet I keep in case anyone asks.\n",
+  "previousDomainSlugs": ["business"],
+  "proposedDomainSlugs": ["financial"],
+  "domainNames": { "business": "Business", "financial": "Finance" },
+  "expected": {
+    "label": "Domains",
+    "from": "Business",
+    "to": "Finance",
+    "paneLabels": ["Current", "Proposed"]
+  }
+}

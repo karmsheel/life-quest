@@ -1,0 +1,561 @@
+{
+  "ok": true,
+  "ranAt": "2026-11-09T18:19:54.949Z",
+  "failures": [],
+  "checks": [
+    {
+      "name": "world: the app booted on Hermes with both seeded chats",
+      "pass": true,
+      "detail": "{\"seed\":{\"hermesReady\":\"ready\",\"hermesCreated\":[{\"title\":\"Hermes alpha\",\"ok\":true,\"id\":\"hermes-session-1\"},{\"title\":\"Hermes beta\",\"ok\":true,\"id\":\"hermes-session-2\"}],\"settings\":\"ready\",\"piReady\":\"ready\",\"piCreated\":[{\"title\":\"Pi alpha\",\"ok\":true,\"id\":\"024eb2e6-6a8a-41b0-95ca-b8ac3162077f\"},{\"title\":\"Pi beta\",\"ok\":true,\"id\":\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\"}],\"piListed\":[\"Pi beta\",\"Pi alpha\"],\"backToHermes\":\"ready\",\"hermesListed\":[\"Hermes beta\",\"Hermes alpha\"],\"piListedOk\":true,\"hermesListedOk\":true},\"activePill\":\"Hermes\",\"railTitles\":[\"Hermes beta\",\"Hermes alpha\"]}"
+    },
+    {
+      "name": "world: the surface is the dashboard, not a connect screen",
+      "pass": true,
+      "detail": "{\"dashboard\":true,\"chatPanel\":true}"
+    },
+    {
+      "name": "world: two Hermes chats are open as two tabs",
+      "pass": true,
+      "detail": "{\"tabLabels\":[\"Hermes alpha\",\"Hermes beta\"],\"tabCount\":2,\"openedFirst\":{\"ok\":true},\"openedSecond\":{\"ok\":true}}"
+    },
+    {
+      "name": "world: the probe installed on the marked dashboard",
+      "pass": true,
+      "detail": "{\"installed\":true,\"marked\":true,\"dashboard\":true,\"welcomeCard\":false,\"chatPanel\":true,\"splashHidden\":true,\"railState\":{\"list\":true,\"rows\":2,\"emptyText\":\"\",\"error\":false,\"blank\":false}}"
+    },
+    {
+      "name": "no connection page appeared during the switch",
+      "pass": true,
+      "detail": "welcomeSeen=0, welcomeCardAbsent=true"
+    },
+    {
+      "name": "the dashboard node never unmounted",
+      "pass": true,
+      "detail": "dashboardGone=0, markedDashboardPresent=true"
+    },
+    {
+      "name": "the launch splash never reappeared",
+      "pass": true,
+      "detail": "splashSeen=0"
+    },
+    {
+      "name": "the chat rail swapped to the Pi chats",
+      "pass": true,
+      "detail": "{\"railTitles\":[\"Pi beta\",\"Pi alpha\"],\"timedOut\":false}"
+    },
+    {
+      "name": "the dock's tab strip no longer shows the Hermes tabs",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "the active pill is Pi",
+      "pass": true,
+      "detail": "{\"activePill\":\"Pi\",\"pillDisabledAtEnd\":false,\"pillDisabledSamples\":0}"
+    },
+    {
+      "name": "the switch stayed under 2000ms",
+      "pass": true,
+      "detail": "switchMs=154 (ceiling 2000ms)"
+    },
+    {
+      "name": "the dock surface stayed mounted at every sample",
+      "pass": true,
+      "detail": "{\"chatPanelMissing\":0,\"chatPanelPresentEverySample\":true,\"duringSwitchSamples\":4}"
+    },
+    {
+      "name": "switching back returned the Hermes rail",
+      "pass": true,
+      "detail": "{\"railTitles\":[\"Hermes beta\",\"Hermes alpha\"],\"timedOut\":false}"
+    },
+    {
+      "name": "switching back restored the two Hermes tabs",
+      "pass": true,
+      "detail": "{\"tabLabels\":[\"Hermes alpha\",\"Hermes beta\"],\"activeTabLabel\":\"Hermes beta\",\"timedOut\":false,\"restoreMs\":89}"
+    },
+    {
+      "name": "the dashboard was never torn down across the round trip",
+      "pass": true,
+      "detail": "{\"dashboardGone\":0,\"markedDashboardPresent\":true,\"chatPanelMissing\":0}"
+    },
+    {
+      "name": "the page logged no errors or uncaught exceptions",
+      "pass": true,
+      "detail": "{\"consoleErrors\":[],\"renderProcessGone\":[],\"pageErrors\":[],\"excludedNoise\":[]}"
+    },
+    {
+      "name": "each pill click sent exactly one companion:switchHarness invoke",
+      "pass": true,
+      "detail": "{\"duringSwitch\":1,\"duringRestore\":1,\"total\":2,\"targets\":[\"pi\",\"hermes\"],\"pageWrap\":{\"frozen\":true,\"wrapped\":false,\"error\":null},\"pageCalls\":0}"
+    },
+    {
+      "name": "the pending pill mark cleared",
+      "pass": true,
+      "detail": "{\"pendingAtEnd\":[],\"busyAtEnd\":[],\"pendingAfterSwitch\":[],\"busyAfterSwitch\":[]}"
+    },
+    {
+      "name": "the chat rail never showed an empty column during the switch",
+      "pass": true,
+      "detail": "{\"blankSamples\":0,\"samples\":14,\"blankDetails\":[]}"
+    },
+    {
+      "name": "the composer draft survived the round trip",
+      "pass": true,
+      "detail": "{\"text\":\"rig draft: keep me across the switch\",\"typed\":{\"ok\":true,\"value\":\"rig draft: keep me across the switch\",\"tag\":\"TEXTAREA\"},\"before\":{\"present\":true,\"value\":\"rig draft: keep me across the switch\",\"disabled\":false,\"placeholder\":\"Message Hermes…\"},\"afterSwitch\":{\"present\":true,\"value\":\"\",\"disabled\":false,\"placeholder\":\"Message Pi…\"},\"restored\":{\"present\":true,\"value\":\"rig draft: keep me across the switch\",\"disabled\":false,\"placeholder\":\"Message Hermes…\"}}"
+    },
+    {
+      "name": "both agents have their own remembered tab strip",
+      "pass": true,
+      "detail": "{\"storage\":{\"hermesRaw\":\"{\\\"tabs\\\":[\\\"hermes-session-1\\\",\\\"hermes-session-2\\\"],\\\"activeId\\\":\\\"hermes-session-2\\\"}\",\"piRaw\":\"{\\\"tabs\\\":[\\\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\\\"],\\\"activeId\\\":\\\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\\\"}\",\"legacyRaw\":null,\"hermes\":{\"tabs\":[\"hermes-session-1\",\"hermes-session-2\"],\"activeId\":\"hermes-session-2\",\"bare\":false},\"pi\":{\"tabs\":[\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\"],\"activeId\":\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\",\"bare\":false},\"lastSessionId\":\"hermes-session-2\"}}"
+    },
+    {
+      "name": "a reload restored the two Hermes tabs",
+      "pass": true,
+      "detail": "{\"expectedActiveTab\":\"Hermes beta\",\"reloadTabLabels\":[\"Hermes alpha\",\"Hermes beta\"],\"reloadActiveTabLabel\":\"Hermes beta\",\"reloadBootMs\":1846,\"reloadSamples\":4,\"reloadWelcomeCardSamples\":3}"
+    },
+    {
+      "name": "the switch never disabled the target pill",
+      "pass": true,
+      "detail": "pillDisabledSamples=0"
+    }
+  ],
+  "world": {
+    "worldDir": "/tmp/lq-agent-switch-w8xRxR",
+    "profileDir": "/tmp/lq-agent-switch-w8xRxR/profile",
+    "vaultDir": "/tmp/lq-agent-switch-w8xRxR/vault",
+    "hermesHome": "/tmp/lq-agent-switch-w8xRxR/hermes-home",
+    "profile": "lq-agent-switch",
+    "devServerUrl": "http://127.0.0.1:5173",
+    "piEndpoint": "http://127.0.0.1:37771/v1",
+    "hermesHost": "http://127.0.0.1:45745/p/lq-agent-switch",
+    "harnessOnBoot": "hermes",
+    "hermesInvocations": []
+  },
+  "seed": {
+    "hermesReady": "ready",
+    "hermesCreated": [
+      {
+        "title": "Hermes alpha",
+        "ok": true,
+        "id": "hermes-session-1"
+      },
+      {
+        "title": "Hermes beta",
+        "ok": true,
+        "id": "hermes-session-2"
+      }
+    ],
+    "settings": "ready",
+    "piReady": "ready",
+    "piCreated": [
+      {
+        "title": "Pi alpha",
+        "ok": true,
+        "id": "024eb2e6-6a8a-41b0-95ca-b8ac3162077f"
+      },
+      {
+        "title": "Pi beta",
+        "ok": true,
+        "id": "17fdf9b6-ddcd-4fa5-85d2-09933b5b7524"
+      }
+    ],
+    "piListed": [
+      "Pi beta",
+      "Pi alpha"
+    ],
+    "backToHermes": "ready",
+    "hermesListed": [
+      "Hermes beta",
+      "Hermes alpha"
+    ],
+    "piListedOk": true,
+    "hermesListedOk": true
+  },
+  "before": {
+    "harness": "hermes",
+    "railTitles": [
+      "Hermes beta",
+      "Hermes alpha"
+    ],
+    "railActive": "Hermes beta",
+    "tabLabels": [
+      "Hermes alpha",
+      "Hermes beta"
+    ],
+    "tabCount": 2,
+    "activeTabLabel": "Hermes beta",
+    "activePill": "Hermes",
+    "dashboard": true,
+    "chatPanel": true
+  },
+  "probe": {
+    "installed": true,
+    "welcomeSeen": 0,
+    "dashboardGone": 0,
+    "splashSeen": 0,
+    "chatPanelMissing": 0,
+    "pillDisabledSamples": 0,
+    "switchStartMs": 93,
+    "sampleCount": 10,
+    "duringSwitchSamples": 7,
+    "chatPanelPresentEverySample": true,
+    "dashboardPresentAtEnd": true,
+    "markedDashboardPresent": true,
+    "welcomeCardAbsent": true,
+    "splashHidden": true,
+    "errors": [],
+    "railSampleCount": 14,
+    "railBlankSamples": 0,
+    "railBlankDetails": [],
+    "samples": [
+      {
+        "t": 0,
+        "marked": false,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 1,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 24,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 144,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 185,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 230,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 247,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 384,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 422,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      },
+      {
+        "t": 451,
+        "marked": true,
+        "dashboard": true,
+        "welcome": false,
+        "shell": false,
+        "chatPanel": true,
+        "splashVisible": false
+      }
+    ]
+  },
+  "afterSwitch": {
+    "clicked": true,
+    "timedOut": false,
+    "switchMs": 154,
+    "activePill": "Pi",
+    "railTitles": [
+      "Pi beta",
+      "Pi alpha"
+    ],
+    "tabLabels": [],
+    "activeTabLabel": null,
+    "pillDisabledAtEnd": false,
+    "pillDisabledSamples": 0,
+    "welcomeCardAbsent": true,
+    "markedDashboardPresent": true,
+    "chatPanelPresent": true,
+    "state": {
+      "railTitles": [
+        "Pi beta",
+        "Pi alpha"
+      ],
+      "railActive": "Pi beta",
+      "tabLabels": [],
+      "activeTabLabel": null,
+      "tabCount": 0,
+      "pills": [
+        {
+          "name": "Hermes",
+          "active": false,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        },
+        {
+          "name": "Pi",
+          "active": true,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        }
+      ],
+      "activePill": "Pi",
+      "pendingPills": [],
+      "busyPills": [],
+      "dashboard": true,
+      "markedDashboard": true,
+      "welcomeCard": false,
+      "chatPanel": true,
+      "splashHidden": true,
+      "hash": "#/home"
+    }
+  },
+  "restored": {
+    "clicked": true,
+    "wasActive": false,
+    "timedOut": false,
+    "restoreMs": 89,
+    "activePill": "Hermes",
+    "railTitles": [
+      "Hermes beta",
+      "Hermes alpha"
+    ],
+    "tabLabels": [
+      "Hermes alpha",
+      "Hermes beta"
+    ],
+    "activeTabLabel": "Hermes beta",
+    "markedDashboardPresent": true,
+    "welcomeCardAbsent": true,
+    "state": {
+      "railTitles": [
+        "Hermes beta",
+        "Hermes alpha"
+      ],
+      "railActive": "Hermes beta",
+      "tabLabels": [
+        "Hermes alpha",
+        "Hermes beta"
+      ],
+      "activeTabLabel": "Hermes beta",
+      "tabCount": 2,
+      "pills": [
+        {
+          "name": "Hermes",
+          "active": true,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        },
+        {
+          "name": "Pi",
+          "active": false,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        }
+      ],
+      "activePill": "Hermes",
+      "pendingPills": [],
+      "busyPills": [],
+      "dashboard": true,
+      "markedDashboard": true,
+      "welcomeCard": false,
+      "chatPanel": true,
+      "splashHidden": true,
+      "hash": "#/home"
+    }
+  },
+  "switchCeilingMs": 2000,
+  "duringShot": {
+    "capturedAtMs": 74,
+    "whileSwitchPending": true,
+    "differsFromBefore": true
+  },
+  "switchInvokes": {
+    "total": 2,
+    "entries": [
+      {
+        "at": 1794248392301,
+        "target": "pi"
+      },
+      {
+        "at": 1794248392543,
+        "target": "hermes"
+      }
+    ],
+    "beforeSwitch": 0,
+    "duringSwitch": 1,
+    "duringRestore": 1,
+    "pageWrap": {
+      "frozen": true,
+      "wrapped": false,
+      "error": null
+    },
+    "pageCalls": 0
+  },
+  "rail": {
+    "blankSamples": 0,
+    "sampleCount": 14,
+    "blankDetails": []
+  },
+  "pill": {
+    "disabledSamples": 0,
+    "pendingAfterSwitch": [],
+    "busyAfterSwitch": [],
+    "pendingAtEnd": [],
+    "busyAtEnd": []
+  },
+  "draft": {
+    "text": "rig draft: keep me across the switch",
+    "typed": {
+      "ok": true,
+      "value": "rig draft: keep me across the switch",
+      "tag": "TEXTAREA"
+    },
+    "before": {
+      "present": true,
+      "value": "rig draft: keep me across the switch",
+      "disabled": false,
+      "placeholder": "Message Hermes…"
+    },
+    "afterSwitch": {
+      "present": true,
+      "value": "",
+      "disabled": false,
+      "placeholder": "Message Pi…"
+    },
+    "restored": {
+      "present": true,
+      "value": "rig draft: keep me across the switch",
+      "disabled": false,
+      "placeholder": "Message Hermes…"
+    }
+  },
+  "persistence": {
+    "beforeReload": {
+      "hermesRaw": "{\"tabs\":[\"hermes-session-1\",\"hermes-session-2\"],\"activeId\":\"hermes-session-2\"}",
+      "piRaw": "{\"tabs\":[\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\"],\"activeId\":\"17fdf9b6-ddcd-4fa5-85d2-09933b5b7524\"}",
+      "legacyRaw": null,
+      "hermes": {
+        "tabs": [
+          "hermes-session-1",
+          "hermes-session-2"
+        ],
+        "activeId": "hermes-session-2",
+        "bare": false
+      },
+      "pi": {
+        "tabs": [
+          "17fdf9b6-ddcd-4fa5-85d2-09933b5b7524"
+        ],
+        "activeId": "17fdf9b6-ddcd-4fa5-85d2-09933b5b7524",
+        "bare": false
+      },
+      "lastSessionId": "hermes-session-2"
+    }
+  },
+  "reload": {
+    "bootMs": 1846,
+    "samples": 4,
+    "welcomeCardSamples": 3,
+    "welcomeCardSeen": true,
+    "expectedActiveTab": "Hermes beta",
+    "tabLabels": [
+      "Hermes alpha",
+      "Hermes beta"
+    ],
+    "activeTabLabel": "Hermes beta",
+    "dashboard": true,
+    "chatPanel": true,
+    "state": {
+      "railTitles": [
+        "Hermes beta",
+        "Hermes alpha"
+      ],
+      "railActive": "Hermes beta",
+      "tabLabels": [
+        "Hermes alpha",
+        "Hermes beta"
+      ],
+      "activeTabLabel": "Hermes beta",
+      "tabCount": 2,
+      "pills": [
+        {
+          "name": "Hermes",
+          "active": true,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        },
+        {
+          "name": "Pi",
+          "active": false,
+          "disabled": false,
+          "pending": false,
+          "busy": false
+        }
+      ],
+      "activePill": "Hermes",
+      "pendingPills": [],
+      "busyPills": [],
+      "dashboard": true,
+      "markedDashboard": false,
+      "welcomeCard": false,
+      "chatPanel": true,
+      "splashHidden": false,
+      "hash": "#/home"
+    }
+  },
+  "consoleErrors": [],
+  "consoleErrorsExcluded": [],
+  "renderProcessGone": [],
+  "pageErrors": [],
+  "screenshots": [
+    "agent-switch-before.png",
+    "agent-switch-during.png",
+    "agent-switch-after.png"
+  ]
+}

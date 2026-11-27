@@ -14,6 +14,7 @@ import {
   markConnectedAgent,
   resolveDecision,
   toolAllowed,
+  unlockDomain,
   updateConnectedAgent,
   type ConnectedAgent,
   type ConnectedGrant,
@@ -212,6 +213,14 @@ describe("MCP agent pairing and permission gate e2e", () => {
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
     const vaultId = (created as { ok: true; value: { lifequest: { id: string } } }).value.lifequest.id;
+
+    // The grant under test names the seeded Finance area, so it must be live.
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const doors = await startPairingDoors({ root: vaultRoot, vaultId, secretsDir, localPort: LOCAL_PORT, invitePort: INVITE_PORT });
     try {

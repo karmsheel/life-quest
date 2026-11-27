@@ -9,15 +9,21 @@ import {
 } from "react";
 import {
   lensSlug,
+  liveAreas,
   recordVisibleMulti,
+  unlockedAreas,
   type LibraryDocument,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
+import { containMarkdownLink } from "@/lib/markdown-links";
 import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { PageMenu } from "@/components/ui/PageMenu";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 import { ProposeChangeDialog } from "@/components/documents/ProposeChangeDialog";
 
 function formatWhen(iso: string): string {
@@ -57,12 +63,14 @@ export default function DocumentsPage() {
   /** The note's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
 
+  /** Everything the operator can see, base included: its name renders as "Life". */
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => liveAreas(snapshot?.domains ?? []),
+    [snapshot],
+  );
+  /** A note is tagged with areas; the base `life` container is the unassigned state. */
+  const pickerAreas = useMemo(
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -130,15 +138,20 @@ export default function DocumentsPage() {
   );
 
   // A library link stays in the composer: open the target note instead of
-  // navigating. Doctrine links are plain hashes and route normally.
+  // navigating. Doctrine links are plain hashes and route normally. Anything
+  // else is contained: the preview renders untrusted markdown into the window
+  // that carries the preload bridge, so a non-hash href is never followed here.
   function onPreviewClick(e: ReactMouseEvent<HTMLDivElement>) {
     const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>(
-      "a[data-library-id]",
+      "a[href]",
     );
     const id = anchor?.getAttribute("data-library-id");
-    if (!id) return;
-    e.preventDefault();
-    void openEdit(id);
+    if (anchor && id) {
+      e.preventDefault();
+      void openEdit(id);
+      return;
+    }
+    containMarkdownLink(e);
   }
 
   function domainName(slug: string): string {
@@ -146,7 +159,7 @@ export default function DocumentsPage() {
   }
 
   const pickerDomains = useMemo(() => {
-    const live = liveDomains.map((d) => ({
+    const live = pickerAreas.map((d) => ({
       slug: d.slug,
       name: d.meta.name,
     }));
@@ -163,7 +176,7 @@ export default function DocumentsPage() {
       });
     }
     return [...live, ...extras];
-  }, [liveDomains, editingId, editingOriginalSlugs, snapshot]);
+  }, [pickerAreas, editingId, editingOriginalSlugs, snapshot]);
 
   function toggleSlug(slug: string) {
     tagsDirty.current = true;
@@ -312,11 +325,57 @@ export default function DocumentsPage() {
   return (
     <div className="documents-page">
       <header className="documents-page__header">
-        <h1 className="stub-page__title">Documents</h1>
-        <p className="stub-page__desc muted">
-          Markdown notes. Tag a domain, or leave unassigned to keep them in
-          Overview only.
-        </p>
+        <div className="documents-page__intro">
+          <WingEyebrow page="Documents" />
+          <h1 className="stub-page__title">Documents</h1>
+          <p className="stub-page__desc muted">
+            Markdown notes. Tag an area, or leave unassigned to keep them in
+            Life only.
+          </p>
+        </div>
+        {/* The open note's actions, behind one three-dot menu in the page's
+            corner. This page has no document heading — the note's title is a
+            field in the composer — so the state badge stays beside the menu
+            rather than beside "Documents", where it would mislabel the page. The
+            corner is absent while the composer is empty: there is no note to
+            lock, propose on, or delete yet. The lock leads the menu; the note's
+            own acts (Propose change while locked, then Delete) follow it, so the
+            composer below is the note and not a row of commands about it. */}
+        {editingId ? (
+          <div className="page-corner" data-testid="documents-page-corner">
+            <DocumentLockBadge locked={editingLocked} />
+            <PageMenu
+              label="Note actions"
+              testId="note-page-menu"
+              lock={{
+                testId: "note-lock-toggle",
+                locked: editingLocked,
+                busy,
+                label: editingLocked ? "Unlock this note" : "Lock this note",
+                onToggle: () => void (editingLocked ? onUnlock() : onLock()),
+              }}
+              actions={[
+                ...(editingLocked
+                  ? [
+                      {
+                        testId: "note-propose",
+                        label: "Propose change",
+                        disabled: busy,
+                        onSelect: () => void onProposeOpen(),
+                      },
+                    ]
+                  : []),
+                {
+                  testId: "note-delete",
+                  label: "Delete note",
+                  disabled: busy,
+                  danger: true,
+                  onSelect: () => void onDelete(),
+                },
+              ]}
+            />
+          </div>
+        ) : null}
       </header>
 
       <form className="library-composer" onSubmit={(e) => void onSave(e)}>
@@ -345,11 +404,10 @@ export default function DocumentsPage() {
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
         <div className="field">
-          <span>Domains</span>
+          <span>Areas</span>
           {pickerDomains.length === 0 ? (
             <p className="muted">
-              No live domains. Leave unassigned to keep this note in Overview
-              only.
+              No live areas. Leave unassigned to keep this note in Life
             </p>
           ) : (
             <div className="library-tag-picker">
@@ -385,46 +443,11 @@ export default function DocumentsPage() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() => void onDelete()}
-                disabled={busy}
-              >
-                Delete
-              </button>
               {editingLocked ? (
-                <>
-                  <span className="muted library-lock-hint">
-                    Unlock to edit, or propose a change.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => void onUnlock()}
-                    disabled={busy}
-                  >
-                    Unlock
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => void onProposeOpen()}
-                    disabled={busy}
-                  >
-                    Propose change
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => void onLock()}
-                  disabled={busy}
-                >
-                  Lock
-                </button>
-              )}
+                <span className="muted library-lock-hint">
+                  Unlock to edit, or propose a change.
+                </span>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -447,7 +470,7 @@ export default function DocumentsPage() {
         <p className="muted">No notes yet. Create one above.</p>
       ) : visible.length === 0 ? (
         <p className="muted">
-          No notes in this domain. Unassigned notes stay in Overview.
+          No notes in this area. Unassigned notes stay in Life.
         </p>
       ) : (
         <ul className="library-list">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
+import { containMarkdownLink } from "@/lib/markdown-links";
 import { api } from "@/lib/ipc";
 
 export function MarkdownView({
@@ -51,6 +52,7 @@ export function MarkdownView({
     <div
       ref={ref}
       className="md-view"
+      onClick={containMarkdownLink}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

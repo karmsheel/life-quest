@@ -140,6 +140,8 @@ async function makeVault(mod, dir, { kit = true, name = "Phone rig" } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   await must("createVault", mod.createVault(dir, name));
   if (kit) {
+    // Areas seed locked; the kit lives in the Finance area, so open it first.
+    await must("unlockDomain", mod.unlockDomain(dir, mod.FINANCE_DOMAIN_SLUG));
     const installed = await must("installFinanceKit", mod.installFinanceKit(dir, mod.USER_ACTOR));
     if (installed.applied !== true) throw new Error("installFinanceKit filed a Decision instead of applying");
   }
