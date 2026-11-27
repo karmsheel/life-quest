@@ -558,6 +558,13 @@ const bridge: Record<string, unknown> = {
   companionSessionMessages: () => ok([]),
   onCompanionStream: () => () => undefined,
   onCompanionStatusChanged: () => () => undefined,
+  // ThemeProvider reads the profile's theme files at mount and subscribes for
+  // writes from the companion. The generic fallback below is wrong for all
+  // three: `themesList` is iterated, and `onThemesChanged` hands back an
+  // unsubscribe the effect calls on cleanup.
+  themesList: () => ok([]),
+  themeGetState: () => ok({ keptFile: null }),
+  onThemesChanged: () => () => undefined,
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
