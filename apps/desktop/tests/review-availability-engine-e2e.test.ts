@@ -784,7 +784,7 @@ describe("the review opening windows persist and gate in a real vault", () => {
           true,
           `ensureReview refused the open daily period: ${openedResult.ok ? "" : openedResult.error}`,
         );
-        const openFile = vaultPaths(root).reviewMd("daily", openPeriod);
+        const openFile = vaultPaths(root).reviewManifest("daily", openPeriod);
         assert.equal(
           await exists(openFile),
           true,
@@ -810,10 +810,7 @@ describe("the review opening windows persist and gate in a real vault", () => {
         // The unopened period: November's monthly review opens 29 Nov 00:00.
         const unopenedPeriod = "2026-11";
         const expectsOpening = openingText("monthly", unopenedPeriod);
-        const unopenedFile = vaultPaths(root).reviewMd(
-          "monthly",
-          unopenedPeriod,
-        );
+        const unopenedFile = vaultPaths(root).reviewManifest("monthly", unopenedPeriod);
         assert.equal(
           await exists(unopenedFile),
           false,
@@ -856,10 +853,7 @@ describe("the review opening windows persist and gate in a real vault", () => {
           true,
           `ensureReview refused the open monthly period: ${previousEnsure.ok ? "" : previousEnsure.error}`,
         );
-        const previousFile = vaultPaths(root).reviewMd(
-          "monthly",
-          previousMonthly,
-        );
+        const previousFile = vaultPaths(root).reviewManifest("monthly", previousMonthly);
         const previousBody = previousEnsure.ok
           ? previousEnsure.value.bodyMarkdown
           : "";
@@ -875,9 +869,17 @@ describe("the review opening windows persist and gate in a real vault", () => {
           `writeReview refused the open monthly period: ${previousWrite.ok ? "" : previousWrite.error}`,
         );
 
-        // Forge a file for the unopened period by copying the open period's
-        // file, so a refusal can only be the window gate and not "not found".
-        await fs.copyFile(previousFile, unopenedFile);
+        // Forge a notebook for the unopened period by copying the open period's
+        // directory and re-pointing its manifest, so a refusal can only be the
+        // window gate and not "not found".
+        await fs.cp(path.dirname(previousFile), path.dirname(unopenedFile), { recursive: true });
+        {
+          const forgedManifest = JSON.parse(await fs.readFile(unopenedFile, "utf8")) as {
+            period: string;
+          };
+          forgedManifest.period = unopenedPeriod;
+          await fs.writeFile(unopenedFile, `${JSON.stringify(forgedManifest, null, 2)}\n`);
+        }
         const forged = await getReview(root, "monthly", unopenedPeriod);
         assert.equal(
           forged.ok,

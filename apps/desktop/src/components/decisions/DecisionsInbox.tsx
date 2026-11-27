@@ -125,6 +125,8 @@ function kindLabel(target: DecisionRecord["target"]): string {
       return "Library note";
     case "review":
       return "Review";
+    case "review-page":
+      return "Review page";
     case "page":
       return "Page";
     case "pins":

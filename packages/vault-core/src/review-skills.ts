@@ -5,7 +5,12 @@ import { listDomains } from "./domains.ts";
 import { appendLog } from "./log.ts";
 import { periodBounds } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
-import { ensureReview, getReview, writeReview } from "./reviews.ts";
+import {
+  ensureReviewPage,
+  getReview,
+  getReviewPageBody,
+  writeReviewPage,
+} from "./reviews.ts";
 import { applyViewDefaults, resolveViewBlocks, runViewBlocks } from "./views.ts";
 import {
   USER_ACTOR,
@@ -721,32 +726,67 @@ export async function prepopulateReview(
   rootPath: string,
   input: { cadence: ReviewCadence; period: string; scope: string; actor: Actor },
 ): Promise<Result<ReviewPrepopulateResult>> {
-  const review = await getReview(rootPath, input.cadence, input.period);
-  if (!review.ok) return review;
-  let record = review.value;
+  const recordRes = await getReview(rootPath, input.cadence, input.period);
+  if (!recordRes.ok) return recordRes;
+  const record = recordRes.value;
+
+  const lockedValue = (bodyMarkdown: string): ReviewPrepopulateResult => ({
+    cadence: input.cadence,
+    period: input.period,
+    scope: input.scope,
+    outcomes: [],
+    applied: 0,
+    planted: [],
+    locked: true,
+    bodyMarkdown,
+  });
 
   if (record.locked) {
-    return {
-      ok: true,
-      value: {
-        cadence: input.cadence,
-        period: input.period,
-        scope: input.scope,
-        outcomes: [],
-        applied: 0,
-        planted: [],
-        locked: true,
-        bodyMarkdown: record.bodyMarkdown,
-      },
-    };
+    return { ok: true, value: lockedValue(record.bodyMarkdown) };
   }
+
+  // The page is the write unit now. A Start can arrive for a page that was not
+  // ensured first (the window's Start does ensure it), so ensure here too: the
+  // figures need a page to land on, and the editor still reads the whole body.
+  const ensured = await ensureReviewPage(rootPath, {
+    cadence: input.cadence,
+    period: input.period,
+    scope: input.scope,
+  });
+  if (!ensured.ok) return ensured;
+  const pageRes = await getReviewPageBody(
+    rootPath,
+    input.cadence,
+    input.period,
+    input.scope,
+  );
+  if (!pageRes.ok) return pageRes;
+  let page = pageRes.value;
 
   const skill = await ensureReviewSkill(rootPath, input.cadence);
   if (!skill.ok) return skill;
 
-  const wanted = skill.value.snapshots.filter(
-    (d) => input.scope === "overall" || d.domain === input.scope,
-  );
+  /**
+   * Which directives belong to this page.
+   *
+   * A directive names a domain, and a page has exactly one scope, so the rule is
+   * the scope's own directives. The daily review is the exception: it is one
+   * general page by design, so its page runs every directive (a day's spending
+   * belongs in the day's Look-back). An area-bearing cadence's overall page runs
+   * no domain directive — those figures live on the area pages, and the
+   * cross-domain table is an app-rendered block, not a per-area snapshot.
+   */
+  const wanted = skill.value.snapshots.filter((directive) => {
+    if (input.cadence === "daily") return true;
+    if (input.scope === "overall") return directive.domain === "";
+    return directive.domain === input.scope;
+  });
+
+  const compatBody = async (): Promise<string> => {
+    const fresh = await getReview(rootPath, input.cadence, input.period);
+    return fresh.ok ? fresh.value.bodyMarkdown : page.bodyMarkdown;
+  };
+
   if (wanted.length === 0 && skill.value.problems.length === 0) {
     return {
       ok: true,
@@ -763,56 +803,7 @@ export async function prepopulateReview(
     };
   }
 
-  const listed = await listDomains(rootPath);
-  const names = new Map<string, string>();
-  if (listed.ok) {
-    for (const d of listed.value) names.set(d.slug, d.meta.name);
-  }
-
-  /**
-   * A rule names a domain, so a review with areas that lacks that domain's
-   * section is owed it.
-   *
-   * The AREA path is what decides planting, because a plant can only add an area
-   * section: a weekly review that has no `## Financial` gets the Financial
-   * section planted even though the overall `## Look-back` could take the block,
-   * so the figure stays in the area it belongs to and the weekly file's shape
-   * does not change just because the operator has not started that area scope
-   * yet. Placement below resolves the same area path first, so the decision to
-   * plant and the decision where the block goes cannot disagree.
-   *
-   * The daily review has no area sections by design — `ensureReview` refuses an
-   * area scope with DAILY_REVIEW_NO_AREAS — so it is never given a plant to
-   * refuse: placement falls back to the overall `## Look-back` instead. Planting
-   * goes through `ensureReview` with that domain as its scope, which is the
-   * existing, tested way a section and its scope state appear together; nothing
-   * here invents structure of its own.
-   */
-  const planted: string[] = [];
-  for (const directive of wanted) {
-    const domainName = names.get(directive.domain) ?? directive.domain;
-    if (findDomainSnapshotSection(record.bodyMarkdown, domainName, directive.section)) {
-      continue;
-    }
-    if (input.cadence === "daily") continue;
-    if (planted.includes(directive.domain)) continue;
-    const grown = await ensureReview(rootPath, {
-      cadence: input.cadence,
-      period: input.period,
-      scope: directive.domain,
-    });
-    if (grown.ok) planted.push(directive.domain);
-  }
-  if (planted.length > 0) {
-    const reread = await getReview(rootPath, input.cadence, input.period);
-    if (reread.ok) record = reread.value;
-  }
-
-  const bounds = periodBounds(
-    input.cadence,
-    input.period,
-    record.weekStartDay,
-  );
+  const bounds = periodBounds(input.cadence, input.period, record.weekStartDay);
   if (!bounds.ok) return bounds;
 
   const outcomes: ReviewSnapshotOutcome[] = skill.value.problems.map((problem, index) => ({
@@ -846,16 +837,18 @@ export async function prepopulateReview(
   }
 
   /**
-   * Place the already-rendered blocks into one body. It is a pure function of
-   * the body and the rendered figures, which is what makes the write below
-   * retryable: a conflict re-reads the file and places the same figures into the
+   * Place the already-rendered blocks into this page. It is a pure function of
+   * the page body and the rendered figures, which is what makes the write below
+   * retryable: a conflict re-reads the page and places the same figures into the
    * newer body rather than replaying the queries.
+   *
+   * Placement resolves the page's own H2, not an area wrapper: a page *is* the
+   * area now, so `### Look-back` under `## Health` has become `## Look-back`.
    */
   const place = (sourceBody: string) => {
     let body = sourceBody;
     const placed: ReviewSnapshotOutcome[] = [];
     for (const directive of wanted) {
-      const domainName = names.get(directive.domain) ?? directive.domain;
       const failure = failedById.get(directive.id);
       if (failure !== undefined) {
         placed.push({
@@ -868,10 +861,8 @@ export async function prepopulateReview(
         });
         continue;
       }
-      // Resolve the span once, here, before the figure is placed: a directive
-      // with nowhere to go is skipped without touching the body, and the hit
-      // below is the same resolution the plant check made above.
-      const found = findSnapshotSection(body, domainName, directive.section);
+      const lines = body.replace(/\r\n/g, "\n").split("\n");
+      const found = findOverallSection(lines, directive.section);
       if (!found) {
         placed.push({
           id: directive.id,
@@ -879,12 +870,12 @@ export async function prepopulateReview(
           section: directive.section,
           title: directive.title,
           status: "skipped",
-          reason: `this review has no "${directive.section}" section under ${domainName}`,
+          reason: `this page has no "${directive.section}" section`,
         });
         continue;
       }
       const prepared = renderedById.get(directive.id)!;
-      const upserted = upsertSnapshotAt(body, directive, domainName, found, prepared.markdown);
+      const upserted = upsertSnapshotAt(body, directive, input.scope, found, prepared.markdown);
       if (upserted.status === "skipped") {
         placed.push({
           id: directive.id,
@@ -909,52 +900,44 @@ export async function prepopulateReview(
     return { body, outcomes: placed };
   };
 
-  const value = (bodyMarkdown: string, placedOutcomes: ReviewSnapshotOutcome[]): ReviewPrepopulateResult => ({
-    cadence: input.cadence,
-    period: input.period,
-    scope: input.scope,
-    outcomes: [...outcomes, ...placedOutcomes],
-    applied: placedOutcomes.filter((o) => o.status === "written").length,
-    planted,
-    locked: false,
-    bodyMarkdown,
-  });
-
-  // A body write here is whole-file (the figure pass still owns the document),
-  // so it carries the rev it read and retries on a conflict: another writer who
-  // landed between the read and the write gets to keep their prose, and the
-  // figures are placed into the newer body instead of reverting it.
-  let lastRecord = record;
-  let placed = place(lastRecord.bodyMarkdown);
-  let resultBody = lastRecord.bodyMarkdown;
+  // A page write carries the page rev it read and retries on a conflict: an
+  // operator's autosave that landed between the read and the write keeps their
+  // prose, and the figures are placed into the newer page instead of reverting it.
+  let placed = place(page.bodyMarkdown);
   let wrote = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (placed.body === lastRecord.bodyMarkdown) {
-      resultBody = lastRecord.bodyMarkdown;
-      break;
-    }
-    const written = await writeReview(rootPath, {
+    if (placed.body === page.bodyMarkdown) break;
+    const written = await writeReviewPage(rootPath, {
       cadence: input.cadence,
       period: input.period,
+      scope: input.scope,
       bodyMarkdown: placed.body,
+      baseRev: page.rev,
       actor: input.actor,
-      baseRev: lastRecord.rev,
     });
     if (written.ok) {
       wrote = true;
-      resultBody = written.value.bodyMarkdown;
+      page = written.page;
       break;
     }
-    if (written.code !== "CONFLICT") {
-      return written;
+    if (written.code === "LOCKED") {
+      return { ok: true, value: lockedValue(await compatBody()) };
     }
-    const fresh = await getReview(rootPath, input.cadence, input.period);
+    if (written.code !== "CONFLICT") {
+      return { ok: false, error: written.error };
+    }
+    const fresh = await getReviewPageBody(
+      rootPath,
+      input.cadence,
+      input.period,
+      input.scope,
+    );
     if (!fresh.ok) return fresh;
-    lastRecord = fresh.value;
-    placed = place(lastRecord.bodyMarkdown);
+    page = fresh.value;
+    placed = place(page.bodyMarkdown);
   }
 
-  if (!wrote && placed.body !== lastRecord.bodyMarkdown) {
+  if (!wrote && placed.body !== page.bodyMarkdown) {
     return {
       ok: false,
       error: "The review changed while its figures were being written; try Start again.",
@@ -962,12 +945,25 @@ export async function prepopulateReview(
   }
 
   // The log is a record of changes, not of Starts: a pass whose write left the
-  // file exactly as it found it — a second Start, a review none of whose rules
+  // page exactly as it found it — a second Start, a review none of whose rules
   // could be placed — appends nothing, so a line here means a figure landed.
-  if (wrote && resultBody !== record.bodyMarkdown) {
+  const bodyMarkdown = await compatBody();
+  if (wrote && placed.outcomes.some((outcome) => outcome.status === "written")) {
     await logSnapshotPass(rootPath, input, record.title, placed.outcomes);
   }
-  return { ok: true, value: value(resultBody, placed.outcomes) };
+  return {
+    ok: true,
+    value: {
+      cadence: input.cadence,
+      period: input.period,
+      scope: input.scope,
+      outcomes: [...outcomes, ...placed.outcomes],
+      applied: placed.outcomes.filter((outcome) => outcome.status === "written").length,
+      planted: [],
+      locked: false,
+      bodyMarkdown,
+    },
+  };
 }
 
 /**

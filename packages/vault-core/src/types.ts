@@ -81,6 +81,12 @@ export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
   | { type: "review"; cadence: ReviewCadence; period: string }
+  // The notebook's page. `scope` is "overall" or a live area slug. A page
+  // Decision carries the page `rev` it was proposed against in `rev`, so an
+  // apply that finds a newer page refuses STALE instead of overwriting prose
+  // the operator never saw. Legacy `{type:"review"}` Decisions read as the
+  // overall page (one release).
+  | { type: "review-page"; cadence: ReviewCadence; period: string; scope: string; rev?: number }
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
@@ -395,15 +401,20 @@ export type ReviewRecord = {
   scopes: Record<string, ReviewScopeState>;
   bodyMarkdown: string;
   /**
-   * The file's own content version, for compare-and-swap. It counts real body
-   * changes only: status, lock and session-id writes leave it alone, so a
-   * concurrent "mark done" cannot make the operator's next autosave conflict.
+   * The review's content version for compare-and-swap, in the compatibility
+   * projection. A notebook has one rev per page, so this is a monotonic
+   * composite: the manifest rev plus every page rev. Any structural change or
+   * real body write moves it, so a page editor that read it still conflicts
+   * when another writer lands between its read and its save.
    *
-   * A file written before this field existed reads as 0, which is a version no
-   * write will produce, so a stale page still conflicts rather than overwriting
-   * a file it never saw.
+   * A legacy single-file review reads its own `rev` (0 for files written before
+   * the field existed), which is a version no write produces.
    */
   rev: number;
+  /** The notebook's page summaries, when the record is the compatibility projection. */
+  pages?: ReviewPageSummary[];
+  /** The compatibility content rev (the same number as `rev`), named for the notebook. */
+  notebookRev?: number;
 };
 
 /**
@@ -417,13 +428,118 @@ export type ReviewRecord = {
  */
 export type ReviewPageBody = {
   scope: string;
-  /** `missing` when the scope has no state yet (never started). */
+  /** The page's display title: the notebook title for `overall`, the area name otherwise. */
+  title: string;
+  /** `missing` when the page does not exist yet (never started). */
   status: "missing" | "draft" | "done";
   sessionId: string | null;
-  /** The review file's rev at read time; pass it back to detect a stale write. */
+  /** The page's own rev at read time; pass it back to detect a stale write. */
   rev: number;
+  updatedAt: string | null;
   locked: boolean;
   bodyMarkdown: string;
+};
+
+/** One page with the notebook identity it belongs to. */
+export type ReviewPage = ReviewPageBody & {
+  cadence: ReviewCadence;
+  period: string;
+};
+
+/**
+ * One notebook page as stored: the markdown file's parsed contents.
+ *
+ * Page files are the unit of concurrent work: they own their prose, status,
+ * session id and rev, and no other page's write touches them. The manifest owns
+ * identity, order and lock.
+ */
+export type ReviewPageFile = {
+  schemaVersion: 1;
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  bodyMarkdown: string;
+};
+
+/** The notebook manifest (`review.json`): identity, order and lock. */
+export type ReviewManifest = {
+  schemaVersion: 1;
+  cadence: ReviewCadence;
+  period: string;
+  weekStartDay: WeekStartDay;
+  title: string;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** The read-only notebook a period presents to the app. */
+export type ReviewPageSummary = {
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  chars: number;
+};
+
+export type ReviewNotebook = {
+  cadence: ReviewCadence;
+  period: string;
+  title: string;
+  weekStartDay: WeekStartDay;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  pages: ReviewPageSummary[];
+  /** Absolute path of the notebook directory (or the legacy file it projects). */
+  path: string;
+  /** True when the period is still a single legacy file the migration has not split. */
+  legacy: boolean;
+};
+
+/** Why a page write was refused. `LEGACY_LAYOUT` asks the caller to retry after migration. */
+export type ReviewPageWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "GATED"
+  | "NOT_OPEN"
+  | "NOT_FOUND"
+  | "MALFORMED"
+  | "LEGACY_LAYOUT";
+
+/** A page write's answer: the page as written, or a refusal with the page as it stands. */
+export type ReviewPageWriteOutcome =
+  | { ok: true; page: ReviewPageBody; notebookRev: number }
+  | {
+      ok: false;
+      code: ReviewPageWriteCode;
+      error: string;
+      /** The same sentence as `error`, under the name the engine API documents. */
+      message: string;
+      current?: ReviewPageBody;
+    };
+
+/** One period's outcome in the legacy→notebook migration. */
+export type ReviewMigrationPeriod = {
+  cadence: ReviewCadence;
+  period: string;
+  status: "migrated" | "skipped" | "failed";
+  reason?: string;
+};
+
+/** What the one-release migration did, stored in its marker file. */
+export type ReviewMigrationReport = {
+  schemaVersion: 1;
+  migratedAt: string;
+  alreadyDone: boolean;
+  periods: ReviewMigrationPeriod[];
 };
 
 /**
@@ -433,9 +549,11 @@ export type ReviewPageBody = {
 export type ReviewWriteCode =
   | "CONFLICT"
   | "LOCKED"
+  | "GATED"
   | "NOT_OPEN"
   | "MALFORMED"
-  | "NOT_FOUND";
+  | "NOT_FOUND"
+  | "LEGACY_LAYOUT";
 
 /**
  * A review write's answer. A refusal carries the current file for `CONFLICT`,
@@ -454,6 +572,12 @@ export type ReviewIndexEntry = {
   period: string;
   locked: boolean;
   scopes: Record<string, { status: "draft" | "done"; sessionId: string | null }>;
+  /** Latest write across the manifest and its pages. */
+  updatedAt?: string;
+  /** How many pages the notebook holds (overall included). */
+  pageCount?: number;
+  /** How many pages are `done`. */
+  doneCount?: number;
   error?: string;
 };
 
@@ -1942,6 +2066,12 @@ export type PeriodPack = {
   liveDays: LiveDay[];
   events: MapEvent[];
   previousReview: ReviewRecord | null;
+  /**
+   * The current period's notebook pages (summary only, no bodies), so a review
+   * session can see which pages exist and their status without reading each one.
+   * Bodies live in `domainSections` (overall) and the compatibility record.
+   */
+  reviewPages?: ReviewPageSummary[];
   /** Daily notes whose date falls inside the period window, oldest first. */
   dailyNotes: DailyNote[];
   domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }>;

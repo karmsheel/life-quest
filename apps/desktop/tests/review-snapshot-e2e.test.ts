@@ -208,7 +208,7 @@ describe("review snapshot e2e", () => {
       const first = await prepopulateReview(vaultRoot, {
         cadence: "weekly",
         period: PERIOD,
-        scope: "overall",
+        scope: "financial",
         actor: ACTOR,
       });
       assert.equal(first.ok, true, `the snapshot pass failed: ${first.ok ? "" : first.error}`);
@@ -266,7 +266,7 @@ describe("review snapshot e2e", () => {
       const second = await prepopulateReview(vaultRoot, {
         cadence: "weekly",
         period: PERIOD,
-        scope: "overall",
+        scope: "financial",
         actor: ACTOR,
       });
       assert.equal(second.ok, true, "the second pass failed");
@@ -736,18 +736,16 @@ describe("review snapshot e2e", () => {
     }
   });
 
-  it("plants the Financial section on a weekly review that has only the overall skeleton", async () => {
+  it("creates the Financial page and fills it on a weekly review that has only the overall page", async () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-review-plant-"));
     const vaultRoot = path.join(workDir, "vault");
     const checks: Record<string, unknown> = {};
 
     try {
-      // The OTHER half of the resolution contract: a weekly review always carries
-      // the overall `## Look-back`, so the overall path could take the block, but
-      // a cadence with area sections keeps the figure under its area — the pass
-      // plants `## Finance` rather than letting the rule drift into the general
-      // section. The weekly case above seeds that section explicitly, so this is
-      // the only case that pins the plant itself.
+      // The page-scoped contract: a weekly review with only the overall page gets
+      // the Financial page created on the first financial Start, and the figure
+      // lands on that page — never in the overall page's Look-back, even though
+      // that section exists and could take the block.
       const created = await createVault(vaultRoot, "Plant Rig");
       assert.equal(created.ok, true, "the rig could not create a vault");
       const unlockFinancial = await unlockDomain(vaultRoot, "financial");
@@ -778,8 +776,8 @@ describe("review snapshot e2e", () => {
       ]);
       assert.equal(inserted.ok, true, "the rig could not post the transaction");
 
-      // Overall only: no Financial area scope has been started, so the file has
-      // the four overall H2s and no `## Finance`.
+      // Overall only: no Financial page has been started, so the notebook has
+      // the overall page and no financial page.
       const ensured = await ensureReview(vaultRoot, {
         cadence: "weekly",
         period: PERIOD,
@@ -807,7 +805,7 @@ describe("review snapshot e2e", () => {
       const pass = await prepopulateReview(vaultRoot, {
         cadence: "weekly",
         period: PERIOD,
-        scope: "overall",
+        scope: "financial",
         actor: ACTOR,
       });
       assert.equal(pass.ok, true, `the snapshot pass failed: ${pass.ok ? "" : pass.error}`);
@@ -815,20 +813,20 @@ describe("review snapshot e2e", () => {
       assert.ok(value, "no pass");
       checks.planted = value.planted;
       checks.outcomes = value.outcomes;
-      assert.equal(value.applied, 1, "the pass wrote no figure after planting");
-      assert.deepEqual(value.planted, ["financial"], "the pass did not plant the Financial section");
+      assert.equal(value.applied, 1, "the pass wrote no figure to the financial page");
+      assert.deepEqual(value.planted, [], "the pass reported a plant: the page is the unit now");
 
       const body = value.bodyMarkdown;
       checks.body = body;
       const financeAt = body.indexOf("## Finance");
       const marker = body.indexOf("<!-- lifequest:snapshot:finance-spend -->");
       const keepAt = body.indexOf("### Keep");
-      assert.ok(financeAt !== -1, "the Financial section was planted but is not in the body");
+      assert.ok(financeAt !== -1, "the financial page exists but is not in the compatibility body");
       assert.ok(
         marker > financeAt && marker > body.indexOf("### Look-back"),
-        "the snapshot did not land under the planted Financial Look-back",
+        "the snapshot did not land under the financial page's Look-back",
       );
-      assert.ok(marker < keepAt, "the snapshot landed outside the planted Financial Look-back");
+      assert.ok(marker < keepAt, "the snapshot landed outside the financial page's Look-back");
       // The overall Look-back took the operator's prose and NOT the figure, even
       // though it could have resolved the rule.
       const overallLookback = body.slice(
@@ -842,14 +840,14 @@ describe("review snapshot e2e", () => {
         "the figure drifted from the area section into the overall one",
       );
 
-      // The planted section is a real area scope now, not just a heading.
+      // The pass created a real page, with the area's page status.
       const reread = await getReview(vaultRoot, "weekly", PERIOD);
       assert.equal(reread.ok, true, "the review could not be read back");
       checks.scopes = reread.ok ? reread.value.scopes : null;
       assert.equal(
         reread.ok && reread.value.scopes.financial?.status,
         "draft",
-        "planting the section did not start the Financial area scope",
+        "the financial page is missing from the compatibility scopes",
       );
 
       fs.mkdirSync(path.dirname(PLANT_ARTIFACT), { recursive: true });

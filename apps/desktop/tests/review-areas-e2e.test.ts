@@ -311,7 +311,16 @@ describe("review areas e2e", () => {
       // ── 5. one file, one section per area, no duplicates ──────────────────
       const weeklyFiles = readFileNames(path.join(vaultRoot, "reviews", "weekly"));
       checks.weeklyFiles = weeklyFiles;
-      assert.deepEqual(weeklyFiles, [`${weekPeriod}.md`], "locking created or removed a review file");
+      // A period is a notebook directory now: the manifest plus one page per
+      // scope. The old single file must be gone (the migration archives it).
+      assert.deepEqual(weeklyFiles, [weekPeriod], "locking created or removed a review period");
+      const notebookDir = path.join(vaultRoot, "reviews", "weekly", weekPeriod);
+      assert.ok(fs.existsSync(path.join(notebookDir, "review.json")), "the notebook manifest is missing");
+      assert.deepEqual(
+        readFileNames(notebookDir).sort(),
+        ["review.json", "overall.md", "health.md", "mind.md", "financial.md"].sort(),
+        "the notebook does not hold one page per scope",
+      );
       assert.deepEqual(
         readFileNames(path.join(vaultRoot, "reviews")),
         ["weekly"],

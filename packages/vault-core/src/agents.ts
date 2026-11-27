@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { chatQuestionsFromUnknown, parseChatQuestionsPatch } from "./chat-questions.ts";
@@ -128,9 +129,40 @@ async function countMdFiles(dir: string): Promise<number> {
 
 export async function countWeeklyVaultFiles(rootPath: string): Promise<number> {
   const paths = vaultPaths(rootPath);
-  const reviews = await countMdFiles(paths.reviewsCadenceDir("weekly"));
+  const reviews = await countWeeklyReviewPeriods(paths.reviewsCadenceDir("weekly"));
   const planning = await countMdFiles(paths.planningCadenceDir("weekly"));
   return reviews + planning;
+}
+
+/**
+ * Weekly review periods, whichever layout they are in: a notebook directory
+ * (one holding review.json) is one period, and a compatibility-release `.md`
+ * file that the migration has not reached is one period too. Counting the
+ * directory's page files instead would inflate the count by one per area.
+ */
+async function countWeeklyReviewPeriods(dir: string): Promise<number> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw e;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      count += 1;
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+    try {
+      await fs.access(path.join(dir, entry.name, "review.json"));
+      count += 1;
+    } catch {
+      // A directory without a manifest is not a review period; leave it out.
+    }
+  }
+  return count;
 }
 
 export function autoApproveInsertsFromUnknown(value: unknown): AutoApproveInsert[] {

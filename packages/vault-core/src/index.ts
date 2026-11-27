@@ -136,18 +136,22 @@ export {
 } from "./period.ts";
 export {
   DAILY_REVIEW_NO_AREAS,
-  composeReviewPageWrite,
   ensureReview,
+  ensureReviewPage,
   getReview,
   getReviewAreaChecklist,
+  getReviewNotebook,
+  getReviewPage,
   getReviewPageBody,
   writeReview,
   writeReviewPage,
+  applyReviewPageBody,
   markReviewDone,
   unlockReview,
   setReviewSessionId,
   listReviewIndex,
   applyLockedReviewBody,
+  migrateLegacyReviews,
 } from "./reviews.ts";
 export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
 export {

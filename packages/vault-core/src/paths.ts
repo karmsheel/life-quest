@@ -344,12 +344,53 @@ export function vaultPaths(root: string) {
     },
     reviewsCadenceDir: (cadence: string) =>
       build("reviews", assertSafeSegment(cadence, "review cadence")),
+    // The pre-notebook layout: one markdown file per period. Read during the
+    // compatibility release (and by the migration), never written once the
+    // period is a notebook.
     reviewMd: (cadence: string, period: string) =>
       build(
         "reviews",
         assertSafeSegment(cadence, "review cadence"),
         assertSafeSegment(period, "review period") + ".md",
       ),
+    // A period is a notebook directory: a manifest plus one markdown page per
+    // scope. The directory scan of `reviews/<cadence>/` names both shapes while
+    // legacy periods remain, so the index is one list either way.
+    reviewNotebookDir: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+      ),
+    reviewManifest: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        "review.json",
+      ),
+    reviewPageMd: (cadence: string, period: string, scope: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        assertSafeSegment(scope, "review scope") + ".md",
+      ),
+    // The one-release migration's archive: legacy files moved here so a scan of
+    // `reviews/<cadence>/` never sees them as a second period.
+    get reviewsLegacyArchiveDir(): string {
+      return build(".lifequest", "legacy-reviews");
+    },
+    reviewLegacyArchiveMd: (cadence: string, period: string) =>
+      build(
+        ".lifequest",
+        "legacy-reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period") + ".md",
+      ),
+    get reviewMigrationMarker(): string {
+      return build(".lifequest", "migrations", "reviews-notebook-v1.json");
+    },
     // The cadence's standing rules for a review session. It lives under
     // `.lifequest` rather than beside the periods so that a directory scan of
     // `reviews/<cadence>/` still finds review files and nothing else.

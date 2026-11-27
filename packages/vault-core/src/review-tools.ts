@@ -1,16 +1,15 @@
 import type { MapToolDef } from "./map/tools.ts";
-import type { Actor, ReviewCadence } from "./types.ts";
+import type { Actor, ReviewCadence, ReviewRecord } from "./types.ts";
 import { createDecision } from "./decisions.ts";
 import { isReviewCadence } from "./period.ts";
 import { getPeriodPack } from "./period-pack.ts";
 import {
-  composeReviewPageWrite,
   getReview,
+  getReviewNotebook,
   getReviewPageBody,
   listReviewIndex,
   markReviewDone,
   unlockReview,
-  writeReview,
   writeReviewPage,
 } from "./reviews.ts";
 import { getReviewSkill, writeReviewSkill } from "./review-skills.ts";
@@ -19,7 +18,7 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "get_review",
     description:
-      "Read a review by cadence and period. With scope (\"overall\" or an area slug) returns that page only — your page, its four headings, its status and the file's rev to quote back when you write. Without scope returns the whole file (legacy read).",
+      "Read a review by cadence and period. With scope (\"overall\" or an area slug) returns that page only — your page, its four headings, its status and the page rev to quote back when you write. Without scope returns the notebook summary and the whole review as the compatibility read.",
     parameters: {
       type: "object",
       properties: {
@@ -38,7 +37,7 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "write_review",
     description:
-      "Write one page of a review. Call get_review with the same scope first, then pass the body of that page (one # title and the four ## headings) and its rev. Only that scope's headings are replaced, so another area's review is never touched. A CONFLICT means the file moved under you: read the page again and re-apply your section. Locked reviews become a pending Decision. Without scope, writes a legacy whole-file body.",
+      "Write one page of a review. Call get_review with the same scope first, then pass the body of that page (one # title and the four ## headings) and its baseRev. Only that page's headings are replaced, so another area's review is never touched. A CONFLICT means the page changed under you: read it again and re-apply your section. A locked review files the page as a pending Decision instead of writing it.",
     parameters: {
       type: "object",
       properties: {
@@ -48,7 +47,7 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
         body: { type: "string" },
         baseRev: { type: "number" },
       },
-      required: ["cadence", "period", "body"],
+      required: ["cadence", "period", "scope", "body", "baseRev"],
     },
   },
   {
@@ -133,6 +132,16 @@ function vaultError(error: string): ReviewToolError {
  * answered by the Decision branch before this, so it only appears when a locked
  * write could not even be composed.
  */
+/** The compatibility whole-file record, or null when the period is unreadable — a write already landed, so a projection failure must not fail it. */
+async function compatRecordOrNull(
+  rootPath: string,
+  cadence: ReviewCadence,
+  period: string,
+): Promise<ReviewRecord | null> {
+  const record = await getReview(rootPath, cadence, period);
+  return record.ok ? record.value : null;
+}
+
 function writeError(message: string, code: string): ReviewToolError {
   return { error: { code, message } };
 }
@@ -167,12 +176,27 @@ export async function executeReviewTool(
       const result = await getReview(root, cp.cadence, cp.period);
       if (!result.ok) return vaultError(result.error);
       const scope = typeof args.scope === "string" ? args.scope : null;
-      if (scope === null) return { review: result.value };
+      const notebookRes = await getReviewNotebook(root, cp.cadence, cp.period);
+      const notebook = notebookRes.ok
+        ? {
+            title: notebookRes.value.title,
+            locked: notebookRes.value.locked,
+            order: notebookRes.value.order,
+            legacy: notebookRes.value.legacy,
+            pages: notebookRes.value.pages.map((page) => ({
+              scope: page.scope,
+              title: page.title,
+              status: page.status,
+              rev: page.rev,
+            })),
+          }
+        : null;
+      if (scope === null) return { review: result.value, notebook };
       const page = await getReviewPageBody(root, cp.cadence, cp.period, scope);
       if (!page.ok) return vaultError(page.error);
       // `review` rides along for the grant projection the tool door applies to
       // connected agents; a companion reads `page`.
-      return { review: result.value, page: page.value };
+      return { review: result.value, notebook, page: page.value };
     }
 
     case "list_reviews": {
@@ -195,75 +219,62 @@ export async function executeReviewTool(
       if (typeof body !== "string") {
         return { error: { code: "MALFORMED", message: "body is required" } };
       }
-      const scope = typeof args.scope === "string" ? args.scope : null;
-      const baseRev = typeof args.baseRev === "number" ? args.baseRev : undefined;
-
-      // No scope is the pre-page contract: a whole-file body from a session that
-      // was started before scopes existed. It still lands, but it has no guard
-      // beyond the mutex — the page and scoped paths are the safe ones.
-      if (scope === null) {
-        const written = await writeReview(root, {
-          cadence: cp.cadence,
-          period: cp.period,
-          bodyMarkdown: body,
-          actor,
-          baseRev,
-        });
-        if (!written.ok) {
-          if (written.code === "LOCKED" && written.current) {
-            const decision = await createDecision(root, {
-              target: { type: "review", cadence: cp.cadence, period: cp.period },
-              proposedBodyMarkdown: body,
-              previousBodyMarkdown: written.current.bodyMarkdown,
-              actor,
-            });
-            if (!decision.ok) return vaultError(decision.error);
-            return {
-              decision: true,
-              id: decision.value.id,
-              decisionId: decision.value.id,
-              status: decision.value.status,
-            };
-          }
-          return writeError(written.error, written.code);
-        }
-        return { review: written.value };
+      const scope = args.scope;
+      if (typeof scope !== "string" || !scope.trim()) {
+        return {
+          error: {
+            code: "MALFORMED",
+            message:
+              'scope is required — pass "overall" or the area slug you were assigned (the daily review has "overall" only)',
+          },
+        };
+      }
+      if (typeof args.baseRev !== "number") {
+        return {
+          error: {
+            code: "MALFORMED",
+            message:
+              "baseRev is required — call get_review with the same scope and pass the page rev it returned",
+          },
+        };
       }
 
-      // A scoped write is a page merge: the companion owns these headings and
-      // nothing else.
       const written = await writeReviewPage(root, {
         cadence: cp.cadence,
         period: cp.period,
         scope,
         bodyMarkdown: body,
+        baseRev: args.baseRev,
         actor,
-        baseRev,
       });
       if (written.ok) {
-        return { review: written.value, scope };
+        return {
+          review: await compatRecordOrNull(root, cp.cadence, cp.period),
+          page: written.page,
+          scope,
+        };
       }
       if (written.code === "LOCKED") {
-        // The approved change has to be a whole-file body, so compose the same
-        // merge the write would have landed against the current file rather than
-        // storing the companion's page as if it were the whole review.
-        const composed = await composeReviewPageWrite(root, {
-          cadence: cp.cadence,
-          period: cp.period,
-          scope,
-          bodyMarkdown: body,
-        });
-        if (!composed.ok) return vaultError(composed.error);
-        let current = written.current;
-        if (!current) {
-          const reread = await getReview(root, cp.cadence, cp.period);
-          if (!reread.ok) return writeError(reread.error, "NOT_FOUND");
-          current = reread.value;
-        }
+        // A locked review has one write path left: an approved Decision against
+        // the page the companion was editing, carrying the page body as proposed.
+        const current = written.current;
+        const pageRes =
+          current === undefined
+            ? await getReviewPageBody(root, cp.cadence, cp.period, scope)
+            : null;
+        const base = current ?? (pageRes && pageRes.ok ? pageRes.value : null);
+        if (!base) return writeError("Review locked and the page could not be read", "LOCKED");
         const decision = await createDecision(root, {
-          target: { type: "review", cadence: cp.cadence, period: cp.period },
-          proposedBodyMarkdown: composed.value.bodyMarkdown,
-          previousBodyMarkdown: current.bodyMarkdown,
+          target: {
+            type: "review-page",
+            cadence: cp.cadence,
+            period: cp.period,
+            scope,
+            rev: base.rev,
+          },
+          proposedTitle: base.title,
+          proposedBodyMarkdown: body,
+          previousBodyMarkdown: base.bodyMarkdown,
           actor,
         });
         if (!decision.ok) return vaultError(decision.error);
@@ -272,6 +283,16 @@ export async function executeReviewTool(
           id: decision.value.id,
           decisionId: decision.value.id,
           status: decision.value.status,
+        };
+      }
+      if (written.code === "CONFLICT") {
+        return {
+          error: {
+            code: "CONFLICT",
+            message:
+              "The page changed on disk since you read it. Call get_review with the same scope, then re-apply your four sections to the rev it returns.",
+          },
+          current: written.current ?? null,
         };
       }
       return writeError(written.error, written.code);
@@ -288,7 +309,17 @@ export async function executeReviewTool(
         // AGENT-09: the life-log line names the actor that marked it.
         actor,
       });
-      if (!result.ok) return vaultError(result.error);
+      if (!result.ok) {
+        // The gate is not malformed input: it is a state the companion can name
+        // and the operator can clear, so it gets its own code.
+        if (/^Finish every area review first/.test(result.error)) {
+          return { error: { code: "GATED", message: result.error } };
+        }
+        if (/locked/i.test(result.error)) {
+          return { error: { code: "LOCKED", message: result.error } };
+        }
+        return vaultError(result.error);
+      }
       return { review: result.value };
     }
 

@@ -33,7 +33,12 @@ import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
 import { checkDatabaseCells } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
-import { getReview, applyLockedReviewBody } from "./reviews.ts";
+import {
+  getReview,
+  applyLockedReviewBody,
+  getReviewPageBody,
+  applyReviewPageBody,
+} from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
 
 function isDocumentKind(kind: string): kind is DocumentKind {
@@ -63,6 +68,7 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isReviewPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
@@ -85,6 +91,17 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         type: "review",
         cadence: String(t.cadence) as ReviewCadence,
         period: String(t.period),
+      };
+    } else if (t.type === "review-page") {
+      // The rev is the page version the proposal was filed against; a Decision
+      // written before the field existed (or for the legacy review target) reads
+      // as absent and the apply falls back to the current page's rev.
+      target = {
+        type: "review-page",
+        cadence: String(t.cadence) as ReviewCadence,
+        period: String(t.period),
+        scope: String(t.scope),
+        ...(typeof t.rev === "number" ? { rev: t.rev } : {}),
       };
     } else if (t.type === "doctrine") {
       target = {
@@ -196,6 +213,10 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     target.type === "database-batch"
   ) {
     domainSlugs = [target.domainSlug];
+  } else if (target.type === "review-page") {
+    // A page Decision reads under the area lens its page belongs to; the overall
+    // page is the whole life, so it carries no domain.
+    domainSlugs = target.scope === "overall" ? [] : [target.scope];
   } else {
     domainSlugs = [];
   }
@@ -306,6 +327,18 @@ function isReviewExplicitTarget(raw: Record<string, unknown>): boolean {
     isReviewCadence(raw.cadence) &&
     typeof raw.period === "string" &&
     raw.period.length > 0
+  );
+}
+
+function isReviewPageExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "review-page" &&
+    typeof raw.cadence === "string" &&
+    isReviewCadence(raw.cadence) &&
+    typeof raw.period === "string" &&
+    raw.period.length > 0 &&
+    typeof raw.scope === "string" &&
+    raw.scope.length > 0
   );
 }
 
@@ -601,6 +634,16 @@ export async function createDecision(
       if (!input.target.period.trim()) {
         return { ok: false, error: "period is required" };
       }
+    } else if (input.target.type === "review-page") {
+      if (!isReviewCadence(input.target.cadence)) {
+        return { ok: false, error: `Invalid review cadence: ${input.target.cadence}` };
+      }
+      if (!input.target.period.trim()) {
+        return { ok: false, error: "period is required" };
+      }
+      if (!input.target.scope.trim()) {
+        return { ok: false, error: "scope is required" };
+      }
     } else if (input.target.type === "page") {
       if (!input.target.domainSlug.trim()) {
         return { ok: false, error: "domainSlug is required" };
@@ -735,6 +778,23 @@ export async function createDecision(
           error: "Review must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "review-page") {
+      // A page proposal only makes sense against a finished review: the page is
+      // read-only then, and the Decision is how a change gets made.
+      const pageRes = await getReviewPageBody(
+        rootPath,
+        input.target.cadence,
+        input.target.period,
+        input.target.scope,
+      );
+      if (!pageRes.ok) return pageRes;
+      docLocked = pageRes.value.locked;
+      if (!docLocked) {
+        return {
+          ok: false,
+          error: "Review must be locked before proposing a change",
+        };
+      }
     } else if (input.target.type === "page") {
       // Pages are not lockable. Verify the page exists.
       const { getPage } = await import("./pages.ts");
@@ -856,7 +916,11 @@ export async function createDecision(
                     ? [input.target.domainSlug]
                   : input.target.type === "review"
                     ? []
-                    : input.target.type === "goal"
+                    : input.target.type === "review-page"
+                      ? input.target.scope === "overall"
+                        ? []
+                        : [input.target.scope]
+                      : input.target.type === "goal"
                       ? input.domainSlugs ?? []
                       : input.target.type === "day-template"
                         ? []
@@ -942,7 +1006,12 @@ export async function createDecision(
  * the operator approves something doomed.
  */
 function isProseTarget(target: DocumentTarget): boolean {
-  return target.type === "doctrine" || target.type === "library" || target.type === "review";
+  return (
+    target.type === "doctrine" ||
+    target.type === "library" ||
+    target.type === "review" ||
+    target.type === "review-page"
+  );
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
@@ -1369,6 +1438,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     if (typeof target.period === "string") {
       assertSafeSegment(target.period, "review period");
     }
+    if (typeof target.scope === "string") {
+      assertSafeSegment(target.scope, "review page scope");
+    }
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
@@ -1421,6 +1493,36 @@ async function applyApprovedBody(
         decision.previousBodyMarkdown ?? undefined,
       );
       if (!res.ok) return { ok: false, error: res.error, terminal: false };
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "review-page") {
+      const current = await getReviewPageBody(
+        rootPath,
+        decision.target.cadence,
+        decision.target.period,
+        decision.target.scope,
+      );
+      if (!current.ok) return { ok: false, error: current.error, terminal: false };
+      const applied = await applyReviewPageBody(rootPath, {
+        cadence: decision.target.cadence,
+        period: decision.target.period,
+        scope: decision.target.scope,
+        bodyMarkdown: decision.proposedBodyMarkdown,
+        baseRev: typeof decision.target.rev === "number" ? decision.target.rev : current.value.rev,
+      });
+      if (!applied.ok) {
+        if (applied.code === "CONFLICT") {
+          // The page moved since the proposal was approved. The Decision stays
+          // pending with the notice, rather than writing prose the operator never
+          // saw or rejecting a proposal that is still wanted.
+          return {
+            ok: false,
+            error: "The page changed after this proposal was approved; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "page") {
