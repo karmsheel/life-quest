@@ -1,6 +1,6 @@
-import { DayTypes } from "@/components/architecture/DayTypes";
-import { DefaultWeek } from "@/components/architecture/DefaultWeek";
-import { RealWeek } from "@/components/architecture/RealWeek";
+import { DayTypes } from "@/components/blueprints/DayTypes";
+import { DefaultWeek } from "@/components/blueprints/DefaultWeek";
+import { RealWeek } from "@/components/blueprints/RealWeek";
 import { DoctrineIndex } from "@/components/doctrine/DoctrineIndex";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useVault } from "@/state/VaultProvider";
@@ -8,11 +8,11 @@ import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
 import { findYear, type MapCommand } from "@lifequest/vault-core/map";
 
-export default function ArchitecturePage() {
-  return <ArchitectureContent />;
+export default function BlueprintsPage() {
+  return <BlueprintsContent />;
 }
 
-function ArchitectureContent() {
+function BlueprintsContent() {
   const { snapshot, refresh } = useVault();
   const { yearNum, setYearNum } = useMapYear();
   const map = snapshot?.map ?? null;
@@ -29,7 +29,7 @@ function ArchitectureContent() {
   const selected = findYear(map, yearNum);
 
   return (
-    <div className={selected?.status === "archive" ? "architecture is-archive" : "architecture"}>
+    <div className={selected?.status === "archive" ? "blueprints is-archive" : "blueprints"}>
       <header className="life-map__chrome">
         <div className="life-map__title">
           <WingEyebrow page="Blueprints" />

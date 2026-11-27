@@ -19,7 +19,7 @@
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
  *     is the move from Plan to Execute, read off the shipped rail.
  *  2. `rail-plan` / `wing-switch` — clicking Plan shows Goals, Life Map,
- *     Architecture and NOT Projects; clicking Act lands back on `/projects`
+ *     Blueprints and NOT Projects; clicking Act lands back on `/projects`
  *     with the Projects row active. The route is the wing's own.
  *  3. `list-attributes` / `list-count` — every built-in attribute a row is
  *     specified to show is on the row: state note, status chip, priority, goal,

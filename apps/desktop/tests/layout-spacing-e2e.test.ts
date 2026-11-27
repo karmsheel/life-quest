@@ -117,7 +117,7 @@ const ROUTES = [
   { route: "/ideal-state", slug: "ideal-state", minCards: 2, spacing: "ruled" },
   { route: "/goals", slug: "goals", minCards: 2, spacing: "cards" },
   { route: "/chart", slug: "chart", minCards: 2, spacing: "compact" },
-  { route: "/track", slug: "track", minCards: 2, spacing: "cards" },
+  { route: "/blueprints", slug: "blueprints", minCards: 2, spacing: "cards" },
   { route: "/projects", slug: "projects", minCards: 2, spacing: "ruled" },
   { route: "/daily", slug: "daily", minCards: 2, spacing: "compact" },
   { route: "/act", slug: "act", minCards: 6, spacing: "compact" },

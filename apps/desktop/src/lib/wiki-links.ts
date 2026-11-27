@@ -35,7 +35,7 @@ export type WikiResolver = (target: string) => WikiLink | null;
 function doctrineLink(slug: string, kind: DocumentKind): WikiLink {
   const href =
     kind === "how"
-      ? `#/track/${slug}/how`
+      ? `#/blueprints/${slug}/how`
       : kind === "what"
         ? `#/vision/${slug}/what`
         : `#/dream/${slug}/${kind}`;

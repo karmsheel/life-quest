@@ -44,7 +44,7 @@ opens it becomes a segmented control with **Life** first (every unlocked area)
 and then one chip per unlocked area. Formerly **domain lens**. See
 [Areas](./05-areas.md).
 
-**Blueprints** — the Plan wing page (`/track`) where the operator designs day
+**Blueprints** — the Plan wing page (`/blueprints`) where the operator designs day
 types, the default week and the real week, and edits the area's Strategy (How)
 document. Not the app's technical architecture; that is
 [System architecture](./30-system-architecture.md).
@@ -122,7 +122,7 @@ The old `autoApproveInserts` allowlist is retired and read by nothing.
 
 **Day template / day type** — a named shape for a day (work day, rest day, and so
 on) designed on the Blueprints page. A template is picked for a day on Daily
-Schedule. See [Blueprints](./08-architecture.md).
+Schedule. See [Blueprints](./08-blueprints.md).
 
 **Decision** — a proposed change that waits for the operator's approval, with a
 status of pending, approved or rejected. The inbox is one global shelf: it is not

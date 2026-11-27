@@ -201,9 +201,9 @@ const ROUTES = [
     spacing: "compact",
   },
   {
-    route: "/track",
+    route: "/blueprints",
     slug: "track",
-    root: ".architecture",
+    root: ".blueprints",
     container: ".arch-type-list",
     card: ".arch-type-card",
     minCards: 2,
