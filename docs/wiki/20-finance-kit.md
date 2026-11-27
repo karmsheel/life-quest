@@ -277,9 +277,10 @@ and the cards say so.
 
 ### Review figures: gross cash in, gross cash out, net
 
-The Finance page of a review carries three figures instead of one "Spending this
-period" number. All three read the Transactions database over the review period
-and the period before it:
+The Finance page of a review carries three figures, written by the app on Start
+from the three metric definitions below (the old single "Spending this period"
+fence in the review rules is gone). All three read the Transactions database
+over the review period and the period before it:
 
 - **Cash in** — the sum of the positive amounts. This is gross income.
 - **Cash out** — the sum of the negative amounts, printed as the positive size of
@@ -302,6 +303,16 @@ gets them on its first review Start; either way only ABSENT files are written, s
 an operator's edit of a definition is never overwritten. Defining a new metric
 applies immediately; editing or deleting an existing definition waits on a
 product decision and is not exposed yet.
+
+A review's figures are the app writing those definitions: one block per
+definition on the **Finance** page under **Look-back**, carrying its label, the
+value and unit, the review window it read, the local as-of minute and
+`Source: the finance:transactions database`; the **Overall** page carries the
+same numbers in its cross-domain table with the previous period and the change
+between the two displayed values. Figures refresh on Start while the review is
+open and freeze when it is locked. They do not come from the cadence's review
+rules any more — the rules may still keep custom `lifequest-snapshot` fences, and
+those keep working, but Cash in / Cash out / Net are definitions.
 
 Plan arithmetic, in plain terms. Budget spend is the sum of negative
 transactions in the budget's category, period and currency, excluding transfers;

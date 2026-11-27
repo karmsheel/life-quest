@@ -96,8 +96,8 @@ The actions under the editor act on the tab you are on:
 - **Start interview** opens that page's own interview, with a companion that is
   scoped to that area and told to leave the others alone. The Overall page's
   interview speaks about the whole life and the areas it sums up. Starting a
-  page fills it with the snapshot figures the page's rules can place, and the
-  page's notice says what was filled.
+  page fills it with the figures the area's metric definitions produce (see
+  [Figures](#figures)), and the page's notice says what was filled.
 - **Mark review complete** — **Mark Health review complete**, **Mark Finance
   review complete**, and for the Overall page **Mark life review complete** —
   finishes that page. Marking an area done updates the progress line and the
@@ -112,6 +112,60 @@ reading every page is still the point — but nothing can be written until it is
 unlocked.
 
 Back to [Wiki home](./index.md).
+
+## Figures
+
+A review's numbers are **figures**: the app writes them into the page on
+**Start**, from the area's own **metric definitions** (the shipped finance set is
+described in [Finance kit](./20-finance-kit.md); definitions are ordinary vault
+objects, see [Data and databases](./19-data-and-databases.md)). A figure is
+Markdown inside a pair of marker comments, so the app finds and refreshes exactly
+its own block and never touches your prose:
+
+```markdown
+<!-- lifequest:metric:cash-in -->
+**Cash in** · 2026-10-12 → 2026-10-18 (period to date)
+
+5,000 (ZAR)
+
+_As of 2026-11-27 15:59 · Source: the finance:transactions database_
+<!-- /lifequest:metric:cash-in -->
+```
+
+Each figure carries five things, and each one is there for a reason:
+
+- **the label** — the definition's own name, so a figure cannot drift from what
+  it measures;
+- **the value and unit** — `3 sessions`, `120 minutes`, `5,000 (ZAR)`; a window
+  with no rows reads **No rows in this window.**, never a fabricated 0;
+- **the window** — the review period exactly, with ` (period to date)` whenever
+  Start ran before the period ended (reviews open before their period does);
+- **the as-of minute** — when the read actually ran, in your local time; and
+- **the source** — the database, or the events key, the number came from.
+
+On an area's page the figures sit under **Look-back**, above your writing, one
+per definition in definition order. On the **Overall** page — and on **Daily**,
+which is one overall page — there is a single **cross-domain table** instead:
+one row per definition of every live area, with this period, the previous period
+and the change between the two displayed values (`—` when either side has no
+rows). It is the only figure block a daily review gets.
+
+Figures refresh on **Start while the review is unlocked**, replacing their own
+markers in place; a second Start with nothing changed writes nothing. Marking
+the overall review complete **freezes** them — a finished review is history, not
+a live dashboard. **Unlock** and Start again to refresh them.
+
+Where the numbers come from. An area's metric definitions live at
+`domains/<area>/metrics/<id>.json`; each names a label, a unit, a source (dated
+events, or a database view), an aggregation and display formatting. Add a
+definition and the next Start writes the new figure; delete one and the next
+Start removes its block. The shipped finance definitions — **Cash in**, **Cash
+out**, **Net cash flow** — install with the kit.
+
+Custom figures still work. A cadence's rules file may keep hand-written
+`lifequest-snapshot` fences for anything a definition does not cover; Start runs
+those too, refreshes them in place beside the figures, and resolves them against
+the same four sections (`Look-back`, `Keep`, `Change`, `Next-period intent`).
 
 ## When a review opens
 
@@ -198,13 +252,13 @@ cannot be quietly rewritten.
    takes you to that week.
 3. On **Daily**, a period with no file says **No review for this period yet.**
    and offers **Start the interview** (create the file, fill the figures the
-   cadence's rules ask for, open the companion chat) or **Write it myself**
+   area's metric definitions produce, open the companion chat) or **Write it myself**
    (create the file and edit it without starting a session).
 4. On **Weekly** and longer, the checklist is the way in. Press an area row — say
    **Health review** — and:
    - the period's notebook is created if it has none, with the overall page and
      a Health page;
-   - the figures this cadence's rules ask for are filled by the app;
+   - the figures this area's metric definitions produce are filled by the app;
    - the Health interview opens in the chat pane, bound to this period's Health
      scope — in a tab of its own, and listed in **Chats** under its name from
      its first paint, even while the agent is still writing;
@@ -252,7 +306,7 @@ notes in this period.** and offers **Write today's note**.
 | Status text | Under the document: **Saved**, **Saving…**, **Not saved**, **Locked**, or **No review for this period yet**. There is no scope line above the body — the checklist's selected row says which review the page is on. |
 | Editor | The Daily Journal's live markdown box at the journal's height, with square corners and its own review title as the first line — `W46 Review: 9-15 Nov '26` — placeholder **Write this review.**, read-only while locked. |
 | Action buttons | **Start interview** (resumes the active scope's session), **Plan next period**, a mark-complete button — **Mark life review complete** / **Mark Health review complete** / **Mark review complete** on Daily — while the review is open, and **Unlock** once it is locked. The mark-complete button is gone on a locked review: the companion marks the review complete itself once you have answered its interview. **Start interview** and **Mark life review complete** are disabled for Life until every area is done. |
-| **Review rules** | A collapsible panel: the cadence's standing rules and its `lifequest-snapshot` directives, with a count and whether they come from your file or the shipped defaults. |
+| **Review rules** | A collapsible panel: the cadence's standing rules and any hand-written `lifequest-snapshot` custom figures, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |
 
 The review page has no page menu and no lock switch of its own: a locked review
@@ -268,7 +322,7 @@ centred; a narrow window only shrinks the column to fit and puts the checklist
 above it.
 
 The review page has no list of past reviews. You reach a period with the pager;
-the vault index of all review files exists for the companion and the snapshot,
+the vault index of all review files exists for the companion and the review pass,
 not as a screen.
 
 ## Page contracts
@@ -393,30 +447,32 @@ writable, and reading a period's file is never blocked, so a review started
 earlier is still editable after its window passes. Planning may create the next
 period's stub; reviews may not.
 
-Snapshots are filled by the app, not the model. A cadence's rules can carry
-fenced `lifequest-snapshot` directives naming a database view (`{id, domain,
-section, title, window: "period" | "all", spec}`). Before the interview starts,
-the app runs each directive and writes the figures inside marker comments under
-the named section, with `window: "period"` meaning this review's own dates. A
+Custom figures are filled by the app, not the model. The shipped figures come
+from the area's metric definitions (see [Figures](#figures)); a cadence's rules
+file may still carry hand-written fenced `lifequest-snapshot` directives naming a
+database view (`{id, domain, section, title, window: "period" | "all", spec}`)
+for a custom figure. Before the interview starts, the app runs each directive and
+writes the block inside marker comments under the named section, with
+`window: "period"` meaning this review's own dates. A
 directive's section is resolved in two steps: first the area's `## <Area name>`
 then `### <section>` (a Finance review's `## Financial` → `### Look-back`), and
 only when that area section is absent, the overall skeleton's `## <section>`.
 The order is the rule — a review that carries both never has the figure drift
-out of its area — and that one resolution is what lets the shipped finance
-snapshot serve an area review and a daily review, which is one general review
-with no area sections, without a per-cadence copy. On a weekly-or-longer review
+out of its area — and that one resolution is what lets one directive serve an
+area review and a daily review, which is one general review with no area
+sections, without a per-cadence copy. On a weekly-or-longer review
 that lacks the area section, it is still added so the figure stays under the area
 it belongs to. A directive the pass cannot place is reported as **Skipped: …**
 in the Start notice rather than dropped in silence, so a review that filled
 nothing does not read as a clean start. A locked review is never touched by the
-snapshot pass.
+figure pass.
 
 Review rules. The rules are read from `.lifequest/reviews/<cadence>.md` when
 that file exists and from the shipped defaults otherwise; the read does not
 create the file. A session's rules are written on first start. A
 ```lifequest-snapshot``` block that cannot be parsed is reported in the panel
 rather than silently dropped, so a typo shows as a line under the editor.
-Snapshot blocks are refreshed in place on every Start.
+Custom figure blocks are refreshed in place on every Start.
 
 Lock, unlock and Decisions. A locked review refuses writes: the editor is
 read-only and the engine answers `LOCKED`. Only the operator can unlock a review
@@ -437,7 +493,8 @@ review of the same cadence, and on an overall review the area sections already
 drafted. An area scope filters log, tasks, goals and events to that area;
 daily notes stay unscoped because a note belongs to no area. Doctrine is not
 in the pack, and the pack carries no table rows — the only database figures are
-the snapshots the rules ask for. Lists are capped and a `truncated` flag says so.
+the ones the metric definitions and your own custom fences name. Lists are capped
+and a `truncated` flag says so.
 
 Planning stubs. `planning/{cadence}/{period}.md` holds frontmatter only —
 `cadence`, `period`, `updatedAt`, `scopes` with companion session ids — and no
@@ -464,10 +521,11 @@ page itself never pastes the pack into the transcript.
 Every write is logged. Starting a review, writing one, marking a scope done,
 unlocking, and applying an approved locked-review change each append a life-log
 entry (`review.ensured`, `review.written`, `review.marked-done`,
-`review.unlocked`, `review.applied`) naming the actor. A snapshot pass that
-changes the body appends its own `review.snapshots` line carrying the `written`,
-`skipped` and `failed` counts; a Start that changed nothing appends none, so the
-log stays a record of changes rather than of Starts.
+`review.unlocked`, `review.applied`) naming the actor. A Start that wrote or
+refreshed figures appends its own `review.figures` line with the page scope and
+the `written`, `unchanged` and `failed` counts, and a custom-figure pass appends
+`review.snapshots` with its own counts; a Start that changed nothing appends
+neither, so the log stays a record of changes rather than of Starts.
 
 ## Tips and edge cases
 
@@ -490,7 +548,7 @@ log stays a record of changes rather than of Starts.
 - The file is the truth. Editing it outside the app is visible on the next load;
   the page reloads the body from disk when the period changes.
 - A review has more than one writer — the page, the companion's interview, the
-  snapshot pass. If the file changes while you have unsaved text in the box, the
+  figure pass. If the file changes while you have unsaved text in the box, the
   page stops saving rather than overwrite the other writer: a **changed on disk**
   banner offers **Reload**, which adopts the file's version; re-apply your text on
   top of it. The draft stays in the box until you reload. Two area interviews on
@@ -504,7 +562,7 @@ log stays a record of changes rather than of Starts.
   not listed in the checklist; its H2 keeps the area's current name on the next
   canonicalising save.
 - If the companion gateway is down, pressing an area row still creates the file
-  and fills snapshots; the failure is reported as the one step that failed, not
+  and fills the figures; the failure is reported as the one step that failed, not
   as a lost review.
 - Daily notes are read from `notes/daily/YYYY-MM-DD.md` and only for dates in the
   window. A review that has not opened yet cannot exist, so it never reads a note

@@ -38,6 +38,36 @@ Week start is a vault setting and cannot change while weekly review or planning 
 - Planning stubs MUST live under `planning/` and MUST NOT hold a plan body.
 - Week start MUST NOT change while weekly review or planning files exist.
 
+- Review figures MUST be written by the app on Start only, never on page open;
+  a locked notebook MUST NOT refresh or change any figure.
+- An area page's figures MUST be app-written blocks found by marker, never by
+  heading: one figure per metric definition under `Look-back`, inside
+  `<!-- lifequest:metric:<definitionId> -->` and
+  `<!-- /lifequest:metric:<definitionId> -->`, in definition order.
+- The overall page (daily included, which has only an overall page) MUST carry a
+  single cross-domain table inside `<!-- lifequest:metrics:overall -->` and
+  `<!-- /lifequest:metrics:overall -->`, with one row per definition of every
+  live area in notebook order: area, metric, this period, previous period, delta.
+- A figure MUST print its label, value with unit, the window it read, the as-of
+  instant at local minute precision, and its provenance (the events key or the
+  source database). A window with no rows MUST print the no-rows sentence or
+  `—`, never a fabricated 0; a delta MUST be the signed change of the two
+  DISPLAYED values and MUST be `—` when either side has no data.
+- A figure's window MUST say `(period to date)` while the pass runs before the
+  window's end date, because a review window opens before its period ends.
+- Placement MUST replace a block by its own markers and MUST preserve every
+  other line of the page, including operator prose before and after the figures.
+  A second Start with unchanged content MUST NOT duplicate a block.
+- A per-definition block whose definition no longer exists MUST be removed by
+  the next pass while the notebook is unlocked.
+- A hand-written ```lifequest-snapshot``` fence in the cadence rules MUST keep
+  working beside the app-written figures and MUST be refreshed by the same pass.
+- A shipped default review skill MUST be replaced by the current default exactly
+  once only when the file on disk is byte-identical to a previously shipped
+  default (0.3.4 and Phase 4); an operator-edited file MUST NOT be matched or
+  touched. The shipped default MUST NOT carry finance fences — figures come from
+  the metric definitions.
+
 ## Page contract
 
 - Every page MUST carry the four common H2 headings `Look-back`, `Keep`,
@@ -69,3 +99,44 @@ Week start is a vault setting and cannot change while weekly review or planning 
   headings, MUST NOT copy an area's extras, and MUST NOT rewrite an area page.
 - A contract write MUST append one `review.template-written` life-log line
   naming the actor.
+
+## Figures
+
+A review page's numbers are app-written blocks, delimited by markers so a pass
+finds its own writing and nothing else. One per metric definition on an area
+page:
+
+```markdown
+<!-- lifequest:metric:cash-in -->
+**Cash in** · 2026-10-12 → 2026-10-18 (period to date)
+
+5,000 (ZAR)
+
+_As of 2026-11-27 15:59 · Source: the finance:transactions database_
+<!-- /lifequest:metric:cash-in -->
+```
+
+And one cross-domain table on the overall page (daily included):
+
+```markdown
+<!-- lifequest:metrics:overall -->
+**Metrics this period** · 2026-10-12 → 2026-10-18 (period to date)
+
+| Area | Metric | This period | Previous period | Δ |
+| --- | --- | --- | --- | --- |
+| Health | Training sessions | 3 sessions | 2 sessions | +1 |
+| Finance | Cash in | 5,000 (ZAR) | 4,000 (ZAR) | +1,000 |
+
+_As of 2026-11-27 15:59 · Previous period: 2026-10-05 → 2026-10-11_
+<!-- /lifequest:metrics:overall -->
+```
+
+- A currency unit prints in parentheses (` (ZAR)`), any other unit after the
+  number (` 3 sessions`); a definition's display formatting (decimals, prefix,
+  suffix, magnitude) is applied to the printed value only, never to the query.
+- Figures are written from the area's metric definitions through one
+  `getMetricsSummary` read per definition; there is no second aggregation path.
+- Figures refresh on Start while the notebook is unlocked and freeze at lock.
+- A `lifequest-snapshot` fence the operator wrote still runs in the same pass and
+  writes its own marker block, so a custom figure and the definitions' figures
+  share the page.
