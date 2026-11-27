@@ -105,8 +105,9 @@ this host before writing a report — rerun it before leaning on it.
 
 ## Open limitations
 
-- The phone client is specified and planned, not built; it queues drafts and shows pinned
-  metrics only.
+- The phone client exists and is text-only: it queues draft transactions and shows one pinned
+  metric, posted by the companion from chat. It has no receipt photos, chat, notifications, or
+  account/store distribution, and the packaged Windows asar path is unverified.
 - Whole-vault encryption and an encrypted context layer are researched, not shipped.
 - The Rust rewrite was declined; native Rust stays an option for specific hot paths only.
 - The archived Next.js + Prisma tree is frozen history, not a runtime.

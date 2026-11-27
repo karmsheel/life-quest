@@ -16948,3 +16948,64 @@ button.chat-panel__activity-line:hover {
   gap: 0.4rem;
   justify-content: flex-end;
 }
+
+/* ——— the phone's queue, above the composer ————————————————————————————————
+   A draft the operator queued on their phone. It is a statement of what is
+   waiting and one invitation to ask about it, so it stays quieter than the
+   field: a hairline, the card's own paper, and no accent except the icon.
+   Nothing here posts: the strip's action prefills a confirmation, and the
+   companion's tool is the only thing that writes a transaction. */
+.phone-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--muted-foreground) 6%, var(--card));
+}
+
+.phone-drafts__head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.phone-drafts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.phone-drafts__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.phone-drafts__body {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-drafts__meta {
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+}
+
+.phone-drafts__more {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}

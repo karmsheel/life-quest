@@ -1,10 +1,11 @@
 # Settings
 
-Settings is one sheet over the app, not a page in the rail. It holds fourteen tabs
+Settings is one sheet over the app, not a page in the rail. It holds fifteen tabs
 in a fixed order: from the theme you wear, the keys you move with, the chat's own
 text size and the way the chat message box sends, through the areas and the vault,
-to the companion, the prompt the agent is given, the review windows, the Decisions
-inbox, updates, your own context, and the Developer bench.
+to the companion, the phone client that talks to the studio, the prompt the agent
+is given, the review windows, the Decisions inbox, updates, your own context, and
+the Developer bench.
 A search field above the tab list narrows the list in place, so a setting you can
 name is two keystrokes away. [The wiki home](./index.md) has the page index.
 
@@ -318,6 +319,33 @@ profile's pinned one, its credential the profile's `.env`, never the vault
 ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)). See [Companion](./24-companion.md) and
 [Agents](./25-agents.md).
 
+## Phone
+
+**Phone** — *A draft queue and one pinned metric on your phone*. This tab turns the
+phone client on and pairs a phone; [Phone client](./38-phone-client.md) is the
+operator guide for the other end of it.
+
+- **Phone access** — off by default. Turning it on binds the loopback door on
+  `127.0.0.1:8647`; the row underneath shows the door's address, or the error that
+  stopped it binding (a taken port, for instance). Off means nothing listens.
+- **Phone address** — the `https://` origin your phone reaches this door on. The
+  app refuses a plain `http://` address and anything with a path, because a phone
+  app over http cannot install to the Home Screen or cache its shell. Expose the
+  door with `tailscale serve --bg http://127.0.0.1:8647` (never `tailscale funnel`,
+  which publishes it to the internet).
+- **Pair a phone** — mints a one-time 8-character code with a QR and a five-minute
+  countdown. Scan the QR with the phone's camera app, or type the code on the phone.
+  **Cancel** discards it.
+- **Pinned metric** — **Net worth**, **Spent this month**, **Received this month**,
+  or none. The phone shows that one number and its age; it cannot open the ledger.
+- **Paired phones** — each phone's name, when it paired, when it was last seen, and
+  **Forget**, which revokes it immediately.
+
+A draft queued on the phone is *not* a transaction: it appears above the dock's
+message box, and the companion posts it only after you confirm it in chat. Phone
+access and the address belong to this machine; the phones and the metric pin
+belong to the vault, so another vault starts unpaired.
+
 ## Agent
 
 **Agent** — *The system prompts and skills your companion is given*. This tab is a
@@ -502,6 +530,7 @@ palette, and a theme file may override them (`colors.logoLife`, `colors.logoIcon
 - [The vault](./04-the-vault.md)
 - [Areas](./05-areas.md)
 - [Companion](./24-companion.md)
+- [Phone client](./38-phone-client.md)
 - [Decisions](./23-decisions.md)
 - [Updates](./27-updates.md)
 - [Security](./29-security.md)

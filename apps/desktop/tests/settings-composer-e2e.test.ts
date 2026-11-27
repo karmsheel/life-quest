@@ -82,6 +82,7 @@ const NAV_ORDER = [
   "Areas",
   "Vault",
   "Hermes",
+  "Phone",
   "Agent",
   "Review",
   "Questions",
@@ -155,14 +156,14 @@ describe("settings composer e2e", () => {
 
     const { opened, enter, reloaded, restored, searched } = report.states;
 
-    // 1 — the tab: a fourteenth section, third in the column, after Keyboard
-    //     and Chat display, and the one that is open.
+    // 1 — the tab: fifth in the column, after Keyboard, Chat display and
+    //     Composer, and the one that is open.
     assert.deepEqual(
       opened.nav.map((row) => row.label),
       NAV_ORDER,
-      "the section column is not the app's fourteen tabs in order",
+      "the section column is not the app's fifteen tabs in order",
     );
-    assert.equal(opened.nav.length, 14, "the sheet does not list 14 tabs");
+    assert.equal(opened.nav.length, 15, "the sheet does not list 15 tabs");
     assert.equal(opened.nav[1]?.label, "Keyboard", "Keyboard is not the tab before Chat display");
     assert.equal(opened.nav[2]?.label, "Chat display", "Chat display does not follow Keyboard");
     assert.equal(opened.nav[3]?.label, "Composer", "Composer does not follow Chat display");
@@ -231,7 +232,7 @@ describe("settings composer e2e", () => {
     assert.equal(reloaded.sendKey, "enter", "the reload lost the chosen keyboard");
     assert.equal(reloaded.radios[1]?.checked, "true", "the reload unchecked the chosen option");
     assert.equal(reloaded.stored, "enter", `the reload lost the stored choice: ${reloaded.stored}`);
-    assert.equal(reloaded.nav.length, 14, "the reload lost the section column");
+    assert.equal(reloaded.nav.length, 15, "the reload lost the section column");
     assert.equal(reloaded.panelView, "composer", "the reload left the Composer page");
 
     // 6 — and back: Ctrl/Cmd+Enter is stored the same way.

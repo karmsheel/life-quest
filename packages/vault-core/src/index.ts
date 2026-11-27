@@ -521,6 +521,7 @@ import { COMPANION_BRIEF_TOOL_DEFS } from "./companion-brief-tools.ts";
 import { PAGE_TOOL_DEFS } from "./pages-tools.ts";
 import { SIGNAL_TOOL_DEFS } from "./signal-tools.ts";
 import { ONBOARDING_TOOL_DEFS } from "./onboarding-tools.ts";
+import { PHONE_TOOL_DEFS } from "./phone-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -544,4 +545,33 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...SIGNAL_TOOL_DEFS,
   ...COMPANION_BRIEF_TOOL_DEFS,
   ...ONBOARDING_TOOL_DEFS,
+  ...PHONE_TOOL_DEFS,
 ];
+
+// ── Phone client ────────────────────────────────────────────────────────────
+//
+// The wire contract is also its own subpath (`@lifequest/vault-core/phone`),
+// because the phone app must import the browser-safe module without pulling
+// the whole vault barrel into a mobile bundle.
+export * from "./phone.ts";
+export {
+  phonePaths,
+  readPhoneSettings,
+  writePhoneMetric,
+  readPhoneDevices,
+  addPhoneDevice,
+  removePhoneDevice,
+  touchPhoneDevice,
+  readPhoneDraft,
+  listPhoneDrafts,
+  pendingPhoneDraftCount,
+  queuePhoneDraft,
+  withdrawPhoneDraft,
+  amendPhoneDraftText,
+  resolvePhoneDraft,
+  pruneResolvedPhoneDrafts,
+} from "./phone-queue.ts";
+export type { QueuePhoneDraftInput } from "./phone-queue.ts";
+export { phoneMetric } from "./phone-metric.ts";
+
+export { PHONE_TOOL_DEFS, executePhoneTool } from "./phone-tools.ts";

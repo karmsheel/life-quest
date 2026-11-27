@@ -22,16 +22,12 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Next
 
-1. **Phone client spec: decide its fate.**
-   branch: `docs/phone-client-spec` (2 commits, 548 behind master) · scope: two spec/plan
-   commits only · decision needed: rebase onto master and keep the plan, or fold the decision
-   into `docs/superpowers/` and delete the branch · proof: a spec a fresh agent can execute.
-2. **Encrypted context layer: decide its fate.**
+1. **Encrypted context layer: decide its fate.**
    branch: `docs/encrypted-context-layer` (1 commit, 509 behind master) · scope: one research
    decision commit · decision needed: promote to a spec + plan, or park it with a one-line
    status in [`PROGRESS.md`](PROGRESS.md) · proof: the decision names what ships and what does
    not.
-3. **Prune the empty audit worktree.**
+2. **Prune the empty audit worktree.**
    branch: `audit/implicit-invariants` (0 commits ahead, 309 behind master) · it holds no work;
    either start the audit it was made for or remove the worktree so `git worktree list` is the
    real queue again.
@@ -45,6 +41,7 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 | When | What | Where |
 |---|---|---|
+| 2026-11-27 | The phone client: an installable PWA served by its own loopback door, a draft queue that survives the studio being quit, one pinned metric with its age, the companion's three draft tools, the Settings → Phone panel, the dock strip, the phone law and its wiki page — built on the 2026-10-26 spec and plan, synced over 632 commits | merge to `master`, 2026-11-27 · `e2e/artifacts/{phone-engine,phone-ui}.json` + `phone-*.png` |
 | 2026-11-27 | The review notebook, per-domain metrics, figures and Analytics: tabbed notebook pages with per-domain contracts, metric definitions and dated events, app-written figures and the overall table, the Analytics matrix with logging/editing/new-metric doors, definition edits through Decisions, the whole review/metrics/analytics IPC surface, law/spec/wiki and ten engine rigs + three renderer rigs | merge `e124a34` · `e2e/artifacts/{analytics,review,database-period}.json` |
 | 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
 | 2026-11-27 | The Plan page's identifiers follow its name: `BlueprintsPage`, `components/blueprints/`, the `.blueprints` class, and route `/blueprints` with the old `/track` address redirecting | merge `840781b` |

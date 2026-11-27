@@ -48,6 +48,8 @@ before 2026-11-27 cite `PRODUCT.md`, which is now [`PRD.md`](PRD.md).
 | [Domain databases & Finance kit](docs/superpowers/specs/2026-09-23-domain-databases-finance-kit-prs.md) | Domain-owned databases, pages, and the Finance kit |
 | [Dashboard page lock](docs/superpowers/specs/2026-10-08-dashboard-page-lock-design.md) | The home pin board's lock, and one call that saves and pins a card |
 | [Daily Note](docs/superpowers/specs/2026-10-14-daily-note-design.md) | One journal note per day, and the review pack that reads it |
+| [Phone client](docs/superpowers/specs/2026-10-26-phone-client-design.md) | A draft queue that survives the studio being quit, one pinned metric, and the companion that posts it |
+| [Phone client plan](docs/superpowers/plans/2026-10-27-phone-client.md) | The task-by-task build: engine, door, Settings, chat, PWA, and the two rigs |
 | [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
 | [Rust rewrite decision](docs/superpowers/specs/2026-10-15-rust-rewrite-decision.md) | Decision memo: stay TypeScript; where native Rust is defensible |
 | [Cold start](docs/superpowers/specs/2026-10-17-cold-start-does-not-wait-on-the-companion-design.md) | What held the splash for 57s, and what the splash is allowed to wait on |

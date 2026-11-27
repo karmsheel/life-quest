@@ -451,10 +451,17 @@ export async function captureUtterance(
     actor: Actor;
     /** Vault-relative path of the original this row came from. */
     sourceFile?: string | null;
+    /**
+     * The phone draft this capture resolves, when the operator confirmed one.
+     * It rides into the log payload so the vault can say which draft became
+     * this row; it changes nothing else about the capture.
+     */
+    phoneDraftId?: string | null;
   },
 ): Promise<Result<CaptureOutcome>> {
   const { text, today, threadId, actor } = input;
   const sourceFile = input.sourceFile ?? null;
+  const phoneDraftId = input.phoneDraftId ?? null;
 
   // Refuse before any row work: a row that cites an original which is not in the
   // vault is worse than no row at all, because nothing downstream can tell the
@@ -603,6 +610,7 @@ export async function captureUtterance(
         accountName,
         categoryName,
         payee,
+        ...(phoneDraftId === null ? {} : { phoneDraftId }),
       },
       actor,
     });

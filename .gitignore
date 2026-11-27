@@ -6,6 +6,7 @@ prisma/*.db
 .worktrees/
 dist
 dist-electron
+dist-phone
 release
 .superpowers/
 

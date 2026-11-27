@@ -114,6 +114,12 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "set_month_objectives",
   "set_month_notes",
   "set_about_me",
+  // The phone's queue. A draft is resolved only by the app's own companion,
+  // after the operator confirms it in that chat; a connected agent is refused
+  // by name and never sees the tools in its manifest.
+  "list_phone_drafts",
+  "post_phone_draft",
+  "dismiss_phone_draft",
   "get_companion_brief",
   "set_companion_brief",
   // The onboarding interview is the companion's own door: a connected agent has

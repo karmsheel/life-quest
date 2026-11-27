@@ -11,6 +11,11 @@ import {
 import { api } from "@/lib/ipc";
 import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { readPageContext } from "@/lib/page-context";
+import {
+  onPhoneQueueChanged,
+  phoneBridge,
+  readPhoneQueue,
+} from "@/lib/phone-queue";
 import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
 import {
   useChatDock,
@@ -1711,6 +1716,36 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [updateRun],
   );
 
+  /**
+   * The phone's waiting drafts, as of the last read. The turn carries them, so
+   * the companion can post one after the operator confirms it in chat.
+   *
+   * Kept in a ref rather than read at send time: `sendMessage` runs inside the
+   * composer's key handler, and awaiting a read there would delay the stream
+   * call past the gesture's own turn.
+   */
+  const phoneDraftsRef = useRef<Array<{ clientId: string; text: string; captureDate: string }>>([]);
+  useEffect(() => {
+    if (!phoneBridge()) return;
+    let live = true;
+    const refresh = () => {
+      void readPhoneQueue().then((drafts) => {
+        if (!live) return;
+        phoneDraftsRef.current = drafts.map((draft) => ({
+          clientId: draft.clientId,
+          text: draft.text,
+          captureDate: draft.captureDate,
+        }));
+      });
+    };
+    refresh();
+    const off = onPhoneQueueChanged(refresh);
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+
   const sendMessageRef = useRef<(id: string, text: string) => Promise<void>>(async () => {});
   const settleTurnRef = useRef<(id: string) => void>(() => {});
   const sendMessage = useCallback(
@@ -1807,6 +1842,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       // message" and "the answer" as two bubbles.
       let settlesOnStream = false;
       try {
+        // The phone's queue rides every turn that has one: the companion is told
+        // what the operator queued and that a draft is not a transaction. It is
+        // read into a ref by the subscription below, never awaited here: this
+        // function is entered from the composer's own key handler, and an await
+        // before the stream call moves the send past the gesture that caused it.
+        const phoneDrafts = phoneDraftsRef.current;
         const result = await api().companionChatStream({
           sessionId: id,
           input: content,
@@ -1819,6 +1860,15 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
               ? { focusedCards: contextCardsRef.current.map(focusedCardOf) }
               : {}),
             ...(page ? { pageContext: page } : {}),
+            ...(phoneDrafts.length > 0
+              ? {
+                  phoneDrafts: phoneDrafts.slice(0, 10).map((phoneDraft) => ({
+                    clientId: phoneDraft.clientId,
+                    text: phoneDraft.text,
+                    captureDate: phoneDraft.captureDate,
+                  })),
+                }
+              : {}),
             ...(automationContext ? { automationContext } : {}),
             // The interview's state rides every turn while it is unfinished:
             // the companion offers it, continues it and revises the proposal

@@ -63,6 +63,7 @@ import {
   shortModelLabel,
 } from "@/components/hermes/ComposerModelControls";
 import { OnboardingCards } from "@/components/hermes/OnboardingCards";
+import { PhoneDraftStrip } from "@/components/hermes/PhoneDraftStrip";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { ChatDisplayPage } from "@/components/hermes/ChatDisplayPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
@@ -84,11 +85,17 @@ import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "@/lib/chat-display";
 import { TurnTimeline } from "@/components/hermes/turn/TurnTimeline";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
+import {
+  onPhoneQueueChanged,
+  phoneBridge,
+  readPhoneQueue,
+} from "@/lib/phone-queue";
 import { SESSION_ICON } from "@/lib/session-icon";
 import { platformMarkFor } from "@/lib/platform-mark";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
+  PhoneDraftView,
 } from "@/vite-env";
 import {
   formatMessageWhen,
@@ -331,6 +338,49 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       if (sessionId) chat.setDraftFor(sessionId, text);
     },
     [chat, sessionId],
+  );
+
+  /**
+   * The phone's queue, refreshed by the two signals that can change it: a vault
+   * write (the companion posting or dismissing one) and the door's own
+   * `phone:changed` (a draft arriving while the dock is open).
+   */
+  const [phoneDrafts, setPhoneDrafts] = useState<PhoneDraftView[]>([]);
+
+  useEffect(() => {
+    // No phone bridge means this page never had a phone surface (a harness that
+    // models only what it tests). Do not add bridge traffic to it: the dock must
+    // behave exactly as it did before the strip existed.
+    if (!phoneBridge()) return;
+    let live = true;
+    const refresh = () => {
+      void readPhoneQueue().then((drafts) => {
+        if (live) setPhoneDrafts(drafts);
+      });
+    };
+    refresh();
+    const offData = api().onVaultDataChanged(() => refresh());
+    const offPhone = onPhoneQueueChanged(refresh);
+    return () => {
+      live = false;
+      offData();
+      offPhone();
+    };
+  }, []);
+
+  /**
+   * Put a draft in front of the companion without posting anything. The
+   * operator sends (or edits) the confirmation; the companion's tool is still
+   * the only thing that writes a transaction.
+   */
+  const askPhoneDraft = useCallback(
+    (phoneDraft: PhoneDraftView) => {
+      setDraft(
+        `Post the phone draft: “${phoneDraft.text}” (${phoneDraft.captureDate})?`,
+      );
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [setDraft],
   );
 
   /** Replace (or drop) the receipt waiting on the open chat. */
@@ -3025,6 +3075,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   of the composer rather than a footer line under it — and it is
                   why the accent ring is on this box instead of on the field.
                 */}
+                <PhoneDraftStrip drafts={phoneDrafts} onPrefill={askPhoneDraft} />
                 <div className="chat-panel__composer-box">
                   <textarea
                     ref={inputRef}

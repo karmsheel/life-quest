@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./pure": "./src/pure.ts",
-    "./map": "./src/map/public.ts"
+    "./map": "./src/map/public.ts",
+    "./phone": "./src/phone.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

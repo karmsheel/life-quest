@@ -11,6 +11,7 @@ import {
   Palette,
   RefreshCw,
   ScrollText,
+  Smartphone,
   Sparkles,
   Type,
   User,
@@ -24,6 +25,7 @@ export type SettingsViewId =
   | "domains"
   | "vault"
   | "hermes"
+  | "phone"
   | "agent"
   | "review"
   | "questions"
@@ -165,6 +167,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "profile",
       "profiles",
       "filing",
+    ],
+  },
+  {
+    id: "phone",
+    label: "Phone",
+    icon: Smartphone,
+    keywords: [
+      "phone",
+      "mobile",
+      "pair",
+      "pairing",
+      "qr",
+      "device",
+      "metric",
+      "tailscale",
+      "door",
     ],
   },
   {

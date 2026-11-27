@@ -146,6 +146,9 @@ type ChatCall = {
   input: string;
   runtime?: unknown;
   receiptRelPath?: string | null;
+  instructionsContext?: {
+    phoneDrafts?: Array<{ clientId: string; text: string; captureDate: string }>;
+  };
   attachments?: Array<{
     id: string;
     kind: "image" | "video" | "audio" | "file";
@@ -183,6 +186,22 @@ const ATTACH_FAILS_AFTER_FIRST = ATTACH_FAIL_MODE === "second";
  * reads as not ready and would hide the action everywhere.
  */
 const NO_KIT = QUERY.has("nokit");
+
+/**
+ * What the phone door answers with when the page is loaded with `?phone=1`.
+ * The draft's id is a real UUID because the renderer only forbids nothing —
+ * the point of the leg is that the panel hands the turn the id it was shown.
+ */
+const PHONE_DRAFTS = new URLSearchParams(window.location.search).has("phone")
+  ? [
+      {
+        clientId: "00000000-0000-4000-8000-000000000001",
+        text: "R85 Pick n Pay food",
+        captureDate: "2026-10-25",
+        deviceName: "iPhone",
+      },
+    ]
+  : [];
 
 /**
  * The composer control row's fixture: the shape `GET /api/model/options` answers
@@ -726,6 +745,15 @@ const bridge: Record<string, unknown> = {
       }
     : {}),
   onVaultFileChanged: () => () => {},
+  onVaultDataChanged: () => () => {},
+  phone: {
+    // Not `ok(...)`: `phone:queue` answers with the queue itself, unlike the
+    // Result-returning calls around it. A stub that wraps it would hand the
+    // panel `undefined` drafts and prove nothing.
+    queue: () =>
+      Promise.resolve({ drafts: PHONE_DRAFTS, count: PHONE_DRAFTS.length }),
+    onChanged: () => () => {},
+  },
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
   // The durable session flags main writes (rename / pin / archive), recorded so
   // a driver can prove the name chip's field committed the name it held. The

@@ -48,7 +48,10 @@ export type EyebrowPage =
   | "Yearly"
   | "Analytics"
   // The bottom shelf — governance pages, which belong to no wing
-  | "Daily Journal";
+  | "Daily Journal"
+  | "Log"
+  | "Automations"
+  | "Customizations";
 
 /**
  * The eyebrow text for a page: the page's own name — `Dashboard`, `Dream`,

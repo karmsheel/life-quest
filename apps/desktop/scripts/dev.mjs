@@ -89,6 +89,11 @@ async function bundleElectron() {
     sourcemap: true,
     target: "node20",
     define: DEV_DEFINE,
+    banner: {
+      // The main bundle is ESM, but a bundled CommonJS dependency may still call
+      // require() for a builtin. qrcode, which draws the pairing QR, does.
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
   });
 
   // Preload: CommonJS. Electron's ESM preload loader requires the .mjs
@@ -129,6 +134,46 @@ function startVite() {
  * and those two exits want opposite answers.
  */
 let electron = null;
+
+/**
+ * Build the phone app once before the app launches, then keep a watcher running.
+ *
+ * The phone is not a second dev server: its files are built into `dist-phone`,
+ * which the desktop's own door serves at `/phone/`. A second Vite origin would
+ * buy HMR at the cost of CORS, a second cookie origin, and a second bench app —
+ * and a phone reload after a rebuild is a small price. The watcher only rewrites
+ * files; nothing in the main process is restarted for a phone change.
+ */
+function phoneVite(args) {
+  const vitePkg = require.resolve("vite/package.json");
+  const viteBin = path.join(path.dirname(vitePkg), "bin", "vite.js");
+  return spawn(
+    process.execPath,
+    [viteBin, "build", ...args, "--config", path.join(root, "phone/vite.config.ts")],
+    { cwd: root, stdio: "inherit", env: process.env },
+  );
+}
+
+function buildPhone() {
+  return new Promise((resolve, reject) => {
+    const child = phoneVite([]);
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`the phone build exited ${code}`));
+    });
+  });
+}
+
+function watchPhone() {
+  const child = phoneVite(["--watch"]);
+  children.push(child);
+  child.on("exit", (code) => {
+    if (!shuttingDown) {
+      console.error(`[dev] the phone watcher exited ${code}; phone changes need a manual build`);
+    }
+  });
+  return child;
+}
 
 function startElectron() {
   const electronPath = require("electron");
@@ -322,6 +367,10 @@ function watchMainSources() {
 async function main() {
   console.log("[dev] bundling electron main + preload…");
   await bundleElectron();
+
+  console.log("[dev] building the phone client…");
+  await buildPhone();
+  watchPhone();
 
   console.log("[dev] starting Vite on", DEV_URL);
   startVite();

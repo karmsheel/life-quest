@@ -37,7 +37,13 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
 const STARRED_SKIN = "Graphite";
-const SECTION_COUNT = 14;
+/**
+ * The settings sections the sheet must list with no search: the product's own
+ * pages plus Phone. The fixture is the count the registry is supposed to
+ * produce, so a page that silently disappears still fails the "cleared restores
+ * everything" step rather than being measured against itself.
+ */
+const SECTION_COUNT = 15;
 
 /**
  * A theme in the shape the app installs: the Forge palette, hex only, every

@@ -314,6 +314,8 @@ type CompanionInstructionsContext = {
   reviewContext?: string;
   /** The page material an automation opened this chat with, already fenced. */
   automationContext?: string;
+  /** Drafts waiting on the operator's phone; absent when the queue is empty. */
+  phoneDrafts?: Array<{ clientId: string; text: string; captureDate: string }>;
   /**
    * The vault's onboarding interview, while it is unfinished. Absent or null
    * once the record is complete, which is what keeps the five-area rubric out
@@ -452,6 +454,38 @@ export type McpDoors = {
   inviteUrl: string;
   localError: string | null;
   inviteError: string | null;
+};
+
+/** One phone paired to this vault, as Settings lists it (never its hash). */
+export type PhoneDeviceView = {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+export type PhoneDraftView = {
+  clientId: string;
+  text: string;
+  captureDate: string;
+  deviceName: string;
+};
+
+export type PhoneStateView = {
+  enabled: boolean;
+  doorUrl: string;
+  publicOrigin: string | null;
+  error: string | null;
+  devices: PhoneDeviceView[];
+  metric: "net_worth" | "month_spend" | "month_income" | null;
+  pendingDrafts: PhoneDraftView[];
+};
+
+export type PhonePairingView = {
+  code: string;
+  link: string;
+  qrDataUrl: string;
+  expiresAt: string;
 };
 
 /** One skill in the companion's library, as Settings lists it. */
@@ -612,6 +646,19 @@ type LifequestApi = {
   settingsUpdate: (
     patch: Partial<VaultSettings>,
   ) => Promise<Result<VaultSettings>>;
+  phone: {
+    state: () => Promise<PhoneStateView>;
+    setEnabled: (enabled: boolean) => Promise<PhoneStateView>;
+    setPublicOrigin: (origin: string) => Promise<Result<PhoneStateView>>;
+    setMetric: (
+      metric: "net_worth" | "month_spend" | "month_income" | null,
+    ) => Promise<Result<{ schemaVersion: 1; metric: "net_worth" | "month_spend" | "month_income" | null }>>;
+    pairingStart: () => Promise<Result<PhonePairingView>>;
+    pairingCancel: () => Promise<void>;
+    revokeDevice: (id: string) => Promise<Result<PhoneStateView>>;
+    queue: () => Promise<{ drafts: PhoneDraftView[]; count: number }>;
+    onChanged: (cb: () => void) => () => void;
+  };
   secretsHasHermesKey: () => Promise<boolean>;
   secretsSetHermesKey: (key: string) => Promise<Result<true>>;
   secretsClearHermesKey: () => Promise<Result<true>>;
@@ -1283,6 +1330,10 @@ export type {
   HermesSession,
   LifequestApi,
   PageContextInput,
+  PhoneDeviceView,
+  PhoneDraftView,
+  PhonePairingView,
+  PhoneStateView,
   PiSettings,
   RecentVaultEntry,
   Result,

@@ -111,6 +111,7 @@ nav:
       - Log: 26-log.md
   - Companion:
       - Companion: 24-companion.md
+      - Phone client: 38-phone-client.md
   - System:
       - Settings: 28-settings.md
       - Security: 29-security.md
@@ -133,6 +134,7 @@ nav:
       - Domain filter: LAWS/DOMAIN-FILTER.md
       - Identity: LAWS/IDENTITY.md
       - Notes: LAWS/NOTES.md
+      - Phone: LAWS/PHONE.md
       - Recurring tasks: LAWS/RECURRING.md
       - Reviews: LAWS/REVIEWS.md
       - Secrets: LAWS/SECRETS.md

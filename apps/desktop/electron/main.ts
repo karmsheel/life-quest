@@ -47,6 +47,7 @@ import type {
 } from "./companion-client.js";
 import * as vault from "./vault-service.js";
 import * as vaultAgents from "./vault-agents.js";
+import * as phone from "./phone-service.js";
 import {
   checkForUpdate,
   installUpdate,
@@ -106,6 +107,17 @@ const E2E: {
   userData?: string;
   showWindow: boolean;
   mcpPorts?: { local?: number; invite?: number };
+  /**
+   * The phone rig: a throwaway door on a free port, and the built shell it
+   * serves. Present only inside the seam gate; the product reads its own
+   * Settings for these.
+   */
+  phone?: {
+    enabled?: boolean;
+    port?: number;
+    publicOrigin?: string;
+    staticDir?: string;
+  };
   /**
    * The update feed and the installer launcher, for the auto-update rig. Both
    * are off unless this object names them: the product always reads GitHub and
@@ -173,6 +185,12 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         userData?: unknown;
         showWindow?: unknown;
         mcpPorts?: { local?: unknown; invite?: unknown };
+        phone?: {
+          enabled?: unknown;
+          port?: unknown;
+          publicOrigin?: unknown;
+          staticDir?: unknown;
+        };
         updateFeedUrl?: unknown;
         updateLauncher?: { exe?: unknown; args?: unknown };
         updatePollMs?: unknown;
@@ -198,6 +216,21 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         E2E.mcpPorts = {
           ...(typeof local === "number" ? { local } : {}),
           ...(typeof invite === "number" ? { invite } : {}),
+        };
+      }
+      if (parsed.phone && typeof parsed.phone === "object") {
+        const rawPhone = parsed.phone;
+        E2E.phone = {
+          ...(rawPhone.enabled === true || rawPhone.enabled === false
+            ? { enabled: rawPhone.enabled }
+            : {}),
+          ...(typeof rawPhone.port === "number" ? { port: rawPhone.port } : {}),
+          ...(typeof rawPhone.publicOrigin === "string" && rawPhone.publicOrigin.trim()
+            ? { publicOrigin: rawPhone.publicOrigin.trim() }
+            : {}),
+          ...(typeof rawPhone.staticDir === "string" && rawPhone.staticDir.trim()
+            ? { staticDir: rawPhone.staticDir.trim() }
+            : {}),
         };
       }
       if (
@@ -283,6 +316,11 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
   if (E2E.mcpPorts) {
     // Before any window or vault: a door binds with whatever is set here.
     setMcpPorts(E2E.mcpPorts);
+  }
+  if (E2E.phone) {
+    // Same reason as the MCP ports: the phone door reads its port and address
+    // when a vault opens, so the seam sets them before any window exists.
+    phone.configurePhoneFromE2e(E2E.phone);
   }
   if (E2E.streamIdleMs !== undefined) {
     // The chat stream's silence bound, shortened for the stalled-turn rig only.
@@ -1032,6 +1070,27 @@ function registerIpcHandlers() {
     (_e, patch: Parameters<typeof vault.settingsUpdate>[0]) =>
       vault.settingsUpdate(patch),
   );
+
+  // The phone door. It lives with the vault and dies with the window; these
+  // handlers are the renderer's whole view of it.
+  ipcMain.handle("phone:state", () => phone.getPhoneState());
+  ipcMain.handle("phone:setEnabled", (_e, enabled: boolean) =>
+    phone.setPhoneEnabled(enabled),
+  );
+  ipcMain.handle("phone:setPublicOrigin", (_e, origin: string) =>
+    phone.setPhonePublicOrigin(origin),
+  );
+  ipcMain.handle(
+    "phone:setMetric",
+    (_e, metric: Parameters<typeof phone.setPhoneMetric>[0]) =>
+      phone.setPhoneMetric(metric),
+  );
+  ipcMain.handle("phone:pairingStart", () => phone.pairingStart());
+  ipcMain.handle("phone:pairingCancel", () => phone.pairingCancel());
+  ipcMain.handle("phone:revokeDevice", (_e, id: string) =>
+    phone.revokePhoneDevice(id),
+  );
+  ipcMain.handle("phone:queue", () => phone.phoneQueue());
 
   ipcMain.handle("secrets:hasHermesKey", () => vault.secretsHasHermesKey());
   ipcMain.handle("secrets:setHermesKey", (_e, key: string) =>
@@ -2510,6 +2569,10 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  // The phone door must not outlive the window. On Windows quit() would stop it
+  // in before-quit anyway; on macOS the app stays alive with no window, and a
+  // listener nobody can see is exactly the state this avoids.
+  void phone.stopPhone();
   if (process.platform !== "darwin") app.quit();
 });
 
@@ -2518,6 +2581,7 @@ app.on("before-quit", (event) => {
   void harness
     .shutdownHarnesses()
     .finally(() => stopMcp())
+    .finally(() => phone.stopPhone())
     .finally(() => app.exit(0));
 });
 
