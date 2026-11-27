@@ -361,8 +361,9 @@ fallback.
 
 - Route stays `/review/:cadence`; rail rows unchanged; Daily is unchanged (single document,
   no tabs, no checklist).
-- A **tab row** sits inside the 48rem page column, under the period header/pager and above
-  the editor: `role="tablist"`, `aria-label="Review pages"`, roving `tabIndex` and
+- A **tab row** sits inside the 48rem page column, under the period header/pager and flush
+  on top of the editor (no divider under it, no gap to the box): `role="tablist"`,
+  `aria-label="Review pages"`, roving `tabIndex` and
   Arrow/Home/End per the `StudioFields` pattern (never Ctrl+Tab — the chat strip owns it).
 - Tabs: `Overall` first, then each scope in manifest order; label = live area name (else the
   recorded title); a `data-status` dot/`✓` reuses the existing not-started / in-progress /

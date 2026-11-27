@@ -437,6 +437,15 @@ const SAMPLE = `(() => {
         rail: rect(rail),
         railPosition: rail ? getComputedStyle(rail).position : null,
         tabs: rect(tabsEl),
+        tabsStyle: (() => {
+          if (!tabsEl) return null;
+          const style = getComputedStyle(tabsEl);
+          return {
+            borderBottomWidth: style.borderBottomWidth,
+            borderBottomStyle: style.borderBottomStyle,
+            paddingBottom: style.paddingBottom,
+          };
+        })(),
         progressLine: rect(document.querySelector('[data-testid="review-progress"]')),
         header: rect(document.querySelector(".review-page__header")),
         editor: rect(document.querySelector(".review-page__editor")),

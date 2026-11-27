@@ -1391,7 +1391,6 @@
 .review-page {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
   width: 100%;
   max-width: 48rem;
   margin-inline: auto;
@@ -1743,7 +1742,8 @@
    the 48rem reading column. The header and the body are the same column, so the
    page reads as one block centred in whatever room the sheet gives it. The old
    checklist rail is retired; its progress line is one quiet line above the tabs,
-   and its actions sit under the editor.
+   the tab row sits on the box with no divider or gap, and its actions sit under
+   the editor.
 
    DAILY IS THE SAME COLUMN without tabs: a day is one general review and has no
    pages to choose between. */
@@ -1789,8 +1789,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.15rem 0.1rem;
-  padding-bottom: 0.15rem;
-  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
 }
 
 .review-page__tab {
@@ -1865,7 +1864,8 @@
   line-height: 1.45;
 }
 
-/* The page's own index above the box: the status sentence, then the tab row. */
+/* The page's own index above the box: the status sentence, then the tab row,
+   with the row's bottom edge flush against the document. */
 .review-page__pages-nav {
   display: flex;
   flex-direction: column;
@@ -1873,8 +1873,8 @@
 }
 
 /* The page's one panel: the conflict banner, the editor, its status line, the
-   actions and the rules all live here, so the index above stays separate from
-   their spacing. */
+   actions and the rules all live here. The index above is flush with it, so the
+   panel's gap only spaces its own parts. */
 .review-page__panel {
   display: flex;
   flex-direction: column;

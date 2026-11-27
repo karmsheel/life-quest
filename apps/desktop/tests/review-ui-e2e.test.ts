@@ -108,6 +108,11 @@ type Layout = {
   rail: Rect | null;
   railPosition: string | null;
   tabs: Rect | null;
+  tabsStyle: {
+    borderBottomWidth: string;
+    borderBottomStyle: string;
+    paddingBottom: string;
+  } | null;
   progressLine: Rect | null;
   header: Rect | null;
   modes: Rect | null;
@@ -581,9 +586,21 @@ describe("review ui e2e", () => {
       opened.layout.editor !== null,
       "the document box's box could not be read",
     );
+    // No divider under the row and no gap to the box: the tabs are the
+    // document's top edge, not a strip floating above it.
     assert.ok(
-      tabsBox.top + tabsBox.height <= opened.layout.editor.top + 1,
-      `the tab row (bottom ${tabsBox.top + tabsBox.height}) is not above the document box (top ${opened.layout.editor.top})`,
+      opened.layout.tabsStyle !== null,
+      "the tab row's own style could not be read",
+    );
+    assert.ok(
+      opened.layout.tabsStyle.borderBottomStyle === "none" ||
+        opened.layout.tabsStyle.borderBottomWidth === "0px",
+      `the tab row still draws a bottom divider (${opened.layout.tabsStyle.borderBottomStyle} ${opened.layout.tabsStyle.borderBottomWidth})`,
+    );
+    const tabToBoxGap = opened.layout.editor.top - (tabsBox.top + tabsBox.height);
+    assert.ok(
+      tabToBoxGap >= 0 && tabToBoxGap <= 1,
+      `there is a ${tabToBoxGap}px gap between the tab row and the document box`,
     );
     assert.deepEqual(
       opened.railButtons,

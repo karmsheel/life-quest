@@ -83,8 +83,9 @@ status.
 
 The page keeps the Daily Journal's 48rem measure as one centred column: the
 eyebrow, the period pager, the progress line and the tab row sit across the top
-in that measure, and the editor and its actions come under them, the same margin
-on both sides. If the sheet is cramped — an open chat dock beside the page, or a
+in that measure, the tab row sits straight on the document box with no divider
+under it, and the editor and its actions come under them, the same margin on
+both sides. If the sheet is cramped — an open chat dock beside the page, or a
 narrow window — the column simply takes the room the sheet has, with equal
 margins; nothing is ever squeezed to make a second column.
 
