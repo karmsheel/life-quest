@@ -31,7 +31,7 @@ import {
  *
  * A review period is a notebook: a manifest plus one markdown page per scope.
  * Four writers share it — the page's autosave, the companion's area sessions,
- * the snapshot pass, and a Decision apply. Phase 1 moves the compare-and-swap
+ * the figure pass, and a Decision apply. Phase 1 moves the compare-and-swap
  * from the file onto each page, and this rig is the evidence the contract holds:
  *
  *  1. one mutex per notebook, so read-merge-write is never interleaved;
@@ -43,7 +43,7 @@ import {
  *  5. a locked page's write becomes a `review-page` Decision, applied with the
  *     page rev recorded at propose time — a page that moved refuses as STALE and
  *     keeps the Decision pending;
- *  6. the snapshot pass writes only its page and never reverts another page.
+ *  6. the figure pass writes only its page and never reverts another page.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
  *
@@ -57,7 +57,7 @@ import {
  *     mark-done, or a page creation.
  *  5. A Decision apply ignoring the page rev it was filed against (the stale
  *     resurrection bug), or one that applies and leaves the Decision pending.
- *  6. The snapshot pass replacing the whole notebook and reverting a page any
+ *  6. The figure pass replacing the whole notebook and reverting a page any
  *     other writer touched while the figures were read.
  */
 
@@ -497,7 +497,7 @@ describe("review notebook guards e2e", () => {
         "the stale Decision overwrote the newer page",
       );
 
-      // ── 9. the snapshot pass writes its own page, never another ───────────
+      // ── 9. the figure pass writes its own page, never another ─────────────
       const period3 = "2026-10-12";
       check(
         await ensureReview(vaultRoot, { cadence: "weekly", period: period3, scope: "overall" }),
@@ -547,13 +547,15 @@ describe("review notebook guards e2e", () => {
       assert.match(
         bodyAfterPass,
         /Health written while the figures were read\./,
-        "the snapshot pass reverted the page written while it was reading",
+        "the figure pass reverted the page written while it was reading",
       );
-      for (const figure of ["finance-in", "finance-out", "finance-net"]) {
+      // A financial page's Start writes one app figure per shipped metric
+      // definition; the operator-fence path is covered by the snapshot rig.
+      for (const figure of ["cash-in", "cash-out", "net-cash-flow"]) {
         assert.match(
           bodyAfterPass,
-          new RegExp(`<!-- lifequest:snapshot:${figure} -->`),
-          `the snapshot pass did not write the ${figure} figure`,
+          new RegExp(`<!-- lifequest:metric:${figure} -->`),
+          `the figure pass did not write the ${figure} figure`,
         );
       }
 
@@ -570,7 +572,7 @@ describe("review notebook guards e2e", () => {
               "two concurrent page writes kept; stale page write CONFLICT with current; canonicaliser " +
               "fixed point; composite compatibility CAS; locked notebook refused every write; a locked " +
               "page write filed a review-page Decision that applied at its rev; a moved page left the " +
-              "Decision pending; the snapshot pass wrote only its page",
+              "Decision pending; the figure pass wrote only its page",
           },
           null,
           2,

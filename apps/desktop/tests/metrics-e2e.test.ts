@@ -9,6 +9,7 @@ import {
   compileMetricSpec,
   compileMetricSpecForVault,
   createVault,
+  defaultReviewSkill,
   defineMetric,
   ensureReview,
   ensureReviewSkill,
@@ -23,6 +24,7 @@ import {
   listMetricDefinitions,
   listRows,
   logMetric,
+  previousPhase4DefaultReviewSkill,
   previousShippedDefaultReviewSkill,
   prepopulateReview,
   readLog,
@@ -880,8 +882,8 @@ describe("metrics e2e", () => {
       assert.equal(kit.ok, true, "the skill rig could not install the finance kit");
       await seedFinance(skillVault);
 
-      // Seed the PREVIOUS shipped default from a FIXTURE OF THE REAL 0.3.4 FILE,
-      // not from the helper that is supposed to recognise it. Seeding with the
+      // Seed the PREVIOUS shipped defaults from FIXTURES OF THE REAL FILES, not
+      // from the helpers that are supposed to recognise them. Seeding with a
       // helper would pass even if both were wrong together — which is exactly
       // how a reworded bullet made the replacement miss every real vault.
       const shippedFixturePath = path.join(
@@ -901,6 +903,27 @@ describe("metrics e2e", () => {
         "the code's copy of the previous default is not byte-identical to the 0.3.4 release file",
       );
       assert.match(shippedDefault, /<!-- lifequest:snapshot:finance-spend -->|"id": "finance-spend"/, "the fixture is not the old finance-spend default");
+
+      // The Phase 4 default (three finance fences) is the SECOND shipped default
+      // a real vault may still carry. Its fixture was captured from the release
+      // commit, so the code copy that recognises it must match byte for byte.
+      const phase4FixturePath = path.join(
+        desktopRoot,
+        "e2e/fixtures/review-skill-phase4-weekly.md",
+      );
+      const phase4Default = fs.readFileSync(phase4FixturePath, "utf8");
+      checks.phase4ByteIdentity = {
+        fixture: "e2e/fixtures/review-skill-phase4-weekly.md",
+        fixtureBytes: phase4Default.length,
+        helperMatchesFixture: previousPhase4DefaultReviewSkill("weekly") === phase4Default,
+      };
+      assert.equal(
+        previousPhase4DefaultReviewSkill("weekly"),
+        phase4Default,
+        "the code's copy of the Phase 4 default is not byte-identical to the release file",
+      );
+      assert.match(phase4Default, /"id": "finance-in"/, "the Phase 4 fixture is not the three-fence default");
+
       const seeded = await writeReviewSkill(skillVault, "weekly", shippedDefault, ACTOR);
       assert.equal(seeded.ok, true);
       const before = await getReviewSkill(skillVault, "weekly");
@@ -933,42 +956,61 @@ describe("metrics e2e", () => {
         body: first!.bodyMarkdown,
         rewrittenMarkdown: rewritten.ok ? rewritten.value.markdown : null,
       };
+      // Figures no longer come from fences: the migrated default declares none,
+      // and the Start writes the finance definitions' figures instead.
       assert.deepEqual(
         rewrittenIds,
-        ["finance-in", "finance-out", "finance-net"],
-        "the previous shipped default was not replaced by the three finance directives",
+        [],
+        "the replacement default still declares operator fences",
       );
       const rewrittenMarkdown = rewritten.ok ? rewritten.value.markdown : "";
       assert.doesNotMatch(
         rewrittenMarkdown,
-        /finance-spend|Spending this period/,
-        "the rewritten skill still carries the old Spending figure",
+        /finance-spend|Spending this period|^```lifequest-snapshot$/m,
+        "the rewritten skill still carries the old figure fences",
+      );
+      assert.match(rewrittenMarkdown, /## Figures/, "the rewritten default does not explain the app-written figures");
+      assert.equal(
+        rewrittenMarkdown,
+        defaultReviewSkill("weekly"),
+        "the previous shipped default was not replaced by the figures default",
       );
       assert.equal(first!.applied, 3, "Start wrote fewer than three figures");
       assert.deepEqual(
         first!.outcomes.map((outcome) => [outcome.id, outcome.status]),
         [
-          ["finance-in", "written"],
-          ["finance-out", "written"],
-          ["finance-net", "written"],
+          ["metric:cash-in", "written"],
+          ["metric:cash-out", "written"],
+          ["metric:net-cash-flow", "written"],
         ],
-        "the three figures did not land as three written outcomes",
+        "the three definitions did not land as three written figures",
       );
       const body = first!.bodyMarkdown;
-      assert.match(body, /Cash in this period/, "the Cash in figure is missing");
-      assert.match(body, /Cash out this period/, "the Cash out figure is missing");
-      assert.match(body, /Net cash flow this period \(transfers included\)/, "the Net figure is missing or unlabelled");
-      assert.match(body, /2026-10-12 → 2026-10-18/, "the figures do not name the review period");
+      assert.doesNotMatch(
+        body,
+        /lifequest:snapshot:/,
+        "the Start wrote a snapshot block from the shipped default it just replaced",
+      );
+      assert.match(body, /<!-- lifequest:metric:cash-in -->/, "the Cash in figure is missing");
+      assert.match(body, /<!-- lifequest:metric:cash-out -->/, "the Cash out figure is missing");
+      assert.match(body, /<!-- lifequest:metric:net-cash-flow -->/, "the Net figure is missing");
+      assert.match(body, /\*\*Cash in\*\* · 2026-10-12 → 2026-10-18/, "the Cash in figure does not name its window");
+      assert.match(body, /Net cash flow \(transfers included\)/, "the Net figure is missing or unlabelled");
       assert.match(body, new RegExp(`${formatSnapshotNumber(5000)} \\(ZAR\\)`), "Cash in is not 5,000");
       assert.match(body, new RegExp(`${formatSnapshotNumber(3000)} \\(ZAR\\)`), "Cash out is not 3,000");
       assert.match(body, new RegExp(`${formatSnapshotNumber(2000)} \\(ZAR\\)`), "Net is not 2,000");
-      const earlier = body.indexOf("Cash in this period");
-      const later = body.indexOf("Cash out this period");
+      const earlier = body.indexOf("<!-- lifequest:metric:cash-in -->");
+      const later = body.indexOf("<!-- lifequest:metric:cash-out -->");
       assert.ok(earlier !== -1 && later > earlier, "the finance figures are not in reading order");
       assert.equal(
-        (body.match(/<!-- lifequest:snapshot:finance-in -->/g) ?? []).length,
+        (body.match(/<!-- lifequest:metric:cash-in -->/g) ?? []).length,
         1,
-        "the finance-in marker is not written exactly once",
+        "the cash-in marker is not written exactly once",
+      );
+      assert.match(
+        body,
+        /_As of \d{4}-\d{2}-\d{2} \d{2}:\d{2} · Source: the finance:transactions database_/,
+        "the figure carries no as-of/source line",
       );
 
       // Start again: the replacement happened once and nothing else is written.
@@ -990,15 +1032,47 @@ describe("metrics e2e", () => {
       const migrated = (skillLog.ok ? skillLog.value : []).filter(
         (event) => event.type === "review-skill.migrated",
       );
-      checks.defaultSkillMigrations = migrated.length;
+      checks.defaultSkillMigrations = migrated.map((event) => event.payload);
       assert.equal(migrated.length, 1, "the shipped-default replacement was logged more or less than once");
+      assert.equal(
+        (migrated[0]!.payload as Json).from,
+        "0.3.4-default",
+        "the migration line does not name the 0.3.4 default it replaced",
+      );
+
+      // The Phase 4 default is replaced once too, on another cadence so the
+      // weekly replacement above cannot mask a missing second copy.
+      await writeReviewSkill(skillVault, "monthly", previousPhase4DefaultReviewSkill("monthly"), ACTOR);
+      const phase4Ensure = await ensureReviewSkill(skillVault, "monthly", ACTOR);
+      assert.equal(phase4Ensure.ok, true);
+      assert.equal(
+        phase4Ensure.ok ? phase4Ensure.value.markdown : "",
+        defaultReviewSkill("monthly"),
+        "the Phase 4 default was not replaced by the figures default",
+      );
+      const phase4Log = await readLog(skillVault);
+      const phase4Migrated = (phase4Log.ok ? phase4Log.value : []).filter(
+        (event) =>
+          event.type === "review-skill.migrated" &&
+          (event.payload as Json | undefined)?.from === "phase-4-default",
+      );
+      checks.phase4DefaultMigration = phase4Migrated.map((event) => event.payload);
+      assert.equal(phase4Migrated.length, 1, "the Phase 4 default replacement was not logged exactly once");
+      await ensureReviewSkill(skillVault, "monthly", ACTOR);
+      const phase4Again = (await readLog(skillVault));
+      const phase4AfterSecond = (phase4Again.ok ? phase4Again.value : []).filter(
+        (event) =>
+          event.type === "review-skill.migrated" &&
+          (event.payload as Json | undefined)?.from === "phase-4-default",
+      );
+      assert.equal(phase4AfterSecond.length, 1, "a second Start migrated the Phase 4 default again");
 
       // An operator-edited skill is never matched by bytes and never touched.
       // The variant is the release fixture plus one visible rule — the operator
       // changed their file, so no release may replace it.
       const edited = `${shippedDefault}\n- Ask about sleep every week.\n`;
-      await writeReviewSkill(skillVault, "monthly", edited, ACTOR);
-      const ensureEdited = await ensureReviewSkill(skillVault, "monthly", ACTOR);
+      await writeReviewSkill(skillVault, "quarterly", edited, ACTOR);
+      const ensureEdited = await ensureReviewSkill(skillVault, "quarterly", ACTOR);
       assert.equal(ensureEdited.ok, true);
       assert.match(
         ensureEdited.ok ? ensureEdited.value.markdown : "",

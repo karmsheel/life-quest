@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   createVault,
   currentPeriod,
+  defaultReviewSkill,
   ensureReview,
   executeReviewTool,
   getReview,
@@ -15,6 +16,7 @@ import {
   installFinanceKit,
   parseSnapshotDirectives,
   prepopulateReview,
+  previousPhase4DefaultReviewSkill,
   readLog,
   shiftLocalIsoDate,
   upsertSnapshotBlock,
@@ -22,6 +24,7 @@ import {
   writeReview,
   writeReviewSkill,
 } from "@lifequest/vault-core";
+import type { ReviewCadence } from "@lifequest/vault-core";
 import { formatReviewContext } from "../electron/review-sessions.ts";
 
 /**
@@ -73,6 +76,34 @@ const DAILY_ARTIFACT = path.join(desktopRoot, "e2e/artifacts/review-snapshot-dai
 // deliberately differ, so it gets its own evidence rather than a comment.
 const PLANT_ARTIFACT = path.join(desktopRoot, "e2e/artifacts/review-snapshot-plant.json");
 const ACTOR = { type: "user", id: "operator", name: "Operator" } as const;
+
+/**
+ * A skill file an OPERATOR might keep: the shipped figures prose plus their own
+ * rules and their own `lifequest-snapshot` fences.
+ *
+ * Since Phase 5 the shipped default carries no fences — figures come from the
+ * area's metric definitions. The fence path still has to work, so these rigs
+ * author a file explicitly instead of borrowing the default. The fences are
+ * taken from the Phase 4 default (kept in code for exactly this kind of byte
+ * comparison), which keeps the custom figure's spec identical to the one that
+ * shipped; the file around them is not byte-identical to any shipped default,
+ * so `ensureReviewSkill` must leave it alone.
+ */
+function customSnapshotSkill(cadence: ReviewCadence): string {
+  const phase4 = previousPhase4DefaultReviewSkill(cadence);
+  const fenceAt = phase4.indexOf("```lifequest-snapshot");
+  assert.ok(fenceAt !== -1, "the Phase 4 default no longer carries a snapshot fence to reuse");
+  return [
+    defaultReviewSkill(cadence).replace(/\n+$/, ""),
+    "",
+    "- One rule the operator added themselves.",
+    "",
+    "## My custom figures",
+    "",
+    phase4.slice(fenceAt).replace(/\n+$/, ""),
+    "",
+  ].join("\n");
+}
 
 const PERIOD = "2026-10-12";
 
@@ -182,21 +213,54 @@ describe("review snapshot e2e", () => {
       assert.equal(seeded.ok, true, "the rig could not seed the operator's prose");
 
       // ── 1. the cadence's rules, as shipped ────────────────────────────────
-      const skill = await getReviewSkill(vaultRoot, "weekly");
-      assert.equal(skill.ok, true, "the weekly skill could not be read");
-      const shipped = skill.ok ? skill.value : null;
-      assert.ok(shipped, "no skill");
-      checks.skillExists = shipped.exists;
+      // Reading a skill never creates a file: the shipped default must stay
+      // replaceable by a release. Since Phase 5 the default carries no fences —
+      // figures come from the area's metric definitions — so this rig writes an
+      // operator's own skill file with the fences it wants to test.
+      const beforeWrite = await getReviewSkill(vaultRoot, "weekly");
+      assert.equal(beforeWrite.ok, true, "the weekly skill could not be read");
+      assert.ok(beforeWrite.ok);
+      checks.skillExistsBeforeWrite = beforeWrite.value.exists;
       assert.equal(
-        shipped.exists,
+        beforeWrite.value.exists,
         false,
         "reading a skill wrote a file: the default must stay replaceable by a release",
       );
-      assert.deepEqual(shipped.problems, [], "the shipped weekly skill does not parse");
+      assert.deepEqual(
+        beforeWrite.value.snapshots,
+        [],
+        "the shipped weekly skill still declares snapshot fences instead of figures",
+      );
+      assert.match(
+        beforeWrite.value.markdown,
+        /## Figures/,
+        "the shipped weekly skill does not explain the app-written figures",
+      );
+      assert.doesNotMatch(
+        beforeWrite.value.markdown,
+        /^```lifequest-snapshot$/m,
+        "the shipped weekly skill still carries a directive fence",
+      );
+
+      const custom = await writeReviewSkill(
+        vaultRoot,
+        "weekly",
+        customSnapshotSkill("weekly"),
+        ACTOR,
+      );
+      assert.equal(custom.ok, true, "the rig could not author the operator's skill file");
+      const skill = await getReviewSkill(vaultRoot, "weekly");
+      assert.equal(skill.ok, true, "the weekly skill could not be read back");
+      const shipped = skill.ok ? skill.value : null;
+      assert.ok(shipped, "no skill");
+      checks.skillExists = shipped.exists;
+      checks.skillIsOperatorAuthored = shipped.exists;
+      assert.equal(shipped.exists, true, "the operator's skill file was not written");
+      assert.deepEqual(shipped.problems, [], "the operator's weekly skill does not parse");
       assert.deepEqual(
         shipped.snapshots.map((directive) => directive.id),
         ["finance-in", "finance-out", "finance-net"],
-        "the shipped weekly skill no longer declares cash in / cash out / net",
+        "the operator's weekly skill does not declare cash in / cash out / net",
       );
       for (const directive of shipped.snapshots) {
         assert.equal(directive.domain, "financial");
@@ -207,7 +271,7 @@ describe("review snapshot e2e", () => {
       assert.match(
         shipped.markdown,
         /lifequest-snapshot/,
-        "the shipped skill carries no directive fence",
+        "the operator's skill carries no directive fence",
       );
 
       // ── 2. the pass fills the Financial Look-back ──────────────────────────
@@ -225,7 +289,23 @@ describe("review snapshot e2e", () => {
         planted: pass.planted,
         outcomes: pass.outcomes,
       };
-      assert.equal(pass.applied, 3, "the snapshot pass wrote fewer than three figures");
+      // The operator's three custom fences plus the three shipped metric
+      // definitions: a custom snapshot figure and an app figure share the page.
+      assert.equal(pass.applied, 6, "the pass wrote fewer than six figures");
+      const outcomeIds = pass.outcomes.map((outcome) => outcome.id);
+      checks.firstPassIds = outcomeIds;
+      assert.deepEqual(
+        outcomeIds,
+        [
+          "finance-in",
+          "finance-out",
+          "finance-net",
+          "metric:cash-in",
+          "metric:cash-out",
+          "metric:net-cash-flow",
+        ],
+        "the fence figures and the definition figures did not both land",
+      );
       assert.deepEqual(
         pass.planted,
         [],
@@ -240,20 +320,38 @@ describe("review snapshot e2e", () => {
         "<!-- lifequest:snapshot:finance-out -->",
         "<!-- lifequest:snapshot:finance-net -->",
       ];
+      const metricMarkers = [
+        "<!-- lifequest:metric:cash-in -->",
+        "<!-- lifequest:metric:cash-out -->",
+        "<!-- lifequest:metric:net-cash-flow -->",
+      ];
       const keep = body.indexOf("### Keep");
-      for (const marker of markers) {
+      for (const marker of [...markers, ...metricMarkers]) {
         const at = body.indexOf(marker);
         assert.ok(lookback !== -1 && at > lookback, `${marker} is not under Financial's Look-back`);
         assert.ok(at < keep, `${marker} landed outside its own section`);
       }
+      // The custom fence blocks come first, the app's definition figures after
+      // them: a Start refreshes both without reordering the operator's rules.
+      const lastSnapshotAt = body.indexOf(markers[markers.length - 1]!);
+      const firstMetricAt = body.indexOf(metricMarkers[0]!);
+      assert.ok(
+        firstMetricAt > lastSnapshotAt,
+        "the definition figures did not land after the operator's custom figures",
+      );
       assert.match(body, /2026-10-12 → 2026-10-18/, "the figures do not name the window they cover");
 
       // Gross cash in 120.5, gross cash out 79.5 (the ledger row is -79.5 and the
       // figure prints its size), net 41. The September row is outside the week and
       // must not be in any figure: a snapshot that read all time would show 1,199.
+      // The fence figure keeps the snapshot renderer's two decimals; the app
+      // figure trims them (5,000 not 5,000.00).
       assert.match(body, /(^|\n)120\.50 \(ZAR\)(\n|$)/, "cash in is not 120.50");
       assert.match(body, /(^|\n)79\.50 \(ZAR\)(\n|$)/, "cash out is not the gross 79.50");
       assert.match(body, /(^|\n)41 \(ZAR\)(\n|$)/, "net is not 120.5 - 79.5");
+      assert.match(body, /(^|\n)120\.5 \(ZAR\)(\n|$)/, "the app's cash-in figure is not 120.5");
+      assert.match(body, /(^|\n)79\.5 \(ZAR\)(\n|$)/, "the app's cash-out figure is not the gross 79.5");
+      assert.match(body, /(^|\n)41 \(ZAR\)(\n|$)/, "the app's net figure is not 41");
       assert.doesNotMatch(body, /1,199/, "a figure read outside its period");
       assert.doesNotMatch(body, /-79\.50?/, "cash out printed the ledger's sign instead of its size");
 
@@ -286,7 +384,7 @@ describe("review snapshot e2e", () => {
       checks.secondPass = { applied: twice.applied, identical: twice.bodyMarkdown === body };
       assert.equal(twice.applied, 0, "a second Start wrote the snapshot again");
       assert.equal(twice.bodyMarkdown, body, "a second Start changed the review's body");
-      for (const marker of markers) {
+      for (const marker of [...markers, ...metricMarkers]) {
         assert.equal(
           body.split(marker).length - 1,
           1,
@@ -567,6 +665,17 @@ describe("review snapshot e2e", () => {
       ]);
       assert.equal(inserted.ok, true, "the rig could not post the transactions");
 
+      // The daily default no longer carries fences; the fence path is tested by
+      // an operator-authored file. Backdating the skill write keeps the rig's
+      // `review-skill.written` line from confusing the pass-log assertions.
+      const authored = await writeReviewSkill(
+        vaultRoot,
+        "daily",
+        customSnapshotSkill("daily"),
+        ACTOR,
+      );
+      assert.equal(authored.ok, true, "the rig could not author the daily skill file");
+
       const ensured = await ensureReview(vaultRoot, {
         cadence: "daily",
         period,
@@ -616,7 +725,9 @@ describe("review snapshot e2e", () => {
         planted: pass.planted,
         outcomes: pass.outcomes,
       };
-      assert.equal(pass.applied, 3, "the daily snapshot pass wrote fewer than three figures");
+      // The three custom fences plus the cross-domain table (the daily page has
+      // no area pages, so the table is the only app figure it gets).
+      assert.equal(pass.applied, 4, "the daily pass wrote fewer than four figures");
       assert.deepEqual(
         pass.planted,
         [],
@@ -628,8 +739,9 @@ describe("review snapshot e2e", () => {
           ["finance-in", "written"],
           ["finance-out", "written"],
           ["finance-net", "written"],
+          ["metrics:overall", "written"],
         ],
-        "a shipped figure was skipped on a daily review: the overall Look-back was not resolved",
+        "a custom figure or the cross-domain table was skipped on a daily review",
       );
       const body = pass.bodyMarkdown;
       checks.body = body;
@@ -662,11 +774,33 @@ describe("review snapshot e2e", () => {
       assert.match(body, /(^|\n)42\.50 \(ZAR\)(\n|$)/, "cash out is not the day's own gross spend");
       assert.doesNotMatch(body, /-42\.5/, "cash out printed the ledger's sign instead of its size");
       assert.match(body, /(^|\n)57\.50 \(ZAR\)(\n|$)/, "net is not 100 - 42.50");
-      assert.doesNotMatch(body, /999/, "a figure read outside the daily period");
+      // The cross-domain table legitimately names the PREVIOUS day (999), so
+      // the window assertion is scoped to the custom figures above it.
+      const beforeTable = body.slice(0, body.indexOf("<!-- lifequest:metrics:overall -->"));
+      assert.doesNotMatch(beforeTable, /999/, "a custom figure read outside the daily period");
       assert.match(
         body,
         new RegExp(`${period} → ${period}`),
         "the figures do not name the window they cover",
+      );
+
+      // The daily review gets the cross-domain table too, after the custom
+      // fences and under the same Look-back.
+      const overallMarker = "<!-- lifequest:metrics:overall -->";
+      const overallAt = body.indexOf(overallMarker);
+      assert.ok(overallAt > previousAt, "the cross-domain table did not land after the custom figures");
+      assert.ok(overallAt < prose, "the cross-domain table landed under the operator's prose");
+      assert.equal(
+        body.split(overallMarker).length - 1,
+        1,
+        "the cross-domain marker is missing or duplicated",
+      );
+      assert.match(body, /\*\*Metrics this period\*\* · /, "the cross-domain table has no caption");
+      assert.match(body, /\| Area \| Metric \| This period \| Previous period \| Δ \|/, "the cross-domain table has no header");
+      assert.match(
+        body,
+        /\| Finance \| Cash in \| 100 \(ZAR\) \| — \| — \|/,
+        "the daily table does not carry the day's Cash in",
       );
 
       // A daily review has no area sections, and the pass must not invent one:
@@ -699,6 +833,14 @@ describe("review snapshot e2e", () => {
         line.actor,
         { type: "user" },
         "the audit line does not name the operator who ran the pass",
+      );
+      const figureLines = events.filter((event) => event.type === "review.figures");
+      checks.firstFigureLog = figureLines.map((event) => event.payload);
+      assert.equal(figureLines.length, 1, "the pass appended no review.figures line, or more than one");
+      assert.deepEqual(
+        figureLines[0]!.payload,
+        { cadence: "daily", period, scope: "overall", written: 1, unchanged: 0, failed: 0 },
+        "the figures log line does not carry the pass's own counts and page scope",
       );
 
       // ── 3. the pass is a fixed point, and a no-op appends nothing ──────────
@@ -737,6 +879,15 @@ describe("review snapshot e2e", () => {
         linesAfterSecond.length,
         1,
         "a pass that wrote nothing appended a review.snapshots line",
+      );
+      const figureLinesAfterSecond = (logAfterSecond.ok ? logAfterSecond.value : []).filter(
+        (event) => event.type === "review.figures",
+      );
+      checks.secondFigureLogCount = figureLinesAfterSecond.length;
+      assert.equal(
+        figureLinesAfterSecond.length,
+        1,
+        "a pass that wrote nothing appended a review.figures line",
       );
 
       // ── the artifact ──────────────────────────────────────────────────────
@@ -798,6 +949,16 @@ describe("review snapshot e2e", () => {
       ]);
       assert.equal(inserted.ok, true, "the rig could not post the transaction");
 
+      // The operator's own fence on top of the figures default: the snapshot
+      // path must keep working beside the app-written figures.
+      const authored = await writeReviewSkill(
+        vaultRoot,
+        "weekly",
+        customSnapshotSkill("weekly"),
+        ACTOR,
+      );
+      assert.equal(authored.ok, true, "the rig could not author the weekly skill file");
+
       // Overall only: no Financial page has been started, so the notebook has
       // the overall page and no financial page.
       const ensured = await ensureReview(vaultRoot, {
@@ -835,7 +996,7 @@ describe("review snapshot e2e", () => {
       assert.ok(value, "no pass");
       checks.planted = value.planted;
       checks.outcomes = value.outcomes;
-      assert.equal(value.applied, 3, "the pass wrote fewer than three figures to the financial page");
+      assert.equal(value.applied, 6, "the pass wrote fewer than six figures to the financial page");
       assert.deepEqual(value.planted, [], "the pass reported a plant: the page is the unit now");
 
       const body = value.bodyMarkdown;
@@ -847,6 +1008,9 @@ describe("review snapshot e2e", () => {
         "<!-- lifequest:snapshot:finance-in -->",
         "<!-- lifequest:snapshot:finance-out -->",
         "<!-- lifequest:snapshot:finance-net -->",
+        "<!-- lifequest:metric:cash-in -->",
+        "<!-- lifequest:metric:cash-out -->",
+        "<!-- lifequest:metric:net-cash-flow -->",
       ]) {
         assert.ok(
           body.indexOf(marker) > financeAt && body.indexOf(marker) > body.indexOf("### Look-back"),
@@ -863,7 +1027,7 @@ describe("review snapshot e2e", () => {
       assert.match(overallLookback, /The week in one line\./, "the overall Look-back lost its prose");
       assert.doesNotMatch(
         overallLookback,
-        /lifequest:snapshot:finance-/,
+        /lifequest:(snapshot|metric):/,
         "the figures drifted from the area section into the overall one",
       );
 
