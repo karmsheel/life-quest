@@ -63,7 +63,7 @@ wants to know what is on disk and what runs where.
 
 | Page | What it covers |
 |---|---|
-| [08 · Architecture](./08-architecture.md) | Strategy (How) plus day types, the default week and the real week |
+| [08 · Blueprints](./08-architecture.md) | Strategy (How) plus day types, the default week and the real week |
 | [10 · Goals](./10-goals.md) | Goal records, metrics vs definitions of done, progress, deadline pressure |
 | [11 · Life Map](./11-life-map.md) | The year canvas and month calendar: years, events, day text, month objectives |
 

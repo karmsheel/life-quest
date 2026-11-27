@@ -47,7 +47,7 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Blueprints. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -203,7 +203,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "track",
     href: "/track",
-    label: "Architecture",
+    label: "Blueprints",
     icon: Target,
     section: "main",
     wing: "plan",

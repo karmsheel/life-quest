@@ -18,7 +18,7 @@ home](./index.md) has the full page index.
 - **Managing areas**: the **Settings** sheet, tab **Areas**, at
   `/settings?tab=domains`. The legacy path `/domains` redirects there.
 - **Area content**: each area's folder is `domains/<slug>/`; doctrine is read and
-  written through **Dream**, **Vision** and **Architecture**; Data, Pages, the
+  written through **Dream**, **Vision** and **Blueprints**; Data, Pages, the
   Dashboard and Notebox are filtered by the lens.
 - **The Life lens** is the union: Data and Pages span every live area, and the
   Dashboard shows the Life board. New databases and pages created while the lens
@@ -204,7 +204,7 @@ Choosing an area narrows the area-scoped screens to that area:
 | **Dashboard** | Shows that area's board (`domains/<slug>/pins.json`) |
 | **Data** | Lists that area's databases; the area selector disappears |
 | **Pages** | Lists that area's pages; the area selector disappears |
-| **Dream**, **Vision**, **Architecture** | Show only that area's documents |
+| **Dream**, **Vision**, **Blueprints** | Show only that area's documents |
 | **Notebox** | Shows Life (general) signals plus signals tagged to that area |
 | **Decisions** (rail badge) | Counts every pending Decision in the vault — the badge is global, not lens-filtered; the Dashboard's Pending card is the lens-scoped view |
 | **Goals**, **Projects**, **Documents** | Lists narrow to that area; new records default to it |

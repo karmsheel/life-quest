@@ -108,7 +108,7 @@ Each requirement is testable and names what makes it binding.
   is an optional external sidekick. The renderer never holds a raw key.
   ([`LAWS/COMPANION.md`](LAWS/COMPANION.md))
 - **P12 — Agents act through the same door and the same rules.** An agent may advise or own a
-  domain; agent writes to doctrine, library, reviews, projects, goal records, Architecture
+  domain; agent writes to doctrine, library, reviews, projects, goal records, Blueprint
   templates, pages other than script blocks, pins, ingest mappings, posted ledger edits and kit
   installs go through Decisions; conversational capture posts only when amount and account are unambiguous and the
   chat names what was written. ([`VISION.md`](VISION.md) "Doctrine, goals, and the day")

@@ -95,7 +95,7 @@ nav:
   - Plan:
       - Goals: 10-goals.md
       - Life Map: 11-life-map.md
-      - Architecture: 08-architecture.md
+      - Blueprints: 08-architecture.md
   - Act:
       - Projects: 12-projects.md
       - Daily Schedule: 13-daily-schedule.md

@@ -14,7 +14,7 @@ import { useVault } from "@/state/VaultProvider";
 /**
  * Which page owns a doctrine document's editor. One page per wing surface:
  * Dream carries Premise / Purpose / Strategy, Vision carries Vision & Desire,
- * and Architecture carries Strategy (How) for the Plan wing.
+ * and Blueprints carries Strategy (How) for the Plan wing.
  */
 export type DoctrineBasePath = "/dream" | "/vision" | "/track";
 

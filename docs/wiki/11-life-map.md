@@ -2,15 +2,15 @@
 
 The Life Map is the year canvas: one page that shows a year as four quarters and twelve month grids, opens any month as a Monday–Sunday calendar, and keeps the year's events. It is the place a single date lives — a deadline, a trip, a launch, a birthday — with notes, an optional area, and an optional link to a Goal. Months also carry their own short text and a Main Objectives / Notes pair.
 
-The Life Map draws events, not tasks and not goal records. Tasks are on the [Task Manager](./14-task-manager.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Architecture](./08-architecture.md).
+The Life Map draws events, not tasks and not goal records. Tasks are on the [Task Manager](./14-task-manager.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Blueprints](./08-architecture.md).
 
 ## Where it lives
 
 - Plan wing, rail label **Life Map**, icon Map, route `/chart`.
 - Header: the grey **Life Map** page eyebrow above the **Life Map** title, with the **Year** selector and the year's buttons on the same row.
 - Page, not a sheet. The year dashboard and the month view are two states of the same page; a **Back to dashboard** button returns from the month.
-- The selected year is session state shared with Architecture; it is not written into the vault.
-- Map data lives in `.lifequest/map.json`: the years, their events, their month text, and the detached weeks that Architecture edits.
+- The selected year is session state shared with Blueprints; it is not written into the vault.
+- Map data lives in `.lifequest/map.json`: the years, their events, their month text, and the detached weeks that Blueprints edits.
 
 Return to [Wiki home](./index.md).
 
@@ -23,7 +23,7 @@ The calendar is vault-global. With one unlocked area the lens band is a quiet **
 ## How to use it
 
 1. Open **Life Map** from the Plan rail. The **Year** selector sits in the header; live years come first, oldest to newest, then archived years newest first, each archive labelled `YYYY (archive)`.
-2. To change years, use the **Year** selector. Life Map and Architecture follow the same selection for the session.
+2. To change years, use the **Year** selector. Life Map and Blueprints follow the same selection for the session.
 3. To add a future year, click **Add {YYYY}**. The button appears only when a live year can still be added and a year in the current year's range is missing. The vault allows at most three live years: the current calendar year and up to two future years.
 4. To delete a year, use **Delete year** (a live year that is not the current year) or **Delete archive** (an archived year). A live future year with content asks first; an empty one deletes on the click. The current calendar year cannot be deleted and shows no button.
 5. To read a month, click its name in a quarter block. The month page opens with **Back to dashboard** at the top.
@@ -66,13 +66,13 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 | Free text | None | A field per day, **Main Objectives**, **Notes** |
 | Editable? | Live year only | Live year only |
 
-**The year record.** Each year in `map.json` carries its `year`, its `status` (`live` or `archive`), an `events` array, twelve `months` records (each with `objectives`, `notes`, and a `days` map keyed by day number), and `detachedWeeks` keyed by Monday date. An archived year also carries the frozen `snapshot` that [Architecture](./08-architecture.md) reads for its templates.
+**The year record.** Each year in `map.json` carries its `year`, its `status` (`live` or `archive`), an `events` array, twelve `months` records (each with `objectives`, `notes`, and a `days` map keyed by day number), and `detachedWeeks` keyed by Monday date. An archived year also carries the frozen `snapshot` that [Blueprints](./08-architecture.md) reads for its templates.
 
 ## Rules and behaviour
 
 **What the year holds.** Each year has a status (`live` or `archive`). The vault ensures the current calendar year exists when it opens and archives any live year that has ended, freezing a snapshot of that year's day types, default week, and materialised weeks. Archives are unlimited and read-only.
 
-**Years.** At most three live years can exist: the current year plus two future ones. The current calendar year cannot be deleted; a future live year with content asks before deleting; an archive can be deleted from the Life Map. Adding is only offered on the Life Map dashboard, not on Architecture.
+**Years.** At most three live years can exist: the current year plus two future ones. The current calendar year cannot be deleted; a future live year with content asks before deleting; an archive can be deleted from the Life Map. Adding is only offered on the Life Map dashboard, not on Blueprints.
 
 **Events are single-date.** An event has one date, no time of day, no recurrence, and no end date. Several events may share a day and are all listed and marked. Events belong to their year: the date picker is bounded to January 1 through December 31 of the selected year.
 
@@ -96,27 +96,27 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 - The current calendar year cannot be deleted; a missing year or event is a not-found error rather than a silent write.
 - A malformed map file is reported and left alone rather than overwritten with empty state.
 
-**Where it fits the rest of the plan.** The Life Map is the calendar; [Architecture](./08-architecture.md) is the weekly template; [Daily Schedule](./13-daily-schedule.md) is today's live copy; [Goals](./10-goals.md) is the outcome list. They share the vault and the area lens, but they write to different records: events to the year, templates to the map store, goals to `goals.json`.
+**Where it fits the rest of the plan.** The Life Map is the calendar; [Blueprints](./08-architecture.md) is the weekly template; [Daily Schedule](./13-daily-schedule.md) is today's live copy; [Goals](./10-goals.md) is the outcome list. They share the vault and the area lens, but they write to different records: events to the year, templates to the map store, goals to `goals.json`.
 
 **Companion.** The map tools let a companion read the map, create and edit years and events, and write month text. Event writes apply directly; goal records (including their deadlines) go through Decisions, as described on [Goals](./10-goals.md). Reads need no approval.
 
 ## Tips and edge cases
 
 - **A month view is not a separate page.** **Back to dashboard** or changing the year clears the month selection; coming back to the Life Map without either reopens the month you were reading.
-- **The year dashboard is the only place to add or delete years.** Architecture's year selector only reads.
+- **The year dashboard is the only place to add or delete years.** Blueprints' year selector only reads.
 - **Clicking a day opens the event form, not a day editor.** Day text is edited with the small field in the month grid, which appears only on the month page.
 - **No event times.** Two events on the same day are both drawn; the map cannot order them by time because it does not store one.
-- **Archives keep what the year actually had.** The archived snapshot includes the day types, default week, and weeks that existed when the year was rolled over, which is why Architecture shows a frozen plan for it.
+- **Archives keep what the year actually had.** The archived snapshot includes the day types, default week, and weeks that existed when the year was rolled over, which is why Blueprints shows a frozen plan for it.
 - **A goal deadline is not an event.** Creating a goal with a deadline adds nothing to the calendar; add an event and link it if you want it drawn.
 - **The Events panel is sorted, not draggable.** The list is ordered by date, then title; there is no manual event order.
 - **Works with an empty vault.** An empty map still opens on the current year with no events; the dashboard and month pages render their empty states.
 - **The map is per vault, not per area.** There is one global calendar; the lens filters events and marks, never the years or the days.
-- **Nothing here writes to Architecture.** Month text, objectives, notes, and events are separate records from day types, the default week, and real weeks.
+- **Nothing here writes to Blueprints.** Month text, objectives, notes, and events are separate records from day types, the default week, and real weeks.
 
 ## Related
 
 - [Wiki home](./index.md)
-- [Architecture](./08-architecture.md)
+- [Blueprints](./08-architecture.md)
 - [Goals](./10-goals.md)
 - [Daily Schedule](./13-daily-schedule.md)
 - [Task Manager](./14-task-manager.md)
