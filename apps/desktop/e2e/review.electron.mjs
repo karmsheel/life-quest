@@ -2548,9 +2548,12 @@ async function main() {
     failure("the locked Finance page drew the overall metrics table");
   }
   await click(win, '[data-testid="review-tab-overall"]');
+  // The editor was edited during the walk above, so the seeded prose is not a
+  // stable marker; the app-written cross-domain table is. Waiting for it also
+  // proves the frozen figures survive the lock on the page that owns them.
   await waitFor(
     win,
-    `(document.querySelector(".note-live")?.textContent ?? "").includes("Two walks")`,
+    `(document.querySelector(".note-live")?.textContent ?? "").includes("Metrics this period")`,
     "the locked Overall page",
   );
   if (!(await fileLocked(win))) failure("the file is not locked after the life review was marked complete");
