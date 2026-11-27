@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useParams, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import {
   DEFAULT_REVIEW_AVAILABILITY,
   currentPeriod,
@@ -7,13 +12,16 @@ import {
   nextPeriod,
   openReviewPeriod,
   previousPeriod,
+  periodBounds,
   periodLabel,
   periodTitle,
   periodTodayLocalIso,
   reviewOpensAt,
   type ReviewCadence,
+  type ReviewNotebook,
+  type ReviewPageBody,
+  type ReviewPageSummary,
   type ReviewPrepopulateResult,
-  type ReviewRecord,
   type ReviewSkill,
   unlockedAreas,
 } from "@lifequest/vault-core/pure";
@@ -25,7 +33,6 @@ import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
-import { AreaReviewsPanel } from "@/components/reviews/AreaReviewsPanel";
 import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
 import { ReviewPeriodPicker } from "@/components/reviews/ReviewPeriodPicker";
 import { WingEyebrow } from "@/components/shell/WingEyebrow";
@@ -39,8 +46,22 @@ const VALID_CADENCES: ReviewCadence[] = [
   "yearly",
 ];
 
-/** How long the page waits after the last keystroke before it writes the review. */
+/** How long the page waits after the last keystroke before it writes the page. */
 const AUTOSAVE_DELAY_MS = 700;
+
+type PageStatus = "missing" | "draft" | "done";
+
+/**
+ * The status vocabulary the tabs share with the retired checklist: a page
+ * nobody started, a page opened and in progress, and a page marked done.
+ */
+function statusLabel(status: PageStatus): string {
+  return status === "done"
+    ? "Done"
+    : status === "draft"
+      ? "In progress"
+      : "Not started";
+}
 
 function resolveCadence(param: string | undefined): ReviewCadence | null {
   if (param && VALID_CADENCES.includes(param as ReviewCadence)) {
@@ -49,51 +70,65 @@ function resolveCadence(param: string | undefined): ReviewCadence | null {
   return null;
 }
 
+/** The key a load/draft belongs to: one period, one page. */
+function pageKey(period: string, scope: string): string {
+  return `${period}|${scope}`;
+}
+
+/** Fold a just-written page into the notebook summary the tabs read. */
+function withPageSummary(
+  notebook: ReviewNotebook,
+  page: ReviewPageBody,
+): ReviewNotebook {
+  const summary: ReviewPageSummary = {
+    scope: page.scope,
+    title: page.title,
+    status: page.status === "missing" ? "draft" : page.status,
+    sessionId: page.sessionId,
+    rev: page.rev,
+    updatedAt: page.updatedAt ?? new Date().toISOString(),
+    chars: page.bodyMarkdown.length,
+  };
+  const exists = notebook.pages.some((row) => row.scope === page.scope);
+  return {
+    ...notebook,
+    pages: exists
+      ? notebook.pages.map((row) => (row.scope === page.scope ? summary : row))
+      : [...notebook.pages, summary],
+  };
+}
+
 /**
- * The review document, and the interview that fills it.
+ * The review period, as a notebook of pages.
  *
- * THE DOCUMENT IS THE PAGE. A review opens in the same box a daily note opens in
- * — `LiveMarkdownEditor`, rendered as it is written, saving itself — because a
- * review *is* a document the operator writes, and it was previously a read-only
- * summary whose edit state had to be entered and left by hand. The sectioned
- * summary is still here behind Preview, for reading a period back.
+ * THE PAGE IS ONE PAGE OF THE PERIOD. Weekly-or-longer reviews used to be one
+ * file with an area section per area, beside a checklist rail. Every writer sent
+ * the whole file, so concurrent interviews clobbered each other; the engine now
+ * stores a page per area (Phase 1) and this page shows one at a time. The tab row
+ * above the editor is the scope selection: Overall first, then each live area.
+ * The area lens in the window title bar is the same selection seen from outside —
+ * pressing a tab moves the lens, and a lens change moves the tab.
  *
- * The previous shape also swallowed the operator's own writing: the summary
- * extracted only the four required headings per section, so a heading or an
- * `# H2` typed outside that skeleton simply did not appear. Whatever the file
- * holds, the editor shows — and Preview now renders the whole body rather than a
- * selection of it.
+ * THE CHECKLIST IS RETIRED. Its progress line survives above the tabs, the Start
+ * / Mark complete / Unlock actions moved under the editor and act on the active
+ * page, and an area with no page yet shows a page-scoped empty state instead of
+ * quietly pre-creating every area.
  *
- * START IS THREE THINGS, IN THIS ORDER. It writes the review file if the period
- * has none, it runs the cadence's snapshot rules so the figures the operator
- * asked for are already under the right heading, and only then does it ask the
- * agent for a session. The order is the point: before this, Start was a single
- * call that created a chat, so an agent that was not running failed the whole
- * action with the transport's own words — "fetch failed" — and the operator got
- * neither the document nor the interview. Now the document is open and filled
- * whatever the agent is doing, and a gateway that is down is reported as the one
- * thing that failed, in words that name where to fix it.
+ * AUTOSAVE IS PER PAGE. The timer and the write queue belong to the page in the
+ * box; switching tabs flushes the page being left first (a write that cannot land
+ * holds the switch), so unsaved text never lands on another area. A live update
+ * from the companion re-reads only the open page and the notebook summary; a
+ * clean box adopts the new body, a dirty one keeps the draft and raises the
+ * conflict banner.
  *
- * THE PAGE OPENS ON AN OPEN WINDOW, NOT ON THE CALENDAR. Each cadence's review
- * becomes writable a little before its period ends — how long, and at what wall
- * clock time, is the operator's to set in Settings › Review. Until the window
- * for the calendar's own period opens, the page stays on the previous period,
- * which is still theirs to write; the latest period whose window is open is the
- * page's base, the pager cannot move past it, and a note under the header says
- * when the calendar's period opens. Everything else here — autosave, Prev/Next,
- * Start, lock, rules, daily notes — behaves as it did.
+ * DAILY IS UNCHANGED. A day is one general review: no tabs, no progress line, no
+ * areas. Internally it is the same single overall page.
  */
 export default function ReviewPage() {
   const { cadence: rawCadence } = useParams<{ cadence: string }>();
   const cadence = resolveCadence(rawCadence) ?? "weekly";
-  // A review page is ONE cadence. Daily and Weekly are two documents, not one
-  // page whose period comes from the other: before the body was keyed by cadence,
-  // switching cadence kept the old period for a render and the page loaded (and,
-  // against a vault that had no such file, briefly drew) a review for a date this
-  // cadence does not have. Keying remounts the body, so the period, the record and
-  // the box all reset together and the new cadence only ever asks for its own
-  // periods. The title-bar lens and the chat dock live outside this page and are
-  // not reset.
+  // A review page is ONE cadence: keying remounts the body so the period, the
+  // notebook and the box all reset together when the cadence changes.
   return <ReviewPageFor key={cadence} />;
 }
 
@@ -102,6 +137,7 @@ function ReviewPageFor() {
   const cadenceParam = resolveCadence(rawCadence);
   const cadence: ReviewCadence = cadenceParam ?? "weekly";
   const navigate = useNavigate();
+  const location = useLocation();
   const { snapshot, refresh, setActiveSlug } = useVault();
   const lens = useDomainLens();
   const chatDock = useChatDock();
@@ -114,22 +150,22 @@ function ReviewPageFor() {
   const availability =
     snapshot?.settings.reviewAvailability ?? DEFAULT_REVIEW_AVAILABILITY;
 
-  const [record, setRecord] = useState<ReviewRecord | null>(null);
+  const [notebook, setNotebook] = useState<ReviewNotebook | null>(null);
+  const [page, setPage] = useState<ReviewPageBody | null>(null);
   const [draft, setDraft] = useState("");
   const [savedBody, setSavedBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  /** The period whose body is in `draft`; null while one is still on its way in. */
-  const [loadedPeriod, setLoadedPeriod] = useState<string | null>(null);
+  /** The period|scope whose page body is in `draft`; null while one is loading. */
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [skill, setSkill] = useState<ReviewSkill | null>(null);
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillDraft, setSkillDraft] = useState("");
   const [skillSaving, setSkillSaving] = useState(false);
-  /** The area slug whose section the page should bring into view, if any. */
-  const [scrollToArea, setScrollToArea] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
 
   // The latest period whose window is open — where the page lands and the wall
   // the pager cannot pass. Memoised on the availability object so a settings
@@ -139,9 +175,28 @@ function ReviewPageFor() {
     [cadence, weekStartDay, availability],
   );
 
-  const [period, setPeriod] = useState(basePeriod);
+  // A `?period=` on the URL is a deep link into one period — the Analytics
+  // matrix's column headers are the door. It is read once, here, so the first
+  // load is the asked-for period rather than the latest period followed by a
+  // second fetch. An invalid period, or one whose review window has not opened,
+  // is ignored: the page lands where it would have without the link.
+  const linkedPeriod = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("period");
+    if (!raw) return null;
+    const bounds = periodBounds(cadence, raw, weekStartDay);
+    if (!bounds.ok || raw > basePeriod) return null;
+    return raw;
+  }, [basePeriod, cadence, location.search, weekStartDay]);
 
+  const [period, setPeriod] = useState(linkedPeriod ?? basePeriod);
+
+  // The base period is where the page lands when the vault's review windows
+  // move under it (a Settings change). It is not re-applied on mount, or the
+  // deep link read above would be overwritten a moment after it was applied.
+  const previousBasePeriod = useRef(basePeriod);
   useEffect(() => {
+    if (previousBasePeriod.current === basePeriod) return;
+    previousBasePeriod.current = basePeriod;
     setPeriod(basePeriod);
   }, [basePeriod]);
 
@@ -166,8 +221,6 @@ function ReviewPageFor() {
 
   // Said only while the calendar-current period is still closed: once the window
   // opens the page is already on that period and there is nothing to wait for.
-  // `reviewOpensAt` answers a Result; a period the engine cannot place simply
-  // shows no note rather than a sentence with an empty date in it.
   const windowNote = useMemo(() => {
     if (!snapshot || calendarCurrent === basePeriod) return null;
     const opensAt = reviewOpensAt(
@@ -181,26 +234,29 @@ function ReviewPageFor() {
   }, [availability, basePeriod, cadence, calendarCurrent, snapshot, weekStartDay]);
 
   /**
-   * The daily review is one general review: it has a single `overall` scope, no
-   * area sections, and it deliberately ignores the title-bar area lens.
+   * The daily review is one general review: it has a single `overall` page and
+   * deliberately ignores the title-bar area lens.
    */
   const isDaily = cadence === "daily";
 
-  // Active scope: overall when daily/overview/unassigned/non-domain, domain slug
-  // otherwise.
-  const activeScope: "overall" | string = useMemo(() => {
-    if (isDaily) return "overall";
-    if (!lens || lens.kind !== "domain" || !lens.slug) return "overall";
-    return lens.slug;
-  }, [isDaily, lens]);
-
-  // The live areas: the checklist's rows, and the set the life review is gated
-  // on. The base `life` area is the whole-vault container, not a scoped review,
-  // so `unlockedAreas` leaves it out.
+  // The live areas: the tabs beside Overall, and the set the life review is
+  // gated on. The base `life` area is the whole-vault container, not an area
+  // review, so `unlockedAreas` leaves it out.
   const liveAreas = useMemo(
     () => (snapshot ? unlockedAreas(snapshot.domains) : []),
     [snapshot],
   );
+
+  // Active page: the lens's area when it is a live area, otherwise Overall.
+  // Daily always reads Overall. This is also the tab selection: there is no
+  // second source of truth.
+  const activeScope: "overall" | string = useMemo(() => {
+    if (isDaily) return "overall";
+    if (!lens || lens.kind !== "domain" || !lens.slug) return "overall";
+    return liveAreas.some((area) => area.slug === lens.slug)
+      ? lens.slug
+      : "overall";
+  }, [isDaily, lens, liveAreas]);
 
   const activeDomainName = useMemo(() => {
     if (activeScope === "overall") return null;
@@ -210,25 +266,21 @@ function ReviewPageFor() {
     );
   }, [activeScope, snapshot]);
 
-  // A load for a period the operator has already left must not land in the editor.
+  // A load for a page the operator has already left must not land in the editor.
   const loadToken = useRef(0);
-  // The same, for the background read below: it is a second door onto the file,
-  // so it gets its own token rather than disturbing the page's own load.
+  // The same, for the background read below: it is a second door onto the page.
   const refreshToken = useRef(0);
-  // The period currently on screen, for a read that resolves after a move.
   const periodRef = useRef(period);
+  const scopeRef = useRef(activeScope);
   useEffect(() => {
     periodRef.current = period;
   }, [period]);
-  // The record as last rendered, so a background read can tell the empty state
-  // (no file, no editor, nothing to lose) from a page that holds a review.
-  const recordRef = useRef<ReviewRecord | null>(null);
   useEffect(() => {
-    recordRef.current = record;
-  }, [record]);
-  // The box as last rendered. A background read lands asynchronously, so the
-  // decision about the operator's text has to be made against what the box holds
-  // when the answer arrives, not against what it held when the read started.
+    scopeRef.current = activeScope;
+  }, [activeScope]);
+  // The page as last rendered, so a background read can tell the empty state
+  // (a page nobody started) from a page that holds prose.
+  const pageRef = useRef<ReviewPageBody | null>(null);
   const draftRef = useRef(draft);
   const savedBodyRef = useRef(savedBody);
   useEffect(() => {
@@ -237,22 +289,57 @@ function ReviewPageFor() {
   useEffect(() => {
     savedBodyRef.current = savedBody;
   }, [savedBody]);
-  // Writes go through here one at a time, in the order the page asked for them, so
-  // a period is never read before the write that belongs to it has landed.
+  // Writes go through here one at a time, in the order the page asked for them,
+  // so a page is never read before the write that belongs to it has landed.
   const queue = useRef<Promise<void>>(Promise.resolve());
   // Bumped by every mutation this page starts. A background read that began
-  // before the bump must not adopt its answer: the file it read is older than
-  // what the page itself just wrote, and adopting it would put a stale body back
-  // in the box over the operator's own edit.
+  // before the bump must not adopt its answer.
   const fileEpoch = useRef(0);
-  // The newest draft that still has to reach the vault, tagged with its period.
-  // Held in a ref rather than in state because a blur or an unmount flushes it
-  // outside any render.
-  const unsaved = useRef<{ period: string; body: string } | null>(null);
-  const refused = useRef<{ period: string; body: string } | null>(null);
+  // The newest draft that still has to reach the vault, tagged with its page.
+  const unsaved = useRef<{
+    key: string;
+    period: string;
+    scope: string;
+    body: string;
+  } | null>(null);
+  const refused = useRef<{
+    key: string;
+    period: string;
+    scope: string;
+    body: string;
+  } | null>(null);
+  // A write raced another writer. The draft is kept, autosave is paused until
+  // the operator reloads: sending the freshly-read rev with the old draft would
+  // land the clobber this whole guard exists to stop.
+  const conflictRef = useRef(false);
+  // Roving focus for the tab row: select-then-focus, never Ctrl+Tab (the chat
+  // strip owns that).
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  const loadRecord = useCallback(
-    async (targetPeriod: string) => {
+  const adoptPage = useCallback(
+    (next: ReviewPageBody, targetPeriod: string, targetScope: string) => {
+      pageRef.current = next;
+      setPage(next);
+      const body = asHeld(next.bodyMarkdown);
+      draftRef.current = body;
+      savedBodyRef.current = body;
+      setDraft(body);
+      setSavedBody(body);
+      setLoadedKey(pageKey(targetPeriod, targetScope));
+      conflictRef.current = false;
+      setConflict(false);
+    },
+    [],
+  );
+
+  /**
+   * Load one period and one page, with the notebook summary beside it.
+   *
+   * A period with no notebook is an empty state, not an error: the two ways to
+   * start it are the page's own empty state.
+   */
+  const loadView = useCallback(
+    async (targetPeriod: string, targetScope: string) => {
       const token = ++loadToken.current;
       // A load replaces the whole page state; a background read that began
       // before it must not land on top of it afterwards.
@@ -260,162 +347,226 @@ function ReviewPageFor() {
       setLoading(true);
       setError(null);
       try {
-        const result = await api().reviewGet(cadence, targetPeriod);
+        const result = await api().reviewNotebookGet(cadence, targetPeriod);
         if (token !== loadToken.current) return;
-        if (result.ok) {
-          const body = asHeld(result.value.bodyMarkdown);
-          setRecord(result.value);
-          setDraft(body);
-          setSavedBody(body);
-        } else if (/not found/i.test(result.error)) {
-          // An empty state, not an error: a period nobody has reviewed yet.
-          setRecord(null);
+        if (!result.ok) {
+          if (/not found/i.test(result.error)) {
+            setNotebook(null);
+            setPage(null);
+            pageRef.current = null;
+            draftRef.current = "";
+            savedBodyRef.current = "";
+            setDraft("");
+            setSavedBody("");
+            setLoadedKey(pageKey(targetPeriod, targetScope));
+            conflictRef.current = false;
+            setConflict(false);
+          } else {
+            setError(result.error);
+            setNotebook(null);
+            setPage(null);
+            setLoadedKey(pageKey(targetPeriod, targetScope));
+          }
+          return;
+        }
+        setNotebook(result.value);
+        const pageResult = await api().reviewPageGet(
+          cadence,
+          targetPeriod,
+          targetScope,
+        );
+        if (token !== loadToken.current) return;
+        if (pageResult.ok) {
+          adoptPage(pageResult.value, targetPeriod, targetScope);
+        } else if (/not found/i.test(pageResult.error)) {
+          // The notebook exists but this page's file is gone: the page's own
+          // empty state offers to make it again.
+          pageRef.current = null;
+          setPage(null);
+          draftRef.current = "";
+          savedBodyRef.current = "";
           setDraft("");
           setSavedBody("");
+          setLoadedKey(pageKey(targetPeriod, targetScope));
         } else {
-          setError(result.error);
-          setRecord(null);
+          setError(pageResult.error);
+          pageRef.current = null;
+          setPage(null);
+          setLoadedKey(pageKey(targetPeriod, targetScope));
         }
-        setLoadedPeriod(targetPeriod);
       } catch (err) {
         if (token !== loadToken.current) return;
         setError(err instanceof Error ? err.message : String(err));
-        setLoadedPeriod(targetPeriod);
+        setLoadedKey(pageKey(targetPeriod, targetScope));
       } finally {
         if (token === loadToken.current) setLoading(false);
       }
     },
-    [cadence],
+    [adoptPage, cadence],
   );
 
-  useEffect(() => {
-    setNotice(null);
-    refused.current = null;
-    unsaved.current = null;
-    void loadRecord(period);
-  }, [loadRecord, period]);
-
   /**
-   * Re-read the review this page is on, for a change it did not make itself.
-   *
-   * The reported case is the companion finishing an interview: it writes the
-   * report and marks an area — or the life review — done with its own tool calls
-   * in the main process, so this page made no IPC call the answer could re-render
-   * it from. The vault's change signal is the only announcement that reaches the
-   * renderer, and this background read is what turns it into "Done" on the
-   * checklist, and into the filled report in the box, while the page is already
-   * open. Before this, the row only flipped — and the box only showed the filled
-   * review — after the operator navigated away and back.
-   *
-   * It is deliberately NOT `loadRecord`. This is a background read: it never
-   * shows a spinner and never puts an error banner over a page that is still
-   * readable. It takes the box's body out of the file when there is nothing in
-   * the box to lose — a page that had no file at all, or a box the operator has
-   * not changed since its last save — because the agent's report has to appear
-   * where the operator is looking, not one navigation later.
-   *
-   * The one case that overrides an unsaved draft is a finished file: once the
-   * review is locked the box is read-only and a write is refused, so there is no
-   * longer any saving the operator's text. Keeping a draft that can never reach
-   * the vault on screen, while the file holds the final report, is exactly the
-   * stale document this page is supposed to stop showing.
+   * Re-read the open page and the notebook summary, for a change this page did
+   * not make itself (the companion finishing an interview writes through its own
+   * tool calls in main). Only the open page is re-read.
    */
-  const refreshRecord = useCallback(
-    async (targetPeriod: string) => {
+  const refreshView = useCallback(
+    async (targetPeriod: string, targetScope: string) => {
       // The write the operator's own autosave queued has to land first, or the
-      // read answers with the file as it stood before their last keystroke.
+      // read answers with the page as it stood before their last keystroke.
       await queue.current;
-      // Captured after the queue has drained, so only a write that starts while
-      // this read is in flight can invalidate it.
       const epoch = fileEpoch.current;
       const token = ++refreshToken.current;
       try {
-        const result = await api().reviewGet(cadence, targetPeriod);
+        const notebookResult = await api().reviewNotebookGet(
+          cadence,
+          targetPeriod,
+        );
         if (token !== refreshToken.current) return;
-        // A read for a period the operator has already left must not land.
         if (periodRef.current !== targetPeriod) return;
+        if (notebookResult.ok) setNotebook(notebookResult.value);
+        const result = await api().reviewPageGet(
+          cadence,
+          targetPeriod,
+          targetScope,
+        );
+        if (token !== refreshToken.current) return;
+        if (periodRef.current !== targetPeriod) return;
+        if (scopeRef.current !== targetScope) return;
         // A write the page started after this read began means the answer is
-        // older than the file. Keeping the page's own newer state is the point;
-        // the write that bumped the epoch updated the box from its own answer.
+        // older than the page. Keeping the page's own newer state is the point.
         if (fileEpoch.current !== epoch) return;
         if (!result.ok) return;
         const next = result.value;
-        const wasEmpty = recordRef.current === null;
-        // Read after the await: the operator may have typed while the read was
-        // in flight, and their unsaved sentence outranks the agent's body.
+        const previous = pageRef.current;
+        const wasMissing = previous === null || previous.status === "missing";
         const boxIsClean = sameNote(draftRef.current, savedBodyRef.current);
-        recordRef.current = next;
-        setRecord(next);
-        if (wasEmpty || next.locked === true || boxIsClean) {
+        pageRef.current = next;
+        setPage(next);
+        if (wasMissing || next.locked || next.status === "missing" || boxIsClean) {
           const body = asHeld(next.bodyMarkdown);
           draftRef.current = body;
           savedBodyRef.current = body;
           setDraft(body);
           setSavedBody(body);
-          setLoadedPeriod(targetPeriod);
-          // The file is what the box holds now; nothing is left to autosave.
+          setLoadedKey(pageKey(targetPeriod, targetScope));
+          // The page is what the box holds now; nothing is left to autosave.
           unsaved.current = null;
+          conflictRef.current = false;
+          setConflict(false);
+        } else if (previous && previous.rev !== next.rev) {
+          // The page moved on while the operator was typing. Keep the draft, but
+          // stop the next autosave from writing the old text over the new rev.
+          conflictRef.current = true;
+          setConflict(true);
+          refused.current = {
+            key: pageKey(targetPeriod, targetScope),
+            period: targetPeriod,
+            scope: targetScope,
+            body: draftRef.current,
+          };
         }
       } catch {
-        // A background read that fails changes nothing: the page keeps the
-        // record it is showing, and the next change tries again.
+        // A background read that fails changes nothing: the page keeps the page
+        // it is showing, and the next change tries again.
       }
     },
     [cadence],
   );
 
   // The vault's change signal is the only way this page hears about a write it
-  // did not make: a companion or paired agent marking a scope done is a tool
-  // call in the main process, never an IPC call from this renderer. Subscribing
-  // is what makes the checklist live.
+  // did not make. Subscribing is what makes the tabs' statuses and the open box
+  // live while the companion works.
   useEffect(() => {
     let stop: (() => void) | undefined;
     try {
       stop = api().onVaultDataChanged(() => {
-        void refreshRecord(periodRef.current);
+        void refreshView(periodRef.current, scopeRef.current);
       });
     } catch {
-      // No bridge (a harness page, or a window opened before preload): the
-      // checklist still updates on the next period change or page load.
       stop = undefined;
     }
     return () => stop?.();
-  }, [refreshRecord]);
+  }, [refreshView]);
 
   /**
-   * Write one review. Answers `saved` when the vault holds the body, `refused`
+   * Write one page. Answers `saved` when the vault holds the page, `refused`
    * when the vault declined it, and `failed` when the write did not complete.
    */
-  const writeReview = useCallback(
-    async (targetPeriod: string, body: string): Promise<"saved" | "refused" | "failed"> => {
+  const writePage = useCallback(
+    async (
+      key: string,
+      targetPeriod: string,
+      targetScope: string,
+      body: string,
+    ): Promise<"saved" | "refused" | "failed"> => {
       const run = async (): Promise<"saved" | "refused" | "failed"> => {
-        // This write is about to change the file: a background read already in
+        // A conflicted box stays paused until Reload: writing now would send the
+        // newly-read rev with the operator's old text and win the race.
+        if (conflictRef.current) {
+          refused.current = { key, period: targetPeriod, scope: targetScope, body };
+          return "refused";
+        }
+        // This write is about to change the page: a background read already in
         // flight is now older than the page's own state.
         fileEpoch.current += 1;
         setSaving(true);
         try {
-          const result = await api().reviewWrite(cadence, targetPeriod, body);
+          const current = pageRef.current;
+          const baseRev =
+            current && current.scope === targetScope ? current.rev : 0;
+          const result = await api().reviewPageWrite(
+            cadence,
+            targetPeriod,
+            targetScope,
+            body,
+            baseRev,
+          );
           if (!result.ok) {
-            setError(result.error);
-            refused.current = { period: targetPeriod, body };
+            if (result.code === "CONFLICT") {
+              conflictRef.current = true;
+              setConflict(true);
+            } else {
+              setError(result.message);
+            }
+            refused.current = {
+              key,
+              period: targetPeriod,
+              scope: targetScope,
+              body,
+            };
             return "refused";
           }
           setError(null);
+          setConflict(false);
+          conflictRef.current = false;
           refused.current = null;
-          setRecord(result.value);
-          // The file is the truth, and the box takes the body the vault actually
+          pageRef.current = result.page;
+          setPage(result.page);
+          setNotebook((currentNotebook) =>
+            currentNotebook
+              ? withPageSummary(currentNotebook, result.page)
+              : currentNotebook,
+          );
+          // The page is the truth, and the box takes the body the vault actually
           // holds back only when the two really are different notes — handing the
           // answer back unconditionally re-cuts the paragraph under the caret.
-          const written = asHeld(result.value.bodyMarkdown);
+          const written = asHeld(result.page.bodyMarkdown);
+          savedBodyRef.current = written;
           setSavedBody(written);
-          setDraft((current) => {
-            if (!sameNote(current, body)) return current;
-            return sameNote(current, written) ? current : written;
+          setDraft((currentDraft) => {
+            if (!sameNote(currentDraft, body)) return currentDraft;
+            return sameNote(currentDraft, written) ? currentDraft : written;
           });
           return "saved";
         } catch (err) {
           setError(err instanceof Error ? err.message : String(err));
-          refused.current = { period: targetPeriod, body };
+          refused.current = {
+            key,
+            period: targetPeriod,
+            scope: targetScope,
+            body,
+          };
           return "failed";
         } finally {
           setSaving(false);
@@ -437,10 +588,10 @@ function ReviewPageFor() {
     const job = unsaved.current;
     if (!job) return "saved";
     unsaved.current = null;
-    const outcome = await writeReview(job.period, job.body);
+    const outcome = await writePage(job.key, job.period, job.scope, job.body);
     if (outcome !== "saved") unsaved.current = job;
     return outcome;
-  }, [writeReview]);
+  }, [writePage]);
 
   const onDraftChange = useCallback(
     (next: string) => {
@@ -449,28 +600,39 @@ function ReviewPageFor() {
       // Recorded here rather than in the effect below, so a blur that beats the
       // next paint still finds the draft it has to save.
       unsaved.current =
-        loadedPeriod === period && !sameNote(next, savedBody)
-          ? { period, body: next }
+        loadedKey === pageKey(period, activeScope) &&
+        !sameNote(next, savedBody)
+          ? {
+              key: pageKey(period, activeScope),
+              period,
+              scope: activeScope,
+              body: next,
+            }
           : null;
     },
-    [loadedPeriod, period, savedBody],
+    [activeScope, loadedKey, period, savedBody],
   );
 
   useEffect(() => {
-    if (loadedPeriod !== period) return;
+    if (loadedKey !== pageKey(period, activeScope)) return;
+    if (!page || page.status === "missing") {
+      unsaved.current = null;
+      return;
+    }
     if (sameNote(draft, savedBody)) {
       unsaved.current = null;
       return;
     }
-    unsaved.current = { period, body: draft };
+    const key = pageKey(period, activeScope);
+    unsaved.current = { key, period, scope: activeScope, body: draft };
     const held = refused.current;
-    if (held && held.period === period && held.body === draft) return;
+    if (held && held.key === key && held.body === draft) return;
     if (saving) return;
     const timer = window.setTimeout(() => {
       void flush();
     }, AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [draft, savedBody, loadedPeriod, period, saving, flush]);
+  }, [activeScope, draft, flush, loadedKey, page, period, savedBody, saving]);
 
   // The page itself can go away with a draft still pending: a closed window is
   // the one exit that is not gated on the write.
@@ -486,6 +648,22 @@ function ReviewPageFor() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flush]);
+
+  // A period or page change writes the page being left first. A write that
+  // cannot land holds the operator on the page it belongs to: nobody knows what
+  // reached the disk. The load effect is keyed on the period and the page only;
+  // the callbacks read the render they run in.
+  const loadForSelection = useCallback(async () => {
+    setNotice(null);
+    setError(null);
+    const outcome = await flush();
+    if (outcome === "failed") return false;
+    await loadView(periodRef.current, scopeRef.current);
+    return true;
+  }, [flush, loadView]);
+  useEffect(() => {
+    void loadForSelection();
+  }, [loadForSelection, period, activeScope]);
 
   const loadSkill = useCallback(async () => {
     try {
@@ -526,13 +704,13 @@ function ReviewPageFor() {
     }
   }, [cadence, skillDraft]);
 
-  /** The snapshot pass, said as one line the operator can check. */
+  /** The figure pass, said as one line the operator can check. */
   const describeSnapshots = useCallback(
     (result: ReviewPrepopulateResult): string | null => {
       const parts: string[] = [];
       if (result.applied > 0) {
         parts.push(
-          `filled ${result.applied} snapshot${result.applied === 1 ? "" : "s"}`,
+          `filled ${result.applied} figure${result.applied === 1 ? "" : "s"}`,
         );
       }
       if (result.planted.length > 0) {
@@ -543,9 +721,7 @@ function ReviewPageFor() {
         parts.push(`${outcome.title} could not run: ${outcome.reason}`);
       }
       // A skip is not a clean start: the rule was meant to write and had no
-      // section to write into, so the operator is told which rule found nothing
-      // and where it looked. Silence here would let a daily Start that filled
-      // nothing read as a review the app had already filled for them.
+      // heading to write into, so the operator is told which rule found nothing.
       const skipped = result.outcomes.filter((o) => o.status === "skipped");
       for (const outcome of skipped) {
         parts.push(`Skipped: ${outcome.title} — ${outcome.reason}`);
@@ -555,43 +731,65 @@ function ReviewPageFor() {
     [],
   );
 
+  /** Read the open page again without a spinner, and put it in the box. */
+  const reloadPage = useCallback(
+    async (targetPeriod: string, targetScope: string) => {
+      const result = await api().reviewPageGet(
+        cadence,
+        targetPeriod,
+        targetScope,
+      );
+      if (!result.ok) return null;
+      adoptPage(result.value, targetPeriod, targetScope);
+      return result.value;
+    },
+    [adoptPage, cadence],
+  );
+
+  /** Read the notebook summary again, for the tabs and the gate. */
+  const reloadNotebook = useCallback(
+    async (targetPeriod: string) => {
+      const result = await api().reviewNotebookGet(cadence, targetPeriod);
+      if (result.ok) setNotebook(result.value);
+      return result.ok ? result.value : null;
+    },
+    [cadence],
+  );
+
   /**
-   * Create the period's review file and open it, without starting an interview.
-   *
-   * A review is normally born with its interview, but the document is the
-   * operator's and they may want to write it themselves. Doing it here rather
-   * than letting an edit imply it is deliberate: the vault refuses a write to a
-   * period with no review, and a page that offered a writing line it could not
-   * save would report "Review file not found" under every keystroke.
+   * Create one page (and the notebook, when the period has none) and open it,
+   * without starting an interview.
    */
+  const ensurePage = useCallback(
+    async (scope: "overall" | string) => {
+      fileEpoch.current += 1;
+      const ensured = await api().reviewPageEnsure(cadence, period, scope);
+      if (!ensured.ok) {
+        setError(ensured.error);
+        return null;
+      }
+      setNotebook(ensured.value);
+      return reloadPage(period, scope);
+    },
+    [cadence, period, reloadPage],
+  );
+
   const onOpenDocument = useCallback(async () => {
     if (!snapshot) return;
-    fileEpoch.current += 1;
     setBusy(true);
     setError(null);
     try {
-      const ensure = await api().reviewEnsure(cadence, period, activeScope);
-      if (!ensure.ok) {
-        setError(ensure.error);
-        return;
-      }
-      setRecord(ensure.value);
-      setDraft(asHeld(ensure.value.bodyMarkdown));
-      setSavedBody(asHeld(ensure.value.bodyMarkdown));
-      setLoadedPeriod(period);
+      await ensurePage(activeScope);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [activeScope, cadence, period, snapshot]);
+  }, [activeScope, ensurePage, snapshot]);
 
   /**
-   * Start one scope of this review — the whole review, or one area's part of it.
-   *
-   * `scope` is a parameter rather than the page's `activeScope` on purpose: the
-   * checklist sets the lens and then starts, and the start has to be for the
-   * scope the operator pressed even though the lens lands on the next render.
+   * Start one page's interview: create the page, run its figures, then ask for
+   * the session. The document is open and filled whatever the agent is doing.
    */
   const runStart = useCallback(
     async (scope: "overall" | string) => {
@@ -601,21 +799,13 @@ function ReviewPageFor() {
       setNotice(null);
       try {
         // 0. Whatever the operator has already typed reaches the vault first: the
-        //    snapshot pass rewrites the body, and a draft it never saw would go
+        //    figure pass rewrites the page, and a draft it never saw would go
         //    under it.
         if ((await flush()) === "failed") return;
 
-        // 1. The document exists. Everything else is optional next to this.
-        fileEpoch.current += 1;
-        const ensure = await api().reviewEnsure(cadence, period, scope);
-        if (!ensure.ok) {
-          setError(ensure.error);
-          return;
-        }
-        setRecord(ensure.value);
-        setDraft(asHeld(ensure.value.bodyMarkdown));
-        setSavedBody(asHeld(ensure.value.bodyMarkdown));
-        setLoadedPeriod(period);
+        // 1. The page exists. Everything else is optional next to this.
+        const fresh = await ensurePage(scope);
+        if (!fresh) return;
 
         // 2. The figures the cadence's rules ask for, filled by the app rather
         //    than the model, so they are there whether or not an agent is.
@@ -623,22 +813,15 @@ function ReviewPageFor() {
         const filled = await api().reviewPrepopulate(cadence, period, scope);
         let filledLine: string | null = null;
         if (filled.ok) {
-          if (filled.value.applied > 0 || filled.value.planted.length > 0) {
-            setRecord((current) =>
-              current ? { ...current, bodyMarkdown: filled.value.bodyMarkdown } : current,
-            );
-            setDraft(asHeld(filled.value.bodyMarkdown));
-            setSavedBody(asHeld(filled.value.bodyMarkdown));
-          }
+          await reloadPage(period, scope);
+          await reloadNotebook(period);
           filledLine = describeSnapshots(filled.value);
         } else {
-          filledLine = `Snapshots could not run: ${filled.error}`;
+          filledLine = `Figures could not run: ${filled.error}`;
         }
         setNotice(filledLine);
 
         // 3. The interview, which needs the agent and is the only part that does.
-        //    A gateway that is down leaves the document open and filled, and says
-        //    so as the one thing that failed.
         const start = await api().reviewStartOrResume(cadence, period, scope);
         if (!start.ok) {
           setError(start.error);
@@ -648,26 +831,19 @@ function ReviewPageFor() {
         chatDock.requestSession({
           id: start.value.sessionId,
           kickoff,
-          // The row the gateway just made (or the resumed one): the dock lists
-          // this review's chat in Chats under its name from the first paint,
-          // rather than waiting for the next session-list read — which does not
-          // happen until the interview's turn settles, so the chat was missing
-          // from the sidebar for the whole run.
           session: start.value.session,
           icon: "review",
         });
         setNotice(
           [
             filledLine,
-            start.value.created ? "Started this review's chat." : "Opened this review's chat.",
+            start.value.created
+              ? "Started this review's chat."
+              : "Opened this review's chat.",
           ]
             .filter(Boolean)
             .join(" · ") || null,
         );
-        // Bring the area's own section into view. The file is one long document
-        // and the interview is about the section that was just started, so
-        // opening on the top of the file would hide the very part in play.
-        if (!isDaily && scope !== "overall") setScrollToArea(scope);
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -679,49 +855,34 @@ function ReviewPageFor() {
       cadence,
       chatDock,
       describeSnapshots,
+      ensurePage,
       flush,
-      isDaily,
       period,
       refresh,
+      reloadNotebook,
+      reloadPage,
       snapshot,
     ],
   );
 
-  /** A checklist row: set the lens first, then start that scope's review. */
-  const startFromRail = useCallback(
-    async (scope: "overall" | string) => {
-      await setActiveSlug(scope === "overall" ? null : scope);
-      await runStart(scope);
-    },
-    [runStart, setActiveSlug],
-  );
-
-  /** The scope line's way back to the whole-life review: no session is started. */
-  // The area section a checked-out row asked for, brought into view once the
-  // document has committed the body that holds it. Best effort by design: the
-  // editor is a whole-file box, so the heading is found in the rendered blocks
-  // and scrolled to; a heading that is not drawn is simply not scrolled to.
-  useEffect(() => {
-    if (!scrollToArea) return;
-    const area = liveAreas.find((item) => item.slug === scrollToArea);
-    if (!area) {
-      setScrollToArea(null);
+  const startFromEmpty = useCallback(() => {
+    // No notebook: the page-level empty state starts the life review (daily: its
+    // one review). An area tab with no page starts that area's page.
+    if (!notebook) {
+      void runStart("overall");
       return;
     }
-    const frame = window.requestAnimationFrame(() => {
-      const box = document.querySelector('[data-testid="review-editor"]');
-      if (box) {
-        const name = area.meta.name.trim().toLowerCase();
-        const heading = Array.from(box.querySelectorAll("h1, h2, h3, h4")).find(
-          (element) => (element.textContent ?? "").trim().toLowerCase() === name,
-        );
-        const target = heading?.closest("[data-note-block]") ?? heading;
-        target?.scrollIntoView({ block: "start", behavior: "smooth" });
-      }
-      setScrollToArea(null);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [scrollToArea, liveAreas, draft, loadedPeriod, period]);
+    void runStart(activeScope);
+  }, [activeScope, notebook, runStart]);
+
+  /** Adopt the page after a conflict — the operator's draft is given up. */
+  const reloadAfterConflict = useCallback(async () => {
+    conflictRef.current = false;
+    setConflict(false);
+    refused.current = null;
+    unsaved.current = null;
+    await loadView(period, activeScope);
+  }, [activeScope, loadView, period]);
 
   const onMarkDone = useCallback(async () => {
     if (!snapshot) return;
@@ -736,43 +897,31 @@ function ReviewPageFor() {
         setError(result.error);
         return;
       }
-      const after = result.value;
-      const allDoneNow =
-        liveAreas.length === 0 ||
-        liveAreas.every((area) => after.scopes[area.slug]?.status === "done");
-      const wasAllDone =
-        liveAreas.length === 0 ||
-        liveAreas.every((area) => record?.scopes[area.slug]?.status === "done");
-      if (isDaily) {
-        setNotice("Review complete.");
-      } else if (scope === "overall") {
-        setNotice("Life review complete.");
-      } else {
-        const name =
-          liveAreas.find((area) => area.slug === scope)?.meta.name ?? "Area";
-        setNotice(
-          allDoneNow && !wasAllDone
-            ? "Every area is reviewed — the life review is ready."
-            : `${name} review complete.`,
-        );
-      }
+      setNotice(
+        isDaily
+          ? "Review complete."
+          : scope === "overall"
+            ? "Life review complete."
+            : `${activeDomainName ?? "Area"} review complete.`,
+      );
       await refresh();
-      await loadRecord(period);
+      await reloadNotebook(period);
+      await reloadPage(period, scope);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   }, [
+    activeDomainName,
     activeScope,
     cadence,
     flush,
     isDaily,
-    liveAreas,
-    loadRecord,
     period,
-    record,
     refresh,
+    reloadNotebook,
+    reloadPage,
     snapshot,
   ]);
 
@@ -788,13 +937,22 @@ function ReviewPageFor() {
         return;
       }
       await refresh();
-      await loadRecord(period);
+      await reloadNotebook(period);
+      await reloadPage(period, activeScope);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [cadence, loadRecord, period, refresh, snapshot]);
+  }, [
+    activeScope,
+    cadence,
+    period,
+    refresh,
+    reloadNotebook,
+    reloadPage,
+    snapshot,
+  ]);
 
   const onPlanNext = useCallback(async () => {
     if (!snapshot) return;
@@ -807,7 +965,11 @@ function ReviewPageFor() {
     setBusy(true);
     setError(null);
     try {
-      const plan = await api().planningStartOrResume(cadence, next.value, activeScope);
+      const plan = await api().planningStartOrResume(
+        cadence,
+        next.value,
+        activeScope,
+      );
       if (!plan.ok) {
         setError(plan.error);
         return;
@@ -816,8 +978,6 @@ function ReviewPageFor() {
       chatDock.requestSession({
         id: plan.value.sessionId,
         kickoff,
-        // The plan chat's own row, so the dock lists it in Chats from the first
-        // paint instead of waiting for the next session-list read.
         session: plan.value.session,
         icon: "plan",
       });
@@ -833,8 +993,7 @@ function ReviewPageFor() {
     async (target: string) => {
       if (target === period) return;
       // The period being left is written first, so prose never lands on another
-      // week. A write that *failed* holds the operator here: nobody knows what
-      // reached the disk.
+      // week. A write that *failed* holds the operator here.
       if ((await flush()) === "failed") return;
       setPeriod(target);
     },
@@ -849,8 +1008,7 @@ function ReviewPageFor() {
   const onNext = useCallback(() => {
     const next = nextPeriod(cadence, period, weekStartDay);
     if (!next.ok) return;
-    // Next stops at the latest open period: anything after it has no window yet,
-    // so stepping there would open a review the vault will not let anyone write.
+    // Next stops at the latest open period: anything after it has no window.
     if (next.value > basePeriod) return;
     void goToPeriod(next.value);
   }, [basePeriod, cadence, goToPeriod, period, weekStartDay]);
@@ -863,6 +1021,49 @@ function ReviewPageFor() {
     [goToPeriod, period],
   );
 
+  // A `?scope=` and/or `?period=` on the URL is how an external link addresses
+  // a page: the scope selects a page, the period selects which review. Both are
+  // applied once, then stripped with `replace` so no other URL state exists and
+  // a back press does not re-apply them. On a cold open the period is already
+  // in state from `linkedPeriod`; this lays it down for a link that lands while
+  // the page is mounted (a second click on an Analytics period header).
+  useEffect(() => {
+    if (!snapshot) return;
+    const params = new URLSearchParams(location.search);
+    const rawPeriod = params.get("period");
+    const requestedScope = isDaily ? null : params.get("scope");
+    if (!rawPeriod && !requestedScope) return;
+    if (rawPeriod) {
+      const bounds = periodBounds(cadence, rawPeriod, weekStartDay);
+      if (bounds.ok && rawPeriod <= basePeriod) setPeriod(rawPeriod);
+    }
+    if (requestedScope) {
+      const valid =
+        requestedScope === "overall" ||
+        liveAreas.some((area) => area.slug === requestedScope);
+      const alreadyActive =
+        requestedScope === "overall"
+          ? lens.kind === "overview"
+          : lens.kind === "domain" && lens.slug === requestedScope;
+      if (valid && !alreadyActive) {
+        void setActiveSlug(requestedScope === "overall" ? null : requestedScope);
+      }
+    }
+    navigate({ pathname: location.pathname, search: "" }, { replace: true });
+  }, [
+    basePeriod,
+    cadence,
+    isDaily,
+    lens,
+    liveAreas,
+    location.pathname,
+    location.search,
+    navigate,
+    setActiveSlug,
+    snapshot,
+    weekStartDay,
+  ]);
+
   const isOnBasePeriod = period === basePeriod;
   const title = useMemo(
     () => periodTitle(cadence, period, weekStartDay),
@@ -870,50 +1071,81 @@ function ReviewPageFor() {
   );
   /**
    * The page's heading: the period alone. The cadence is the page's eyebrow, so
-   * repeating it in a title would say the same thing twice — the daily journal
-   * heads its page with the day, not with the words "Daily Note".
+   * repeating it in a title would say the same thing twice.
    */
   const headline = useMemo(
     () => periodLabel(cadence, period, weekStartDay),
     [cadence, period, weekStartDay],
   );
 
-  /**
-   * The eyebrow names the wing and the cadence's own page: "Review / Daily"
-   * for the daily review, "Review / Weekly" for the weekly one, and so on.
-   * The cadence is already one of the review page names, so the label is its
-   * capitalised form.
-   */
-  const cadenceLabel =
-    cadence.charAt(0).toUpperCase() + cadence.slice(1);
+  const cadenceLabel = cadence.charAt(0).toUpperCase() + cadence.slice(1);
 
-  if (!cadenceParam) {
-    return <Navigate to="/review/weekly" replace />;
-  }
+  /** The tab row: Overall first, then each live area, in the vault's order. */
+  const tabs = useMemo(() => {
+    if (isDaily) return [] as Array<{
+      scope: string;
+      label: string;
+      status: PageStatus;
+    }>;
+    const summaries = new Map(
+      (notebook?.pages ?? []).map((row) => [row.scope, row]),
+    );
+    const rows: Array<{ scope: string; label: string; status: PageStatus }> = [
+      {
+        scope: "overall",
+        label: "Overall",
+        status: summaries.get("overall")?.status ?? "missing",
+      },
+    ];
+    for (const area of liveAreas) {
+      const summary = summaries.get(area.slug);
+      rows.push({
+        scope: area.slug,
+        label: summary?.title ?? area.meta.name,
+        status: summary?.status ?? "missing",
+      });
+    }
+    return rows;
+  }, [isDaily, liveAreas, notebook]);
 
-  if (!snapshot) {
-    return <p className="muted">No vault open.</p>;
-  }
+  const pageReady = loadedKey === pageKey(period, activeScope);
+  const locked = notebook?.locked === true || page?.locked === true;
+  const areaStatus = useCallback(
+    (scope: string): PageStatus =>
+      (notebook?.pages.find((row) => row.scope === scope)?.status as
+        | PageStatus
+        | undefined) ?? "missing",
+    [notebook],
+  );
 
-  const locked = record?.locked === true;
-
-  // The life review is gated on the areas, and derived exactly as the rail derives
-  // it: a live area whose scope is not `done` gates the whole-life review, and a
-  // period with no file has nothing done, so it is gated too. No live areas means
+  // The life review is gated on the areas, and derived exactly as the rail
+  // derivation was: a live area whose page is not done gates the whole-life
+  // review, and a period with no notebook has nothing done. No live areas means
   // there is nothing to gate behind.
   const allAreasDone =
     liveAreas.length === 0 ||
-    liveAreas.every((area) => record?.scopes[area.slug]?.status === "done");
+    liveAreas.every((area) => areaStatus(area.slug) === "done");
   const lifeReviewGated =
     !isDaily && activeScope === "overall" && !allAreasDone;
   const lifeReviewGateHint = "Finish every area review first";
+  const doneCount = liveAreas.filter(
+    (area) => areaStatus(area.slug) === "done",
+  ).length;
 
-  // The first area whose review is not done: what the empty state's one button
-  // starts when the period has no file yet. When there are none — or no areas at
-  // all — that button is the life review's.
-  const firstUnfinishedArea = liveAreas.find(
-    (area) => record?.scopes[area.slug]?.status !== "done",
-  );
+  const progressText = useMemo(() => {
+    if (isDaily || !notebook) return null;
+    if (locked && areaStatus("overall") === "done") {
+      return "Review complete — read-only.";
+    }
+    if (allAreasDone) {
+      return "Every area is reviewed — the life review is ready";
+    }
+    return `${doneCount} of ${liveAreas.length} areas done · Life review unlocks when every area is done`;
+  }, [allAreasDone, areaStatus, doneCount, isDaily, liveAreas.length, locked, notebook]);
+
+  const pageMissing = page === null || page.status === "missing";
+  const showEditor = !loading && pageReady && notebook !== null && !pageMissing;
+  const showEmpty = !loading && pageReady && !showEditor;
 
   const markDoneLabel = isDaily
     ? "Mark review complete"
@@ -923,43 +1155,83 @@ function ReviewPageFor() {
 
   const emptyStartLabel = isDaily
     ? "Start the interview"
-    : firstUnfinishedArea
-      ? `Start the ${firstUnfinishedArea.meta.name} review`
-      : "Start the life review";
+    : !notebook || activeScope === "overall"
+      ? "Start the life review"
+      : `Start the ${activeDomainName ?? "area"} review`;
 
-  const startFromEmpty = () => {
-    if (isDaily) {
-      void runStart("overall");
-      return;
-    }
-    void startFromRail(firstUnfinishedArea?.slug ?? "overall");
-  };
+  const emptyPageText = !notebook
+    ? "No review for this period yet."
+    : activeScope === "overall"
+      ? "No review for this period yet."
+      : `No ${activeDomainName ?? "area"} review for this period yet.`;
 
-  const dirty = !sameNote(draft, savedBody);
+  const selectTab = useCallback(
+    async (scope: string) => {
+      if (scope === activeScope) return;
+      // The page being left is written first; a write that cannot land holds the
+      // switch, so its prose never lands on another area.
+      if ((await flush()) !== "saved") return;
+      await setActiveSlug(scope === "overall" ? null : scope);
+    },
+    [activeScope, flush, setActiveSlug],
+  );
+
+  const onTabKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = tabs.length - 1;
+      }
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const target = tabs[nextIndex];
+      if (!target) return;
+      void selectTab(target.scope);
+      window.requestAnimationFrame(() => {
+        tabRefs.current.get(target.scope)?.focus();
+      });
+    },
+    [selectTab, tabs],
+  );
+
+  const dirty = showEditor && !sameNote(draft, savedBody);
+  const heldRefusal =
+    refused.current !== null &&
+    refused.current.key === pageKey(period, activeScope) &&
+    refused.current.body === draft;
   const status = locked
     ? "Locked"
     : saving
       ? "Saving…"
       : dirty
-        ? refused.current?.period === period && refused.current.body === draft
+        ? heldRefusal
           ? "Not saved"
           : "Saving…"
-        : record
+        : showEditor
           ? "Saved"
           : "No review for this period yet";
 
+  if (!cadenceParam) {
+    return <Navigate to="/review/weekly" replace />;
+  }
+
+  if (!snapshot) {
+    return <p className="muted">No vault open.</p>;
+  }
+
   return (
-    <div
-      className={`review-page-layout${isDaily ? " review-page-layout--single" : ""}`}
-      data-testid="review-layout"
-    >
+    <div className="review-page-layout" data-testid="review-layout">
       <div className="review-page-layout__inner">
         <header className="review-page__header">
           {/* The page's name is the eyebrow, as on the Daily Journal: the period
               below is the page's one heading, so the cadence is not repeated as a
-              second title. Review names the wing before the cadence so the page
-              reads "Review / Weekly", not a bare "Weekly". The lock, while it is
-              on, is the page's one badge and rides the title row's trailing edge. */}
+              second title. */}
           <div className="review-page__title-row">
             <WingEyebrow page={cadenceLabel as EyebrowPage} wing="Review" />
             {locked ? (
@@ -968,11 +1240,7 @@ function ReviewPageFor() {
               </div>
             ) : null}
           </div>
-          {/* The period row: the journal's day row, at a period's scale. The two
-              step keys sit on the column's edges — wordless arrows, no frame, so
-              they read as the page's margins rather than as chrome — while the
-              period and its calendar are one block centred between them. Next
-              stops at the open period: a later one has no window to write. */}
+          {/* The period row: the journal's day row, at a period's scale. */}
           <div className="review-page__pager">
             <Button
               variant="ghost"
@@ -1013,9 +1281,6 @@ function ReviewPageFor() {
               <ChevronRight size={20} aria-hidden />
             </Button>
           </div>
-          {/* Why the page is on an earlier period than the calendar's: its window
-              has not opened. It rides in the header, above any error, because it
-              is context for the period on screen rather than a report about it. */}
           {windowNote ? (
             <p className="review-page__window" data-testid="review-window-note">
               {windowNote}
@@ -1033,207 +1298,267 @@ function ReviewPageFor() {
               {notice}
             </p>
           ) : null}
-
         </header>
 
         <div className="review-page">
-
-          {loading ? (
-            <p className="muted">Loading review…</p>
-          ) : !record ? (
-            // A period nobody has reviewed yet. There is no file to write into, so
-            // there is no box: the two ways to make one are the whole page.
-            <div className="review-page__empty" data-testid="review-empty">
-              <p className="muted">
-                {isDaily
-                  ? "No review for this period yet."
-                  : "No review for this period yet — pick an area in the checklist to start its review."}
-              </p>
-              <div className="review-page__actions">
-                <Button
-                  variant="primary"
-                  data-testid="review-start"
-                  onClick={startFromEmpty}
-                  disabled={busy}
+          {isDaily ? null : (
+            <div className="review-page__pages-nav">
+              {/* The status sentence leads, then the tab row sits straight on the
+                  document it selects between, so the strip reads as the page's own
+                  index rather than as chrome under the header. */}
+              {progressText ? (
+                <p
+                  className="review-page__progress"
+                  data-testid="review-progress"
+                  role="status"
                 >
-                  {busy ? "Starting…" : emptyStartLabel}
-                </Button>
-                <Button
-                  variant="outline"
-                  data-testid="review-open-document"
-                  onClick={onOpenDocument}
-                  disabled={busy}
-                >
-                  Write it myself
-                </Button>
+                  {progressText}
+                </p>
+              ) : null}
+              {/* The tab row is the scope selection. Roving tabIndex and the
+                  Arrow/Home/End keys match the studio's field strip; Ctrl+Tab is
+                  the chat dock's and is never claimed here. Six tabs wrap rather
+                  than scroll sideways, so no page hides. */}
+              <div
+                className="review-page__tabs"
+                role="tablist"
+                aria-label="Review pages"
+                data-testid="review-tabs"
+              >
+                {tabs.map((tab, index) => {
+                  const active = tab.scope === activeScope;
+                  return (
+                    <button
+                      key={tab.scope}
+                      ref={(element) => {
+                        if (element) tabRefs.current.set(tab.scope, element);
+                        else tabRefs.current.delete(tab.scope);
+                      }}
+                      type="button"
+                      role="tab"
+                      id={`review-tab-${tab.scope}`}
+                      aria-selected={active}
+                      aria-controls="review-page-panel"
+                      tabIndex={active ? 0 : -1}
+                      data-testid={`review-tab-${tab.scope}`}
+                      data-status={tab.status}
+                      data-scope={tab.scope}
+                      title={`${tab.label} — ${statusLabel(tab.status)}`}
+                      className={`review-page__tab${active ? " is-active" : ""}`}
+                      onClick={() => void selectTab(tab.scope)}
+                      onKeyDown={(event) => onTabKeyDown(event, index)}
+                    >
+                      <span
+                        className="review-page__tab-status"
+                        aria-hidden
+                        data-status={tab.status}
+                      >
+                        {tab.status === "done" ? "✓" : ""}
+                      </span>
+                      <span className="review-page__tab-label">{tab.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          ) : (
-            <>
-              {/* The box is the page: there is no second view of it to switch
-                  between, and no chrome above the prose — the checklist marks
-                  the scope and the autosave line sits under the box. */}
-              <div
-                className="review-page__editor"
-                  // The pointer leaving the box — for another pane, another app — is
-                  // the operator stepping away, so the review is written then rather
-                  // than at the end of the debounce. Moving between paragraphs stays
-                  // inside.
+          )}
+
+          <div
+            id="review-page-panel"
+            role={isDaily ? undefined : "tabpanel"}
+            aria-labelledby={isDaily ? undefined : `review-tab-${activeScope}`}
+            className="review-page__panel"
+          >
+            {loading || !pageReady ? (
+              <p className="muted">Loading review…</p>
+            ) : showEmpty ? (
+              // A period nobody has reviewed yet, or an area page nobody started:
+              // there is no box, so the two ways to make one are the page.
+              <div className="review-page__empty" data-testid="review-empty">
+                <p className="muted">{emptyPageText}</p>
+                <div className="review-page__actions">
+                  <Button
+                    variant="primary"
+                    data-testid="review-start"
+                    onClick={startFromEmpty}
+                    disabled={busy}
+                  >
+                    {busy ? "Starting…" : emptyStartLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    data-testid="review-open-document"
+                    onClick={onOpenDocument}
+                    disabled={busy}
+                  >
+                    Write it myself
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* The box is the page: one page at a time, keyed so switching
+                    tabs remounts blocks and caret cleanly. */}
+                {conflict ? (
+                  <div
+                    className="review-page__conflict"
+                    role="alert"
+                    data-testid="review-conflict"
+                  >
+                    <p>
+                      This page changed on disk while you were writing. Reload to
+                      read the latest version, then re-apply your text.
+                    </p>
+                    <Button
+                      variant="outline"
+                      data-testid="review-conflict-reload"
+                      onClick={() => void reloadAfterConflict()}
+                    >
+                      Reload
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div
+                  className="review-page__editor"
                   onBlur={(event) => {
                     if (event.currentTarget.contains(event.relatedTarget)) return;
                     void flush();
                   }}
                 >
                   <LiveMarkdownEditor
+                    key={activeScope}
                     testId="review-editor"
                     value={draft}
                     onChange={onDraftChange}
-                    slug={`review-${cadence}-${period}`}
+                    slug={`review-${cadence}-${period}-${activeScope}`}
                     ariaLabel={title}
                     placeholder="Write this review."
                     readOnly={locked}
                   />
-              </div>
+                </div>
 
-              {/* Whether the prose has reached the vault, under the box it
-                  reports on: the page's one line of chrome about the document. */}
-              <div className="review-page__status-row">
-                <span className="muted review-page__status" data-testid="review-status">
-                  {status}
-                </span>
-              </div>
+                <div className="review-page__status-row">
+                  <span className="muted review-page__status" data-testid="review-status">
+                    {status}
+                  </span>
+                </div>
 
-              <div className="review-page__actions">
-                <Button
-                  variant="primary"
-                  data-testid="review-start"
-                  onClick={() => void runStart(activeScope)}
-                  disabled={busy || lifeReviewGated}
-                  title={lifeReviewGated ? lifeReviewGateHint : undefined}
-                >
-                  {busy ? "Starting…" : "Start interview"}
-                </Button>
-                <Button
-                  variant="outline"
-                  data-testid="review-plan-next"
-                  onClick={onPlanNext}
-                  disabled={busy}
-                >
-                  Plan next period
-                </Button>
-                {/* Only while the review is open. The companion marks the scope
-                    complete itself once the interview is answered, and on a locked
-                    review the button can only re-mark a file that is already final;
-                    the row keeps Unlock as the one way back in. */}
-                {locked ? null : (
+                <div className="review-page__actions" data-testid="review-actions">
+                  {locked ? null : (
+                    <Button
+                      variant="primary"
+                      data-testid="review-start"
+                      onClick={() => void runStart(activeScope)}
+                      disabled={busy || page?.status === "done"}
+                    >
+                      {busy ? "Starting…" : "Start interview"}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
-                    data-testid="review-mark-done"
-                    onClick={onMarkDone}
-                    disabled={busy || !record || lifeReviewGated}
-                    title={lifeReviewGated ? lifeReviewGateHint : undefined}
-                  >
-                    {markDoneLabel}
-                  </Button>
-                )}
-                {locked ? (
-                  <Button
-                    variant="outline"
-                    data-testid="review-unlock"
-                    onClick={onUnlock}
+                    data-testid="review-plan-next"
+                    onClick={onPlanNext}
                     disabled={busy}
                   >
-                    Unlock
+                    Plan next period
                   </Button>
-                ) : null}
-              </div>
+                  {/* Authoring controls are hidden on a locked notebook; the row
+                      keeps Unlock as the one way back in. */}
+                  {locked ? null : (
+                    <Button
+                      variant="outline"
+                      data-testid="review-mark-done"
+                      onClick={onMarkDone}
+                      disabled={busy || page?.status === "done" || lifeReviewGated}
+                      title={lifeReviewGated ? lifeReviewGateHint : undefined}
+                    >
+                      {markDoneLabel}
+                    </Button>
+                  )}
+                  {locked ? (
+                    <Button
+                      variant="outline"
+                      data-testid="review-unlock"
+                      onClick={onUnlock}
+                      disabled={busy}
+                    >
+                      Unlock
+                    </Button>
+                  ) : null}
+                </div>
 
-              {/* The cadence's standing rules: what every review of this cadence is
-                  told, and the snapshot rules the app runs before the interview. The
-                  operator can add a rule here directly, or ask the companion to. */}
-              <section className="review-page__skill">
-                <button
-                  type="button"
-                  className="review-page__skill-toggle"
-                  data-testid="review-skill-toggle"
-                  aria-expanded={skillOpen}
-                  onClick={() => {
-                    const next = !skillOpen;
-                    setSkillOpen(next);
-                    if (next && !skill) void loadSkill();
-                  }}
-                >
-                  <span>Review rules</span>
-                  <span className="muted">
-                    {skill
-                      ? `${skill.snapshots.length} snapshot${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
-                      : "what this review session is told"}
-                  </span>
-                </button>
-                {skillOpen ? (
-                  <div className="review-page__skill-body">
-                    <p className="muted review-page__skill-hint">
-                      Every line here is handed to this cadence&rsquo;s review session,
-                      and a <code>lifequest-snapshot</code> block is a figure the app
-                      fills into the review itself. Ask the companion to add a rule, or
-                      write one here.
-                    </p>
-                    <LiveMarkdownEditor
-                      testId="review-skill-editor"
-                      value={skillDraft}
-                      onChange={setSkillDraft}
-                      slug={`review-skill-${cadence}`}
-                      ariaLabel={`${cadence} review rules`}
-                    />
-                    {skill && skill.problems.length > 0 ? (
-                      <ul className="review-page__skill-problems">
-                        {skill.problems.map((problem) => (
-                          <li key={problem}>{problem}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    <div className="review-page__actions">
-                      <Button
-                        variant="primary"
-                        data-testid="review-skill-save"
-                        onClick={onSaveSkill}
-                        disabled={skillSaving || !skill}
-                      >
-                        {skillSaving ? "Saving…" : "Save rules"}
-                      </Button>
+                {/* The cadence's standing rules: what every review of this
+                    cadence is told, and the custom figure rules the app still
+                    honours in it. */}
+                <section className="review-page__skill">
+                  <button
+                    type="button"
+                    className="review-page__skill-toggle"
+                    data-testid="review-skill-toggle"
+                    aria-expanded={skillOpen}
+                    onClick={() => {
+                      const next = !skillOpen;
+                      setSkillOpen(next);
+                      if (next && !skill) void loadSkill();
+                    }}
+                  >
+                    <span>Review rules</span>
+                    <span className="muted">
+                      {skill
+                        ? `${skill.snapshots.length} custom figure${skill.snapshots.length === 1 ? "" : "s"} · ${skill.exists ? "your file" : "defaults"}`
+                        : "what this review session is told"}
+                    </span>
+                  </button>
+                  {skillOpen ? (
+                    <div className="review-page__skill-body">
+                      <p className="muted review-page__skill-hint">
+                        Every line here is handed to this cadence&rsquo;s review
+                        session, and a <code>lifequest-snapshot</code> block is a
+                        figure the app fills into the review itself. Ask the
+                        companion to add a rule, or write one here.
+                      </p>
+                      <LiveMarkdownEditor
+                        testId="review-skill-editor"
+                        value={skillDraft}
+                        onChange={setSkillDraft}
+                        slug={`review-skill-${cadence}`}
+                        ariaLabel={`${cadence} review rules`}
+                      />
+                      {skill && skill.problems.length > 0 ? (
+                        <ul className="review-page__skill-problems">
+                          {skill.problems.map((problem) => (
+                            <li key={problem}>{problem}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <div className="review-page__actions">
+                        <Button
+                          variant="primary"
+                          data-testid="review-skill-save"
+                          onClick={onSaveSkill}
+                          disabled={skillSaving || !skill}
+                        >
+                          {skillSaving ? "Saving…" : "Save rules"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </section>
-            </>
-          )}
+                  ) : null}
+                </section>
+              </>
+            )}
+          </div>
 
-          {/* The days the operator wrote, under the review body and its controls:
-              the same notes the companion's period pack carries. Scope-independent
-              by design — a note belongs to no domain. */}
-          <DailyNotesPanel
-            cadence={cadence}
-            period={period}
-            weekStartDay={weekStartDay}
-          />
-
+          {/* The days the operator wrote: once, on the overall page — a note
+              belongs to no area, so it is not repeated per tab. */}
+          {isDaily || activeScope === "overall" ? (
+            <DailyNotesPanel
+              cadence={cadence}
+              period={period}
+              weekStartDay={weekStartDay}
+            />
+          ) : null}
         </div>
-
-        {/* The checklist is the page's second column on a weekly-or-longer
-            review, and the daily review has none: a day is one general review,
-            so there is nothing to tick off beside it. */}
-        {isDaily ? null : (
-          <AreaReviewsPanel
-            record={record}
-            liveAreas={liveAreas}
-            activeScope={activeScope}
-            busy={busy}
-            locked={locked}
-            onStart={(scope) => {
-              void startFromRail(scope);
-            }}
-          />
-        )}
       </div>
     </div>
   );

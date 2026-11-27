@@ -22,6 +22,7 @@ import {
   type DatabaseDecisionBody,
   type DecisionAmendment,
   type DecisionRecord,
+  type DefineMetricInput,
   type DocumentKind,
   type DocumentTarget,
   type GoalsCommand,
@@ -33,7 +34,12 @@ import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
 import { checkDatabaseCells } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
-import { getReview, applyLockedReviewBody } from "./reviews.ts";
+import {
+  getReview,
+  applyLockedReviewBody,
+  getReviewPageBody,
+  applyReviewPageBody,
+} from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
 
 function isDocumentKind(kind: string): kind is DocumentKind {
@@ -63,6 +69,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isReviewPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isMetricDefinitionExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
@@ -85,6 +93,31 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         type: "review",
         cadence: String(t.cadence) as ReviewCadence,
         period: String(t.period),
+      };
+    } else if (t.type === "review-page") {
+      // The rev is the page version the proposal was filed against; a Decision
+      // written before the field existed (or for the legacy review target) reads
+      // as absent and the apply falls back to the current page's rev.
+      target = {
+        type: "review-page",
+        cadence: String(t.cadence) as ReviewCadence,
+        period: String(t.period),
+        scope: String(t.scope),
+        ...(typeof t.rev === "number" ? { rev: t.rev } : {}),
+      };
+    } else if (t.type === "metric-definition") {
+      // The proposed definition travels in the target, and `baseUpdatedAt` is
+      // the definition version it was filed against (null on a legacy record:
+      // then the apply reads the current file and does no staleness check).
+      target = {
+        type: "metric-definition",
+        domainSlug: String(t.domainSlug),
+        metricId: String(t.metricId),
+        action: t.action === "delete" ? "delete" : "update",
+        ...(isRecordValue(t.definition)
+          ? { definition: t.definition as unknown as DefineMetricInput }
+          : {}),
+        baseUpdatedAt: typeof t.baseUpdatedAt === "string" ? t.baseUpdatedAt : null,
       };
     } else if (t.type === "doctrine") {
       target = {
@@ -196,6 +229,13 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     target.type === "database-batch"
   ) {
     domainSlugs = [target.domainSlug];
+  } else if (target.type === "review-page") {
+    // A page Decision reads under the area lens its page belongs to; the overall
+    // page is the whole life, so it carries no domain.
+    domainSlugs = target.scope === "overall" ? [] : [target.scope];
+  } else if (target.type === "metric-definition") {
+    // A definition belongs to its area, so its Decision is shown under that lens.
+    domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
   }
@@ -306,6 +346,35 @@ function isReviewExplicitTarget(raw: Record<string, unknown>): boolean {
     isReviewCadence(raw.cadence) &&
     typeof raw.period === "string" &&
     raw.period.length > 0
+  );
+}
+
+function isReviewPageExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "review-page" &&
+    typeof raw.cadence === "string" &&
+    isReviewCadence(raw.cadence) &&
+    typeof raw.period === "string" &&
+    raw.period.length > 0 &&
+    typeof raw.scope === "string" &&
+    raw.scope.length > 0
+  );
+}
+
+/**
+ * A metric-definition target names a live area (or a saved database, for a
+ * derived metric), a metric id, and either an update payload or a delete. It is
+ * never a lockable document: creating applies at once, and the Decision itself
+ * is the governed change.
+ */
+function isMetricDefinitionExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "metric-definition" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.metricId === "string" &&
+    raw.metricId.length > 0 &&
+    (raw.action === "update" || raw.action === "delete")
   );
 }
 
@@ -601,6 +670,33 @@ export async function createDecision(
       if (!input.target.period.trim()) {
         return { ok: false, error: "period is required" };
       }
+    } else if (input.target.type === "review-page") {
+      if (!isReviewCadence(input.target.cadence)) {
+        return { ok: false, error: `Invalid review cadence: ${input.target.cadence}` };
+      }
+      if (!input.target.period.trim()) {
+        return { ok: false, error: "period is required" };
+      }
+      if (!input.target.scope.trim()) {
+        return { ok: false, error: "scope is required" };
+      }
+    } else if (input.target.type === "metric-definition") {
+      // A metric definition is not a lockable document; the store write is what
+      // the approval performs, so the shape is all this door checks. The area's
+      // liveness and the definition that the proposal is against are read on
+      // the propose path (metrics.ts), where they can still be reported.
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
+      }
+      if (!input.target.metricId.trim()) {
+        return { ok: false, error: "metricId is required" };
+      }
+      if (input.target.action !== "update" && input.target.action !== "delete") {
+        return { ok: false, error: `Invalid metric action: ${String(input.target.action)}` };
+      }
+      if (input.target.action === "update" && !input.target.definition) {
+        return { ok: false, error: "A metric update needs the proposed definition" };
+      }
     } else if (input.target.type === "page") {
       if (!input.target.domainSlug.trim()) {
         return { ok: false, error: "domainSlug is required" };
@@ -735,6 +831,35 @@ export async function createDecision(
           error: "Review must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "review-page") {
+      // A page proposal only makes sense against a finished review: the page is
+      // read-only then, and the Decision is how a change gets made.
+      const pageRes = await getReviewPageBody(
+        rootPath,
+        input.target.cadence,
+        input.target.period,
+        input.target.scope,
+      );
+      if (!pageRes.ok) return pageRes;
+      docLocked = pageRes.value.locked;
+      if (!docLocked) {
+        return {
+          ok: false,
+          error: "Review must be locked before proposing a change",
+        };
+      }
+    } else if (input.target.type === "metric-definition") {
+      // A definition is not lockable — changing it is already the governed act.
+      // The area must be live (an archived area must not gain a pending card);
+      // the propose path has already read the definition itself.
+      if (!(await isDomainLive(rootPath, input.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Domain not found or archived: ${input.target.domainSlug}`,
+        };
+      }
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else if (input.target.type === "page") {
       // Pages are not lockable. Verify the page exists.
       const { getPage } = await import("./pages.ts");
@@ -856,7 +981,13 @@ export async function createDecision(
                     ? [input.target.domainSlug]
                   : input.target.type === "review"
                     ? []
-                    : input.target.type === "goal"
+                    : input.target.type === "review-page"
+                      ? input.target.scope === "overall"
+                        ? []
+                        : [input.target.scope]
+                      : input.target.type === "metric-definition"
+                        ? [input.target.domainSlug]
+                      : input.target.type === "goal"
                       ? input.domainSlugs ?? []
                       : input.target.type === "day-template"
                         ? []
@@ -878,9 +1009,13 @@ export async function createDecision(
 
     // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
     // "Proposed change to" would make the inbox read "Proposed change to
-    // Finance bot".
+    // Finance bot". A metric-definition title is the same shape ("Edit the
+    // Training minutes metric"): the proposer names the verb and the metric,
+    // and the generic "Proposed change to" wrapper would bury both.
     const title =
-      input.target.type === "agent-pairing" && input.proposedTitle
+      (input.target.type === "agent-pairing" ||
+        input.target.type === "metric-definition") &&
+      input.proposedTitle
         ? input.proposedTitle
         : `Proposed change to ${documentTargetLabel(input.target, input.proposedTitle ?? "")}`;
 
@@ -942,7 +1077,12 @@ export async function createDecision(
  * the operator approves something doomed.
  */
 function isProseTarget(target: DocumentTarget): boolean {
-  return target.type === "doctrine" || target.type === "library" || target.type === "review";
+  return (
+    target.type === "doctrine" ||
+    target.type === "library" ||
+    target.type === "review" ||
+    target.type === "review-page"
+  );
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
@@ -1353,6 +1493,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     if (typeof target.mappingId === "string") {
       assertSafeSegment(target.mappingId, "mapping id");
     }
+    if (typeof target.metricId === "string" && target.metricId) {
+      assertSafeSegment(target.metricId, "metric id");
+    }
     if (typeof target.id === "string" && target.id) {
       assertSafeSegment(target.id, "document id");
     }
@@ -1368,6 +1511,9 @@ function decisionTargetProblem(decision: DecisionRecord): string | null {
     }
     if (typeof target.period === "string") {
       assertSafeSegment(target.period, "review period");
+    }
+    if (typeof target.scope === "string") {
+      assertSafeSegment(target.scope, "review page scope");
     }
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
@@ -1414,8 +1560,70 @@ async function applyApprovedBody(
         decision.target.cadence,
         decision.target.period,
         decision.proposedBodyMarkdown,
+        undefined,
+        // What the Decision was proposed against: the apply keeps a heading whose
+        // file content moved on since then (three-way merge), so approving a
+        // proposal cannot resurrect another area's stale prose.
+        decision.previousBodyMarkdown ?? undefined,
       );
       if (!res.ok) return { ok: false, error: res.error, terminal: false };
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "review-page") {
+      const current = await getReviewPageBody(
+        rootPath,
+        decision.target.cadence,
+        decision.target.period,
+        decision.target.scope,
+      );
+      if (!current.ok) return { ok: false, error: current.error, terminal: false };
+      const applied = await applyReviewPageBody(rootPath, {
+        cadence: decision.target.cadence,
+        period: decision.target.period,
+        scope: decision.target.scope,
+        bodyMarkdown: decision.proposedBodyMarkdown,
+        baseRev: typeof decision.target.rev === "number" ? decision.target.rev : current.value.rev,
+      });
+      if (!applied.ok) {
+        if (applied.code === "CONFLICT") {
+          // The page moved since the proposal was approved. The Decision stays
+          // pending with the notice, rather than writing prose the operator never
+          // saw or rejecting a proposal that is still wanted.
+          return {
+            ok: false,
+            error: "The page changed after this proposal was approved; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "metric-definition") {
+      // The store write lives in metrics.ts, exactly as a page write lives in
+      // reviews.ts; this path only decides what a refusal means. A stale
+      // definition leaves the Decision pending with the notice (the operator
+      // asked for a change that is still wanted, against an older version),
+      // and an invalid payload leaves it pending so it can be amended.
+      const { applyMetricDefinitionChange } = await import("./metrics.ts");
+      const applied = await applyMetricDefinitionChange(
+        rootPath,
+        decision.target,
+        decision.actor,
+        decision.proposedBodyMarkdown,
+      );
+      if (!applied.ok) {
+        if (applied.stale) {
+          return {
+            ok: false,
+            error:
+              "The metric definition changed after this proposal was approved, so the proposal is " +
+              "stale; it is still pending.",
+            terminal: false,
+          };
+        }
+        return { ok: false, error: applied.error, terminal: false };
+      }
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "page") {

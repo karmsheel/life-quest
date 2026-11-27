@@ -13,6 +13,8 @@ import {
   executeDocumentTool,
   REVIEW_TOOL_DEFS,
   executeReviewTool,
+  METRICS_TOOL_DEFS,
+  executeMetricsTool,
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
   COMPANION_BRIEF_TOOL_DEFS,
@@ -231,6 +233,15 @@ async function executeToolInner(
   // get_review, list_reviews, write_review, mark_review_done, unlock_review, get_period_pack
   if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeReviewTool(root, actor, name, rec);
+  }
+
+  // define_metric, log_metric, list_metrics, get_metrics_summary — metric
+  // definitions and dated events. Creating a definition or logging an event
+  // applies at once; the two reads run through the same view engine the review
+  // figures use, so the tool door cannot produce a second opinion about a
+  // number.
+  if (METRICS_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeMetricsTool(root, actor, name, rec);
   }
 
   // list_daily_notes, get_daily_note — the operator's journal, read-only. A
@@ -453,7 +464,8 @@ async function executeConnectedTool(
     (name === "list_databases" ||
       name === "list_pages" ||
       name === "list_projects" ||
-      name === "list_signals") &&
+      name === "list_signals" ||
+      name === "list_metrics") &&
     rec.domainSlug !== undefined &&
     rec.domainSlug !== null
   ) {
@@ -517,7 +529,15 @@ async function executeConnectedTool(
     if (name === "get_review") {
       const review = (result as { review: ReviewRecord }).review;
       if (!connectedReviewVisible(review.scopes, grant)) return grantRefusal("NOT_FOUND");
-      return { review: projectConnectedReview(review, grant, headings) };
+      // A scoped read names the page it wants; a page outside the grant answers
+      // NOT_FOUND exactly like a missing one, so the agent cannot map the review.
+      const scope = typeof rec.scope === "string" ? rec.scope : null;
+      if (scope !== null && !granted(scope)) return grantRefusal("NOT_FOUND");
+      const projected = projectConnectedReview(review, grant, headings);
+      if (scope === null) return { review: projected };
+      const page = (result as { page?: unknown }).page;
+      if (page === undefined) return grantRefusal("NOT_FOUND");
+      return { review: projected, page };
     }
     const { reviews } = result as { reviews: ReviewIndexEntry[] };
     return {
@@ -666,6 +686,33 @@ async function executeConnectedTool(
     };
   }
 
+  // ── metrics: a definition belongs to one area, so it is visible only when
+  // that area is in the grant. The ungranted-area case was refused above when
+  // the call named a domain; an all-areas listing is filtered here, problems
+  // included — a problem's file path names its area, so a malformed file in an
+  // ungranted area must not leak the slug.
+  if (name === "list_metrics") {
+    const result = await executeMetricsTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const listed = result as {
+      metrics: Array<{ domainSlug: string }>;
+      problems: Array<{ file?: string }>;
+    };
+    const visible = listed.metrics.filter((metric) => granted(metric.domainSlug));
+    const problems = listed.problems.filter((problem) => {
+      const match = /^domains\/([^/]+)\//.exec(problem.file ?? "");
+      return match ? granted(match[1]) : false;
+    });
+    return { metrics: visible, problems };
+  }
+
+  if (name === "get_metrics_summary") {
+    // A summary is a read of one area's metric values, so an ungranted area is
+    // NOT_FOUND exactly like a missing one.
+    if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+    return executeMetricsTool(root, actor, name, rec);
+  }
+
   // The live week belongs to no domain, so the Schedule gate has already
   // settled it and there is nothing further to check per call. Same payload as
   // the companion's, resolved from the same store.
@@ -731,6 +778,9 @@ async function executeConnectedTool(
   }
   if (VIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeViewTool(root, actor, name, rec);
+  }
+  if (METRICS_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeMetricsTool(root, actor, name, rec);
   }
 
   // ── writes, already past the grant's domain check ─────────────────────────
@@ -926,6 +976,14 @@ async function connectedWriteRefusal(
   if (name === "mark_review_done") {
     // `scope: "overall"` is the companion's, not the agent's.
     return allow([rec.scope as string | null | undefined]);
+  }
+  // ── metrics ──────────────────────────────────────────────────────────────
+  if (name === "define_metric" || name === "log_metric") {
+    // Creating a definition and logging a dated event apply immediately (§10.6),
+    // and both write inside exactly one area. The grant must cover it; the
+    // per-call check runs before the engine, so a refused write never creates a
+    // definition file or a row.
+    return allow([rec.domainSlug as string | null | undefined]);
   }
   if (name === "write_review" || name === "unlock_review") {
     // Both act on the whole review file, whose body carries the `overall`

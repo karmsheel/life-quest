@@ -1331,6 +1331,40 @@ function registerIpcHandlers() {
       vault.reviewGet(cadence, period),
   );
   ipcMain.handle(
+    "review:notebook",
+    (_e, cadence: Parameters<typeof vault.reviewNotebookGet>[0], period: string) =>
+      vault.reviewNotebookGet(cadence, period),
+  );
+  ipcMain.handle(
+    "review:pageGet",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageGet>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageGet>[2],
+    ) => vault.reviewPageGet(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageEnsure",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageEnsure>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageEnsure>[2],
+    ) => vault.reviewPageEnsure(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:pageWrite",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPageWrite>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPageWrite>[2],
+      body: string,
+      baseRev: number,
+    ) => vault.reviewPageWrite(cadence, period, scope, body, baseRev),
+  );
+  ipcMain.handle(
     "review:ensure",
     (
       _e,
@@ -1346,7 +1380,8 @@ function registerIpcHandlers() {
       cadence: Parameters<typeof vault.reviewWrite>[0],
       period: string,
       body: string,
-    ) => vault.reviewWrite(cadence, period, body),
+      baseRev?: number,
+    ) => vault.reviewWrite(cadence, period, body, baseRev),
   );
   ipcMain.handle(
     "review:markDone",
@@ -1462,6 +1497,39 @@ function registerIpcHandlers() {
       period: string,
       scope: Parameters<typeof vault.planningEnsure>[2],
     ) => vault.planningEnsure(cadence, period, scope),
+  );
+  // Phase 6: the Analytics matrix (a read) and the metrics doors. Logging an
+  // event and creating a definition apply immediately; an edit or delete of an
+  // existing definition is filed through `metrics:propose` and applies only on
+  // approval. `metrics:define`, `metrics:logEvent` and `metrics:propose` are
+  // named in data-revision.ts so the vault's change signal fires and an open
+  // matrix/inbox reloads.
+  ipcMain.handle(
+    "analytics:matrix",
+    (_e, input: Parameters<typeof vault.analyticsMatrix>[0]) =>
+      vault.analyticsMatrix(input),
+  );
+  ipcMain.handle(
+    "metrics:events",
+    (_e, input: Parameters<typeof vault.metricEvents>[0]) => vault.metricEvents(input),
+  );
+  ipcMain.handle(
+    "metrics:logEvent",
+    (_e, input: Parameters<typeof vault.metricLogEvent>[0]) =>
+      vault.metricLogEvent(input),
+  );
+  ipcMain.handle(
+    "metrics:define",
+    (_e, input: Parameters<typeof vault.metricDefine>[0]) => vault.metricDefine(input),
+  );
+  ipcMain.handle(
+    "metrics:get",
+    (_e, input: Parameters<typeof vault.metricGet>[0]) => vault.metricGet(input),
+  );
+  ipcMain.handle(
+    "metrics:propose",
+    (_e, input: Parameters<typeof vault.metricPropose>[0]) =>
+      vault.metricPropose(input),
   );
   ipcMain.handle(
     "review:startOrResume",

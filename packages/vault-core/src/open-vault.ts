@@ -10,7 +10,7 @@ import { legacyOnboardingRecord, readOnboardingProposal, readOnboardingRecord } 
 import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
 import { listPlanningIndex } from "./planning-stubs.ts";
-import { listReviewIndex } from "./reviews.ts";
+import { listReviewIndex, migrateLegacyReviews } from "./reviews.ts";
 import { reviewAvailabilityFromUnknown } from "./review-availability.ts";
 import {
   DOCUMENT_KINDS,
@@ -145,6 +145,17 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       goals = goalsRes.value;
     } else {
       goalsError = goalsRes.error;
+    }
+
+    // The notebook migration runs before the first index read, so the app never
+    // shows a period twice (legacy file + notebook) and never reads a half-split
+    // one. A failure is not fatal: un-migrated periods keep reading through the
+    // compatibility projection, and the next open retries (the marker is only
+    // written when the pass completed).
+    try {
+      await migrateLegacyReviews(paths.root);
+    } catch {
+      // Reported per period by the migration itself; open keeps working.
     }
 
     let reviews: ReviewIndexEntry[] = [];

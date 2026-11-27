@@ -66,7 +66,22 @@ export const TIME_WINDOWS = [
   "this-year",
 ] as const;
 export const TIME_BUCKETS = ["day", "week", "month"] as const;
-export const FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "in"] as const;
+export const FILTER_OPS = [
+  "eq",
+  "neq",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "in",
+  // Presence tests, not comparisons. `is-set` = non-null and not the empty
+  // string; `is-not-set` = null (including a missing cell) or the empty string.
+  // They take no value argument. SQL NULL comparisons are false, so without
+  // these `neq ""` would silently drop every row whose cell was never filled —
+  // the transfer legs of the finance ledger among them.
+  "is-set",
+  "is-not-set",
+] as const;
 export const MEASURES: readonly ViewMeasure[] = ["sum", "count", "last", "avg", "avg-per"];
 /**
  * The periods an `avg-per` measure can divide a window by. One vocabulary with
@@ -633,6 +648,24 @@ function validateBlock(
         return { ok: false, error: `${at}The in filter op requires a non-empty array` };
       }
     }
+    if (f.op === "is-set" || f.op === "is-not-set") {
+      // A presence test asks about the cell, not about a value to compare to.
+      // Omitted and explicit null are the two ways JSON says "none", so both
+      // mean no value; anything else supplied is refused rather than ignored,
+      // so a spec cannot say "is-set" and mean "is-set OR equals this".
+      if (Array.isArray(f.value)) {
+        return {
+          ok: false,
+          error: `${at}The ${f.op} filter op takes no value, but an array was supplied — drop value.`,
+        };
+      }
+      if (f.value !== undefined && f.value !== null) {
+        return {
+          ok: false,
+          error: `${at}The ${f.op} filter op takes no value — drop value (it tests whether the cell holds anything).`,
+        };
+      }
+    }
   }
 
   if (v.sort != null) {
@@ -1153,14 +1186,27 @@ export function buildReadSql(
     lte: "CAST(json_extract(cells, ?) AS REAL) <= ?",
   };
   for (const f of spec.filters) {
-    if (f.op === "in") {
+    if (f.op === "is-set" || f.op === "is-not-set") {
+      // Presence, not comparison. "Set" is non-null AND not the empty string;
+      // "not set" is the complement, INCLUDING a cell that was never filled
+      // (json_extract returns SQL NULL for a missing key). Both the value and
+      // the empty-string cell are what a transfer leg looks like, which is why
+      // the complement is written as two clauses rather than `IS NULL`.
+      const path = `$.${f.columnId}`;
+      conds.push(
+        f.op === "is-set"
+          ? "(json_extract(cells, ?) IS NOT NULL AND json_extract(cells, ?) != '')"
+          : "(json_extract(cells, ?) IS NULL OR json_extract(cells, ?) = '')",
+      );
+      params.push(path, path);
+    } else if (f.op === "in") {
       const placeholders = (f.value as unknown[]).map(() => "?").join(",");
       conds.push(`json_extract(cells, ?) IN (${placeholders})`);
       params.push(`$.${f.columnId}`, ...(f.value as unknown[]).map(toSqlBindable));
     } else {
       // Comparisons CAST to REAL so a number filter compares number-wise even
       // though json_extract may return text; eq/neq keep JSON's own type rules.
-      conds.push(opSql[f.op]);
+      conds.push(opSql[f.op]!);
       params.push(`$.${f.columnId}`, toSqlBindable(f.value));
     }
   }

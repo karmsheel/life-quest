@@ -125,6 +125,8 @@ function kindLabel(target: DecisionRecord["target"]): string {
       return "Library note";
     case "review":
       return "Review";
+    case "review-page":
+      return "Review page";
     case "page":
       return "Page";
     case "pins":
@@ -154,6 +156,10 @@ function kindLabel(target: DecisionRecord["target"]): string {
       return "Agent pairing";
     case "view":
       return "Dashboard view";
+    // A metric edit/delete Decision (spec §10.6): the card names the metric in
+    // its title, so the kind label only has to say what class of change it is.
+    case "metric-definition":
+      return "Metric definition";
   }
 }
 

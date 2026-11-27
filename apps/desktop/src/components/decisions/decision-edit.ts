@@ -162,7 +162,8 @@ export function isProseTarget(target: DocumentTarget): boolean {
   return (
     target.type === "doctrine" ||
     target.type === "library" ||
-    target.type === "review"
+    target.type === "review" ||
+    target.type === "review-page"
   );
 }
 

@@ -182,6 +182,7 @@ is the only place that maps a channel onto it.
 | `page:` / `script:` / `document:` / `library:` | `page:update`, `script:apply`, `document:save`, `library:update` |
 | `signalChain:` / `map:` / `goals:` | `signalChain:create`, `map:apply`, `goals:apply` |
 | `review:` / `note:` / `planning:` | `review:write`, `review:markDone`, `note:write` |
+| `analytics:` / `metrics:` | `analytics:matrix`, `metrics:events`, `metrics:logEvent`, `metrics:define` |
 | `images:` / `attachment:` / `brief:` | `images:save`, `attachment:attach`, `brief:dismiss` |
 | `onboarding:` / `companion:` | `onboarding:start`, `onboarding:confirm`, `companion:useHarness` |
 | `connectedAgents:` / `agents:` / `settings:` / `update:` / `log:` | `connectedAgents:invite`, `agents:hire`, `settings:update`, `update:check`, `log:list` |
@@ -263,7 +264,8 @@ The tool surface is one list, `ALL_TOOL_DEFS`, assembled from fourteen families:
 | map and goals | `get_state`, `get_week`, `get_doctrine`, `create_task`, `move_task`, `list_goals` |
 | database | `list_databases`, `list_rows`, `upsert_row`, `insert_rows`, `delete_row`, `add_column` |
 | views and dashboard | `get_dashboard`, `preview_view`, `save_view`, `arrange_dashboard` |
-| documents / reviews | `get_document`, `update_document`, `write_review`, `mark_review_done` |
+| documents / reviews | `get_document`, `update_document`, `write_review`, `mark_review_done`, `get_review_template` |
+| metrics | `define_metric`, `log_metric`, `list_metrics`, `get_metrics_summary` |
 | pages / signal / notes / capture / script / projects | `list_pages`, `create_signal`, `get_daily_note`, `capture_transaction`, `run_script_block`, `get_project` |
 | brief / onboarding | `get_companion_brief`, `set_companion_brief`, `propose_onboarding_unlock` |
 
@@ -322,7 +324,7 @@ regaining focus (edits by another program, a sync client, or a second copy).
 | `/goals`, `/projects`, `/chart` | Goals, Projects, Life Map |
 | `/blueprints`, `/act`, `/daily` | Blueprints, Task Manager, Daily Schedule |
 | `/track` | Redirect to `/blueprints` (the old Plan address) |
-| `/review/:cadence`, `/documents`, `/log`, `/personnel` | Review, Documents, Log, Agents |
+| `/review/:cadence`, `/review/analytics`, `/documents`, `/log`, `/personnel` | Review, Analytics, Documents, Log, Agents |
 | `/decisions`, `/settings` | Sheets over the page you were on |
 | `/` and `*` | Redirect to `/home` with a vault, `/welcome` without |
 

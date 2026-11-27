@@ -1391,7 +1391,6 @@
 .review-page {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
   width: 100%;
   max-width: 48rem;
   margin-inline: auto;
@@ -1550,6 +1549,27 @@
   font-size: 0.85rem;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* A write raced another writer (the companion's page write, another tab). The
+   draft is kept and autosave is paused, so this reads as an action: reload the
+   file, then re-apply the text — never as a save failure the page will retry. */
+.review-page__conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-raised, var(--surface));
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.review-page__conflict p {
+  margin: 0;
 }
 
 /* The autosave line, under the box it reports on: there is no second view of the
@@ -1716,51 +1736,32 @@
   padding: 0.35rem 0.5rem 0.75rem;
 }
 
-/* —— The review's two columns ——
-   A weekly-or-longer review is one file of area sections, so the page grows a
-   second column beside the reading column: the Review checklist, where each area
-   is a button and the whole-life review waits behind them. The 48rem measure is
-   unchanged — it is the reading column's own width, declared once on
-   `.review-page` above — and the header is the same column, so the workshop
-   reads as one block rather than as a page with a panel bolted to one edge.
+/* —— The review's one column ——
+   A weekly-or-longer review is a notebook of pages, not one file with an area
+   section per area: the tabs under the period select the page, and the page is
+   the 48rem reading column. The header and the body are the same column, so the
+   page reads as one block centred in whatever room the sheet gives it. The old
+   checklist rail is retired; its progress line is one quiet line above the tabs,
+   the tab row sits on the box with no divider or gap, and its actions sit under
+   the editor.
 
-   THE HEADER OWNS THE TOP OF THE PAGE. The eyebrow and the period pager are the
-   one thing every cadence opens with, so they sit across the top of the layout
-   in the page's own column, and everything else comes under them. On a sheet
-   with room for the pair the reading column and the checklist stand side by side
-   under the header; on a cramped sheet the checklist takes its own row between
-   the header and the prose — the order of a review: which period, tick the
-   parts off, then write the whole.
-
-   ROOM IS THE SHEET'S, NOT THE WINDOW'S. The rail and the dock take their width
-   before the page sees any, so a wide window with the dock open is as cramped as
-   a narrow one. The grid asks the layout's own content box, which is what the
-   sheet actually handed the page. The prose never gives width to the checklist:
-   it keeps its measure, or the room the sheet has plus the same margin on
-   either side. The daily review is one general review and has no checklist at
-   all, which is what `--single` says. */
+   DAILY IS THE SAME COLUMN without tabs: a day is one general review and has no
+   pages to choose between. */
 .review-page-layout {
-  container-type: inline-size;
   width: 100%;
 }
 
-/* The layout's grid: a 48rem reading column and a 17rem checklist under one
-   header. The header spans both columns but is drawn on the page's column, so
-   the eyebrow and the pager stay over the prose at every width. */
 .review-page-layout__inner {
   display: grid;
-  grid-template-columns: minmax(0, 48rem) 17rem;
+  grid-template-columns: minmax(0, 48rem);
   grid-template-rows: auto auto;
   grid-template-areas:
-    "header header"
-    "page   rail";
+    "header"
+    "page";
   align-items: start;
   justify-content: center;
-  column-gap: 1.5rem;
   row-gap: 1rem;
   box-sizing: border-box;
-  /* A fixed band, so the container threshold below is one number: the pair needs
-     48rem + 17rem + 1.5rem = 69.3rem of sheet, padding included. */
   padding-inline: 1.4rem;
 }
 
@@ -1778,190 +1779,106 @@
   min-width: 0;
 }
 
-/* The one-column daily review: no checklist, so the header and the page are the
-   only rows. */
-.review-page-layout--single .review-page-layout__inner {
-  grid-template-columns: minmax(0, 48rem);
-  grid-template-areas:
-    "header"
-    "page";
-}
-
-/* Too narrow for the 17rem rail beside the 48rem measure: the checklist takes
-   its own row UNDER the header, the page's column width, and scrolls with the
-   page instead of sticking. The reading column keeps the sheet's width with the
-   same margin either side; it is never narrowed to leave the rail beside it. */
-@container (max-width: 69.3rem) {
-  .review-page-layout__inner {
-    grid-template-columns: minmax(0, 48rem);
-    grid-template-rows: auto auto auto;
-    grid-template-areas:
-      "header"
-      "rail"
-      "page";
-  }
-
-  .review-page-layout__inner > .review-checklist {
-    position: static;
-    width: 100%;
-    max-width: 48rem;
-    /* In its own row the rail's base flex-basis is irrelevant; stacked it is as
-       tall as its rows, not a 17rem scroll box. */
-    max-height: none;
-    overflow: visible;
-  }
-}
-
-/* —— The Review checklist rail ——
-   A checklist, not a second document: compact rows, the name on the leading edge
-   and a quiet status on the trailing one, painted on the card step with one
-   hairline — the same card/panel language the rest of the studio uses. The Life
-   review is set apart by a rule below it because it is not another row of the
-   same kind: it is the summary that the rows unlock.
-
-   The rail is sticky under the page's pager on a tall window: the file it maps
-   is long, and the checklist is only useful while the operator is reading it. */
-.review-checklist {
-  position: sticky;
-  top: 1rem;
-  flex: 0 0 17rem;
-  box-sizing: border-box;
+/* —— The tab row ——
+   One tab per page: Overall first, then the live areas in the vault's order. It
+   is the page's scope selection, so it sits directly under the period and above
+   the prose. Tabs wrap rather than scroll: at a narrow sheet the row grows a
+   second line, and a label that would still not fit truncates with its full name
+   in the tooltip — no page is ever hidden behind a sideways scroller. */
+.review-page__tabs {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
-  padding: 0.85rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--card);
+  flex-wrap: wrap;
+  gap: 0.15rem 0.1rem;
+  padding-bottom: 0;
 }
 
-.review-checklist__header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-/* The rail's name and the progress line share the grey eyebrow's treatment: the
-   rail is chrome beside the prose, not a heading in it. */
-.review-checklist__title {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.review-checklist__progress {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.review-checklist__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-/* One row: a button, squarely cornered like the rest of the page's controls. The
-   row's own frame is invisible at rest so the list reads as a checklist rather
-   than as a stack of cards; the selected row grows the page's accent hairline,
-   the same mark the shell gives the surface the operator is on. */
-.review-checklist__item {
-  display: flex;
+.review-page__tab {
+  display: inline-flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 0.6rem;
-  width: 100%;
-  padding: 0.4rem 0.5rem;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.4rem 0.6rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-xs);
+  border-bottom: 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   background: none;
-  color: var(--fg);
+  color: var(--muted-foreground);
   font: inherit;
   font-size: 0.9rem;
   text-align: left;
   cursor: pointer;
 }
 
-.review-checklist__item:hover:not(:disabled) {
+.review-page__tab:hover {
   background: var(--muted-surface);
+  color: var(--fg);
 }
 
-.review-checklist__item.is-active {
-  border-color: var(--primary);
-  background: var(--accent-fill);
-}
-
-.review-checklist__item.is-active .review-checklist__name {
+.review-page__tab.is-active {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--fg);
   font-weight: 600;
 }
 
-.review-checklist__item:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.review-checklist__item:focus-visible {
-  outline: 2px solid var(--ring);
+.review-page__tab:focus-visible {
+  outline: 2px solid var(--primary);
   outline-offset: -1px;
 }
 
-/* The Life review stands apart from the areas it summarises. */
-.review-checklist__item--life {
-  margin-bottom: 0.25rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
-}
-
-.review-checklist__item--life.is-active {
-  border-bottom-color: var(--primary);
-}
-
-.review-checklist__name {
-  flex: 1 1 auto;
-  min-width: 0;
+.review-page__tab-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The status is the quiet half of the row. A count while the life review is
-   gated, then the same three words the areas use. */
-.review-checklist__status {
-  flex: 0 0 auto;
-  font-size: 0.72rem;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  color: var(--muted-foreground);
+/* The status dot reuses the retired checklist's vocabulary: a faint ring for a
+   page nobody started, a filled dot for one in progress, a tick for done. It is
+   decoration — the tab's tooltip carries the words — so it is not coloured as an
+   action. */
+.review-page__tab-status {
+  display: inline-block;
+  width: 0.8rem;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--muted);
 }
 
-.review-checklist__status[data-status="draft"] {
-  color: var(--fg);
-}
-
-.review-checklist__status[data-status="done"]::before {
-  content: "✓ ";
-}
-
-.review-checklist__status[data-status="done"] {
+.review-page__tab-status[data-status="draft"]::before {
+  content: "•";
   color: var(--primary);
 }
 
-.review-checklist__hint {
+.review-page__tab-status[data-status="done"] {
+  color: var(--primary);
+}
+
+/* The retired checklist's progress line, kept as one quiet sentence above the
+   tabs: how many areas are done, and what the life review waits on. It leads the
+   page's own index so the tabs can sit straight on the document. */
+.review-page__progress {
   margin: 0;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* The page's own index above the box: the status sentence, then the tab row,
+   with the row's bottom edge flush against the document. */
+.review-page__pages-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* The page's one panel: the conflict banner, the editor, its status line, the
+   actions and the rules all live here. The index above is flush with it, so the
+   panel's gap only spaces its own parts. */
+.review-page__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
 }
 

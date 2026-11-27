@@ -34,6 +34,11 @@ import type {
   AutomationInput,
   AutomationRecord,
   AutomationRunPatch,
+  AnalyticsMatrix,
+  MetricDefinition,
+  MetricDefinitionDraft,
+  MetricEventRow,
+  MetricEvents,
   PageBlock,
   PageListEntry,
   PageRecord,
@@ -62,6 +67,7 @@ import type {
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
+  ReviewWriteOutcome,
   ScriptApplyResult,
   ScriptRunResult,
   SavedView,
@@ -784,6 +790,31 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
   ) => Promise<Result<ReviewRecord>>;
+  /** The period's notebook summary: tabs, lock and page statuses, no bodies. */
+  reviewNotebookGet: (
+    cadence: ReviewCadence,
+    period: string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** One page's body and rev, for the page the operator is reading. */
+  reviewPageGet: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewPageBody>>;
+  /** Create one page (and the notebook) without starting an interview. */
+  reviewPageEnsure: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewNotebook>>;
+  /** Write one page against the rev it was read at. */
+  reviewPageWrite: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+    body: string,
+    baseRev: number,
+  ) => Promise<ReviewPageWriteOutcome>;
   reviewEnsure: (
     cadence: ReviewCadence,
     period: string,
@@ -793,7 +824,8 @@ type LifequestApi = {
     cadence: ReviewCadence,
     period: string,
     body: string,
-  ) => Promise<Result<ReviewRecord>>;
+    baseRev?: number,
+  ) => Promise<ReviewWriteOutcome>;
   reviewMarkDone: (
     cadence: ReviewCadence,
     period: string,
@@ -823,6 +855,53 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<Result<ReviewPrepopulateResult>>;
+  /**
+   * The Analytics matrix: rows = metric definitions, columns = the last recent
+   * periods of `cadence`, scoped by the lens (null = Life, every live area).
+   * `count` defaults to 8; the engine also reads one older window so the oldest
+   * column can still show a delta.
+   */
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => Promise<Result<AnalyticsMatrix>>;
+  /** One events metric's logged rows for one period, with the metrics
+   *  database's minted column ids so a row can be edited through dbUpsertRow. */
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => Promise<Result<MetricEvents>>;
+  /** Log one dated event. Applies immediately; the engine logs `metric.logged`. */
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => Promise<Result<MetricEventRow>>;
+  /** Create one metric definition from the bridge draft (events or derived).
+   *  Creation applies immediately; an existing id is refused here — propose the
+   *  edit through metricPropose. */
+  metricDefine: (input: {
+    area: string;
+    definition: MetricDefinitionDraft;
+  }) => Promise<Result<MetricDefinition>>;
+  /** Read one definition, e.g. to prefill the Analytics edit form. */
+  metricGet: (input: {
+    area: string;
+    metricId: string;
+  }) => Promise<Result<MetricDefinition>>;
+  /** File a Decision proposing an edit or delete of an existing definition.
+   *  Nothing changes until the operator approves it. */
+  metricPropose: (input: {
+    area: string;
+    metricId: string;
+    action: "update" | "delete";
+    definition?: MetricDefinitionDraft;
+  }) => Promise<Result<{ decisionId: string }>>;
   planningEnsure: (
     cadence: ReviewCadence,
     period: string,

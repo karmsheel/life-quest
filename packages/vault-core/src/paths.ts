@@ -344,12 +344,53 @@ export function vaultPaths(root: string) {
     },
     reviewsCadenceDir: (cadence: string) =>
       build("reviews", assertSafeSegment(cadence, "review cadence")),
+    // The pre-notebook layout: one markdown file per period. Read during the
+    // compatibility release (and by the migration), never written once the
+    // period is a notebook.
     reviewMd: (cadence: string, period: string) =>
       build(
         "reviews",
         assertSafeSegment(cadence, "review cadence"),
         assertSafeSegment(period, "review period") + ".md",
       ),
+    // A period is a notebook directory: a manifest plus one markdown page per
+    // scope. The directory scan of `reviews/<cadence>/` names both shapes while
+    // legacy periods remain, so the index is one list either way.
+    reviewNotebookDir: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+      ),
+    reviewManifest: (cadence: string, period: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        "review.json",
+      ),
+    reviewPageMd: (cadence: string, period: string, scope: string) =>
+      build(
+        "reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period"),
+        assertSafeSegment(scope, "review scope") + ".md",
+      ),
+    // The one-release migration's archive: legacy files moved here so a scan of
+    // `reviews/<cadence>/` never sees them as a second period.
+    get reviewsLegacyArchiveDir(): string {
+      return build(".lifequest", "legacy-reviews");
+    },
+    reviewLegacyArchiveMd: (cadence: string, period: string) =>
+      build(
+        ".lifequest",
+        "legacy-reviews",
+        assertSafeSegment(cadence, "review cadence"),
+        assertSafeSegment(period, "review period") + ".md",
+      ),
+    get reviewMigrationMarker(): string {
+      return build(".lifequest", "migrations", "reviews-notebook-v1.json");
+    },
     // The cadence's standing rules for a review session. It lives under
     // `.lifequest` rather than beside the periods so that a directory scan of
     // `reviews/<cadence>/` still finds review files and nothing else.
@@ -358,6 +399,14 @@ export function vaultPaths(root: string) {
     },
     reviewSkillMd: (cadence: string) =>
       build(".lifequest", "reviews", assertSafeSegment(cadence, "review cadence") + ".md"),
+    // A live area's page contract: the headings a new page of that area is
+    // seeded with, and the order the page keeps them in. One file per area,
+    // beside the cadence skills, so `reviews/<cadence>/` holds periods only.
+    get reviewPageTemplatesDir(): string {
+      return build(".lifequest", "reviews", "pages");
+    },
+    reviewPageTemplateMd: (slug: string) =>
+      build(".lifequest", "reviews", "pages", assertDomainSlug(slug) + ".md"),
     get planningDir(): string {
       return build("planning");
     },
@@ -461,6 +510,17 @@ export function vaultPaths(root: string) {
         assertDomainSlug(slug),
         "views",
         assertSafeSegment(viewId, "view id") + ".json",
+      ),
+    // Metric definitions (2026-11-26 metrics design): one operator-owned JSON
+    // per metric, exactly like a saved view, so a definition is a git-portable
+    // object with no wholesale file to clobber.
+    domainMetricsDir: (slug: string) => build("domains", assertDomainSlug(slug), "metrics"),
+    domainMetric: (slug: string, metricId: string) =>
+      build(
+        "domains",
+        assertDomainSlug(slug),
+        "metrics",
+        assertSafeSegment(metricId, "metric id") + ".json",
       ),
     get overviewPins(): string {
       return build(".lifequest", "overview-pins.json");

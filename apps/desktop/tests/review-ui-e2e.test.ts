@@ -12,7 +12,7 @@ import {
 } from "../electron/data-revision.ts";
 
 /**
- * The Review page: the document and the Review checklist beside it, the per-area
+ * The Review page: the tabbed notebook, one page per tab, the per-area
  * reviews, the life review they unlock, and the daily review that has none of
  * them.
  *
@@ -25,7 +25,7 @@ import {
  * `npm run dev` in another terminal brings it up (the repository's
  * `lifequest-e2e` runner starts one itself, so the final run does not skip).
  *
- * The artifact is `e2e/artifacts/review.json` plus the eleven `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the thirteen `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -45,11 +45,13 @@ const SHOTS = [
   "review-calendar.png",
   "review-rules.png",
   "review-wide.png",
-  "review-checklist.png",
+  "review-tabs.png",
   "review-life-ready.png",
   "review-daily.png",
-  "review-live-checklist.png",
+  "review-live-tabs.png",
   "review-daily-complete.png",
+  "review-conflict.png",
+  "review-period-link.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 /** The four-overall-headings order the engine's skeleton uses. */
@@ -62,9 +64,27 @@ const AREAS = [
 ] as const;
 const TOTAL_AREAS = AREAS.length;
 const RAIL_ROWS = [
-  "review-area-overall",
-  ...AREAS.map((area) => `review-area-${area.slug}`),
+  "review-tab-overall",
+  ...AREAS.map((area) => `review-tab-${area.slug}`),
 ];
+/**
+ * The three figure blocks the app writes into Finance's Look-back at Start, one
+ * per shipped finance metric definition. The marker id is the definition's id;
+ * the default skill no longer carries `lifequest-snapshot` fences.
+ */
+const FIGURE_MARKERS = [
+  "<!-- lifequest:metric:cash-in -->",
+  "<!-- lifequest:metric:cash-out -->",
+  "<!-- lifequest:metric:net-cash-flow -->",
+];
+const FIGURE_TITLES = ["Cash in", "Cash out", "Net cash flow (transfers included)"];
+const FIGURE_VALUES = ["5,000 (ZAR)", "1,234.56 (ZAR)", "3,765.44 (ZAR)"];
+/** The overall page's cross-domain block and the table under it. */
+const OVERALL_OPEN = "<!-- lifequest:metrics:overall -->";
+const OVERALL_CLOSE = "<!-- /lifequest:metrics:overall -->";
+const OVERALL_HEADERS = ["Area", "Metric", "This period", "Previous period", "Δ"];
+/** Any old skill-fence marker: the Phase 5 default carries none. */
+const STALE_SNAPSHOT_MARKER = "lifequest:snapshot:";
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -83,7 +103,7 @@ function runDriver(): Promise<number> {
     execFile(
       electron,
       [path.join(desktopRoot, "e2e/review.electron.mjs")],
-      { cwd: desktopRoot, timeout: 180_000 },
+      { cwd: desktopRoot, timeout: 180_000, maxBuffer: 20 * 1024 * 1024 },
       (error) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -106,6 +126,13 @@ type Layout = {
   pageMaxWidth: string | null;
   rail: Rect | null;
   railPosition: string | null;
+  tabs: Rect | null;
+  tabsStyle: {
+    borderBottomWidth: string;
+    borderBottomStyle: string;
+    paddingBottom: string;
+  } | null;
+  progressLine: Rect | null;
   header: Rect | null;
   modes: Rect | null;
   editor: Rect | null;
@@ -265,6 +292,23 @@ type StartCall = {
 
 type ScopeState = { status: "draft" | "done"; sessionId: string | null };
 
+/** The router while a `?period=`/`?scope=` link was landing. */
+type LinkRouter = {
+  before: number;
+  after: number;
+  location: { pathname: string; search: string } | null;
+};
+
+/** The page a one-shot `?period=`/`?scope=` link left the Review page on. */
+type LinkedPage = {
+  period: string | null;
+  title: string | null;
+  scope: string | null;
+  locked: string | null;
+  boxText: string;
+  router: LinkRouter;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -288,7 +332,7 @@ type Report = {
     formatted: Page;
     agentDown: Page;
     agentDownRail: RailState;
-    agentDownSnapshotCalls: { cadence: string; period: string; scope: string }[];
+    agentDownFigureCalls: { cadence: string; period: string; scope: string }[];
     filledBody: string;
     started: Page;
     starts: StartCall[];
@@ -351,6 +395,8 @@ type Report = {
     lockedScopes: Record<string, ScopeState>;
     refusedWrite: boolean;
     lockedBody: string;
+    /** The locked Finance page after its tab was switched to: the figures survive. */
+    lockedFinance: Page;
     /** The open page before the agent marked anything: the week it is on. */
     liveBefore: Page;
     livePeriod: string;
@@ -377,6 +423,43 @@ type Report = {
     /** Reads that named a period of another cadence: [channel, cadence, period]. */
     crossCadenceReads: string[][];
     failedFinanceStarts: number;
+    /** The page the `?period=` leg started from: the page the conflict leg left open. */
+    periodLinkBefore: { period: string | null; scope: string | null };
+    /** The second weekly notebook the leg seeds: an earlier, finished week. */
+    periodLinkSealed: {
+      period: string;
+      title: string;
+      prose: string;
+      healthProse: string;
+    } | null;
+    /** That earlier week's Overall page, read on the way to the cold mount. */
+    periodLinkSealedOverall: { period: string | null; boxText: string };
+    /** `/review/weekly?period=<earlier week>&scope=health` on the mounted page. */
+    periodLinkInPlace: LinkedPage;
+    /** The same link as a cold mount, which is how it arrives from Analytics. */
+    periodLinkCold: LinkedPage;
+    /** A period the cadence does not have: the URL is read, the page stays put. */
+    periodLinkInvalid: {
+      requested: string;
+      period: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
+    /** A period of the cadence whose review window has not opened yet. */
+    periodLinkFuture: {
+      requested: string;
+      period: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
+    /** `?scope=` on its own: still selects its page, on the current period. */
+    periodLinkScopeOnly: {
+      requested: string;
+      period: string | null;
+      scope: string | null;
+      search: string | null;
+      router: LinkRouter;
+    };
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -436,7 +519,7 @@ function railText(page: Page, slug: string): string | null {
 }
 
 describe("review ui e2e", () => {
-  it("draws the review checklist beside the document, gates the life review behind the areas, and keeps the daily review one general review", async (t) => {
+  it("draws a tabbed review notebook, gates the Overall page behind the areas, and keeps the daily review one general page", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -479,7 +562,7 @@ describe("review ui e2e", () => {
     // ── the review IS the document, with the checklist beside it ────────────
     const opened = report.checks.opened;
     assert.equal(opened.boxes, 1, "the review page does not draw exactly one editor box");
-    assert.equal(opened.blockCount, 35, "the review did not render its own file");
+    assert.equal(opened.blockCount, 10, "the review did not render the page it opened");
     assert.equal(opened.editing, false, "the review opened a writing line on arrival");
     assert.equal(opened.blanks, 1, "the blank line the operator typed is not drawn");
     // The header is the Daily Journal's shape: the wing and cadence are the
@@ -555,11 +638,45 @@ describe("review ui e2e", () => {
       "raw markdown markers are painted in the review box",
     );
 
-    // ── the checklist is the LIVE areas, Life first, with the file's statuses ─
+    // ── the tab row is the LIVE pages, Overall first, with their statuses ────
     assert.equal(opened.layoutPresent, true, "the review-page-layout wrapper is missing");
-    assert.equal(opened.layoutSingle, false, "a weekly review was rendered as a single column");
-    assert.equal(opened.railPresent, true, "the weekly review has no Review checklist");
-    assert.equal(opened.railLabel, "Review checklist", "the checklist is not labelled as one");
+    assert.equal(opened.railPresent, true, "the weekly review has no Review pages tab row");
+    assert.equal(opened.railLabel, "Review pages", "the tab row is not labelled as one");
+    // The page's own index reads status first, then the tabs straight on the box:
+    // the progress sentence is above the tab row, and the tabs sit above the
+    // document rather than under the header note.
+    const progressBox = opened.layout.progressLine;
+    const tabsBox = opened.layout.tabs;
+    assert.ok(progressBox !== null, "the progress line's box could not be read");
+    assert.ok(tabsBox !== null, "the tab row's box could not be read");
+    assert.ok(
+      progressBox.top < tabsBox.top,
+      `the progress line (top ${progressBox.top}) is not above the tab row (top ${tabsBox.top})`,
+    );
+    assert.ok(
+      progressBox.top + progressBox.height <= tabsBox.top + 1,
+      "the progress line and the tab row overlap",
+    );
+    assert.ok(
+      opened.layout.editor !== null,
+      "the document box's box could not be read",
+    );
+    // No divider under the row and no gap to the box: the tabs are the
+    // document's top edge, not a strip floating above it.
+    assert.ok(
+      opened.layout.tabsStyle !== null,
+      "the tab row's own style could not be read",
+    );
+    assert.ok(
+      opened.layout.tabsStyle.borderBottomStyle === "none" ||
+        opened.layout.tabsStyle.borderBottomWidth === "0px",
+      `the tab row still draws a bottom divider (${opened.layout.tabsStyle.borderBottomStyle} ${opened.layout.tabsStyle.borderBottomWidth})`,
+    );
+    const tabToBoxGap = opened.layout.editor.top - (tabsBox.top + tabsBox.height);
+    assert.ok(
+      tabToBoxGap >= 0 && tabToBoxGap <= 1,
+      `there is a ${tabToBoxGap}px gap between the tab row and the document box`,
+    );
     assert.deepEqual(
       opened.railButtons,
       RAIL_ROWS,
@@ -568,13 +685,13 @@ describe("review ui e2e", () => {
     // The fixture also has a locked `spirit` area on disk: a rail built from every
     // domain file would offer a review for an area the operator cannot see.
     assert.equal(
-      opened.railButtons.includes("review-area-spirit"),
+      opened.railButtons.includes("review-tab-spirit"),
       false,
       "the checklist offers a review for the locked spirit area",
     );
-    assert.equal(
-      opened.progress,
-      `1 of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(opened.progress),
+      new RegExp(`^1 of ${TOTAL_AREAS} areas done · Life review unlocks when every area is done$`),
       "the progress line does not count the fixture's one done area",
     );
     assert.equal(opened.healthStatus, "Done", "the done area does not read Done");
@@ -596,13 +713,41 @@ describe("review ui e2e", () => {
       true,
       "the Life review is pressable before the areas are done",
     );
-    // The reviewing line above the box is gone: the checklist's selected row
-    // says which review the page is on, and nothing sits between the pager and
-    // the prose.
+    // The reviewing line above the box is gone: the selected tab says which
+    // page the operator is on, and nothing sits between the pager and the tabs.
     assert.equal(opened.scopeName, null, "the retired scope line is still on the page");
     assert.equal(opened.scopeLine, null, "the retired scope line is still on the page");
     assert.equal(opened.scopeWholeLifeLink, false, "the retired whole-life link came back");
-    assert.equal(activeScope(opened), "overall", "the Life row is not the selected row on arrival");
+    assert.equal(activeScope(opened), "overall", "the Overall tab is not the selected tab on arrival");
+
+    // ── the tabs are one selection: keyboard and the lens move the same page ─
+    const keyboard = report.checks.tabsKeyboard;
+    assert.equal(keyboard.length, 4, "the keyboard walk did not record four steps");
+    assert.deepEqual(
+      keyboard.map((step) => step.scope),
+      ["overall", "health", "relationships", "overall"],
+      "Arrow/Home/End did not move the selected page",
+    );
+    assert.deepEqual(
+      keyboard[0]?.tabStops,
+      ["overall"],
+      "the tab row does not keep a single tab stop on the selected tab",
+    );
+    assert.equal(
+      keyboard[3]?.focused,
+      "review-tab-overall",
+      "Home did not leave the keyboard on the selected tab",
+    );
+    assert.equal(
+      report.checks.lensToTab?.scope,
+      "financial",
+      "choosing Finance in the area lens did not bring the Finance page up",
+    );
+    assert.equal(
+      report.checks.tabBack?.scope,
+      "overall",
+      "choosing Life in the area lens did not bring the Overall page back",
+    );
     // The document is a page, not a card: its own week-first title, square
     // corners, and the autosave line under the box it reports on.
     assert.match(
@@ -623,7 +768,7 @@ describe("review ui e2e", () => {
       "the mark-done button is not the life review's form",
     );
 
-    // ── the page is one centred pair: 48rem column + checklist to its right ──
+    // ── the page is one centred column: 48rem of prose, the same margin both sides
     const centred = report.checks.centering;
     assert.ok(centred.pageLeft !== null, "the reading column's leading edge could not be read");
     assert.ok(centred.pageWidth !== null, "the reading column's width could not be read");
@@ -636,21 +781,6 @@ describe("review ui e2e", () => {
       Number(centred.pageWidth) >= 48 * 16 - 1,
       `the reading column narrowed to ${centred.pageWidth}px although the sheet had room for 48rem`,
     );
-    assert.ok(centred.railWidth !== null, "the checklist's width could not be read");
-    assert.ok(
-      Number(centred.railWidth) >= 180 && Number(centred.railWidth) <= 420,
-      `the checklist is ${centred.railWidth}px wide, not the ~17rem column the page is drawn for`,
-    );
-    assert.ok(
-      centred.gap !== null && centred.gap >= 16,
-      `the checklist is not to the right of the column with a gap: ${centred.gap}px`,
-    );
-    assert.ok(
-      Math.abs((centred.groupCentre ?? NaN) - (centred.innerCentre ?? NaN)) <= 2,
-      `the page+checklist group's centre is ${centred.groupCentre}, ${centred.innerCentre} is the page's padded centre`,
-    );
-    // The layout's grid has its own side padding, the same on both sides: the
-    // document is centred, not pulled off its centre by the rail.
     assert.ok(
       Number(centred.layoutPadLeft) >= 8,
       `the page has only ${centred.layoutPadLeft}px of leading padding`,
@@ -662,6 +792,12 @@ describe("review ui e2e", () => {
     assert.ok(
       Math.abs(Number(centred.layoutPadLeft) - Number(centred.layoutPadRight)) <= 2,
       `the page's side padding is lopsided: ${centred.layoutPadLeft}px leading, ${centred.layoutPadRight}px trailing`,
+    );
+    const centredBefore = Number(centred.pageLeft) - Number(centred.innerLeft);
+    const centredAfter = Number(centred.innerRight) - Number(centred.pageRight);
+    assert.ok(
+      Math.abs(centredBefore - centredAfter) <= 2,
+      `the column's margins are lopsided — ${centredBefore}px before it, ${centredAfter}px after it`,
     );
     for (const [part, left] of [
       ["header", centred.headerLeft],
@@ -675,44 +811,27 @@ describe("review ui e2e", () => {
       );
     }
 
-    // ── a wide window: the same measure, the pair centred with room ─────────
+    // ── a wide window: the same measure, still centred with room ────────────
     const wide = report.checks.wideCentering;
     assert.ok(wide.pageLeft !== null, "the wide page column's leading edge could not be read");
     assert.ok(wide.pageWidth !== null, "the wide page column's width could not be read");
     assert.ok(wide.contentCentre !== null, "the wide sheet's centre could not be read");
     assert.ok(
-      Math.abs((wide.groupCentre ?? NaN) - (wide.innerCentre ?? NaN)) <= 2,
-      "in a wide window the page+checklist group is not centred inside the page padding",
-    );
-    assert.ok(
       Number(wide.pageWidth) >= 48 * 16 - 1 && Number(wide.pageWidth) <= 48 * 16 + 1,
       `in a wide window the reading column is ${wide.pageWidth}px wide, not its 48rem measure`,
     );
+    const wideBefore = Number(wide.pageLeft) - Number(wide.innerLeft);
+    const wideAfter = Number(wide.innerRight) - Number(wide.pageRight);
     assert.ok(
-      wide.railLeft !== null &&
-        wide.pageRight !== null &&
-        wide.railLeft >= wide.pageRight + 16,
-      "in a wide window the checklist is not a real column to the right of the page",
+      Math.abs(wideBefore - wideAfter) <= 2,
+      `in a wide window the column's margins are lopsided — ${wideBefore}px before it, ${wideAfter}px after it`,
     );
 
-    // ── the dock open: the sheet is cramped, so the rail stacks ABOVE ──────
+    // ── the dock open: the sheet is cramped, so the column narrows ──────────
     // The dock takes its column before the page sees any width, so the same
-    // window is cramped while it is open. The checklist must move above the
-    // document rather than sit beside it and squeeze the prose, and the document
-    // must keep the same margin on both sides while it does.
+    // window is cramped while it is open. The page stays one column, takes the
+    // room it has, and keeps the same margin on both sides.
     const cramped = report.checks.crampedColumns;
-    assert.ok(
-      cramped.railTop !== null && cramped.pageTop !== null,
-      "with the dock open the stacked layout could not be read",
-    );
-    assert.ok(
-      Number(cramped.railTop) < Number(cramped.pageTop),
-      "with the dock open the checklist is not above the reading column",
-    );
-    assert.ok(
-      Number(cramped.railBottom) <= Number(cramped.pageTop) + 1,
-      "with the dock open the checklist overlaps the reading column",
-    );
     const crampedInner =
       cramped.innerRight !== null && cramped.innerLeft !== null
         ? cramped.innerRight - cramped.innerLeft
@@ -728,31 +847,18 @@ describe("review ui e2e", () => {
       Math.abs(crampedBefore - crampedAfter) <= 2,
       `with the dock open the document's margins are lopsided — ${crampedBefore}px before it, ${crampedAfter}px after it`,
     );
-    assert.ok(
-      cramped.pageRight !== null &&
-        cramped.pageLeft !== null &&
-        cramped.railLeft !== null &&
-        cramped.railRight !== null &&
-        Math.abs(cramped.railLeft - cramped.pageLeft) <= 2 &&
-        Math.abs(cramped.railRight - cramped.pageRight) <= 2,
-      "with the dock open the checklist does not span the reading column's width",
-    );
 
-    // ── a narrow window: no room beside the column, so the rail stacks above ─
+    // ── a narrow window: the one column takes the room it has ───────────────
     const narrow = report.checks.narrowColumns;
-    assert.ok(narrow.railTop !== null && narrow.pageTop !== null, "the narrow layout could not be read");
+    assert.ok(narrow.pageLeft !== null && narrow.pageWidth !== null, "the narrow layout could not be read");
     assert.ok(
-      Number(narrow.railTop) < Number(narrow.pageTop),
-      "in a narrow window the checklist is not above the reading column",
-    );
-    assert.ok(
-      Number(narrow.railBottom) <= Number(narrow.pageTop) + 1,
-      "in a narrow window the checklist overlaps the reading column",
+      Number(narrow.pageWidth) <= 48 * 16 + 1,
+      `in a narrow window the column is ${narrow.pageWidth}px wide, past its measure`,
     );
     assert.equal(
       report.checks.narrow.railPresent,
       true,
-      "the narrow window lost the checklist instead of stacking it",
+      "the narrow window lost the tab row instead of wrapping it",
     );
 
     // ── a blank line the operator typed reaches the file ────────────────────
@@ -809,9 +915,9 @@ describe("review ui e2e", () => {
     );
     assert.equal(agentDown.boxes, 1, "an unreachable agent took the review document away");
     assert.equal(
-      agentDown.boxText.includes("Spending this period"),
+      agentDown.boxText.includes("Cash in"),
       true,
-      "the filled snapshot is not visible in the review with the agent down",
+      "the filled figures are not visible in the review with the agent down",
     );
     // Pressing a row puts the page on that area: the selected row is the only
     // place the scope is said now that the reviewing line is gone.
@@ -822,50 +928,93 @@ describe("review ui e2e", () => {
       "the pressed row is not the selected row",
     );
     assert.equal(
-      report.checks.agentDownSnapshotCalls.length,
+      report.checks.agentDownFigureCalls.length,
       1,
-      "the failed start did not run the snapshot pass exactly once",
+      "the failed start did not run the figure pass exactly once",
     );
     assert.equal(
-      report.checks.agentDownSnapshotCalls[0]!.scope,
+      report.checks.agentDownFigureCalls[0]!.scope,
       "financial",
-      "the Finance row ran the snapshot pass for another scope",
+      "the Finance row ran the figure pass for another scope",
     );
+    for (const marker of FIGURE_MARKERS) {
+      assert.equal(
+        report.checks.filledBody.split(marker).length - 1,
+        1,
+        `${marker} is not in the file exactly once`,
+      );
+    }
     assert.equal(
-      report.checks.filledBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-      1,
-      "the snapshot marker is not in the file exactly once",
+      report.checks.filledBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "an old lifequest:snapshot marker is still in the filled review",
     );
-    assert.match(report.checks.filledBody, /\| Groceries \| 1,234\.56 \|/, "the snapshot did not carry the figure");
-    // The rule names the financial domain's Look-back, so the block belongs in
-    // the Finance area section, not under the overall `## Look-back`.
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.filledBody.includes(value),
+        true,
+        `the figure pass did not write ${value}`,
+      );
+    }
+    // The definitions belong to the Finance area, so the blocks belong in the
+    // Finance area section, not under the overall `## Look-back`.
     const filled = report.checks.filledBody;
     const financeAt = filled.indexOf("## Finance");
     const financeLookback = filled.indexOf("### Look-back", Math.max(financeAt, 0));
-    const snapshotAt = filled.indexOf("<!-- lifequest:snapshot:finance-spend -->");
+    const firstFigureAt = filled.indexOf(FIGURE_MARKERS[0]);
     const financeKeep = filled.indexOf("### Keep", Math.max(financeLookback, 0));
     assert.ok(
       financeAt !== -1 &&
         financeLookback !== -1 &&
-        snapshotAt > financeLookback &&
-        snapshotAt < financeKeep,
-      "the snapshot did not land in Finance's Look-back section",
+        firstFigureAt > financeLookback &&
+        firstFigureAt < financeKeep,
+      "the figures did not land in Finance's Look-back section",
+    );
+    // The window, the as-of instant and the source are what make a figure honest
+    // while a period is still open; the box must print all three.
+    assert.equal(
+      agentDown.boxText.includes("2026-10-12 → 2026-10-18"),
+      true,
+      "the filled figures do not print their window",
     );
     assert.equal(
-      agentDown.boxText.includes("lifequest:snapshot"),
+      agentDown.boxText.includes(
+        "As of 2026-10-18 08:00 · Source: the finance:transactions database",
+      ),
+      true,
+      "the filled figures do not print the as-of instant and their source",
+    );
+    assert.equal(
+      agentDown.boxText.includes("lifequest:metric:"),
       false,
-      "the snapshot marker is printed in the review",
+      "the metric marker is printed in the review",
     );
-    assert.equal(agentDown.tables >= 1, true, "the snapshot's table is not drawn as a table");
-    assert.deepEqual(
-      agentDown.headers.filter((h) => h === "Category" || h === "Total (ZAR)").sort(),
-      ["Category", "Total (ZAR)"],
-      "the snapshot's table headers are wrong",
+    for (const title of FIGURE_TITLES) {
+      assert.equal(
+        agentDown.boxText.includes(title),
+        true,
+        `the filled figure ${JSON.stringify(title)} is not drawn in the review`,
+      );
+    }
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        agentDown.boxText.includes(value),
+        true,
+        `the filled figure's value ${JSON.stringify(value)} is not drawn in the review`,
+      );
+    }
+    // The document was filled before the agent failed: the notice must say what
+    // the app wrote rather than read as a clean start.
+    assert.match(
+      String(agentDown.notice),
+      /filled 3 figure/,
+      "the agent-down start did not report the figures it filled",
     );
+    assert.equal(agentDown.tables, 0, "the figures are prose, not a table");
     assert.equal(
       agentDown.boxText.includes("| --- |"),
       false,
-      "the snapshot's table is painted as markdown pipes",
+      "the figures are painted as markdown pipes",
     );
 
     // ── the Finance row opens the Finance interview, and finishing it flips
@@ -875,10 +1024,18 @@ describe("review ui e2e", () => {
     assert.equal(started.error, null, `the Finance start reported ${String(started.error)}`);
     assert.equal(financeStart.scope, "financial", "the Finance row started another scope");
     assert.equal(financeStart.cadence, "weekly", "the Finance row started another cadence");
-    assert.match(financeStart.kickoff, /## Finance/, "the Finance kickoff does not name its own section");
-    assert.match(financeStart.kickoff, /only/, "the Finance kickoff does not scope the companion to one section");
+    assert.match(financeStart.kickoff, /scope "financial"/, "the Finance kickoff does not name its own scope");
+    assert.match(
+      financeStart.kickoff,
+      /Leave every other page alone/,
+      "the Finance kickoff does not scope the companion to one page",
+    );
     assert.equal(report.checks.financeKickoffs.length, 1, "the dock was not sent exactly the Finance kickoff");
-    assert.match(String(report.checks.financeKickoffs[0]), /## Finance/, "the dock was sent another kickoff");
+    assert.match(
+      String(report.checks.financeKickoffs[0]),
+      /scope "financial"/,
+      "the dock was sent another kickoff",
+    );
 
     // ── the started interview is in Chats while the agent is still working ──
     // The chat list was read before this session existed and is not read again
@@ -941,31 +1098,47 @@ describe("review ui e2e", () => {
       "the arrow steps did not walk back to the open week",
     );
     assert.equal(picker.back?.nextDisabled, true, "Next is not disabled on the open week");
-    assert.match(String(started.notice), /snapshot/i, "the page did not say what it filled");
+    // This is the second Finance Start, and the first wrote the figures already:
+    // with the window and as-of fixed, the pass has nothing to change, so the
+    // notice names the chat it opened and does not claim a fill it did not do.
     assert.match(String(started.notice), /chat/i, "the page did not say the interview opened");
+    assert.doesNotMatch(
+      String(started.notice),
+      /filled \d+ figure/i,
+      "the second start claimed to fill the figures again",
+    );
     assert.equal(
       started.markDoneLabel,
       "Mark Finance review complete",
       "the mark-done button is not the Finance form",
     );
     assert.equal(
-      report.checks.startedTwiceBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
-      1,
-      "a second start appended a second snapshot block",
+      report.checks.startedTwiceBody,
+      report.checks.filledBody,
+      "a second start rewrote the figure blocks it had already written",
     );
-    assert.equal(
-      report.checks.startedTwiceBody.split("| Groceries | 1,234.56 |").length - 1,
-      1,
-      "a second start appended the snapshot's own table again",
-    );
+    for (const marker of FIGURE_MARKERS) {
+      assert.equal(
+        report.checks.startedTwiceBody.split(marker).length - 1,
+        1,
+        `a second start appended a second ${marker}`,
+      );
+    }
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.startedTwiceBody.split(value).length - 1,
+        1,
+        `a second start appended the figure value ${value} again`,
+      );
+    }
     assert.equal(
       railText(report.checks.financeDone, "financial"),
       "Done",
       "finishing Finance did not flip its row to Done",
     );
-    assert.equal(
-      report.checks.financeDone.progress,
-      `2 of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(report.checks.financeDone.progress),
+      new RegExp(`^2 of ${TOTAL_AREAS} areas done · `),
       "the progress line did not count the second area",
     );
     assert.match(
@@ -993,10 +1166,18 @@ describe("review ui e2e", () => {
         area.slug,
         `the ${area.name} row started another scope`,
       );
+      // The shipped kickoff names the page by its scope and tells the session to
+      // leave every other page alone; it no longer quotes a "## <Area>" heading
+      // (an area page has no area section — the page IS the area).
       assert.match(
         startedArea.start.kickoff,
-        new RegExp(`## ${area.name}`),
-        `the ${area.name} kickoff does not name its own section`,
+        new RegExp(`scope "${area.slug}"`),
+        `the ${area.name} kickoff does not name its own page`,
+      );
+      assert.match(
+        startedArea.start.kickoff,
+        /Leave every other page alone/,
+        `the ${area.name} kickoff does not scope the companion to one page`,
       );
       assert.equal(
         activeScope(startedArea.page),
@@ -1010,26 +1191,28 @@ describe("review ui e2e", () => {
       );
       assert.equal(railText(completed, area.slug), "Done", `the ${area.name} row did not flip to Done`);
       const doneCount = remaining.findIndex((r) => r.slug === area.slug) + 3;
-      assert.equal(
-        completed.progress,
-        `${doneCount} of ${TOTAL_AREAS} areas done`,
+      assert.match(
+        String(completed.progress),
+        doneCount === TOTAL_AREAS
+          ? /Every area is reviewed/
+          : new RegExp(`^${doneCount} of ${TOTAL_AREAS} areas done · `),
         `the progress line after ${area.name} is wrong`,
       );
       if (area.slug === "relationships") {
         assert.match(
           String(completed.notice),
+          /Relationships review complete/,
+          "finishing the last area did not say it completed",
+        );
+        assert.match(
+          String(completed.progress),
           /Every area is reviewed/,
-          "finishing the last area did not say every area is reviewed",
+          "the progress line does not say every area is reviewed",
         );
         assert.match(
           String(completed.hint),
-          /All areas are reviewed/i,
-          "the checklist hint does not say all areas are reviewed",
-        );
-        assert.equal(
-          completed.lifeItem !== null && completed.lifeItem.disabled,
-          false,
-          "the Life review is still disabled after the last area was completed",
+          /Every area is reviewed/i,
+          "the progress line does not say every area is reviewed",
         );
         assert.equal(
           completed.lifeStatus,
@@ -1045,9 +1228,9 @@ describe("review ui e2e", () => {
       }
     }
     const allDone = report.checks.allDone;
-    assert.equal(
-      allDone.progress,
-      `${TOTAL_AREAS} of ${TOTAL_AREAS} areas done`,
+    assert.match(
+      String(allDone.progress),
+      /Every area is reviewed/,
       "every area is done but the progress line does not say so",
     );
     for (const area of AREAS) {
@@ -1062,9 +1245,9 @@ describe("review ui e2e", () => {
     assert.equal(dailyOpen.scopeName, null, "the daily review drew a scope name");
     assert.equal(dailyOpen.layoutPresent, true, "the daily review has no review-page-layout wrapper");
     assert.equal(
-      dailyOpen.layoutSingle,
+      report.checks.dailyColumns.pageWidth !== null,
       true,
-      "the daily review is not rendered as the single-column review-page-layout",
+      "the daily review has no measurable reading column",
     );
     assert.equal(
       dailyOpen.startLabel,
@@ -1103,6 +1286,54 @@ describe("review ui e2e", () => {
         `the daily review file grew a ${area.name} section`,
       );
     }
+    // The one general page carries the cross-domain table and no area figure
+    // block: a daily review has no areas for a figure to land on.
+    assert.equal(
+      report.checks.dailyBody.split(OVERALL_OPEN).length - 1,
+      1,
+      "the daily review file does not hold the overall metrics block exactly once",
+    );
+    assert.equal(
+      report.checks.dailyBody.split(OVERALL_CLOSE).length - 1,
+      1,
+      "the daily review file's overall metrics block is not closed once",
+    );
+    assert.equal(
+      report.checks.dailyBody.includes("lifequest:metric:"),
+      false,
+      "the daily review file grew an area figure block",
+    );
+    assert.equal(
+      report.checks.dailyBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "the daily review file holds an old lifequest:snapshot marker",
+    );
+    assert.ok(
+      report.checks.dailyBody.includes(
+        "| Health | Training sessions | 3 sessions | 2 sessions | +1 |",
+      ),
+      "the daily review's overall block does not hold the Health training row",
+    );
+    assert.equal(
+      report.checks.dailyStarted.tables,
+      1,
+      "the daily review did not print the overall metrics table",
+    );
+    assert.deepEqual(
+      report.checks.dailyStarted.headers,
+      OVERALL_HEADERS,
+      "the daily review's metrics table headers are wrong",
+    );
+    assert.match(
+      String(report.checks.dailyStarted.boxText),
+      /Metrics this period/,
+      "the daily review did not print the overall metrics block",
+    );
+    assert.match(
+      String(report.checks.dailyStarted.boxText),
+      /5,000 \(ZAR\)/,
+      "the daily review's overall table did not print the finance rows",
+    );
     assert.equal(
       report.checks.dailyStarted.markDoneLabel,
       "Mark review complete",
@@ -1113,14 +1344,12 @@ describe("review ui e2e", () => {
       false,
       "the daily review grew a checklist after its interview started",
     );
-    // The prepopulate stub answers this daily review with a skipped snapshot (a
-    // directive the pass cannot place). A Start that filled nothing must not
-    // read as a clean start: the notice has to name the rule and where it
-    // looked, which is also the only page surface that reports a genuine skip.
+    // The daily Start writes the overall block, so its notice reports what the app
+    // wrote rather than reading as a clean start.
     assert.match(
       String(report.checks.dailyStarted.notice),
-      /Skipped: Spending this period — this review has no "Look-back" section under Finance/,
-      "the daily Start notice did not report the skipped snapshot",
+      /filled \d+ figure/,
+      "the daily Start notice did not report the figures it filled",
     );
 
     // ── the agent fills and completes the daily review ON THE OPEN PAGE ─────
@@ -1211,15 +1440,15 @@ describe("review ui e2e", () => {
       "the weekly mark-done button is not the area's form",
     );
     assert.equal(
-      back.lifeItem !== null && back.lifeItem.disabled,
-      false,
-      "the Life review is not enabled on the weekly review with every area done",
+      back.lifeStatus,
+      "In progress",
+      "the Life review does not read In progress with every area done",
     );
 
     // ── the cadence's rules, read and written from the page ────────────────
     assert.match(
       String(report.checks.rules.skillValue),
-      /Keep it to a page\./,
+      /Standing rules for this cadence's review sessions/,
       "the rules panel did not show the cadence's rules",
     );
     assert.equal(report.checks.skillWrites.length, 1, "the rules were not written exactly once");
@@ -1233,13 +1462,16 @@ describe("review ui e2e", () => {
     assert.deepEqual(report.checks.modeButtons, [], "the review page still has Document/Preview buttons");
     assert.deepEqual(back.modes, [], "the review page still draws a view switch");
     assert.equal(back.previewShown, false, "the review page still draws a Preview surface");
+    // The operator-written parts live on the Overall page, so read that page
+    // before claiming the box kept them.
+    const overallBack = report.checks.overallBack;
     assert.match(
-      String(back.boxText),
+      String(overallBack.boxText),
       /A note outside the skeleton\./,
       "the one box dropped a section the operator wrote",
     );
     assert.match(
-      String(back.boxText),
+      String(overallBack.boxText),
       /alpha beta gamma/,
       "the one box dropped the heading the operator wrote",
     );
@@ -1264,19 +1496,88 @@ describe("review ui e2e", () => {
       "Mark life review complete",
       "the life review's mark-done button is not its form",
     );
+    // The overall page shows the cross-domain table the Start wrote: the Health
+    // event metric and the three Finance definitions, with the as-of instant and
+    // the previous window under it. It is a table, not pipes printed as prose.
+    const lifeStarted = report.checks.lifeStarted;
+    assert.equal(lifeStarted.tables, 1, "the overall page did not draw the metrics table");
+    assert.deepEqual(
+      lifeStarted.headers,
+      OVERALL_HEADERS,
+      "the overall metrics table's headers are wrong",
+    );
+    for (const cell of [
+      "Health",
+      "Training sessions",
+      "3 sessions",
+      "2 sessions",
+      "Finance",
+      "Cash in",
+      "5,000 (ZAR)",
+      "4,000 (ZAR)",
+      "Cash out",
+      "1,234.56 (ZAR)",
+      "Net cash flow (transfers included)",
+      "3,765.44 (ZAR)",
+    ]) {
+      assert.equal(
+        String(lifeStarted.boxText).includes(cell),
+        true,
+        `the overall metrics table is missing ${cell}`,
+      );
+    }
+    assert.match(
+      String(lifeStarted.boxText),
+      /Metrics this period/,
+      "the overall page did not print the metrics block's heading",
+    );
+    assert.match(
+      String(lifeStarted.boxText),
+      /As of 2026-10-18 08:00 · Previous period: 2026-10-05 → 2026-10-11/,
+      "the overall metrics block does not print the as-of instant and previous window",
+    );
+    assert.equal(
+      String(lifeStarted.boxText).includes("| --- |"),
+      false,
+      "the overall metrics table is painted as markdown pipes",
+    );
+    assert.equal(
+      String(lifeStarted.boxText).includes("lifequest:metrics"),
+      false,
+      "the overall metrics marker is printed in the review",
+    );
     const locked = report.checks.locked;
     assert.equal(locked.lockedBadge, "Locked", "the locked review does not show its Locked badge");
     assert.equal(locked.status, "Locked", "the page's status line is not Locked");
     assert.equal(railText(locked, "overall"), "Done", "the Life row does not read Done after completion");
-    for (const area of [...AREAS, { slug: "overall", name: "Life" }]) {
-      const item = railItem(locked, area.slug);
+    // Reading still works on a locked review: every page tab is there and can
+    // be pressed; only the authoring controls are gone.
+    assert.equal(
+      locked.railButtons.length,
+      RAIL_ROWS.length,
+      "the locked review does not offer every page tab",
+    );
+    assert.equal(
+      locked.actions.includes("Start interview"),
+      false,
+      "the locked review still offers Start interview",
+    );
+    assert.equal(locked.unlockPresent, true, "the locked review offers no way to unlock it");
+    // Reading survives the lock: the Finance tab still switches and shows the
+    // figures the app wrote before the lock.
+    const lockedFinance = report.checks.lockedFinance;
+    for (const title of FIGURE_TITLES) {
       assert.equal(
-        item !== null && item.disabled,
+        String(lockedFinance.boxText).includes(title),
         true,
-        `the ${area.name} row is still pressable on a locked review`,
+        `the locked Finance page lost the figure ${title}`,
       );
     }
-    assert.equal(locked.unlockPresent, true, "the locked review offers no way to unlock it");
+    assert.equal(
+      lockedFinance.tables,
+      0,
+      "the locked Finance page drew the overall metrics table",
+    );
     assert.equal(
       locked.markDoneLabel,
       null,
@@ -1302,10 +1603,34 @@ describe("review ui e2e", () => {
         `the locked review holds a duplicate ${area.name} section`,
       );
     }
+    for (const marker of FIGURE_MARKERS) {
+      assert.equal(
+        report.checks.lockedBody.split(marker).length - 1,
+        1,
+        `the lock changed the figure block ${marker}`,
+      );
+    }
     assert.equal(
-      report.checks.lockedBody.split("<!-- lifequest:snapshot:finance-spend -->").length - 1,
+      report.checks.lockedBody.split(OVERALL_OPEN).length - 1,
       1,
-      "the lock changed the snapshot block",
+      "the locked review does not hold the overall metrics block exactly once",
+    );
+    assert.equal(
+      report.checks.lockedBody.includes(STALE_SNAPSHOT_MARKER),
+      false,
+      "the locked review holds an old lifequest:snapshot marker",
+    );
+    for (const value of FIGURE_VALUES) {
+      assert.equal(
+        report.checks.lockedBody.includes(value),
+        true,
+        `the locked review lost the figure value ${value}`,
+      );
+    }
+    assert.match(
+      report.checks.lockedBody,
+      /As of 2026-10-18 08:00 · Source: the finance:transactions database/,
+      "the locked review's figures lost their as-of instant and source",
     );
 
     // ── an agent's mark updates the checklist of the page already open ──────
@@ -1339,10 +1664,10 @@ describe("review ui e2e", () => {
       "Not started",
       "the agent's Finance mark also changed an area it did not touch",
     );
-    assert.equal(
-      live.liveFinance.progress,
-      `2 of ${TOTAL_AREAS} areas done`,
-      "the checklist's progress did not count the agent's mark",
+    assert.match(
+      String(live.liveFinance.progress),
+      new RegExp(`^2 of ${TOTAL_AREAS} areas done · `),
+      "the progress line did not count the agent's mark",
     );
     assert.ok(
       live.liveReReads >= 1,
@@ -1358,13 +1683,8 @@ describe("review ui e2e", () => {
     // agent's last area and the row becoming usable.
     assert.match(
       String(live.liveGated.hint),
-      /All areas are reviewed/i,
-      "the checklist still gates the Life review after the agent finished every area",
-    );
-    assert.equal(
-      live.liveGated.lifeItem !== null && live.liveGated.lifeItem.disabled,
-      false,
-      "the Life review is still disabled after the agent finished every area live",
+      /Every area is reviewed/i,
+      "the progress line still gates the Life review after the agent finished every area",
     );
     assert.equal(
       railText(live.liveGated, "overall"),
@@ -1422,6 +1742,155 @@ describe("review ui e2e", () => {
     );
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
+
+    // ── a second writer under the open page: the draft is kept ─────────────
+    // The page's autosave and the companion both write the whole review body.
+    // The autosave carries the rev it loaded, so a file that moved on under it is
+    // a CONFLICT: the comment is kept in the box, the file keeps the companion's
+    // paragraph, and the reload control is the only thing that resolves it.
+    const conflicted = report.checks.conflicted;
+    assert.ok(report.checks.conflictPeriod, "the conflict leg never reached a weekly review");
+    assert.equal(
+      report.checks.conflictRemoteWrite?.ok,
+      true,
+      "the rig refused the companion's write under the open page",
+    );
+    assert.equal(
+      report.checks.conflictFile,
+      report.checks.conflictRemoteBody,
+      "the conflicted autosave overwrote the companion's body instead of being refused",
+    );
+    assert.match(
+      String(conflicted?.boxText),
+      /Operator sentence while the companion writes\./,
+      "the conflict threw the operator's draft away",
+    );
+    assert.match(
+      String(conflicted?.banner),
+      /changed on disk/,
+      "the conflict banner does not say what happened",
+    );
+    assert.equal(conflicted?.reloadPresent, true, "the conflict banner offers no reload control");
+    assert.deepEqual(
+      report.checks.conflictWritesPaused,
+      [report.checks.conflictWritesPaused[0], report.checks.conflictWritesPaused[0]],
+      "the conflicted box kept autosaving its stale body",
+    );
+    assert.equal(
+      report.checks.conflictReloaded?.locked,
+      null,
+      "the conflict leg ran on a locked review",
+    );
+    assert.match(
+      String(report.checks.conflictReloaded?.boxText),
+      /REMOTE COMPANION SENTENCE\./,
+      "reloading after the conflict did not adopt the file's body",
+    );
+
+    // ── the Analytics period link is a one-shot deep link ──────────────────
+    // The sender side is `analytics-e2e.test.ts`; this is the receiver.
+    // `/review/weekly?period=<earlier week>&scope=health` must apply the period
+    // it names (read off that week's own prose) and the page it names, then strip
+    // both params — on the mounted page and as a cold mount, which is how the
+    // link really arrives from Analytics. An invalid or not-yet-open period must
+    // leave the page where it was, and `?scope=` on its own must still work.
+    const linkBefore = report.checks.periodLinkBefore;
+    const sealed = report.checks.periodLinkSealed;
+    assert.ok(sealed, "the deep-link leg never seeded the earlier weekly review");
+    assert.equal(
+      linkBefore.scope,
+      "overall",
+      "the deep-link leg did not start on the page the conflict leg left open",
+    );
+    assert.notEqual(
+      linkBefore.period,
+      sealed.period,
+      "the seeded 'earlier' week is the week the page was already on, so the leg proves no period switch",
+    );
+    assert.equal(
+      report.checks.periodLinkSealedOverall.period,
+      sealed.period,
+      "the earlier week's Overall page is not that week",
+    );
+    assert.ok(
+      report.checks.periodLinkSealedOverall.boxText.includes(sealed.prose),
+      "the earlier week's Overall page does not hold its own prose",
+    );
+    for (const [label, landed] of [
+      ["the link landing on the mounted page", report.checks.periodLinkInPlace],
+      ["the link arriving as a cold mount", report.checks.periodLinkCold],
+    ] as const) {
+      assert.equal(landed.period, sealed.period, `${label} did not apply the link's period`);
+      assert.equal(landed.title, sealed.title, `${label} shows another week's heading`);
+      assert.equal(landed.scope, "health", `${label} did not select the Health tab`);
+      assert.ok(
+        landed.boxText.includes(sealed.healthProse),
+        `${label} did not load the earlier week's document`,
+      );
+      assert.equal(
+        landed.locked,
+        "Locked",
+        `${label} did not read the earlier week as the finished review it is`,
+      );
+      assert.equal(
+        landed.router.location?.search,
+        "",
+        `${label} left the link's params on the URL`,
+      );
+      assert.equal(
+        landed.router.location?.pathname,
+        "/review/weekly",
+        `${label} left the router on another path`,
+      );
+      assert.ok(
+        landed.router.after >= landed.router.before + 2,
+        `${label} was never actually applied — the router saw no URL to strip`,
+      );
+    }
+    const invalidLink = report.checks.periodLinkInvalid;
+    assert.equal(invalidLink.requested, "9999-13-99");
+    assert.equal(invalidLink.period, sealed.period, "an invalid ?period= moved the review page");
+    assert.equal(
+      invalidLink.search,
+      "",
+      "an invalid ?period= left its param on the URL",
+    );
+    assert.ok(
+      invalidLink.router.after >= invalidLink.router.before + 2,
+      "the invalid link was never actually put on the URL",
+    );
+    const futureLink = report.checks.periodLinkFuture;
+    assert.ok(
+      futureLink.requested > String(report.checks.opened.periodData),
+      "the not-yet-open leg did not ask for a period after the open week",
+    );
+    assert.equal(
+      futureLink.period,
+      sealed.period,
+      "a not-yet-open ?period= moved the review page",
+    );
+    assert.equal(
+      futureLink.search,
+      "",
+      "a not-yet-open ?period= left its param on the URL",
+    );
+    assert.ok(
+      futureLink.router.after >= futureLink.router.before + 2,
+      "the not-yet-open link was never actually put on the URL",
+    );
+    const scopeOnly = report.checks.periodLinkScopeOnly;
+    assert.equal(scopeOnly.requested, "/review/weekly?scope=mind");
+    assert.equal(
+      scopeOnly.period,
+      sealed.period,
+      "?scope= alone moved the review page to another period",
+    );
+    assert.equal(scopeOnly.scope, "mind", "?scope= alone did not select its page");
+    assert.equal(scopeOnly.search, "", "?scope= alone left its param on the URL");
+    assert.ok(
+      scopeOnly.router.after >= scopeOnly.router.before + 2,
+      "the scope-only link was never actually put on the URL",
+    );
 
     // ── the artifacts ──────────────────────────────────────────────────────
     assert.equal(report.checks.openedRail.rows.length, RAIL_ROWS.length);

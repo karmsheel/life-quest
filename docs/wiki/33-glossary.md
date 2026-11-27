@@ -218,6 +218,19 @@ page. See [Log](./26-log.md).
 write the vault. The studio runs the MCP server; the door is protected by pairing
 secrets. See [Agents](./25-agents.md).
 
+**Metric definition** — the operator's named measurement in an area: label, unit,
+source, aggregation, optional target and display formatting, stored as one JSON
+per metric at `domains/<slug>/metrics/<id>.json`. A `derived` definition carries
+one view spec over the area's databases; an `events` definition names the
+`eventKey` its logged rows carry. Creating one applies at once; editing or
+deleting one is not exposed yet (it waits on a product decision). See
+[Data and databases](./19-data-and-databases.md).
+
+**Metric event** — one dated row in an area's **Metrics** database: `date`,
+`metric` (the definition's `eventKey`), `value` and an optional `note`. A
+manual metric is the count or sum of these rows for a period, so "Training
+sessions" (count) and "Training minutes" (sum) can read the same events. See
+[Data and databases](./19-data-and-databases.md).
 **Onboarding interview** — the first-run conversation offered by the **Welcome to
 LifeQuest.** card in the chat dock. **Begin the interview** starts it; the
 companion hears the operator out and opens one to three areas itself (never all

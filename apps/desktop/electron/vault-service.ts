@@ -31,6 +31,7 @@ import {
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
+  ensureReviewPage,
   fileImpliedChanges,
   getDailyNote,
   readCompanionBrief,
@@ -40,6 +41,8 @@ import {
   getPage,
   getPeriodPack,
   getReview,
+  getReviewNotebook,
+  getReviewPageBody,
   getRow,
   getVisionBoard,
   hireAgent,
@@ -109,11 +112,24 @@ import {
   USER_ACTOR,
   vaultPaths,
   writeReview,
+  writeReviewPage,
   // The cadence's standing review rules, and the snapshot pass that fills the
   // review from them before an interview starts.
   getReviewSkill,
   writeReviewSkill,
   prepopulateReview,
+  // Phase 6: the Analytics matrix, and the metric events/log/define door the
+  // page uses to log and create definitions. The writes apply immediately (the
+  // add-vs-change split): editing an existing definition stays on the Decision
+  // path.
+  getAnalyticsMatrix,
+  listMetricEvents,
+  logMetric,
+  defineMetric,
+  getMetric,
+  draftToDefineMetricInput,
+  proposeMetricDefinitionChange,
+  isReviewCadence,
   addDatabaseColumn,
   withDecisionDisplayLabels,
   exportDomainBooks,
@@ -204,8 +220,17 @@ import {
   type Result,
   type ReviewCadence,
   type ReviewPrepopulateResult,
+  type ReviewNotebook,
+  type ReviewPageBody,
+  type ReviewPageWriteOutcome,
   type ReviewRecord,
+  type ReviewWriteOutcome,
   type ReviewSkill,
+  type AnalyticsMatrix,
+  type MetricDefinition,
+  type MetricDefinitionDraft,
+  type MetricEventRow,
+  type MetricEvents,
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalRecord,
@@ -1923,15 +1948,82 @@ export async function reviewWrite(
   cadence: ReviewCadence,
   period: string,
   body: string,
-): Promise<Result<ReviewRecord>> {
-  return withVault((root) =>
-    writeReview(root, {
+  baseRev?: number,
+): Promise<ReviewWriteOutcome> {
+  // The whole-body editor path: it carries the rev it loaded so a write that
+  // raced another writer comes back as CONFLICT instead of overwriting prose.
+  return enqueue(async () => {
+    if (!currentRoot) return { ok: false, error: "No vault is open", code: "MALFORMED" };
+    return writeReview(currentRoot, {
       cadence,
       period,
       bodyMarkdown: body,
       actor: USER_ACTOR,
-    }),
-  );
+      baseRev,
+    });
+  });
+}
+
+/**
+ * The period's notebook summary: identity, lock and one row per page.
+ *
+ * Phase 2's page UI reads this for its tabs, so it is the one door onto a
+ * notebook that has no body in it. `reviewPageGet` is the body beside it.
+ */
+export async function reviewNotebookGet(
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => getReviewNotebook(root, cadence, period));
+}
+
+/** One page's body and rev, for the page the operator is reading. */
+export async function reviewPageGet(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewPageBody>> {
+  return withVault((root) => getReviewPageBody(root, cadence, period, scope));
+}
+
+/**
+ * Create one page (and the notebook, when the period has none) without starting
+ * an interview: the page's "Write it myself" and the first half of Start.
+ */
+export async function reviewPageEnsure(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewNotebook>> {
+  return withVault((root) => ensureReviewPage(root, { cadence, period, scope }));
+}
+
+/** Write one page against the rev it was read at. */
+export async function reviewPageWrite(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+  body: string,
+  baseRev: number,
+): Promise<ReviewPageWriteOutcome> {
+  return enqueue(async () => {
+    if (!currentRoot) {
+      return {
+        ok: false as const,
+        code: "MALFORMED" as const,
+        error: "No vault is open",
+        message: "No vault is open",
+      };
+    }
+    return writeReviewPage(currentRoot, {
+      cadence,
+      period,
+      scope,
+      bodyMarkdown: body,
+      baseRev,
+      actor: USER_ACTOR,
+    });
+  });
 }
 
 export async function reviewMarkDone(
@@ -2115,12 +2207,153 @@ export async function reviewPrepopulate(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6: the Analytics matrix, and logging / defining metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * The Analytics matrix: every definition's value over the last N periods of a
+ * cadence, scoped by the lens (null = Life, every live area). A read; it never
+ * creates the events table and never writes.
+ */
+export async function analyticsMatrix(input: {
+  cadence: string;
+  lens: string | null;
+  count?: number;
+}): Promise<Result<AnalyticsMatrix>> {
+  if (!isReviewCadence(input.cadence)) {
+    return { ok: false, error: `Unknown review cadence: ${String(input.cadence)}` };
+  }
+  return withVault((root) =>
+    getAnalyticsMatrix(root, {
+      cadence: input.cadence as ReviewCadence,
+      lens: typeof input.lens === "string" && input.lens ? input.lens : null,
+      count: input.count,
+    }),
+  );
+}
+
+/**
+ * One events metric's logged rows for a period, with the metrics database's
+ * minted column ids so the page can edit a row through the standard row path.
+ * A derived metric answers an error: it has no rows to list.
+ */
+export async function metricEvents(input: {
+  area: string;
+  metricId: string;
+  start: string;
+  end: string;
+}): Promise<Result<MetricEvents>> {
+  return withVault((root) =>
+    listMetricEvents(root, {
+      area: input.area,
+      metricId: input.metricId,
+      start: input.start,
+      end: input.end,
+    }),
+  );
+}
+
+/**
+ * Log one dated event. Applies immediately — logging a row is the add-vs-change
+ * line (editing an existing row goes through the standard Decision path) — and
+ * the engine logs `metric.logged` itself, so no second line is written here.
+ */
+export async function metricLogEvent(input: {
+  area: string;
+  metricId: string;
+  date?: string;
+  value?: number;
+  note?: string;
+}): Promise<Result<MetricEventRow>> {
+  return withVault(async (root) => {
+    const logged = await logMetric(
+      root,
+      input.area,
+      input.metricId,
+      { date: input.date, value: input.value, note: input.note },
+      USER_ACTOR,
+    );
+    if (!logged.ok) return { ok: false, error: logged.error };
+    return {
+      ok: true,
+      value: {
+        rowId: logged.value.rowId,
+        date: logged.value.date,
+        value: logged.value.value,
+        note: logged.value.note ?? "",
+      },
+    };
+  });
+}
+
+export type MetricDefineInput = {
+  area: string;
+  definition: MetricDefinitionDraft;
+};
+
+/**
+ * Create one metric definition from the bridge's draft. Creation applies
+ * immediately (the companion's own add rule) and is attributed to the operator;
+ * the engine writes the `metric.created` line and creates the area's Metrics
+ * database if needed. A derived draft names its database and two columns and the
+ * engine builds the one-number spec; the renderer never holds a ViewSpec.
+ * Editing an existing definition is `metricPropose`, not this door: a duplicate
+ * id is refused here.
+ */
+export async function metricDefine(
+  input: MetricDefineInput,
+): Promise<Result<MetricDefinition>> {
+  return withVault((root) =>
+    defineMetric(root, input.area, draftToDefineMetricInput(input.definition), USER_ACTOR),
+  );
+}
+
+/** Read one definition, for the Analytics page's edit form to prefill. */
+export async function metricGet(input: {
+  area: string;
+  metricId: string;
+}): Promise<Result<MetricDefinition>> {
+  return withVault(async (root) => {
+    const read = await getMetric(root, input.area, input.metricId);
+    if (!read.ok) return { ok: false, error: read.error };
+    return { ok: true, value: read.value };
+  });
+}
+
+/**
+ * File the Decision that proposes editing or deleting one definition. Writes no
+ * definition: the change applies only when the operator approves it. The engine
+ * validates the proposed payload and names any identical pending proposal
+ * instead of filing a duplicate card.
+ */
+export async function metricPropose(input: {
+  area: string;
+  metricId: string;
+  action: "update" | "delete";
+  definition?: MetricDefinitionDraft;
+}): Promise<Result<{ decisionId: string }>> {
+  return withVault((root) =>
+    proposeMetricDefinitionChange(
+      root,
+      {
+        area: input.area,
+        metricId: input.metricId,
+        action: input.action,
+        ...(input.definition !== undefined
+          ? { definition: draftToDefineMetricInput(input.definition) }
+          : {}),
+      },
+      USER_ACTOR,
+    ),
+  );
+}
+
 export async function planningEnsure(
   cadence: ReviewCadence,
   period: string,
   scope: "overall" | string,
-): Promise<Result<PlanningStub>> {
-  return withVault((root) =>
+): Promise<Result<PlanningStub>> {  return withVault((root) =>
     ensurePlanningStub(root, { cadence, period, scope }),
   );
 }

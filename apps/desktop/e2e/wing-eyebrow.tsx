@@ -53,6 +53,7 @@ import ProjectsPage from "@/pages/ProjectsPage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import ActPage from "@/pages/ActPage";
 import ReviewPage from "@/pages/ReviewPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 import "@/styles/global.css";
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
@@ -197,12 +198,26 @@ const bridge: Record<string, unknown> = {
   goalsApply: () => ok(null),
   planningStartOrResume: () => ok(null),
   mapApply: () => ok(null),
-  // A period nobody has reviewed yet: the page reads this as its empty state,
-  // not as a failure, and it matches on the words "not found".
-  reviewGet: () =>
+  // A period nobody has reviewed yet: the notebook read is this page's empty
+  // state, matched on the words "not found", so every cadence route draws its
+  // title and eyebrow without a fixture per period.
+  reviewNotebookGet: () =>
     Promise.resolve({ ok: false as const, error: "Review not found" }),
-  reviewEnsure: () => ok(null),
-  reviewSkillGet: () => ok(null),
+  reviewPageGet: () =>
+    Promise.resolve({ ok: false as const, error: "Review page not found" }),
+  reviewPageEnsure: () => ok(null),
+  reviewSkillGet: () =>
+    ok({ cadence: "weekly", markdown: "", snapshots: [], problems: [], exists: false }),
+  // The Analytics matrix: this rig only needs the page to draw its empty state.
+  analyticsMatrix: (input: { cadence?: string } = {}) =>
+    ok({
+      cadence: input.cadence ?? "weekly",
+      lens: null,
+      periods: [],
+      rows: [],
+      problems: [],
+      asOf: new Date().toISOString(),
+    }),
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
     setTitleBarOverlay: () => Promise.resolve(),
@@ -298,6 +313,7 @@ createRoot(root).render(
                       <Route path="/projects" element={<ProjectsPage />} />
                       <Route path="/daily" element={<DailySchedulePage />} />
                       <Route path="/act" element={<ActPage />} />
+                      <Route path="/review/analytics" element={<AnalyticsPage />} />
                       <Route path="/review/:cadence" element={<ReviewPage />} />
                     </Route>
                   </Routes>

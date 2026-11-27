@@ -9,6 +9,7 @@ import {
   listRows,
   readRegistry,
 } from "./domain-databases.ts";
+import { defineMetric, type DefineMetricInput } from "./metrics.ts";
 import {
   FINANCE_KIT_ID,
   FINANCE_DOMAIN_SLUG,
@@ -368,6 +369,163 @@ async function mergeOverviewPins(root: string): Promise<void> {
 }
 
 /**
+ * The three shipped finance metric definitions (spec §10.3, decision D3).
+ *
+ * The ledger convention is documented and already implemented by budget spend:
+ * expenses are NEGATIVE amounts, income is POSITIVE, and a transfer is two rows
+ * sharing a `transfer_id` that must not count as either. So:
+ *
+ *  - Cash in  = sum of positive amounts, transfer legs excluded;
+ *  - Cash out = sum of negative amounts, transfer legs excluded, printed as its
+ *    size (the definition's `magnitude: "abs"` — display only);
+ *  - Net cash flow = sum of every amount, transfers included, and labelled so.
+ *
+ * A `transfer_id is-not-set` filter is the gross rule, and it is why the
+ * `is-not-set` filter op exists: SQL NULL comparison is false, so `neq ""`
+ * would drop exactly the rows whose cell was never filled.
+ *
+ * These are plain `metric` specs (one number each), not the review snapshot's
+ * composed `blocks` shape: a definition is the object Phase 5 figures and the
+ * Phase 6 matrix read, and its window is rewritten to the period at read time.
+ */
+const SHIPPED_FINANCE_METRICS: DefineMetricInput[] = [
+  {
+    id: "cash-in",
+    label: "Cash in",
+    unit: "ZAR",
+    source: "derived",
+    aggregation: "sum",
+    direction: "neutral",
+    target: null,
+    formatting: { decimals: 2 },
+    spec: {
+      databaseId: FINANCE_DB_IDS.transactions,
+      title: "Cash in",
+      presentation: "metric",
+      groupBy: null,
+      timeBucket: null,
+      timeColumnId: "date",
+      timeWindow: "all",
+      filters: [
+        { columnId: "amount", op: "gt", value: 0 },
+        { columnId: "transfer_id", op: "is-not-set" },
+      ],
+      measure: "sum",
+      measureColumnId: "amount",
+      per: null,
+      sort: { by: "value", dir: "desc" },
+      limit: 12,
+      convertToZar: true,
+      columns: [],
+    },
+  },
+  {
+    id: "cash-out",
+    label: "Cash out",
+    unit: "ZAR",
+    source: "derived",
+    aggregation: "sum",
+    direction: "neutral",
+    target: null,
+    // Display only: the query sums the negative side of the ledger and this
+    // prints its size. The stored number keeps its sign.
+    formatting: { decimals: 2, magnitude: "abs" },
+    spec: {
+      databaseId: FINANCE_DB_IDS.transactions,
+      title: "Cash out",
+      presentation: "metric",
+      groupBy: null,
+      timeBucket: null,
+      timeColumnId: "date",
+      timeWindow: "all",
+      filters: [
+        { columnId: "amount", op: "lt", value: 0 },
+        { columnId: "transfer_id", op: "is-not-set" },
+      ],
+      measure: "sum",
+      measureColumnId: "amount",
+      per: null,
+      sort: { by: "value", dir: "desc" },
+      limit: 12,
+      convertToZar: true,
+      columns: [],
+    },
+  },
+  {
+    id: "net-cash-flow",
+    // The label is what a summary/tool surfaces (the spec title is only the
+    // query's), so the transfers caveat belongs on the label the operator and
+    // the agent read — otherwise Net reads as an unqualified figure beside the
+    // two gross ones.
+    label: "Net cash flow (transfers included)",
+    unit: "ZAR",
+    source: "derived",
+    aggregation: "sum",
+    direction: "neutral",
+    target: null,
+    formatting: { decimals: 2 },
+    spec: {
+      databaseId: FINANCE_DB_IDS.transactions,
+      title: "Net cash flow (transfers included)",
+      presentation: "metric",
+      groupBy: null,
+      timeBucket: null,
+      timeColumnId: "date",
+      timeWindow: "all",
+      filters: [],
+      measure: "sum",
+      measureColumnId: "amount",
+      per: null,
+      sort: { by: "value", dir: "desc" },
+      limit: 12,
+      convertToZar: true,
+      columns: [],
+    },
+  },
+];
+
+export type FinanceMetricsInstallResult = {
+  /** Ids of definitions this call created. */
+  created: string[];
+  /** Ids that already had a file; never rewritten. */
+  existing: string[];
+  /** Definitions that could not be written, named with the reason. */
+  problems: string[];
+};
+
+/**
+ * Install the shipped finance metric definitions, idempotently.
+ *
+ * Only ABSENT files are created: an operator may have edited a definition or
+ * removed one, and re-installing the kit must not undo that. Called from the
+ * kit install (a fresh install) and from the review Start path (a vault that
+ * installed the kit before metrics existed), so both routes converge on the
+ * same three definitions.
+ *
+ * Failures are collected rather than thrown: a vault whose ledger is intact
+ * must still be able to install the kit, and a definition that could not be
+ * written is reported to the caller instead of disappearing.
+ */
+export async function ensureFinanceMetrics(
+  root: string,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<FinanceMetricsInstallResult>> {
+  if (!(await isDomainLive(root, FINANCE_DOMAIN_SLUG))) {
+    return { ok: false, error: `Domain not found or archived: ${FINANCE_DOMAIN_SLUG}` };
+  }
+  const created: string[] = [];
+  const existing: string[] = [];
+  const problems: string[] = [];
+  for (const definition of SHIPPED_FINANCE_METRICS) {
+    const written = await defineMetric(root, FINANCE_DOMAIN_SLUG, definition, actor);
+    if (written.ok) created.push(written.value.id);
+    else if (written.code === "EXISTS") existing.push(definition.id);
+    else problems.push(`${definition.id}: ${written.error}`);
+  }
+  return { ok: true, value: { created, existing, problems } };
+}
+
+/**
  * The actual install write path — used by both user install and approved Decision.
  * Does NOT create Decisions.
  */
@@ -448,7 +606,15 @@ export async function applyFinanceKitInstall(
   await writeFinancialPins(root);
   await mergeOverviewPins(root);
 
-  // 10. Log kit.installed
+  // 10. The shipped metric definitions (Cash in / Cash out / Net cash flow).
+  // Only absent files are created, so a re-install can never overwrite an
+  // operator's edit of a definition. A definition that cannot be written does
+  // not fail the install — the ledger is intact either way — but it is reported
+  // in the result instead of being silently dropped.
+  const metrics = await ensureFinanceMetrics(root, actor);
+  const metricProblems = metrics.ok ? metrics.value.problems : [metrics.error];
+
+  // 11. Log kit.installed
   await appendLog(root, {
     domainSlug: slug,
     type: "kit.installed",
@@ -457,7 +623,14 @@ export async function applyFinanceKitInstall(
     actor,
   });
 
-  return { ok: true, value: { applied: true, alreadyInstalled: false } };
+  return {
+    ok: true,
+    value: {
+      applied: true,
+      alreadyInstalled: false,
+      ...(metricProblems.length > 0 ? { metricProblems } : {}),
+    },
+  };
 }
 
 /**

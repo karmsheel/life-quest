@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  ChartNoAxesColumn,
   ClipboardList,
   Clock,
   Compass,
@@ -47,7 +48,7 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Blueprints. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Blueprints. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly, Analytics. Bottom shelf: Notebox, Decisions, Daily Journal, Automations, Customizations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -274,6 +275,17 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/review/yearly",
     label: "Yearly",
     icon: CalendarCheck,
+    section: "main",
+    wing: "review",
+  },
+  {
+    // The Review wing's one non-cadence page. It sits after the cadence ladder
+    // because it compares periods rather than opening one: it is review work,
+    // but it is not another period to fill. It wears the matrix's mark.
+    id: "analytics",
+    href: "/review/analytics",
+    label: "Analytics",
+    icon: ChartNoAxesColumn,
     section: "main",
     wing: "review",
   },

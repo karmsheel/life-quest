@@ -261,16 +261,23 @@ const VIEW_BLOCK_SCHEMA = {
       description: "Rows must match every filter. Empty is the normal case.",
       items: {
         type: "object",
-        required: ["columnId", "op", "value"],
+        required: ["columnId", "op"],
         properties: {
           columnId: { type: "string", description: "A column id of this database, e.g. 'category'." },
           op: {
             type: "string",
-            enum: ["eq", "neq", "gt", "gte", "lt", "lte", "in"],
-            description: "Comparison. 'in' takes an array value; the others take one value.",
+            enum: ["eq", "neq", "gt", "gte", "lt", "lte", "in", "is-set", "is-not-set"],
+            description:
+              "Comparison. 'in' takes an array value and the comparison ops take one value. " +
+              "'is-set' / 'is-not-set' take NO value: they test whether the cell holds anything " +
+              "(set = non-null and not the empty string) and are how rows with an unfilled cell are " +
+              'selected or excluded — e.g. {columnId:"transfer_id", op:"is-not-set"} excludes ' +
+              "finance transfer legs.",
           },
           value: {
-            description: "The value to compare against. For a relation column this is the target row id.",
+            description:
+              "The value to compare against. For a relation column this is the target row id. " +
+              "Omit it for 'is-set' / 'is-not-set'; supplying one there is refused, not ignored.",
           },
         },
       },

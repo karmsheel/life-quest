@@ -34,6 +34,10 @@ export function documentTargetLabel(
 ): string {
   if (target.type === "doctrine") return DOCUMENT_KIND_LABELS[target.kind];
   if (target.type === "review") return periodTitle(target.cadence, target.period, "monday");
+  if (target.type === "review-page") {
+    const period = periodTitle(target.cadence, target.period, "monday");
+    return fallbackTitle ? `${period} · ${fallbackTitle}` : `${period} · ${target.scope}`;
+  }
   if (target.type === "page") return fallbackTitle || "Page";
   if (target.type === "pins") {
     return target.domainSlug ? `${target.domainSlug} dashboard` : "Life dashboard";

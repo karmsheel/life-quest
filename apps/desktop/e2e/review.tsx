@@ -11,7 +11,7 @@
  * cadence+period with a body, per-scope state (`draft` / `done`), and a lock, and
  * the methods mutate those files exactly as the engine does. So "the rail says
  * Done" is a claim about the file the page loaded, not about a call that
- * happened, and "Start filled the snapshot" is checked by reading the body the
+ * happened, and "Start filled the figures" is checked by reading the body the
  * page wrote through the bridge.
  *
  * ── How this can fail (written before the assertions) ────────────────────────
@@ -37,7 +37,7 @@
  *     measure, sits under it at a window with room, or overlaps it when the
  *     window is narrow.
  *  9. An existing claim regresses while the new surface is added: the document
- *     box, blank-line fidelity, the formatting keys, the snapshot pass (filled
+ *     box, blank-line fidelity, the formatting keys, the figure pass (filled
  *     once, inside its markers, under its heading), the one full-width-enough box
  *     (no Document/Preview second view), or the cadence's rules read/written from
  *     the page.
@@ -62,15 +62,32 @@
  *     refuses any read whose cadence and period do not belong together.
  * 13. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
+ * 14. The Analytics period header's `?period=<period>&scope=<area>` link is not
+ *     a one-shot deep link: it is read only on a cold mount, or its params are
+ *     left on the URL, or it is applied when the period is not one the cadence
+ *     has / not open yet. The rig seeds a second weekly notebook (an earlier,
+ *     finished week with prose of its own), lands on it through the router both
+ *     on the mounted page and as a cold mount, and reads the document: the
+ *     period, the selected tab, the earlier week's prose and the now-empty
+ *     search all have to agree, while an invalid or not-yet-open period leaves
+ *     the page where it was.
  *
  * The driver waits on `reviewRigReady`, set after the shell, the page and the
  * checklist have committed, so it never samples a half-rendered page.
  */
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import type {
   ReviewCadence,
+  ReviewNotebook,
+  ReviewPageBody,
   ReviewPrepopulateResult,
   ReviewRecord,
   ReviewSkill,
@@ -78,6 +95,7 @@ import type {
 } from "@lifequest/vault-core";
 import {
   DEFAULT_REVIEW_AVAILABILITY,
+  periodLabel,
   periodTitle,
 } from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
@@ -136,6 +154,12 @@ type StoredReview = {
   body: string;
   scopes: Record<string, ScopeState>;
   locked: boolean;
+  /** The content version the real engine keeps; a whole-body baseRev is checked against it. */
+  rev: number;
+  /** The pages this notebook has created, overall first, then in creation order. */
+  pages: string[];
+  /** Each page's own rev; a page write's baseRev is checked against its page. */
+  pageRevs: Record<string, number>;
 };
 
 const files = new Map<string, StoredReview>();
@@ -208,6 +232,11 @@ function seedReview(cadence: ReviewCadence, period: string): StoredReview {
     body: weekly
       ? weeklyBlocks(period).join("\n\n")
       : `# ${titleFor(cadence, period)}\n\n${overallSkeleton()}`,
+    rev: 7,
+    pages: weekly ? ["overall", "health", "financial"] : ["overall"],
+    pageRevs: weekly
+      ? { overall: 5, health: 6, financial: 3 }
+      : { overall: 5 },
     scopes: weekly
       ? {
           // The engine plants the overall scope when it creates the file, which
@@ -220,6 +249,76 @@ function seedReview(cadence: ReviewCadence, period: string): StoredReview {
         }
       : { overall: { status: "draft", sessionId: null } },
     locked: false,
+  };
+}
+
+/**
+ * The second weekly notebook: the earlier, already-finished week the Analytics
+ * period link lands on.
+ *
+ * It carries a title and prose of its own so "the link moved the page to THAT
+ * review" is read off the document — the prose only this file holds — rather
+ * than inferred from the period heading the page computes from state anyway.
+ * The engine-shaped record is `seedReview`'s; only the period, the prose and the
+ * lock differ, because a finished week is read-only.
+ */
+const SEALED_WEEK_PROSE =
+  "A sealed earlier week: two runs, one early night, and a finished report.";
+const SEALED_HEALTH_PROSE =
+  "The sealed week's Health note — the earlier report, not the open week's.";
+const SEALED_AREA_PROSE = "The sealed week's note for this area.";
+
+/** That week's whole-file body: the H1, the four overall headings, each area's section. */
+function sealedWeeklyBlocks(period: string): string[] {
+  return [
+    `# ${titleFor("weekly", period)}`,
+    "## Look-back",
+    SEALED_WEEK_PROSE,
+    "## Keep",
+    "## Change",
+    "## Next-period intent",
+    ...AREAS.flatMap((area) => [
+      `## ${area.name}`,
+      "### Look-back",
+      area.slug === "health" ? SEALED_HEALTH_PROSE : SEALED_AREA_PROSE,
+      "### Keep",
+      "### Change",
+      "### Next-period intent",
+    ]),
+  ];
+}
+
+/**
+ * Seed that earlier week on request.
+ *
+ * The driver picks the period (the suite's clock owns the open week, and this
+ * rig does not pin one), the rig builds the engine-shaped record, marks its
+ * pages done and locks it, and answers what the page must show on arrival: the
+ * heading and the prose only this review holds. Seeding before the navigation
+ * means the deep link reads a review the vault already had, not one created by
+ * the read it is being tested on.
+ */
+function seedSealedWeek(period: string): {
+  period: string;
+  title: string;
+  prose: string;
+  healthProse: string;
+} {
+  const stored = seedReview("weekly", period);
+  stored.body = sealedWeeklyBlocks(period).join("\n\n");
+  stored.locked = true;
+  stored.rev = 3;
+  for (const scope of stored.pages) {
+    stored.scopes[scope] = { status: "done", sessionId: null };
+  }
+  files.set(fileKey("weekly", period), stored);
+  return {
+    period,
+    // The page's heading is `periodLabel` ("9-15 Nov '26 (W46)"); `periodTitle`
+    // ("W46 Review: …") is the file's own H1, which `sealedWeeklyBlocks` keeps.
+    title: periodLabel("weekly", period, WEEK_START_DAY),
+    prose: SEALED_WEEK_PROSE,
+    healthProse: SEALED_HEALTH_PROSE,
   };
 }
 
@@ -278,6 +377,12 @@ function agentWritesBody(body: string): { ok: boolean; error?: string } {
   // real tool would refuse.
   if (stored.locked) return { ok: false, error: "LOCKED" };
   stored.body = body;
+  stored.rev += 1;
+  // The agent wrote the whole file, so every page it can see has moved: a page
+  // write issued from the draft the operator loaded before this is stale.
+  for (const scope of stored.pages) {
+    stored.pageRevs[scope] = (stored.pageRevs[scope] ?? 0) + 1;
+  }
   announceDataChanged();
   return { ok: true };
 }
@@ -341,6 +446,7 @@ function recordOf(stored: StoredReview): ReviewRecord {
     locked: stored.locked,
     updatedAt: "2026-10-18T00:00:00.000Z",
     title: titleFor(stored.cadence, stored.period),
+    rev: stored.rev,
     scopes,
     bodyMarkdown: stored.body,
   };
@@ -350,82 +456,469 @@ function hasAreaSection(body: string, name: string): boolean {
   return body.split("\n").some((line) => line.trim() === `## ${name}`);
 }
 
-/** What the app's snapshot pass writes into Finance's Look-back. */
-const SNAPSHOT_MARKER_OPEN = "<!-- lifequest:snapshot:finance-spend -->";
-const SNAPSHOT_MARKER_CLOSE = "<!-- /lifequest:snapshot:finance-spend -->";
-const SNAPSHOT_BLOCK = [
-  SNAPSHOT_MARKER_OPEN,
-  ``,
-  `**Spending this period** · 2026-10-12 → 2026-10-18`,
-  ``,
-  `| Category | Total (ZAR) |`,
-  `| --- | --- |`,
-  `| Groceries | 1,234.56 |`,
-  ``,
-  SNAPSHOT_MARKER_CLOSE,
-].join("\n");
+/**
+ * One page's body, projected out of the in-memory whole file.
+ *
+ * The real engine stores a page per scope; the rig keeps the same fixture it
+ * always had and projects the page the way the engine's compatibility view does
+ * the opposite (page bodies demote to area sections). That keeps the fixture
+ * readable while the page API is what the page under test actually calls.
+ */
+function pageTitle(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? titleFor(stored.cadence, stored.period)
+    : (AREA_NAME.get(scope) ?? scope);
+}
+
+function areaNames(): Set<string> {
+  return new Set(AREAS.map((area) => area.name));
+}
+
+function pageSkeletonFor(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? `# ${pageTitle(stored, scope)}\n\n${overallSkeleton()}`
+    : `# ${pageTitle(stored, scope)}\n\n${OVERALL_HEADINGS.map((heading) => `## ${heading}`).join("\n\n")}`;
+}
+
+/** The overall page: the H1, the non-area H2 blocks (the four headings and any extras). */
+function overallPageBody(stored: StoredReview): string {
+  const lines = stored.body.split("\n");
+  const blocks: string[] = [];
+  const areas = areaNames();
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const match = /^##\s+(.*)$/.exec(line);
+    if (!match) {
+      i += 1;
+      continue;
+    }
+    const name = match[1]!.trim();
+    const start = i;
+    i += 1;
+    while (i < lines.length && !/^##\s/.test(lines[i]!)) i += 1;
+    if (!areas.has(name)) blocks.push(lines.slice(start, i).join("\n").trimEnd());
+  }
+  return [`# ${pageTitle(stored, "overall")}`, ...blocks].join("\n\n");
+}
+
+/** One area page: H1 = the area's name, then its four headings as H2. */
+function areaPageBody(stored: StoredReview, scope: string): string {
+  const name = pageTitle(stored, scope);
+  const lines = stored.body.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `## ${name}`);
+  if (start === -1) return pageSkeletonFor(stored, scope);
+  let end = start + 1;
+  while (end < lines.length && !/^##\s/.test(lines[end]!)) end += 1;
+  const body = lines
+    .slice(start + 1, end)
+    .map((line) => (/^###\s/.test(line) ? line.slice(1) : line))
+    .join("\n")
+    .trim();
+  return body ? `# ${name}\n\n${body}` : pageSkeletonFor(stored, scope);
+}
+
+function pageBodyOf(stored: StoredReview, scope: string): string {
+  return scope === "overall"
+    ? overallPageBody(stored)
+    : areaPageBody(stored, scope);
+}
+
+/** Split whole-file blocks: the H1, each H2 block, in order. */
+function h2Blocks(body: string): Array<{ name: string; text: string }> {
+  const lines = body.split("\n");
+  const blocks: Array<{ name: string; text: string }> = [];
+  let i = 0;
+  while (i < lines.length) {
+    const match = /^##\s+(.*)$/.exec(lines[i]!);
+    if (!match) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    i += 1;
+    while (i < lines.length && !/^##\s/.test(lines[i]!)) i += 1;
+    blocks.push({ name: match[1]!.trim(), text: lines.slice(start, i).join("\n").trimEnd() });
+  }
+  return blocks;
+}
 
 /**
- * Write the snapshot block into the Finance area's Look-back, or rewrite the
- * block where it already is.
+ * Write one page's body back into the whole fixture file.
  *
- * The directive names the financial domain, so the block belongs under
- * `## Finance` / `### Look-back` — not under the overall `## Look-back`. Writing
- * it in the right section is the claim; a stub that dropped it anywhere would
- * let a page that never scoped the pass pass.
+ * An area page's H2s become the area section's H3s under `## <Area>`; the overall
+ * page's H2s replace the file's non-area H2s and keep every area block as it was.
  */
-function writeSnapshot(body: string): { body: string; applied: boolean } {
-  if (body.includes(SNAPSHOT_MARKER_OPEN)) {
-    const lines = body.split("\n");
-    const open = lines.indexOf(SNAPSHOT_MARKER_OPEN);
-    const close = lines.indexOf(SNAPSHOT_MARKER_CLOSE);
-    if (open !== -1 && close !== -1) {
-      const next = [
-        ...lines.slice(0, open),
-        ...SNAPSHOT_BLOCK.split("\n"),
-        ...lines.slice(close + 1),
-      ];
-      return { body: next.join("\n"), applied: true };
-    }
+function writePageInto(stored: StoredReview, scope: string, pageBody: string): void {
+  const lines = pageBody.split("\n");
+  const firstH2 = lines.findIndex((line) => /^##\s/.test(line));
+  const pageBlocks = firstH2 === -1 ? [] : h2Blocks(lines.slice(firstH2).join("\n"));
+  const areas = areaNames();
+  const existing = h2Blocks(stored.body);
+  const areaBlocks = existing.filter((block) => areas.has(block.name));
+  if (scope === "overall") {
+    const overallBlocks = pageBlocks.filter((block) => !areas.has(block.name));
+    stored.body = [
+      `# ${titleFor(stored.cadence, stored.period)}`,
+      ...overallBlocks.map((block) => block.text),
+      ...areaBlocks.map((block) => block.text),
+    ].join("\n\n");
+    return;
   }
-  const lines = body.split("\n");
-  const financeAt = lines.indexOf("## Finance");
-  if (financeAt === -1) return { body, applied: false };
-  let lookbackAt = -1;
-  for (let i = financeAt + 1; i < lines.length; i += 1) {
-    const line = lines[i]!;
-    if (/^##\s/.test(line)) break;
-    if (line.trim() === "### Look-back") {
-      lookbackAt = i;
-      break;
-    }
-  }
-  if (lookbackAt === -1) return { body, applied: false };
-  let at = lookbackAt + 1;
-  while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  const name = pageTitle(stored, scope);
+  const areaBlock = [
+    `## ${name}`,
+    ...pageBlocks.map((block) =>
+      block.text
+        .split("\n")
+        .map((line) => (/^##\s/.test(line) ? `#${line}` : line))
+        .join("\n"),
+    ),
+  ].join("\n\n");
+  const others = areaBlocks.filter((block) => block.name !== name);
+  const overallBlocks = existing.filter((block) => !areas.has(block.name));
+  const replaced = [...others, areaBlock];
+  // Keep the vault's area order (AREAS), then any other area blocks after it.
+  const ordered = [
+    ...AREAS.flatMap((area) => replaced.filter((block) => block.name === area.name)),
+    ...replaced.filter((block) => !AREAS.some((area) => area.name === block.name)),
+  ];
+  stored.body = [
+    `# ${titleFor(stored.cadence, stored.period)}`,
+    ...overallBlocks.map((block) => block.text),
+    ...ordered.map((block) => block.text),
+  ].join("\n\n");
+}
+
+/** The notebook summary the tabs read. */
+function notebookOf(stored: StoredReview): ReviewNotebook {
+  const pages = stored.pages.map((scope) => ({
+    scope,
+    title: pageTitle(stored, scope),
+    status: (stored.scopes[scope]?.status ?? "draft") as "draft" | "done",
+    sessionId: stored.scopes[scope]?.sessionId ?? null,
+    rev: stored.pageRevs[scope] ?? 1,
+    updatedAt: "2026-10-18T00:00:00.000Z",
+    chars: pageBodyOf(stored, scope).length,
+  }));
   return {
-    body: [
-      ...lines.slice(0, at),
-      ...SNAPSHOT_BLOCK.split("\n"),
-      "",
-      ...lines.slice(at),
-    ].join("\n"),
-    applied: true,
+    cadence: stored.cadence,
+    period: stored.period,
+    title: titleFor(stored.cadence, stored.period),
+    weekStartDay: WEEK_START_DAY,
+    locked: stored.locked,
+    order: stored.pages,
+    rev: stored.rev,
+    pages,
+    path: "C:\\harness\\vault\\reviews",
+    legacy: false,
   };
 }
 
+/** One page as the page API answers it. */
+function pageOf(stored: StoredReview, scope: string): ReviewPageBody {
+  const exists = stored.pages.includes(scope);
+  return {
+    scope,
+    title: pageTitle(stored, scope),
+    status: exists
+      ? ((stored.scopes[scope]?.status ?? "draft") as "draft" | "done")
+      : "missing",
+    sessionId: exists ? (stored.scopes[scope]?.sessionId ?? null) : null,
+    rev: exists ? (stored.pageRevs[scope] ?? 1) : 0,
+    updatedAt: exists ? "2026-10-18T00:00:00.000Z" : null,
+    locked: stored.locked,
+    bodyMarkdown: exists
+      ? pageBodyOf(stored, scope)
+      : pageSkeletonFor(stored, scope),
+  };
+}
+
+/**
+ * The three figures the app writes into Finance's Look-back at Start, from the
+ * shipped finance metric definitions. The values are fixtures, but the marker
+ * ids, labels, units, window, as-of instant and provenance line are the shipped
+ * shapes: a stub that still drew the skill's old `lifequest-snapshot` block would
+ * let a page that never learned metric figures pass.
+ */
+type StubFigure = {
+  /** The metric definition's id; the marker wraps `metric:<id>`. */
+  id: string;
+  label: string;
+  /** The printed value with its unit. */
+  value: string;
+  /** The previous window's printed value, for the overall page's comparison table. */
+  previous: string;
+  /** The signed difference of the printed values, as the engine prints it. */
+  delta: string;
+};
+
+const METRIC_FIGURES: StubFigure[] = [
+  {
+    id: "cash-in",
+    label: "Cash in",
+    value: "5,000 (ZAR)",
+    previous: "4,000 (ZAR)",
+    delta: "+1,000",
+  },
+  {
+    id: "cash-out",
+    label: "Cash out",
+    value: "1,234.56 (ZAR)",
+    previous: "980.10 (ZAR)",
+    delta: "+254.46",
+  },
+  {
+    id: "net-cash-flow",
+    label: "Net cash flow (transfers included)",
+    value: "3,765.44 (ZAR)",
+    previous: "3,019.90 (ZAR)",
+    delta: "+745.54",
+  },
+];
+
+/**
+ * The windows and as-of instant are fixed, not read from the clock: a second
+ * Start then produces a byte-identical block, so "the file holds one block per
+ * definition" is a claim about replacement, not about two timestamps differing.
+ */
+const FIGURE_WINDOW = "2026-10-12 → 2026-10-18";
+const PREVIOUS_WINDOW = "2026-10-05 → 2026-10-11";
+const FIGURE_AS_OF = "2026-10-18 08:00";
+const FIGURE_SOURCE = "the finance:transactions database";
+
+const OVERALL_OPEN = "<!-- lifequest:metrics:overall -->";
+const OVERALL_CLOSE = "<!-- /lifequest:metrics:overall -->";
+
+/**
+ * One row of the overall page's cross-domain table: the area and metric the
+ * number came from, and the three cells the table prints. The Health row is the
+ * fixture's event-backed metric; the Finance rows are the three shipped
+ * definitions above.
+ */
+type StubOverallRow = {
+  area: string;
+  label: string;
+  current: string;
+  previous: string;
+  delta: string;
+};
+
+const OVERALL_ROWS: StubOverallRow[] = [
+  {
+    area: "Health",
+    label: "Training sessions",
+    current: "3 sessions",
+    previous: "2 sessions",
+    delta: "+1",
+  },
+  ...METRIC_FIGURES.map((figure) => ({
+    area: "Finance",
+    label: figure.label,
+    current: figure.value,
+    previous: figure.previous,
+    delta: figure.delta,
+  })),
+];
+
+function figureMarkerOpen(id: string): string {
+  return `<!-- lifequest:metric:${id} -->`;
+}
+
+function figureMarkerClose(id: string): string {
+  return `<!-- /lifequest:metric:${id} -->`;
+}
+
+/**
+ * One figure's markdown — the block's inside, between its markers: bold label
+ * with its window, then its number, as-of and source.
+ */
+function figureBlockText(figure: StubFigure): string {
+  return [
+    `**${figure.label}** · ${FIGURE_WINDOW}`,
+    ``,
+    figure.value,
+    ``,
+    `_As of ${FIGURE_AS_OF} · Source: ${FIGURE_SOURCE}_`,
+  ].join("\n");
+}
+
+/**
+ * The overall block's inside, between its markers: one row per measured metric,
+ * then the as-of instant and the previous window.
+ */
+function overallBlockText(): string {
+  return [
+    `**Metrics this period** · ${FIGURE_WINDOW}`,
+    ``,
+    `| Area | Metric | This period | Previous period | Δ |`,
+    `| --- | --- | --- | --- | --- |`,
+    ...OVERALL_ROWS.map(
+      (row) =>
+        `| ${row.area} | ${row.label} | ${row.current} | ${row.previous} | ${row.delta} |`,
+    ),
+    ``,
+    `_As of ${FIGURE_AS_OF} · Previous period: ${PREVIOUS_WINDOW}_`,
+  ].join("\n");
+}
+
+/** The span of one heading's section: where it starts and where the next heading begins. */
+type SectionSpan = { headingAt: number; endAt: number };
+
+/** Find one heading at or after `from`, and the next heading that ends its section. */
+function findSectionSpan(
+  lines: string[],
+  from: number,
+  heading: string,
+  next: RegExp,
+): SectionSpan | null {
+  for (let i = from; i < lines.length; i += 1) {
+    if (lines[i]!.trim() !== heading) continue;
+    let endAt = lines.length;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (next.test(lines[j]!)) {
+        endAt = j;
+        break;
+      }
+    }
+    return { headingAt: i, endAt };
+  }
+  return null;
+}
+
+/** Any app-written block's closing marker: where the next block goes after. */
+const APP_BLOCK_CLOSE =
+  /^<!-- \/(?:lifequest:snapshot:.+|lifequest:metric:.+|lifequest:metrics:overall) -->$/;
+
+/**
+ * Put one app-written block where it belongs: replace it by its own markers, or
+ * open the section ahead of the operator's prose and after any block a previous
+ * pass wrote — the engine's own placement, so a second Start rewrites one block
+ * per figure instead of appending another.
+ */
+function upsertAppBlock(
+  body: string,
+  span: SectionSpan,
+  open: string,
+  close: string,
+  markdown: string,
+): { body: string; applied: boolean } {
+  const lines = body.split("\n");
+  const openAt = lines.indexOf(open);
+  if (openAt !== -1) {
+    const closeAt = lines.indexOf(close, openAt + 1);
+    const end = closeAt === -1 ? openAt + 1 : closeAt + 1;
+    const next = [
+      ...lines.slice(0, openAt),
+      open,
+      ...markdown.split("\n"),
+      close,
+      ...lines.slice(end),
+    ].join("\n");
+    return { body: next, applied: next !== body };
+  }
+  let at = span.headingAt + 1;
+  while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  for (let i = span.headingAt + 1; i < span.endAt && i < lines.length; i += 1) {
+    if (!APP_BLOCK_CLOSE.test(lines[i]!)) continue;
+    at = i + 1;
+    while (at < lines.length && lines[at]!.trim() === "") at += 1;
+  }
+  const before = lines.slice(0, at);
+  if (before.length > 0 && before[before.length - 1]!.trim() !== "") before.push("");
+  const after = lines.slice(at);
+  const next = [...before, open, ...markdown.split("\n"), close];
+  if (after.length > 0 && after[0]!.trim() !== "") next.push("");
+  next.push(...after);
+  return { body: next.join("\n"), applied: true };
+}
+
+/**
+ * Write the three figures into the Finance area's Look-back, in definition
+ * order, each one upserted by its own marker.
+ *
+ * The definitions name the financial domain, so the blocks belong under
+ * `## Finance` / `### Look-back` — not under the overall `## Look-back` — and,
+ * like the engine, they open the section ahead of the operator's own prose.
+ */
+function writeAreaFigures(body: string): { body: string; applied: boolean } {
+  let next = body;
+  for (const figure of METRIC_FIGURES) {
+    const lines = next.split("\n");
+    const financeAt = lines.indexOf("## Finance");
+    if (financeAt === -1) break;
+    const span = findSectionSpan(lines, financeAt + 1, "### Look-back", /^#{2,3}\s/);
+    if (!span) break;
+    next = upsertAppBlock(
+      next,
+      span,
+      figureMarkerOpen(figure.id),
+      figureMarkerClose(figure.id),
+      figureBlockText(figure),
+    ).body;
+  }
+  return { body: next, applied: next !== body };
+}
+
+/**
+ * Write the overall page's cross-domain table under its `## Look-back`, or
+ * refresh it in place. The operator's prose below the block is kept, and the
+ * marker is the anchor: a second Start rewrites the same block.
+ */
+function writeOverallMetrics(body: string): { body: string; applied: boolean } {
+  const lines = body.split("\n");
+  const span = findSectionSpan(lines, 0, "## Look-back", /^##\s/);
+  if (!span) return { body, applied: false };
+  return upsertAppBlock(body, span, OVERALL_OPEN, OVERALL_CLOSE, overallBlockText());
+}
+
+/**
+ * The shipped Phase 5 default skill (weekly), verbatim: prose only.
+ *
+ * Figures come from the vault's metric definitions and are written by the app at
+ * Start, so the default carries no `lifequest-snapshot` fences; the prose keeps
+ * the one door that is still the operator's — a hand-written fence for a custom
+ * figure no definition covers. The rules panel in the rig is this file, so a
+ * stub whose rules disagreed with the shipped default would show a different
+ * page than the operator gets.
+ */
 const SKILL_MARKDOWN = [
   `---`,
   `cadence: weekly`,
   `---`,
   `# Weekly review skill`,
   ``,
-  `- Keep it to a page.`,
+  `Standing rules for this cadence's review sessions. Edit freely, or ask the`,
+  `companion to add a rule — the whole file is handed to the review session.`,
   ``,
-  '```lifequest-snapshot',
-  `{"id":"finance-spend","domain":"financial","section":"Look-back","window":"period"}`,
-  "```",
+  `## How to run this review`,
   ``,
+  `- Work from the review page the app has open. Read it with \`get_review\` and the scope you were given before you change anything; a page is written with \`write_review(scope, body, baseRev)\`.`,
+  `- Look-back is for what happened, told straight. Keep is for what worked and should stay. Change is for what to do differently. Next-period intent is for what the next period is for.`,
+  `- Prefer the operator's own words over your summary of them. \`get_period_pack\` carries the period's daily notes, log, tasks, goals and events — use it rather than asking for facts it already holds.`,
+  `- Write into the section you were asked about, and leave the other sections, and the other pages, as they are.`,
+  `- On the overall page, read every area page first and put the areas back together under the four common headings; never rewrite an area's page from there.`,
+  `- When the report is ready, propose \`mark_review_done\` rather than marking it done yourself.`,
+  ``,
+  `- A week is where patterns start to show. Name the one pattern worth changing, not five.`,
+  `- Compare against the previous week's review when there is one.`,
+  ``,
+  `## Figures`,
+  ``,
+  `The app writes this review's figures itself when Start is pressed. Each one is`,
+  `read from the area's own metric definitions, so the numbers are there whether`,
+  `or not the agent is running, and a figure prints its label, its value and unit,`,
+  `the window it covers, the as-of minute it was read, and the database or event`,
+  `it came from. A review window opens before its period ends, so a figure read`,
+  `early says "period to date" — the as-of line is what makes the number honest.`,
+  ``,
+  `Figures refresh on Start while the review is open and freeze once it is`,
+  `locked: a finished review is history, not a live dashboard. To change what a`,
+  `figure measures, change that area's metric definitions rather than this file.`,
+  ``,
+  `A hand-written \`lifequest-snapshot\` fence in this file is still honoured for a`,
+  `custom figure the metric definitions do not cover; the app writes and refreshes`,
+  `that block on Start exactly as before.`,
 ].join("\n");
 
 /**
@@ -438,15 +931,15 @@ const SKILL_MARKDOWN = [
 function kickoffFor(cadence: ReviewCadence, period: string, scope: string): string {
   const title = titleFor(cadence, period);
   const figures =
-    "Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside `<!-- lifequest:snapshot -->` markers. Use get_period_pack for the period's own days.";
+    "Read your page with get_review (pass this scope) — the app has already filled in the figures from your metric definitions, inside `<!-- lifequest:metric:<id> -->` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days.";
   if (cadence === "daily") {
     return `Let's assemble the ${title}. This is one general review of the day as a whole — the daily review has no area sections, so write the overall sections only. Interview me through look-back, keep, change, and next-period intent. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   if (scope === "overall") {
-    return `Let's assemble the ${title}. This is the whole-life review: every area review for this period is complete (${AREAS.length} areas). Read the file with get_review and go across each area's Look-back, Keep, Change and Next-period intent — what the areas say together, where they pull against each other, and what that means for the life vision. Write the overall sections only, synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
+    return `Let's assemble the ${title}. This is the whole-life review: every area review for this period is complete (${AREAS.length} areas). Read every area page with get_review first (one call per area scope). The overall page has no area sections: synthesise the area pages under the four common headings — Look-back, Keep, Change, Next-period intent — without copying an area's own extra sections, and never rewrite an area page. Write the overall page only (get_review with scope "overall", then write_review with that scope and its rev), synthesising from the areas rather than repeating a single one. Interview me through the four overall headings. ${figures} When the report is ready, propose marking this review complete with mark_review_done.`;
   }
   const name = AREA_NAME.get(scope) ?? scope;
-  return `Let's assemble the ${title}. This is the ${name} review — this period's part of the life review. Write into the ## ${name} section only and leave the other sections alone. Interview me through the four ### headings for this area. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
+  return `Let's assemble the ${title}. This is the ${name} review — this period's part of the life review. Your page is get_review with scope "${scope}" → write_review with the same scope, the page body (one # title and the four common ## headings) and the rev it returned. Leave every other page alone. Interview me through the four common headings. ${figures} When this area's report is ready, propose marking the ${name} review complete with mark_review_done.`;
 }
 
 /** The refusal the engine builds when the life review is pressed too early. */
@@ -462,7 +955,7 @@ function overallRefusal(stored: StoredReview): string | null {
 }
 
 type ReviewWrite = { cadence: string; period: string; body: string };
-type SnapshotCall = { cadence: string; period: string; scope: string };
+type FigurePassCall = { cadence: string; period: string; scope: string };
 type StartCall = {
   cadence: string;
   period: string;
@@ -474,11 +967,31 @@ type StartCall = {
 type HarnessWindow = Window & {
   reviewRigReady?: boolean;
   reviewRigSkin?: string;
+  /** Land a pathname with its search on the router, as a cross-page link does. */
   reviewRigGoto?: (path: string) => void;
+  /** The router's current pathname and search, for "the link's params are gone". */
+  reviewRigLocation?: () => { pathname: string; search: string };
+  /**
+   * How many times the router's location has changed. A deep link is proven
+   * APPLIED (not merely ignored) by the driver seeing two changes: the URL with
+   * the params, then the stripped one.
+   */
+  reviewRigLocationChanges?: () => number;
+  /**
+   * Seed the earlier, finished week the `?period=` leg lands on, and answer what
+   * the page must show when it gets there.
+   */
+  reviewRigSeedSealedWeek?: (period: string) => {
+    period: string;
+    title: string;
+    prose: string;
+    healthProse: string;
+  };
   reviewRigCalls?: string[];
   reviewRigUnexpectedCalls?: string[];
   reviewRigWrites?: ReviewWrite[];
-  reviewRigSnapshotCalls?: SnapshotCall[];
+  /** Every figure pass the page asked the vault to run, with the scope it named. */
+  reviewRigFigureCalls?: FigurePassCall[];
   /** Every session the page asked Start to open, with the scope it named. */
   reviewRigStarts?: StartCall[];
   /** The turn text the dock sent when a start opened the interview. */
@@ -495,8 +1008,12 @@ type HarnessWindow = Window & {
   reviewRigReleaseTurns?: () => void;
   /** The chats the gateway holds, so the driver can find the one a start made. */
   reviewRigSessions?: () => HermesSession[];
-  /** The review body as the file holds it, for the driver to assert against. */
+  /** The review body as the whole file holds it, for the driver to assert against. */
   reviewRigBody?: () => string;
+  /** One page's body as the engine would serve it, for page-level assertions. */
+  reviewRigPageBody?: (scope: string) => string;
+  /** The pages the notebook holds, in order. */
+  reviewRigPages?: () => string[];
   /** The loaded file's scope states, so "the rail said Done" can be cross-checked. */
   reviewRigScopes?: () => Record<string, ScopeState>;
   /** The loaded file's lock, so the lock claim is about the file, not just a badge. */
@@ -514,10 +1031,12 @@ type HarnessWindow = Window & {
 };
 
 const harness = window as HarnessWindow;
+/** Every router location change since load, so a link can be proven applied. */
+let locationChanges = 0;
 harness.reviewRigCalls = [];
 harness.reviewRigUnexpectedCalls = [];
 harness.reviewRigWrites = [];
-harness.reviewRigSnapshotCalls = [];
+harness.reviewRigFigureCalls = [];
 harness.reviewRigStarts = [];
 harness.reviewRigKickoffs = [];
 harness.reviewRigSkillWrites = [];
@@ -529,6 +1048,14 @@ harness.reviewRigReleaseTurns = () => {
 harness.reviewRigSessions = () => gatewaySessions.map((row) => ({ ...row }));
 
 harness.reviewRigBody = () => (activeKey ? (files.get(activeKey)?.body ?? "") : "");
+harness.reviewRigPageBody = (scope: string) => {
+  const stored = activeKey ? files.get(activeKey) : undefined;
+  return stored ? pageOf(stored, scope).bodyMarkdown : "";
+};
+harness.reviewRigPages = () => {
+  const stored = activeKey ? files.get(activeKey) : undefined;
+  return stored ? [...stored.pages] : [];
+};
 harness.reviewRigScopes = () => {
   const stored = activeKey ? files.get(activeKey) : undefined;
   return stored ? { ...stored.scopes } : {};
@@ -538,6 +1065,8 @@ harness.reviewRigDataListenerCount = () => dataChangeListeners.size;
 harness.reviewRigAnnounceDataChange = () => announceDataChanged();
 harness.reviewRigAgentWritesBody = (body: string) => agentWritesBody(body);
 harness.reviewRigAgentMarksDone = (scope: string) => agentMarksDone(scope);
+harness.reviewRigLocationChanges = () => locationChanges;
+harness.reviewRigSeedSealedWeek = (period: string) => seedSealedWeek(period);
 
 /**
  * One chat row, as the gateway hands it back.
@@ -687,6 +1216,11 @@ const bridge: Record<string, unknown> = {
   // The gateway's chat list, answered as copies the way the real IPC hop does —
   // a mutable array would let a later create appear in the store's list by
   // aliasing, hiding the very bug this rig is for.
+  // The dock's receipt chip asks main whether the kit is installed; these rigs
+  // run without a finance kit, so the chip stays out of the way. It is a
+  // promise: ChatPanel chains `.then` on it, and a plain object throws in the
+  // mount effect (which unmounts the page before the rig's ready flag).
+  receiptReady: () => Promise.resolve({ ok: true as const, value: false }),
   companionSessionsList: () => ok(gatewaySessions.map((row) => ({ ...row }))),
   companionSessionCreate: (title: string) => ok(madeSession(title)),
   companionSessionMessages: () => ok([]),
@@ -750,6 +1284,106 @@ const bridge: Record<string, unknown> = {
     activeKey = key;
     return Promise.resolve(ok(recordOf(found)));
   },
+  reviewNotebookGet: (cadence: string, period: string) => {
+    harness.reviewRigCalls?.push(`reviewNotebookGet:${cadence}:${period}`);
+    const key = fileKey(cadence, period);
+    const stored =
+      files.get(key) ??
+      (cadence === "daily" ? undefined : getOrSeed(cadence as ReviewCadence, period));
+    if (!stored) return Promise.resolve(fail("Review file not found"));
+    activeKey = key;
+    return Promise.resolve(ok(notebookOf(stored)));
+  },
+  reviewPageGet: (cadence: string, period: string, scope: string) => {
+    harness.reviewRigCalls?.push(`reviewPageGet:${cadence}:${period}:${scope}`);
+    const key = fileKey(cadence, period);
+    const stored =
+      files.get(key) ??
+      (cadence === "daily" ? undefined : getOrSeed(cadence as ReviewCadence, period));
+    if (!stored) return Promise.resolve(fail("Review file not found"));
+    if (scope !== "overall" && !AREA_NAME.has(scope)) {
+      return Promise.resolve(fail(`Area not found: ${scope}`));
+    }
+    activeKey = key;
+    return Promise.resolve(ok(pageOf(stored, scope)));
+  },
+  reviewPageEnsure: (cadence: string, period: string, scope: string) => {
+    harness.reviewRigCalls?.push(`reviewPageEnsure:${cadence}:${period}:${scope}`);
+    if (cadence === "daily" && scope !== "overall") {
+      return Promise.resolve(fail(DAILY_NO_AREAS));
+    }
+    if (scope !== "overall" && !AREA_NAME.has(scope)) {
+      return Promise.resolve(fail(`Area not found: ${scope}`));
+    }
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    if (!stored.scopes[scope]) {
+      stored.scopes[scope] = { status: "draft", sessionId: null };
+    }
+    if (!stored.pages.includes(scope)) {
+      stored.pages.push(scope);
+      stored.pageRevs[scope] = 1;
+      if (scope !== "overall") {
+        const name = pageTitle(stored, scope);
+        if (!hasAreaSection(stored.body, name)) {
+          stored.body = `${stored.body}\n\n${areaSkeleton(name)}`;
+        }
+      }
+    }
+    return Promise.resolve(ok(notebookOf(stored)));
+  },
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    baseRev: number,
+  ) => {
+    harness.reviewRigCalls?.push(`reviewPageWrite:${cadence}:${period}:${scope}`);
+    const stored = getOrSeed(cadence as ReviewCadence, period);
+    harness.reviewRigWrites?.push({ cadence, period, body });
+    if (stored.locked) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "LOCKED",
+        message: "This review is locked.",
+        code: "LOCKED" as const,
+        current: pageOf(stored, scope),
+      });
+    }
+    const current = pageOf(stored, scope);
+    if (baseRev !== current.rev) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "CONFLICT",
+        message: "This page changed on disk. Reload it and re-apply your text.",
+        code: "CONFLICT" as const,
+        current,
+      });
+    }
+    if (body === current.bodyMarkdown) {
+      return Promise.resolve({
+        ok: true as const,
+        page: current,
+        notebookRev: stored.rev,
+      });
+    }
+    if (!stored.pages.includes(scope)) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "NOT_FOUND",
+        message: "Review page not found",
+        code: "NOT_FOUND" as const,
+      });
+    }
+    writePageInto(stored, scope, body);
+    stored.pageRevs[scope] = (stored.pageRevs[scope] ?? 0) + 1;
+    stored.rev += 1;
+    return Promise.resolve({
+      ok: true as const,
+      page: pageOf(stored, scope),
+      notebookRev: stored.rev,
+    });
+  },
   reviewEnsure: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewEnsure:${cadence}:${period}:${scope}`);
     if (cadence === "daily" && scope !== "overall") {
@@ -759,6 +1393,7 @@ const bridge: Record<string, unknown> = {
     if (!stored.scopes.overall) {
       stored.scopes.overall = { status: "draft", sessionId: null };
     }
+    if (!stored.pages.includes("overall")) stored.pages.unshift("overall");
     if (scope !== "overall") {
       const name = AREA_NAME.get(scope) ?? scope;
       if (!hasAreaSection(stored.body, name)) {
@@ -767,23 +1402,46 @@ const bridge: Record<string, unknown> = {
       if (!stored.scopes[scope]) {
         stored.scopes[scope] = { status: "draft", sessionId: null };
       }
+      if (!stored.pages.includes(scope)) {
+        stored.pages.push(scope);
+        stored.pageRevs[scope] = 1;
+      }
     }
     return Promise.resolve(ok(recordOf(stored)));
   },
-  reviewWrite: (cadence: string, period: string, next: string) => {
+  reviewWrite: (cadence: string, period: string, next: string, baseRev?: number) => {
     harness.reviewRigCalls?.push(`reviewWrite:${cadence}:${period}`);
     harness.reviewRigWrites?.push({ cadence, period, body: next });
     const stored = getOrSeed(cadence as ReviewCadence, period);
     // Locking means "this is finished": the engine refuses a write to a locked
     // file, and the rig models that so "marking the life review complete locks
     // it" is checked against the file rather than against a badge.
-    if (stored.locked) return Promise.resolve(fail("This review is locked."));
+    if (stored.locked) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "This review is locked.",
+        code: "LOCKED" as const,
+        current: recordOf(stored),
+      });
+    }
+    // The engine's compare-and-swap: a save from a body the file has moved past
+    // is refused with the file as it now stands, not applied.
+    if (typeof baseRev === "number" && baseRev !== stored.rev) {
+      return Promise.resolve({
+        ok: false as const,
+        error: "CONFLICT",
+        code: "CONFLICT" as const,
+        current: recordOf(stored),
+      });
+    }
+    if (next === stored.body) return Promise.resolve(ok(recordOf(stored)));
     stored.body = next;
+    stored.rev += 1;
     return Promise.resolve(ok(recordOf(stored)));
   },
   reviewPrepopulate: (cadence: string, period: string, scope: string) => {
     harness.reviewRigCalls?.push(`reviewPrepopulate:${cadence}:${period}:${scope}`);
-    harness.reviewRigSnapshotCalls?.push({ cadence, period, scope });
+    harness.reviewRigFigureCalls?.push({ cadence, period, scope });
     const stored = getOrSeed(cadence as ReviewCadence, period);
     const value = (patch: Partial<ReviewPrepopulateResult>): Result<ReviewPrepopulateResult> =>
       ok({
@@ -797,60 +1455,49 @@ const bridge: Record<string, unknown> = {
         bodyMarkdown: stored.body,
         ...patch,
       });
+    // A locked review is frozen: the engine touches nothing, so a rig that
+    // rewrote it would let a page claim a fill the vault refuses.
     if (stored.locked) return Promise.resolve(value({}));
-    // This stub answer stands for a review whose directive the pass cannot
-    // place — a section the review does not carry — not for the shipped daily
-    // review: after the core fix that directive resolves to the overall
-    // `## Look-back`, so a real daily Start writes. It is kept here because this
-    // is the only harness path that exercises the page's skip line, and the
-    // page must report a skip rather than a clean start.
-    if (cadence === "daily") {
+    // The overall page — the daily review included — gets the cross-domain table
+    // and nothing else. A daily review has no area pages, so it never grows an
+    // area figure block; the table is found by its own marker. The engine reports
+    // one `overall` outcome for the block, not one per row.
+    if (scope === "overall") {
+      const written = writeOverallMetrics(stored.body);
+      if (written.applied) stored.body = written.body;
       return Promise.resolve(
         value({
+          applied: written.applied ? 1 : 0,
           outcomes: [
             {
-              id: "finance-spend",
-              domain: "financial",
+              kind: "overall",
+              id: "metrics:overall",
+              domain: "",
               section: "Look-back",
-              title: "Spending this period",
-              status: "skipped",
-              reason: 'this review has no "Look-back" section under Finance',
+              title: "Metrics this period",
+              status: written.applied ? ("written" as const) : ("unchanged" as const),
             },
           ],
         }),
       );
     }
-    // The directive names the financial domain, so an area scope only runs for
-    // that area; the overall scope runs every directive in the skill.
-    if (scope !== "overall" && scope !== "financial") {
-      return Promise.resolve(value({}));
-    }
-    const written = writeSnapshot(stored.body);
+    // Only the Finance area has definitions in this vault; the other areas'
+    // passes find nothing to write and leave their pages alone.
+    if (scope !== "financial") return Promise.resolve(value({}));
+    const written = writeAreaFigures(stored.body);
     if (written.applied) stored.body = written.body;
     return Promise.resolve(
       value({
-        applied: written.applied ? 1 : 0,
-        outcomes: written.applied
-          ? [
-              {
-                id: "finance-spend",
-                domain: "financial",
-                section: "Look-back",
-                title: "Spending this period",
-                status: "written",
-                groups: 2,
-              },
-            ]
-          : [
-              {
-                id: "finance-spend",
-                domain: "financial",
-                section: "Look-back",
-                title: "Spending this period",
-                status: "skipped",
-                reason: 'this review has no "Look-back" section under Finance',
-              },
-            ],
+        applied: written.applied ? METRIC_FIGURES.length : 0,
+        outcomes: METRIC_FIGURES.map((figure) => ({
+          kind: "metric",
+          id: `metric:${figure.id}`,
+          definitionId: figure.id,
+          domain: "financial",
+          section: "Look-back",
+          title: figure.label,
+          status: written.applied ? ("written" as const) : ("unchanged" as const),
+        })),
       }),
     );
   },
@@ -916,35 +1563,12 @@ const bridge: Record<string, unknown> = {
   },
   reviewSkillGet: (cadence: string) => {
     harness.reviewRigCalls?.push(`reviewSkillGet:${cadence}`);
+    // The Phase 5 default carries no directives: the figures come from metric
+    // definitions, so a `snapshots` list here would model the retired skill pass.
     const value: ReviewSkill = {
       cadence: cadence as ReviewCadence,
       markdown: skillMarkdown ?? SKILL_MARKDOWN,
-      snapshots: [
-        {
-          id: "finance-spend",
-          domain: "financial",
-          section: "Look-back",
-          title: "Spending this period",
-          window: "period",
-          spec: {
-            databaseId: "finance:transactions",
-            title: "Spending this period",
-            presentation: "metric",
-            groupBy: null,
-            timeBucket: null,
-            timeColumnId: "date",
-            timeWindow: "all",
-            filters: [],
-            measure: "sum",
-            measureColumnId: "amount",
-            per: null,
-            sort: { by: "value", dir: "desc" },
-            limit: 12,
-            convertToZar: true,
-            columns: [],
-          },
-        },
-      ],
+      snapshots: [],
       problems: [],
       exists: skillMarkdown !== null,
     };
@@ -954,16 +1578,14 @@ const bridge: Record<string, unknown> = {
     harness.reviewRigCalls?.push(`reviewSkillWrite:${cadence}`);
     harness.reviewRigSkillWrites?.push(markdown);
     skillMarkdown = markdown;
-    // A rule the page cannot read is reported rather than thrown, exactly as the
-    // vault reports it.
-    const problems = markdown.includes("lifequest-snapshot")
-      ? []
-      : ["snapshot 1: not valid JSON (Unexpected end of JSON input)"];
+    // A prose-only rules file is normal since Phase 5 — figures are not read off
+    // the skill — so a write without fences parses clean. A fence that fails to
+    // yield a directive is what `problems` names, and this fixture writes none.
     const value: ReviewSkill = {
       cadence: cadence as ReviewCadence,
       markdown,
       snapshots: [],
-      problems,
+      problems: [],
       exists: true,
     };
     return Promise.resolve(ok(value));
@@ -998,9 +1620,27 @@ const stubbed = new Proxy(bridge, {
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from review.html");
 
+/**
+ * The driver's two doors onto the router.
+ *
+ * `reviewRigGoto` lands a pathname WITH its search — the way a cross-page link
+ * arrives as `/review/weekly?period=…&scope=…` — on the page that is already
+ * mounted; the MemoryRouter keeps the URL in memory, so `reviewRigLocation`
+ * publishes it back for "the link's params were stripped" and
+ * `reviewRigLocationChanges` counts the changes so an ignored link (where
+ * nothing on screen moves) can still be proven to have been read.
+ */
 function RouterControl() {
   const navigate = useNavigate();
+  const location = useLocation();
   harness.reviewRigGoto = (path: string) => navigate(path);
+  useEffect(() => {
+    locationChanges += 1;
+    harness.reviewRigLocation = () => ({
+      pathname: location.pathname,
+      search: location.search,
+    });
+  }, [location.pathname, location.search]);
   return null;
 }
 
@@ -1042,8 +1682,9 @@ harness.reviewRigSkin = skinName;
 const waitForPage = () => {
   const rail = document.querySelector(".nav-rail");
   const box = document.querySelector(".note-live");
-  const checklist = document.querySelector('[data-testid="review-area-rail"]');
-  if (!rail || !box || !checklist) {
+  const tabs = document.querySelector('[data-testid="review-tabs"]');
+  const daily = document.querySelector('[data-testid="review-layout"]');
+  if (!rail || !box || (!tabs && !daily)) {
     requestAnimationFrame(waitForPage);
     return;
   }

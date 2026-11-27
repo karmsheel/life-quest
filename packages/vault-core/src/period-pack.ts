@@ -13,7 +13,7 @@ import {
   openReviewPeriod,
   reviewAvailabilityFromUnknown,
 } from "./review-availability.ts";
-import { getReview } from "./reviews.ts";
+import { getReview, getReviewNotebook } from "./reviews.ts";
 import { vaultPaths } from "./paths.ts";
 import type {
   DailyNote,
@@ -254,6 +254,13 @@ export async function getPeriodPack(
     }
   }
 
+  // --- notebook pages (summary) ---
+  let reviewPages: import("./types.ts").ReviewPageSummary[] | undefined;
+  {
+    const notebookRes = await getReviewNotebook(rootPath, input.cadence, input.period);
+    if (notebookRes.ok) reviewPages = notebookRes.value.pages;
+  }
+
   // --- domainSections (overall only) ---
   let domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }> = [];
   if (isOverall) {
@@ -326,6 +333,7 @@ export async function getPeriodPack(
       liveDays,
       events,
       previousReview,
+      reviewPages,
       dailyNotes,
       domainSections,
       missingSources,

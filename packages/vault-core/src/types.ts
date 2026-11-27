@@ -81,6 +81,27 @@ export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
   | { type: "review"; cadence: ReviewCadence; period: string }
+  // The notebook's page. `scope` is "overall" or a live area slug. A page
+  // Decision carries the page `rev` it was proposed against in `rev`, so an
+  // apply that finds a newer page refuses STALE instead of overwriting prose
+  // the operator never saw. Legacy `{type:"review"}` Decisions read as the
+  // overall page (one release).
+  | { type: "review-page"; cadence: ReviewCadence; period: string; scope: string; rev?: number }
+  // A metric definition CHANGE. Creating a definition applies immediately, but
+  // editing or deleting one changes what a review measures, so it is filed as a
+  // Decision (spec §10.6) and applied only on approval. `definition` is the
+  // proposed update payload; `baseUpdatedAt` is the definition's `updatedAt`
+  // when the proposal was filed (`null` when the record carries none), so an
+  // apply that finds a newer file refuses STALE instead of overwriting a change
+  // the operator never saw.
+  | {
+      type: "metric-definition";
+      domainSlug: string;
+      metricId: string;
+      action: "update" | "delete";
+      definition?: DefineMetricInput;
+      baseUpdatedAt: string | null;
+    }
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
@@ -394,12 +415,184 @@ export type ReviewRecord = {
   title: string;
   scopes: Record<string, ReviewScopeState>;
   bodyMarkdown: string;
+  /**
+   * The review's content version for compare-and-swap, in the compatibility
+   * projection. A notebook has one rev per page, so this is a monotonic
+   * composite: the manifest rev plus every page rev. Any structural change or
+   * real body write moves it, so a page editor that read it still conflicts
+   * when another writer lands between its read and its save.
+   *
+   * A legacy single-file review reads its own `rev` (0 for files written before
+   * the field existed), which is a version no write produces.
+   */
+  rev: number;
+  /** The notebook's page summaries, when the record is the compatibility projection. */
+  pages?: ReviewPageSummary[];
+  /** The compatibility content rev (the same number as `rev`), named for the notebook. */
+  notebookRev?: number;
 };
+
+/**
+ * One scope's page as the companion reads and writes it.
+ *
+ * A page is the operator's unit of work: the overall review, or one area's
+ * report. In today's single-file storage it is a projection of the file — the
+ * `overall` H2s for the overall page, one area's `###` headings for an area
+ * page — and the writer merges a page back into the file by scope, so two area
+ * sessions no longer replace each other's prose.
+ */
+export type ReviewPageBody = {
+  scope: string;
+  /** The page's display title: the notebook title for `overall`, the area name otherwise. */
+  title: string;
+  /** `missing` when the page does not exist yet (never started). */
+  status: "missing" | "draft" | "done";
+  sessionId: string | null;
+  /** The page's own rev at read time; pass it back to detect a stale write. */
+  rev: number;
+  updatedAt: string | null;
+  locked: boolean;
+  bodyMarkdown: string;
+};
+
+/** One page with the notebook identity it belongs to. */
+export type ReviewPage = ReviewPageBody & {
+  cadence: ReviewCadence;
+  period: string;
+};
+
+/**
+ * One notebook page as stored: the markdown file's parsed contents.
+ *
+ * Page files are the unit of concurrent work: they own their prose, status,
+ * session id and rev, and no other page's write touches them. The manifest owns
+ * identity, order and lock.
+ */
+export type ReviewPageFile = {
+  schemaVersion: 1;
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  bodyMarkdown: string;
+};
+
+/** The notebook manifest (`review.json`): identity, order and lock. */
+export type ReviewManifest = {
+  schemaVersion: 1;
+  cadence: ReviewCadence;
+  period: string;
+  weekStartDay: WeekStartDay;
+  title: string;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** The read-only notebook a period presents to the app. */
+export type ReviewPageSummary = {
+  scope: string;
+  title: string;
+  status: "draft" | "done";
+  sessionId: string | null;
+  rev: number;
+  updatedAt: string;
+  chars: number;
+};
+
+export type ReviewNotebook = {
+  cadence: ReviewCadence;
+  period: string;
+  title: string;
+  weekStartDay: WeekStartDay;
+  locked: boolean;
+  order: string[];
+  rev: number;
+  pages: ReviewPageSummary[];
+  /** Absolute path of the notebook directory (or the legacy file it projects). */
+  path: string;
+  /** True when the period is still a single legacy file the migration has not split. */
+  legacy: boolean;
+};
+
+/** Why a page write was refused. `LEGACY_LAYOUT` asks the caller to retry after migration. */
+export type ReviewPageWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "GATED"
+  | "NOT_OPEN"
+  | "NOT_FOUND"
+  | "MALFORMED"
+  | "LEGACY_LAYOUT";
+
+/** A page write's answer: the page as written, or a refusal with the page as it stands. */
+export type ReviewPageWriteOutcome =
+  | { ok: true; page: ReviewPageBody; notebookRev: number }
+  | {
+      ok: false;
+      code: ReviewPageWriteCode;
+      error: string;
+      /** The same sentence as `error`, under the name the engine API documents. */
+      message: string;
+      current?: ReviewPageBody;
+    };
+
+/** One period's outcome in the legacy→notebook migration. */
+export type ReviewMigrationPeriod = {
+  cadence: ReviewCadence;
+  period: string;
+  status: "migrated" | "skipped" | "failed";
+  reason?: string;
+};
+
+/** What the one-release migration did, stored in its marker file. */
+export type ReviewMigrationReport = {
+  schemaVersion: 1;
+  migratedAt: string;
+  alreadyDone: boolean;
+  periods: ReviewMigrationPeriod[];
+};
+
+/**
+ * Why a review write was refused. `CONFLICT` is the one a caller must handle
+ * rather than retry blindly: the page it read is no longer the page on disk.
+ */
+export type ReviewWriteCode =
+  | "CONFLICT"
+  | "LOCKED"
+  | "GATED"
+  | "NOT_OPEN"
+  | "MALFORMED"
+  | "NOT_FOUND"
+  | "LEGACY_LAYOUT";
+
+/**
+ * A review write's answer. A refusal carries the current file for `CONFLICT`,
+ * so the caller can show "this changed on disk" without a second read.
+ */
+export type ReviewWriteOutcome =
+  | { ok: true; value: ReviewRecord }
+  | {
+      ok: false;
+      error: string;
+      code: ReviewWriteCode;
+      current?: ReviewRecord;
+    };
 export type ReviewIndexEntry = {
   cadence: ReviewCadence;
   period: string;
   locked: boolean;
   scopes: Record<string, { status: "draft" | "done"; sessionId: string | null }>;
+  /** Latest write across the manifest and its pages. */
+  updatedAt?: string;
+  /** How many pages the notebook holds (overall included). */
+  pageCount?: number;
+  /** How many pages are `done`. */
+  doneCount?: number;
   error?: string;
 };
 
@@ -428,6 +621,14 @@ export type ReviewSnapshotDirective = {
    * `all` leaves the spec's window as it was written.
    */
   window: "period" | "all";
+  /**
+   * Display-only sign handling, mirroring a metric definition's
+   * `formatting.magnitude`: `abs` prints a negative total as its gross size
+   * (Cash out), `negate` flips the sign. It is applied where the value is
+   * PRINTED and never to the query or the stored number, so a review can read
+   * "Cash out 3,000" while the ledger keeps -3,000.
+   */
+  magnitude?: "abs" | "negate" | null;
   spec: Omit<ViewSpec, "schemaVersion">;
 };
 
@@ -461,12 +662,74 @@ export type ReviewSkill = {
   exists: boolean;
 };
 
+/**
+ * One app-written metric figure, as the pass plans it.
+ *
+ * A figure is NOT a snapshot directive: an operator's fence carries a view spec
+ * the app executes, while a figure is written from the area's metric definition
+ * (Phase 4) through `getMetricsSummary`. The two share the marker-placement
+ * machinery and the outcome vocabulary, not the query source — a snapshot is a
+ * rule the operator wrote, a figure is a number the app already knows how to
+ * read. `kind` is what tells the two apart in a pass's outcomes.
+ */
+export type ReviewMetricFigureDirective = {
+  kind: "metric";
+  /** The stable marker id, `metric:<definitionId>`. */
+  id: string;
+  /** The metric definition the figure reads, without the marker prefix. */
+  definitionId: string;
+  /** The area whose page the figure lands on. */
+  domain: string;
+  /** Figures live under the area page's own Look-back. */
+  section: "Look-back";
+  /** The definition's label, printed bold above the value. */
+  title: string;
+  /** The definition's unit, display only: `ZAR` prints in parentheses. */
+  unit: string;
+  /** The definition's display formatting; the figure never changes the query. */
+  formatting: MetricFormatting | null;
+};
+
+/**
+ * The overall page's cross-domain block. It is one app-rendered table over one
+ * run per definition — a `ViewSpec` answers one domain per call, so this cannot
+ * be a directive, and a fake "overall domain" spec would be a second engine.
+ */
+export type ReviewMetricsOverallDirective = {
+  kind: "overall";
+  id: "metrics:overall";
+  domain: "";
+  section: "Look-back";
+  title: "Metrics this period";
+};
+
+export type ReviewFigureDirective =
+  | ReviewMetricFigureDirective
+  | ReviewMetricsOverallDirective;
+
+/** How one app-written figure ended up, in the same words a snapshot outcome uses. */
+export type ReviewFigureOutcome = {
+  kind: "metric" | "overall";
+  id: string;
+  /** The definition behind a metric figure (absent for the overall block). */
+  definitionId?: string;
+  domain: string;
+  section: string;
+  title: string;
+  status: "written" | "unchanged" | "failed";
+  /** Why it failed, or why a stale figure was removed. */
+  reason?: string;
+};
+
+/** One pass's outcome: an operator fence's snapshot, or an app-written figure. */
+export type ReviewPrepopulateOutcome = ReviewSnapshotOutcome | ReviewFigureOutcome;
+
 /** What one pre-population pass did to a review, and why for each part. */
 export type ReviewPrepopulateResult = {
   cadence: ReviewCadence;
   period: string;
   scope: string;
-  outcomes: ReviewSnapshotOutcome[];
+  outcomes: ReviewPrepopulateOutcome[];
   /** How many directives ended up written or refreshed. */
   applied: number;
   /**
@@ -479,6 +742,175 @@ export type ReviewPrepopulateResult = {
   locked: boolean;
   /** The review body after the pass — the file's own, unchanged when locked. */
   bodyMarkdown: string;
+};
+
+// ---------------------------------------------------------------------------
+// Metrics (2026-11-26 metrics design, §10). A metric definition is the
+// operator's named measurement, stored as one git-portable JSON per metric
+// under `domains/<slug>/metrics/<id>.json`. The rows it reads are ordinary
+// rows in the area's own database (the `metrics` events table for a manually
+// logged metric, or whatever database a derived spec names), so figures run
+// through the one view engine rather than a second aggregation path.
+// ---------------------------------------------------------------------------
+
+/** Where a metric's rows come from. */
+export const METRIC_SOURCES = ["derived", "events"] as const;
+export type MetricSource = (typeof METRIC_SOURCES)[number];
+
+/** The measures a metric may fold its rows with. `avg-per` stays a view-only measure. */
+export const METRIC_AGGREGATIONS = ["sum", "count", "last", "avg"] as const;
+export type MetricAggregation = (typeof METRIC_AGGREGATIONS)[number];
+
+export const METRIC_DIRECTIONS = ["higher-is-better", "lower-is-better", "neutral"] as const;
+export type MetricDirection = (typeof METRIC_DIRECTIONS)[number];
+
+/** Display-only sign handling; never applied to the query or the stored number. */
+export const METRIC_MAGNITUDES = ["abs", "negate"] as const;
+export type MetricMagnitude = (typeof METRIC_MAGNITUDES)[number];
+
+/**
+ * How a metric's value is printed. All of it is display-only: a `prefix` never
+ * enters the SQL, and `magnitude` never changes what the query returned.
+ */
+export type MetricFormatting = {
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  magnitude?: MetricMagnitude | null;
+};
+
+/**
+ * One operator-owned metric definition, exactly the object spec §10.1 names.
+ *
+ * `derived` carries a spec — validated against the area's own databases at
+ * definition time — and `events` carries the `metric` cell value its rows
+ * carry. `aggregation` is the fold for an events metric and display metadata
+ * for a derived one, whose query stays in `spec` (the same split a saved view
+ * makes between its data and its drawing).
+ */
+export type MetricDefinition = {
+  schemaVersion: 1;
+  /** Stable id; a review figure is found by `metric:<id>`. */
+  id: string;
+  domainSlug: string;
+  /** "Training minutes" */
+  label: string;
+  /** "minutes" | "sessions" | "pages" | "ZAR" | free text, display only. */
+  unit: string;
+  source: MetricSource;
+  /** derived: the one query that answers the metric. Validated on write. */
+  spec?: Omit<ViewSpec, "schemaVersion">;
+  /** events: the `metric` cell value the logged rows carry. */
+  eventKey?: string;
+  aggregation: MetricAggregation;
+  direction?: MetricDirection;
+  target?: number | null;
+  formatting?: MetricFormatting;
+  createdBy: "user" | "agent";
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * A definition write's payload: the definition minus the fields the store owns.
+ *
+ * A `derived` definition normally carries its validated one-number `spec`. The
+ * bridge forms — the Analytics "New metric" form and a Decision's edit draft —
+ * cannot build a full ViewSpec, so they may instead name the parts a one-number
+ * query is made of: `databaseId`, `measureColumnId` and `timeColumnId`. The
+ * engine synthesizes the same spec it validates for a hand-written one, so
+ * there is never a second query vocabulary and the renderer never holds a spec.
+ */
+export type DefineMetricInput = Omit<
+  MetricDefinition,
+  "schemaVersion" | "domainSlug" | "createdBy" | "createdAt" | "updatedAt"
+> & {
+  /** derived convenience form: the database the one-number query reads. */
+  databaseId?: string;
+  /** derived convenience form: the number column folded (null/absent for count). */
+  measureColumnId?: string | null;
+  /** derived convenience form: the date column the period window acts on. */
+  timeColumnId?: string;
+};
+
+/**
+ * What the bridge accepts where a full definition would be sent: a create, or
+ * the proposed payload of an update Decision.
+ *
+ * The two arms are the two sources, and neither carries a `spec` — the engine
+ * builds and validates the one-number query a derived metric runs. An `events`
+ * draft names the `eventKey` its logged rows carry; a `derived` draft names the
+ * database and the two columns the engine should query.
+ */
+export type MetricDefinitionDraft =
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: MetricAggregation;
+      eventKey: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    }
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "derived";
+      aggregation: MetricAggregation;
+      databaseId: string;
+      measureColumnId?: string | null;
+      timeColumnId: string;
+      target?: number | null;
+      direction?: MetricDirection | null;
+      formatting?: MetricFormatting | null;
+    };
+
+/**
+ * One metric's answered value for a review period and the one before it.
+ *
+ * `value`/`previousValue`/`delta` are null when the window held no rows at all
+ * — never a fabricated zero, because a metric that was not tracked and a metric
+ * that was genuinely zero are different statements, and only one of them is
+ * true. `formatting` is carried so Phase 5/6 render from the definition rather
+ * than from a second copy of it.
+ */
+export type MetricSummary = {
+  id: string;
+  label: string;
+  unit: string;
+  source: MetricSource;
+  value: number | null;
+  previousValue: number | null;
+  delta: number | null;
+  direction: MetricDirection | null;
+  target: number | null;
+  formatting: MetricFormatting | null;
+  window: { start: string; end: string };
+  previousWindow: { start: string; end: string };
+  /** The instant the read ran, ISO — a review window opens before the period ends. */
+  asOf: string;
+  /** Where the number came from, for the figure's provenance line. */
+  provenance: { databaseId: string; eventKey?: string };
+};
+
+/**
+ * One definition the metrics layer could not use, reported rather than thrown.
+ *
+ * Two failures look the same to a caller: a file that is malformed on disk and a
+ * well-formed definition that cannot ANSWER (a derived metric whose source
+ * database was deleted, a spec that is no longer runnable). Both are reported
+ * here; the second carries `metricId`, and its summary answers null rather than a
+ * fabricated value.
+ */
+export type MetricDefinitionProblem = {
+  /** Vault-relative file, so the operator can open the one that is wrong. */
+  file: string;
+  /** The definition that could not answer, for a run failure (absent for a file read failure). */
+  metricId?: string;
+  reason: string;
 };
 
 export type PlanningStub = {
@@ -1336,7 +1768,17 @@ export type CaptureOutcome =
     };
 
 export type KitInstallResult =
-  | { applied: true; alreadyInstalled: boolean }
+  | {
+      applied: true;
+      alreadyInstalled: boolean;
+      /**
+       * Shipped metric definitions that could not be written during the install.
+       * The kit itself still installed (a ledger must not fail because one
+       * definition file is unwritable), so these are reported, not thrown — the
+       * same shape the metrics summary uses for a definition that cannot answer.
+       */
+      metricProblems?: string[];
+    }
   | { applied: false; decision: DecisionRecord };
 
 // KAR-61 Finance kit constants
@@ -1888,6 +2330,12 @@ export type PeriodPack = {
   liveDays: LiveDay[];
   events: MapEvent[];
   previousReview: ReviewRecord | null;
+  /**
+   * The current period's notebook pages (summary only, no bodies), so a review
+   * session can see which pages exist and their status without reading each one.
+   * Bodies live in `domainSections` (overall) and the compatibility record.
+   */
+  reviewPages?: ReviewPageSummary[];
   /** Daily notes whose date falls inside the period window, oldest first. */
   dailyNotes: DailyNote[];
   domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }>;
@@ -1976,12 +2424,36 @@ export type ViewPresentation = (typeof VIEW_PRESENTATIONS)[number];
 
 export const VIEW_MEASURES = ["sum", "count", "last"] as const;
 
-export type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in";
+export type ViewFilterOp =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  /**
+   * Presence tests, not comparisons: `is-set` matches a cell that holds
+   * something (non-null and not the empty string), `is-not-set` matches a cell
+   * that holds nothing (null, absent or empty). They take no value.
+   *
+   * They exist because SQL NULL comparisons are false, so `neq ""` silently
+   * drops rows whose cell was never filled — which is exactly the finance
+   * ledger's transfer legs (`transfer_id` is empty) and the one filter gross
+   * spend needs. Their meaning is stated once, here and in the SQL builder.
+   */
+  | "is-set"
+  | "is-not-set";
 
 export type ViewFilter = {
   columnId: string;
   op: ViewFilterOp;
-  value: unknown;
+  /**
+   * The value to compare against. Absent for the presence ops (`is-set`,
+   * `is-not-set`), which ask about the cell rather than compare it — the
+   * validator refuses a supplied value there instead of silently ignoring it.
+   */
+  value?: unknown;
 };
 
 export type ViewTimeWindow =

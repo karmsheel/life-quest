@@ -137,31 +137,131 @@ export {
 export {
   DAILY_REVIEW_NO_AREAS,
   ensureReview,
+  ensureReviewPage,
   getReview,
   getReviewAreaChecklist,
+  getReviewNotebook,
+  getReviewPage,
+  getReviewPageBody,
   writeReview,
+  writeReviewPage,
+  applyReviewPageBody,
   markReviewDone,
   unlockReview,
   setReviewSessionId,
   listReviewIndex,
   applyLockedReviewBody,
+  migrateLegacyReviews,
 } from "./reviews.ts";
 export type { ReviewAreaChecklist, ReviewAreaState } from "./reviews.ts";
 export {
+  REVIEW_PAGE_COMMON_HEADINGS,
+  REVIEW_PAGE_TEMPLATE_MAX_EXTRAS,
+  canonicalizeReviewPageTemplate,
+  getReviewPageTemplate,
+  parseReviewPageTemplate,
+  reviewPageTemplateSeed,
+  writeReviewPageTemplate,
+} from "./review-templates.ts";
+export type { ReviewPageTemplate } from "./review-templates.ts";
+export {
   REVIEW_SECTIONS,
-  FINANCE_SNAPSHOT_ID,
   defaultReviewSkill,
   ensureReviewSkill,
   formatSnapshotNumber,
   getReviewSkill,
   parseSnapshotDirectives,
   prepopulateReview,
+  previousPhase4DefaultReviewSkill,
+  previousShippedDefaultReviewSkill,
   renderSnapshotMarkdown,
   snapshotCloseMarker,
   snapshotOpenMarker,
   upsertSnapshotBlock,
   writeReviewSkill,
 } from "./review-skills.ts";
+export {
+  FIGURE_SECTION,
+  METRICS_OVERALL_ID,
+  formatMetricAsOf,
+  formatMetricNumber,
+  isPeriodToDate,
+  metricCloseMarker,
+  metricFigureId,
+  metricOpenMarker,
+  metricProvenanceText,
+  metricUnitSuffix,
+  metricValueText,
+  metricWindowLabel,
+  metricsOverallCloseMarker,
+  metricsOverallOpenMarker,
+  planAreaFigures,
+  planOverallFigures,
+  removeMetricsOverallBlock,
+  removeStaleMetricFigures,
+  renderMetricFigure,
+  renderMetricsOverall,
+  upsertFigureBlock,
+} from "./review-figures.ts";
+export type {
+  MetricFigurePlan,
+  MetricOverviewRow,
+  PlannedMetricFigure,
+  PlannedOverallBlock,
+} from "./review-figures.ts";
+export {
+  METRIC_ID_PATTERN,
+  METRICS_DATABASE_ID,
+  METRICS_DATABASE_NAME,
+  applyMetricDefinitionChange,
+  compileMetricSpec,
+  compileMetricSpecForVault,
+  defineMetric,
+  draftToDefineMetricInput,
+  ensureMetricsDatabase,
+  getMetric,
+  getMetricsSummary,
+  listMetricDefinitions,
+  logMetric,
+  metricDisplayValue,
+  metricMagnitude,
+  proposeMetricDefinitionChange,
+  synthesizeDerivedMetricSpec,
+} from "./metrics.ts";
+export type {
+  ApplyMetricDefinitionChangeResult,
+  DefineMetricInput,
+  GetMetricsSummaryInput,
+  LogMetricInput,
+  LoggedMetricEvent,
+  MetricBounds,
+  MetricDefinitionApplyTarget,
+  MetricErrorCode,
+  MetricEventColumns,
+  MetricResult,
+  MetricsSummaryResult,
+  ProposeMetricDefinitionChangeInput,
+} from "./metrics.ts";
+export {
+  ANALYTICS_DEFAULT_PERIODS,
+  ANALYTICS_MAX_PERIODS,
+  getAnalyticsMatrix,
+  listMetricEvents,
+} from "./analytics.ts";
+export type {
+  AnalyticsCell,
+  AnalyticsMetricRow,
+  AnalyticsMatrix,
+  AnalyticsPeriod,
+  GetAnalyticsMatrixInput,
+  ListMetricEventsInput,
+  MetricEventRow,
+  MetricEvents,
+} from "./analytics.ts";
+export {
+  METRICS_TOOL_DEFS,
+  executeMetricsTool,
+} from "./metrics-tools.ts";
 export {
   ensurePlanningStub,
   getPlanningStub,
@@ -314,8 +414,10 @@ export {
   listInstalledKits,
   getFinanceKitSettings,
   applyFinanceKitInstall,
+  ensureFinanceMetrics,
   setFinanceCaptureAccount,
 } from "./finance-kit.ts";
+export type { FinanceMetricsInstallResult } from "./finance-kit.ts";
 export {
   DEFAULT_FX_SOURCE,
   fxSourceOf,
@@ -408,6 +510,7 @@ export type { ProjectToolResult } from "./projects.ts";
 import { MAP_TOOL_DEFS, GOALS_TOOL_DEFS } from "./map/tools.ts";
 import { DOCUMENT_TOOL_DEFS } from "./document-tools.ts";
 import { REVIEW_TOOL_DEFS } from "./review-tools.ts";
+import { METRICS_TOOL_DEFS } from "./metrics-tools.ts";
 import { CAPTURE_TOOL_DEFS } from "./capture-tools.ts";
 import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
 import { PROJECT_TOOL_DEFS } from "./projects.ts";
@@ -430,6 +533,7 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...GOALS_TOOL_DEFS,
   ...DOCUMENT_TOOL_DEFS,
   ...REVIEW_TOOL_DEFS,
+  ...METRICS_TOOL_DEFS,
   ...CAPTURE_TOOL_DEFS,
   ...SCRIPT_TOOL_DEFS,
   ...PROJECT_TOOL_DEFS,

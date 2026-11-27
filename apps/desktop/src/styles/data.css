@@ -108,6 +108,40 @@
   color: var(--muted-foreground);
 }
 
+.data-studio .data-studio__panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+/* A period deep link is a question answered in the panel's own head: which
+   slice of the rows the operator is looking at, and the one control that
+   widens it back to every row. */
+.data-studio .data-studio__period-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.15rem 0.1rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--data-radius);
+  background: var(--accent-tint);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-studio .data-studio__period-filter-range {
+  line-height: 1.25;
+}
+
+.data-studio .data-studio__period-filter .btn {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+}
+
 .data-studio__count {
   min-width: 1.4rem;
   padding: 0.05rem 0.4rem;

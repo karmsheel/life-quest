@@ -311,7 +311,16 @@ describe("review areas e2e", () => {
       // ── 5. one file, one section per area, no duplicates ──────────────────
       const weeklyFiles = readFileNames(path.join(vaultRoot, "reviews", "weekly"));
       checks.weeklyFiles = weeklyFiles;
-      assert.deepEqual(weeklyFiles, [`${weekPeriod}.md`], "locking created or removed a review file");
+      // A period is a notebook directory now: the manifest plus one page per
+      // scope. The old single file must be gone (the migration archives it).
+      assert.deepEqual(weeklyFiles, [weekPeriod], "locking created or removed a review period");
+      const notebookDir = path.join(vaultRoot, "reviews", "weekly", weekPeriod);
+      assert.ok(fs.existsSync(path.join(notebookDir, "review.json")), "the notebook manifest is missing");
+      assert.deepEqual(
+        readFileNames(notebookDir).sort(),
+        ["review.json", "overall.md", "health.md", "mind.md", "financial.md"].sort(),
+        "the notebook does not hold one page per scope",
+      );
       assert.deepEqual(
         readFileNames(path.join(vaultRoot, "reviews")),
         ["weekly"],
@@ -437,9 +446,19 @@ describe("review areas e2e", () => {
         weekStartDay: "monday",
       });
       checks.areaKickoff = areaKickoff;
-      assert.match(areaKickoff, /## Health/, "the area kickoff does not name its own section");
-      assert.match(areaKickoff, /only/, "the area kickoff does not say to write only its section");
+      assert.match(areaKickoff, /scope "health"/, "the area kickoff does not name its own scope");
+      assert.match(
+        areaKickoff,
+        /Leave every other page alone\./,
+        "the area kickoff does not bind the session to its own page",
+      );
+      assert.match(
+        areaKickoff,
+        /four common headings and this area's own sections/,
+        "the area kickoff does not name the page contract the session writes against",
+      );
       assert.match(areaKickoff, /get_review/, "the area kickoff lost the get_review guidance");
+      assert.match(areaKickoff, /write_review/, "the area kickoff lost the write_review guidance");
 
       // The plan kickoff is untouched by all of this.
       const planKickoff = boundKickoff({
@@ -474,7 +493,7 @@ describe("review areas e2e", () => {
       checks.overallContext = overallContext;
       assert.match(
         overallContext,
-        /Review scope: the whole life — the overall review\./,
+        /Review scope: the whole life — the overall page\./,
         "the overall context does not name the whole-life scope",
       );
       assert.match(
@@ -504,7 +523,7 @@ describe("review areas e2e", () => {
       checks.areaContext = areaContext;
       assert.match(
         areaContext,
-        /Review scope: the Health area — write only the ## Health section and leave the other sections alone\./,
+        /Review scope: the Health area page — call get_review with scope "health", then write_review with that scope and its rev; leave every other section and area alone\./,
         "the area context does not name and bound the area section",
       );
       assert.match(

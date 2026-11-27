@@ -2,6 +2,35 @@ import { contextBridge, ipcRenderer } from "electron";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/**
+ * The bridge's metric-definition payload: the two sources, neither carrying a
+ * ViewSpec. A `derived` draft names its database and two columns and the engine
+ * builds/validates the query.
+ */
+type MetricDefinitionDraft =
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "events";
+      aggregation: "sum" | "count" | "last" | "avg";
+      eventKey: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    }
+  | {
+      id: string;
+      label: string;
+      unit: string;
+      source: "derived";
+      aggregation: "sum" | "count" | "last" | "avg";
+      databaseId: string;
+      measureColumnId?: string | null;
+      timeColumnId: string;
+      target?: number | null;
+      direction?: "higher-is-better" | "lower-is-better" | "neutral" | null;
+    };
+
 /** KAR-70: the two loopback doors, as main reports them. */
 type McpDoors = {
   localUrl: string;
@@ -615,13 +644,40 @@ const lifequest = {
 
   reviewGet: (cadence: string, period: string) =>
     ipcRenderer.invoke("review:get", cadence, period) as Promise<Result<unknown>>,
+  reviewNotebookGet: (cadence: string, period: string) =>
+    ipcRenderer.invoke("review:notebook", cadence, period) as Promise<
+      Result<unknown>
+    >,
+  reviewPageGet: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageGet", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageEnsure: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:pageEnsure", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewPageWrite: (
+    cadence: string,
+    period: string,
+    scope: string,
+    body: string,
+    baseRev: number,
+  ) =>
+    ipcRenderer.invoke(
+      "review:pageWrite",
+      cadence,
+      period,
+      scope,
+      body,
+      baseRev,
+    ) as Promise<unknown>,
   reviewEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:ensure", cadence, period, scope) as Promise<
       Result<unknown>
     >,
-  reviewWrite: (cadence: string, period: string, body: string) =>
-    ipcRenderer.invoke("review:write", cadence, period, body) as Promise<
-      Result<unknown>
+  reviewWrite: (cadence: string, period: string, body: string, baseRev?: number) =>
+    ipcRenderer.invoke("review:write", cadence, period, body, baseRev) as Promise<
+      unknown
     >,
   reviewMarkDone: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("review:markDone", cadence, period, scope) as Promise<
@@ -645,6 +701,43 @@ const lifequest = {
     ipcRenderer.invoke("review:prepopulate", cadence, period, scope) as Promise<
       Result<unknown>
     >,
+  // Phase 6 Analytics: the matrix read, one events metric's rows for a period,
+  // and the two immediate writes (log an event, define an events metric).
+  analyticsMatrix: (input: {
+    cadence: string;
+    lens: string | null;
+    count?: number;
+  }) => ipcRenderer.invoke("analytics:matrix", input) as Promise<Result<unknown>>,
+  metricEvents: (input: {
+    area: string;
+    metricId: string;
+    start: string;
+    end: string;
+  }) => ipcRenderer.invoke("metrics:events", input) as Promise<Result<unknown>>,
+  metricLogEvent: (input: {
+    area: string;
+    metricId: string;
+    date?: string;
+    value?: number;
+    note?: string;
+  }) => ipcRenderer.invoke("metrics:logEvent", input) as Promise<Result<unknown>>,
+  metricDefine: (input: {
+    area: string;
+    definition: MetricDefinitionDraft;
+  }) => ipcRenderer.invoke("metrics:define", input) as Promise<Result<unknown>>,
+  // Editing/deleting a definition is a governed change: these door calls read
+  // one definition for the form, or file the proposal (nothing changes until the
+  // operator approves the Decision).
+  metricGet: (input: {
+    area: string;
+    metricId: string;
+  }) => ipcRenderer.invoke("metrics:get", input) as Promise<Result<unknown>>,
+  metricPropose: (input: {
+    area: string;
+    metricId: string;
+    action: "update" | "delete";
+    definition?: MetricDefinitionDraft;
+  }) => ipcRenderer.invoke("metrics:propose", input) as Promise<Result<unknown>>,
   planningEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
       Result<unknown>

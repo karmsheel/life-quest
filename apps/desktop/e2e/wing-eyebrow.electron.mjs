@@ -25,7 +25,8 @@
  *  5. Personnel is renamed Agents, and the Act page is renamed Task Manager —
  *     in the rail and in the eyebrow.
  *  6. The five review cadences each carry their own name under the Review
- *     wing word: "Review / Daily", "Review / Weekly", and so on.
+ *     wing word ("Review / Daily", "Review / Weekly", …), and the wing's
+ *     Analytics matrix names itself "Review / Analytics".
  *  7. No page under a wing is missing its eyebrow, and no page carries two.
  *
  * NOT covered here: the real vault. The IPC bridge is stubbed, so this rig
@@ -85,6 +86,9 @@ const PAGES = [
   { route: "/review/monthly", eyebrow: "Review / Monthly", wing: "Review", heading: null },
   { route: "/review/quarterly", eyebrow: "Review / Quarterly", wing: "Review", heading: null },
   { route: "/review/yearly", eyebrow: "Review / Yearly", wing: "Review", heading: null },
+  // The Review wing's one non-cadence page: it compares periods, so it hangs
+  // off Review with its own name rather than a cadence's.
+  { route: "/review/analytics", eyebrow: "Review / Analytics", wing: "Review", heading: "Analytics" },
 ];
 
 /** The rail labels, per wing — the claim that Images moved to Home. */
@@ -93,7 +97,7 @@ const RAILS = {
   Define: ["Dream", "Vision", "Ideal State"],
   Plan: ["Goals", "Life Map", "Blueprints"],
   Act: ["Projects", "Daily Schedule", "Task Manager"],
-  Review: ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"],
+  Review: ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly", "Analytics"],
 };
 
 const SAMPLE = `(() => {

@@ -170,11 +170,21 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "map:apply",
   "goals:apply",
   "review:ensure",
+  "review:pageEnsure",
+  "review:pageWrite",
   "review:write",
   "review:markDone",
   "review:unlock",
   "review:prepopulate",
   "review:skillWrite",
+  // metrics: logging an event writes a row into the area's Metrics database, and
+  // defining a metric writes a definition file and may create that database, so
+  // both move what the Analytics matrix and the review figures read. Proposing
+  // an edit/delete writes a Decision (not the definition): the inbox and the
+  // board must redraw to show the new pending card.
+  "metrics:logEvent",
+  "metrics:define",
+  "metrics:propose",
   "note:write",
   "planning:ensure",
   // settings carry the currency and the FX rate
@@ -225,6 +235,12 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_page",
   "list_signals",
   "get_signal",
+  // Metric definitions and their period comparison (2026-11-26 metrics design),
+  // and the review page contract: all reads, so none of them may fire the
+  // whole-vault repaint a write does.
+  "list_metrics",
+  "get_metrics_summary",
+  "get_review_template",
   "library_list",
   "library_get",
   "list_library_notes",

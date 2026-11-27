@@ -11,6 +11,7 @@ import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 import AutomationsPage from "@/pages/AutomationsPage";
 import CustomizationsPage from "@/pages/CustomizationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
@@ -155,6 +156,10 @@ function AppRoutes() {
               redirect keeps them working without keeping the old name in the UI. */}
           <Route path="/extensions" element={<Navigate to="/customizations" replace />} />
           <Route path="/daily" element={<DailySchedulePage />} />
+          {/* The literal route sits beside the cadence parameter; React Router
+              ranks the static segment higher, so /review/analytics is the
+              matrix and never the "analytics" cadence. */}
+          <Route path="/review/analytics" element={<AnalyticsPage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />
