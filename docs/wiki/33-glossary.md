@@ -1,6 +1,6 @@
 # Glossary
 
-Every term this wiki uses, defined once, for LifeQuest 0.3.5. Where a term
+Every term this wiki uses, defined once, for LifeQuest 0.3.6. Where a term
 belongs to a page, the definition links there for the full story. Old names are
 kept where the operator may still meet them in a vault or a saved link, marked
 **formerly**.

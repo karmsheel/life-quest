@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-11-27 · master `d305a9c`
+Last updated: 2026-11-28 · master `71f8c09`
 
 The live queue. One **Now** per person or agent; **Next** is ordered but may be worked in
 parallel when each has its own worktree; **Blocked** says why and who can unblock it. Close an
@@ -12,12 +12,13 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 ## Now
 
-- [ ] **Release 0.3.5.**
-      The review notebook, per-domain metrics, figures and Analytics are on `master` (merge
-      `e124a34`); the pack and the notebook are both in, so this is the release the queue has
-      been waiting for. branch: `master` · scope: version in `apps/desktop/package.json`, wiki
-      "Version covered", release notes in `PROGRESS.md` · proof: `npm run release`,
-      `packaged-smoke.mjs`, `update-live-feed.mjs`, `gh release create` · plan:
+- [ ] **Release 0.3.6.**
+      The phone client, the Spiritual and Career areas with the lens modes, the studio chrome
+      across the wings and the shelf, the landing page and the unwritten review sheet are on
+      `master` after `v0.3.5` (merge `0335056` is the last of them). branch: `master` · scope:
+      version in `apps/desktop/package.json`, wiki "Version covered", release notes in
+      `PROGRESS.md` · proof: `npm run release`, `packaged-smoke.mjs`, `update-live-feed.mjs`,
+      `gh release create` · plan:
       [`docs/wiki/31-development.md`](docs/wiki/31-development.md) release section.
 
 ## Next
@@ -41,6 +42,7 @@ command and artifact that show it works), and the **plan** or spec it follows.
 
 | When | What | Where |
 |---|---|---|
+| 2026-11-27 | v0.3.5 shipped (review notebook, per-domain metrics, figures, Analytics, the plan pack, Blueprints and Customizations) | tag `v0.3.5` |
 | 2026-11-27 | The phone client: an installable PWA served by its own loopback door, a draft queue that survives the studio being quit, one pinned metric with its age, the companion's three draft tools, the Settings → Phone panel, the dock strip, the phone law and its wiki page — built on the 2026-10-26 spec and plan, synced over 632+ commits | merge `0335056` · `e2e/artifacts/{phone-engine,phone-ui}.json` + `phone-*.png` |
 | 2026-11-27 | The review notebook, per-domain metrics, figures and Analytics: tabbed notebook pages with per-domain contracts, metric definitions and dated events, app-written figures and the overall table, the Analytics matrix with logging/editing/new-metric doors, definition edits through Decisions, the whole review/metrics/analytics IPC surface, law/spec/wiki and ten engine rigs + three renderer rigs | merge `e124a34` · `e2e/artifacts/{analytics,review,database-period}.json` |
 | 2026-11-27 | The six-file plan pack, the `DESIGN.md` restructure, the `AGENTS.md` repair, the docs gate for both, and the Plan page renamed **Blueprints** (with the wing-eyebrow harness repaired and its rig green) | merge `692bb72` |
