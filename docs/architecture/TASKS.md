@@ -7,9 +7,9 @@ then an anti-regression check.
 
 ## Now
 
-- [ ] **IPC channel contract.** `LifequestApi`, `preload.ts`, and `ipcMain.handle`
-      registrations can drift. Add a source check that every handled channel is
-      on the bridge and every bridge method has a handler. No behavior change.
+- [ ] **Local today.** Five private `localIsoDate` copies and two public
+      `todayLocalIso` functions format the same local `YYYY-MM-DD`. One
+      implementation in `calendar-date.ts`; published names stay as aliases.
 
 ## Next
 
