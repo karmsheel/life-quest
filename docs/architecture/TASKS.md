@@ -31,6 +31,9 @@ then an anti-regression check.
   do not load. Leave them until a harness already shares a type module.
 - **`DecisionBody` timestamp check.** It matches a date or an instant so the
   inbox can format either. That is not a calendar-date rule.
+- **Two slug functions.** `slugifyDomainName` falls back to `domain` and does not
+  truncate. The profile-name slug normalizes Unicode, caps at 32 characters,
+  and falls back to `vault`. Same shape, different contract.
 
 ## Pending confirmation
 
