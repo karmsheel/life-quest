@@ -134,6 +134,7 @@ export {
   isoWeekOf,
   type IsoWeek,
 } from "./period.ts";
+export { calendarDateFromParts, isCalendarDate } from "./calendar-date.ts";
 export {
   DAILY_REVIEW_NO_AREAS,
   ensureReview,

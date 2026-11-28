@@ -1175,7 +1175,7 @@ function textOf(value: string, field: string, lookups: Lookups): string {
   if (field === "domainSlug" || field === "domain") return lookups.domainName(value);
   if (field === "status" || field === "priority") return labelize(value);
   if (MAP_COLORS.has(value) && (field === "color" || field === "")) return value;
-  if (isIsoDate(value)) return formatIso(value);
+  if (looksLikeTimestamp(value)) return formatIso(value);
   if (isUuid(value)) return shortId(value);
   return value;
 }
@@ -1191,7 +1191,7 @@ function ColorValue({ value }: { value: string }) {
 
 function plain(value: unknown): string {
   if (isEmpty(value)) return "";
-  if (typeof value === "string") return isIsoDate(value) ? formatIso(value) : value;
+  if (typeof value === "string") return looksLikeTimestamp(value) ? formatIso(value) : value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
 }
@@ -1239,7 +1239,7 @@ function shortId(value: string): string {
   return isUuid(value) ? `${value.slice(0, 8)}…` : value;
 }
 
-function isIsoDate(value: string): boolean {
+function looksLikeTimestamp(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}(?:[T\s]|$)/.test(value);
 }
 

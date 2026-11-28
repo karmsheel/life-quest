@@ -1,3 +1,4 @@
+import { isCalendarDate } from "./calendar-date.ts";
 import {
   REVIEW_CADENCES,
   type Result,
@@ -7,7 +8,6 @@ import {
 
 export { REVIEW_CADENCES, type ReviewCadence };
 
-const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH = /^(\d{4})-(\d{2})$/;
 const QUARTER = /^(\d{4})-Q([1-4])$/;
 const YEAR = /^(\d{4})$/;
@@ -42,20 +42,9 @@ export function todayLocalIso(now = new Date()): string {
 }
 
 function utc(date: string): Date | null {
-  const m = ISO.exec(date);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (
-    dt.getUTCFullYear() !== y ||
-    dt.getUTCMonth() !== mo - 1 ||
-    dt.getUTCDate() !== d
-  ) {
-    return null;
-  }
-  return dt;
+  if (!isCalendarDate(date)) return null;
+  const [y, mo, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y!, mo! - 1, d!));
 }
 
 function toIso(dt: Date): string {
@@ -136,7 +125,7 @@ function weekParts(
  * filename, so a plausible-looking string is not enough.
  */
 export function isValidLocalIsoDate(value: string): boolean {
-  return utc(value) !== null;
+  return isCalendarDate(value);
 }
 
 /** `date` moved by `days` on the calendar; null when `date` is not a date. */

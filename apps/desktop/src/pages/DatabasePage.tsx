@@ -9,6 +9,7 @@ import type {
   IngestRow,
   SyncConflict,
 } from "@lifequest/vault-core";
+import { isCalendarDate } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -29,15 +30,6 @@ async function loadBatches(slug: string, id: string, setBatches: (b: IngestBatch
  * so the operator lands on the rows behind that cell's number.
  */
 type PeriodFilter = { from: string; to: string; columnId: string };
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** A real calendar day, not merely the shape `YYYY-MM-DD` can wear. */
-function isCalendarDate(value: string): boolean {
-  if (!ISO_DATE.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
 
 /**
  * The period a link asked for, or null when the link is incomplete or cannot be
