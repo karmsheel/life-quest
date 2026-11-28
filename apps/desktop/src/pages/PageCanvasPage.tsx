@@ -19,6 +19,7 @@ import {
   filterByLens,
   deadlinePressureGoals,
   daysUntilDeadline,
+  todayLocalIso as localIsoDate,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
@@ -49,11 +50,6 @@ const BLOCK_LABELS: Record<string, string> = {
 
 function genId(): string {
   return `blk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function localIsoDate(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
 }
 
 function isEmpty(v: unknown): boolean {

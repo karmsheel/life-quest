@@ -8,7 +8,10 @@ import {
   isCalendarDate,
   isIsoDate as mapIsIsoDate,
   isValidLocalIsoDate,
+  todayLocalIso as publishedToday,
 } from "../../../packages/vault-core/src/index.ts";
+import { todayLocalIso } from "../../../packages/vault-core/src/calendar-date.ts";
+import { todayLocalIso as periodToday } from "../../../packages/vault-core/src/period.ts";
 import { isIsoDate as phoneIsIsoDate } from "../../../packages/vault-core/src/phone.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -74,6 +77,14 @@ describe("calendar date", () => {
     assert.equal(phoneIsIsoDate(undefined), false);
   });
 
+  it("names today from the local calendar, once", () => {
+    const evening = new Date(2026, 1, 28, 23, 30, 0);
+    assert.equal(todayLocalIso(evening), "2026-02-28");
+    assert.equal(periodToday(evening), todayLocalIso(evening));
+    assert.equal(publishedToday(evening), todayLocalIso(evening));
+    assert.equal(isCalendarDate(todayLocalIso(evening)), true);
+  });
+
   it("does not grow a second calendar-date implementation", () => {
     const roots = [
       path.join(repoRoot, "packages", "vault-core", "src"),
@@ -106,6 +117,19 @@ describe("calendar date", () => {
       }
       if (/function isValidLocalIsoDate\(/.test(text) && !aliasFiles.has(normalized)) {
         offenders.push(`${rel} declares isValidLocalIsoDate`);
+      }
+      if (/function localIsoDate\(/.test(text)) {
+        offenders.push(`${rel} declares localIsoDate`);
+      }
+      if (/function todayLocalIso\(/.test(text) && normalized !== canonical && !aliasFiles.has(normalized)) {
+        offenders.push(`${rel} declares todayLocalIso`);
+      }
+      if (
+        (normalized === path.normalize(path.join(repoRoot, "packages/vault-core/src/period.ts")) ||
+          normalized === path.normalize(path.join(repoRoot, "packages/vault-core/src/map/dates.ts"))) &&
+        !text.includes("return localToday(now)")
+      ) {
+        offenders.push(`${rel} todayLocalIso does not call the calendar-date rule`);
       }
       if (aliasFiles.has(normalized) && !text.includes("isCalendarDate(")) {
         offenders.push(`${rel} alias does not call isCalendarDate`);

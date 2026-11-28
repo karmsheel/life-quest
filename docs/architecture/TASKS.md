@@ -7,9 +7,7 @@ then an anti-regression check.
 
 ## Now
 
-- [ ] **Local today.** Five private `localIsoDate` copies and two public
-      `todayLocalIso` functions format the same local `YYYY-MM-DD`. One
-      implementation in `calendar-date.ts`; published names stay as aliases.
+- None. The next candidates are in **Next**, and neither is a safe deletion yet.
 
 ## Next
 

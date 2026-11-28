@@ -1,3 +1,4 @@
+import { todayLocalIso as localIsoDate } from "./calendar-date.ts";
 import type { Goal } from "./types.ts";
 
 export type GoalPace = {
@@ -77,14 +78,6 @@ export function daysUntilDeadline(
   const today =
     todayIso ?? localIsoDate();
   return daysBetweenUtc(today, deadline);
-}
-
-function localIsoDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 /**

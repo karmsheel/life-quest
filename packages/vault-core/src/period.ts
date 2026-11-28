@@ -1,4 +1,4 @@
-import { isCalendarDate } from "./calendar-date.ts";
+import { isCalendarDate, todayLocalIso as localToday } from "./calendar-date.ts";
 import {
   REVIEW_CADENCES,
   type Result,
@@ -35,10 +35,7 @@ export function isWeekStartDay(value: string): value is WeekStartDay {
 }
 
 export function todayLocalIso(now = new Date()): string {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return localToday(now);
 }
 
 function utc(date: string): Date | null {

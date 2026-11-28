@@ -8,8 +8,8 @@ Internal record for the entropy-reduction workstream. Product history stays in
 | | |
 |---|---|
 | Branch | `room/goal-systematically-reduce-architectural-wcpv` |
-| Round | 2 verified |
-| Verified by | `node --experimental-strip-types --test apps/desktop/tests/ipc-channels.test.ts` |
+| Round | 3 verified |
+| Verified by | `node --experimental-strip-types --test apps/desktop/tests/calendar-date.test.ts` |
 
 ## Rounds
 
@@ -33,4 +33,11 @@ The 223 invoke channels already matched their handlers, and the 10
 main-to-renderer events already matched their preload listeners. Nothing
 moved. `apps/desktop/tests/ipc-channels.test.ts` now fails if a channel is
 added on only one side, or if a channel stops being a string literal.
+
+### 3 — local today, one formatter
+
+Five private `localIsoDate` copies and two public `todayLocalIso` functions
+formatted the local calendar day the same way. `calendar-date.ts` owns it.
+The map and period names call it. Goal pace, the deadline banner, the page
+canvas, recent vaults, and the notification path no longer keep a copy.
 

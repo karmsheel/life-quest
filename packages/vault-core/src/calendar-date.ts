@@ -35,6 +35,14 @@ export function calendarDateFromParts(
   return `${y}-${m}-${d}`;
 }
 
+/** Today's local calendar day, not the UTC day `toISOString` would name. */
+export function todayLocalIso(now = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** True when `value` is a real local calendar date in `YYYY-MM-DD` form. */
 export function isCalendarDate(value: string): boolean {
   const match = ISO.exec(value);

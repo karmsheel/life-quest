@@ -1,4 +1,4 @@
-import { isCalendarDate } from "../calendar-date.ts";
+import { isCalendarDate, todayLocalIso as localToday } from "../calendar-date.ts";
 import type { IsoDate, Weekday } from "./types.ts";
 
 export function isIsoDate(value: string): boolean {
@@ -65,8 +65,5 @@ export function addDays(date: IsoDate, days: number): IsoDate {
 }
 
 export function todayLocalIso(now = new Date()): IsoDate {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return localToday(now);
 }
