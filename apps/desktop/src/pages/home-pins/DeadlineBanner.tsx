@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { deadlinePressureGoals, filterByLens, daysUntilDeadline } from "@lifequest/vault-core/pure";
+import { deadlinePressureGoals, filterByLens, daysUntilDeadline, todayLocalIso as localIsoDate } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { BuiltInBadge } from "@/components/home/BuiltInBadge";
-
-function localIsoDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 export function DeadlineBanner() {
   const { snapshot } = useVault();

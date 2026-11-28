@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { isCalendarDate } from "./calendar-date.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { loadGoals } from "./goals.ts";
@@ -60,22 +61,8 @@ function isPercent(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 /** A project id is its filename, so it is always one safe path segment. */
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/**
- * A calendar date, not merely something Date.parse accepts. `Date.parse` rolls
- * 2026-02-31 over into March, so the round-trip through UTC is what rejects a
- * day that does not exist.
- */
-function isValidIsoDate(value: string): boolean {
-  if (!ISO_DATE.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return false;
-  return parsed.toISOString().slice(0, 10) === value;
-}
 
 // ---------------------------------------------------------------------------
 // Field validation shared by the operator CRUD, the agent command, and the
@@ -188,7 +175,7 @@ function parseDateField(value: unknown, field: string): Result<string | null> {
   if (typeof value !== "string") return fail(`${field} must be YYYY-MM-DD or null`);
   const trimmed = value.trim();
   if (!trimmed) return ok(null);
-  if (!isValidIsoDate(trimmed)) return fail(`${field} must be a real date in YYYY-MM-DD form`);
+  if (!isCalendarDate(trimmed)) return fail(`${field} must be a real date in YYYY-MM-DD form`);
   return ok(trimmed);
 }
 
@@ -292,7 +279,7 @@ function parseProjectFile(id: string, raw: string): Project | null {
     if (typeof value !== "string") return undefined;
     const trimmed = value.trim();
     if (!trimmed) return null;
-    return isValidIsoDate(trimmed) ? trimmed : undefined;
+    return isCalendarDate(trimmed) ? trimmed : undefined;
   };
   const startDate = readDate(data.startDate);
   if (startDate === undefined) return null;

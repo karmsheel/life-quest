@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { isCalendarDate } from "./calendar-date.ts";
 import { listDomains } from "./domains.ts";
 import { appendLog } from "./log.ts";
 import { fail, ok } from "./map/errors.ts";
@@ -19,8 +20,6 @@ import { isLiveAreaMeta } from "./domain-lens.ts";
 
 const STATUSES: GoalStatus[] = ["open", "done"];
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 function assertDomain(
   slug: string | null,
   live: ReadonlySet<string>,
@@ -33,7 +32,7 @@ function assertDomain(
 function parseDeadline(value: string | null | undefined): MapResult<string | null> {
   if (value === undefined || value === null || value.trim() === "") return ok(null);
   const s = value.trim();
-  if (!ISO_DATE.test(s) || !Number.isFinite(Date.parse(`${s}T00:00:00Z`))) {
+  if (!isCalendarDate(s)) {
     return fail("MALFORMED", "Deadline must be YYYY-MM-DD");
   }
   return ok(s);

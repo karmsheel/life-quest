@@ -11,6 +11,8 @@
  * companion, through `post_phone_draft`, can turn one into a row.
  */
 
+import { isCalendarDate } from "./calendar-date.ts";
+
 export const PHONE_METRIC_IDS = [
   "net_worth",
   "month_spend",
@@ -121,7 +123,6 @@ export type PhoneState = {
 
 const CLIENT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 86_400_000;
 
 export function isPhoneMetricId(value: unknown): value is PhoneMetricId {
@@ -137,14 +138,7 @@ export function isClientId(value: unknown): value is string {
 
 /** A real calendar date in `YYYY-MM-DD`, not merely the right shape. */
 export function isIsoDate(value: unknown): value is string {
-  if (typeof value !== "string" || !ISO_DATE.test(value)) return false;
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1, day!));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month! - 1 &&
-    date.getUTCDate() === day
-  );
+  return typeof value === "string" && isCalendarDate(value);
 }
 
 /**

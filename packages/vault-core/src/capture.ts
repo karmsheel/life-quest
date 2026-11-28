@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { calendarDateFromParts } from "./calendar-date.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
@@ -83,19 +84,6 @@ const MONTH_NAMES: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-function isoDate(year: number, month: number, day: number): string | null {
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const d = new Date(Date.UTC(year, month - 1, day));
-  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
-    return null;
-  }
-  const y = String(year).padStart(4, "0");
-  const m = String(month).padStart(2, "0");
-  const dayPart = String(day).padStart(2, "0");
-  return `${y}-${m}-${dayPart}`;
-}
-
 function expandYear(raw: string): number {
   const n = Number(raw);
   return raw.length <= 2 ? 2000 + n : n;
@@ -109,11 +97,11 @@ function parseNumericDate(text: string): string | null {
   // A four-digit first number is the year; otherwise the day/month order is
   // resolved by which number cannot be a month, and day-then-month when both
   // could be (South African order).
-  if (match[1]!.length === 4) return isoDate(Number(match[1]), Number(match[2]), Number(c));
+  if (match[1]!.length === 4) return calendarDateFromParts(Number(match[1]), Number(match[2]), Number(c));
   const year = expandYear(c);
-  if (a > 12) return isoDate(year, b, a);
-  if (b > 12) return isoDate(year, a, b);
-  return isoDate(year, b, a);
+  if (a > 12) return calendarDateFromParts(year, b, a);
+  if (b > 12) return calendarDateFromParts(year, a, b);
+  return calendarDateFromParts(year, b, a);
 }
 
 function monthIndex(name: string): number | null {
@@ -127,14 +115,14 @@ function parseMonthNameDate(text: string): string | null {
   );
   if (dayFirst) {
     const month = monthIndex(dayFirst[2]!);
-    if (month) return isoDate(expandYear(dayFirst[3]!), month, Number(dayFirst[1]));
+    if (month) return calendarDateFromParts(expandYear(dayFirst[3]!), month, Number(dayFirst[1]));
   }
   const monthFirst = text.match(
     /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2}),?\s+(\d{2,4})\b/i,
   );
   if (monthFirst) {
     const month = monthIndex(monthFirst[1]!);
-    if (month) return isoDate(expandYear(monthFirst[3]!), month, Number(monthFirst[2]));
+    if (month) return calendarDateFromParts(expandYear(monthFirst[3]!), month, Number(monthFirst[2]));
   }
   return null;
 }
